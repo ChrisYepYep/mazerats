@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#120c07">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Admin — Maze Rats</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMR%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="admin">
+
+    <header class="site-header">
+        <a class="brand" href="index.html">
+            <span class="brand-text">MAZE RATS</span>
+        </a>
+        <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+        <nav class="site-nav">
+            <a href="index.html" data-page="home">Home</a>
+            <a href="archive.html" data-page="archive">Archive</a>
+            <a href="about.html" data-page="about">About</a>
+            <a href="admin.html" data-page="admin" class="nav-admin">Admin</a>
+        </nav>
+    </header>
+
+    <main>
+        <div class="container">
+            <div class="page-content" style="padding-bottom: 0;">
+                <h1>Admin</h1>
+                <p class="subtitle">Add and amend mazes and events.</p>
+            </div>
+
+            <div class="callout admin-notice">
+                <h3>Read this before you start</h3>
+                <p>This site has no server or database behind it, so there's nowhere for "Save" to actually publish
+                to. Everything you do here is written to <strong>this browser's local storage only</strong> — it
+                previews live on this device (open the Archive page in another tab to see it), but nobody else will
+                see it. To make a change permanent for every visitor, use <strong>Export</strong> at the bottom of
+                this page and paste the generated code into <code>js/rooms-data.js</code> / <code>js/events-data.js</code>
+                in the project, then redeploy the site.</p>
+            </div>
+
+            <!-- ---------- Mazes ---------- -->
+            <div class="chrome-window admin-section">
+                <div class="chrome-titlebar"><h2>Manage Mazes</h2></div>
+                <div class="chrome-frame">
+                    <div class="chrome-body">
+                        <div class="chrome-list" id="rooms-list"></div>
+                        <button class="btn btn-solid admin-add-btn" id="rooms-add-btn" type="button">+ Add a Maze</button>
+                        <form class="admin-form" id="rooms-form" style="display:none;"></form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ---------- Events ---------- -->
+            <div class="chrome-window admin-section">
+                <div class="chrome-titlebar"><h2>Manage Events</h2></div>
+                <div class="chrome-frame">
+                    <div class="chrome-body">
+                        <div class="chrome-list" id="events-list"></div>
+                        <button class="btn btn-solid admin-add-btn" id="events-add-btn" type="button">+ Add an Event</button>
+                        <form class="admin-form" id="events-form" style="display:none;"></form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ---------- Export ---------- -->
+            <div class="chrome-window admin-section">
+                <div class="chrome-titlebar"><h2>Export / Publish</h2></div>
+                <div class="chrome-frame">
+                    <div class="chrome-body">
+                        <p class="chrome-intro">Copy this into the matching data file to make your changes live for everyone. Each block replaces just the array itself — leave the helper functions above it (like <code>pickThumb</code>) in place.</p>
+
+                        <h3 class="admin-export-label">js/rooms-data.js — replace the <code>ROOMS</code> array</h3>
+                        <textarea class="admin-export" id="rooms-export" readonly></textarea>
+                        <button class="btn admin-copy-btn" data-target="rooms-export" type="button">Copy</button>
+
+                        <h3 class="admin-export-label">js/events-data.js — replace the <code>EVENTS</code> array</h3>
+                        <textarea class="admin-export" id="events-export" readonly></textarea>
+                        <button class="btn admin-copy-btn" data-target="events-export" type="button">Copy</button>
+
+                        <p class="admin-reset-row">
+                            <button class="btn admin-reset-btn" id="reset-btn" type="button">Reset this browser to site defaults</button>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>Maze Rats is an unofficial fan archive and is not affiliated with Habbo or Sulake.</p>
+    </footer>
+
+    <script src="js/admin-store.js"></script>
+    <script src="js/rooms-data.js"></script>
+    <script src="js/events-data.js"></script>
+    <script src="js/site.js"></script>
+    <script src="js/admin.js"></script>
+</body>
+</html>

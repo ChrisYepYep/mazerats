@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#120c07">
+    <title>Maze Rats — A Habbo Hotel Maze Room Archive</title>
+    <meta name="description" content="Maze Rats is a fan-run archive preserving the history of maze rooms across Habbo Hotel.">
+    <meta property="og:title" content="Maze Rats">
+    <meta property="og:description" content="A fan-run archive preserving the history of maze rooms across Habbo Hotel.">
+    <meta property="og:type" content="website">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMR%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="home">
+
+    <header class="site-header">
+        <a class="brand" href="index.html">
+            <span class="brand-text">MAZE RATS</span>
+        </a>
+        <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+        <nav class="site-nav">
+            <a href="index.html" data-page="home">Home</a>
+            <a href="archive.html" data-page="archive">Archive</a>
+            <a href="about.html" data-page="about">About</a>
+            <a href="admin.html" data-page="admin" class="nav-admin">Admin</a>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h1>MAZE RATS</h1>
+            <p class="tagline">An ongoing archive of maze rooms built across Habbo Hotel — their layouts, their builders, and the ones that are gone but not forgotten.</p>
+            <div class="hero-actions">
+                <a class="btn btn-solid" href="archive.html">Browse the Archive</a>
+                <a class="btn" href="about.html">About This Project</a>
+            </div>
+        </section>
+
+        <div class="container">
+            <div class="chrome-window">
+                <div class="chrome-titlebar">
+                    <h2>Recently Archived</h2>
+                </div>
+                <div class="chrome-nav">
+                    <button class="chrome-nav-btn active" data-view="active">Active Mazes</button>
+                    <button class="chrome-nav-btn" data-view="archived">Archived Mazes</button>
+                    <button class="chrome-nav-btn" data-view="events">Events</button>
+                </div>
+                <div class="chrome-frame">
+                    <div class="chrome-body">
+                        <p class="chrome-intro" id="featured-intro">The latest active mazes added to the collection.</p>
+                        <div class="chrome-list" id="featured-grid"></div>
+                        <p class="admin-empty" id="featured-empty" style="display:none;"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>Maze Rats is an unofficial fan archive and is not affiliated with Habbo or Sulake.</p>
+        <p><a href="about.html">Know a maze room that belongs here?</a></p>
+    </footer>
+
+    <script src="js/admin-store.js"></script>
+    <script src="js/rooms-data.js"></script>
+    <script src="js/events-data.js"></script>
+    <script src="js/site.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const grid = document.getElementById("featured-grid");
+            const intro = document.getElementById("featured-intro");
+            const empty = document.getElementById("featured-empty");
+            const navBtns = document.querySelectorAll(".chrome-nav-btn");
+
+            const introText = {
+                active: "The latest active mazes added to the collection.",
+                archived: "The latest mazes marked closed or lost.",
+                events: "The latest events added to the collection."
+            };
+            const emptyText = {
+                active: "No active mazes archived yet.",
+                archived: "No archived mazes yet.",
+                events: "No events archived yet."
+            };
+
+            function normalize(item, view) {
+                if (view === "events") {
+                    return {
+                        name: item.title,
+                        subtitle: item.host ? `by ${item.host}` : "",
+                        statusKey: item.status || "upcoming",
+                        statusLabel: item.status === "past" ? "Past" : "Upcoming",
+                        thumb: item.thumb,
+                        description: item.description,
+                        sortKey: item.date || ""
+                    };
+                }
+                return {
+                    name: item.name,
+                    subtitle: item.creator ? `by ${item.creator}` : "",
+                    statusKey: item.status,
+                    statusLabel: item.status === "active" ? "Active" : item.status === "closed" ? "Closed" : "Unknown",
+                    thumb: item.thumb,
+                    description: item.description,
+                    sortKey: item.added || ""
+                };
+            }
+
+            function sourceItems(view) {
+                if (view === "active") return ROOMS.filter(r => r.status === "active" || r.status === "unknown");
+                if (view === "archived") return ROOMS.filter(r => r.status === "closed");
+                return EVENTS;
+            }
+
+            function render(view) {
+                const items = sourceItems(view)
+                    .map(item => normalize(item, view))
+                    .sort((a, b) => b.sortKey.localeCompare(a.sortKey))
+                    .slice(0, 3);
+
+                intro.textContent = introText[view];
+                grid.innerHTML = items.map(n => `
+                    <a class="chrome-list-row featured" href="archive.html?view=${view}">
+                        <div class="row-thumb" ${n.thumb ? `style="background-image: url('${encodeURI(n.thumb)}');"` : ""}>
+                            <span class="status-badge status-${n.statusKey}">${n.statusLabel}</span>
+                        </div>
+                        <div class="row-info">
+                            <h3>${n.name}</h3>
+                            <p class="row-creator">${n.subtitle}</p>
+                            <p class="row-desc">${n.description || ""}</p>
+                        </div>
+                        <span class="chrome-go">Go &#9654;</span>
+                    </a>
+                `).join("");
+
+                empty.textContent = emptyText[view];
+                empty.style.display = items.length === 0 ? "block" : "none";
+            }
+
+            navBtns.forEach(btn => {
+                btn.addEventListener("click", () => {
+                    navBtns.forEach(b => b.classList.remove("active"));
+                    btn.classList.add("active");
+                    render(btn.dataset.view);
+                });
+            });
+
+            render("active");
+        });
+    </script>
+</body>
+</html>
