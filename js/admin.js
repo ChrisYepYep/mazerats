@@ -31,7 +31,7 @@ document.addEventListener("DOMContentLoaded", () => {
             fieldMap: { title: "name", subtitle: "creator", date: "added" },
             titleLabel: "Room name",
             subtitleLabel: "Creator (Habbo username)",
-            dateLabel: "Date added (YYYY-MM-DD)",
+            dateLabel: "Date opened (YYYY-MM-DD)",
             statusOptions: [["open", "Open"], ["closed", "Closed"], ["unknown", "Unknown"]],
             getAll: () => workingRooms,
             create: item => Api.createRoom(adminToken, item),

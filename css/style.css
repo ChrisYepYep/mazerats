@@ -157,7 +157,7 @@ main { display: block; flex: 1 0 auto; }
 /* ---------- hero ---------- */
 
 .hero {
-    padding: 48px 20px 60px;
+    padding: 48px 20px 24px;
     text-align: center;
 }
 
@@ -172,6 +172,11 @@ main { display: block; flex: 1 0 auto; }
 }
 
 .hero-title span { display: block; }
+
+/* MAZE and RATS are both 4 letters, but M/A/Z/E render visibly wider than
+   R/A/T/S at the same size — nudge the second line up slightly so the two
+   lines read as the same width instead of RATS looking narrower. */
+.hero-title span:last-child { font-size: 1.1em; }
 
 .hero p.tagline {
     max-width: 560px;
@@ -333,10 +338,13 @@ main { display: block; flex: 1 0 auto; }
     color: #fff8ec;
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
     letter-spacing: 0.5px;
-    margin: 0;
     text-align: center;
     background: var(--chrome-fill);
-    padding: 3px 12px;
+    padding: 9px 12px;
+    /* Cancels the titlebar's own vertical padding so this backing plate
+       spans its full height, fully covering the dotted pattern instead of
+       leaving a strip of it visible above/below the text. */
+    margin: -9px 0;
     border-radius: 3px;
     max-width: 100%;
     overflow: hidden;
@@ -554,7 +562,7 @@ main { display: block; flex: 1 0 auto; }
 
 .search-box input {
     width: 100%;
-    background: #fff;
+    background: var(--parchment);
     border: 2px solid var(--chrome-border);
     color: #3a2812;
     font-family: 'Roboto', sans-serif;
@@ -595,6 +603,11 @@ main { display: block; flex: 1 0 auto; }
     justify-content: center;
     z-index: 100;
     padding: 24px;
+    /* The modal itself no longer caps its own height / scrolls internally
+       (that produced a scrollbar down the window's own right edge) — this
+       lets the overlay scroll the whole card when it's taller than the
+       viewport, while still centering it when it comfortably fits. */
+    overflow-y: auto;
 }
 
 .modal-overlay.open { display: flex; }
@@ -609,16 +622,12 @@ main { display: block; flex: 1 0 auto; }
     border-radius: 14px;
     max-width: 600px;
     width: 100%;
-    max-height: 86vh;
-    overflow-y: auto;
+    margin: auto;
     box-shadow: 0 22px 55px rgba(0, 0, 0, 0.85);
     animation: modalIn 0.2s ease-out;
 }
 
 .modal .chrome-titlebar {
-    position: sticky;
-    top: 0;
-    z-index: 3;
     padding-left: 28px;
     padding-right: 28px;
 }
@@ -633,12 +642,9 @@ main { display: block; flex: 1 0 auto; }
 .modal-thumb {
     height: 220px;
     padding: 20px;
-    background-color: var(--wood-dark);
-    background-image:
-        linear-gradient(rgba(10,7,4,0.3), rgba(10,7,4,0.6)),
-        url('../assets/img/MazeBG.png');
-    background-size: cover;
-    background-position: center;
+    /* Solid, slightly darker than --frame-bg (the colour behind the modal's
+       text below) rather than the wood/pattern texture. */
+    background-color: #453a2c;
     position: relative;
 }
 
@@ -650,14 +656,13 @@ main { display: block; flex: 1 0 auto; }
 
 .modal-thumb.has-gallery {
     height: 340px;
-    background-color: #000;
 }
 
 .modal-gallery-img {
     width: 100%;
     height: 100%;
     object-fit: contain;
-    background: #000;
+    background: transparent;
     cursor: zoom-in;
     border-radius: 8px;
 }

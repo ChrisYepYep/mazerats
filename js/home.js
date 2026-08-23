@@ -90,7 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
             statusKey: item.status,
             statusLabel: item.status === "open" ? "Open" : item.status === "closed" ? "Closed" : "Unknown",
             hotel: item.hotel,
-            dateFieldLabel: "Archived",
+            dateFieldLabel: "Opened",
             dateValue: item.added,
             thumb: item.thumb,
             description: item.description,
@@ -204,7 +204,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const g = activeGallery[activeIndex];
         modalGalleryImg.src = imgCdn(g.image, 900, null, 78);
         modalGalleryImg.alt = `${modalName.textContent} — ${g.label}`;
-        galleryCounter.textContent = `${g.label} — ${activeIndex + 1} of ${activeGallery.length}`;
+        galleryCounter.textContent = `${g.label} of ${activeGallery.length}`;
         galleryStrip.querySelectorAll("img").forEach((thumb, i) => {
             thumb.classList.toggle("active", i === activeIndex);
         });
