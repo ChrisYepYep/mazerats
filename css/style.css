@@ -639,6 +639,14 @@ main { display: block; flex: 1 0 auto; }
     background-size: cover;
     background-position: center;
     position: relative;
+    /* Vignette so the current image reads as sitting recessed inside the
+       frame, with the frame's edge casting a shadow in on it, instead of
+       floating flat on top. */
+    box-shadow:
+        inset 0 14px 18px -8px rgba(0, 0, 0, 0.8),
+        inset 0 -14px 18px -8px rgba(0, 0, 0, 0.8),
+        inset 14px 0 18px -8px rgba(0, 0, 0, 0.8),
+        inset -14px 0 18px -8px rgba(0, 0, 0, 0.8);
 }
 
 .modal-thumb img { width: 100%; height: 100%; object-fit: cover; }
@@ -654,6 +662,14 @@ main { display: block; flex: 1 0 auto; }
     object-fit: contain;
     background: #000;
     cursor: zoom-in;
+    /* Same vignette as .modal-thumb, but on the <img> itself — inset
+       shadows on a parent get hidden behind an opaque child, so this is
+       needed for the shadow to actually paint over the photo. */
+    box-shadow:
+        inset 0 14px 18px -8px rgba(0, 0, 0, 0.8),
+        inset 0 -14px 18px -8px rgba(0, 0, 0, 0.8),
+        inset 14px 0 18px -8px rgba(0, 0, 0, 0.8),
+        inset -14px 0 18px -8px rgba(0, 0, 0, 0.8);
 }
 
 /* ---------- image lightbox ---------- */
