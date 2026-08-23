@@ -1,11 +1,17 @@
-/* Renders the room/event archive on archive.html: view switching (Open
-   Mazes / Archived Mazes / Events), search, and the modal detail view. */
+/* Drives the homepage (index.html) — the only browsing page on the site.
+   "Featured" is the default state (no nav button active): one highlighted
+   maze, no search. Clicking Open Mazes / Archived Mazes / Events switches
+   to a full searchable list in the same frame; clicking that same button
+   again toggles back to Featured. Clicking a row opens the full detail
+   modal, with its own gallery viewer and lightbox. */
 document.addEventListener("DOMContentLoaded", () => {
-    const grid = document.getElementById("room-grid");
+    const grid = document.getElementById("featured-grid");
+    const introEl = document.getElementById("featured-intro");
+    const searchWrap = document.getElementById("search-wrap");
     const searchInput = document.getElementById("room-search");
+    const resultCountEl = document.getElementById("result-count");
+    const emptyEl = document.getElementById("featured-empty");
     const navBtns = document.querySelectorAll(".chrome-nav-btn");
-    const resultCount = document.getElementById("result-count");
-    const emptyState = document.getElementById("empty-state");
 
     const modalOverlay = document.getElementById("room-modal");
     const modalThumb = document.getElementById("modal-thumb");
@@ -29,15 +35,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const lightboxNext = document.getElementById("lightbox-next");
     const lightboxCounter = document.getElementById("lightbox-counter");
 
-    let currentView = "open"; // "open" | "archived" | "events"
+    let currentView = "featured"; // "featured" | "open" | "archived" | "events"
     let query = "";
     let activeGallery = null;
     let activeIndex = 0;
     let ROOMS = [];
     let EVENTS = [];
     let dataLoaded = false;
+    let currentItems = [];
 
     const emptyMessagesNoSearch = {
+        featured: "No mazes archived yet.",
         open: "No open mazes archived yet.",
         archived: "No archived mazes yet.",
         events: "No events scheduled."
@@ -48,12 +56,17 @@ document.addEventListener("DOMContentLoaded", () => {
         events: "No events match your search."
     };
 
-    // Normalizes a room or event into one shared shape so the rest of this
-    // file doesn't need to branch on what kind of thing it's rendering.
-    function normalize(item) {
-        if (currentView === "events") {
+    function sourceItems(view) {
+        if (view === "featured" || view === "open") return ROOMS.filter(r => r.status === "open" || r.status === "unknown");
+        if (view === "archived") return ROOMS.filter(r => r.status === "closed");
+        return EVENTS.filter(e => (e.status || "upcoming") === "upcoming");
+    }
+
+    // Normalizes a room or event into one shared shape so rendering and the
+    // modal don't need to branch on what kind of thing they're showing.
+    function normalize(item, view) {
+        if (view === "events") {
             return {
-                raw: item,
                 name: item.title,
                 subtitle: item.host ? `by ${item.host}` : "",
                 statusKey: item.status || "upcoming",
@@ -67,11 +80,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 details: item.details,
                 tags: item.tags,
                 habboLink: item.habboLink,
-                gallery: null
+                gallery: null,
+                sortKey: item.date || ""
             };
         }
         return {
-            raw: item,
             name: item.name,
             subtitle: item.creator ? `by ${item.creator}` : "",
             statusKey: item.status,
@@ -84,14 +97,9 @@ document.addEventListener("DOMContentLoaded", () => {
             details: item.details,
             tags: item.tags,
             habboLink: item.habboLink,
-            gallery: item.gallery
+            gallery: item.gallery,
+            sortKey: item.added || ""
         };
-    }
-
-    function sourceItems() {
-        if (currentView === "open") return ROOMS.filter(r => r.status === "open" || r.status === "unknown");
-        if (currentView === "archived") return ROOMS.filter(r => r.status === "closed");
-        return EVENTS.filter(e => (e.status || "upcoming") === "upcoming");
     }
 
     function matchesQuery(n) {
@@ -102,23 +110,19 @@ document.addEventListener("DOMContentLoaded", () => {
             (n.tags || []).some(t => t.toLowerCase().includes(q));
     }
 
-    function rowThumbStyle(n) {
-        return n.thumb ? `background-image: url('${imgCdn(n.thumb, 160, 160, 65)}');` : "";
-    }
-
-    // Gallery entries used to be plain image path strings (labels derived from
-    // the filename); the admin's room-by-room editor now stores richer
-    // {image, label} objects instead. Normalize both shapes so old seeded data
-    // keeps working alongside anything added through the new editor.
+    // Gallery entries used to be plain image path strings (labels derived
+    // from the filename); the admin's room-by-room editor now stores richer
+    // {image, label} objects instead. Normalize both shapes so old seeded
+    // data keeps working alongside anything added through the new editor.
     function normalizeGalleryItem(entry) {
         if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry) };
         return { image: entry.image, label: entry.label || deriveGalleryLabel(entry.image) };
     }
 
-    // Event start/end are stored as UTC ISO strings (e.g.
-    // "2026-08-23T18:00:00Z") — render them as a fixed-UTC duration range so
-    // the displayed time never silently shifts with the visitor's local
-    // timezone. Collapses to a single date when start and end share a day.
+    // Event start/end are stored as UTC ISO strings — render them as a
+    // fixed-UTC duration range so the displayed time never silently shifts
+    // with the visitor's local timezone. Collapses to one date when start
+    // and end share a day.
     function formatUtcParts(iso) {
         const d = new Date(iso);
         if (isNaN(d)) return null;
@@ -138,15 +142,36 @@ document.addEventListener("DOMContentLoaded", () => {
         return `${start.date} ${start.time} UTC – ${end.date} ${end.time} UTC`;
     }
 
-    function render() {
-        const items = sourceItems().map(normalize).filter(matchesQuery);
-        grid.innerHTML = "";
+    function updateChrome() {
+        const isFeatured = currentView === "featured";
+        introEl.style.display = isFeatured ? "block" : "none";
+        searchWrap.style.display = isFeatured ? "none" : "block";
+        resultCountEl.style.display = isFeatured ? "none" : "block";
+    }
 
-        items.forEach(n => {
-            const row = document.createElement("div");
-            row.className = "chrome-list-row featured";
-            row.innerHTML = `
-                <div class="row-thumb" style="${rowThumbStyle(n)}">
+    function render() {
+        updateChrome();
+
+        if (!dataLoaded) {
+            introEl.textContent = "Loading…";
+            grid.innerHTML = "";
+            emptyEl.style.display = "none";
+            resultCountEl.textContent = "";
+            return;
+        }
+
+        const isFeatured = currentView === "featured";
+        const items = sourceItems(currentView)
+            .map(item => normalize(item, currentView))
+            .filter(matchesQuery)
+            .sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+        currentItems = isFeatured ? items.slice(0, 1) : items;
+
+        if (isFeatured) introEl.textContent = "A featured maze from the collection.";
+
+        grid.innerHTML = currentItems.map(n => `
+            <div class="chrome-list-row featured">
+                <div class="row-thumb" ${n.thumb ? `style="background-image: url('${imgCdn(n.thumb, 160, 160, 65)}');"` : ""}>
                     <span class="status-badge status-${n.statusKey}">${n.statusLabel}</span>
                 </div>
                 <div class="row-info">
@@ -156,22 +181,21 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="row-tags">${(n.tags || []).map(t => `<span class="tag">${t}</span>`).join("")}</div>
                 </div>
                 <span class="chrome-go">Go &#9654;</span>
-            `;
-            row.addEventListener("click", () => openModal(n));
-            grid.appendChild(row);
+            </div>
+        `).join("");
+
+        grid.querySelectorAll(".chrome-list-row").forEach((row, i) => {
+            row.addEventListener("click", () => openModal(currentItems[i]));
         });
 
-        if (!dataLoaded) {
-            resultCount.textContent = "Loading…";
-            emptyState.style.display = "none";
-            return;
+        if (!isFeatured) {
+            const nouns = currentView === "events" ? "event" : "maze";
+            resultCountEl.textContent = `${currentItems.length} ${nouns}${currentItems.length === 1 ? "" : "s"} found`;
         }
 
-        const nouns = currentView === "events" ? "event" : "maze";
-        resultCount.textContent = `${items.length} ${nouns}${items.length === 1 ? "" : "s"} found`;
-        const messages = query.trim() ? emptyMessagesSearch : emptyMessagesNoSearch;
-        emptyState.querySelector("p").textContent = messages[currentView];
-        emptyState.style.display = items.length === 0 ? "block" : "none";
+        const messages = (!isFeatured && query.trim()) ? emptyMessagesSearch : emptyMessagesNoSearch;
+        emptyEl.textContent = messages[currentView];
+        emptyEl.style.display = currentItems.length === 0 ? "block" : "none";
     }
 
     function showGalleryImage(index) {
@@ -268,11 +292,18 @@ document.addEventListener("DOMContentLoaded", () => {
         render();
     });
 
+    // Clicking the already-active nav button toggles it off, back to the
+    // default Featured state — otherwise it switches straight to that view.
     navBtns.forEach(btn => {
         btn.addEventListener("click", () => {
+            const view = btn.dataset.view;
             navBtns.forEach(b => b.classList.remove("active"));
-            btn.classList.add("active");
-            currentView = btn.dataset.view;
+            if (currentView === view) {
+                currentView = "featured";
+            } else {
+                btn.classList.add("active");
+                currentView = view;
+            }
             searchInput.value = "";
             query = "";
             render();
@@ -306,15 +337,6 @@ document.addEventListener("DOMContentLoaded", () => {
             if (e.key === "ArrowRight") showGalleryImage(activeIndex + 1);
         }
     });
-
-    // Deep-link support: ?view=open|archived|events lets other pages (e.g.
-    // the homepage's own nav buttons) send the visitor straight into the
-    // matching view here, instead of always landing on the default.
-    const requestedView = new URLSearchParams(window.location.search).get("view");
-    if (requestedView && ["open", "archived", "events"].includes(requestedView)) {
-        currentView = requestedView;
-        navBtns.forEach(b => b.classList.toggle("active", b.dataset.view === requestedView));
-    }
 
     render();
 
