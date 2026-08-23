@@ -105,6 +105,27 @@ document.addEventListener("DOMContentLoaded", () => {
         return n.thumb ? `background-image: url('${encodeURI(n.thumb)}');` : "";
     }
 
+    // Gallery entries used to be plain image path strings (labels derived from
+    // the filename); the admin's room-by-room editor now stores richer
+    // {image, label} objects instead. Normalize both shapes so old seeded data
+    // keeps working alongside anything added through the new editor.
+    function normalizeGalleryItem(entry) {
+        if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry) };
+        return { image: entry.image, label: entry.label || deriveGalleryLabel(entry.image) };
+    }
+
+    // Event dates/times are stored as UTC ISO strings (e.g.
+    // "2026-08-23T18:00:00Z") — render them in a fixed UTC format so the
+    // displayed time never silently shifts with the visitor's local timezone.
+    function formatEventDateTime(iso) {
+        if (!iso) return "";
+        const d = new Date(iso);
+        if (isNaN(d)) return iso;
+        const datePart = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+        const timePart = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
+        return `${datePart}, ${timePart} UTC`;
+    }
+
     function render() {
         const items = sourceItems().map(normalize).filter(matchesQuery);
         grid.innerHTML = "";
@@ -144,10 +165,10 @@ document.addEventListener("DOMContentLoaded", () => {
     function showGalleryImage(index) {
         if (!activeGallery || !activeGallery.length) return;
         activeIndex = (index + activeGallery.length) % activeGallery.length;
-        const label = deriveGalleryLabel(activeGallery[activeIndex]);
-        modalGalleryImg.src = encodeURI(activeGallery[activeIndex]);
-        modalGalleryImg.alt = `${modalName.textContent} — ${label}`;
-        galleryCounter.textContent = `${label} — ${activeIndex + 1} of ${activeGallery.length}`;
+        const g = activeGallery[activeIndex];
+        modalGalleryImg.src = encodeURI(g.image);
+        modalGalleryImg.alt = `${modalName.textContent} — ${g.label}`;
+        galleryCounter.textContent = `${g.label} — ${activeIndex + 1} of ${activeGallery.length}`;
         galleryStrip.querySelectorAll("img").forEach((thumb, i) => {
             thumb.classList.toggle("active", i === activeIndex);
         });
@@ -176,10 +197,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function openModal(n) {
         modalName.textContent = n.name;
         modalCreator.textContent = n.subtitle;
+        const dateDisplay = currentView === "events" ? formatEventDateTime(n.dateValue) : n.dateValue;
         modalMeta.innerHTML = `
             <span class="status-badge status-${n.statusKey}">${n.statusLabel}</span>
             <span>Hotel: ${n.hotel || "Unknown"}</span>
-            <span>${n.dateFieldLabel}: ${n.dateValue || "Unknown"}</span>
+            <span>${n.dateFieldLabel}: ${dateDisplay || "Unknown"}</span>
         `;
         modalDesc.textContent = n.details || n.description || "";
         modalTags.innerHTML = (n.tags || []).map(t => `<span class="tag">${t}</span>`).join("");
@@ -191,7 +213,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (n.gallery && n.gallery.length) {
-            activeGallery = n.gallery;
+            activeGallery = n.gallery.map(normalizeGalleryItem);
             modalThumb.classList.add("has-gallery");
             modalThumb.style.backgroundImage = "";
             modalGalleryImg.style.display = "block";
@@ -199,8 +221,8 @@ document.addEventListener("DOMContentLoaded", () => {
             galleryNext.style.display = "flex";
             galleryCounter.style.display = "block";
             galleryStrip.style.display = "flex";
-            galleryStrip.innerHTML = activeGallery.map((src, i) =>
-                `<img src="${encodeURI(src)}" loading="lazy" alt="${deriveGalleryLabel(src)}" data-index="${i}">`
+            galleryStrip.innerHTML = activeGallery.map((g, i) =>
+                `<img src="${encodeURI(g.image)}" loading="lazy" alt="${g.label}" data-index="${i}">`
             ).join("");
             galleryStrip.querySelectorAll("img").forEach(thumb => {
                 thumb.addEventListener("click", () => showGalleryImage(Number(thumb.dataset.index)));

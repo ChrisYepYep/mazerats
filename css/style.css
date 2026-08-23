@@ -911,6 +911,107 @@ main { display: block; }
     gap: 10px;
 }
 
+.admin-hint {
+    color: var(--parchment-dim);
+    font-size: 0.75rem;
+    margin: 0;
+}
+
+/* Thumbnail upload: URL field + file picker + inline status, stacked. */
+.admin-thumb-upload {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.admin-thumb-upload input[type="file"] {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 4px 0;
+    color: var(--parchment-dim);
+    font-size: 0.8rem;
+}
+
+.admin-thumb-status {
+    font-size: 0.75rem;
+    color: var(--amber-bright);
+    min-height: 1em;
+}
+
+/* Room-by-room gallery editor */
+.admin-gallery-field { gap: 10px; }
+
+.admin-gallery-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.admin-gallery-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--chrome-row);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+}
+
+.admin-gallery-thumb {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    background-color: var(--bg-panel-light);
+    background-size: cover;
+    background-position: center;
+    border: 1px solid var(--border);
+}
+
+.admin-gallery-row .admin-gallery-label {
+    flex: 1;
+    min-width: 0;
+}
+
+.admin-gallery-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.admin-gallery-actions .btn {
+    padding: 6px 10px;
+    font-size: 0.65rem;
+}
+
+.admin-gallery-add {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding-top: 8px;
+}
+
+.admin-gallery-add input[type="text"] {
+    flex: 1;
+    min-width: 140px;
+}
+
+.admin-gallery-add input[type="file"] {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: var(--parchment-dim);
+    font-size: 0.8rem;
+}
+
+.admin-gallery-status {
+    font-size: 0.75rem;
+    color: var(--amber-bright);
+    margin: 0;
+}
+
 
 /* ---------- about / static page content ---------- */
 

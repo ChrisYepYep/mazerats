@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Maze Rats — a Habbo Hotel maze room archive.",
   "dependencies": {
-    "mongodb": "^6.10.0"
+    "mongodb": "^6.10.0",
+    "@netlify/blobs": "^8.1.0"
   }
 }

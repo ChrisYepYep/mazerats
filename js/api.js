@@ -49,5 +49,12 @@ const Api = {
 
     createEvent(token, ev) { return this._write("/.netlify/functions/events", "POST", token, ev); },
     updateEvent(token, ev) { return this._write("/.netlify/functions/events", "PUT", token, ev); },
-    deleteEvent(token, id) { return this._write(`/.netlify/functions/events?id=${encodeURIComponent(id)}`, "DELETE", token); }
+    deleteEvent(token, id) { return this._write(`/.netlify/functions/events?id=${encodeURIComponent(id)}`, "DELETE", token); },
+
+    uploadImage(token, prefix, filename, dataUrl) {
+        return this._write("/.netlify/functions/upload", "POST", token, { prefix, filename, dataUrl });
+    },
+    deleteImage(token, key) {
+        return this._write(`/.netlify/functions/upload?key=${encodeURIComponent(key)}`, "DELETE", token);
+    }
 };

@@ -2,7 +2,10 @@
    Everything here writes live to MongoDB via the Netlify Functions in
    netlify/functions/ (see js/api.js) — no local-only staging anymore.
    Write requests are gated by a password checked server-side against the
-   ADMIN_PASSWORD environment variable (see netlify/functions/_auth.js). */
+   ADMIN_PASSWORD environment variable (see netlify/functions/_auth.js).
+   Image uploads (thumbnails, room-by-room gallery shots) go through
+   netlify/functions/upload.js into Netlify Blobs — see js/api.js's
+   uploadImage/deleteImage. */
 document.addEventListener("DOMContentLoaded", () => {
 
     const TOKEN_KEY = "mazerats_admin_token";
@@ -38,7 +41,6 @@ document.addEventListener("DOMContentLoaded", () => {
             fieldMap: { title: "title", subtitle: "host", date: "date" },
             titleLabel: "Event title",
             subtitleLabel: "Host (Habbo username)",
-            dateLabel: "Event date",
             statusOptions: [["upcoming", "Upcoming"], ["past", "Past"]],
             getAll: () => workingEvents,
             create: item => Api.createEvent(adminToken, item),
@@ -108,6 +110,141 @@ document.addEventListener("DOMContentLoaded", () => {
         renderList("events");
     }
 
+    // ---------- image uploads ----------
+
+    function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error("Couldn't read that file."));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async function uploadImageFile(prefix, file) {
+        const dataUrl = await readFileAsDataUrl(file);
+        return Api.uploadImage(adminToken, prefix, file.name, dataUrl);
+    }
+
+    function blobKeyFromUrl(url) {
+        const m = /\/\.netlify\/functions\/image\?key=([^&]+)/.exec(url || "");
+        return m ? decodeURIComponent(m[1]) : null;
+    }
+
+    // Gallery entries used to be plain image path strings; the editor below
+    // stores {image, label} objects instead so labels aren't tied to a
+    // filename. Normalize both shapes so older seeded rooms keep working.
+    function normalizeGalleryEntry(entry) {
+        if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry) };
+        return { image: entry.image, label: entry.label || deriveGalleryLabel(entry.image) };
+    }
+
+    function wireThumbUpload(formEl, uploadPrefix) {
+        const fileInput = formEl.querySelector(".admin-thumb-file");
+        const textInput = formEl.querySelector('input[name="thumb"]');
+        const status = formEl.querySelector(".admin-thumb-status");
+        if (!fileInput) return;
+        fileInput.addEventListener("change", async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+            status.textContent = "Uploading…";
+            try {
+                const { url } = await uploadImageFile(uploadPrefix, file);
+                textInput.value = url;
+                status.textContent = "Uploaded";
+            } catch (err) {
+                if (err.status === 401) { lockOut(); return; }
+                status.textContent = err.message || "Upload failed.";
+            }
+        });
+    }
+
+    function wireGalleryEditor(formEl, uploadPrefix) {
+        const listEl = formEl.querySelector(".admin-gallery-list");
+        const labelInput = formEl.querySelector(".admin-gallery-new-label");
+        const fileInput = formEl.querySelector(".admin-gallery-new-file");
+        const addBtn = formEl.querySelector(".admin-gallery-add-btn");
+        const status = formEl.querySelector(".admin-gallery-status");
+
+        function renderGalleryList() {
+            const draft = formEl._galleryDraft;
+            listEl.innerHTML = draft.map((g, i) => `
+                <div class="admin-gallery-row" data-index="${i}">
+                    <div class="admin-gallery-thumb" style="${g.image ? `background-image:url('${encodeURI(g.image)}');` : ""}"></div>
+                    <input type="text" class="admin-gallery-label" value="${g.label || ""}" placeholder="Room label">
+                    <div class="admin-gallery-actions">
+                        <button type="button" class="btn admin-gallery-up" ${i === 0 ? "disabled" : ""} title="Move up">&#9650;</button>
+                        <button type="button" class="btn admin-gallery-down" ${i === draft.length - 1 ? "disabled" : ""} title="Move down">&#9660;</button>
+                        <button type="button" class="btn admin-delete-btn admin-gallery-remove" title="Remove">Remove</button>
+                    </div>
+                </div>
+            `).join("");
+
+            listEl.querySelectorAll(".admin-gallery-row").forEach(row => {
+                const i = Number(row.dataset.index);
+                row.querySelector(".admin-gallery-label").addEventListener("input", e => {
+                    draft[i].label = e.target.value;
+                });
+                row.querySelector(".admin-gallery-up").addEventListener("click", () => {
+                    if (i === 0) return;
+                    [draft[i - 1], draft[i]] = [draft[i], draft[i - 1]];
+                    renderGalleryList();
+                });
+                row.querySelector(".admin-gallery-down").addEventListener("click", () => {
+                    if (i === draft.length - 1) return;
+                    [draft[i + 1], draft[i]] = [draft[i], draft[i + 1]];
+                    renderGalleryList();
+                });
+                row.querySelector(".admin-gallery-remove").addEventListener("click", () => {
+                    const [removed] = draft.splice(i, 1);
+                    renderGalleryList();
+                    const key = blobKeyFromUrl(removed.image);
+                    if (key) Api.deleteImage(adminToken, key).catch(() => {});
+                });
+            });
+        }
+
+        addBtn.addEventListener("click", async () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                status.textContent = "Choose an image first.";
+                status.style.display = "block";
+                return;
+            }
+            const draft = formEl._galleryDraft;
+            const label = labelInput.value.trim() || `Room ${draft.length + 1}`;
+            addBtn.disabled = true;
+            status.style.display = "block";
+            status.textContent = "Uploading…";
+            try {
+                const { url } = await uploadImageFile(uploadPrefix, file);
+                draft.push({ image: url, label });
+                fileInput.value = "";
+                labelInput.value = "";
+                status.style.display = "none";
+                renderGalleryList();
+            } catch (err) {
+                if (err.status === 401) { lockOut(); return; }
+                status.textContent = err.message || "Upload failed.";
+            } finally {
+                addBtn.disabled = false;
+            }
+        });
+
+        renderGalleryList();
+    }
+
+    function cleanupItemImages(item) {
+        const keys = [];
+        const thumbKey = blobKeyFromUrl(item.thumb);
+        if (thumbKey) keys.push(thumbKey);
+        (item.gallery || []).forEach(entry => {
+            const key = blobKeyFromUrl(typeof entry === "string" ? entry : entry.image);
+            if (key) keys.push(key);
+        });
+        keys.forEach(key => Api.deleteImage(adminToken, key).catch(() => {}));
+    }
+
     // ---------- list rendering ----------
 
     function renderList(key) {
@@ -158,10 +295,40 @@ document.addEventListener("DOMContentLoaded", () => {
         const cfg = COLLECTIONS[key];
         const isEdit = editIndex !== undefined && editIndex !== null;
         const item = isEdit ? cfg.getAll()[editIndex] : {};
+        const isEvents = key === "events";
+        const isRooms = key === "rooms";
 
         const statusOptionsHtml = cfg.statusOptions.map(([value, label]) =>
             `<option value="${value}" ${item.status === value ? "selected" : ""}>${label}</option>`
         ).join("");
+
+        let eventDatePart = "", eventTimePart = "";
+        if (isEvents && item.date) {
+            const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(item.date);
+            if (m) { eventDatePart = m[1]; eventTimePart = m[2]; }
+        }
+
+        const dateFieldHtml = isEvents
+            ? `
+                ${fieldRow("Event date (UTC)", `<input type="date" name="eventDate" required value="${eventDatePart}">`)}
+                ${fieldRow("Event time (UTC, 24-hour)", `<input type="time" name="eventTime" required value="${eventTimePart}">`)}
+                <p class="admin-hint">Both fields are UTC. The site shows this time as-is — it does not convert it to a visitor's local timezone.</p>
+              `
+            : fieldRow(cfg.dateLabel, `<input type="text" name="date" value="${item[cfg.fieldMap.date] || ""}">`);
+
+        const gallerySectionHtml = isRooms ? `
+            <div class="admin-field admin-gallery-field">
+                <span>Room-by-room gallery (optional)</span>
+                <p class="admin-hint">Upload a screenshot for each room in the maze, in order — use the arrows to reorder them.</p>
+                <div class="admin-gallery-list"></div>
+                <div class="admin-gallery-add">
+                    <input type="text" class="admin-gallery-new-label" placeholder="Room label (e.g. Room 12)">
+                    <input type="file" class="admin-gallery-new-file" accept="image/png,image/jpeg,image/gif,image/webp">
+                    <button type="button" class="btn admin-gallery-add-btn">+ Add Room Image</button>
+                </div>
+                <p class="admin-gallery-status" style="display:none;"></p>
+            </div>
+        ` : "";
 
         cfg.formEl.innerHTML = `
             <h3 class="admin-form-title">${isEdit ? "Edit " + cfg.singular : "Add a New " + cfg.singular}</h3>
@@ -169,12 +336,19 @@ document.addEventListener("DOMContentLoaded", () => {
             ${fieldRow(cfg.subtitleLabel, `<input type="text" name="subtitle" value="${item[cfg.fieldMap.subtitle] || ""}">`)}
             ${fieldRow("Status", `<select name="status">${statusOptionsHtml}</select>`)}
             ${fieldRow("Hotel", `<input type="text" name="hotel" value="${item.hotel || ""}" placeholder="e.g. Origins, US, NL">`)}
-            ${fieldRow(cfg.dateLabel, `<input type="text" name="date" value="${item[cfg.fieldMap.date] || ""}">`)}
+            ${dateFieldHtml}
             ${fieldRow("Tags (comma-separated)", `<input type="text" name="tags" value="${(item.tags || []).join(", ")}">`)}
-            ${fieldRow("Thumbnail image URL", `<input type="text" name="thumb" value="${item.thumb || ""}" placeholder="assets/... or https://...">`)}
+            ${fieldRow("Thumbnail image", `
+                <div class="admin-thumb-upload">
+                    <input type="text" name="thumb" value="${item.thumb || ""}" placeholder="assets/... or https://...">
+                    <input type="file" class="admin-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp">
+                    <span class="admin-thumb-status"></span>
+                </div>
+            `)}
             ${fieldRow("Short description (shown on the card)", `<textarea name="description" rows="2">${item.description || ""}</textarea>`)}
             ${fieldRow("Full details (shown in the popup, optional)", `<textarea name="details" rows="4">${item.details || ""}</textarea>`)}
             ${fieldRow("Habbo link (optional)", `<input type="text" name="habboLink" value="${item.habboLink || ""}" placeholder="https://...">`)}
+            ${gallerySectionHtml}
             <p class="admin-form-error" style="display:none;"></p>
             <div class="admin-form-actions">
                 <button type="submit" class="btn btn-solid">Save</button>
@@ -186,6 +360,20 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl.style.display = "flex";
         cfg.addBtn.style.display = "none";
         cfg.formEl.querySelector(".admin-cancel-btn").addEventListener("click", () => closeForm(key));
+
+        // Every upload made while this form is open (thumbnail, room images)
+        // is namespaced under this prefix — the real room id once saved, or
+        // a throwaway draft id for a maze that doesn't exist yet. Either way
+        // the resulting image URL is stored directly in the field, so it
+        // doesn't matter that the prefix isn't the "final" id.
+        const uploadPrefix = item.id || `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        wireThumbUpload(cfg.formEl, uploadPrefix);
+        if (isRooms) {
+            cfg.formEl._galleryDraft = (item.gallery || []).map(normalizeGalleryEntry);
+            wireGalleryEditor(cfg.formEl, uploadPrefix);
+        }
+
         cfg.formEl.scrollIntoView({ behavior: "smooth", block: "center" });
     }
 
@@ -193,6 +381,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const cfg = COLLECTIONS[key];
         cfg.formEl.style.display = "none";
         cfg.formEl.innerHTML = "";
+        cfg.formEl._galleryDraft = null;
         cfg.addBtn.style.display = "inline-block";
     }
 
@@ -217,7 +406,16 @@ document.addEventListener("DOMContentLoaded", () => {
         };
         payload[cfg.fieldMap.title] = data.title;
         payload[cfg.fieldMap.subtitle] = data.subtitle;
-        payload[cfg.fieldMap.date] = data.date;
+
+        if (key === "events") {
+            payload.date = data.eventDate && data.eventTime ? `${data.eventDate}T${data.eventTime}:00Z` : "";
+        } else {
+            payload[cfg.fieldMap.date] = data.date;
+        }
+
+        if (key === "rooms") {
+            payload.gallery = form._galleryDraft || [];
+        }
 
         const submitBtn = form.querySelector("button[type=submit]");
         const errorEl = form.querySelector(".admin-form-error");
@@ -253,6 +451,7 @@ document.addEventListener("DOMContentLoaded", () => {
             await cfg.remove(item.id);
             items.splice(index, 1);
             renderList(key);
+            cleanupItemImages(item);
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
             alert(err.message || "Couldn't delete that — try again.");
