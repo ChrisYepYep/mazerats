@@ -13,6 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const loginForm = document.getElementById("login-form");
     const loginError = document.getElementById("login-error");
     const adminContent = document.getElementById("admin-content");
+    const logoutBtn = document.getElementById("logout-btn");
 
     let adminToken = sessionStorage.getItem(TOKEN_KEY) || "";
     let workingRooms = [];
@@ -98,6 +99,18 @@ document.addEventListener("DOMContentLoaded", () => {
         loginModal.classList.add("open");
         loginError.textContent = "Session expired — enter the password again.";
         loginError.style.display = "block";
+    }
+
+    function doLogout() {
+        sessionStorage.removeItem(TOKEN_KEY);
+        adminToken = "";
+        workingRooms = [];
+        workingEvents = [];
+        Object.keys(COLLECTIONS).forEach(key => closeForm(key));
+        adminContent.style.display = "none";
+        loginModal.classList.add("open");
+        loginError.style.display = "none";
+        loginForm.reset();
     }
 
     async function enterAdmin() {
@@ -459,6 +472,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ---------- wire up ----------
+
+    logoutBtn.addEventListener("click", doLogout);
 
     Object.keys(COLLECTIONS).forEach(key => {
         const cfg = COLLECTIONS[key];

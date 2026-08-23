@@ -832,6 +832,12 @@ main { display: block; }
 
 .admin-section { margin-top: 26px; }
 
+.admin-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 14px;
+}
+
 .admin-empty {
     color: var(--parchment-dim);
     font-size: 0.85rem;
