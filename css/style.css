@@ -38,6 +38,8 @@ body {
     margin: 0;
     padding: 0;
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
     background-color: var(--bg-black);
     background-image:
         linear-gradient(rgba(10, 7, 4, 0.7), rgba(10, 7, 4, 0.78)),
@@ -128,7 +130,7 @@ nav.site-nav a.active {
     cursor: pointer;
 }
 
-main { display: block; }
+main { display: block; flex: 1 0 auto; }
 
 .container {
     width: 92%;
@@ -137,14 +139,19 @@ main { display: block; }
 }
 
 .site-footer {
+    flex-shrink: 0;
     margin-top: 60px;
-    padding: 26px 24px 40px;
+    padding: 18px 24px;
     text-align: center;
     border-top: 1px solid var(--border);
     color: var(--parchment-dim);
-    font-size: 0.8rem;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.72rem;
+    line-height: 1.5;
 }
 
+.site-footer p { margin: 0 0 4px; }
+.site-footer p:last-child { margin-bottom: 0; }
 .site-footer a { color: var(--amber); }
 
 /* ---------- hero ---------- */
