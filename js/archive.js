@@ -103,7 +103,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function rowThumbStyle(n) {
-        return n.thumb ? `background-image: url('${encodeURI(n.thumb)}');` : "";
+        return n.thumb ? `background-image: url('${imgCdn(n.thumb, 160, 160, 65)}');` : "";
     }
 
     // Gallery entries used to be plain image path strings (labels derived from
@@ -178,7 +178,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!activeGallery || !activeGallery.length) return;
         activeIndex = (index + activeGallery.length) % activeGallery.length;
         const g = activeGallery[activeIndex];
-        modalGalleryImg.src = encodeURI(g.image);
+        modalGalleryImg.src = imgCdn(g.image, 900, null, 78);
         modalGalleryImg.alt = `${modalName.textContent} — ${g.label}`;
         galleryCounter.textContent = `${g.label} — ${activeIndex + 1} of ${activeGallery.length}`;
         galleryStrip.querySelectorAll("img").forEach((thumb, i) => {
@@ -234,7 +234,7 @@ document.addEventListener("DOMContentLoaded", () => {
             galleryCounter.style.display = "block";
             galleryStrip.style.display = "flex";
             galleryStrip.innerHTML = activeGallery.map((g, i) =>
-                `<img src="${encodeURI(g.image)}" loading="lazy" alt="${g.label}" data-index="${i}">`
+                `<img src="${imgCdn(g.image, 110, 110, 55)}" loading="lazy" alt="${g.label}" data-index="${i}">`
             ).join("");
             galleryStrip.querySelectorAll("img").forEach(thumb => {
                 thumb.addEventListener("click", () => showGalleryImage(Number(thumb.dataset.index)));
@@ -250,7 +250,7 @@ document.addEventListener("DOMContentLoaded", () => {
             galleryStrip.style.display = "none";
             galleryStrip.innerHTML = "";
             modalThumb.style.backgroundImage = n.thumb
-                ? `linear-gradient(rgba(10,7,4,0.15), rgba(10,7,4,0.35)), url('${encodeURI(n.thumb)}')`
+                ? `linear-gradient(rgba(10,7,4,0.15), rgba(10,7,4,0.35)), url('${imgCdn(n.thumb, 800, 500, 70)}')`
                 : "";
         }
 

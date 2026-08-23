@@ -141,7 +141,7 @@
                 intro.textContent = introText[view];
                 grid.innerHTML = items.map(n => `
                     <a class="chrome-list-row featured" href="archive.html?view=${linkView}">
-                        <div class="row-thumb" ${n.thumb ? `style="background-image: url('${encodeURI(n.thumb)}');"` : ""}>
+                        <div class="row-thumb" ${n.thumb ? `style="background-image: url('${imgCdn(n.thumb, 160, 160, 65)}');"` : ""}>
                             <span class="status-badge status-${n.statusKey}">${n.statusLabel}</span>
                         </div>
                         <div class="row-info">

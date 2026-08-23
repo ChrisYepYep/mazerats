@@ -181,7 +181,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const draft = formEl._galleryDraft;
             listEl.innerHTML = draft.map((g, i) => `
                 <div class="admin-gallery-row" data-index="${i}">
-                    <div class="admin-gallery-thumb" style="${g.image ? `background-image:url('${encodeURI(g.image)}');` : ""}"></div>
+                    <div class="admin-gallery-thumb" style="${g.image ? `background-image:url('${imgCdn(g.image, 100, 100, 55)}');` : ""}"></div>
                     <input type="text" class="admin-gallery-label" value="${g.label || ""}" placeholder="Room label">
                     <div class="admin-gallery-actions">
                         <button type="button" class="btn admin-gallery-up" ${i === 0 ? "disabled" : ""} title="Move up">&#9650;</button>
@@ -277,7 +277,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const row = document.createElement("div");
             row.className = "chrome-list-row admin-row";
             row.innerHTML = `
-                <div class="row-thumb" style="${item.thumb ? `background-image:url('${encodeURI(item.thumb)}');` : ""}">
+                <div class="row-thumb" style="${item.thumb ? `background-image:url('${imgCdn(item.thumb, 160, 160, 65)}');` : ""}">
                     <span class="status-badge status-${item.status}">${item.status}</span>
                 </div>
                 <div class="row-info">
