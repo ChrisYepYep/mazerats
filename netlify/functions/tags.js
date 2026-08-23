@@ -1,0 +1,53 @@
+/* /.netlify/functions/tags — shared vocabulary of maze tags shown as
+   clickable chips in the admin's maze form. GET is public (auto-seeded
+   with the default set the first time it's ever called); adding a new tag
+   requires an admin session, same as rooms.js/events.js. There's no
+   edit/delete here — only adding new tags was asked for. */
+const { getDb } = require("./_db");
+const { isAuthorized, UNAUTHORIZED } = require("./_auth");
+
+const json = (statusCode, data) => ({
+    statusCode,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+});
+
+const DEFAULT_TAGS = ["FURNI MAZE", "ILLUSION", "FLOATING", "FUNCTIONAL", "LONG-FORM"];
+
+exports.handler = async (event) => {
+    let db;
+    try {
+        db = await getDb();
+    } catch (e) {
+        return json(500, { error: "Database connection failed", detail: e.message });
+    }
+    const tags = db.collection("tags");
+
+    if (event.httpMethod === "GET") {
+        const count = await tags.countDocuments();
+        if (count === 0) {
+            await tags.insertMany(
+                DEFAULT_TAGS.map((label, i) => ({ label, createdAt: new Date(Date.now() + i).toISOString() }))
+            );
+        }
+        const all = await tags.find({}, { projection: { _id: 0 } }).sort({ createdAt: 1 }).toArray();
+        return json(200, all.map(t => t.label));
+    }
+
+    if (!isAuthorized(event)) return UNAUTHORIZED;
+
+    if (event.httpMethod === "POST") {
+        const body = JSON.parse(event.body || "{}");
+        const label = (body.label || "").trim();
+        if (!label) return json(400, { error: "A tag needs a label" });
+
+        const all = await tags.find({}, { projection: { _id: 0 } }).toArray();
+        const existing = all.find(t => t.label.toLowerCase() === label.toLowerCase());
+        if (existing) return json(200, { label: existing.label });
+
+        await tags.insertOne({ label, createdAt: new Date().toISOString() });
+        return json(201, { label });
+    }
+
+    return json(405, { error: "Method not allowed" });
+};

@@ -330,6 +330,20 @@ document.addEventListener("DOMContentLoaded", () => {
               `
             : fieldRow(cfg.dateLabel, `<input type="text" name="date" value="${item[cfg.fieldMap.date] || ""}">`);
 
+        const tagsFieldHtml = isRooms
+            ? `
+                <div class="admin-field admin-tags-field">
+                    <span>Tags</span>
+                    <div class="tag-chip-list" id="tag-chip-list"><p class="admin-empty">Loading tags…</p></div>
+                    <div class="admin-tag-add">
+                        <input type="text" class="admin-tag-new-input" placeholder="Add a new tag...">
+                        <button type="button" class="btn admin-tag-add-btn">+ Add Tag</button>
+                    </div>
+                    <p class="admin-tag-status" style="display:none;"></p>
+                </div>
+              `
+            : fieldRow("Tags (comma-separated)", `<input type="text" name="tags" value="${(item.tags || []).join(", ")}">`);
+
         const gallerySectionHtml = isRooms ? `
             <div class="admin-field admin-gallery-field">
                 <span>Room-by-room gallery (optional)</span>
@@ -351,7 +365,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ${fieldRow("Status", `<select name="status">${statusOptionsHtml}</select>`)}
             ${fieldRow("Hotel", `<input type="text" name="hotel" value="${item.hotel || ""}" placeholder="e.g. Origins, US, NL">`)}
             ${dateFieldHtml}
-            ${fieldRow("Tags (comma-separated)", `<input type="text" name="tags" value="${(item.tags || []).join(", ")}">`)}
+            ${tagsFieldHtml}
             ${fieldRow("Thumbnail image", `
                 <div class="admin-thumb-upload">
                     <input type="text" name="thumb" value="${item.thumb || ""}" placeholder="assets/... or https://...">
@@ -386,6 +400,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (isRooms) {
             cfg.formEl._galleryDraft = (item.gallery || []).map(normalizeGalleryEntry);
             wireGalleryEditor(cfg.formEl, uploadPrefix);
+            cfg.formEl._selectedTags = new Set((item.tags || []).map(t => t.trim()).filter(Boolean));
+            wireTagPicker(cfg.formEl);
         }
 
         cfg.formEl.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -396,7 +412,70 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl.style.display = "none";
         cfg.formEl.innerHTML = "";
         cfg.formEl._galleryDraft = null;
+        cfg.formEl._selectedTags = null;
         cfg.addBtn.style.display = "inline-block";
+    }
+
+    // Renders the shared tag vocabulary (plus any tags already on this room
+    // that aren't in it yet, so nothing gets silently dropped) as clickable
+    // chips, and wires up adding a brand new tag to the shared list.
+    async function wireTagPicker(formEl) {
+        const listEl = formEl.querySelector("#tag-chip-list");
+        const newInput = formEl.querySelector(".admin-tag-new-input");
+        const addBtn = formEl.querySelector(".admin-tag-add-btn");
+        const status = formEl.querySelector(".admin-tag-status");
+
+        let tagPool = [];
+        try {
+            tagPool = await Api.getTags();
+        } catch (e) {
+            tagPool = [];
+        }
+
+        function renderChips() {
+            const selected = formEl._selectedTags;
+            const allTags = Array.from(new Set([...tagPool, ...selected]));
+            listEl.innerHTML = allTags.map(tag => `
+                <button type="button" class="tag-chip${selected.has(tag) ? " selected" : ""}" data-tag="${tag}">${tag}</button>
+            `).join("");
+            listEl.querySelectorAll(".tag-chip").forEach(chip => {
+                chip.addEventListener("click", () => {
+                    const tag = chip.dataset.tag;
+                    if (selected.has(tag)) selected.delete(tag);
+                    else selected.add(tag);
+                    renderChips();
+                });
+            });
+        }
+
+        async function addNewTag() {
+            const label = newInput.value.trim();
+            if (!label) return;
+            addBtn.disabled = true;
+            status.style.display = "none";
+            try {
+                const result = await Api.createTag(adminToken, label);
+                if (!tagPool.some(t => t.toLowerCase() === result.label.toLowerCase())) {
+                    tagPool.push(result.label);
+                }
+                formEl._selectedTags.add(result.label);
+                newInput.value = "";
+                renderChips();
+            } catch (err) {
+                if (err.status === 401) { lockOut(); return; }
+                status.textContent = err.message || "Couldn't add that tag.";
+                status.style.display = "block";
+            } finally {
+                addBtn.disabled = false;
+            }
+        }
+
+        addBtn.addEventListener("click", addNewTag);
+        newInput.addEventListener("keydown", e => {
+            if (e.key === "Enter") { e.preventDefault(); addNewTag(); }
+        });
+
+        renderChips();
     }
 
     async function submitForm(key, e) {
@@ -412,7 +491,9 @@ document.addEventListener("DOMContentLoaded", () => {
             ...existing,
             status: data.status,
             hotel: data.hotel,
-            tags: data.tags.split(",").map(t => t.trim()).filter(Boolean),
+            tags: key === "rooms"
+                ? Array.from(form._selectedTags || [])
+                : (data.tags || "").split(",").map(t => t.trim()).filter(Boolean),
             thumb: data.thumb,
             description: data.description,
             details: data.details,

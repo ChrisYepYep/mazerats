@@ -92,5 +92,17 @@ const Api = {
     },
     deleteAdmin(token, username) {
         return this._write(`/.netlify/functions/auth?username=${encodeURIComponent(username)}`, "DELETE", token);
-    }
+    },
+
+    async getTags() {
+        try {
+            const res = await fetch("/.netlify/functions/tags");
+            if (!res.ok) throw new Error(`tags fetch failed: ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.warn("Live tag list unavailable, using built-in fallback.", e);
+            return ["FURNI MAZE", "ILLUSION", "FLOATING", "FUNCTIONAL", "LONG-FORM"];
+        }
+    },
+    createTag(token, label) { return this._write("/.netlify/functions/tags", "POST", token, { label }); }
 };

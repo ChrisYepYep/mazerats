@@ -1054,6 +1054,59 @@ main { display: block; flex: 1 0 auto; }
     margin: 0;
 }
 
+/* Clickable tag vocabulary picker (maze form only) */
+.admin-tags-field { gap: 10px; }
+
+.tag-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.tag-chip {
+    appearance: none;
+    -webkit-appearance: none;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 6px 12px;
+    border: 1.5px solid var(--chrome-highlight);
+    border-radius: 12px;
+    color: var(--parchment-dim);
+    background: rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.tag-chip:hover { border-color: var(--amber); color: var(--parchment); }
+
+.tag-chip.selected {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: #241505;
+    font-weight: 700;
+}
+
+.admin-tag-add {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding-top: 4px;
+}
+
+.admin-tag-add input[type="text"] {
+    flex: 1;
+    min-width: 140px;
+}
+
+.admin-tag-status {
+    font-size: 0.75rem;
+    color: var(--danger);
+    margin: 0;
+}
+
 
 /* ---------- about / static page content ---------- */
 
