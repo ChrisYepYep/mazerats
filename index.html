@@ -42,10 +42,10 @@
         <div class="container">
             <div class="chrome-window">
                 <div class="chrome-titlebar">
-                    <h2>Recently Archived</h2>
+                    <h2>Origins Mazes</h2>
                 </div>
                 <div class="chrome-nav">
-                    <button class="chrome-nav-btn active" data-view="active">Active Mazes</button>
+                    <button class="chrome-nav-btn" data-view="open">Open Mazes</button>
                     <button class="chrome-nav-btn" data-view="archived">Archived Mazes</button>
                     <button class="chrome-nav-btn" data-view="events">Events</button>
                 </div>
@@ -79,17 +79,19 @@
             let ROOMS = [];
             let EVENTS = [];
             let dataLoaded = false;
-            let currentView = "active";
+            let currentView = "featured"; // "featured" | "open" | "archived" | "events"
 
             const introText = {
-                active: "The latest active mazes added to the collection.",
+                featured: "A featured maze from the collection.",
+                open: "The latest open mazes added to the collection.",
                 archived: "The latest mazes marked closed or lost.",
-                events: "The latest events added to the collection."
+                events: "Upcoming events."
             };
             const emptyText = {
-                active: "No active mazes archived yet.",
+                featured: "No mazes archived yet.",
+                open: "No open mazes archived yet.",
                 archived: "No archived mazes yet.",
-                events: "No events archived yet."
+                events: "No events scheduled."
             };
 
             function normalize(item, view) {
@@ -108,7 +110,7 @@
                     name: item.name,
                     subtitle: item.creator ? `by ${item.creator}` : "",
                     statusKey: item.status,
-                    statusLabel: item.status === "active" ? "Active" : item.status === "closed" ? "Closed" : "Unknown",
+                    statusLabel: item.status === "open" ? "Open" : item.status === "closed" ? "Closed" : "Unknown",
                     thumb: item.thumb,
                     description: item.description,
                     sortKey: item.added || ""
@@ -116,9 +118,9 @@
             }
 
             function sourceItems(view) {
-                if (view === "active") return ROOMS.filter(r => r.status === "active" || r.status === "unknown");
+                if (view === "featured" || view === "open") return ROOMS.filter(r => r.status === "open" || r.status === "unknown");
                 if (view === "archived") return ROOMS.filter(r => r.status === "closed");
-                return EVENTS;
+                return EVENTS.filter(e => (e.status || "upcoming") === "upcoming");
             }
 
             function render(view) {
@@ -129,14 +131,16 @@
                     empty.style.display = "none";
                     return;
                 }
+                const linkView = view === "featured" ? "open" : view;
+                const limit = view === "featured" ? 1 : 3;
                 const items = sourceItems(view)
                     .map(item => normalize(item, view))
                     .sort((a, b) => b.sortKey.localeCompare(a.sortKey))
-                    .slice(0, 3);
+                    .slice(0, limit);
 
                 intro.textContent = introText[view];
                 grid.innerHTML = items.map(n => `
-                    <a class="chrome-list-row featured" href="archive.html?view=${view}">
+                    <a class="chrome-list-row featured" href="archive.html?view=${linkView}">
                         <div class="row-thumb" ${n.thumb ? `style="background-image: url('${encodeURI(n.thumb)}');"` : ""}>
                             <span class="status-badge status-${n.statusKey}">${n.statusLabel}</span>
                         </div>
@@ -161,7 +165,7 @@
                 });
             });
 
-            render("active");
+            render("featured");
 
             Promise.all([Api.getRooms(), Api.getEvents()]).then(([rooms, events]) => {
                 ROOMS = rooms;

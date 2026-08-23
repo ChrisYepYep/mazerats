@@ -33,27 +33,7 @@
                 <p class="subtitle">Add and amend mazes and events.</p>
             </div>
 
-            <!-- ---------- Password gate ---------- -->
-            <div class="chrome-window admin-section" id="login-section">
-                <div class="chrome-titlebar"><h2>Enter Password</h2></div>
-                <div class="chrome-frame">
-                    <div class="chrome-body">
-                        <p class="chrome-intro">Changes made here are live immediately for every visitor, so this page checks a password before allowing any add, edit, or delete.</p>
-                        <form class="admin-form" id="login-form" style="display:flex;">
-                            <label class="admin-field">
-                                <span>Admin password</span>
-                                <input type="password" name="password" autocomplete="current-password" required>
-                            </label>
-                            <p class="admin-login-error" id="login-error" style="display:none;">Wrong password — try again.</p>
-                            <div class="admin-form-actions">
-                                <button type="submit" class="btn btn-solid">Unlock</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ---------- Everything below is hidden until unlocked ---------- -->
+            <!-- Everything below is hidden until the login modal is unlocked -->
             <div id="admin-content" style="display:none;">
 
                 <div class="callout admin-notice">
@@ -92,6 +72,30 @@
     <footer class="site-footer">
         <p>Maze Rats is an unofficial fan archive and is not affiliated with Habbo or Sulake.</p>
     </footer>
+
+    <!-- Login gate, styled like the room detail modal — open by default,
+         no close button, since there's nothing behind it worth revealing
+         until you're actually signed in. -->
+    <div class="modal-overlay open" id="login-modal">
+        <div class="modal">
+            <div class="chrome-titlebar"><h2>Admin Login</h2></div>
+            <div class="chrome-frame">
+                <div class="modal-body">
+                    <p class="room-desc-full">Changes made here are live immediately for every visitor, so this checks a password first.</p>
+                    <form class="admin-form" id="login-form" style="display:flex;">
+                        <label class="admin-field">
+                            <span>Admin password</span>
+                            <input type="password" name="password" autocomplete="current-password" required autofocus>
+                        </label>
+                        <p class="admin-login-error" id="login-error" style="display:none;">Wrong password — try again.</p>
+                        <div class="admin-form-actions">
+                            <button type="submit" class="btn btn-solid">Unlock</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="js/rooms-data.js"></script>
     <script src="js/events-data.js"></script>

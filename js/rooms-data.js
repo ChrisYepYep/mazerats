@@ -13,7 +13,7 @@
      id          unique slug, lowercase-with-dashes
      name        room name as it appears in Habbo
      creator     Habbo username of the room owner
-     status      "active" | "closed" | "unknown"
+     status      "open" | "closed" | "unknown"
      hotel       which Habbo hotel this room is/was on (e.g. "Origins", "US", "NL")
      added       date added to the archive, "YYYY-MM-DD"
      tags        array of short tags, e.g. ["pixel maze","trap door","event"]
@@ -96,7 +96,7 @@ const DEFAULT_ROOMS = [
         id: "the-little-maze",
         name: "The Little Maze",
         creator: "ChrisYepYep",
-        status: "active",
+        status: "open",
         hotel: "Unknown",
         added: "2026-08-23",
         tags: ["100-room walkthrough", "long-form"],

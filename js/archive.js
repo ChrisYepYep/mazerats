@@ -1,4 +1,4 @@
-/* Renders the room/event archive on archive.html: view switching (Active
+/* Renders the room/event archive on archive.html: view switching (Open
    Mazes / Archived Mazes / Events), search, and the modal detail view. */
 document.addEventListener("DOMContentLoaded", () => {
     const grid = document.getElementById("room-grid");
@@ -29,7 +29,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const lightboxNext = document.getElementById("lightbox-next");
     const lightboxCounter = document.getElementById("lightbox-counter");
 
-    let currentView = "active"; // "active" | "archived" | "events"
+    let currentView = "open"; // "open" | "archived" | "events"
     let query = "";
     let activeGallery = null;
     let activeIndex = 0;
@@ -38,12 +38,12 @@ document.addEventListener("DOMContentLoaded", () => {
     let dataLoaded = false;
 
     const emptyMessagesNoSearch = {
-        active: "No active mazes archived yet.",
+        open: "No open mazes archived yet.",
         archived: "No archived mazes yet.",
-        events: "No events archived yet."
+        events: "No events scheduled."
     };
     const emptyMessagesSearch = {
-        active: "No active mazes match your search.",
+        open: "No open mazes match your search.",
         archived: "No archived mazes match your search.",
         events: "No events match your search."
     };
@@ -74,7 +74,7 @@ document.addEventListener("DOMContentLoaded", () => {
             name: item.name,
             subtitle: item.creator ? `by ${item.creator}` : "",
             statusKey: item.status,
-            statusLabel: item.status === "active" ? "Active" : item.status === "closed" ? "Closed" : "Unknown",
+            statusLabel: item.status === "open" ? "Open" : item.status === "closed" ? "Closed" : "Unknown",
             hotel: item.hotel,
             dateFieldLabel: "Archived",
             dateValue: item.added,
@@ -88,9 +88,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function sourceItems() {
-        if (currentView === "active") return ROOMS.filter(r => r.status === "active" || r.status === "unknown");
+        if (currentView === "open") return ROOMS.filter(r => r.status === "open" || r.status === "unknown");
         if (currentView === "archived") return ROOMS.filter(r => r.status === "closed");
-        return EVENTS;
+        return EVENTS.filter(e => (e.status || "upcoming") === "upcoming");
     }
 
     function matchesQuery(n) {
@@ -273,11 +273,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // Deep-link support: ?view=active|archived|events lets other pages (e.g.
+    // Deep-link support: ?view=open|archived|events lets other pages (e.g.
     // the homepage's own nav buttons) send the visitor straight into the
     // matching view here, instead of always landing on the default.
     const requestedView = new URLSearchParams(window.location.search).get("view");
-    if (requestedView && ["active", "archived", "events"].includes(requestedView)) {
+    if (requestedView && ["open", "archived", "events"].includes(requestedView)) {
         currentView = requestedView;
         navBtns.forEach(b => b.classList.toggle("active", b.dataset.view === requestedView));
     }

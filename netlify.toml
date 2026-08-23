@@ -10,6 +10,13 @@
 # the API, so it no longer needs to be blocked outright — just reachable
 # by anyone who knows the URL, same as any password-gated page.
 
+# Serves admin.html at the clean /admin URL (a rewrite, status 200, so the
+# address bar stays /admin rather than redirecting to /admin.html).
+[[redirects]]
+  from = "/admin"
+  to = "/admin.html"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]

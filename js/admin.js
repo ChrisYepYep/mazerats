@@ -6,7 +6,7 @@
 document.addEventListener("DOMContentLoaded", () => {
 
     const TOKEN_KEY = "mazerats_admin_token";
-    const loginSection = document.getElementById("login-section");
+    const loginModal = document.getElementById("login-modal");
     const loginForm = document.getElementById("login-form");
     const loginError = document.getElementById("login-error");
     const adminContent = document.getElementById("admin-content");
@@ -23,7 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
             titleLabel: "Room name",
             subtitleLabel: "Creator (Habbo username)",
             dateLabel: "Date added (YYYY-MM-DD)",
-            statusOptions: [["active", "Active"], ["closed", "Closed"], ["unknown", "Unknown"]],
+            statusOptions: [["open", "Open"], ["closed", "Closed"], ["unknown", "Unknown"]],
             getAll: () => workingRooms,
             create: item => Api.createRoom(adminToken, item),
             update: item => Api.updateRoom(adminToken, item),
@@ -93,13 +93,13 @@ document.addEventListener("DOMContentLoaded", () => {
         sessionStorage.removeItem(TOKEN_KEY);
         adminToken = "";
         adminContent.style.display = "none";
-        loginSection.style.display = "block";
+        loginModal.classList.add("open");
         loginError.textContent = "Session expired — enter the password again.";
         loginError.style.display = "block";
     }
 
     async function enterAdmin() {
-        loginSection.style.display = "none";
+        loginModal.classList.remove("open");
         adminContent.style.display = "block";
         const [rooms, events] = await Promise.all([Api.getRooms(), Api.getEvents()]);
         workingRooms = rooms;

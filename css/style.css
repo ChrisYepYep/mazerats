@@ -261,7 +261,7 @@ main { display: block; }
    flush — the nav's bottom border becomes the frame's top edge. */
 .chrome-nav + .chrome-frame { margin-top: 0; }
 
-/* Page-level view switcher (e.g. Active Mazes / Archived Mazes / Events),
+/* Page-level view switcher (e.g. Open Mazes / Archived Mazes / Events),
    docked directly above the frame. Each button is a fixed width so the whole
    window — and the frame beneath it — sizes around exactly these 3 buttons,
    rather than the frame dictating the window's width. */
@@ -472,7 +472,7 @@ main { display: block; }
     border: 1px solid currentColor;
 }
 
-.status-active { color: var(--ok); }
+.status-open { color: var(--ok); }
 .status-closed { color: var(--danger); }
 .status-unknown { color: var(--unknown); }
 .status-upcoming { color: var(--ok); }
