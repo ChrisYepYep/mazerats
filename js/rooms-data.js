@@ -1,8 +1,13 @@
 /* ===========================================================
-   Maze Rats — room archive data
-   Add a new maze room by adding an object to the ROOMS array
-   below. This is the ONLY file you should need to edit to
-   grow the archive.
+   Maze Rats — fallback room data
+
+   The site normally reads live room data from MongoDB via
+   /.netlify/functions/rooms (see js/api.js) — use the Admin page to add
+   or edit rooms there instead of editing this file.
+
+   DEFAULT_ROOMS below is only a fallback, used if that API call fails
+   (e.g. the database is unreachable), so the site still shows something
+   instead of going blank. It's also what seeded the database originally.
 
    Fields:
      id          unique slug, lowercase-with-dashes
@@ -86,7 +91,7 @@ const LITTLE_MAZE_FILES = [
 // numbered walkthrough sequence (e.g. an establishing "entrance" shot).
 const LITTLE_MAZE_COVER_FILES = ["tlm_entrance.png"];
 
-const ROOMS = [
+const DEFAULT_ROOMS = [
     {
         id: "the-little-maze",
         name: "The Little Maze",
@@ -102,10 +107,3 @@ const ROOMS = [
         gallery: [...LITTLE_MAZE_COVER_FILES, ...LITTLE_MAZE_FILES].map(f => LITTLE_MAZE_DIR + f)
     }
 ];
-
-// Admin-panel overrides live in this browser's localStorage only — see
-// js/admin-store.js for what that does and doesn't mean.
-if (typeof AdminStore !== "undefined") {
-    const storedRooms = AdminStore.getRooms(null);
-    if (storedRooms) { ROOMS.length = 0; ROOMS.push(...storedRooms); }
-}

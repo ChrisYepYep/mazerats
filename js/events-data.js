@@ -1,6 +1,12 @@
 /* ===========================================================
-   Maze Rats — events data
-   Add a new event by adding an object to the EVENTS array below.
+   Maze Rats — fallback event data
+
+   The site normally reads live event data from MongoDB via
+   /.netlify/functions/events (see js/api.js) — use the Admin page to add
+   or edit events there instead of editing this file.
+
+   DEFAULT_EVENTS below is only a fallback, used if that API call fails,
+   so the site still shows something instead of going blank.
 
    Fields:
      id          unique slug, lowercase-with-dashes
@@ -16,11 +22,4 @@
      habboLink   navigator/room link if still joinable, or "" if unavailable
    =========================================================== */
 
-const EVENTS = [];
-
-// Admin-panel overrides live in this browser's localStorage only — see
-// js/admin-store.js for what that does and doesn't mean.
-if (typeof AdminStore !== "undefined") {
-    const storedEvents = AdminStore.getEvents(null);
-    if (storedEvents) { EVENTS.length = 0; EVENTS.push(...storedEvents); }
-}
+const DEFAULT_EVENTS = [];

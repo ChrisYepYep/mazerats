@@ -869,6 +869,13 @@ main { display: block; }
 
 .admin-form-title { font-size: 1.1rem; }
 
+.admin-login-error,
+.admin-form-error {
+    color: var(--danger);
+    font-size: 0.85rem;
+    margin: 0;
+}
+
 .admin-field {
     display: flex;
     flex-direction: column;
@@ -904,37 +911,6 @@ main { display: block; }
     gap: 10px;
 }
 
-.admin-export-label {
-    font-size: 0.85rem;
-    color: var(--amber-bright);
-    margin: 22px 0 8px;
-}
-
-.admin-export-label:first-of-type { margin-top: 4px; }
-
-.admin-export {
-    width: 100%;
-    min-height: 140px;
-    background: #100b06;
-    color: var(--parchment-dim);
-    border: 2px solid var(--chrome-border);
-    border-radius: 6px;
-    font-family: 'Roboto Mono', 'Courier New', monospace;
-    font-size: 0.75rem;
-    padding: 12px;
-    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.4);
-}
-
-.admin-copy-btn { margin-top: 8px; }
-
-.admin-reset-row {
-    margin-top: 30px;
-    padding-top: 18px;
-    border-top: 2px solid var(--chrome-border);
-}
-
-.admin-reset-btn { border-color: var(--danger); color: var(--danger); }
-.admin-reset-btn:hover { background: var(--danger); color: #fff; }
 
 /* ---------- about / static page content ---------- */
 

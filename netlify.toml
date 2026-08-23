@@ -1,15 +1,14 @@
 [build]
+  command = "npm install"
   publish = "."
 
-# The admin panel is only meant for local use — not linked from the site
-# nav, and blocked here so it isn't reachable on the deployed domain even
-# by direct URL. Run it locally (open admin.html straight from the repo,
-# or serve the folder) if you need it.
-[[redirects]]
-  from = "/admin.html"
-  to = "/"
-  status = 302
-  force = true
+[functions]
+  directory = "netlify/functions"
+
+# The admin panel is unlinked from the site nav (not discoverable through
+# browsing) and its write actions require the ADMIN_PASSWORD env var via
+# the API, so it no longer needs to be blocked outright — just reachable
+# by anyone who knows the URL, same as any password-gated page.
 
 [[headers]]
   for = "/*"

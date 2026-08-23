@@ -33,6 +33,9 @@ document.addEventListener("DOMContentLoaded", () => {
     let query = "";
     let activeGallery = null;
     let activeIndex = 0;
+    let ROOMS = [];
+    let EVENTS = [];
+    let dataLoaded = false;
 
     const emptyMessagesNoSearch = {
         active: "No active mazes archived yet.",
@@ -124,6 +127,12 @@ document.addEventListener("DOMContentLoaded", () => {
             row.addEventListener("click", () => openModal(n));
             grid.appendChild(row);
         });
+
+        if (!dataLoaded) {
+            resultCount.textContent = "Loading…";
+            emptyState.style.display = "none";
+            return;
+        }
 
         const nouns = currentView === "events" ? "event" : "maze";
         resultCount.textContent = `${items.length} ${nouns}${items.length === 1 ? "" : "s"} found`;
@@ -274,4 +283,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     render();
+
+    Promise.all([Api.getRooms(), Api.getEvents()]).then(([rooms, events]) => {
+        ROOMS = rooms;
+        EVENTS = events;
+        dataLoaded = true;
+        render();
+    });
 });

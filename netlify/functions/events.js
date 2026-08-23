@@ -1,0 +1,72 @@
+/* /.netlify/functions/events — CRUD API for events. Mirrors rooms.js. */
+const { getDb } = require("./_db");
+const { isAuthorized, UNAUTHORIZED } = require("./_auth");
+
+const json = (statusCode, data) => ({
+    statusCode,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+});
+
+function slugify(text) {
+    return (text || "").toLowerCase().trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "") || "event";
+}
+
+exports.handler = async (event) => {
+    let db;
+    try {
+        db = await getDb();
+    } catch (e) {
+        return json(500, { error: "Database connection failed", detail: e.message });
+    }
+    const events = db.collection("events");
+
+    if (event.httpMethod === "GET") {
+        const all = await events.find({}, { projection: { _id: 0 } }).toArray();
+        return json(200, all);
+    }
+
+    if (!isAuthorized(event)) return UNAUTHORIZED;
+
+    if (event.httpMethod === "POST") {
+        const body = JSON.parse(event.body || "{}");
+        if (!body.title) return json(400, { error: "An event needs at least a title" });
+
+        let id = slugify(body.title);
+        let suffix = 2;
+        while (await events.findOne({ id })) {
+            id = `${slugify(body.title)}-${suffix++}`;
+        }
+
+        const item = { ...body, id };
+        delete item._id;
+        await events.insertOne(item);
+        const { _id, ...clean } = item;
+        return json(201, clean);
+    }
+
+    if (event.httpMethod === "PUT") {
+        const body = JSON.parse(event.body || "{}");
+        if (!body.id) return json(400, { error: "Missing event id" });
+        const { _id, ...update } = body;
+        const result = await events.findOneAndUpdate(
+            { id: body.id },
+            { $set: update },
+            { returnDocument: "after", projection: { _id: 0 } }
+        );
+        if (!result) return json(404, { error: "Event not found" });
+        return json(200, result);
+    }
+
+    if (event.httpMethod === "DELETE") {
+        const id = (event.queryStringParameters || {}).id;
+        if (!id) return json(400, { error: "Missing event id" });
+        const result = await events.deleteOne({ id });
+        if (result.deletedCount === 0) return json(404, { error: "Event not found" });
+        return json(200, { deleted: id });
+    }
+
+    return json(405, { error: "Method not allowed" });
+};

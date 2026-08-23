@@ -65,9 +65,9 @@
         <p><a href="about.html">Know a maze room that belongs here?</a></p>
     </footer>
 
-    <script src="js/admin-store.js"></script>
     <script src="js/rooms-data.js"></script>
     <script src="js/events-data.js"></script>
+    <script src="js/api.js"></script>
     <script src="js/site.js"></script>
     <script>
         document.addEventListener("DOMContentLoaded", () => {
@@ -75,6 +75,11 @@
             const intro = document.getElementById("featured-intro");
             const empty = document.getElementById("featured-empty");
             const navBtns = document.querySelectorAll(".chrome-nav-btn");
+
+            let ROOMS = [];
+            let EVENTS = [];
+            let dataLoaded = false;
+            let currentView = "active";
 
             const introText = {
                 active: "The latest active mazes added to the collection.",
@@ -117,6 +122,13 @@
             }
 
             function render(view) {
+                currentView = view;
+                if (!dataLoaded) {
+                    intro.textContent = "Loading…";
+                    grid.innerHTML = "";
+                    empty.style.display = "none";
+                    return;
+                }
                 const items = sourceItems(view)
                     .map(item => normalize(item, view))
                     .sort((a, b) => b.sortKey.localeCompare(a.sortKey))
@@ -150,6 +162,13 @@
             });
 
             render("active");
+
+            Promise.all([Api.getRooms(), Api.getEvents()]).then(([rooms, events]) => {
+                ROOMS = rooms;
+                EVENTS = events;
+                dataLoaded = true;
+                render(currentView);
+            });
         });
     </script>
 </body>

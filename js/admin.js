@@ -1,13 +1,19 @@
 /* Admin panel logic for admin.html — add/edit/delete mazes and events.
-   Persists to this browser's localStorage only (see js/admin-store.js for
-   why) and provides an Export panel to turn that into real source code. */
+   Everything here writes live to MongoDB via the Netlify Functions in
+   netlify/functions/ (see js/api.js) — no local-only staging anymore.
+   Write requests are gated by a password checked server-side against the
+   ADMIN_PASSWORD environment variable (see netlify/functions/_auth.js). */
 document.addEventListener("DOMContentLoaded", () => {
 
-    // Working copies. ROOMS/EVENTS already reflect any stored override by
-    // the time this runs (rooms-data.js / events-data.js apply it on load),
-    // so these clones start from "whatever this browser currently sees".
-    let workingRooms = ROOMS.map(r => ({ ...r }));
-    let workingEvents = EVENTS.map(e => ({ ...e }));
+    const TOKEN_KEY = "mazerats_admin_token";
+    const loginSection = document.getElementById("login-section");
+    const loginForm = document.getElementById("login-form");
+    const loginError = document.getElementById("login-error");
+    const adminContent = document.getElementById("admin-content");
+
+    let adminToken = sessionStorage.getItem(TOKEN_KEY) || "";
+    let workingRooms = [];
+    let workingEvents = [];
 
     const COLLECTIONS = {
         rooms: {
@@ -19,12 +25,12 @@ document.addEventListener("DOMContentLoaded", () => {
             dateLabel: "Date added (YYYY-MM-DD)",
             statusOptions: [["active", "Active"], ["closed", "Closed"], ["unknown", "Unknown"]],
             getAll: () => workingRooms,
-            setAll: arr => { workingRooms = arr; AdminStore.setRooms(workingRooms); },
+            create: item => Api.createRoom(adminToken, item),
+            update: item => Api.updateRoom(adminToken, item),
+            remove: id => Api.deleteRoom(adminToken, id),
             listEl: document.getElementById("rooms-list"),
             formEl: document.getElementById("rooms-form"),
-            addBtn: document.getElementById("rooms-add-btn"),
-            exportEl: document.getElementById("rooms-export"),
-            varName: "ROOMS"
+            addBtn: document.getElementById("rooms-add-btn")
         },
         events: {
             singular: "Event",
@@ -35,28 +41,71 @@ document.addEventListener("DOMContentLoaded", () => {
             dateLabel: "Event date",
             statusOptions: [["upcoming", "Upcoming"], ["past", "Past"]],
             getAll: () => workingEvents,
-            setAll: arr => { workingEvents = arr; AdminStore.setEvents(workingEvents); },
+            create: item => Api.createEvent(adminToken, item),
+            update: item => Api.updateEvent(adminToken, item),
+            remove: id => Api.deleteEvent(adminToken, id),
             listEl: document.getElementById("events-list"),
             formEl: document.getElementById("events-form"),
-            addBtn: document.getElementById("events-add-btn"),
-            exportEl: document.getElementById("events-export"),
-            varName: "EVENTS"
+            addBtn: document.getElementById("events-add-btn")
         }
     };
 
-    function slugify(text) {
-        return text.toLowerCase().trim()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/(^-|-$)/g, "") || "item";
+    // ---------- login ----------
+
+    async function tryUnlock(password) {
+        // No dedicated "verify password" endpoint — instead send a PUT with
+        // no id, which is invalid either way, but only gets past the auth
+        // check (and returns 400, not 401) if the password is correct.
+        try {
+            const res = await fetch("/.netlify/functions/rooms", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json", "x-admin-token": password },
+                body: JSON.stringify({})
+            });
+            return res.status !== 401;
+        } catch (e) {
+            return false;
+        }
     }
 
-    function uniqueSlug(base, items, skipId) {
-        let slug = slugify(base);
-        let n = 2;
-        while (items.some(i => i.id === slug && i.id !== skipId)) {
-            slug = `${slugify(base)}-${n++}`;
+    loginForm.addEventListener("submit", async e => {
+        e.preventDefault();
+        const password = new FormData(loginForm).get("password");
+        loginError.style.display = "none";
+        const submitBtn = loginForm.querySelector("button[type=submit]");
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Checking…";
+
+        const ok = await tryUnlock(password);
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Unlock";
+
+        if (!ok) {
+            loginError.style.display = "block";
+            return;
         }
-        return slug;
+        adminToken = password;
+        sessionStorage.setItem(TOKEN_KEY, adminToken);
+        enterAdmin();
+    });
+
+    function lockOut() {
+        sessionStorage.removeItem(TOKEN_KEY);
+        adminToken = "";
+        adminContent.style.display = "none";
+        loginSection.style.display = "block";
+        loginError.textContent = "Session expired — enter the password again.";
+        loginError.style.display = "block";
+    }
+
+    async function enterAdmin() {
+        loginSection.style.display = "none";
+        adminContent.style.display = "block";
+        const [rooms, events] = await Promise.all([Api.getRooms(), Api.getEvents()]);
+        workingRooms = rooms;
+        workingEvents = events;
+        renderList("rooms");
+        renderList("events");
     }
 
     // ---------- list rendering ----------
@@ -126,6 +175,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ${fieldRow("Short description (shown on the card)", `<textarea name="description" rows="2">${item.description || ""}</textarea>`)}
             ${fieldRow("Full details (shown in the popup, optional)", `<textarea name="details" rows="4">${item.details || ""}</textarea>`)}
             ${fieldRow("Habbo link (optional)", `<input type="text" name="habboLink" value="${item.habboLink || ""}" placeholder="https://...">`)}
+            <p class="admin-form-error" style="display:none;"></p>
             <div class="admin-form-actions">
                 <button type="submit" class="btn btn-solid">Save</button>
                 <button type="button" class="btn admin-cancel-btn">Cancel</button>
@@ -146,7 +196,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.addBtn.style.display = "inline-block";
     }
 
-    function submitForm(key, e) {
+    async function submitForm(key, e) {
         e.preventDefault();
         const cfg = COLLECTIONS[key];
         const form = cfg.formEl;
@@ -155,9 +205,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const editIndex = form.dataset.editIndex !== "" ? Number(form.dataset.editIndex) : null;
         const existing = editIndex !== null ? items[editIndex] : {};
 
-        const updated = {
+        const payload = {
             ...existing,
-            id: existing.id || uniqueSlug(data.title, items, undefined),
             status: data.status,
             hotel: data.hotel,
             tags: data.tags.split(",").map(t => t.trim()).filter(Boolean),
@@ -166,37 +215,48 @@ document.addEventListener("DOMContentLoaded", () => {
             details: data.details,
             habboLink: data.habboLink
         };
-        updated[cfg.fieldMap.title] = data.title;
-        updated[cfg.fieldMap.subtitle] = data.subtitle;
-        updated[cfg.fieldMap.date] = data.date;
+        payload[cfg.fieldMap.title] = data.title;
+        payload[cfg.fieldMap.subtitle] = data.subtitle;
+        payload[cfg.fieldMap.date] = data.date;
 
-        if (editIndex !== null) {
-            items[editIndex] = updated;
-        } else {
-            items.push(updated);
+        const submitBtn = form.querySelector("button[type=submit]");
+        const errorEl = form.querySelector(".admin-form-error");
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Saving…";
+
+        try {
+            if (editIndex !== null) {
+                const updated = await cfg.update(payload);
+                items[editIndex] = updated;
+            } else {
+                const created = await cfg.create(payload);
+                items.push(created);
+            }
+            closeForm(key);
+            renderList(key);
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            errorEl.textContent = err.message || "Something went wrong saving this.";
+            errorEl.style.display = "block";
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Save";
         }
-        cfg.setAll(items);
-        closeForm(key);
-        renderList(key);
-        renderExport(key);
     }
 
-    function deleteItem(key, index) {
+    async function deleteItem(key, index) {
         const cfg = COLLECTIONS[key];
         const items = cfg.getAll();
-        const title = items[index][cfg.fieldMap.title] || "this entry";
-        if (!confirm(`Delete "${title}"? This only removes it from this browser's draft — it won't affect the live site until you re-export.`)) return;
-        items.splice(index, 1);
-        cfg.setAll(items);
-        renderList(key);
-        renderExport(key);
-    }
-
-    // ---------- export ----------
-
-    function renderExport(key) {
-        const cfg = COLLECTIONS[key];
-        cfg.exportEl.value = `const ${cfg.varName} = ${JSON.stringify(cfg.getAll(), null, 4)};`;
+        const item = items[index];
+        const title = item[cfg.fieldMap.title] || "this entry";
+        if (!confirm(`Delete "${title}"? This is permanent and affects the live site immediately.`)) return;
+        try {
+            await cfg.remove(item.id);
+            items.splice(index, 1);
+            renderList(key);
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            alert(err.message || "Couldn't delete that — try again.");
+        }
     }
 
     // ---------- wire up ----------
@@ -205,29 +265,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const cfg = COLLECTIONS[key];
         cfg.addBtn.addEventListener("click", () => openForm(key));
         cfg.formEl.addEventListener("submit", e => submitForm(key, e));
-        renderList(key);
-        renderExport(key);
     });
 
-    document.querySelectorAll(".admin-copy-btn").forEach(btn => {
-        btn.addEventListener("click", async () => {
-            const target = document.getElementById(btn.dataset.target);
-            target.select();
-            try {
-                await navigator.clipboard.writeText(target.value);
-                const original = btn.textContent;
-                btn.textContent = "Copied!";
-                setTimeout(() => { btn.textContent = original; }, 1500);
-            } catch (e) {
-                // Clipboard API unavailable — the textarea is already selected as a fallback.
-            }
-        });
-    });
-
-    document.getElementById("reset-btn").addEventListener("click", () => {
-        if (!confirm("Clear this browser's draft and go back to the site's built-in defaults? This can't be undone.")) return;
-        AdminStore.clearRooms();
-        AdminStore.clearEvents();
-        location.reload();
-    });
+    if (adminToken) {
+        // Re-check the stored token is still valid before trusting it.
+        tryUnlock(adminToken).then(ok => ok ? enterAdmin() : lockOut());
+    }
 });
