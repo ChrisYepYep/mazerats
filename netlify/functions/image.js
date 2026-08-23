@@ -1,6 +1,6 @@
 /* /.netlify/functions/image — serves images uploaded via upload.js out of
    Netlify Blobs. Public (the site needs to display them to every visitor). */
-const { getStore } = require("@netlify/blobs");
+const { imagesStore } = require("./_images");
 
 exports.handler = async (event) => {
     if (event.httpMethod !== "GET") {
@@ -10,7 +10,7 @@ exports.handler = async (event) => {
     const key = (event.queryStringParameters || {}).key;
     if (!key) return { statusCode: 400, body: "Missing key" };
 
-    const store = getStore("mazerats-images");
+    const store = imagesStore();
     const result = await store.getWithMetadata(key, { type: "arrayBuffer" });
     if (!result) return { statusCode: 404, body: "Not found" };
 

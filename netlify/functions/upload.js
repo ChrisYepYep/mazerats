@@ -2,8 +2,8 @@
    room-by-room gallery screenshots) in Netlify Blobs, gated by the same
    x-admin-token used by rooms.js/events.js. Images are served back out
    through image.js. */
-const { getStore } = require("@netlify/blobs");
 const { isAuthorized, UNAUTHORIZED } = require("./_auth");
+const { imagesStore } = require("./_images");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -28,7 +28,7 @@ function slugify(text) {
 exports.handler = async (event) => {
     if (!isAuthorized(event)) return UNAUTHORIZED;
 
-    const store = getStore("mazerats-images");
+    const store = imagesStore();
 
     if (event.httpMethod === "POST") {
         let body;
