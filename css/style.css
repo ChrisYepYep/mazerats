@@ -1,0 +1,1012 @@
+/* ===========================================================
+   Maze Rats — shared stylesheet
+   A Habbo Hotel fansite archiving maze rooms.
+   =========================================================== */
+
+:root {
+    --bg-black: #120c07;
+    --bg-panel: #1d140c;
+    --bg-panel-light: #2a1c10;
+    --wood-dark: #2b1d12;
+    --wood-mid: #4a3018;
+    --amber: #ab8b64;
+    --amber-bright: #c7a679;
+    --parchment: #d8cbb2;
+    --parchment-dim: #a89a84;
+    --danger: #a1462f;
+    --ok: #6f8f4f;
+    --unknown: #7a6e5a;
+    --border: rgba(201, 151, 79, 0.35);
+    --shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+
+    /* Habbo-window "chrome" palette, sampled directly from the hand-made
+       window-frame and tab assets in assets/img/ so the CSS matches them
+       exactly rather than approximating. */
+    --chrome-border: #000000;
+    --chrome-fill: #39250f;
+    --chrome-highlight: #60462b;
+    --chrome-row: #2e1d0d;
+    --chrome-row-featured: #4a3018;
+    --frame-bg: #554736;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    background-color: var(--bg-black);
+    background-image:
+        linear-gradient(rgba(10, 7, 4, 0.7), rgba(10, 7, 4, 0.78)),
+        url('../assets/img/MazeBG.png');
+    background-repeat: repeat;
+    background-size: 220px;
+    background-attachment: fixed;
+    color: var(--parchment);
+    font-family: 'Roboto', sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+}
+
+h1, h2, h3, h4 {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    color: var(--amber-bright);
+    letter-spacing: 0.5px;
+    margin: 0 0 0.4em;
+    text-shadow: 2px 2px 6px rgba(0, 0, 0, 0.8);
+}
+
+a { color: var(--amber-bright); }
+
+p { color: var(--parchment-dim); }
+
+/* ---------- layout shell ---------- */
+
+.site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px;
+    background: linear-gradient(180deg, rgba(18, 12, 7, 0.97), rgba(18, 12, 7, 0.9));
+    border-bottom: 2px solid var(--chrome-border);
+    box-shadow: 0 4px 0 -2px var(--chrome-fill);
+    backdrop-filter: blur(4px);
+}
+
+.site-header .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+}
+
+.site-header .brand-text {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 1.15rem;
+    color: var(--parchment);
+    letter-spacing: 2px;
+}
+
+nav.site-nav {
+    display: flex;
+    gap: 22px;
+}
+
+nav.site-nav a {
+    text-decoration: none;
+    color: var(--parchment-dim);
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding-bottom: 3px;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+nav.site-nav a:hover,
+nav.site-nav a.active {
+    color: var(--amber-bright);
+    border-color: var(--amber);
+}
+
+.nav-admin {
+    margin-left: 6px;
+    padding-left: 20px;
+    border-left: 1px solid var(--border);
+    opacity: 0.7;
+}
+
+.nav-admin:hover { opacity: 1; }
+
+.nav-toggle {
+    display: none;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--amber-bright);
+    font-size: 1.2rem;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+main { display: block; }
+
+.container {
+    width: 92%;
+    max-width: 1080px;
+    margin: 0 auto;
+}
+
+.site-footer {
+    margin-top: 60px;
+    padding: 26px 24px 40px;
+    text-align: center;
+    border-top: 1px solid var(--border);
+    color: var(--parchment-dim);
+    font-size: 0.8rem;
+}
+
+.site-footer a { color: var(--amber); }
+
+/* ---------- hero ---------- */
+
+.hero {
+    padding: 48px 20px 60px;
+    text-align: center;
+}
+
+.hero h1 {
+    font-size: clamp(2.4rem, 7vw, 4.2rem);
+    margin-bottom: 14px;
+}
+
+.hero p.tagline {
+    max-width: 560px;
+    margin: 0 auto 32px;
+    font-size: 1.05rem;
+    color: var(--parchment-dim);
+}
+
+.hero-actions {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+    display: inline-block;
+    font-family: 'Silkscreen', 'Roboto', sans-serif;
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.5px;
+    text-decoration: none;
+    padding: 11px 26px;
+    border-radius: 999px;
+    border: 2px solid var(--amber);
+    color: var(--amber-bright);
+    background: rgba(201, 151, 79, 0.08);
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+    transition: background 0.2s, color 0.2s, transform 0.15s;
+    cursor: pointer;
+}
+
+.btn:hover { background: var(--amber); color: #1a1108; transform: translateY(-1px); }
+.btn:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }
+
+.btn.btn-solid {
+    background: linear-gradient(180deg, var(--amber-bright), var(--amber));
+    border-color: var(--chrome-border);
+    color: #241505;
+}
+.btn.btn-solid:hover { background: var(--amber-bright); }
+
+/* Buttons that live inside a light chrome window (e.g. "Visit Room") need the
+   dark-bordered bevel look rather than the amber-on-dark hero treatment. */
+.chrome-body .btn,
+.modal-body .btn {
+    background: linear-gradient(180deg, var(--amber-bright), var(--amber));
+    border-color: var(--chrome-border);
+    color: #241505;
+}
+.chrome-body .btn:hover,
+.modal-body .btn:hover { background: var(--amber-bright); }
+
+/* ---------- Habbo-style window chrome ----------
+   Reusable "window" skin built from the hand-drawn frame pieces in
+   assets/img/ — a single composited border-image sprite (window_frame.png,
+   assembled from the corner + edge PNGs) so the border, the bevel highlight,
+   and the fill all come from one continuous image whose rounded corners the
+   border naturally flows into, rather than a CSS border-radius approximation. */
+
+/* Fixed at exactly the width of the 3-button nav row (3 x 158px buttons +
+   2 x 8px gaps + the nav's 10px side margins + the window's own 14px border
+   on each side) so every chrome-window is the same width everywhere,
+   regardless of what — or how much — text happens to be inside it. Letting
+   this size itself via fit-content instead made the width drift from page
+   to page, since unconstrained paragraph text inside the frame was pulling
+   the intrinsic width wider than the nav row alone. */
+.chrome-window {
+    width: 538px;
+    max-width: 100%;
+    margin: 0 auto;
+    border-style: solid;
+    border-width: 14px;
+    border-image-source: url('../assets/img/window_frame.png');
+    border-image-slice: 14 fill;
+    border-image-width: 14px;
+    border-image-repeat: stretch;
+    border-radius: 14px; /* the border itself is drawn by border-image above;
+        this only rounds the box-shadow below to match its curve. */
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.6);
+}
+
+/* Everything below the titlebar (tabs + body, or image + body in the modal)
+   sits inside this inset panel — its own off-cream-dark background and the
+   same fine black border used on rows, tags, and search fields elsewhere. */
+.chrome-frame {
+    margin: 10px;
+    background: var(--frame-bg);
+    border: 2px solid var(--chrome-border);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow:
+        inset 0 6px 8px -4px rgba(0, 0, 0, 0.65),
+        inset 6px 0 8px -4px rgba(0, 0, 0, 0.65);
+}
+
+/* When a page-level nav sits between the titlebar and the frame (see
+   .chrome-nav below), the frame's own top margin is dropped so the two sit
+   flush — the nav's bottom border becomes the frame's top edge. */
+.chrome-nav + .chrome-frame { margin-top: 0; }
+
+/* Page-level view switcher (e.g. Active Mazes / Archived Mazes / Events),
+   docked directly above the frame. Each button is a fixed width so the whole
+   window — and the frame beneath it — sizes around exactly these 3 buttons,
+   rather than the frame dictating the window's width. */
+.chrome-nav {
+    display: flex;
+    gap: 8px;
+    margin: 10px 10px 0;
+}
+
+.chrome-nav-btn {
+    width: 158px;
+    flex-shrink: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent; /* see the identical note on .chrome-tab — buttons
+        have an opaque UA background by default that shows through the
+        border-image's transparent corners otherwise. */
+    border-style: solid;
+    border-width: 10px;
+    border-image-source: url('../assets/img/btn_inactive.png');
+    border-image-slice: 10 fill;
+    border-image-width: 10px;
+    border-image-repeat: stretch;
+    color: #3a2812;
+    font-family: 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.66rem;
+    letter-spacing: 0.5px;
+    text-align: center;
+    padding: 1px 4px;
+    cursor: pointer;
+    outline: none;
+}
+
+.chrome-nav-btn.active {
+    border-image-source: url('../assets/img/btn_active.png');
+    color: #241505;
+}
+
+/* The titlebar carries the dotted texture itself — the title sits nested in
+   the middle of the pattern, with its own opaque backing plate breaking the
+   dots around it, the way a label interrupts a dashed rule. */
+.chrome-titlebar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 9px 40px;
+    background-image: url('../assets/img/title_pattern.png');
+    background-repeat: repeat;
+    background-color: var(--chrome-fill);
+    image-rendering: pixelated;
+    border-bottom: 2px solid var(--chrome-border);
+}
+
+.chrome-titlebar h1,
+.chrome-titlebar h2,
+.chrome-titlebar .chrome-title-text {
+    font-family: 'Silkscreen', monospace;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #fff8ec;
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
+    letter-spacing: 0.5px;
+    margin: 0;
+    text-align: center;
+    background: var(--chrome-fill);
+    padding: 3px 12px;
+    border-radius: 3px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chrome-close {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    background: linear-gradient(180deg, #fff, #dcd3c0);
+    border: 1.5px solid var(--chrome-border);
+    border-radius: 4px;
+    color: #3a2a15;
+    font-size: 0.85rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+    text-decoration: none;
+    flex-shrink: 0;
+}
+
+.chrome-close:hover { background: #fff; }
+
+.chrome-body { padding: 18px; }
+
+.chrome-intro {
+    color: var(--parchment-dim);
+    font-size: 0.85rem;
+    margin: 0 0 14px;
+}
+
+/* ---------- room list (Habbo navigator style) ---------- */
+
+.chrome-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 0 4px;
+}
+
+.chrome-list-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    background: var(--chrome-row);
+    border: 2px solid var(--chrome-border);
+    border-radius: 8px;
+    padding: 10px;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.chrome-list-row:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+
+.chrome-list-row.featured { background: var(--chrome-row-featured); }
+
+.chrome-list-row .row-thumb {
+    width: 76px;
+    height: 76px;
+    border-radius: 6px;
+    border: 2px solid var(--chrome-border);
+    background-color: var(--wood-dark);
+    background-size: cover;
+    background-position: center;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.chrome-list-row .row-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.chrome-list-row h3 {
+    font-family: 'Silkscreen', monospace;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--amber-bright);
+    text-shadow: none;
+    margin: 0 0 3px;
+    letter-spacing: 0;
+}
+
+.chrome-list-row .row-creator {
+    font-size: 0.74rem;
+    color: var(--amber);
+    margin: 0 0 4px;
+}
+
+.chrome-list-row .row-desc {
+    font-size: 0.8rem;
+    color: var(--parchment-dim);
+    margin: 0;
+}
+
+.chrome-list-row .row-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 6px;
+}
+
+.chrome-go {
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.75rem;
+    color: var(--amber-bright);
+    display: flex;
+    align-items: center;
+    align-self: center;
+    gap: 3px;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.status-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    font-size: 0.6rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-family: 'Roboto', sans-serif;
+    font-weight: 700;
+    background: rgba(20, 13, 6, 0.85);
+    border: 1px solid currentColor;
+}
+
+.status-active { color: var(--ok); }
+.status-closed { color: var(--danger); }
+.status-unknown { color: var(--unknown); }
+.status-upcoming { color: var(--ok); }
+.status-past { color: var(--unknown); }
+
+.tag {
+    font-size: 0.63rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border: 1.5px solid var(--chrome-highlight);
+    border-radius: 10px;
+    color: var(--parchment-dim);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+/* ---------- tabs (docked directly under the titlebar, like Habbo's own
+   Public Spaces / Rooms tabs) — each tab is the actual btn_active.png /
+   btn_inactive.png pill asset, applied as a border-image so it stretches
+   cleanly to whatever width the row divides into. ---------- */
+
+.chrome-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px 8px 6px;
+    border-bottom: 2px solid var(--chrome-border);
+}
+
+.chrome-tab {
+    flex: 1;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent; /* buttons have a default opaque UA background —
+        without this it shows through the border-image's transparent corners
+        as solid white squares instead of the pill's actual rounded shape. */
+    border-style: solid;
+    border-width: 10px;
+    border-image-source: url('../assets/img/btn_inactive.png');
+    border-image-slice: 10 fill;
+    border-image-width: 10px;
+    border-image-repeat: stretch;
+    color: #3a2812;
+    font-family: 'Silkscreen', monospace;
+    font-weight: 700;
+    font-size: 0.68rem;
+    letter-spacing: 0.5px;
+    padding: 1px 4px;
+    cursor: pointer;
+    outline: none;
+}
+
+.chrome-tab.active {
+    border-image-source: url('../assets/img/btn_active.png');
+    color: #241505;
+}
+
+/* ---------- archive controls ---------- */
+
+.archive-controls {
+    padding: 2px 0 16px;
+}
+
+.search-box {
+    position: relative;
+}
+
+.search-box input {
+    width: 100%;
+    background: #fff;
+    border: 2px solid var(--chrome-border);
+    color: #3a2812;
+    font-family: 'Roboto', sans-serif;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.3);
+}
+
+.search-box input::placeholder { color: #6b5638; }
+
+.search-box input:focus {
+    outline: none;
+    border-color: var(--amber);
+}
+
+.result-count {
+    text-align: center;
+    font-size: 0.78rem;
+    color: var(--parchment-dim);
+    margin-bottom: 10px;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 50px 20px;
+    color: var(--parchment-dim);
+}
+
+/* ---------- modal ---------- */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 4, 2, 0.82);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 24px;
+}
+
+.modal-overlay.open { display: flex; }
+
+.modal {
+    border-style: solid;
+    border-width: 14px;
+    border-image-source: url('../assets/img/window_frame.png');
+    border-image-slice: 14 fill;
+    border-image-width: 14px;
+    border-image-repeat: stretch;
+    border-radius: 14px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 86vh;
+    overflow-y: auto;
+    box-shadow: 0 22px 55px rgba(0, 0, 0, 0.85);
+    animation: modalIn 0.2s ease-out;
+}
+
+.modal .chrome-titlebar {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    padding-left: 28px;
+    padding-right: 28px;
+}
+
+.modal .chrome-titlebar h2 { font-size: 0.8rem; }
+
+@keyframes modalIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.modal-thumb {
+    height: 220px;
+    background-color: var(--wood-dark);
+    background-image:
+        linear-gradient(rgba(10,7,4,0.3), rgba(10,7,4,0.6)),
+        url('../assets/img/MazeBG.png');
+    background-size: cover;
+    background-position: center;
+    position: relative;
+}
+
+.modal-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+.modal-thumb.has-gallery {
+    height: 340px;
+    background-color: #000;
+}
+
+.modal-gallery-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+    cursor: zoom-in;
+}
+
+/* ---------- image lightbox ---------- */
+
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 3, 2, 0.92);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 50px;
+}
+
+.lightbox-overlay.open { display: flex; }
+
+.lightbox-img {
+    max-width: 90vw;
+    max-height: 88vh;
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+    cursor: zoom-out;
+    animation: lightboxIn 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes lightboxIn {
+    from { opacity: 0; transform: scale(0.85); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.lightbox-close {
+    position: absolute;
+    top: 20px;
+    right: 24px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid var(--border);
+    color: var(--parchment);
+    font-size: 1.2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+}
+
+.lightbox-overlay .gallery-nav {
+    width: 46px;
+    height: 46px;
+    font-size: 1rem;
+}
+
+.lightbox-prev { left: 24px; }
+.lightbox-next { right: 24px; }
+
+.lightbox-counter {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.gallery-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.55);
+    border: 1px solid var(--border);
+    color: var(--parchment);
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+}
+
+.gallery-nav:hover { background: rgba(0,0,0,0.8); border-color: var(--amber); }
+.gallery-prev { left: 10px; }
+.gallery-next { right: 10px; }
+
+.gallery-counter {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.65);
+    border: 1px solid var(--border);
+    color: var(--parchment-dim);
+    font-size: 0.72rem;
+    letter-spacing: 0.5px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    max-width: calc(100% - 70px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gallery-strip {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 4px 0 10px;
+    margin-top: 6px;
+    scrollbar-color: var(--chrome-border) var(--chrome-row);
+}
+
+.gallery-strip::-webkit-scrollbar { height: 10px; }
+.gallery-strip::-webkit-scrollbar-track {
+    background: var(--chrome-row);
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+}
+.gallery-strip::-webkit-scrollbar-thumb {
+    background: var(--chrome-border);
+    border-radius: 6px;
+}
+
+.gallery-strip img {
+    width: 52px;
+    height: 52px;
+    object-fit: cover;
+    border-radius: 3px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    opacity: 0.6;
+    flex-shrink: 0;
+    transition: opacity 0.15s, border-color 0.15s;
+}
+
+.gallery-strip img:hover { opacity: 0.9; }
+
+.gallery-strip img.active {
+    opacity: 1;
+    border-color: var(--amber);
+}
+
+.modal-body { padding: 20px 22px 24px; }
+
+.modal-body .room-creator {
+    color: var(--amber-bright);
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+.modal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 10px 0 16px;
+    font-size: 0.78rem;
+    color: var(--parchment-dim);
+}
+
+.modal-meta span { display: flex; align-items: center; gap: 5px; }
+
+.modal-meta .status-badge {
+    position: static;
+    display: inline-flex;
+}
+
+.modal-body .room-desc-full {
+    color: var(--parchment-dim);
+    font-size: 0.92rem;
+    line-height: 1.6;
+    margin-bottom: 16px;
+}
+
+/* ---------- admin page ---------- */
+
+.admin-notice {
+    text-align: left;
+}
+
+.admin-notice code {
+    background: rgba(0, 0, 0, 0.35);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.85em;
+}
+
+.admin-section { margin-top: 26px; }
+
+.admin-empty {
+    color: var(--parchment-dim);
+    font-size: 0.85rem;
+    padding: 10px 0;
+}
+
+.admin-row { cursor: default; }
+.admin-row:hover { transform: none; box-shadow: none; }
+
+.admin-row-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-shrink: 0;
+    align-self: center;
+}
+
+.admin-row-actions .btn {
+    padding: 6px 14px;
+    font-size: 0.65rem;
+}
+
+.admin-delete-btn { border-color: var(--danger); color: var(--danger); }
+.admin-delete-btn:hover { background: var(--danger); color: #fff; }
+
+.admin-add-btn { margin-top: 14px; }
+
+.admin-form {
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 2px solid var(--chrome-border);
+}
+
+.admin-form-title { font-size: 1.1rem; }
+
+.admin-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 0.8rem;
+    color: var(--parchment-dim);
+}
+
+.admin-field input,
+.admin-field select,
+.admin-field textarea {
+    background: #fff;
+    border: 2px solid var(--chrome-border);
+    color: #3a2812;
+    font-family: 'Roboto', sans-serif;
+    padding: 9px 12px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.3);
+}
+
+.admin-field input:focus,
+.admin-field select:focus,
+.admin-field textarea:focus {
+    outline: none;
+    border-color: var(--amber);
+}
+
+.admin-field textarea { resize: vertical; font-family: 'Roboto', sans-serif; }
+
+.admin-form-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.admin-export-label {
+    font-size: 0.85rem;
+    color: var(--amber-bright);
+    margin: 22px 0 8px;
+}
+
+.admin-export-label:first-of-type { margin-top: 4px; }
+
+.admin-export {
+    width: 100%;
+    min-height: 140px;
+    background: #100b06;
+    color: var(--parchment-dim);
+    border: 2px solid var(--chrome-border);
+    border-radius: 6px;
+    font-family: 'Roboto Mono', 'Courier New', monospace;
+    font-size: 0.75rem;
+    padding: 12px;
+    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.4);
+}
+
+.admin-copy-btn { margin-top: 8px; }
+
+.admin-reset-row {
+    margin-top: 30px;
+    padding-top: 18px;
+    border-top: 2px solid var(--chrome-border);
+}
+
+.admin-reset-btn { border-color: var(--danger); color: var(--danger); }
+.admin-reset-btn:hover { background: var(--danger); color: #fff; }
+
+/* ---------- about / static page content ---------- */
+
+.page-content {
+    padding: 60px 0 40px;
+}
+
+.page-content h1 { font-size: 2.2rem; text-align: center; margin-bottom: 8px; }
+.page-content .subtitle {
+    text-align: center;
+    color: var(--parchment-dim);
+    margin-bottom: 40px;
+}
+
+.prose {
+    max-width: 680px;
+    margin: 0 auto;
+}
+
+.prose h2 {
+    font-size: 1.3rem;
+    margin-top: 34px;
+}
+
+.prose p { margin-bottom: 14px; }
+
+.prose ul { color: var(--parchment-dim); padding-left: 20px; }
+.prose li { margin-bottom: 8px; }
+
+.callout {
+    max-width: 680px;
+    margin: 30px auto 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px 22px;
+}
+
+.callout h3 { font-size: 1rem; margin-bottom: 8px; }
+.callout p { margin: 0; font-size: 0.88rem; }
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 640px) {
+    nav.site-nav {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        background: var(--bg-panel);
+        border-bottom: 1px solid var(--border);
+        padding: 10px 24px 18px;
+        gap: 14px;
+        display: none;
+    }
+    nav.site-nav.open { display: flex; }
+    .nav-toggle { display: block; }
+    .chrome-list-row .row-thumb { width: 56px; height: 56px; }
+    .chrome-go { display: none; }
+    .chrome-titlebar { padding: 10px 34px; }
+    .chrome-titlebar h1, .chrome-titlebar h2, .chrome-titlebar .chrome-title-text { font-size: 0.8rem; }
+    .chrome-tab { font-size: 0.56rem; letter-spacing: 0; border-width: 8px; }
+    .chrome-window { width: 100%; }
+    .chrome-nav-btn { width: auto; flex: 1; font-size: 0.56rem; border-width: 8px; }
+}
