@@ -838,6 +838,13 @@ main { display: block; }
     margin-bottom: 14px;
 }
 
+.admin-you-tag {
+    color: var(--parchment-dim);
+    font-size: 0.75rem;
+    font-family: 'Roboto', sans-serif;
+    letter-spacing: normal;
+}
+
 .admin-empty {
     color: var(--parchment-dim);
     font-size: 0.85rem;

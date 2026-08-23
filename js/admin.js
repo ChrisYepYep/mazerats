@@ -1,11 +1,11 @@
 /* Admin panel logic for admin.html — add/edit/delete mazes and events.
    Everything here writes live to MongoDB via the Netlify Functions in
    netlify/functions/ (see js/api.js) — no local-only staging anymore.
-   Write requests are gated by a password checked server-side against the
-   ADMIN_PASSWORD environment variable (see netlify/functions/_auth.js).
-   Image uploads (thumbnails, room-by-room gallery shots) go through
-   netlify/functions/upload.js into Netlify Blobs — see js/api.js's
-   uploadImage/deleteImage. */
+   Write requests are gated by a session token from logging in with a
+   username/password (see netlify/functions/auth.js and _auth.js); sessions
+   expire automatically after 12 hours. Image uploads (thumbnails,
+   room-by-room gallery shots) go through netlify/functions/upload.js into
+   Netlify Blobs — see js/api.js's uploadImage/deleteImage. */
 document.addEventListener("DOMContentLoaded", () => {
 
     const TOKEN_KEY = "mazerats_admin_token";
@@ -14,10 +14,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const loginError = document.getElementById("login-error");
     const adminContent = document.getElementById("admin-content");
     const logoutBtn = document.getElementById("logout-btn");
+    const adminsListEl = document.getElementById("admins-list");
+    const adminsFormEl = document.getElementById("admins-form");
+    const adminsAddBtn = document.getElementById("admins-add-btn");
 
     let adminToken = sessionStorage.getItem(TOKEN_KEY) || "";
+    let currentUsername = "";
     let workingRooms = [];
     let workingEvents = [];
+    let workingAdmins = [];
 
     const COLLECTIONS = {
         rooms: {
@@ -55,58 +60,50 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------- login ----------
 
-    async function tryUnlock(password) {
-        // No dedicated "verify password" endpoint — instead send a PUT with
-        // no id, which is invalid either way, but only gets past the auth
-        // check (and returns 400, not 401) if the password is correct.
-        try {
-            const res = await fetch("/.netlify/functions/rooms", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json", "x-admin-token": password },
-                body: JSON.stringify({})
-            });
-            return res.status !== 401;
-        } catch (e) {
-            return false;
-        }
-    }
-
     loginForm.addEventListener("submit", async e => {
         e.preventDefault();
-        const password = new FormData(loginForm).get("password");
+        const formData = new FormData(loginForm);
+        const username = (formData.get("username") || "").trim();
+        const password = formData.get("password");
         loginError.style.display = "none";
         const submitBtn = loginForm.querySelector("button[type=submit]");
         submitBtn.disabled = true;
         submitBtn.textContent = "Checking…";
 
-        const ok = await tryUnlock(password);
-        submitBtn.disabled = false;
-        submitBtn.textContent = "Unlock";
-
-        if (!ok) {
+        try {
+            const result = await Api.login(username, password);
+            adminToken = result.token;
+            currentUsername = result.username;
+            sessionStorage.setItem(TOKEN_KEY, adminToken);
+            await enterAdmin();
+        } catch (err) {
+            loginError.textContent = err.message || "Wrong username or password — try again.";
             loginError.style.display = "block";
-            return;
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Unlock";
         }
-        adminToken = password;
-        sessionStorage.setItem(TOKEN_KEY, adminToken);
-        enterAdmin();
     });
 
     function lockOut() {
         sessionStorage.removeItem(TOKEN_KEY);
         adminToken = "";
+        currentUsername = "";
         adminContent.style.display = "none";
         loginModal.classList.add("open");
-        loginError.textContent = "Session expired — enter the password again.";
+        loginError.textContent = "Session expired — log in again.";
         loginError.style.display = "block";
     }
 
     function doLogout() {
         sessionStorage.removeItem(TOKEN_KEY);
         adminToken = "";
+        currentUsername = "";
         workingRooms = [];
         workingEvents = [];
+        workingAdmins = [];
         Object.keys(COLLECTIONS).forEach(key => closeForm(key));
+        closeAdminsForm();
         adminContent.style.display = "none";
         loginModal.classList.add("open");
         loginError.style.display = "none";
@@ -121,6 +118,7 @@ document.addEventListener("DOMContentLoaded", () => {
         workingEvents = events;
         renderList("rooms");
         renderList("events");
+        loadAdmins();
     }
 
     // ---------- image uploads ----------
@@ -315,17 +313,20 @@ document.addEventListener("DOMContentLoaded", () => {
             `<option value="${value}" ${item.status === value ? "selected" : ""}>${label}</option>`
         ).join("");
 
-        let eventDatePart = "", eventTimePart = "";
-        if (isEvents && item.date) {
-            const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(item.date);
-            if (m) { eventDatePart = m[1]; eventTimePart = m[2]; }
+        function splitIso(iso) {
+            const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(iso || "");
+            return m ? { date: m[1], time: m[2] } : { date: "", time: "" };
         }
+        const start = isEvents ? splitIso(item.date) : { date: "", time: "" };
+        const end = isEvents ? splitIso(item.endDate) : { date: "", time: "" };
 
         const dateFieldHtml = isEvents
             ? `
-                ${fieldRow("Event date (UTC)", `<input type="date" name="eventDate" required value="${eventDatePart}">`)}
-                ${fieldRow("Event time (UTC, 24-hour)", `<input type="time" name="eventTime" required value="${eventTimePart}">`)}
-                <p class="admin-hint">Both fields are UTC. The site shows this time as-is — it does not convert it to a visitor's local timezone.</p>
+                ${fieldRow("Event start date (UTC)", `<input type="date" name="startDate" required value="${start.date}">`)}
+                ${fieldRow("Event start time (UTC, 24-hour)", `<input type="time" name="startTime" required value="${start.time}">`)}
+                ${fieldRow("Event end date (UTC)", `<input type="date" name="endDate" required value="${end.date}">`)}
+                ${fieldRow("Event end time (UTC, 24-hour)", `<input type="time" name="endTime" required value="${end.time}">`)}
+                <p class="admin-hint">All four fields are UTC. The site shows this as-is — it does not convert to a visitor's local timezone.</p>
               `
             : fieldRow(cfg.dateLabel, `<input type="text" name="date" value="${item[cfg.fieldMap.date] || ""}">`);
 
@@ -421,7 +422,8 @@ document.addEventListener("DOMContentLoaded", () => {
         payload[cfg.fieldMap.subtitle] = data.subtitle;
 
         if (key === "events") {
-            payload.date = data.eventDate && data.eventTime ? `${data.eventDate}T${data.eventTime}:00Z` : "";
+            payload.date = data.startDate && data.startTime ? `${data.startDate}T${data.startTime}:00Z` : "";
+            payload.endDate = data.endDate && data.endTime ? `${data.endDate}T${data.endTime}:00Z` : "";
         } else {
             payload[cfg.fieldMap.date] = data.date;
         }
@@ -432,6 +434,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const submitBtn = form.querySelector("button[type=submit]");
         const errorEl = form.querySelector(".admin-form-error");
+
+        if (key === "events" && payload.date && payload.endDate && payload.endDate <= payload.date) {
+            errorEl.textContent = "The event's end must be after its start.";
+            errorEl.style.display = "block";
+            return;
+        }
+
         submitBtn.disabled = true;
         submitBtn.textContent = "Saving…";
 
@@ -471,9 +480,138 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // ---------- admin accounts ----------
+
+    async function loadAdmins() {
+        try {
+            workingAdmins = await Api.getAdmins(adminToken);
+            renderAdminsList();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+        }
+    }
+
+    function renderAdminsList() {
+        adminsListEl.innerHTML = "";
+        if (!workingAdmins.length) {
+            const empty = document.createElement("p");
+            empty.className = "admin-empty";
+            empty.textContent = "No admin accounts found.";
+            adminsListEl.appendChild(empty);
+            return;
+        }
+        workingAdmins.forEach(admin => {
+            const isSelf = admin.username === currentUsername;
+            const row = document.createElement("div");
+            row.className = "chrome-list-row admin-row admin-account-row";
+            row.innerHTML = `
+                <div class="row-info">
+                    <h3>${admin.username}${isSelf ? ' <span class="admin-you-tag">(you)</span>' : ""}</h3>
+                    <p class="row-creator">${admin.createdAt ? "Added " + admin.createdAt.slice(0, 10) : ""}</p>
+                </div>
+                <div class="admin-row-actions">
+                    <button type="button" class="btn admin-reset-btn">Reset Password</button>
+                    <button type="button" class="btn admin-delete-btn" ${workingAdmins.length <= 1 ? "disabled" : ""}>Delete</button>
+                </div>
+            `;
+            row.querySelector(".admin-reset-btn").addEventListener("click", () => openResetForm(admin.username));
+            row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteAdmin(admin.username));
+            adminsListEl.appendChild(row);
+        });
+    }
+
+    function openCreateAdminForm() {
+        adminsFormEl.innerHTML = `
+            <h3 class="admin-form-title">Add a New Admin</h3>
+            ${fieldRow("Username", `<input type="text" name="username" required autocomplete="off">`)}
+            ${fieldRow("Password (8+ characters)", `<input type="password" name="password" required minlength="8" autocomplete="new-password">`)}
+            ${fieldRow("Confirm password", `<input type="password" name="confirm" required minlength="8" autocomplete="new-password">`)}
+            <p class="admin-form-error" style="display:none;"></p>
+            <div class="admin-form-actions">
+                <button type="submit" class="btn btn-solid">Save</button>
+                <button type="button" class="btn admin-cancel-btn">Cancel</button>
+            </div>
+        `;
+        adminsFormEl.dataset.mode = "create";
+        adminsFormEl.dataset.username = "";
+        openAdminsForm();
+    }
+
+    function openResetForm(username) {
+        adminsFormEl.innerHTML = `
+            <h3 class="admin-form-title">Reset Password — ${username}</h3>
+            ${fieldRow("New password (8+ characters)", `<input type="password" name="password" required minlength="8" autocomplete="new-password">`)}
+            ${fieldRow("Confirm new password", `<input type="password" name="confirm" required minlength="8" autocomplete="new-password">`)}
+            <p class="admin-form-error" style="display:none;"></p>
+            <div class="admin-form-actions">
+                <button type="submit" class="btn btn-solid">Save</button>
+                <button type="button" class="btn admin-cancel-btn">Cancel</button>
+            </div>
+        `;
+        adminsFormEl.dataset.mode = "reset";
+        adminsFormEl.dataset.username = username;
+        openAdminsForm();
+    }
+
+    function openAdminsForm() {
+        adminsFormEl.style.display = "flex";
+        adminsAddBtn.style.display = "none";
+        adminsFormEl.querySelector(".admin-cancel-btn").addEventListener("click", closeAdminsForm);
+        adminsFormEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function closeAdminsForm() {
+        adminsFormEl.style.display = "none";
+        adminsFormEl.innerHTML = "";
+        adminsAddBtn.style.display = "inline-block";
+    }
+
+    adminsFormEl.addEventListener("submit", async e => {
+        e.preventDefault();
+        const data = Object.fromEntries(new FormData(adminsFormEl).entries());
+        const errorEl = adminsFormEl.querySelector(".admin-form-error");
+        const submitBtn = adminsFormEl.querySelector("button[type=submit]");
+
+        if (data.password !== data.confirm) {
+            errorEl.textContent = "Passwords don't match.";
+            errorEl.style.display = "block";
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Saving…";
+        try {
+            if (adminsFormEl.dataset.mode === "create") {
+                await Api.createAdmin(adminToken, data.username.trim(), data.password);
+            } else {
+                await Api.resetAdminPassword(adminToken, adminsFormEl.dataset.username, data.password);
+            }
+            closeAdminsForm();
+            await loadAdmins();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            errorEl.textContent = err.message || "Something went wrong saving this.";
+            errorEl.style.display = "block";
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Save";
+        }
+    });
+
+    async function deleteAdmin(username) {
+        if (!confirm(`Delete admin account "${username}"? They'll no longer be able to log in.`)) return;
+        try {
+            await Api.deleteAdmin(adminToken, username);
+            await loadAdmins();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            alert(err.message || "Couldn't delete that account.");
+        }
+    }
+
     // ---------- wire up ----------
 
     logoutBtn.addEventListener("click", doLogout);
+    adminsAddBtn.addEventListener("click", openCreateAdminForm);
 
     Object.keys(COLLECTIONS).forEach(key => {
         const cfg = COLLECTIONS[key];
@@ -482,7 +620,12 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     if (adminToken) {
-        // Re-check the stored token is still valid before trusting it.
-        tryUnlock(adminToken).then(ok => ok ? enterAdmin() : lockOut());
+        // Re-check the stored token is still valid (and not expired) before
+        // trusting it, and recover the username it belongs to.
+        Api.verifySession(adminToken).then(result => {
+            if (!result) { lockOut(); return; }
+            currentUsername = result.username;
+            enterAdmin();
+        });
     }
 });

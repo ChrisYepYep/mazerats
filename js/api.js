@@ -1,7 +1,7 @@
 /* Talks to the Netlify Functions backed by MongoDB (see netlify/functions/).
-   GETs are public. Writes need an admin token, checked server-side against
-   the ADMIN_PASSWORD environment variable — see js/admin.js for the login
-   prompt that collects it. */
+   GETs are public. Writes need a session token from logging in with a
+   username/password on the admin page — see js/admin.js and
+   netlify/functions/auth.js. */
 const Api = {
     async getRooms() {
         try {
@@ -56,5 +56,41 @@ const Api = {
     },
     deleteImage(token, key) {
         return this._write(`/.netlify/functions/upload?key=${encodeURIComponent(key)}`, "DELETE", token);
+    },
+
+    async login(username, password) {
+        const res = await fetch("/.netlify/functions/auth", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "login", username, password })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            const err = new Error(data.error || `Login failed: ${res.status}`);
+            err.status = res.status;
+            throw err;
+        }
+        return data; // { token, username }
+    },
+
+    async verifySession(token) {
+        const res = await fetch("/.netlify/functions/auth", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-admin-token": token },
+            body: JSON.stringify({ action: "verify" })
+        });
+        if (!res.ok) return null;
+        return res.json(); // { username }
+    },
+
+    getAdmins(token) { return this._write("/.netlify/functions/auth", "GET", token); },
+    createAdmin(token, username, password) {
+        return this._write("/.netlify/functions/auth", "POST", token, { action: "create", username, password });
+    },
+    resetAdminPassword(token, username, password) {
+        return this._write("/.netlify/functions/auth", "PUT", token, { username, password });
+    },
+    deleteAdmin(token, username) {
+        return this._write(`/.netlify/functions/auth?username=${encodeURIComponent(username)}`, "DELETE", token);
     }
 };

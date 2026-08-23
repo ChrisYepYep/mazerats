@@ -69,6 +69,19 @@
                     </div>
                 </div>
 
+                <!-- ---------- Admins ---------- -->
+                <div class="chrome-window admin-section">
+                    <div class="chrome-titlebar"><h2>Manage Admins</h2></div>
+                    <div class="chrome-frame">
+                        <div class="chrome-body">
+                            <p class="admin-hint" style="margin-bottom:14px;">Sessions expire automatically after 12 hours.</p>
+                            <div class="chrome-list" id="admins-list"></div>
+                            <button class="btn btn-solid admin-add-btn" id="admins-add-btn" type="button">+ Add an Admin</button>
+                            <form class="admin-form" id="admins-form" style="display:none;"></form>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     </main>
@@ -85,13 +98,17 @@
             <div class="chrome-titlebar"><h2>Admin Login</h2></div>
             <div class="chrome-frame">
                 <div class="modal-body">
-                    <p class="room-desc-full">Changes made here are live immediately for every visitor, so this checks a password first.</p>
+                    <p class="room-desc-full">Changes made here are live immediately for every visitor, so this checks a username and password first.</p>
                     <form class="admin-form" id="login-form" style="display:flex;">
                         <label class="admin-field">
-                            <span>Admin password</span>
-                            <input type="password" name="password" autocomplete="current-password" required autofocus>
+                            <span>Username</span>
+                            <input type="text" name="username" autocomplete="username" required autofocus>
                         </label>
-                        <p class="admin-login-error" id="login-error" style="display:none;">Wrong password — try again.</p>
+                        <label class="admin-field">
+                            <span>Password</span>
+                            <input type="password" name="password" autocomplete="current-password" required>
+                        </label>
+                        <p class="admin-login-error" id="login-error" style="display:none;">Wrong username or password — try again.</p>
                         <div class="admin-form-actions">
                             <button type="submit" class="btn btn-solid">Unlock</button>
                         </div>

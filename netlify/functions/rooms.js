@@ -1,6 +1,7 @@
 /* /.netlify/functions/rooms — CRUD API for maze rooms.
    GET is public (the site needs to read it to render). POST/PUT/DELETE
-   require the x-admin-token header to match ADMIN_PASSWORD (see _auth.js). */
+   require the x-admin-token header to carry a valid session token from
+   logging in on the admin page (see auth.js and _auth.js). */
 const { getDb } = require("./_db");
 const { isAuthorized, UNAUTHORIZED } = require("./_auth");
 

@@ -61,6 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 hotel: item.hotel,
                 dateFieldLabel: "Date",
                 dateValue: item.date,
+                endDateValue: item.endDate,
                 thumb: item.thumb,
                 description: item.description,
                 details: item.details,
@@ -114,16 +115,27 @@ document.addEventListener("DOMContentLoaded", () => {
         return { image: entry.image, label: entry.label || deriveGalleryLabel(entry.image) };
     }
 
-    // Event dates/times are stored as UTC ISO strings (e.g.
-    // "2026-08-23T18:00:00Z") — render them in a fixed UTC format so the
-    // displayed time never silently shifts with the visitor's local timezone.
-    function formatEventDateTime(iso) {
-        if (!iso) return "";
+    // Event start/end are stored as UTC ISO strings (e.g.
+    // "2026-08-23T18:00:00Z") — render them as a fixed-UTC duration range so
+    // the displayed time never silently shifts with the visitor's local
+    // timezone. Collapses to a single date when start and end share a day.
+    function formatUtcParts(iso) {
         const d = new Date(iso);
-        if (isNaN(d)) return iso;
-        const datePart = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-        const timePart = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
-        return `${datePart}, ${timePart} UTC`;
+        if (isNaN(d)) return null;
+        return {
+            date: d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }),
+            time: d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" })
+        };
+    }
+
+    function formatEventDuration(startIso, endIso) {
+        if (!startIso) return "";
+        const start = formatUtcParts(startIso);
+        if (!start) return startIso;
+        const end = endIso ? formatUtcParts(endIso) : null;
+        if (!end) return `${start.date}, ${start.time} UTC`;
+        if (start.date === end.date) return `${start.date}, ${start.time}–${end.time} UTC`;
+        return `${start.date} ${start.time} UTC – ${end.date} ${end.time} UTC`;
     }
 
     function render() {
@@ -197,7 +209,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function openModal(n) {
         modalName.textContent = n.name;
         modalCreator.textContent = n.subtitle;
-        const dateDisplay = currentView === "events" ? formatEventDateTime(n.dateValue) : n.dateValue;
+        const dateDisplay = currentView === "events" ? formatEventDuration(n.dateValue, n.endDateValue) : n.dateValue;
         modalMeta.innerHTML = `
             <span class="status-badge status-${n.statusKey}">${n.statusLabel}</span>
             <span>Hotel: ${n.hotel || "Unknown"}</span>
