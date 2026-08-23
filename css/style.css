@@ -157,7 +157,9 @@ main { display: block; flex: 1 0 auto; }
 /* ---------- hero ---------- */
 
 .hero {
-    padding: 48px 20px 24px;
+    /* Bottom padding matches .hero-title's margin-bottom below, so the gap
+       from blurb to the window equals the gap from header to blurb. */
+    padding: 48px 20px 14px;
     text-align: center;
 }
 
@@ -180,7 +182,7 @@ main { display: block; flex: 1 0 auto; }
 
 .hero p.tagline {
     max-width: 560px;
-    margin: 0 auto 32px;
+    margin: 0 auto;
     font-size: 0.9rem;
     color: var(--parchment-dim);
 }
@@ -388,7 +390,23 @@ main { display: block; flex: 1 0 auto; }
    / Archived / Events on the homepage doesn't collapse or snap the whole
    page height (and the footer along with it) when a view has few or no
    items — views taller than this still grow past it as normal. */
-.home-results { min-height: 340px; }
+.home-results {
+    min-height: 340px;
+    max-height: 480px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.home-results::-webkit-scrollbar { width: 10px; }
+.home-results::-webkit-scrollbar-track {
+    background: var(--chrome-row);
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+}
+.home-results::-webkit-scrollbar-thumb {
+    background: var(--chrome-border);
+    border-radius: 6px;
+}
 
 /* ---------- room list (Habbo navigator style) ---------- */
 
@@ -555,6 +573,10 @@ main { display: block; flex: 1 0 auto; }
 .archive-controls {
     padding: 2px 0 16px;
 }
+
+/* Pulls the search box up into .chrome-body's own top padding, closer to
+   the Open/Archived/Events tabs above the frame — homepage-only element. */
+#search-wrap { margin-top: -14px; }
 
 .search-box {
     position: relative;

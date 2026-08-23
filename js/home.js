@@ -9,7 +9,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const introEl = document.getElementById("featured-intro");
     const searchWrap = document.getElementById("search-wrap");
     const searchInput = document.getElementById("room-search");
-    const resultCountEl = document.getElementById("result-count");
     const emptyEl = document.getElementById("featured-empty");
     const navBtns = document.querySelectorAll(".chrome-nav-btn");
 
@@ -146,7 +145,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const isFeatured = currentView === "featured";
         introEl.style.display = isFeatured ? "block" : "none";
         searchWrap.style.display = isFeatured ? "none" : "block";
-        resultCountEl.style.display = isFeatured ? "none" : "block";
     }
 
     function render() {
@@ -156,7 +154,6 @@ document.addEventListener("DOMContentLoaded", () => {
             introEl.textContent = "Loading…";
             grid.innerHTML = "";
             emptyEl.style.display = "none";
-            resultCountEl.textContent = "";
             return;
         }
 
@@ -187,11 +184,6 @@ document.addEventListener("DOMContentLoaded", () => {
         grid.querySelectorAll(".chrome-list-row").forEach((row, i) => {
             row.addEventListener("click", () => openModal(currentItems[i]));
         });
-
-        if (!isFeatured) {
-            const nouns = currentView === "events" ? "event" : "maze";
-            resultCountEl.textContent = `${currentItems.length} ${nouns}${currentItems.length === 1 ? "" : "s"} found`;
-        }
 
         const messages = (!isFeatured && query.trim()) ? emptyMessagesSearch : emptyMessagesNoSearch;
         emptyEl.textContent = messages[currentView];
