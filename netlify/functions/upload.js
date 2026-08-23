@@ -53,7 +53,11 @@ exports.handler = async (event) => {
         const key = `rooms/${slugify(prefix)}/${Date.now()}-${slugify(filename || "image")}.${ext}`;
         await store.set(key, buffer, { metadata: { contentType: mimeType } });
 
-        return json(201, { key, url: `/.netlify/functions/image?key=${encodeURIComponent(key)}` });
+        // Not percent-encoded here: slugify() guarantees the key only ever
+        // contains [a-z0-9-/.], and every place that displays this URL
+        // wraps it in encodeURI() at render time — pre-encoding it here too
+        // would double-encode it and 404.
+        return json(201, { key, url: `/.netlify/functions/image?key=${key}` });
     }
 
     if (event.httpMethod === "DELETE") {
