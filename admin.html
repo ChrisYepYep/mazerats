@@ -22,7 +22,6 @@
         <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
         <nav class="site-nav">
             <a href="home.html" data-page="home">Home</a>
-            <a href="about.html" data-page="about">About</a>
         </nav>
     </header>
 
@@ -46,6 +45,19 @@
                         <div class="chrome-titlebar"><h2>Manage Mazes</h2></div>
                         <div class="chrome-frame">
                             <div class="chrome-body">
+                                <div class="archive-controls">
+                                    <div class="search-box">
+                                        <input type="text" id="rooms-search" placeholder="Search by name, builder, or tag...">
+                                    </div>
+                                    <div class="sort-box">
+                                        <select id="rooms-sort">
+                                            <option value="name">Sort by: Maze Name</option>
+                                            <option value="date">Sort by: Opening Date</option>
+                                            <option value="difficulty-asc">Sort by: Difficulty (Easy-Hard)</option>
+                                            <option value="difficulty-desc">Sort by: Difficulty (Hard-Easy)</option>
+                                        </select>
+                                    </div>
+                                </div>
                                 <div class="chrome-list" id="rooms-list"></div>
                                 <button class="btn btn-solid admin-add-btn" id="rooms-add-btn" type="button">+ Add a Maze</button>
                                 <form class="admin-form" id="rooms-form" style="display:none;"></form>

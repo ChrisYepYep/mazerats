@@ -107,13 +107,21 @@ const Api = {
     createTag(token, label) { return this._write("/.netlify/functions/tags", "POST", token, { label }); },
 
     async getSiteSettings() {
+        // The welcome button ships disabled and only this call can enable it,
+        // so a request that hangs instead of failing outright would otherwise
+        // leave visitors stuck forever. The timeout guarantees it always lands
+        // in the same catch as a normal fetch failure, within a few seconds.
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6000);
         try {
-            const res = await fetch("/.netlify/functions/settings");
+            const res = await fetch("/.netlify/functions/settings", { signal: controller.signal });
             if (!res.ok) throw new Error(`settings fetch failed: ${res.status}`);
             return await res.json();
         } catch (e) {
             console.warn("Live site settings unavailable, defaulting to Enter.", e);
             return { landingState: "enter" };
+        } finally {
+            clearTimeout(timeout);
         }
     },
     updateSiteSettings(token, landingState) {

@@ -12,6 +12,11 @@
     <meta property="og:title" content="Maze Rats">
     <meta property="og:description" content="A fan-run archive preserving the history of maze rooms across Habbo Hotel.">
     <meta property="og:type" content="website">
+    <meta property="og:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -19,7 +24,10 @@
 
     <header class="site-header">
         <div class="brand-group">
-            <span class="brand-text">MAZE RATS</span>
+            <div class="brand">
+                <span class="brand-text">MAZE RATS</span>
+                <span class="brand-tagline">Every maze. One place.</span>
+            </div>
             <a class="header-badge" href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Discord</a>
         </div>
     </header>
@@ -27,7 +35,14 @@
     <main class="welcome-screen">
         <div class="welcome-stack">
             <h1 class="hero-title welcome-title"><span id="welcome-maze">MAZE<img class="hand-rat" src="assets/img/rat_handstand.png" alt="" aria-hidden="true"></span><span>RATS</span></h1>
-            <a class="btn-enter" href="home.html" id="welcome-btn"><img class="btn-sit-rat" src="assets/img/rat_sit.png" alt="" aria-hidden="true"><span id="welcome-btn-label">Enter</span></a>
+            <!-- No href by default and starts disabled — js/welcome.js is the
+                 only thing that ever turns this into a working link, and only
+                 once it's actually confirmed the site is open. Shipping this
+                 pre-enabled (as it used to be) meant the real Enter link was
+                 live and clickable for however long the settings check took,
+                 so a fast click during Coming Soon/Maintenance could slip
+                 through before the button ever updated. -->
+            <a class="btn-enter is-disabled" id="welcome-btn"><img class="btn-sit-rat" src="assets/img/rat_sit3.png" alt="" aria-hidden="true"><span id="welcome-btn-label">Loading…</span></a>
         </div>
     </main>
 

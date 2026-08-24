@@ -12,6 +12,11 @@
     <meta property="og:title" content="Maze Rats">
     <meta property="og:description" content="A fan-run archive preserving the history of maze rooms across Habbo Hotel.">
     <meta property="og:type" content="website">
+    <meta property="og:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -19,15 +24,15 @@
 
     <header class="site-header">
         <div class="brand-group">
-            <a class="brand" href="home.html">
+            <div class="brand">
                 <span class="brand-text">MAZE RATS</span>
-            </a>
+                <span class="brand-tagline">Every maze. One place.</span>
+            </div>
             <a class="header-badge" href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Discord</a>
         </div>
         <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
         <nav class="site-nav">
             <a href="home.html" data-page="home">Home</a>
-            <a href="about.html" data-page="about">About</a>
         </nav>
     </header>
 
@@ -99,11 +104,13 @@
         <div class="modal">
             <div class="chrome-titlebar">
                 <h2 id="modal-name"></h2>
-                <button class="chrome-close" id="modal-close" aria-label="Close">&times;</button>
+                <button class="chrome-close" id="modal-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
             </div>
             <div class="chrome-frame">
                 <div class="modal-thumb" id="modal-thumb">
-                    <img class="modal-gallery-img" id="modal-gallery-img" alt="" style="display:none;">
+                    <div class="gallery-viewport" id="gallery-viewport">
+                        <img class="modal-gallery-img" id="modal-gallery-img" alt="" style="display:none;">
+                    </div>
                     <button class="gallery-nav gallery-prev" id="gallery-prev" aria-label="Previous room" style="display:none;">&#10094;</button>
                     <button class="gallery-nav gallery-next" id="gallery-next" aria-label="Next room" style="display:none;">&#10095;</button>
                     <span class="gallery-bonus-tab" id="gallery-bonus-tab" style="display:none;">Side Quest</span>
@@ -111,15 +118,23 @@
                     <span class="gallery-counter gallery-position" id="gallery-position" style="display:none;"></span>
                 </div>
                 <div class="modal-body">
-                    <p class="room-creator" id="modal-creator"></p>
+                    <div class="modal-top-row">
+                        <p class="room-creator" id="modal-creator"></p>
+                        <div class="room-tags" id="modal-tags"></div>
+                    </div>
                     <div class="modal-meta" id="modal-meta"></div>
-                    <p class="room-desc-full" id="modal-desc"></p>
-                    <div class="room-tags" id="modal-tags"></div>
-                    <div class="gallery-strip" id="gallery-strip" style="display:none;"></div>
-                    <p style="margin-top:18px;">
+                    <div class="room-desc-box" id="room-desc-box">
+                        <p class="room-desc-full" id="modal-desc"></p>
+                        <div class="room-links-refs" id="modal-links-wrap" style="display:none;">
+                            <span class="room-links-refs-label">Links &amp; References</span>
+                            <p class="room-links-refs-text" id="modal-links"></p>
+                        </div>
+                    </div>
+                    <p class="modal-visit-link">
                         <a class="btn" id="modal-link" href="#" target="_blank" rel="noopener">Visit Room</a>
                     </p>
                 </div>
+                <div class="gallery-strip" id="gallery-strip" style="display:none;"></div>
             </div>
         </div>
     </div>

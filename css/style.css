@@ -28,11 +28,39 @@
     --chrome-row: #2e1d0d;
     --chrome-row-featured: #4a3018;
     --frame-bg: #554736;
+    --frame-bg-light: #61513d;
 }
 
 * { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; }
+/* Site-wide scrollbar treatment — every scrolling element (this page
+   scroll, .home-results, .modal-overlay, .gallery-strip, .room-desc-box,
+   admin textareas) shares this same thin, rounded, low-contrast thumb
+   instead of each browser's blocky default. Set once here on html so it's
+   the fallback everywhere; anything with a differently-coloured surrounding
+   (the white admin inputs) overrides the track/thumb colours locally. */
+html {
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: var(--wood-dark) var(--frame-bg);
+}
+
+html::-webkit-scrollbar { width: 10px; }
+html::-webkit-scrollbar-track {
+    background: var(--frame-bg);
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+}
+html::-webkit-scrollbar-thumb {
+    background: var(--wood-dark);
+    border-radius: 6px;
+}
+/* No arrow buttons — beyond just looking cleaner, WebKit reserves square
+   button-sized space at each end of the track by default even with no
+   arrow icon drawn, which stops the thumb ever reaching the fully-rounded
+   top/bottom (or left/right, for horizontal bars) of the track. Zeroing
+   this out is what lets the thumb sit flush against that rounded end. */
+html::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: var(--frame-bg); }
 
 body {
     margin: 0;
@@ -51,6 +79,13 @@ body {
     font-family: 'Roboto', sans-serif;
     font-size: 16px;
     line-height: 1.5;
+    /* Without this, browsers show an I-beam text-select cursor over plain
+       headings/paragraphs (anything with cursor: auto, which is most text
+       on the page) — cursor inherits, so setting it here once gives every
+       non-interactive element a plain arrow. Actual controls (buttons,
+       links, clickable rows, tags) all set their own cursor: pointer
+       explicitly and take priority over this regardless. */
+    cursor: default;
 }
 
 h1, h2, h3, h4 {
@@ -82,10 +117,12 @@ p { color: var(--parchment-dim); }
     backdrop-filter: blur(4px);
 }
 
+/* Column, not row — .brand-tagline (where present) stacks directly under
+   .brand-text instead of sitting beside it. */
 .site-header .brand {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    flex-direction: column;
+    align-items: flex-start;
     text-decoration: none;
 }
 
@@ -95,6 +132,19 @@ p { color: var(--parchment-dim); }
     font-size: 1.15rem;
     color: var(--parchment);
     letter-spacing: 2px;
+    /* Overrides body's line-height: 1.5 — left alone, that reserves a lot
+       of phantom space below the glyphs before .brand-tagline starts. */
+    line-height: 1;
+}
+
+.brand-tagline {
+    display: block;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.62rem;
+    color: var(--parchment-dim);
+    letter-spacing: 0.4px;
+    line-height: 1;
+    margin-top: 3px;
 }
 
 /* Groups the brand link with whatever small pill sits next to it (the
@@ -505,7 +555,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
     background-repeat: repeat;
     background-color: var(--chrome-fill);
     image-rendering: pixelated;
-    border-bottom: 2px solid var(--chrome-border);
 }
 
 .chrome-titlebar h1,
@@ -554,6 +603,29 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 .chrome-close:hover { background: #fff; }
+
+/* The room-viewing modal's close button is just the pixel-art X image
+   itself — no button chrome — so it overrides .chrome-close's frame back
+   out to nothing. Scoped to its id rather than .chrome-close so the admin
+   confirm/info dialogs (which share that class) keep their plain "×"
+   glyph in the normal cream button frame. */
+#modal-close {
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    width: auto;
+    height: auto;
+    padding: 6px;
+}
+
+#modal-close:hover { background: none; }
+
+#modal-close img {
+    width: 14px;
+    height: auto;
+    image-rendering: pixelated;
+}
 
 .chrome-body { padding: 18px; }
 
@@ -630,23 +702,30 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding-bottom: 1px;
 }
 
+/* Cancels .chrome-body's 18px right padding (a scrollbar renders at this
+   element's own border-box edge, so without this it sits 18px in from the
+   frame, not tight against it) and puts most of that space back as padding
+   instead, so the actual list content keeps roughly its old inset — only
+   the scrollbar itself moves out to the frame's edge. */
 .home-results {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding-right: 4px;
+    margin-right: -18px;
+    padding-right: 14px;
 }
 
 .home-results::-webkit-scrollbar { width: 10px; }
 .home-results::-webkit-scrollbar-track {
-    background: var(--chrome-row);
+    background: var(--frame-bg);
     border: 1px solid var(--chrome-border);
     border-radius: 6px;
 }
 .home-results::-webkit-scrollbar-thumb {
-    background: var(--chrome-border);
+    background: var(--wood-dark);
     border-radius: 6px;
 }
+.home-results::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: var(--frame-bg); }
 
 /* ---------- room list (Habbo navigator style) ---------- */
 
@@ -689,11 +768,40 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-radius: 10px;
     border: 2px solid var(--chrome-border);
     background-color: var(--wood-dark);
-    background-size: cover;
-    background-position: center;
     position: relative;
     flex-shrink: 0;
 }
+
+/* Clips the zoomed image to the thumbnail's rounded corners — kept off
+   .row-thumb itself because .status-badge is a child of .row-thumb too,
+   deliberately positioned to poke outside its top-right corner (negative
+   top/right); overflow:hidden there was clipping the badge along with the
+   image instead of just the image. */
+.row-thumb-crop {
+    width: 100%;
+    height: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* A real <img loading="lazy"> instead of a CSS background-image — offscreen
+   rows don't even request their thumbnail until scrolled near, and this is
+   what lets the fade-in below work at all (background-image swaps have no
+   "loaded" moment JS/CSS can hook). Starts invisible and fades in once
+   wireThumbFadeIn (home.js) marks it .is-loaded, instead of popping in the
+   instant the network request finishes. Scaled slightly past object-fit's
+   own cover crop so it reads as zoomed in, matching every other thumbnail
+   on the site. */
+.row-thumb-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scale(1.15);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.row-thumb-img.is-loaded { opacity: 1; }
 
 .chrome-list-row .row-info {
     flex: 1;
@@ -933,7 +1041,20 @@ body[data-page="home"] .hero { padding-top: 18px; }
        lets the overlay scroll the whole card when it's taller than the
        viewport, while still centering it when it comfortably fits. */
     overflow-y: auto;
+    scrollbar-color: var(--wood-dark) var(--frame-bg);
 }
+
+.modal-overlay::-webkit-scrollbar { width: 10px; }
+.modal-overlay::-webkit-scrollbar-track {
+    background: var(--frame-bg);
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+}
+.modal-overlay::-webkit-scrollbar-thumb {
+    background: var(--wood-dark);
+    border-radius: 6px;
+}
+.modal-overlay::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: var(--frame-bg); }
 
 .modal-overlay.open { display: flex; }
 
@@ -964,6 +1085,19 @@ body[data-page="home"] .hero { padding-top: 18px; }
     to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* Reverse of modalIn, played while .modal-overlay still has "open" (so the
+   overlay stays visible/display:flex for the animation's duration) — see
+   closeModal() in home.js, which adds "closing" and waits for this to
+   finish before actually hiding the overlay. */
+.modal-overlay.closing .modal {
+    animation: modalOut 0.2s ease-in forwards;
+}
+
+@keyframes modalOut {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to { opacity: 0; transform: translateY(10px) scale(0.98); }
+}
+
 .modal-thumb {
     height: 220px;
     padding: 20px;
@@ -990,13 +1124,34 @@ body[data-page="home"] .hero { padding-top: 18px; }
     height: 340px;
 }
 
+/* Clips the incoming/outgoing pair while they slide past each other —
+   a plain sibling of the nav arrows/counters inside .modal-thumb, so
+   clipping the image never clips them too. */
+.gallery-viewport {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 8px;
+}
+
 .modal-gallery-img {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: contain;
     background: transparent;
     cursor: zoom-in;
     border-radius: 8px;
+    transition: transform 0.95s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* A throwaway clone of .modal-gallery-img, injected only for the moment a
+   slide is in flight (see slideGalleryImage in home.js) — carries the
+   outgoing image out while the real element carries the new one in. */
+.gallery-slide-outgoing {
+    pointer-events: none;
 }
 
 /* ---------- image lightbox ---------- */
@@ -1141,30 +1296,51 @@ body[data-page="home"] .hero { padding-top: 18px; }
     50% { box-shadow: 0 0 9px 2px rgba(199, 166, 121, 0.85); }
 }
 
+/* Its own small panel, inset from .chrome-frame's edges with a margin —
+   left/right match .modal-body's own 22px padding so it lines up with the
+   text above rather than sitting narrower than everything else. No border
+   of its own (unlike the earlier version) — just a fill a shade lighter
+   than .chrome-frame's, and a soft fade at each horizontal edge (see the
+   mask-image below) stands in for a hard boundary, showing the thumbnails
+   gently disappearing into the panel rather than getting cut off. Still
+   the last thing in .chrome-frame, so it still reads as anchored to the
+   bottom of the modal. */
 .gallery-strip {
     display: flex;
     gap: 6px;
     overflow-x: auto;
-    padding: 4px 0 10px;
-    margin-top: 6px;
-    scrollbar-color: var(--chrome-border) var(--chrome-row);
+    margin: 12px 22px 10px;
+    padding: 8px 10px;
+    background: var(--frame-bg-light);
+    border-radius: 8px;
+    scrollbar-color: var(--wood-dark) var(--frame-bg);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
 }
 
+/* Same colours as every other scrollbar on the site (.home-results,
+   .modal-overlay, .room-desc-box, html) — this one very deliberately
+   doesn't get its own custom treatment, it should just look like the rest. */
 .gallery-strip::-webkit-scrollbar { height: 10px; }
 .gallery-strip::-webkit-scrollbar-track {
-    background: var(--chrome-row);
+    background: var(--frame-bg);
     border: 1px solid var(--chrome-border);
     border-radius: 6px;
 }
 .gallery-strip::-webkit-scrollbar-thumb {
-    background: var(--chrome-border);
+    background: var(--wood-dark);
     border-radius: 6px;
 }
+.gallery-strip::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: var(--frame-bg); }
 
 .gallery-strip img {
     width: 52px;
     height: 52px;
     object-fit: cover;
+    /* Slightly zoomed in, matching the other thumbnails around the site —
+       scale() rather than a bigger crop from the CDN since object-fit
+       already fills the box; this just crops in further on top of that. */
+    transform: scale(1.12);
     border-radius: 8px;
     border: 2px solid transparent;
     cursor: pointer;
@@ -1209,10 +1385,28 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-align: center;
 }
 
+/* Creator on the left, difficulty/tag pills on the right, both riding the
+   same line — .room-tags wraps onto further lines from the right edge if
+   there are enough pills to need it, rather than pushing the creator down. */
+.modal-top-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 .modal-body .room-creator {
     color: var(--amber-bright);
     font-size: 0.85rem;
     margin: 0;
+    flex-shrink: 0;
+}
+
+.modal-top-row .room-tags {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 5px;
 }
 
 .modal-meta {
@@ -1231,12 +1425,81 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: inline-flex;
 }
 
+/* Description (plus Links & References right beneath it, when set) is
+   capped and scrolls internally instead of growing the modal indefinitely —
+   scrollbar styled to match .home-results/.gallery-strip. */
+.room-desc-box {
+    max-height: 160px;
+    overflow-y: auto;
+    padding-right: 10px;
+    margin-bottom: 16px;
+}
+
+.room-desc-box::-webkit-scrollbar { width: 10px; }
+.room-desc-box::-webkit-scrollbar-track {
+    background: var(--frame-bg);
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+}
+.room-desc-box::-webkit-scrollbar-thumb {
+    background: var(--wood-dark);
+    border-radius: 6px;
+}
+.room-desc-box::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: var(--frame-bg); }
+
 .modal-body .room-desc-full {
     color: var(--parchment-dim);
     font-size: 0.92rem;
     line-height: 1.6;
-    margin-bottom: 16px;
 }
+
+/* Reads as a continuation of the description rather than a separate card —
+   same text treatment, just a hairline rule and a small caps label to mark
+   where it starts. */
+.room-links-refs {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--chrome-border);
+}
+
+.room-links-refs-label {
+    display: block;
+    font-size: 0.68rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
+    opacity: 0.75;
+    margin-bottom: 6px;
+}
+
+.room-links-refs-text {
+    color: var(--parchment-dim);
+    font-size: 0.92rem;
+    line-height: 1.6;
+    margin: 0;
+    /* References are often one URL per line — preserve that instead of
+       collapsing it into a single run-on line, and let very long URLs
+       break rather than forcing the box to scroll sideways. */
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+/* Themed in place of the browser's default blue/underline — amber like the
+   rest of the site's accents, glowing a light cream on hover/focus instead
+   of just changing colour flatly. */
+.room-links-refs-text a {
+    color: var(--amber-bright);
+    text-decoration: none;
+    transition: color 0.15s, text-shadow 0.2s;
+}
+
+.room-links-refs-text a:hover,
+.room-links-refs-text a:focus-visible {
+    color: #fff8ec;
+    text-shadow: 0 0 8px rgba(255, 248, 236, 0.75);
+}
+
+.modal-visit-link { margin-top: 18px; }
 
 /* ---------- admin page ---------- */
 
@@ -1452,7 +1715,30 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-color: var(--amber);
 }
 
-.admin-field textarea { resize: vertical; font-family: 'Roboto', sans-serif; }
+.admin-date-parts {
+    display: flex;
+    gap: 8px;
+}
+
+.admin-date-parts select,
+.admin-date-parts input { flex: 1 1 0; min-width: 0; }
+
+.admin-field textarea {
+    resize: vertical;
+    font-family: 'Roboto', sans-serif;
+    /* Same thin thumb as everywhere else, just against this field's own
+       white fill instead of the dark chrome — a solid track colour here
+       would look like a stray grey bar rather than blending in. */
+    scrollbar-color: var(--wood-dark) transparent;
+}
+
+.admin-field textarea::-webkit-scrollbar { width: 10px; }
+.admin-field textarea::-webkit-scrollbar-track { background: transparent; }
+.admin-field textarea::-webkit-scrollbar-thumb {
+    background: var(--wood-dark);
+    border-radius: 6px;
+}
+.admin-field textarea::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: var(--frame-bg); }
 
 .admin-form-actions {
     display: flex;
@@ -1496,14 +1782,23 @@ body[data-page="home"] .hero { padding-top: 18px; }
     gap: 8px;
 }
 
+/* Two tiers: thumbnail + name on top, the row's action pills on their own
+   line underneath — cramming all six-plus buttons onto the same line as a
+   48px thumbnail never had room to breathe. */
 .admin-gallery-row {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    flex-direction: column;
+    gap: 8px;
     background: var(--chrome-row);
     border: 1px solid var(--border);
     border-radius: 6px;
     padding: 8px;
+}
+
+.admin-gallery-row-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .admin-gallery-thumb {
@@ -1512,7 +1807,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     flex-shrink: 0;
     border-radius: 8px;
     background-color: var(--bg-panel-light);
-    background-size: cover;
+    background-size: 115%;
     background-position: center;
     border: 1px solid var(--border);
 }
@@ -1525,21 +1820,57 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .admin-gallery-actions {
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 4px;
-    flex-shrink: 0;
-    max-width: 140px;
+    gap: 6px;
 }
 
-.admin-gallery-actions .btn {
-    padding: 6px 10px;
-    font-size: 0.65rem;
+/* Same pill shape/weight as .tag, not the pixel-art .btn frame — mostly
+   transparent at rest, filled in solid only while .active (a real on/off
+   state: Bonus, Run-Through). Plain one-shot actions (Entrance, End,
+   reorder, Remove) never carry .active, so they stay in this same
+   transparent resting state and rely on the hover glow for feedback. */
+.admin-pill-btn {
+    font-size: 0.6rem;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    font-weight: 700;
+    padding: 3px 10px;
+    border: 1.5px solid var(--chrome-highlight);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--parchment-dim);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s, box-shadow 0.2s;
 }
 
-.admin-gallery-bonus.active {
-    background: var(--amber);
-    color: #241505;
+.admin-pill-btn:hover:not(:disabled) {
     border-color: var(--amber-bright);
+    color: #fff8ec;
+    box-shadow: 0 0 8px rgba(255, 248, 236, 0.65);
+}
+
+.admin-pill-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.admin-pill-btn.active {
+    background: var(--amber-bright);
+    border-color: var(--amber-bright);
+    color: #241505;
+}
+
+/* Remove reads as destructive even at rest — a dim red border/text instead
+   of the neutral pill colour — while still following the same "solid only
+   when active" rule (it just never has an active state to reach). */
+.admin-pill-btn.admin-pill-danger {
+    border-color: rgba(161, 70, 47, 0.7);
+    color: #c98468;
+}
+
+.admin-pill-btn.admin-pill-danger:hover:not(:disabled) {
+    border-color: var(--danger);
+    color: #fff0ec;
+    box-shadow: 0 0 8px rgba(161, 70, 47, 0.65);
 }
 
 .admin-gallery-add {

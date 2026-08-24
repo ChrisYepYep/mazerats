@@ -30,12 +30,38 @@ document.addEventListener("DOMContentLoaded", () => {
     let workingRooms = [];
     let workingEvents = [];
     let workingAdmins = [];
+    let roomsQuery = "";
+    let roomsSortBy = "name";
+    const roomsSearchInput = document.getElementById("rooms-search");
+    const roomsSortSelect = document.getElementById("rooms-sort");
     // Which of "rooms"/"events" the floating Save/Cancel currently act on —
     // null whenever neither form is open (they're hidden then too).
     let activeFormKey = null;
 
     // Kept in this exact order everywhere (easiest → hardest) — js/home.js
     // has its own copy of the value/label pairs for rendering the pill.
+    // Same order used by the rooms-sort dropdown's difficulty options and by
+    // the public site's own room-sort (js/home.js) — kept in sync manually
+    // since each file already has its own small copy of the difficulty list.
+    const DIFFICULTY_ORDER = ["easy", "medium", "hard", "very-hard", "extreme"];
+
+    const MONTH_NAMES = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ];
+
+    // A maze's opening date is stored as "YYYY-MM-DD", or "YYYY-MM" when the
+    // exact day isn't known (the admin form's Day dropdown left on "—") —
+    // js/home.js's formatMazeDate shows the day-less form as just "Month
+    // Year" on the public site instead of guessing a day.
+    function parseMazeDate(dateStr) {
+        const full = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || "");
+        if (full) return { year: full[1], month: full[2], day: full[3] };
+        const monthOnly = /^(\d{4})-(\d{2})$/.exec(dateStr || "");
+        if (monthOnly) return { year: monthOnly[1], month: monthOnly[2], day: "" };
+        return { year: "", month: "", day: "" };
+    }
+
     const DIFFICULTY_OPTIONS = [
         ["", "Not rated"],
         ["easy", "Easy"],
@@ -52,7 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
             fieldMap: { title: "name", subtitle: "creator", date: "added" },
             titleLabel: "Maze Name",
             subtitleLabel: "Creator (Habbo username)",
-            dateLabel: "Date opened (YYYY-MM-DD)",
+            dateLabel: "Date opened",
             statusOptions: [["open", "Open"], ["closed", "Closed"], ["collab", "Collab"], ["unknown", "Unknown"]],
             getAll: () => workingRooms,
             create: item => Api.createRoom(adminToken, item),
@@ -174,8 +200,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // stores {image, label} objects instead so labels aren't tied to a
     // filename. Normalize both shapes so older seeded rooms keep working.
     function normalizeGalleryEntry(entry) {
-        if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry), bonus: false };
-        return { image: entry.image, label: entry.label || deriveGalleryLabel(entry.image), bonus: !!entry.bonus };
+        if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry), bonus: false, runThrough: false };
+        return {
+            image: entry.image,
+            label: entry.label || deriveGalleryLabel(entry.image),
+            bonus: !!entry.bonus,
+            runThrough: !!entry.runThrough
+        };
     }
 
     function wireThumbUpload(formEl, uploadPrefix) {
@@ -417,19 +448,28 @@ document.addEventListener("DOMContentLoaded", () => {
         const addBtn = formEl.querySelector(".admin-gallery-add-btn");
         const status = formEl.querySelector(".admin-gallery-status");
 
+        // Every row's buttons sit on their own line under the name field
+        // (rather than crowding the thumbnail on a single row) and share
+        // .admin-pill-btn — the same rounded, mostly-transparent pill look
+        // used for tags elsewhere on the site, solid-filled only while
+        // .active (Bonus/Run-Through, the two that carry a real on/off
+        // state; the rest are one-shot actions and never get .active).
         function renderGalleryList() {
             const draft = formEl._galleryDraft;
             listEl.innerHTML = draft.map((g, i) => `
                 <div class="admin-gallery-row" data-index="${i}">
-                    <div class="admin-gallery-thumb" style="${g.image ? `background-image:url('${imgCdn(g.image, 100, 100, 55)}');` : ""}"></div>
-                    <input type="text" class="admin-gallery-label" value="${g.label || ""}" placeholder="Room label">
+                    <div class="admin-gallery-row-top">
+                        <div class="admin-gallery-thumb" style="${g.image ? `background-image:url('${imgCdn(g.image, 100, 100, 55)}');` : ""}"></div>
+                        <input type="text" class="admin-gallery-label" value="${g.label || ""}" placeholder="Room label">
+                    </div>
                     <div class="admin-gallery-actions">
-                        <button type="button" class="btn admin-gallery-bonus ${g.bonus ? "active" : ""}" title="Mark as Bonus Room">Bonus</button>
-                        <button type="button" class="btn admin-gallery-make-entrance" title="Make this the Entrance image">Entrance</button>
-                        <button type="button" class="btn admin-gallery-make-finish" title="Make this the Finish image">End</button>
-                        <button type="button" class="btn admin-gallery-up" ${i === 0 ? "disabled" : ""} title="Move up">&#9650;</button>
-                        <button type="button" class="btn admin-gallery-down" ${i === draft.length - 1 ? "disabled" : ""} title="Move down">&#9660;</button>
-                        <button type="button" class="btn admin-delete-btn admin-gallery-remove" title="Remove">Remove</button>
+                        <button type="button" class="admin-pill-btn admin-gallery-bonus ${g.bonus ? "active" : ""}" title="Mark as Bonus Room">Bonus</button>
+                        <button type="button" class="admin-pill-btn admin-gallery-run-through ${g.runThrough ? "active" : ""}" title="Mark as a run-through room — excluded from the room count and number">Run-Through</button>
+                        <button type="button" class="admin-pill-btn admin-gallery-make-entrance" title="Make this the Entrance image">Entrance</button>
+                        <button type="button" class="admin-pill-btn admin-gallery-make-finish" title="Make this the Finish image">End</button>
+                        <button type="button" class="admin-pill-btn admin-gallery-up" ${i === 0 ? "disabled" : ""} title="Move up">&#9650; Up</button>
+                        <button type="button" class="admin-pill-btn admin-gallery-down" ${i === draft.length - 1 ? "disabled" : ""} title="Move down">&#9660; Down</button>
+                        <button type="button" class="admin-pill-btn admin-pill-danger admin-gallery-remove" title="Remove">Remove</button>
                     </div>
                 </div>
             `).join("");
@@ -438,6 +478,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 const i = Number(row.dataset.index);
                 row.querySelector(".admin-gallery-bonus").addEventListener("click", () => {
                     draft[i].bonus = !draft[i].bonus;
+                    renderGalleryList();
+                });
+                row.querySelector(".admin-gallery-run-through").addEventListener("click", () => {
+                    draft[i].runThrough = !draft[i].runThrough;
                     renderGalleryList();
                 });
                 row.querySelector(".admin-gallery-make-entrance").addEventListener("click", () => {
@@ -515,26 +559,64 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------- list rendering ----------
 
+    // Search/sort (rooms only, for now) filters and reorders what's shown,
+    // but openForm/deleteItem still need the item's real index into
+    // workingRooms — so this pairs each item with that original index
+    // *before* filtering/sorting, and the row's click handlers close over
+    // that paired index rather than its position in the display list.
+    function visibleRoomEntries() {
+        const q = roomsQuery.trim().toLowerCase();
+        let entries = workingRooms.map((item, index) => ({ item, index }));
+        if (q) {
+            entries = entries.filter(({ item }) => {
+                const haystack = [item.name, item.creator, ...(item.tags || [])].join(" ").toLowerCase();
+                return haystack.includes(q);
+            });
+        }
+        if (roomsSortBy === "date") {
+            entries.sort((a, b) => (b.item.added || "").localeCompare(a.item.added || ""));
+        } else if (roomsSortBy === "difficulty-asc" || roomsSortBy === "difficulty-desc") {
+            const dir = roomsSortBy === "difficulty-asc" ? 1 : -1;
+            entries.sort((a, b) => {
+                const ai = DIFFICULTY_ORDER.indexOf(a.item.difficulty);
+                const bi = DIFFICULTY_ORDER.indexOf(b.item.difficulty);
+                if (ai === -1 && bi === -1) return 0;
+                if (ai === -1) return 1;
+                if (bi === -1) return -1;
+                return (ai - bi) * dir;
+            });
+        } else {
+            entries.sort((a, b) => (a.item.name || "").localeCompare(b.item.name || ""));
+        }
+        return entries;
+    }
+
     function renderList(key) {
         const cfg = COLLECTIONS[key];
-        const items = cfg.getAll();
+        const entries = key === "rooms" ? visibleRoomEntries() : cfg.getAll().map((item, index) => ({ item, index }));
         cfg.listEl.innerHTML = "";
 
-        if (!items.length) {
+        if (!entries.length) {
             const empty = document.createElement("p");
             empty.className = "admin-empty";
-            empty.textContent = `No ${cfg.plural.toLowerCase()} yet — add the first one below.`;
+            empty.textContent = cfg.getAll().length
+                ? `No ${cfg.plural.toLowerCase()} match that search.`
+                : `No ${cfg.plural.toLowerCase()} yet — add the first one below.`;
             cfg.listEl.appendChild(empty);
             return;
         }
 
-        items.forEach((item, index) => {
+        entries.forEach(({ item, index }) => {
             const title = item[cfg.fieldMap.title] || "(untitled)";
             const subtitle = item[cfg.fieldMap.subtitle] || "";
+            // Same fallback as the public site: no thumbnail set falls back
+            // to the entrance shot rather than showing an empty square.
+            const thumbSrc = item.thumb || (item.entrance && item.entrance.image) || "";
             const row = document.createElement("div");
             row.className = "chrome-list-row admin-row";
             row.innerHTML = `
-                <div class="row-thumb" style="${item.thumb ? `background-image:url('${imgCdn(item.thumb, 160, 160, 65)}');` : ""}">
+                <div class="row-thumb">
+                    ${thumbSrc ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(thumbSrc, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
                     <span class="status-badge status-${item.status}">${item.status}</span>
                 </div>
                 <div class="row-info">
@@ -549,7 +631,26 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
             row.querySelector(".admin-edit-btn").addEventListener("click", () => openForm(key, index));
             row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteItem(key, index));
+            const rowImg = row.querySelector(".row-thumb-img");
+            if (rowImg) {
+                if (rowImg.complete) rowImg.classList.add("is-loaded");
+                else rowImg.addEventListener("load", () => rowImg.classList.add("is-loaded"), { once: true });
+            }
             cfg.listEl.appendChild(row);
+        });
+    }
+
+    if (roomsSearchInput) {
+        roomsSearchInput.addEventListener("input", e => {
+            roomsQuery = e.target.value;
+            renderList("rooms");
+        });
+    }
+    if (roomsSortSelect) {
+        roomsSortSelect.value = roomsSortBy;
+        roomsSortSelect.addEventListener("change", e => {
+            roomsSortBy = e.target.value;
+            renderList("rooms");
         });
     }
 
@@ -584,6 +685,20 @@ document.addEventListener("DOMContentLoaded", () => {
         const start = isEvents ? splitIso(item.date) : { date: "", time: "" };
         const end = isEvents ? splitIso(item.endDate) : { date: "", time: "" };
 
+        const openedDate = isRooms ? parseMazeDate(item[cfg.fieldMap.date]) : { day: "", month: "", year: "" };
+        const dayOptionsHtml = ["<option value=\"\">—</option>"].concat(
+            Array.from({ length: 31 }, (_, i) => {
+                const v = String(i + 1).padStart(2, "0");
+                return `<option value="${v}" ${openedDate.day === v ? "selected" : ""}>${i + 1}</option>`;
+            })
+        ).join("");
+        const monthOptionsHtml = ["<option value=\"\">Month</option>"].concat(
+            MONTH_NAMES.map((name, i) => {
+                const v = String(i + 1).padStart(2, "0");
+                return `<option value="${v}" ${openedDate.month === v ? "selected" : ""}>${name}</option>`;
+            })
+        ).join("");
+
         const dateFieldHtml = isEvents
             ? `
                 ${fieldRow("Event start date (UTC)", `<input type="date" name="startDate" required value="${start.date}">`)}
@@ -592,7 +707,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${fieldRow("Event end time (UTC, 24-hour)", `<input type="time" name="endTime" required value="${end.time}">`)}
                 <p class="admin-hint">All four fields are UTC. The site shows this as-is — it does not convert to a visitor's local timezone.</p>
               `
-            : fieldRow(cfg.dateLabel, `<input type="text" name="date" value="${item[cfg.fieldMap.date] || ""}">`);
+            : `
+                <div class="admin-field admin-date-field">
+                    <span>${cfg.dateLabel}</span>
+                    <div class="admin-date-parts">
+                        <select name="dateDay" aria-label="Day">${dayOptionsHtml}</select>
+                        <select name="dateMonth" aria-label="Month">${monthOptionsHtml}</select>
+                        <input type="number" name="dateYear" aria-label="Year" placeholder="Year" min="2000" max="2100" value="${openedDate.year}">
+                    </div>
+                    <p class="admin-hint">Leave Day on "—" if the exact day it opened isn't known — the site will just show the month and year.</p>
+                </div>
+              `;
 
         const tagsFieldHtml = isRooms
             ? `
@@ -620,10 +745,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span>${title}</span>
                     <p class="admin-hint">${hint}</p>
                     <div class="admin-gallery-row">
-                        <div class="admin-gallery-thumb" style="${entry.image ? `background-image:url('${imgCdn(entry.image, 100, 100, 55)}');` : ""}"></div>
-                        <input type="text" name="${kind}Label" class="admin-gallery-label" placeholder="Label (e.g. ${kindLabel})" value="${entry.label || kindLabel}">
+                        <div class="admin-gallery-row-top">
+                            <div class="admin-gallery-thumb" style="${entry.image ? `background-image:url('${imgCdn(entry.image, 100, 100, 55)}');` : ""}"></div>
+                            <input type="text" name="${kind}Label" class="admin-gallery-label" placeholder="Label (e.g. ${kindLabel})" value="${entry.label || kindLabel}">
+                        </div>
                         <div class="admin-gallery-actions">
-                            <button type="button" class="btn admin-delete-btn admin-${kind}-remove" title="Remove" ${entry.image ? "" : "disabled"}>Remove</button>
+                            <button type="button" class="admin-pill-btn admin-pill-danger admin-${kind}-remove" title="Remove" ${entry.image ? "" : "disabled"}>Remove</button>
                         </div>
                     </div>
                     <input type="hidden" name="${kind}Image" value="${entry.image || ""}">
@@ -678,6 +805,7 @@ document.addEventListener("DOMContentLoaded", () => {
             `)}
             ${fieldRow("Short description (shown on the card)", `<textarea name="description" rows="2">${item.description || ""}</textarea>`)}
             ${fieldRow("Full details (shown in the popup, optional)", `<textarea name="details" rows="4">${item.details || ""}</textarea>`)}
+            ${isRooms ? fieldRow("Links &amp; References (optional, shown directly beneath the description)", `<textarea name="linksReferences" rows="3">${item.linksReferences || ""}</textarea>`) : ""}
             ${fieldRow("Habbo link (optional)", `<input type="text" name="habboLink" value="${item.habboLink || ""}" placeholder="https://...">`)}
             ${entranceSectionHtml}
             ${gallerySectionHtml}
@@ -821,11 +949,18 @@ document.addEventListener("DOMContentLoaded", () => {
             payload.date = data.startDate && data.startTime ? `${data.startDate}T${data.startTime}:00Z` : "";
             payload.endDate = data.endDate && data.endTime ? `${data.endDate}T${data.endTime}:00Z` : "";
         } else {
-            payload[cfg.fieldMap.date] = data.date;
+            // Day is optional — a maze whose exact opening day isn't known
+            // saves as "YYYY-MM" instead of guessing a day, and
+            // js/home.js's formatMazeDate shows that as just "Month Year".
+            const year = (data.dateYear || "").trim();
+            const month = data.dateMonth || "";
+            const day = data.dateDay || "";
+            payload[cfg.fieldMap.date] = year && month ? `${year.padStart(4, "0")}-${month}${day ? `-${day}` : ""}` : "";
         }
 
         if (key === "rooms") {
             payload.difficulty = data.difficulty || "";
+            payload.linksReferences = data.linksReferences || "";
             payload.gallery = form._galleryDraft || [];
             const entranceImage = (data.entranceImage || "").trim();
             payload.entrance = entranceImage ? { image: entranceImage, label: (data.entranceLabel || "").trim() || "Entrance" } : null;
