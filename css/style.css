@@ -187,6 +187,52 @@ main { display: block; flex: 1 0 auto; }
     color: var(--parchment-dim);
 }
 
+/* ---------- welcome / splash screen ---------- */
+
+.welcome-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 60px 20px;
+}
+
+/* Same stacked MAZE/RATS treatment as the homepage hero, just bigger. */
+.welcome-title {
+    font-size: clamp(3.4rem, 14vw, 7.5rem);
+    margin-bottom: 30px;
+}
+
+.btn-enter {
+    display: inline-block;
+    padding: 10px 34px;
+    border-style: solid;
+    border-width: 7px;
+    border-image-source: url('../assets/img/window_frame.png');
+    border-image-slice: 14 fill;
+    border-image-width: 7px;
+    border-image-repeat: stretch;
+    border-radius: 7px;
+    font-family: 'Silkscreen', monospace;
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: #fff8ec;
+    text-decoration: none;
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
+    /* Same window-frame art as .chrome-window/.modal, darkened into a much
+       smaller, plainer button rather than a new asset. */
+    filter: brightness(0.55) saturate(0.85);
+    transition: filter 0.15s, transform 0.15s;
+}
+
+.btn-enter:hover {
+    filter: brightness(0.7) saturate(0.9);
+    transform: translateY(-2px);
+}
+
 /* ---------- buttons ---------- */
 
 .btn {

@@ -1,4 +1,4 @@
-/* Drives the homepage (index.html) — the only browsing page on the site.
+/* Drives the homepage (home.html) — the only browsing page on the site.
    "Featured" is the default state (no nav button active): one highlighted
    maze, no search. Clicking Open Mazes / Archived Mazes / Events switches
    to a full searchable list in the same frame; clicking that same button

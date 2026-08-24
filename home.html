@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#120c07">
+    <title>Maze Rats — A Habbo Hotel Maze Room Archive</title>
+    <meta name="description" content="Maze Rats is a fan-run archive preserving the history of maze rooms across Habbo Hotel.">
+    <meta property="og:title" content="Maze Rats">
+    <meta property="og:description" content="A fan-run archive preserving the history of maze rooms across Habbo Hotel.">
+    <meta property="og:type" content="website">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMR%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="home">
+
+    <header class="site-header">
+        <a class="brand" href="home.html">
+            <span class="brand-text">MAZE RATS</span>
+        </a>
+        <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+        <nav class="site-nav">
+            <a href="home.html" data-page="home">Home</a>
+            <a href="about.html" data-page="about">About</a>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h1 class="hero-title"><span>MAZE</span><span>RATS</span></h1>
+            <p class="tagline">An ongoing archive of maze rooms built across Habbo Hotel: Origins; their rooms, their builders, and the ones that are gone but not forgotten.</p>
+        </section>
+
+        <div class="container">
+            <div class="chrome-window">
+                <div class="chrome-titlebar">
+                    <h2>Origins Mazes</h2>
+                </div>
+                <div class="chrome-nav">
+                    <button class="chrome-nav-btn" data-view="open">Open Mazes</button>
+                    <button class="chrome-nav-btn" data-view="archived">Archived Mazes</button>
+                    <button class="chrome-nav-btn" data-view="events">Events</button>
+                </div>
+                <div class="chrome-frame">
+                    <div class="chrome-body">
+                        <p class="chrome-intro" id="featured-intro"></p>
+                        <div class="archive-controls" id="search-wrap" style="display:none;">
+                            <div class="search-box">
+                                <input type="text" id="room-search" placeholder="Search by name, builder, or tag...">
+                            </div>
+                        </div>
+                        <div class="home-results">
+                            <div class="chrome-list" id="featured-grid"></div>
+                            <p class="admin-empty" id="featured-empty" style="display:none;"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Full-size image lightbox, opened by clicking the gallery image in the room modal -->
+    <div class="lightbox-overlay" id="image-lightbox">
+        <button class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
+        <button class="gallery-nav lightbox-prev" id="lightbox-prev" aria-label="Previous room">&#10094;</button>
+        <img class="lightbox-img" id="lightbox-img" alt="">
+        <button class="gallery-nav lightbox-next" id="lightbox-next" aria-label="Next room">&#10095;</button>
+        <span class="gallery-counter lightbox-counter" id="lightbox-counter"></span>
+    </div>
+
+    <footer class="site-footer">
+        <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
+        <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
+        <p><a href="about.html">Know a maze room that belongs here?</a></p>
+    </footer>
+
+    <!-- Room detail modal -->
+    <div class="modal-overlay" id="room-modal">
+        <div class="modal">
+            <div class="chrome-titlebar">
+                <h2 id="modal-name"></h2>
+                <button class="chrome-close" id="modal-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="chrome-frame">
+                <div class="modal-thumb" id="modal-thumb">
+                    <img class="modal-gallery-img" id="modal-gallery-img" alt="" style="display:none;">
+                    <button class="gallery-nav gallery-prev" id="gallery-prev" aria-label="Previous room" style="display:none;">&#10094;</button>
+                    <button class="gallery-nav gallery-next" id="gallery-next" aria-label="Next room" style="display:none;">&#10095;</button>
+                    <span class="gallery-counter" id="gallery-counter" style="display:none;"></span>
+                </div>
+                <div class="modal-body">
+                    <p class="room-creator" id="modal-creator"></p>
+                    <div class="modal-meta" id="modal-meta"></div>
+                    <p class="room-desc-full" id="modal-desc"></p>
+                    <div class="room-tags" id="modal-tags"></div>
+                    <div class="gallery-strip" id="gallery-strip" style="display:none;"></div>
+                    <p style="margin-top:18px;">
+                        <a class="btn" id="modal-link" href="#" target="_blank" rel="noopener">Visit Room</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/rooms-data.js"></script>
+    <script src="js/events-data.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/site.js"></script>
+    <script src="js/home.js"></script>
+</body>
+</html>
