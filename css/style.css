@@ -437,8 +437,8 @@ main { display: block; flex: 1 0 auto; }
    page height (and the footer along with it) when a view has few or no
    items — views taller than this still grow past it as normal. */
 .home-results {
-    min-height: 340px;
-    max-height: 480px;
+    min-height: 300px;
+    max-height: 300px;
     overflow-y: auto;
     padding-right: 4px;
 }
