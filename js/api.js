@@ -84,8 +84,8 @@ const Api = {
     },
 
     getAdmins(token) { return this._write("/.netlify/functions/auth", "GET", token); },
-    createAdmin(token, username, password) {
-        return this._write("/.netlify/functions/auth", "POST", token, { action: "create", username, password });
+    createAdmin(token, username, password, role) {
+        return this._write("/.netlify/functions/auth", "POST", token, { action: "create", username, password, role });
     },
     resetAdminPassword(token, username, password) {
         return this._write("/.netlify/functions/auth", "PUT", token, { username, password });
@@ -104,5 +104,19 @@ const Api = {
             return ["FURNI MAZE", "ILLUSION", "FLOATING", "FUNCTIONAL", "LONG-FORM"];
         }
     },
-    createTag(token, label) { return this._write("/.netlify/functions/tags", "POST", token, { label }); }
+    createTag(token, label) { return this._write("/.netlify/functions/tags", "POST", token, { label }); },
+
+    async getSiteSettings() {
+        try {
+            const res = await fetch("/.netlify/functions/settings");
+            if (!res.ok) throw new Error(`settings fetch failed: ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.warn("Live site settings unavailable, defaulting to Enter.", e);
+            return { landingState: "enter" };
+        }
+    },
+    updateSiteSettings(token, landingState) {
+        return this._write("/.netlify/functions/settings", "PUT", token, { landingState });
+    }
 };

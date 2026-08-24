@@ -97,6 +97,40 @@ p { color: var(--parchment-dim); }
     letter-spacing: 2px;
 }
 
+/* Groups the brand link with whatever small pill sits next to it (the
+   "Admin" tag, the Discord link) so they read as one unit at the header's
+   left edge instead of competing with .site-nav for the space-between. */
+.brand-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Small pill-style tag next to the brand — shared by the "Admin" label
+   (admin.html) and the Discord link (home.html, index.html). Only the link
+   variant (a.header-badge) gets the hover glow; the plain span doesn't. */
+.header-badge {
+    padding: 2px 8px;
+    border: 1px solid var(--amber);
+    border-radius: 10px;
+    font-family: 'Roboto', sans-serif;
+    font-weight: 700;
+    font-size: 0.62rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--amber-bright);
+}
+
+a.header-badge {
+    text-decoration: none;
+    transition: box-shadow 0.2s, background-color 0.2s;
+}
+
+a.header-badge:hover {
+    box-shadow: 0 0 8px 2px rgba(199, 166, 121, 0.55);
+    background-color: rgba(201, 151, 79, 0.12);
+}
+
 nav.site-nav {
     display: flex;
     gap: 22px;
@@ -163,6 +197,12 @@ main { display: block; flex: 1 0 auto; }
     text-align: center;
 }
 
+/* Homepage only — a shorter top bar with everything below pulled up snug
+   underneath it, rather than the more generous spacing every other page
+   still uses. */
+body[data-page="home"] .site-header { padding: 8px 24px; }
+body[data-page="home"] .hero { padding-top: 18px; }
+
 .hero-title {
     display: flex;
     flex-direction: column;
@@ -198,40 +238,92 @@ main { display: block; flex: 1 0 auto; }
     padding: 60px 20px;
 }
 
+/* A single max-content column sized to the wider of its two children (the
+   title), which the button — the narrower one — then stretches to fill
+   (grid's default justify-items: stretch), so the button always matches
+   the title's width exactly, at any viewport size. */
+.welcome-stack {
+    display: grid;
+    grid-template-columns: max-content;
+    justify-content: center;
+}
+
 /* Same stacked MAZE/RATS treatment as the homepage hero, just bigger. */
 .welcome-title {
     font-size: clamp(3.4rem, 14vw, 7.5rem);
     margin-bottom: 30px;
 }
 
+/* Scoped to the landing page's MAZE span specifically (not the homepage
+   hero, which reuses .hero-title/span but has no #welcome-maze) so the
+   handstanding rat only ever shows up here. */
+#welcome-maze {
+    position: relative;
+}
+
+.hand-rat {
+    position: absolute;
+    right: -6px;
+    bottom: 87px;
+    width: 80px;
+    height: auto;
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* Same window-frame border-image as .chrome-window (minus "fill", so the
+   border-image only draws the rim), filled with the same dotted
+   title_pattern.png treatment .chrome-titlebar uses behind its title. */
 .btn-enter {
+    position: relative;
     display: inline-block;
-    padding: 10px 34px;
+    padding: 10px 46px;
     border-style: solid;
     border-width: 7px;
     border-image-source: url('../assets/img/window_frame.png');
-    border-image-slice: 14 fill;
+    border-image-slice: 14;
     border-image-width: 7px;
     border-image-repeat: stretch;
     border-radius: 7px;
+    background-image: url('../assets/img/title_pattern.png');
+    background-repeat: repeat;
+    background-color: var(--chrome-fill);
+    image-rendering: pixelated;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+    text-decoration: none;
+    transition: transform 0.15s;
+}
+
+/* Sits perched on the button's top-left corner. No separate :hover rule is
+   needed to make him move — he's a normal child of .btn-enter, so he rides
+   along with its own transform: translateY(-2px) on hover for free. */
+.btn-sit-rat {
+    position: absolute;
+    top: -90.6px;
+    left: 13.4px;
+    width: 63px;
+    height: auto;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.btn-enter span {
     font-family: 'Silkscreen', monospace;
     font-weight: 700;
     font-size: 0.9rem;
     letter-spacing: 1.5px;
     text-transform: uppercase;
     color: #fff8ec;
-    text-decoration: none;
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
-    /* Same window-frame art as .chrome-window/.modal, darkened into a much
-       smaller, plainer button rather than a new asset. */
-    filter: brightness(0.55) saturate(0.85);
-    transition: filter 0.15s, transform 0.15s;
 }
 
-.btn-enter:hover {
-    filter: brightness(0.7) saturate(0.9);
-    transform: translateY(-2px);
-}
+.btn-enter:hover { transform: translateY(-2px); }
+
+/* Coming Soon / Maintenance — still looks clickable (pointer cursor stays,
+   since removing href would otherwise reset it to the default arrow), but
+   doesn't actually go anywhere, so no hover lift either. */
+.btn-enter.is-disabled { cursor: pointer; }
+.btn-enter.is-disabled:hover { transform: none; }
 
 /* ---------- buttons ---------- */
 
@@ -318,48 +410,87 @@ main { display: block; flex: 1 0 auto; }
 
 /* When a page-level nav sits between the titlebar and the frame (see
    .chrome-nav below), the frame's own top margin is dropped so the two sit
-   flush — the nav's bottom border becomes the frame's top edge. */
+   flush — the nav's bottom border becomes the frame's top edge. Both the
+   top-level and sub nav rows carry the .chrome-nav class, so this covers
+   whichever one actually ends up adjacent to the frame. */
 .chrome-nav + .chrome-frame { margin-top: 0; }
 
-/* Page-level view switcher (e.g. Open Mazes / Archived Mazes / Events),
-   docked directly above the frame. Each button is a fixed width so the whole
-   window — and the frame beneath it — sizes around exactly these 3 buttons,
-   rather than the frame dictating the window's width. */
+/* Two-row page-level view switcher: a top row (Mazes / Events) and a sub
+   row beneath it whose 3 buttons' labels/filters swap depending on which
+   top button is active (see js/home.js). Buttons fill the row edge-to-edge
+   with no gaps, including between the two rows themselves — .chrome-window
+   has its own fixed width, so the nav no longer needs to dictate it. */
 .chrome-nav {
     display: flex;
-    gap: 8px;
+    gap: 0;
     margin: 10px 10px 0;
 }
 
+.chrome-nav-sub { margin-top: 0; }
+
+/* The button's own border/border-image lives on ::before instead of the
+   button itself, so the recoloring filter below (which shifts the sprite
+   away from its baked-in gold toward muted brown / cream) only touches the
+   decorative layer — the label text sits on top, completely unfiltered, so
+   its color and contrast stay exactly what's set below. */
 .chrome-nav-btn {
-    width: 158px;
-    flex-shrink: 0;
+    position: relative;
+    isolation: isolate;
+    flex: 1;
+    min-width: 0;
     appearance: none;
     -webkit-appearance: none;
     background: transparent; /* see the identical note on .chrome-tab — buttons
         have an opaque UA background by default that shows through the
         border-image's transparent corners otherwise. */
+    border: none;
+    color: #f5ecd8;
+    font-family: 'Silkscreen', monospace;
+    font-weight: 700;
+    font-size: 0.72rem;
+    letter-spacing: 0.75px;
+    text-align: center;
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
+    padding: 11px 10px;
+    cursor: pointer;
+    outline: none;
+}
+
+.chrome-nav-btn::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
     border-style: solid;
     border-width: 10px;
     border-image-source: url('../assets/img/btn_inactive.png');
     border-image-slice: 10 fill;
     border-image-width: 10px;
     border-image-repeat: stretch;
-    color: #3a2812;
-    font-family: 'Silkscreen', monospace;
-    font-weight: 400;
-    font-size: 0.66rem;
-    letter-spacing: 0.5px;
-    text-align: center;
-    padding: 1px 4px;
-    cursor: pointer;
-    outline: none;
+    /* Muted brown: desaturated and darkened well away from the sprite's
+       original gold. */
+    filter: sepia(0.25) saturate(0.5) brightness(0.66) contrast(1.05);
 }
 
 .chrome-nav-btn.active {
-    border-image-source: url('../assets/img/btn_active.png');
     color: #241505;
+    text-shadow: none;
 }
+
+.chrome-nav-btn.active::before {
+    border-image-source: url('../assets/img/btn_active.png');
+    /* Cream: desaturated and brightened, instead of gold. */
+    filter: saturate(0.3) brightness(1.3);
+}
+
+/* The Mazes/Events row is the primary pair of tabs, meeting in the middle
+   at 50/50 — a bit larger than the filter row beneath it. */
+.chrome-nav-top .chrome-nav-btn {
+    font-size: 0.85rem;
+    padding: 18px 12px;
+}
+
+.chrome-nav-top .chrome-nav-btn::before { border-width: 13px; }
 
 /* The titlebar carries the dotted texture itself — the title sits nested in
    the middle of the pattern, with its own opaque backing plate breaking the
@@ -436,9 +567,72 @@ main { display: block; flex: 1 0 auto; }
    / Archived / Events on the homepage doesn't collapse or snap the whole
    page height (and the footer along with it) when a view has few or no
    items — views taller than this still grow past it as normal. */
+/* #browse-window (the homepage's Origins Mazes window specifically — not
+   the modal, which also uses .chrome-frame/.chrome-body, or the admin
+   page's windows) is pinned to one total height regardless of which tab is
+   selected. The sub-nav row and the intro-text/search-box swap add or
+   remove their own height depending on the view, so everything below the
+   titlebar is a flex column and .home-results (flex: 1) absorbs whatever
+   space is left over, instead of the window itself resizing. */
+#browse-window {
+    display: flex;
+    flex-direction: column;
+    height: 600px;
+    position: relative;
+}
+
+/* A little rat peeking over the top-right corner of the window, hands
+   resting on the golden frame — sits outside the normal flex flow so it
+   never affects the window's own layout, and paints above .chrome-frame's
+   box-shadow (rather than behind it) since it comes later in source order
+   and shares the same stacking context. */
+.window-peek-rat {
+    position: absolute;
+    top: -51px;
+    right: 28px;
+    width: 78px;
+    height: auto;
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* A second rat, curled up asleep at the bottom-left corner — mostly resting
+   in the empty space below the window, just barely overlapping up onto the
+   bottom edge of the frame (mirrors .window-peek-rat's overlap, but from
+   below instead of above). */
+.window-sleep-rat {
+    position: absolute;
+    bottom: -25px;
+    left: 5px;
+    width: 96px;
+    height: auto;
+    pointer-events: none;
+    z-index: 2;
+}
+
+#browse-window .chrome-frame {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+#browse-window .chrome-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    /* .chrome-body's shared 18px padding otherwise reserves a permanent,
+       unscrollable gap below .home-results — scrolled all the way down,
+       the list still stopped 18px short of the frame's actual bottom
+       edge. Trimmed to match .chrome-list's own 4px bottom padding so
+       content can actually reach down to the frame edge. */
+    padding-bottom: 1px;
+}
+
 .home-results {
-    min-height: 300px;
-    max-height: 300px;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding-right: 4px;
 }
@@ -460,7 +654,12 @@ main { display: block; flex: 1 0 auto; }
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 0 0 4px;
+    /* Top padding isn't decorative — .chrome-list-row:hover lifts the row
+       2px and its .status-badge already sits 8px above the row's own top
+       edge, so without this the scrolling container (.home-results,
+       overflow-y: auto) clips the badge on the first row the moment it's
+       hovered. */
+    padding: 10px 0 4px;
 }
 
 .chrome-list-row {
@@ -517,6 +716,8 @@ main { display: block; flex: 1 0 auto; }
     margin: 0 0 4px;
 }
 
+.row-date { color: var(--parchment-dim); }
+
 .chrome-list-row .row-desc {
     font-size: 0.8rem;
     color: var(--parchment-dim);
@@ -560,19 +761,30 @@ main { display: block; flex: 1 0 auto; }
 .status-open { color: var(--ok); }
 .status-closed { color: var(--danger); }
 .status-unknown { color: var(--unknown); }
+.status-collab { color: var(--amber-bright); }
 .status-upcoming { color: var(--ok); }
 .status-past { color: var(--unknown); }
+.status-archive { color: var(--danger); }
 
 .tag {
-    font-size: 0.63rem;
-    letter-spacing: 0.5px;
+    font-size: 0.56rem;
+    letter-spacing: 0.4px;
     text-transform: uppercase;
-    padding: 2px 8px;
+    padding: 1.5px 6px;
     border: 1.5px solid var(--chrome-highlight);
     border-radius: 10px;
     color: var(--parchment-dim);
     background: rgba(0, 0, 0, 0.2);
 }
+
+/* Difficulty pill — same shape as a regular .tag, just colour-coded easiest
+   (green) to hardest (deep orange). Kept subtle (border + text colour on
+   the same dark fill as every other tag) rather than a solid colour block. */
+.difficulty-easy { color: #7fae52; border-color: #7fae52; }
+.difficulty-medium { color: #b3a24c; border-color: #b3a24c; }
+.difficulty-hard { color: #c98a42; border-color: #c98a42; }
+.difficulty-very-hard { color: #c2692f; border-color: #c2692f; }
+.difficulty-extreme { color: #b8481f; border-color: #b8481f; }
 
 /* ---------- tabs (docked directly under the titlebar, like Habbo's own
    Public Spaces / Rooms tabs) — each tab is the actual btn_active.png /
@@ -617,6 +829,11 @@ main { display: block; flex: 1 0 auto; }
 /* ---------- archive controls ---------- */
 
 .archive-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
     padding: 2px 0 16px;
 }
 
@@ -624,20 +841,25 @@ main { display: block; flex: 1 0 auto; }
    the Open/Archived/Events tabs above the frame — homepage-only element. */
 #search-wrap { margin-top: -14px; }
 
+/* Fills whatever space the sort dropdown (pinned to the row's right edge,
+   see .sort-box below) doesn't need, rather than spanning the full row on
+   its own. */
 .search-box {
     position: relative;
+    flex: 1 1 auto;
+    min-width: 120px;
 }
 
 .search-box input {
     width: 100%;
     background: var(--parchment);
-    border: 2px solid var(--chrome-border);
+    border: 1.5px solid var(--chrome-border);
     color: #3a2812;
     font-family: 'Roboto', sans-serif;
-    padding: 10px 14px;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.3);
+    padding: 6px 11px;
+    border-radius: 5px;
+    font-size: 0.78rem;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 .search-box input::placeholder { color: #6b5638; }
@@ -645,6 +867,41 @@ main { display: block; flex: 1 0 auto; }
 .search-box input:focus {
     outline: none;
     border-color: var(--amber);
+}
+
+.sort-box { flex-shrink: 0; }
+
+.sort-box select {
+    background: var(--parchment);
+    border: 1.5px solid var(--chrome-border);
+    color: #3a2812;
+    font-family: 'Roboto', sans-serif;
+    padding: 6px 10px;
+    border-radius: 5px;
+    font-size: 0.74rem;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+    /* Tints the native dropdown's own selected/hover highlight — support
+       varies by browser (Chromium respects accent-color + option:checked
+       fairly well, Firefox honours the option rules too; the exact native
+       popup styling is otherwise outside CSS's reach). */
+    accent-color: var(--amber-bright);
+}
+
+.sort-box select:focus {
+    outline: none;
+    border-color: var(--amber);
+}
+
+.sort-box select option {
+    background: var(--parchment);
+    color: #3a2812;
+}
+
+.sort-box select option:checked,
+.sort-box select option:hover {
+    background: var(--amber-bright);
+    color: #241505;
 }
 
 .result-count {
@@ -714,6 +971,13 @@ main { display: block; flex: 1 0 auto; }
        text below) rather than the wood/pattern texture. */
     background-color: #453a2c;
     position: relative;
+    /* .chrome-frame's own inset shadow (top+left) is drawn on its own box,
+       which sits *behind* this element's opaque background — without this,
+       the shadow is completely hidden under modal-thumb instead of visible
+       on top of it. Duplicating it here directly fixes that. */
+    box-shadow:
+        inset 0 6px 8px -4px rgba(0, 0, 0, 0.65),
+        inset 6px 0 8px -4px rgba(0, 0, 0, 0.65);
 }
 
 /* The image sits inset within the frame rather than flush against its
@@ -839,6 +1103,44 @@ main { display: block; flex: 1 0 auto; }
     text-overflow: ellipsis;
 }
 
+/* The room's number/total sits separately, top-right of the image, in the
+   same pill style as the label counter at the bottom. */
+.gallery-position {
+    bottom: auto;
+    top: 10px;
+    left: auto;
+    right: 10px;
+    transform: none;
+    max-width: none;
+}
+
+/* A little flag sitting directly above the room-label pill, for rooms the
+   admin has marked optional/bonus — same pill shape as .gallery-counter,
+   just amber instead of neutral, with a slow glow so it actually reads as
+   "special" rather than just another label. */
+.gallery-bonus-tab {
+    position: absolute;
+    bottom: 38px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.65);
+    border: 1px solid var(--amber);
+    color: var(--amber-bright);
+    font-size: 0.6rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-weight: 700;
+    padding: 2px 9px;
+    border-radius: 12px;
+    white-space: nowrap;
+    animation: bonusTabGlow 2.2s ease-in-out infinite;
+}
+
+@keyframes bonusTabGlow {
+    0%, 100% { box-shadow: 0 0 3px 0 rgba(199, 166, 121, 0.35); }
+    50% { box-shadow: 0 0 9px 2px rgba(199, 166, 121, 0.85); }
+}
+
 .gallery-strip {
     display: flex;
     gap: 6px;
@@ -880,6 +1182,33 @@ main { display: block; flex: 1 0 auto; }
 
 .modal-body { padding: 20px 22px 24px; }
 
+/* Small, centered pop-up used for the landing-page Yes/No confirmations and
+   their follow-up "done" message — .modal's default 600px max-width and
+   generous padding are sized for the room detail modal, way more than a
+   one-line prompt needs. */
+.confirm-modal {
+    max-width: 340px;
+}
+
+.confirm-modal .modal-body {
+    padding: 18px 20px 20px;
+}
+
+.confirm-message {
+    text-align: center;
+    margin: 0 0 16px;
+}
+
+.confirm-actions {
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.confirm-actions .btn {
+    min-width: 84px;
+    text-align: center;
+}
+
 .modal-body .room-creator {
     color: var(--amber-bright);
     font-size: 0.85rem;
@@ -910,6 +1239,120 @@ main { display: block; flex: 1 0 auto; }
 }
 
 /* ---------- admin page ---------- */
+
+/* Kept at the same fixed width .chrome-window has always used, centered in
+   .container exactly as before — the sidebar anchors off *this* box's right
+   edge (not a shared flex/grid track), so it can't pull the main content
+   off-center regardless of whether it's showing. */
+.admin-center {
+    position: relative;
+    width: 538px;
+    max-width: 100%;
+    margin: 28px auto 0;
+}
+
+/* Fixed rather than absolute — it and everything in it (Log Out, the
+   Landing Page title/hint, the three toggle buttons) stay in place in the
+   viewport as the maze/event lists below scroll, instead of scrolling away
+   with them. Horizontal position mirrors .admin-center's own centering math
+   (see .admin-floating-actions below for the same calc), since a fixed
+   element can't anchor off .admin-center's box the way the old absolute
+   positioning did. */
+.admin-sidebar {
+    position: fixed;
+    top: 70px;
+    left: calc(50vw + 289px);
+    margin-left: 0;
+    width: 150px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.admin-sidebar-title {
+    font-size: 1rem;
+    margin-bottom: -6px;
+}
+
+@media (max-width: 900px) {
+    .admin-sidebar { position: static; width: 100%; left: auto; margin-top: 24px; }
+}
+
+/* Fixed (viewport-relative, not document-relative) so it stays put while
+   the form underneath it scrolls. .admin-center is always centered at
+   `50vw - 269px` (half its own 538px width) regardless of viewport size,
+   and .admin-sidebar sits 20px past its right edge — this lines up with
+   that same horizontal position without needing JS to measure it. Sits
+   below .admin-sidebar's own fixed position + height. */
+.admin-floating-actions {
+    position: fixed;
+    top: 400px;
+    left: calc(50vw + 289px);
+    width: 150px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 40;
+}
+
+.admin-floating-actions.open { display: flex; }
+
+.admin-floating-actions .btn {
+    width: 100%;
+    text-align: center;
+    padding: 10px 12px;
+}
+
+@media (max-width: 900px) {
+    .admin-floating-actions { position: static; width: 100%; left: auto; margin-top: 16px; }
+}
+
+/* Same window-frame + dotted-pattern treatment as .btn-enter, shrunk down
+   further for a row of small toggle controls. */
+.btn-enter-mini {
+    display: block;
+    width: 100%;
+    padding: 9px 10px;
+    border-style: solid;
+    border-width: 5px;
+    border-image-source: url('../assets/img/window_frame.png');
+    border-image-slice: 14;
+    border-image-width: 5px;
+    border-image-repeat: stretch;
+    border-radius: 5px;
+    background-image: url('../assets/img/title_pattern.png');
+    background-repeat: repeat;
+    background-color: var(--chrome-fill);
+    image-rendering: pixelated;
+    font-family: 'Silkscreen', monospace;
+    font-weight: 700;
+    font-size: 0.65rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #fff8ec;
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
+    text-align: center;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.btn-enter-mini:disabled { opacity: 0.6; cursor: default; }
+
+.btn-enter-mini.active {
+    box-shadow:
+        0 0 14px 3px rgba(111, 143, 79, 0.8),
+        0 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+/* Coming Soon / Maintenance glow dark orange instead of the default green
+   when active, since they're the "site is closed" states. */
+.btn-enter-mini[data-state="coming-soon"].active,
+.btn-enter-mini[data-state="maintenance"].active {
+    box-shadow:
+        0 0 14px 3px rgba(184, 72, 31, 0.8),
+        0 4px 10px rgba(0, 0, 0, 0.5);
+}
 
 .admin-notice {
     text-align: left;
@@ -1081,13 +1524,22 @@ main { display: block; flex: 1 0 auto; }
 
 .admin-gallery-actions {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 4px;
     flex-shrink: 0;
+    max-width: 140px;
 }
 
 .admin-gallery-actions .btn {
     padding: 6px 10px;
     font-size: 0.65rem;
+}
+
+.admin-gallery-bonus.active {
+    background: var(--amber);
+    color: #241505;
+    border-color: var(--amber-bright);
 }
 
 .admin-gallery-add {
@@ -1234,5 +1686,7 @@ main { display: block; flex: 1 0 auto; }
     .chrome-titlebar h1, .chrome-titlebar h2, .chrome-titlebar .chrome-title-text { font-size: 0.8rem; }
     .chrome-tab { font-size: 0.56rem; letter-spacing: 0; border-width: 8px; }
     .chrome-window { width: 100%; }
-    .chrome-nav-btn { width: auto; flex: 1; font-size: 0.56rem; border-width: 8px; }
+    .chrome-nav-btn { width: auto; flex: 1; font-size: 0.6rem; padding: 9px 6px; }
+    .chrome-nav-btn::before { border-width: 8px; }
+    .chrome-nav-top .chrome-nav-btn { font-size: 0.7rem; padding: 14px 8px; }
 }

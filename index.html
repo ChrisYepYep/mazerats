@@ -12,14 +12,23 @@
     <meta property="og:title" content="Maze Rats">
     <meta property="og:description" content="A fan-run archive preserving the history of maze rooms across Habbo Hotel.">
     <meta property="og:type" content="website">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMR%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body data-page="welcome">
 
+    <header class="site-header">
+        <div class="brand-group">
+            <span class="brand-text">MAZE RATS</span>
+            <a class="header-badge" href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Discord</a>
+        </div>
+    </header>
+
     <main class="welcome-screen">
-        <h1 class="hero-title welcome-title"><span>MAZE</span><span>RATS</span></h1>
-        <a class="btn-enter" href="home.html">Enter</a>
+        <div class="welcome-stack">
+            <h1 class="hero-title welcome-title"><span id="welcome-maze">MAZE<img class="hand-rat" src="assets/img/rat_handstand.png" alt="" aria-hidden="true"></span><span>RATS</span></h1>
+            <a class="btn-enter" href="home.html" id="welcome-btn"><img class="btn-sit-rat" src="assets/img/rat_sit.png" alt="" aria-hidden="true"><span id="welcome-btn-label">Enter</span></a>
+        </div>
     </main>
 
     <footer class="site-footer">
@@ -27,5 +36,7 @@
         <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
     </footer>
 
+    <script src="js/api.js"></script>
+    <script src="js/welcome.js"></script>
 </body>
 </html>

@@ -17,22 +17,43 @@ document.addEventListener("DOMContentLoaded", () => {
     const adminsListEl = document.getElementById("admins-list");
     const adminsFormEl = document.getElementById("admins-form");
     const adminsAddBtn = document.getElementById("admins-add-btn");
+    const landingToggleEl = document.getElementById("landing-toggle");
+    const landingToggleBtns = document.querySelectorAll(".btn-enter-mini");
+    const landingToggleStatus = document.getElementById("landing-toggle-status");
+    const floatingActionsEl = document.getElementById("floating-actions");
+    const floatingSaveBtn = document.getElementById("floating-save-btn");
+    const floatingCancelBtn = document.getElementById("floating-cancel-btn");
 
     let adminToken = sessionStorage.getItem(TOKEN_KEY) || "";
     let currentUsername = "";
+    let currentUserRole = "admin";
     let workingRooms = [];
     let workingEvents = [];
     let workingAdmins = [];
+    // Which of "rooms"/"events" the floating Save/Cancel currently act on —
+    // null whenever neither form is open (they're hidden then too).
+    let activeFormKey = null;
+
+    // Kept in this exact order everywhere (easiest → hardest) — js/home.js
+    // has its own copy of the value/label pairs for rendering the pill.
+    const DIFFICULTY_OPTIONS = [
+        ["", "Not rated"],
+        ["easy", "Easy"],
+        ["medium", "Medium"],
+        ["hard", "Hard"],
+        ["very-hard", "Very Hard"],
+        ["extreme", "Extreme"]
+    ];
 
     const COLLECTIONS = {
         rooms: {
             singular: "Maze",
             plural: "Mazes",
             fieldMap: { title: "name", subtitle: "creator", date: "added" },
-            titleLabel: "Room name",
+            titleLabel: "Maze Name",
             subtitleLabel: "Creator (Habbo username)",
             dateLabel: "Date opened (YYYY-MM-DD)",
-            statusOptions: [["open", "Open"], ["closed", "Closed"], ["unknown", "Unknown"]],
+            statusOptions: [["open", "Open"], ["closed", "Closed"], ["collab", "Collab"], ["unknown", "Unknown"]],
             getAll: () => workingRooms,
             create: item => Api.createRoom(adminToken, item),
             update: item => Api.updateRoom(adminToken, item),
@@ -47,7 +68,7 @@ document.addEventListener("DOMContentLoaded", () => {
             fieldMap: { title: "title", subtitle: "host", date: "date" },
             titleLabel: "Event title",
             subtitleLabel: "Host (Habbo username)",
-            statusOptions: [["upcoming", "Upcoming"], ["past", "Past"]],
+            statusOptions: [["upcoming", "Upcoming"], ["past", "Past"], ["archive", "Archive"]],
             getAll: () => workingEvents,
             create: item => Api.createEvent(adminToken, item),
             update: item => Api.updateEvent(adminToken, item),
@@ -74,6 +95,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const result = await Api.login(username, password);
             adminToken = result.token;
             currentUsername = result.username;
+            currentUserRole = result.role || "admin";
             sessionStorage.setItem(TOKEN_KEY, adminToken);
             await enterAdmin();
         } catch (err) {
@@ -89,7 +111,9 @@ document.addEventListener("DOMContentLoaded", () => {
         sessionStorage.removeItem(TOKEN_KEY);
         adminToken = "";
         currentUsername = "";
+        currentUserRole = "admin";
         adminContent.style.display = "none";
+        landingToggleEl.style.display = "none";
         loginModal.classList.add("open");
         loginError.textContent = "Session expired — log in again.";
         loginError.style.display = "block";
@@ -99,12 +123,14 @@ document.addEventListener("DOMContentLoaded", () => {
         sessionStorage.removeItem(TOKEN_KEY);
         adminToken = "";
         currentUsername = "";
+        currentUserRole = "admin";
         workingRooms = [];
         workingEvents = [];
         workingAdmins = [];
         Object.keys(COLLECTIONS).forEach(key => closeForm(key));
         closeAdminsForm();
         adminContent.style.display = "none";
+        landingToggleEl.style.display = "none";
         loginModal.classList.add("open");
         loginError.style.display = "none";
         loginForm.reset();
@@ -113,12 +139,14 @@ document.addEventListener("DOMContentLoaded", () => {
     async function enterAdmin() {
         loginModal.classList.remove("open");
         adminContent.style.display = "block";
+        landingToggleEl.style.display = "flex";
         const [rooms, events] = await Promise.all([Api.getRooms(), Api.getEvents()]);
         workingRooms = rooms;
         workingEvents = events;
         renderList("rooms");
         renderList("events");
         loadAdmins();
+        loadLandingState();
     }
 
     // ---------- image uploads ----------
@@ -146,8 +174,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // stores {image, label} objects instead so labels aren't tied to a
     // filename. Normalize both shapes so older seeded rooms keep working.
     function normalizeGalleryEntry(entry) {
-        if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry) };
-        return { image: entry.image, label: entry.label || deriveGalleryLabel(entry.image) };
+        if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry), bonus: false };
+        return { image: entry.image, label: entry.label || deriveGalleryLabel(entry.image), bonus: !!entry.bonus };
     }
 
     function wireThumbUpload(formEl, uploadPrefix) {
@@ -170,6 +198,218 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Entrance/Finish upload — mirrors the room-by-room gallery's explicit
+    // "choose a file, then click Add" flow (see wireGalleryEditor's addBtn)
+    // rather than auto-uploading the instant a file is picked, so the two
+    // slot editors behave identically to the numbered room rows.
+    function wireBookendUpload(formEl, kind, uploadPrefix) {
+        const fileInput = formEl.querySelector(`.admin-${kind}-file`);
+        const uploadBtn = formEl.querySelector(`.admin-${kind}-upload-btn`);
+        const removeBtn = formEl.querySelector(`.admin-${kind}-remove`);
+        const textInput = formEl.querySelector(`input[name="${kind}Image"]`);
+        const status = formEl.querySelector(`.admin-${kind}-status`);
+        const previewEl = formEl.querySelector(`.admin-${kind}-field .admin-gallery-thumb`);
+        if (!uploadBtn) return;
+
+        uploadBtn.addEventListener("click", async () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                status.textContent = "Choose an image first.";
+                status.style.display = "block";
+                return;
+            }
+            uploadBtn.disabled = true;
+            status.style.display = "block";
+            status.textContent = "Uploading…";
+            try {
+                const { url } = await uploadImageFile(uploadPrefix, file);
+                textInput.value = url;
+                if (previewEl) previewEl.style.backgroundImage = `url('${imgCdn(url, 100, 100, 55)}')`;
+                if (removeBtn) removeBtn.disabled = false;
+                fileInput.value = "";
+                status.style.display = "none";
+            } catch (err) {
+                if (err.status === 401) { lockOut(); return; }
+                status.textContent = err.message || "Upload failed.";
+            } finally {
+                uploadBtn.disabled = false;
+            }
+        });
+
+        if (removeBtn) {
+            removeBtn.addEventListener("click", () => {
+                const key = blobKeyFromUrl(textInput.value);
+                if (key) Api.deleteImage(adminToken, key).catch(() => {});
+                textInput.value = "";
+                if (previewEl) previewEl.style.backgroundImage = "";
+                removeBtn.disabled = true;
+            });
+        }
+    }
+
+    // Promotes an image (either uploaded fresh or an existing gallery room,
+    // see wireGalleryEditor's Entrance/End buttons) into the entrance or
+    // finish bookend slot, updating that field's text input + label + live
+    // preview thumbnail in place.
+    function setBookendImage(formEl, kind, image, label) {
+        const textInput = formEl.querySelector(`input[name="${kind}Image"]`);
+        const labelInput = formEl.querySelector(`input[name="${kind}Label"]`);
+        const previewEl = formEl.querySelector(`.admin-${kind}-field .admin-gallery-thumb`);
+        const removeBtn = formEl.querySelector(`.admin-${kind}-remove`);
+        if (textInput) textInput.value = image || "";
+        if (labelInput) labelInput.value = label || (kind === "entrance" ? "Entrance" : "Finish");
+        if (previewEl) previewEl.style.backgroundImage = image ? `url('${imgCdn(image, 100, 100, 55)}')` : "";
+        if (removeBtn) removeBtn.disabled = !image;
+    }
+
+    // Pop-up shown when promoting a room image over an entrance/finish slot
+    // that's already occupied — asks whether the bumped image should be
+    // deleted outright or moved back into the room-by-room list. Built as a
+    // one-off modal-overlay (reusing the same classes as the room/login
+    // modals) instead of a native confirm() so it can offer three real
+    // choices, and it blocks the rest of the form while open so the row
+    // index the caller is acting on can't go stale underneath it.
+    function showBookendConflictDialog(kind, existingLabel) {
+        return new Promise(resolve => {
+            const kindLabel = kind === "entrance" ? "Entrance" : "Finish";
+            const overlay = document.createElement("div");
+            overlay.className = "modal-overlay open";
+            overlay.innerHTML = `
+                <div class="modal">
+                    <div class="chrome-titlebar">
+                        <h2>Replace the ${kindLabel} image?</h2>
+                        <button type="button" class="chrome-close" aria-label="Cancel">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="room-desc-full">This maze already has a ${kindLabel.toLowerCase()} image ("${existingLabel}"). What should happen to it?</p>
+                        <div class="admin-form-actions" style="flex-direction:column; align-items:stretch; gap:8px; margin-top:10px;">
+                            <button type="button" class="btn btn-solid" data-choice="keep">Move it into the room list</button>
+                            <button type="button" class="btn admin-delete-btn" data-choice="discard">Delete it</button>
+                            <button type="button" class="btn" data-choice="cancel">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            function finish(choice) {
+                overlay.remove();
+                resolve(choice);
+            }
+
+            overlay.querySelectorAll("[data-choice]").forEach(btn => {
+                btn.addEventListener("click", () => finish(btn.dataset.choice));
+            });
+            overlay.querySelector(".chrome-close").addEventListener("click", () => finish("cancel"));
+            overlay.addEventListener("click", e => {
+                if (e.target === overlay) finish("cancel");
+            });
+        });
+    }
+
+    // Generic Yes/No pop-up (same modal-overlay treatment as the dialogs
+    // above) — resolves true only if "Yes" was actually clicked; closing
+    // any other way (the × button, clicking outside) counts as "No".
+    function showConfirmDialog(message) {
+        return new Promise(resolve => {
+            const overlay = document.createElement("div");
+            overlay.className = "modal-overlay open";
+            overlay.innerHTML = `
+                <div class="modal confirm-modal">
+                    <div class="chrome-titlebar">
+                        <h2>Are You Sure?</h2>
+                        <button type="button" class="chrome-close" aria-label="No">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="room-desc-full confirm-message">${message}</p>
+                        <div class="admin-form-actions confirm-actions">
+                            <button type="button" class="btn btn-solid" data-choice="yes">Yes</button>
+                            <button type="button" class="btn" data-choice="no">No</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            function finish(choice) {
+                overlay.remove();
+                resolve(choice === "yes");
+            }
+
+            overlay.querySelectorAll("[data-choice]").forEach(btn => {
+                btn.addEventListener("click", () => finish(btn.dataset.choice));
+            });
+            overlay.querySelector(".chrome-close").addEventListener("click", () => finish("no"));
+            overlay.addEventListener("click", e => {
+                if (e.target === overlay) finish("no");
+            });
+        });
+    }
+
+    // Plain acknowledgement pop-up — a single OK button, no other choice.
+    function showInfoDialog(message) {
+        return new Promise(resolve => {
+            const overlay = document.createElement("div");
+            overlay.className = "modal-overlay open";
+            overlay.innerHTML = `
+                <div class="modal confirm-modal">
+                    <div class="chrome-titlebar">
+                        <h2>Landing Page Updated</h2>
+                        <button type="button" class="chrome-close" aria-label="Close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="room-desc-full confirm-message">${message}</p>
+                        <div class="admin-form-actions confirm-actions">
+                            <button type="button" class="btn btn-solid" data-choice="ok">OK</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            function finish() {
+                overlay.remove();
+                resolve();
+            }
+
+            overlay.querySelector("[data-choice]").addEventListener("click", finish);
+            overlay.querySelector(".chrome-close").addEventListener("click", finish);
+            overlay.addEventListener("click", e => {
+                if (e.target === overlay) finish();
+            });
+        });
+    }
+
+    // Shared by the gallery editor's Entrance/End buttons — pulls room[index]
+    // out of the draft and into the given bookend slot, prompting first if
+    // that slot is already occupied (see showBookendConflictDialog).
+    async function promoteToBookend(formEl, draft, index, kind, renderGalleryList) {
+        const textInput = formEl.querySelector(`input[name="${kind}Image"]`);
+        const labelInput = formEl.querySelector(`input[name="${kind}Label"]`);
+        const existingImage = textInput ? textInput.value.trim() : "";
+        const existingLabel = (labelInput && labelInput.value.trim()) || (kind === "entrance" ? "Entrance" : "Finish");
+
+        let choice = "discard";
+        if (existingImage) {
+            choice = await showBookendConflictDialog(kind, existingLabel);
+            if (choice === "cancel") return;
+        }
+
+        const [promoted] = draft.splice(index, 1);
+
+        if (existingImage) {
+            if (choice === "keep") {
+                draft.push({ image: existingImage, label: existingLabel });
+            } else {
+                const key = blobKeyFromUrl(existingImage);
+                if (key) Api.deleteImage(adminToken, key).catch(() => {});
+            }
+        }
+
+        setBookendImage(formEl, kind, promoted.image, promoted.label);
+        renderGalleryList();
+    }
+
     function wireGalleryEditor(formEl, uploadPrefix) {
         const listEl = formEl.querySelector(".admin-gallery-list");
         const labelInput = formEl.querySelector(".admin-gallery-new-label");
@@ -184,6 +424,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="admin-gallery-thumb" style="${g.image ? `background-image:url('${imgCdn(g.image, 100, 100, 55)}');` : ""}"></div>
                     <input type="text" class="admin-gallery-label" value="${g.label || ""}" placeholder="Room label">
                     <div class="admin-gallery-actions">
+                        <button type="button" class="btn admin-gallery-bonus ${g.bonus ? "active" : ""}" title="Mark as Bonus Room">Bonus</button>
+                        <button type="button" class="btn admin-gallery-make-entrance" title="Make this the Entrance image">Entrance</button>
+                        <button type="button" class="btn admin-gallery-make-finish" title="Make this the Finish image">End</button>
                         <button type="button" class="btn admin-gallery-up" ${i === 0 ? "disabled" : ""} title="Move up">&#9650;</button>
                         <button type="button" class="btn admin-gallery-down" ${i === draft.length - 1 ? "disabled" : ""} title="Move down">&#9660;</button>
                         <button type="button" class="btn admin-delete-btn admin-gallery-remove" title="Remove">Remove</button>
@@ -193,6 +436,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
             listEl.querySelectorAll(".admin-gallery-row").forEach(row => {
                 const i = Number(row.dataset.index);
+                row.querySelector(".admin-gallery-bonus").addEventListener("click", () => {
+                    draft[i].bonus = !draft[i].bonus;
+                    renderGalleryList();
+                });
+                row.querySelector(".admin-gallery-make-entrance").addEventListener("click", () => {
+                    promoteToBookend(formEl, draft, i, "entrance", renderGalleryList);
+                });
+                row.querySelector(".admin-gallery-make-finish").addEventListener("click", () => {
+                    promoteToBookend(formEl, draft, i, "finish", renderGalleryList);
+                });
                 row.querySelector(".admin-gallery-label").addEventListener("input", e => {
                     draft[i].label = e.target.value;
                 });
@@ -229,7 +482,7 @@ document.addEventListener("DOMContentLoaded", () => {
             status.textContent = "Uploading…";
             try {
                 const { url } = await uploadImageFile(uploadPrefix, file);
-                draft.push({ image: url, label });
+                draft.push({ image: url, label, bonus: false });
                 fileInput.value = "";
                 labelInput.value = "";
                 status.style.display = "none";
@@ -249,6 +502,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const keys = [];
         const thumbKey = blobKeyFromUrl(item.thumb);
         if (thumbKey) keys.push(thumbKey);
+        const entranceKey = blobKeyFromUrl(item.entrance && item.entrance.image);
+        if (entranceKey) keys.push(entranceKey);
+        const finishKey = blobKeyFromUrl(item.finish && item.finish.image);
+        if (finishKey) keys.push(finishKey);
         (item.gallery || []).forEach(entry => {
             const key = blobKeyFromUrl(typeof entry === "string" ? entry : entry.image);
             if (key) keys.push(key);
@@ -313,6 +570,13 @@ document.addEventListener("DOMContentLoaded", () => {
             `<option value="${value}" ${item.status === value ? "selected" : ""}>${label}</option>`
         ).join("");
 
+        const difficultyOptionsHtml = DIFFICULTY_OPTIONS.map(([value, label]) =>
+            `<option value="${value}" ${(item.difficulty || "") === value ? "selected" : ""}>${label}</option>`
+        ).join("");
+        const difficultyFieldHtml = isRooms
+            ? fieldRow("Difficulty", `<select name="difficulty">${difficultyOptionsHtml}</select>`)
+            : "";
+
         function splitIso(iso) {
             const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(iso || "");
             return m ? { date: m[1], time: m[2] } : { date: "", time: "" };
@@ -344,6 +608,39 @@ document.addEventListener("DOMContentLoaded", () => {
               `
             : fieldRow("Tags (comma-separated)", `<input type="text" name="tags" value="${(item.tags || []).join(", ")}">`);
 
+        // Entrance/Finish share this layout: a live preview + label input
+        // (identical row markup to a gallery room), a hidden field carrying
+        // the actual image URL, and an explicit choose-file-then-upload
+        // control matching the room-by-room gallery's "+ Add" flow — see
+        // wireBookendUpload.
+        function bookendSectionHtml(kind, title, hint, entry) {
+            const kindLabel = kind === "entrance" ? "Entrance" : "Finish";
+            return `
+                <div class="admin-field admin-${kind}-field">
+                    <span>${title}</span>
+                    <p class="admin-hint">${hint}</p>
+                    <div class="admin-gallery-row">
+                        <div class="admin-gallery-thumb" style="${entry.image ? `background-image:url('${imgCdn(entry.image, 100, 100, 55)}');` : ""}"></div>
+                        <input type="text" name="${kind}Label" class="admin-gallery-label" placeholder="Label (e.g. ${kindLabel})" value="${entry.label || kindLabel}">
+                        <div class="admin-gallery-actions">
+                            <button type="button" class="btn admin-delete-btn admin-${kind}-remove" title="Remove" ${entry.image ? "" : "disabled"}>Remove</button>
+                        </div>
+                    </div>
+                    <input type="hidden" name="${kind}Image" value="${entry.image || ""}">
+                    <div class="admin-gallery-add">
+                        <input type="file" class="admin-${kind}-file" accept="image/png,image/jpeg,image/gif,image/webp">
+                        <button type="button" class="btn admin-${kind}-upload-btn">+ Upload ${kindLabel} Image</button>
+                    </div>
+                    <p class="admin-${kind}-status" style="display:none;"></p>
+                </div>
+            `;
+        }
+
+        const entrance = item.entrance || {};
+        const entranceSectionHtml = isRooms
+            ? bookendSectionHtml("entrance", "Entrance image (optional)", "Always shown first in the gallery, before every room-by-room image — use it for the maze's entrance or lobby screenshot.", entrance)
+            : "";
+
         const gallerySectionHtml = isRooms ? `
             <div class="admin-field admin-gallery-field">
                 <span>Room-by-room gallery (optional)</span>
@@ -358,11 +655,17 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
         ` : "";
 
+        const finish = item.finish || {};
+        const finishSectionHtml = isRooms
+            ? bookendSectionHtml("finish", "Finish image (optional)", "Always shown last in the gallery, after every room-by-room image — use it for the maze's finish or prize room screenshot.", finish)
+            : "";
+
         cfg.formEl.innerHTML = `
             <h3 class="admin-form-title">${isEdit ? "Edit " + cfg.singular : "Add a New " + cfg.singular}</h3>
             ${fieldRow(cfg.titleLabel, `<input type="text" name="title" required value="${item[cfg.fieldMap.title] || ""}">`)}
             ${fieldRow(cfg.subtitleLabel, `<input type="text" name="subtitle" value="${item[cfg.fieldMap.subtitle] || ""}">`)}
             ${fieldRow("Status", `<select name="status">${statusOptionsHtml}</select>`)}
+            ${difficultyFieldHtml}
             ${fieldRow("Hotel", `<input type="text" name="hotel" value="${item.hotel || ""}" placeholder="e.g. Origins, US, NL">`)}
             ${dateFieldHtml}
             ${tagsFieldHtml}
@@ -376,7 +679,9 @@ document.addEventListener("DOMContentLoaded", () => {
             ${fieldRow("Short description (shown on the card)", `<textarea name="description" rows="2">${item.description || ""}</textarea>`)}
             ${fieldRow("Full details (shown in the popup, optional)", `<textarea name="details" rows="4">${item.details || ""}</textarea>`)}
             ${fieldRow("Habbo link (optional)", `<input type="text" name="habboLink" value="${item.habboLink || ""}" placeholder="https://...">`)}
+            ${entranceSectionHtml}
             ${gallerySectionHtml}
+            ${finishSectionHtml}
             <p class="admin-form-error" style="display:none;"></p>
             <div class="admin-form-actions">
                 <button type="submit" class="btn btn-solid">Save</button>
@@ -398,13 +703,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
         wireThumbUpload(cfg.formEl, uploadPrefix);
         if (isRooms) {
+            wireBookendUpload(cfg.formEl, "entrance", uploadPrefix);
+            wireBookendUpload(cfg.formEl, "finish", uploadPrefix);
             cfg.formEl._galleryDraft = (item.gallery || []).map(normalizeGalleryEntry);
             wireGalleryEditor(cfg.formEl, uploadPrefix);
             cfg.formEl._selectedTags = new Set((item.tags || []).map(t => t.trim()).filter(Boolean));
             wireTagPicker(cfg.formEl);
         }
 
-        cfg.formEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        cfg.formEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+        activeFormKey = key;
+        floatingActionsEl.classList.add("open");
     }
 
     function closeForm(key) {
@@ -414,6 +724,11 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl._galleryDraft = null;
         cfg.formEl._selectedTags = null;
         cfg.addBtn.style.display = "inline-block";
+
+        if (activeFormKey === key) {
+            activeFormKey = null;
+            floatingActionsEl.classList.remove("open");
+        }
     }
 
     // Renders the shared tag vocabulary (plus any tags already on this room
@@ -510,7 +825,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (key === "rooms") {
+            payload.difficulty = data.difficulty || "";
             payload.gallery = form._galleryDraft || [];
+            const entranceImage = (data.entranceImage || "").trim();
+            payload.entrance = entranceImage ? { image: entranceImage, label: (data.entranceLabel || "").trim() || "Entrance" } : null;
+            const finishImage = (data.finishImage || "").trim();
+            payload.finish = finishImage ? { image: finishImage, label: (data.finishLabel || "").trim() || "Finish" } : null;
         }
 
         const submitBtn = form.querySelector("button[type=submit]");
@@ -581,32 +901,47 @@ document.addEventListener("DOMContentLoaded", () => {
             adminsListEl.appendChild(empty);
             return;
         }
+        const canDelete = currentUserRole === "owner";
         workingAdmins.forEach(admin => {
             const isSelf = admin.username === currentUsername;
+            const role = admin.role || "admin";
             const row = document.createElement("div");
             row.className = "chrome-list-row admin-row admin-account-row";
             row.innerHTML = `
                 <div class="row-info">
                     <h3>${admin.username}${isSelf ? ' <span class="admin-you-tag">(you)</span>' : ""}</h3>
-                    <p class="row-creator">${admin.createdAt ? "Added " + admin.createdAt.slice(0, 10) : ""}</p>
+                    <p class="row-creator">${role === "owner" ? "Owner" : "Admin"} · ${admin.createdAt ? "Added " + admin.createdAt.slice(0, 10) : ""}</p>
                 </div>
                 <div class="admin-row-actions">
                     <button type="button" class="btn admin-reset-btn">Reset Password</button>
-                    <button type="button" class="btn admin-delete-btn" ${workingAdmins.length <= 1 ? "disabled" : ""}>Delete</button>
+                    ${canDelete ? `<button type="button" class="btn admin-delete-btn" ${workingAdmins.length <= 1 ? "disabled" : ""}>Delete</button>` : ""}
                 </div>
             `;
             row.querySelector(".admin-reset-btn").addEventListener("click", () => openResetForm(admin.username));
-            row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteAdmin(admin.username));
+            const deleteBtn = row.querySelector(".admin-delete-btn");
+            if (deleteBtn) deleteBtn.addEventListener("click", () => deleteAdmin(admin.username));
             adminsListEl.appendChild(row);
         });
     }
 
     function openCreateAdminForm() {
+        // Only an owner can grant owner privileges (also enforced server-side) —
+        // everyone else just creates standard admins, no selector shown.
+        const roleFieldHtml = currentUserRole === "owner"
+            ? fieldRow("Privileges", `
+                <select name="role">
+                    <option value="admin">Standard Admin</option>
+                    <option value="owner">Owner (can delete other admins)</option>
+                </select>
+              `)
+            : "";
+
         adminsFormEl.innerHTML = `
             <h3 class="admin-form-title">Add a New Admin</h3>
             ${fieldRow("Username", `<input type="text" name="username" required autocomplete="off">`)}
             ${fieldRow("Password (8+ characters)", `<input type="password" name="password" required minlength="8" autocomplete="new-password">`)}
             ${fieldRow("Confirm password", `<input type="password" name="confirm" required minlength="8" autocomplete="new-password">`)}
+            ${roleFieldHtml}
             <p class="admin-form-error" style="display:none;"></p>
             <div class="admin-form-actions">
                 <button type="submit" class="btn btn-solid">Save</button>
@@ -638,7 +973,7 @@ document.addEventListener("DOMContentLoaded", () => {
         adminsFormEl.style.display = "flex";
         adminsAddBtn.style.display = "none";
         adminsFormEl.querySelector(".admin-cancel-btn").addEventListener("click", closeAdminsForm);
-        adminsFormEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        adminsFormEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
     function closeAdminsForm() {
@@ -663,7 +998,7 @@ document.addEventListener("DOMContentLoaded", () => {
         submitBtn.textContent = "Saving…";
         try {
             if (adminsFormEl.dataset.mode === "create") {
-                await Api.createAdmin(adminToken, data.username.trim(), data.password);
+                await Api.createAdmin(adminToken, data.username.trim(), data.password, data.role);
             } else {
                 await Api.resetAdminPassword(adminToken, adminsFormEl.dataset.username, data.password);
             }
@@ -689,6 +1024,74 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // ---------- landing page state ----------
+
+    async function loadLandingState() {
+        try {
+            const { landingState } = await Api.getSiteSettings();
+            landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
+        } catch (e) {
+            // best-effort — the toggle just won't show anything highlighted
+        }
+    }
+
+    // Returns whether the update actually went through, so callers that
+    // show a follow-up success message (see the offline-confirmation flow
+    // below) know not to show one after a failed save.
+    async function setLandingState(state, clickedBtn) {
+        landingToggleBtns.forEach(b => b.disabled = true);
+        landingToggleStatus.style.display = "none";
+        try {
+            await Api.updateSiteSettings(adminToken, state);
+            landingToggleBtns.forEach(b => b.classList.toggle("active", b === clickedBtn));
+            return true;
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return false; }
+            landingToggleStatus.textContent = err.message || "Couldn't update the landing page.";
+            landingToggleStatus.style.display = "block";
+            return false;
+        } finally {
+            landingToggleBtns.forEach(b => b.disabled = false);
+        }
+    }
+
+    // Coming Soon / Maintenance take the live site offline for every
+    // visitor, so they get a two-step "are you sure" before actually
+    // switching. Enter (Live) only needs one — it's the safe/undo
+    // direction, but still worth a single check since it re-opens the site.
+    // Each ends with a confirmation once the switch has actually happened.
+    const LANDING_STATE_MESSAGES = {
+        "coming-soon": {
+            confirmSteps: ["You're about to take Maze Rats offline! Are you sure?", "Sure you're sure?"],
+            success: "Coming soon mode activated. Website closed to visitors."
+        },
+        "maintenance": {
+            confirmSteps: ["You're about to take Maze Rats offline! Are you sure?", "Sure you're sure?"],
+            success: "Maintenance mode activated. Website closed to visitors."
+        },
+        "enter": {
+            confirmSteps: ["You're about to bring Maze Rats back online! Are you sure?"],
+            success: "Live mode activated. Website open to visitors."
+        }
+    };
+
+    landingToggleBtns.forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const state = btn.dataset.state;
+            const config = LANDING_STATE_MESSAGES[state];
+            if (!config) {
+                setLandingState(state, btn);
+                return;
+            }
+            for (const message of config.confirmSteps) {
+                const ok = await showConfirmDialog(message);
+                if (!ok) return;
+            }
+            const succeeded = await setLandingState(state, btn);
+            if (succeeded) await showInfoDialog(config.success);
+        });
+    });
+
     // ---------- wire up ----------
 
     logoutBtn.addEventListener("click", doLogout);
@@ -700,12 +1103,25 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl.addEventListener("submit", e => submitForm(key, e));
     });
 
+    // Floating Save/Cancel just proxy to whichever maze/event form is
+    // currently open — requestSubmit() runs the same validation + submit
+    // event as clicking that form's own (still-present) Save button.
+    floatingSaveBtn.addEventListener("click", () => {
+        if (!activeFormKey) return;
+        COLLECTIONS[activeFormKey].formEl.requestSubmit();
+    });
+    floatingCancelBtn.addEventListener("click", () => {
+        if (!activeFormKey) return;
+        closeForm(activeFormKey);
+    });
+
     if (adminToken) {
         // Re-check the stored token is still valid (and not expired) before
         // trusting it, and recover the username it belongs to.
         Api.verifySession(adminToken).then(result => {
             if (!result) { lockOut(); return; }
             currentUsername = result.username;
+            currentUserRole = result.role || "admin";
             enterAdmin();
         });
     }

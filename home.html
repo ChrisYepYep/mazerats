@@ -12,15 +12,18 @@
     <meta property="og:title" content="Maze Rats">
     <meta property="og:description" content="A fan-run archive preserving the history of maze rooms across Habbo Hotel.">
     <meta property="og:type" content="website">
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMR%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body data-page="home">
 
     <header class="site-header">
-        <a class="brand" href="home.html">
-            <span class="brand-text">MAZE RATS</span>
-        </a>
+        <div class="brand-group">
+            <a class="brand" href="home.html">
+                <span class="brand-text">MAZE RATS</span>
+            </a>
+            <a class="header-badge" href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Discord</a>
+        </div>
         <button class="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
         <nav class="site-nav">
             <a href="home.html" data-page="home">Home</a>
@@ -35,14 +38,19 @@
         </section>
 
         <div class="container">
-            <div class="chrome-window">
+            <div class="chrome-window" id="browse-window">
+                <img class="window-peek-rat" src="assets/img/rat_peek.png" alt="" aria-hidden="true">
                 <div class="chrome-titlebar">
                     <h2>Origins Mazes</h2>
                 </div>
-                <div class="chrome-nav">
-                    <button class="chrome-nav-btn" data-view="open">Open Mazes</button>
-                    <button class="chrome-nav-btn" data-view="archived">Archived Mazes</button>
-                    <button class="chrome-nav-btn" data-view="events">Events</button>
+                <div class="chrome-nav chrome-nav-top" id="top-nav">
+                    <button type="button" class="chrome-nav-btn" data-top="mazes">Mazes</button>
+                    <button type="button" class="chrome-nav-btn" data-top="events">Events</button>
+                </div>
+                <div class="chrome-nav chrome-nav-sub" id="sub-nav" style="display:none;">
+                    <button type="button" class="chrome-nav-btn"></button>
+                    <button type="button" class="chrome-nav-btn"></button>
+                    <button type="button" class="chrome-nav-btn"></button>
                 </div>
                 <div class="chrome-frame">
                     <div class="chrome-body">
@@ -51,6 +59,14 @@
                             <div class="search-box">
                                 <input type="text" id="room-search" placeholder="Search by name, builder, or tag...">
                             </div>
+                            <div class="sort-box">
+                                <select id="room-sort">
+                                    <option value="date">Sort by: Opening Date</option>
+                                    <option value="name">Sort by: Maze Name</option>
+                                    <option value="difficulty-asc">Sort by: Difficulty (Easy-Hard)</option>
+                                    <option value="difficulty-desc">Sort by: Difficulty (Hard-Easy)</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="home-results">
                             <div class="chrome-list" id="featured-grid"></div>
@@ -58,6 +74,7 @@
                         </div>
                     </div>
                 </div>
+                <img class="window-sleep-rat" src="assets/img/rat_sleep.png" alt="" aria-hidden="true">
             </div>
         </div>
     </main>
@@ -89,7 +106,9 @@
                     <img class="modal-gallery-img" id="modal-gallery-img" alt="" style="display:none;">
                     <button class="gallery-nav gallery-prev" id="gallery-prev" aria-label="Previous room" style="display:none;">&#10094;</button>
                     <button class="gallery-nav gallery-next" id="gallery-next" aria-label="Next room" style="display:none;">&#10095;</button>
+                    <span class="gallery-bonus-tab" id="gallery-bonus-tab" style="display:none;">Side Quest</span>
                     <span class="gallery-counter" id="gallery-counter" style="display:none;"></span>
+                    <span class="gallery-counter gallery-position" id="gallery-position" style="display:none;"></span>
                 </div>
                 <div class="modal-body">
                     <p class="room-creator" id="modal-creator"></p>
