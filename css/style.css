@@ -145,6 +145,12 @@ p { color: var(--parchment-dim); }
     letter-spacing: 0.4px;
     line-height: 1;
     margin-top: 3px;
+    /* Both spans share the same box edge, but Roboto's "E" has less left
+       side-bearing than Montserrat 800's "M" — measured by rendering both
+       to a canvas and finding each string's leftmost ink pixel, not just
+       eyeballed — so the tagline's actual ink sits ~0.5px further left
+       than the brand text's without this nudge. */
+    margin-left: 0.5px;
 }
 
 /* Groups the brand link with whatever small pill sits next to it (the
@@ -181,37 +187,78 @@ a.header-badge:hover {
     background-color: rgba(201, 151, 79, 0.12);
 }
 
-nav.site-nav {
-    display: flex;
-    gap: 22px;
-}
-
-nav.site-nav a {
-    text-decoration: none;
-    color: var(--parchment-dim);
-    font-size: 0.85rem;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    padding-bottom: 3px;
-    border-bottom: 2px solid transparent;
-    transition: color 0.2s, border-color 0.2s;
-}
-
-nav.site-nav a:hover,
-nav.site-nav a.active {
-    color: var(--amber-bright);
-    border-color: var(--amber);
-}
-
-.nav-toggle {
+/* Small "what's coming up" readout, right side of the header, opposite the
+   brand. Text-align right so it reads toward the edge of the page instead
+   of toward the middle. Fixed max-width (not just white-space:nowrap) so
+   the header doesn't visibly resize/reflow every time it rotates to a
+   longer or shorter event title. Three tight lines (label, title, when)
+   sized to fit inside the same header height the brand's two lines
+   (brand-text + tagline) already use, so adding this doesn't grow the bar. */
+.header-events {
     display: none;
-    background: none;
-    border: 1px solid var(--border);
+    max-width: 200px;
+    text-align: right;
+}
+
+.header-events-label {
+    margin: 0 0 1px;
+    font-size: 0.5rem;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
+    opacity: 0.75;
+    line-height: 1;
+}
+
+.header-events-viewport {
+    position: relative;
+    overflow: hidden;
+}
+
+.header-events-slide {
+    transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* A throwaway clone of .header-events-slide, injected only while a
+   rotation is animating — same technique as the maze modal's image slide
+   (see slideGalleryImage in home.js): the clone carries the outgoing
+   event out one side while the real element carries the new one in. */
+.header-events-slide-outgoing {
+    position: absolute;
+    inset: 0;
+    transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.header-events-title {
+    display: block;
+    margin: 0;
+    font-size: 0.66rem;
+    font-weight: 700;
     color: var(--amber-bright);
-    font-size: 1.2rem;
-    padding: 6px 10px;
-    border-radius: 4px;
-    cursor: pointer;
+    letter-spacing: 0.2px;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-decoration: none;
+}
+
+a.header-events-title:hover,
+a.header-events-title:focus-visible {
+    color: #fff8ec;
+    text-shadow: 0 0 6px rgba(255, 248, 236, 0.65);
+}
+
+.header-events-when {
+    margin: 1px 0 0;
+    font-size: 0.56rem;
+    color: var(--parchment-dim);
+    letter-spacing: 0.2px;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 main { display: block; flex: 1 0 auto; }
@@ -311,11 +358,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
     position: relative;
 }
 
+/* em, not px — #welcome-maze's font-size (inherited from .welcome-title)
+   scales fluidly with viewport width via clamp(), so fixed pixel offsets
+   drifted out of place on narrow/mobile screens once the text shrank
+   underneath them. Ratios below match the original px values (-6, 87, 80)
+   against the 120px font-size (7.5rem) they were tuned at. */
 .hand-rat {
     position: absolute;
-    right: -6px;
-    bottom: 87px;
-    width: 80px;
+    right: -0.05em;
+    bottom: 0.725em;
+    width: 0.667em;
     height: auto;
     pointer-events: none;
     z-index: 2;
@@ -873,6 +925,24 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .status-upcoming { color: var(--ok); }
 .status-past { color: var(--unknown); }
 .status-archive { color: var(--danger); }
+
+/* Every pill-shaped badge/tag on the site centers its text both ways —
+   padding alone still leaves it reading slightly off vertically, since a
+   font's line-height isn't symmetric around its glyphs at these small
+   sizes. Covers .gallery-position too (it only ever appears alongside the
+   .gallery-counter class, never alone). */
+.tag,
+.status-badge,
+.header-badge,
+.gallery-counter,
+.gallery-bonus-tab,
+.admin-pill-btn,
+.tag-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
 
 .tag {
     font-size: 0.56rem;
@@ -1997,20 +2067,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* ---------- responsive ---------- */
 
 @media (max-width: 640px) {
-    nav.site-nav {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        flex-direction: column;
-        background: var(--bg-panel);
-        border-bottom: 1px solid var(--border);
-        padding: 10px 24px 18px;
-        gap: 14px;
-        display: none;
-    }
-    nav.site-nav.open { display: flex; }
-    .nav-toggle { display: block; }
     .chrome-list-row .row-thumb { width: 56px; height: 56px; }
     .chrome-go { display: none; }
     .chrome-titlebar { padding: 10px 34px; }
@@ -2020,4 +2076,18 @@ body[data-page="home"] .hero { padding-top: 18px; }
     .chrome-nav-btn { width: auto; flex: 1; font-size: 0.6rem; padding: 9px 6px; }
     .chrome-nav-btn::before { border-width: 8px; }
     .chrome-nav-top .chrome-nav-btn { font-size: 0.7rem; padding: 14px 8px; }
+    /* Trims the modal's fixed chrome — overlay padding, body padding, the
+       thumbnail strip's margins — freeing up height on short phones so the
+       vh-capped image/description just below don't have to shrink as much
+       to make the modal fit the screen without scrolling. Scoped to this
+       max-width query (not a bare vh cap on the base rule) specifically so
+       it only ever kicks in for narrow/mobile viewports — a short-but-wide
+       desktop window is a different situation and shouldn't shrink the
+       image just because the window isn't very tall. */
+    .modal-overlay { padding: 12px; }
+    .modal-body { padding: 14px 18px 16px; }
+    .gallery-strip { margin: 8px 16px 8px; padding: 6px 8px; }
+    .modal-thumb { height: min(220px, 32vh); }
+    .modal-thumb.has-gallery { height: min(340px, 28vh); }
+    .room-desc-box { max-height: min(160px, 18vh); }
 }

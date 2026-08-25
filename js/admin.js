@@ -763,28 +763,35 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
         }
 
+        // Rooms and events share the exact same gallery mechanism (entrance
+        // bookend, ordered image list, finish bookend) and the exact same
+        // public-facing viewer — only the wording below adapts per
+        // collection so an event's form doesn't talk about "rooms".
+        const hasGallery = isRooms || isEvents;
+        const galleryItemNoun = isRooms ? "room" : "photo";
+
         const entrance = item.entrance || {};
-        const entranceSectionHtml = isRooms
-            ? bookendSectionHtml("entrance", "Entrance image (optional)", "Always shown first in the gallery, before every room-by-room image — use it for the maze's entrance or lobby screenshot.", entrance)
+        const entranceSectionHtml = hasGallery
+            ? bookendSectionHtml("entrance", "Entrance image (optional)", `Always shown first in the gallery, before every other image — use it for the ${cfg.singular.toLowerCase()}'s entrance or cover screenshot.`, entrance)
             : "";
 
-        const gallerySectionHtml = isRooms ? `
+        const gallerySectionHtml = hasGallery ? `
             <div class="admin-field admin-gallery-field">
-                <span>Room-by-room gallery (optional)</span>
-                <p class="admin-hint">Upload a screenshot for each room in the maze, in order — use the arrows to reorder them.</p>
+                <span>${isRooms ? "Room-by-room gallery" : "Photo gallery"} (optional)</span>
+                <p class="admin-hint">Upload a screenshot for each ${galleryItemNoun}, in order — use the arrows to reorder them.</p>
                 <div class="admin-gallery-list"></div>
                 <div class="admin-gallery-add">
-                    <input type="text" class="admin-gallery-new-label" placeholder="Room label (e.g. Room 12)">
+                    <input type="text" class="admin-gallery-new-label" placeholder="${isRooms ? "Room label (e.g. Room 12)" : "Photo label"}">
                     <input type="file" class="admin-gallery-new-file" accept="image/png,image/jpeg,image/gif,image/webp">
-                    <button type="button" class="btn admin-gallery-add-btn">+ Add Room Image</button>
+                    <button type="button" class="btn admin-gallery-add-btn">+ Add ${isRooms ? "Room" : "Photo"} Image</button>
                 </div>
                 <p class="admin-gallery-status" style="display:none;"></p>
             </div>
         ` : "";
 
         const finish = item.finish || {};
-        const finishSectionHtml = isRooms
-            ? bookendSectionHtml("finish", "Finish image (optional)", "Always shown last in the gallery, after every room-by-room image — use it for the maze's finish or prize room screenshot.", finish)
+        const finishSectionHtml = hasGallery
+            ? bookendSectionHtml("finish", "Finish image (optional)", `Always shown last in the gallery, after every other image — use it for the ${cfg.singular.toLowerCase()}'s finish or closing screenshot.`, finish)
             : "";
 
         cfg.formEl.innerHTML = `
@@ -830,11 +837,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const uploadPrefix = item.id || `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
         wireThumbUpload(cfg.formEl, uploadPrefix);
-        if (isRooms) {
+        if (hasGallery) {
             wireBookendUpload(cfg.formEl, "entrance", uploadPrefix);
             wireBookendUpload(cfg.formEl, "finish", uploadPrefix);
             cfg.formEl._galleryDraft = (item.gallery || []).map(normalizeGalleryEntry);
             wireGalleryEditor(cfg.formEl, uploadPrefix);
+        }
+        if (isRooms) {
             cfg.formEl._selectedTags = new Set((item.tags || []).map(t => t.trim()).filter(Boolean));
             wireTagPicker(cfg.formEl);
         }
@@ -961,12 +970,15 @@ document.addEventListener("DOMContentLoaded", () => {
         if (key === "rooms") {
             payload.difficulty = data.difficulty || "";
             payload.linksReferences = data.linksReferences || "";
-            payload.gallery = form._galleryDraft || [];
-            const entranceImage = (data.entranceImage || "").trim();
-            payload.entrance = entranceImage ? { image: entranceImage, label: (data.entranceLabel || "").trim() || "Entrance" } : null;
-            const finishImage = (data.finishImage || "").trim();
-            payload.finish = finishImage ? { image: finishImage, label: (data.finishLabel || "").trim() || "Finish" } : null;
         }
+
+        // Rooms and events both get the gallery/entrance/finish fields —
+        // same mechanism, same fields, just optional for events too.
+        payload.gallery = form._galleryDraft || [];
+        const entranceImage = (data.entranceImage || "").trim();
+        payload.entrance = entranceImage ? { image: entranceImage, label: (data.entranceLabel || "").trim() || "Entrance" } : null;
+        const finishImage = (data.finishImage || "").trim();
+        payload.finish = finishImage ? { image: finishImage, label: (data.finishLabel || "").trim() || "Finish" } : null;
 
         const submitBtn = form.querySelector("button[type=submit]");
         const errorEl = form.querySelector(".admin-form-error");

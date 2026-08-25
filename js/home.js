@@ -51,7 +51,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const lightboxNext = document.getElementById("lightbox-next");
     const lightboxCounter = document.getElementById("lightbox-counter");
 
-    let topView = "featured"; // "featured" | "mazes" | "events"
+    let topView = "mazes"; // "featured" | "mazes" | "events" — opens on Mazes by default
     let mazesSub = "open"; // "open" | "archived" | "collab"
     let eventsSub = "upcoming"; // "upcoming" | "past" | "archive"
     let sortBy = "date"; // "date" | "name" | "difficulty"
@@ -113,12 +113,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 dateFieldLabel: "Date",
                 dateValue: item.date,
                 endDateValue: item.endDate,
-                thumb: item.thumb,
+                // Events use the exact same fallback (entrance shot when no
+                // thumb is set) and the same gallery/entrance/finish shape
+                // as mazes, so openModal's gallery-building logic already
+                // works unmodified for either kind.
+                thumb: item.thumb || (item.entrance && item.entrance.image) || "",
                 description: item.description,
                 details: item.details,
                 tags: item.tags,
                 habboLink: item.habboLink,
-                gallery: null,
+                gallery: item.gallery,
+                entrance: item.entrance,
+                finish: item.finish,
                 sortKey: item.date || ""
             };
         }
@@ -734,6 +740,21 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // The header's upcoming-events widget (site.js) links its title at
+    // "home.html#event-<id>" — from any other page that's just a normal
+    // navigation, but a click while already on home.html only changes the
+    // hash (no reload), so this also has to run on "hashchange", not just
+    // once at load.
+    function openEventFromHash() {
+        const m = /^#event-(.+)$/.exec(location.hash);
+        if (!m || !dataLoaded) return;
+        const id = decodeURIComponent(m[1]);
+        const match = EVENTS.find(e => e.id === id);
+        if (match) openModal(normalize(match, true));
+    }
+
+    window.addEventListener("hashchange", openEventFromHash);
+
     render();
 
     Promise.all([Api.getRooms(), Api.getEvents()]).then(([rooms, events]) => {
@@ -741,5 +762,6 @@ document.addEventListener("DOMContentLoaded", () => {
         EVENTS = events;
         dataLoaded = true;
         render();
+        openEventFromHash();
     });
 });
