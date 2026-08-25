@@ -8,6 +8,11 @@
    Netlify Blobs — see js/api.js's uploadImage/deleteImage. */
 document.addEventListener("DOMContentLoaded", () => {
 
+    // localStorage, not sessionStorage — an admin checking the live site
+    // (home.html/about.html, see js/site.js's Coming Soon/Maintenance gate)
+    // in a second tab or window needs this same token there too;
+    // sessionStorage is scoped per-tab and wouldn't be visible outside the
+    // tab actually used to log in.
     const TOKEN_KEY = "mazerats_admin_token";
     const loginModal = document.getElementById("login-modal");
     const loginForm = document.getElementById("login-form");
@@ -24,7 +29,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const floatingSaveBtn = document.getElementById("floating-save-btn");
     const floatingCancelBtn = document.getElementById("floating-cancel-btn");
 
-    let adminToken = sessionStorage.getItem(TOKEN_KEY) || "";
+    let adminToken = localStorage.getItem(TOKEN_KEY) || "";
     let currentUsername = "";
     let currentUserRole = "admin";
     let workingRooms = [];
@@ -122,7 +127,7 @@ document.addEventListener("DOMContentLoaded", () => {
             adminToken = result.token;
             currentUsername = result.username;
             currentUserRole = result.role || "admin";
-            sessionStorage.setItem(TOKEN_KEY, adminToken);
+            localStorage.setItem(TOKEN_KEY, adminToken);
             await enterAdmin();
         } catch (err) {
             loginError.textContent = err.message || "Wrong username or password — try again.";
@@ -134,7 +139,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     function lockOut() {
-        sessionStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(TOKEN_KEY);
         adminToken = "";
         currentUsername = "";
         currentUserRole = "admin";
@@ -146,7 +151,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function doLogout() {
-        sessionStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(TOKEN_KEY);
         adminToken = "";
         currentUsername = "";
         currentUserRole = "admin";
@@ -196,16 +201,77 @@ document.addEventListener("DOMContentLoaded", () => {
         return m ? decodeURIComponent(m[1]) : null;
     }
 
+    // Wraps a file input in a much larger drag-and-drop target instead of
+    // leaving it as the browser's own tiny "Choose File" control — used for
+    // every image upload on the page (thumbnail, entrance/finish, gallery
+    // rooms, older versions). Wrapping in a <label> means clicking anywhere
+    // in it still opens the native picker with zero extra JS; dropping a
+    // file sets the input's own .files (via a real DataTransfer, the only
+    // way to do that from script) and fires "change", so every existing
+    // upload flow keyed off that input needs no changes at all.
+    //
+    // Dropping (or picking) a file only ever selects it — it never uploads
+    // on its own. Flows with their own explicit Add/Upload button (the
+    // gallery "+ Add" flows, bookend upload, older versions) upload only
+    // once that button is actually pressed; wireThumbUpload's own change
+    // handler is the one exception (it has no separate button to press),
+    // unaffected either way by drag vs. click-to-browse.
+    function wireDropzone(fileInput) {
+        if (!fileInput || fileInput.closest(".admin-dropzone")) return;
+        const label = document.createElement("label");
+        label.className = "admin-dropzone";
+        const text = document.createElement("span");
+        text.className = "admin-dropzone-text";
+        const placeholder = "Drag & drop an image here, or click to browse";
+        text.textContent = placeholder;
+
+        fileInput.insertAdjacentElement("beforebegin", label);
+        label.appendChild(fileInput);
+        label.appendChild(text);
+
+        fileInput.addEventListener("change", () => {
+            text.textContent = fileInput.files[0] ? fileInput.files[0].name : placeholder;
+        });
+
+        ["dragenter", "dragover"].forEach(evt => label.addEventListener(evt, e => {
+            e.preventDefault();
+            label.classList.add("dragover");
+        }));
+        ["dragleave", "drop"].forEach(evt => label.addEventListener(evt, e => {
+            e.preventDefault();
+            label.classList.remove("dragover");
+        }));
+        label.addEventListener("drop", e => {
+            const file = e.dataTransfer.files[0];
+            if (!file) return;
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            fileInput.files = dt.files;
+            fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+    }
+
+    // A room's older-version images are simpler than the room itself —
+    // just an image + optional label, no bonus/run-through/entrance-finish
+    // promotion — so they get their own lightweight normalizer, nested
+    // inside normalizeGalleryEntry below rather than a full second copy of
+    // normalizeGalleryEntry's shape.
+    function normalizeOldVersionEntry(entry) {
+        if (typeof entry === "string") return { image: entry, label: "" };
+        return { image: entry.image, label: entry.label || "" };
+    }
+
     // Gallery entries used to be plain image path strings; the editor below
     // stores {image, label} objects instead so labels aren't tied to a
     // filename. Normalize both shapes so older seeded rooms keep working.
     function normalizeGalleryEntry(entry) {
-        if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry), bonus: false, runThrough: false };
+        if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry), bonus: false, runThrough: false, oldVersions: [] };
         return {
             image: entry.image,
             label: entry.label || deriveGalleryLabel(entry.image),
             bonus: !!entry.bonus,
-            runThrough: !!entry.runThrough
+            runThrough: !!entry.runThrough,
+            oldVersions: (entry.oldVersions || []).map(normalizeOldVersionEntry)
         };
     }
 
@@ -214,6 +280,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const textInput = formEl.querySelector('input[name="thumb"]');
         const status = formEl.querySelector(".admin-thumb-status");
         if (!fileInput) return;
+        wireDropzone(fileInput);
         fileInput.addEventListener("change", async () => {
             const file = fileInput.files[0];
             if (!file) return;
@@ -241,6 +308,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const status = formEl.querySelector(`.admin-${kind}-status`);
         const previewEl = formEl.querySelector(`.admin-${kind}-field .admin-gallery-thumb`);
         if (!uploadBtn) return;
+        wireDropzone(fileInput);
 
         uploadBtn.addEventListener("click", async () => {
             const file = fileInput.files[0];
@@ -268,12 +336,24 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         if (removeBtn) {
-            removeBtn.addEventListener("click", () => {
+            removeBtn.addEventListener("click", async () => {
+                if (!await showConfirmDialog(`Remove the ${kind === "entrance" ? "Entrance" : "Finish"} image? This can't be undone.`)) return;
                 const key = blobKeyFromUrl(textInput.value);
                 if (key) Api.deleteImage(adminToken, key).catch(() => {});
                 textInput.value = "";
                 if (previewEl) previewEl.style.backgroundImage = "";
                 removeBtn.disabled = true;
+
+                // The image's own older-version history goes with it — an
+                // empty slot with old versions attached doesn't mean anything.
+                (formEl[`_${kind}OldVersions`] || []).forEach(v => {
+                    const vKey = blobKeyFromUrl(v.image);
+                    if (vKey) Api.deleteImage(adminToken, vKey).catch(() => {});
+                });
+                formEl[`_${kind}OldVersions`] = [];
+                formEl[`_${kind}OldVersionsExpanded`] = false;
+                const refresh = formEl[`_render${kind}OldVersions`];
+                if (refresh) refresh();
             });
         }
     }
@@ -291,6 +371,108 @@ document.addEventListener("DOMContentLoaded", () => {
         if (labelInput) labelInput.value = label || (kind === "entrance" ? "Entrance" : "Finish");
         if (previewEl) previewEl.style.backgroundImage = image ? `url('${imgCdn(image, 100, 100, 55)}')` : "";
         if (removeBtn) removeBtn.disabled = !image;
+    }
+
+    // Older-version images for the Entrance/Finish bookend slots — same
+    // idea as a gallery room's own Old Version toggle (see wireGalleryEditor)
+    // but there's only ever one entrance and one finish, so the draft and
+    // expanded-state live directly on formEl (`_entranceOldVersions` /
+    // `_finishOldVersions`, `_entranceOldVersionsExpanded` / ...Expanded)
+    // instead of a per-index Set. The render function is also stashed on
+    // formEl (`_render${kind}OldVersions`) so promoteToBookend and the
+    // bookend's own Remove button can refresh this panel after they change
+    // formEl[`_${kind}OldVersions`] out from under it.
+    function wireBookendOldVersions(formEl, kind, uploadPrefix) {
+        const toggleBtn = formEl.querySelector(`.admin-${kind}-oldversions-toggle`);
+        const container = formEl.querySelector(`.admin-${kind}-oldversions-container`);
+        if (!toggleBtn || !container) return;
+
+        function render() {
+            const items = formEl[`_${kind}OldVersions`] || (formEl[`_${kind}OldVersions`] = []);
+            const expanded = !!formEl[`_${kind}OldVersionsExpanded`];
+            toggleBtn.classList.toggle("active", expanded);
+            toggleBtn.textContent = items.length ? `Old Versions (${items.length})` : "Old Version";
+
+            if (!expanded) {
+                container.innerHTML = "";
+                return;
+            }
+
+            const rows = items.map((v, vi) => `
+                <div class="admin-gallery-row" data-sub-index="${vi}">
+                    <div class="admin-gallery-row-top">
+                        <div class="admin-gallery-thumb" style="${v.image ? `background-image:url('${imgCdn(v.image, 100, 100, 55)}');` : ""}"></div>
+                        <input type="text" class="admin-gallery-label admin-${kind}-oldversions-sublabel" value="${v.label || ""}" placeholder="Label (optional)">
+                    </div>
+                    <div class="admin-gallery-actions-secondary">
+                        <button type="button" class="admin-pill-btn admin-pill-danger admin-${kind}-oldversions-subremove" title="Remove">Remove</button>
+                    </div>
+                </div>
+            `).join("");
+
+            container.innerHTML = `
+                <div class="admin-oldversions-subpanel">
+                    <p class="admin-hint">Older screenshots of this ${kind === "entrance" ? "entrance" : "finish"} image — shown behind a "See older version(s)" pill on the site.</p>
+                    <div class="admin-gallery-list">${rows || `<p class="admin-empty">No older versions added yet.</p>`}</div>
+                    <div class="admin-gallery-add">
+                        <input type="text" class="admin-${kind}-oldversions-new-label" placeholder="Label (optional)">
+                        <input type="file" class="admin-${kind}-oldversions-new-file" accept="image/png,image/jpeg,image/gif,image/webp">
+                        <button type="button" class="admin-pill-btn admin-${kind}-oldversions-add-btn">+ Add Older Version</button>
+                    </div>
+                    <p class="admin-${kind}-oldversions-status" style="display:none;"></p>
+                </div>
+            `;
+
+            container.querySelectorAll("[data-sub-index]").forEach(row => {
+                const vi = Number(row.dataset.subIndex);
+                row.querySelector(`.admin-${kind}-oldversions-sublabel`).addEventListener("input", e => {
+                    items[vi].label = e.target.value;
+                });
+                row.querySelector(`.admin-${kind}-oldversions-subremove`).addEventListener("click", async () => {
+                    if (!await showConfirmDialog("Remove this older version image?")) return;
+                    const [removed] = items.splice(vi, 1);
+                    render();
+                    const key = blobKeyFromUrl(removed.image);
+                    if (key) Api.deleteImage(adminToken, key).catch(() => {});
+                });
+            });
+
+            const subLabelInput = container.querySelector(`.admin-${kind}-oldversions-new-label`);
+            const subFileInput = container.querySelector(`.admin-${kind}-oldversions-new-file`);
+            const subAddBtn = container.querySelector(`.admin-${kind}-oldversions-add-btn`);
+            const subStatus = container.querySelector(`.admin-${kind}-oldversions-status`);
+            wireDropzone(subFileInput);
+            subAddBtn.addEventListener("click", async () => {
+                const file = subFileInput.files[0];
+                if (!file) {
+                    subStatus.textContent = "Choose an image first.";
+                    subStatus.style.display = "block";
+                    return;
+                }
+                const label = subLabelInput.value.trim();
+                subAddBtn.disabled = true;
+                subStatus.style.display = "block";
+                subStatus.textContent = "Uploading…";
+                try {
+                    const { url } = await uploadImageFile(uploadPrefix, file);
+                    items.push({ image: url, label });
+                    render();
+                } catch (err) {
+                    if (err.status === 401) { lockOut(); return; }
+                    subStatus.textContent = err.message || "Upload failed.";
+                } finally {
+                    subAddBtn.disabled = false;
+                }
+            });
+        }
+
+        formEl[`_render${kind}OldVersions`] = render;
+        toggleBtn.addEventListener("click", () => {
+            formEl[`_${kind}OldVersionsExpanded`] = !formEl[`_${kind}OldVersionsExpanded`];
+            render();
+        });
+
+        render();
     }
 
     // Pop-up shown when promoting a room image over an entrance/finish slot
@@ -419,6 +601,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const labelInput = formEl.querySelector(`input[name="${kind}Label"]`);
         const existingImage = textInput ? textInput.value.trim() : "";
         const existingLabel = (labelInput && labelInput.value.trim()) || (kind === "entrance" ? "Entrance" : "Finish");
+        const existingOldVersions = formEl[`_${kind}OldVersions`] || [];
 
         let choice = "discard";
         if (existingImage) {
@@ -430,52 +613,133 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (existingImage) {
             if (choice === "keep") {
-                draft.push({ image: existingImage, label: existingLabel });
+                // The bumped bookend's own older versions travel with it
+                // back into the room list, same as its image and label.
+                draft.push({ image: existingImage, label: existingLabel, bonus: false, runThrough: false, oldVersions: existingOldVersions });
             } else {
                 const key = blobKeyFromUrl(existingImage);
                 if (key) Api.deleteImage(adminToken, key).catch(() => {});
+                existingOldVersions.forEach(v => {
+                    const vKey = blobKeyFromUrl(v.image);
+                    if (vKey) Api.deleteImage(adminToken, vKey).catch(() => {});
+                });
             }
         }
+
+        // The promoted room's own older versions become this slot's, not
+        // discarded — same principle in reverse.
+        formEl[`_${kind}OldVersions`] = promoted.oldVersions || [];
+        formEl[`_${kind}OldVersionsExpanded`] = false;
+        const refreshOldVersions = formEl[`_render${kind}OldVersions`];
+        if (refreshOldVersions) refreshOldVersions();
 
         setBookendImage(formEl, kind, promoted.image, promoted.label);
         renderGalleryList();
     }
 
-    function wireGalleryEditor(formEl, uploadPrefix) {
+    function wireGalleryEditor(formEl, uploadPrefix, allowMissingImage) {
         const listEl = formEl.querySelector(".admin-gallery-list");
         const labelInput = formEl.querySelector(".admin-gallery-new-label");
         const fileInput = formEl.querySelector(".admin-gallery-new-file");
         const addBtn = formEl.querySelector(".admin-gallery-add-btn");
         const status = formEl.querySelector(".admin-gallery-status");
+        wireDropzone(fileInput);
 
-        // Every row's buttons sit on their own line under the name field
-        // (rather than crowding the thumbnail on a single row) and share
-        // .admin-pill-btn — the same rounded, mostly-transparent pill look
-        // used for tags elsewhere on the site, solid-filled only while
-        // .active (Bonus/Run-Through, the two that carry a real on/off
-        // state; the rest are one-shot actions and never get .active).
-        function renderGalleryList() {
-            const draft = formEl._galleryDraft;
-            listEl.innerHTML = draft.map((g, i) => `
-                <div class="admin-gallery-row" data-index="${i}">
+        // Which rows currently have their older-versions sub-panel open,
+        // keyed by room index — persisted on the form element (not a local
+        // var) so it survives across renderGalleryList() re-renders, which
+        // happen on every state change including ones in unrelated rows.
+        // Cleared on remove/reorder below since either shifts every index
+        // after the affected row, which would otherwise leave the wrong
+        // row's panel open.
+        const expandedOldVersions = formEl._expandedOldVersions || (formEl._expandedOldVersions = new Set());
+
+        function oldVersionsSubpanelHtml(g) {
+            const rows = g.oldVersions.map((v, vi) => `
+                <div class="admin-gallery-row" data-sub-index="${vi}">
                     <div class="admin-gallery-row-top">
-                        <div class="admin-gallery-thumb" style="${g.image ? `background-image:url('${imgCdn(g.image, 100, 100, 55)}');` : ""}"></div>
-                        <input type="text" class="admin-gallery-label" value="${g.label || ""}" placeholder="Room label">
+                        <div class="admin-gallery-thumb" style="${v.image ? `background-image:url('${imgCdn(v.image, 100, 100, 55)}');` : ""}"></div>
+                        <input type="text" class="admin-gallery-label admin-oldversions-sublabel" value="${v.label || ""}" placeholder="Label (optional)">
                     </div>
-                    <div class="admin-gallery-actions">
-                        <button type="button" class="admin-pill-btn admin-gallery-bonus ${g.bonus ? "active" : ""}" title="Mark as Bonus Room">Bonus</button>
-                        <button type="button" class="admin-pill-btn admin-gallery-run-through ${g.runThrough ? "active" : ""}" title="Mark as a run-through room — excluded from the room count and number">Run-Through</button>
-                        <button type="button" class="admin-pill-btn admin-gallery-make-entrance" title="Make this the Entrance image">Entrance</button>
-                        <button type="button" class="admin-pill-btn admin-gallery-make-finish" title="Make this the Finish image">End</button>
-                        <button type="button" class="admin-pill-btn admin-gallery-up" ${i === 0 ? "disabled" : ""} title="Move up">&#9650; Up</button>
-                        <button type="button" class="admin-pill-btn admin-gallery-down" ${i === draft.length - 1 ? "disabled" : ""} title="Move down">&#9660; Down</button>
-                        <button type="button" class="admin-pill-btn admin-pill-danger admin-gallery-remove" title="Remove">Remove</button>
+                    <div class="admin-gallery-actions-secondary">
+                        <button type="button" class="admin-pill-btn admin-pill-danger admin-oldversions-subremove" title="Remove">Remove</button>
                     </div>
                 </div>
             `).join("");
+            return `
+                <div class="admin-oldversions-subpanel">
+                    <p class="admin-hint">Older screenshots of this room (e.g. before a rebuild) — shown behind a "See older version(s)" pill on the site, kept separate from the main image above.</p>
+                    <div class="admin-gallery-list">${rows || `<p class="admin-empty">No older versions added yet.</p>`}</div>
+                    <div class="admin-gallery-add">
+                        <input type="text" class="admin-oldversions-new-label" placeholder="Label (optional)">
+                        <input type="file" class="admin-oldversions-new-file" accept="image/png,image/jpeg,image/gif,image/webp">
+                        <button type="button" class="admin-pill-btn admin-oldversions-add-btn">+ Add Older Version</button>
+                    </div>
+                    <p class="admin-oldversions-status" style="display:none;"></p>
+                </div>
+            `;
+        }
 
-            listEl.querySelectorAll(".admin-gallery-row").forEach(row => {
+        // Every row's buttons sit on two lines under the name field, rather
+        // than crowding a 48px thumbnail with seven-plus buttons on one —
+        // Old Version/Bonus/Run-Through/Entrance/End on the first, reorder
+        // + Remove on the second. Shares .admin-pill-btn (the same rounded,
+        // mostly-transparent pill look used for tags elsewhere), solid-
+        // filled only while .active — Bonus/Run-Through carry a real on/off
+        // data state; Old Version's .active just mirrors whether its
+        // sub-panel is currently expanded.
+        function renderGalleryList() {
+            const draft = formEl._galleryDraft;
+
+            // Mirrors js/home.js's own roomIndex logic exactly (bonus and
+            // run-through rooms are excluded from the count/number there
+            // too) so the number shown here is the same one a visitor will
+            // actually see on the public site, not just this row's raw
+            // position in the list.
+            let roomCounter = 0;
+            const roomNumbers = draft.map(g => (g.bonus || g.runThrough) ? null : ++roomCounter);
+
+            listEl.innerHTML = draft.map((g, i) => {
+                const expanded = expandedOldVersions.has(i);
+                const oldVersionsLabel = g.oldVersions.length ? `Old Versions (${g.oldVersions.length})` : "Old Version";
+                const roomNumber = roomNumbers[i];
+                return `
+                    <div class="admin-gallery-row" data-index="${i}">
+                        ${roomNumber ? `<span class="admin-gallery-room-number" title="Room number on the public site">${roomNumber}</span>` : ""}
+                        <div class="admin-gallery-row-top">
+                            <span class="admin-gallery-drag-handle" draggable="true" title="Drag to reorder">&#9776;</span>
+                            <div class="admin-gallery-thumb" style="${g.image ? `background-image:url('${imgCdn(g.image, 100, 100, 55)}');` : ""}"></div>
+                            <input type="text" class="admin-gallery-label" value="${g.label || ""}" placeholder="Room label">
+                        </div>
+                        <div class="admin-gallery-actions">
+                            <button type="button" class="admin-pill-btn admin-gallery-oldversions-toggle ${expanded ? "active" : ""}" title="Add or view older versions of this room">${oldVersionsLabel}</button>
+                            <button type="button" class="admin-pill-btn admin-gallery-bonus ${g.bonus ? "active" : ""}" title="Mark as Bonus Room">Bonus</button>
+                            <button type="button" class="admin-pill-btn admin-gallery-run-through ${g.runThrough ? "active" : ""}" title="Mark as a run-through room — excluded from the room count and number">Run-Through</button>
+                            <button type="button" class="admin-pill-btn admin-gallery-make-entrance" ${g.image ? "" : "disabled"} title="${g.image ? "Make this the Entrance image" : "Add an image to this room first"}">Entrance</button>
+                            <button type="button" class="admin-pill-btn admin-gallery-make-finish" ${g.image ? "" : "disabled"} title="${g.image ? "Make this the Finish image" : "Add an image to this room first"}">End</button>
+                        </div>
+                        <div class="admin-gallery-actions-secondary">
+                            <button type="button" class="admin-pill-btn admin-gallery-up" ${i === 0 ? "disabled" : ""} title="Move up">&#9650; Up</button>
+                            <button type="button" class="admin-pill-btn admin-gallery-down" ${i === draft.length - 1 ? "disabled" : ""} title="Move down">&#9660; Down</button>
+                            <button type="button" class="admin-pill-btn admin-pill-danger admin-gallery-remove" title="Remove">Remove</button>
+                        </div>
+                        ${expanded ? oldVersionsSubpanelHtml(g) : ""}
+                    </div>
+                `;
+            }).join("");
+
+            // :scope > so this only matches the top-level room rows — an
+            // expanded row's old-versions subpanel nests its own
+            // .admin-gallery-row elements (data-sub-index, not data-index)
+            // several levels down, and a plain descendant query would catch
+            // those too, then throw wiring a toggle button that isn't there.
+            listEl.querySelectorAll(":scope > .admin-gallery-row").forEach(row => {
                 const i = Number(row.dataset.index);
+                row.querySelector(".admin-gallery-oldversions-toggle").addEventListener("click", () => {
+                    if (expandedOldVersions.has(i)) expandedOldVersions.delete(i);
+                    else expandedOldVersions.add(i);
+                    renderGalleryList();
+                });
                 row.querySelector(".admin-gallery-bonus").addEventListener("click", () => {
                     draft[i].bonus = !draft[i].bonus;
                     renderGalleryList();
@@ -495,38 +759,157 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
                 row.querySelector(".admin-gallery-up").addEventListener("click", () => {
                     if (i === 0) return;
+                    expandedOldVersions.clear();
                     [draft[i - 1], draft[i]] = [draft[i], draft[i - 1]];
                     renderGalleryList();
                 });
                 row.querySelector(".admin-gallery-down").addEventListener("click", () => {
                     if (i === draft.length - 1) return;
+                    expandedOldVersions.clear();
                     [draft[i + 1], draft[i]] = [draft[i], draft[i + 1]];
                     renderGalleryList();
                 });
-                row.querySelector(".admin-gallery-remove").addEventListener("click", () => {
+
+                // Drag-to-reorder, alongside the Up/Down buttons above rather
+                // than replacing them. Only the handle itself is draggable —
+                // not the whole row — so dragging inside the label input
+                // still just selects text instead of picking the row up.
+                // Drop position is whichever half of the target row the
+                // cursor is over (top half = insert before, bottom = after).
+                const dragHandle = row.querySelector(".admin-gallery-drag-handle");
+                dragHandle.addEventListener("dragstart", e => {
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", String(i));
+                    row.classList.add("dragging");
+                });
+                dragHandle.addEventListener("dragend", () => {
+                    row.classList.remove("dragging");
+                });
+                // A file dragged from the OS into this row's own nested
+                // Old Version dropzone (see oldVersionsSubpanelHtml) bubbles
+                // its dragover/drop events up through the row too — without
+                // this guard, that also triggered the reorder logic below:
+                // e.dataTransfer.getData("text/plain") is "" for a file
+                // drag (no setData call ever set it), and Number("") is 0,
+                // not NaN, so the "not a real reorder" check silently failed
+                // and spliced room 0 out to wherever the file landed,
+                // scrambling the room order and re-rendering the list out
+                // from under the upload that was actually in progress.
+                row.addEventListener("dragover", e => {
+                    if (e.dataTransfer.types.includes("Files")) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    const before = e.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2;
+                    row.classList.toggle("drag-over-top", before);
+                    row.classList.toggle("drag-over-bottom", !before);
+                });
+                row.addEventListener("dragleave", () => {
+                    row.classList.remove("drag-over-top", "drag-over-bottom");
+                });
+                row.addEventListener("drop", e => {
+                    if (e.dataTransfer.types.includes("Files")) return;
+                    e.preventDefault();
+                    row.classList.remove("drag-over-top", "drag-over-bottom");
+                    const from = Number(e.dataTransfer.getData("text/plain"));
+                    if (Number.isNaN(from) || from === i) return;
+                    const before = e.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2;
+                    let to = before ? i : i + 1;
+                    if (from < to) to--;
+                    expandedOldVersions.clear();
+                    const [moved] = draft.splice(from, 1);
+                    draft.splice(to, 0, moved);
+                    renderGalleryList();
+                });
+
+                row.querySelector(".admin-gallery-remove").addEventListener("click", async () => {
+                    if (!await showConfirmDialog(`Remove "${draft[i].label || "this room"}"? This can't be undone.`)) return;
+                    expandedOldVersions.clear();
                     const [removed] = draft.splice(i, 1);
                     renderGalleryList();
                     const key = blobKeyFromUrl(removed.image);
                     if (key) Api.deleteImage(adminToken, key).catch(() => {});
+                    removed.oldVersions.forEach(v => {
+                        const vKey = blobKeyFromUrl(v.image);
+                        if (vKey) Api.deleteImage(adminToken, vKey).catch(() => {});
+                    });
+                });
+
+                if (!expandedOldVersions.has(i)) return;
+
+                row.querySelectorAll("[data-sub-index]").forEach(subRow => {
+                    const vi = Number(subRow.dataset.subIndex);
+                    subRow.querySelector(".admin-oldversions-sublabel").addEventListener("input", e => {
+                        draft[i].oldVersions[vi].label = e.target.value;
+                    });
+                    subRow.querySelector(".admin-oldversions-subremove").addEventListener("click", async () => {
+                        if (!await showConfirmDialog("Remove this older version image?")) return;
+                        const [removed] = draft[i].oldVersions.splice(vi, 1);
+                        renderGalleryList();
+                        const key = blobKeyFromUrl(removed.image);
+                        if (key) Api.deleteImage(adminToken, key).catch(() => {});
+                    });
+                });
+
+                const subLabelInput = row.querySelector(".admin-oldversions-new-label");
+                const subFileInput = row.querySelector(".admin-oldversions-new-file");
+                const subAddBtn = row.querySelector(".admin-oldversions-add-btn");
+                const subStatus = row.querySelector(".admin-oldversions-status");
+                wireDropzone(subFileInput);
+                subAddBtn.addEventListener("click", async () => {
+                    const file = subFileInput.files[0];
+                    if (!file) {
+                        subStatus.textContent = "Choose an image first.";
+                        subStatus.style.display = "block";
+                        return;
+                    }
+                    const label = subLabelInput.value.trim();
+                    subAddBtn.disabled = true;
+                    subStatus.style.display = "block";
+                    subStatus.textContent = "Uploading…";
+                    try {
+                        const { url } = await uploadImageFile(uploadPrefix, file);
+                        draft[i].oldVersions.push({ image: url, label });
+                        renderGalleryList();
+                    } catch (err) {
+                        if (err.status === 401) { lockOut(); return; }
+                        subStatus.textContent = err.message || "Upload failed.";
+                    } finally {
+                        subAddBtn.disabled = false;
+                    }
                 });
             });
         }
 
         addBtn.addEventListener("click", async () => {
             const file = fileInput.files[0];
+            const draft = formEl._galleryDraft;
+            const label = labelInput.value.trim() || `Room ${draft.length + 1}`;
+
+            // No file chosen isn't an error for rooms any more — one can be
+            // added with just a title, e.g. built but not screenshotted
+            // yet. The public site shows an "Awaiting Room Image" pill in
+            // its place (see showGalleryImage in home.js) until it's edited
+            // in later with a real upload. Events' photo gallery has no
+            // equivalent identity without the image itself, so that side
+            // keeps the original requirement.
+            if (!file && allowMissingImage) {
+                draft.push({ image: "", label, bonus: false, runThrough: false, oldVersions: [] });
+                labelInput.value = "";
+                renderGalleryList();
+                return;
+            }
             if (!file) {
                 status.textContent = "Choose an image first.";
                 status.style.display = "block";
                 return;
             }
-            const draft = formEl._galleryDraft;
-            const label = labelInput.value.trim() || `Room ${draft.length + 1}`;
+
             addBtn.disabled = true;
             status.style.display = "block";
             status.textContent = "Uploading…";
             try {
                 const { url } = await uploadImageFile(uploadPrefix, file);
-                draft.push({ image: url, label, bonus: false });
+                draft.push({ image: url, label, bonus: false, runThrough: false, oldVersions: [] });
                 fileInput.value = "";
                 labelInput.value = "";
                 status.style.display = "none";
@@ -548,11 +931,23 @@ document.addEventListener("DOMContentLoaded", () => {
         if (thumbKey) keys.push(thumbKey);
         const entranceKey = blobKeyFromUrl(item.entrance && item.entrance.image);
         if (entranceKey) keys.push(entranceKey);
+        (item.entrance && item.entrance.oldVersions || []).forEach(v => {
+            const key = blobKeyFromUrl(v.image);
+            if (key) keys.push(key);
+        });
         const finishKey = blobKeyFromUrl(item.finish && item.finish.image);
         if (finishKey) keys.push(finishKey);
+        (item.finish && item.finish.oldVersions || []).forEach(v => {
+            const key = blobKeyFromUrl(v.image);
+            if (key) keys.push(key);
+        });
         (item.gallery || []).forEach(entry => {
             const key = blobKeyFromUrl(typeof entry === "string" ? entry : entry.image);
             if (key) keys.push(key);
+            (entry.oldVersions || []).forEach(v => {
+                const vKey = blobKeyFromUrl(v.image);
+                if (vKey) keys.push(vKey);
+            });
         });
         keys.forEach(key => Api.deleteImage(adminToken, key).catch(() => {}));
     }
@@ -750,8 +1145,10 @@ document.addEventListener("DOMContentLoaded", () => {
                             <input type="text" name="${kind}Label" class="admin-gallery-label" placeholder="Label (e.g. ${kindLabel})" value="${entry.label || kindLabel}">
                         </div>
                         <div class="admin-gallery-actions">
+                            <button type="button" class="admin-pill-btn admin-${kind}-oldversions-toggle" title="Add or view older versions of this image">Old Version</button>
                             <button type="button" class="admin-pill-btn admin-pill-danger admin-${kind}-remove" title="Remove" ${entry.image ? "" : "disabled"}>Remove</button>
                         </div>
+                        <div class="admin-${kind}-oldversions-container"></div>
                     </div>
                     <input type="hidden" name="${kind}Image" value="${entry.image || ""}">
                     <div class="admin-gallery-add">
@@ -778,7 +1175,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const gallerySectionHtml = hasGallery ? `
             <div class="admin-field admin-gallery-field">
                 <span>${isRooms ? "Room-by-room gallery" : "Photo gallery"} (optional)</span>
-                <p class="admin-hint">Upload a screenshot for each ${galleryItemNoun}, in order — use the arrows to reorder them.</p>
+                <p class="admin-hint">Upload a screenshot for each ${galleryItemNoun}, in order — drag the &#9776; handle or use the arrows to reorder them.${isRooms ? ' A room can be added with just a label and no image yet — the site shows an "Awaiting Room Image" placeholder until you edit one in.' : ""}</p>
                 <div class="admin-gallery-list"></div>
                 <div class="admin-gallery-add">
                     <input type="text" class="admin-gallery-new-label" placeholder="${isRooms ? "Room label (e.g. Room 12)" : "Photo label"}">
@@ -793,6 +1190,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const finishSectionHtml = hasGallery
             ? bookendSectionHtml("finish", "Finish image (optional)", `Always shown last in the gallery, after every other image — use it for the ${cfg.singular.toLowerCase()}'s finish or closing screenshot.`, finish)
             : "";
+
 
         cfg.formEl.innerHTML = `
             <h3 class="admin-form-title">${isEdit ? "Edit " + cfg.singular : "Add a New " + cfg.singular}</h3>
@@ -840,8 +1238,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (hasGallery) {
             wireBookendUpload(cfg.formEl, "entrance", uploadPrefix);
             wireBookendUpload(cfg.formEl, "finish", uploadPrefix);
+            cfg.formEl._entranceOldVersions = ((item.entrance && item.entrance.oldVersions) || []).map(normalizeOldVersionEntry);
+            cfg.formEl._finishOldVersions = ((item.finish && item.finish.oldVersions) || []).map(normalizeOldVersionEntry);
+            wireBookendOldVersions(cfg.formEl, "entrance", uploadPrefix);
+            wireBookendOldVersions(cfg.formEl, "finish", uploadPrefix);
             cfg.formEl._galleryDraft = (item.gallery || []).map(normalizeGalleryEntry);
-            wireGalleryEditor(cfg.formEl, uploadPrefix);
+            wireGalleryEditor(cfg.formEl, uploadPrefix, isRooms);
         }
         if (isRooms) {
             cfg.formEl._selectedTags = new Set((item.tags || []).map(t => t.trim()).filter(Boolean));
@@ -860,6 +1262,11 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl.innerHTML = "";
         cfg.formEl._galleryDraft = null;
         cfg.formEl._selectedTags = null;
+        cfg.formEl._expandedOldVersions = null;
+        cfg.formEl._entranceOldVersions = null;
+        cfg.formEl._finishOldVersions = null;
+        cfg.formEl._entranceOldVersionsExpanded = null;
+        cfg.formEl._finishOldVersionsExpanded = null;
         cfg.addBtn.style.display = "inline-block";
 
         if (activeFormKey === key) {
@@ -976,9 +1383,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // same mechanism, same fields, just optional for events too.
         payload.gallery = form._galleryDraft || [];
         const entranceImage = (data.entranceImage || "").trim();
-        payload.entrance = entranceImage ? { image: entranceImage, label: (data.entranceLabel || "").trim() || "Entrance" } : null;
+        payload.entrance = entranceImage ? { image: entranceImage, label: (data.entranceLabel || "").trim() || "Entrance", oldVersions: form._entranceOldVersions || [] } : null;
         const finishImage = (data.finishImage || "").trim();
-        payload.finish = finishImage ? { image: finishImage, label: (data.finishLabel || "").trim() || "Finish" } : null;
+        payload.finish = finishImage ? { image: finishImage, label: (data.finishLabel || "").trim() || "Finish", oldVersions: form._finishOldVersions || [] } : null;
 
         const submitBtn = form.querySelector("button[type=submit]");
         const errorEl = form.querySelector(".admin-form-error");
@@ -1173,10 +1580,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------- landing page state ----------
 
+    // Mirrors js/site.js's own Dev Mode pill (shown there on home.html/
+    // about.html while a logged-in admin roams during Coming Soon/
+    // Maintenance) — same pill here in the admin header, plus a link back
+    // to home.html so getting to the gated public site is one click either
+    // direction. Idempotent (clears any pill it previously added first) so
+    // it can just be re-called on every state check/change instead of
+    // needing to track whether it's already showing.
+    function renderDevModeLink(landingState) {
+        const brandGroup = document.querySelector(".brand-group");
+        if (!brandGroup) return;
+        brandGroup.querySelectorAll(".header-state-pill").forEach(el => el.remove());
+        if (landingState === "enter") return;
+
+        const pill = document.createElement("span");
+        pill.className = "header-badge header-state-pill";
+        pill.textContent = "Dev Mode";
+
+        const homeLink = document.createElement("a");
+        homeLink.className = "header-badge header-state-pill header-state-link";
+        homeLink.href = "home.html";
+        homeLink.textContent = "Home";
+
+        brandGroup.appendChild(pill);
+        brandGroup.appendChild(homeLink);
+    }
+
     async function loadLandingState() {
         try {
             const { landingState } = await Api.getSiteSettings();
             landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
+            renderDevModeLink(landingState);
         } catch (e) {
             // best-effort — the toggle just won't show anything highlighted
         }
@@ -1191,6 +1625,7 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             await Api.updateSiteSettings(adminToken, state);
             landingToggleBtns.forEach(b => b.classList.toggle("active", b === clickedBtn));
+            renderDevModeLink(state);
             return true;
         } catch (err) {
             if (err.status === 401) { lockOut(); return false; }
@@ -1249,6 +1684,14 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.addBtn.addEventListener("click", () => openForm(key));
         cfg.formEl.addEventListener("submit", e => submitForm(key, e));
     });
+
+    // Sidebar shortcuts to the same two forms — openForm's own
+    // scrollIntoView already brings the form into view within .admin-main's
+    // internal scroll, so these just save hunting down the page for them.
+    const sidebarAddRoomBtn = document.getElementById("sidebar-add-room-btn");
+    const sidebarAddEventBtn = document.getElementById("sidebar-add-event-btn");
+    if (sidebarAddRoomBtn) sidebarAddRoomBtn.addEventListener("click", () => openForm("rooms"));
+    if (sidebarAddEventBtn) sidebarAddEventBtn.addEventListener("click", () => openForm("events"));
 
     // Floating Save/Cancel just proxy to whichever maze/event form is
     // currently open — requestSubmit() runs the same validation + submit

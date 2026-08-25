@@ -67,7 +67,7 @@
                                     </div>
                                 </div>
                                 <div class="chrome-list" id="rooms-list"></div>
-                                <button class="btn btn-solid admin-add-btn" id="rooms-add-btn" type="button">+ Add a Maze</button>
+                                <button class="admin-action-pill admin-add-btn" id="rooms-add-btn" type="button">+ Add a Maze</button>
                                 <form class="admin-form" id="rooms-form" style="display:none;"></form>
                             </div>
                         </div>
@@ -79,7 +79,7 @@
                         <div class="chrome-frame">
                             <div class="chrome-body">
                                 <div class="chrome-list" id="events-list"></div>
-                                <button class="btn btn-solid admin-add-btn" id="events-add-btn" type="button">+ Add an Event</button>
+                                <button class="admin-action-pill admin-add-btn" id="events-add-btn" type="button">+ Add an Event</button>
                                 <form class="admin-form" id="events-form" style="display:none;"></form>
                             </div>
                         </div>
@@ -92,7 +92,7 @@
                             <div class="chrome-body">
                                 <p class="admin-hint" style="margin-bottom:14px;">Sessions expire automatically after 12 hours.</p>
                                 <div class="chrome-list" id="admins-list"></div>
-                                <button class="btn btn-solid admin-add-btn" id="admins-add-btn" type="button">+ Add an Admin</button>
+                                <button class="admin-action-pill admin-add-btn" id="admins-add-btn" type="button">+ Add an Admin</button>
                                 <form class="admin-form" id="admins-form" style="display:none;"></form>
                             </div>
                         </div>
@@ -103,7 +103,7 @@
                 <!-- ---------- Landing page state ---------- -->
                 <aside class="admin-sidebar" id="landing-toggle" style="display:none;">
                     <div class="admin-toolbar">
-                        <button class="btn" id="logout-btn" type="button">Log Out</button>
+                        <button class="admin-action-pill" id="logout-btn" type="button">Log Out</button>
                     </div>
                     <h3 class="admin-sidebar-title">Landing Page</h3>
                     <p class="admin-hint">Controls what the "Enter" button on mazerats.net does.</p>
@@ -111,16 +111,24 @@
                     <button type="button" class="btn-enter-mini" data-state="maintenance">Maintenance</button>
                     <button type="button" class="btn-enter-mini" data-state="enter">Enter (Live)</button>
                     <p class="admin-hint" id="landing-toggle-status" style="display:none;"></p>
-                </aside>
 
-                <!-- Floating Save/Cancel — shown only while a maze or event
-                     form is open, fixed in place under the landing-page
-                     controls so it stays reachable no matter how far the
-                     form itself scrolls (the gallery editor especially can
-                     get long). Acts on whichever form is currently open. -->
-                <aside class="admin-floating-actions" id="floating-actions">
-                    <button type="button" class="btn btn-solid" id="floating-save-btn">Save</button>
-                    <button type="button" class="btn" id="floating-cancel-btn">Cancel</button>
+                    <div class="admin-sidebar-add">
+                        <button type="button" class="admin-action-pill" id="sidebar-add-room-btn">+ Add Maze</button>
+                        <button type="button" class="admin-action-pill" id="sidebar-add-event-btn">+ Add Event</button>
+                    </div>
+
+                    <!-- Save/Cancel — shown only while a maze or event form
+                         is open. Nested in the same fixed sidebar column
+                         (rather than a second independently-positioned fixed
+                         element) so it simply flows below whatever else is
+                         in the sidebar instead of needing its own hand-tuned
+                         pixel offset that breaks every time the sidebar's
+                         own content changes. Acts on whichever form is
+                         currently open. -->
+                    <div class="admin-floating-actions" id="floating-actions">
+                        <button type="button" class="admin-action-pill admin-pill-solid" id="floating-save-btn">Save</button>
+                        <button type="button" class="admin-action-pill" id="floating-cancel-btn">Cancel</button>
+                    </div>
                 </aside>
             </div>
         </div>

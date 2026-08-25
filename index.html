@@ -10,7 +10,7 @@
     <title>Maze Rats — A Habbo Hotel Maze Room Archive</title>
     <meta name="description" content="Maze Rats is a fan-run archive preserving the history of maze rooms across Habbo Hotel.">
     <meta property="og:title" content="Maze Rats">
-    <meta property="og:description" content="A fan-run archive preserving the history of maze rooms across Habbo Hotel.">
+    <meta property="og:description" content="An archive preserving the history of maze rooms across Habbo Hotel: Origins.">
     <meta property="og:type" content="website">
     <meta property="og:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
     <meta property="og:image:width" content="1200">
@@ -29,6 +29,15 @@
                 <span class="brand-tagline">Every maze. One place.</span>
             </div>
             <a class="header-badge" href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Discord</a>
+        </div>
+        <div class="header-events" id="header-events">
+            <p class="header-events-label">Upcoming Events</p>
+            <div class="header-events-viewport" id="header-events-viewport">
+                <div class="header-events-slide" id="header-events-slide">
+                    <p class="header-events-title"></p>
+                    <p class="header-events-when"></p>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -51,7 +60,46 @@
         <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
     </footer>
 
+    <!-- Event detail modal — a simplified version of home.html's full
+         room/event modal (a single image + click-through thumbnail strip,
+         no auto-advance carousel or old-versions view) so the header's
+         Upcoming Events widget can open a preview right here on the
+         landing page. That matters specifically because home.html itself
+         is off-limits to regular visitors during Coming Soon/Maintenance
+         (see js/site.js) — this page isn't, so it's the one place that
+         preview has to work entirely on its own. -->
+    <div class="modal-overlay" id="event-modal">
+        <div class="modal">
+            <div class="chrome-titlebar">
+                <h2 id="event-modal-name"></h2>
+                <button class="chrome-close" id="event-modal-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+            </div>
+            <div class="chrome-frame">
+                <div class="modal-thumb" id="event-modal-thumb" style="display:none;">
+                    <div class="gallery-viewport">
+                        <img class="modal-gallery-img" id="event-modal-img" alt="">
+                    </div>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-top-row">
+                        <p class="room-creator" id="event-modal-host"></p>
+                        <div class="room-tags" id="event-modal-tags"></div>
+                    </div>
+                    <div class="modal-meta" id="event-modal-meta"></div>
+                    <div class="room-desc-box">
+                        <p class="room-desc-full" id="event-modal-desc"></p>
+                    </div>
+                    <p class="modal-visit-link" id="event-modal-visit-wrap" style="display:none;">
+                        <a class="btn" id="event-modal-link" href="#" target="_blank" rel="noopener">Visit</a>
+                    </p>
+                </div>
+                <div class="gallery-strip" id="event-modal-strip" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+
     <script src="js/api.js"></script>
+    <script src="js/site.js"></script>
     <script src="js/welcome.js"></script>
 </body>
 </html>

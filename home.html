@@ -3,14 +3,14 @@
 <head>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <title>Maze Rats — A Habbo Hotel Maze Room Archive</title>
     <meta name="description" content="Maze Rats is a fan-run archive preserving the history of maze rooms across Habbo Hotel.">
     <meta property="og:title" content="Maze Rats">
-    <meta property="og:description" content="A fan-run archive preserving the history of maze rooms across Habbo Hotel.">
+    <meta property="og:description" content="An archive preserving the history of maze rooms across Habbo Hotel: Origins.">
     <meta property="og:type" content="website">
     <meta property="og:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
     <meta property="og:image:width" content="1200">
@@ -51,33 +51,33 @@
             <div class="chrome-window" id="browse-window">
                 <img class="window-peek-rat" src="assets/img/rat_peek.png" alt="" aria-hidden="true">
                 <div class="chrome-titlebar">
-                    <h2>Origins Mazes</h2>
+                    <h2>Origins Maze Archive</h2>
                 </div>
                 <div class="chrome-nav chrome-nav-top" id="top-nav">
-                    <button type="button" class="chrome-nav-btn" data-top="mazes">Mazes</button>
-                    <button type="button" class="chrome-nav-btn" data-top="events">Events</button>
+                    <button type="button" class="chrome-nav-btn chrome-nav-btn-mazes" data-top="mazes"><img class="chrome-nav-icon" src="assets/img/mazes_icon.png" alt="" aria-hidden="true"><span class="chrome-nav-btn-label">Mazes</span></button>
+                    <button type="button" class="chrome-nav-btn chrome-nav-btn-events" data-top="events"><img class="chrome-nav-icon" src="assets/img/events_icon.png" alt="" aria-hidden="true"><span class="chrome-nav-btn-label">Events</span></button>
                 </div>
                 <div class="chrome-nav chrome-nav-sub" id="sub-nav" style="display:none;">
                     <button type="button" class="chrome-nav-btn"></button>
                     <button type="button" class="chrome-nav-btn"></button>
                     <button type="button" class="chrome-nav-btn"></button>
                 </div>
+                <div class="archive-controls" id="search-wrap" style="display:none;">
+                    <div class="search-box">
+                        <input type="text" id="room-search" placeholder="Search by name, builder, or tag...">
+                    </div>
+                    <div class="sort-box">
+                        <select id="room-sort">
+                            <option value="date">Sort by: Opening Date</option>
+                            <option value="name">Sort by: Maze Name</option>
+                            <option value="difficulty-asc">Sort by: Difficulty (Easy-Hard)</option>
+                            <option value="difficulty-desc">Sort by: Difficulty (Hard-Easy)</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="chrome-frame">
                     <div class="chrome-body">
                         <p class="chrome-intro" id="featured-intro"></p>
-                        <div class="archive-controls" id="search-wrap" style="display:none;">
-                            <div class="search-box">
-                                <input type="text" id="room-search" placeholder="Search by name, builder, or tag...">
-                            </div>
-                            <div class="sort-box">
-                                <select id="room-sort">
-                                    <option value="date">Sort by: Opening Date</option>
-                                    <option value="name">Sort by: Maze Name</option>
-                                    <option value="difficulty-asc">Sort by: Difficulty (Easy-Hard)</option>
-                                    <option value="difficulty-desc">Sort by: Difficulty (Hard-Easy)</option>
-                                </select>
-                            </div>
-                        </div>
                         <div class="home-results">
                             <div class="chrome-list" id="featured-grid"></div>
                             <p class="admin-empty" id="featured-empty" style="display:none;"></p>
@@ -112,34 +112,54 @@
                 <button class="chrome-close" id="modal-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
             </div>
             <div class="chrome-frame">
-                <div class="modal-thumb" id="modal-thumb">
-                    <div class="gallery-viewport" id="gallery-viewport">
-                        <img class="modal-gallery-img" id="modal-gallery-img" alt="" style="display:none;">
-                    </div>
-                    <button class="gallery-nav gallery-prev" id="gallery-prev" aria-label="Previous room" style="display:none;">&#10094;</button>
-                    <button class="gallery-nav gallery-next" id="gallery-next" aria-label="Next room" style="display:none;">&#10095;</button>
-                    <span class="gallery-bonus-tab" id="gallery-bonus-tab" style="display:none;">Side Quest</span>
-                    <span class="gallery-counter" id="gallery-counter" style="display:none;"></span>
-                    <span class="gallery-counter gallery-position" id="gallery-position" style="display:none;"></span>
-                </div>
-                <div class="modal-body">
-                    <div class="modal-top-row">
-                        <p class="room-creator" id="modal-creator"></p>
-                        <div class="room-tags" id="modal-tags"></div>
-                    </div>
-                    <div class="modal-meta" id="modal-meta"></div>
-                    <div class="room-desc-box" id="room-desc-box">
-                        <p class="room-desc-full" id="modal-desc"></p>
-                        <div class="room-links-refs" id="modal-links-wrap" style="display:none;">
-                            <span class="room-links-refs-label">Links &amp; References</span>
-                            <p class="room-links-refs-text" id="modal-links"></p>
+                <div class="modal-viewport" id="modal-viewport">
+                    <div class="modal-primary-view" id="modal-primary-view">
+                        <div class="modal-thumb" id="modal-thumb">
+                            <div class="gallery-viewport" id="gallery-viewport">
+                                <img class="modal-gallery-img" id="modal-gallery-img" alt="" style="display:none;">
+                                <span class="gallery-missing-pill" id="gallery-missing-pill" style="display:none;">Awaiting Room Image</span>
+                            </div>
+                            <button class="gallery-nav gallery-prev" id="gallery-prev" aria-label="Previous room" style="display:none;">&#10094;</button>
+                            <button class="gallery-nav gallery-next" id="gallery-next" aria-label="Next room" style="display:none;">&#10095;</button>
+                            <span class="gallery-bonus-tab" id="gallery-bonus-tab" style="display:none;">Bonus Room</span>
+                            <span class="gallery-counter" id="gallery-counter" style="display:none;"></span>
+                            <span class="gallery-counter gallery-position" id="gallery-position" style="display:none;"></span>
+                            <button type="button" class="old-versions-pill" id="old-versions-pill" style="display:none;"></button>
                         </div>
+                        <div class="modal-body">
+                            <div class="modal-top-row">
+                                <p class="room-creator" id="modal-creator"></p>
+                                <div class="room-tags" id="modal-tags"></div>
+                            </div>
+                            <div class="modal-meta" id="modal-meta"></div>
+                            <div class="room-desc-box" id="room-desc-box">
+                                <p class="room-desc-full" id="modal-desc"></p>
+                                <div class="room-links-refs" id="modal-links-wrap" style="display:none;">
+                                    <span class="room-links-refs-label">Links &amp; References</span>
+                                    <p class="room-links-refs-text" id="modal-links"></p>
+                                </div>
+                            </div>
+                            <p class="modal-visit-link">
+                                <a class="btn" id="modal-link" href="#" target="_blank" rel="noopener">Visit Room</a>
+                            </p>
+                        </div>
+                        <div class="gallery-strip" id="gallery-strip" style="display:none;"></div>
                     </div>
-                    <p class="modal-visit-link">
-                        <a class="btn" id="modal-link" href="#" target="_blank" rel="noopener">Visit Room</a>
-                    </p>
+                    <div class="modal-oldversions-view" id="modal-oldversions-view">
+                        <button type="button" class="old-versions-back-tab" id="old-versions-back-pill">
+                            <span class="old-versions-back-arrow" aria-hidden="true">&#9650;</span> Back
+                        </button>
+                        <div class="modal-thumb old-versions-thumb" id="old-versions-thumb">
+                            <div class="gallery-viewport">
+                                <img class="modal-gallery-img" id="old-versions-img" alt="">
+                            </div>
+                            <button class="gallery-nav gallery-prev" id="old-versions-prev" aria-label="Previous version">&#10094;</button>
+                            <button class="gallery-nav gallery-next" id="old-versions-next" aria-label="Next version">&#10095;</button>
+                            <span class="gallery-counter" id="old-versions-counter"></span>
+                        </div>
+                        <div class="gallery-strip" id="old-versions-strip"></div>
+                    </div>
                 </div>
-                <div class="gallery-strip" id="gallery-strip" style="display:none;"></div>
             </div>
         </div>
     </div>

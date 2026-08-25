@@ -28,6 +28,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalThumb = document.getElementById("modal-thumb");
     const galleryViewport = document.getElementById("gallery-viewport");
     const modalGalleryImg = document.getElementById("modal-gallery-img");
+    const galleryMissingPill = document.getElementById("gallery-missing-pill");
     const galleryPrev = document.getElementById("gallery-prev");
     const galleryNext = document.getElementById("gallery-next");
     const galleryCounter = document.getElementById("gallery-counter");
@@ -43,6 +44,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalTags = document.getElementById("modal-tags");
     const modalLink = document.getElementById("modal-link");
     const modalClose = document.getElementById("modal-close");
+
+    const modalViewport = document.getElementById("modal-viewport");
+    const modalPrimaryView = document.getElementById("modal-primary-view");
+    const modalOldVersionsView = document.getElementById("modal-oldversions-view");
+    const oldVersionsPill = document.getElementById("old-versions-pill");
+    const oldVersionsBackPill = document.getElementById("old-versions-back-pill");
+    const oldVersionsImg = document.getElementById("old-versions-img");
+    const oldVersionsPrev = document.getElementById("old-versions-prev");
+    const oldVersionsNext = document.getElementById("old-versions-next");
+    const oldVersionsCounter = document.getElementById("old-versions-counter");
+    const oldVersionsStrip = document.getElementById("old-versions-strip");
 
     const lightboxOverlay = document.getElementById("image-lightbox");
     const lightboxImg = document.getElementById("lightbox-img");
@@ -62,6 +74,9 @@ document.addEventListener("DOMContentLoaded", () => {
     let slideOutgoingEl = null;
     let slideRequestSeq = 0;
     let modalCloseToken = 0;
+    let oldVersionsGallery = null;
+    let oldVersionsIndex = 0;
+    let oldVersionsOpen = false;
     let ROOMS = [];
     let EVENTS = [];
     let dataLoaded = false;
@@ -260,12 +275,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // {image, label} objects instead. Normalize both shapes so old seeded
     // data keeps working alongside anything added through the new editor.
     function normalizeGalleryItem(entry) {
-        if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry), bonus: false, runThrough: false };
+        if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry), bonus: false, runThrough: false, oldVersions: [] };
         return {
             image: entry.image,
             label: entry.label || deriveGalleryLabel(entry.image),
             bonus: !!entry.bonus,
-            runThrough: !!entry.runThrough
+            runThrough: !!entry.runThrough,
+            oldVersions: entry.oldVersions || []
         };
     }
 
@@ -414,32 +430,65 @@ document.addEventListener("DOMContentLoaded", () => {
         // counter only ever reflects g.roomIndex/g.roomTotal, which are only
         // set on kind:"room" entries, so it's hidden for the bookends.
         const position = (g.kind === "room" && g.roomIndex) ? `${g.roomIndex} of ${g.roomTotal}` : "";
-        const newSrc = imgCdn(g.image, 900, null, 78);
         const newAlt = `${modalName.textContent} — ${label}`;
         const oldSrc = modalGalleryImg.getAttribute("src");
 
-        if (!skipSlide && oldSrc) {
-            slideGalleryImage(oldSrc, modalGalleryImg.alt, newSrc, newAlt, direction);
+        // A room added without a screenshot yet (see admin.js's gallery
+        // editor) has no image to show or slide to — swap straight to the
+        // placeholder pill instead. Clearing modalGalleryImg's own src (not
+        // just hiding it) means oldSrc reads as empty next time too, so
+        // navigating away from a missing image never tries to slide *out*
+        // of one either.
+        if (g.image) {
+            const newSrc = imgCdn(g.image, 900, null, 78);
+            modalGalleryImg.style.display = "block";
+            galleryMissingPill.style.display = "none";
+            if (!skipSlide && oldSrc) {
+                slideGalleryImage(oldSrc, modalGalleryImg.alt, newSrc, newAlt, direction);
+            } else {
+                modalGalleryImg.style.transition = "none";
+                modalGalleryImg.style.transform = "translateX(0)";
+                modalGalleryImg.src = newSrc;
+                modalGalleryImg.alt = newAlt;
+            }
         } else {
             modalGalleryImg.style.transition = "none";
             modalGalleryImg.style.transform = "translateX(0)";
-            modalGalleryImg.src = newSrc;
-            modalGalleryImg.alt = newAlt;
+            modalGalleryImg.removeAttribute("src");
+            modalGalleryImg.alt = "";
+            modalGalleryImg.style.display = "none";
+            galleryMissingPill.style.display = "block";
         }
         galleryCounter.textContent = label;
         galleryPosition.textContent = position;
-        galleryPosition.style.display = position ? "block" : "none";
-        galleryBonusTab.style.display = (g.kind === "room" && g.bonus) ? "block" : "none";
-        galleryStrip.querySelectorAll("img").forEach((thumb, i) => {
+        galleryPosition.style.display = position ? "inline-flex" : "none";
+        galleryBonusTab.style.display = (g.kind === "room" && g.bonus) ? "inline-flex" : "none";
+
+        // Old-version images belong to whichever room is on screen, not the
+        // maze as a whole — re-derived every time the active image changes.
+        // If the panel was open for the room we're navigating away from, it
+        // closes rather than keep showing older versions of a room that's
+        // no longer visible above it.
+        oldVersionsGallery = (g.oldVersions || []).filter(v => v && v.image);
+        if (oldVersionsOpen) resetOldVersionsInstant();
+        oldVersionsPill.style.display = oldVersionsGallery.length ? "inline-flex" : "none";
+        oldVersionsPill.textContent = `See older version${oldVersionsGallery.length > 1 ? "s" : ""}`;
+
+        galleryStrip.querySelectorAll("img, .gallery-strip-missing").forEach((thumb, i) => {
             thumb.classList.toggle("active", i === activeIndex);
         });
         const activeThumb = galleryStrip.children[activeIndex];
         if (activeThumb) activeThumb.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
 
         if (lightboxOverlay.classList.contains("open")) {
-            lightboxImg.src = modalGalleryImg.src;
-            lightboxImg.alt = modalGalleryImg.alt;
-            lightboxCounter.textContent = position ? `${label} — ${position}` : label;
+            // Nothing to zoom into for a room with no image — close rather
+            // than show the lightbox's own broken/blank image.
+            if (!g.image) closeLightbox();
+            else {
+                lightboxImg.src = modalGalleryImg.src;
+                lightboxImg.alt = modalGalleryImg.alt;
+                lightboxCounter.textContent = position ? `${label} — ${position}` : label;
+            }
         }
     }
 
@@ -549,6 +598,136 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    function showOldVersionImage(index) {
+        if (!oldVersionsGallery || !oldVersionsGallery.length) return;
+        oldVersionsIndex = (index + oldVersionsGallery.length) % oldVersionsGallery.length;
+        const v = oldVersionsGallery[oldVersionsIndex];
+        oldVersionsImg.src = imgCdn(v.image, 900, null, 78);
+        oldVersionsImg.alt = v.label ? `${modalName.textContent} — ${v.label}` : modalName.textContent;
+        const position = oldVersionsGallery.length > 1 ? `${oldVersionsIndex + 1} of ${oldVersionsGallery.length}` : "";
+        oldVersionsCounter.textContent = v.label && position ? `${position} — ${v.label}` : (v.label || position);
+        oldVersionsStrip.querySelectorAll("img").forEach((thumb, i) => {
+            thumb.classList.toggle("active", i === oldVersionsIndex);
+        });
+        const activeThumb = oldVersionsStrip.children[oldVersionsIndex];
+        if (activeThumb) activeThumb.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+    }
+
+    // Same thumbnail-strip treatment as the room-by-room gallery (see
+    // openModal's galleryStrip.innerHTML build) — built fresh each time
+    // older versions are opened, since which room (and which images) is
+    // showing can change between opens.
+    function renderOldVersionsStrip() {
+        oldVersionsStrip.innerHTML = oldVersionsGallery.map((v, i) =>
+            `<img src="${imgCdn(v.image, 110, 110, 55)}" loading="lazy" alt="${v.label || "Older version"}" data-index="${i}">`
+        ).join("");
+        oldVersionsStrip.querySelectorAll("img").forEach(thumb => {
+            thumb.addEventListener("click", () => showOldVersionImage(Number(thumb.dataset.index)));
+        });
+    }
+
+    const OLD_VERSIONS_TRANSITION = "transform 0.45s cubic-bezier(0.22, 1, 0.36, 1)";
+
+    // Slides .modal-primary-view up and out of .modal-viewport while
+    // .modal-oldversions-view slides up into its place — a reel-style swap,
+    // not a reveal — after first freezing .modal-viewport to its current
+    // pixel height so the modal card itself never changes size (unlike the
+    // room-by-room gallery, older versions' own content is usually shorter
+    // than the description/tags/etc. it's covering, so left to flow
+    // naturally the card would visibly shrink for the duration).
+    function openOldVersions() {
+        if (!oldVersionsGallery || !oldVersionsGallery.length || oldVersionsOpen) return;
+        oldVersionsOpen = true;
+        stopAutoAdvance();
+
+        renderOldVersionsStrip();
+        showOldVersionImage(0);
+
+        modalViewport.style.height = `${modalViewport.getBoundingClientRect().height}px`;
+
+        modalPrimaryView.style.transition = "none";
+        modalPrimaryView.style.position = "absolute";
+        modalPrimaryView.style.top = "0";
+        modalPrimaryView.style.left = "0";
+        modalPrimaryView.style.width = "100%";
+        modalPrimaryView.style.transform = "translateY(0)";
+
+        modalOldVersionsView.style.transition = "none";
+        modalOldVersionsView.style.display = "flex";
+        modalOldVersionsView.style.transform = "translateY(100%)";
+
+        // Commits the "start" transforms above before the transition to
+        // their end state is requested below — same reflow trick as
+        // slideGalleryImage/header-events, otherwise both writes get
+        // coalesced into one paint and neither view appears to move.
+        void modalViewport.offsetHeight;
+
+        modalPrimaryView.style.transition = OLD_VERSIONS_TRANSITION;
+        modalOldVersionsView.style.transition = OLD_VERSIONS_TRANSITION;
+        modalPrimaryView.style.transform = "translateY(-100%)";
+        modalOldVersionsView.style.transform = "translateY(0)";
+
+        modalPrimaryView.addEventListener("transitionend", () => {
+            if (oldVersionsOpen) modalPrimaryView.style.display = "none";
+        }, { once: true });
+    }
+
+    function closeOldVersions() {
+        if (!oldVersionsOpen) return;
+        oldVersionsOpen = false;
+
+        modalPrimaryView.style.display = "block";
+        modalPrimaryView.style.transition = "none";
+        modalPrimaryView.style.transform = "translateY(-100%)";
+
+        void modalViewport.offsetHeight;
+
+        modalPrimaryView.style.transition = OLD_VERSIONS_TRANSITION;
+        modalOldVersionsView.style.transition = OLD_VERSIONS_TRANSITION;
+        modalPrimaryView.style.transform = "translateY(0)";
+        modalOldVersionsView.style.transform = "translateY(100%)";
+
+        modalOldVersionsView.addEventListener("transitionend", () => {
+            if (oldVersionsOpen) return; // reopened again before this fired
+            modalOldVersionsView.style.display = "none";
+            modalOldVersionsView.style.transform = "";
+            modalPrimaryView.style.position = "";
+            modalPrimaryView.style.top = "";
+            modalPrimaryView.style.left = "";
+            modalPrimaryView.style.width = "";
+            modalPrimaryView.style.transform = "";
+            modalPrimaryView.style.transition = "";
+            modalViewport.style.height = "";
+            if (modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing")) {
+                restartAutoAdvance();
+            }
+        }, { once: true });
+    }
+
+    // Snaps both views back to their closed-state styling instantly, no
+    // transition — used when the room shown behind older versions changes
+    // out from under it (navigating the main carousel, or opening a
+    // different maze entirely) rather than the user explicitly backing out.
+    function resetOldVersionsInstant() {
+        oldVersionsOpen = false;
+        modalOldVersionsView.style.transition = "none";
+        modalOldVersionsView.style.display = "none";
+        modalOldVersionsView.style.transform = "";
+        modalPrimaryView.style.transition = "none";
+        modalPrimaryView.style.display = "block";
+        modalPrimaryView.style.position = "";
+        modalPrimaryView.style.top = "";
+        modalPrimaryView.style.left = "";
+        modalPrimaryView.style.width = "";
+        modalPrimaryView.style.transform = "";
+        modalViewport.style.height = "";
+    }
+
+    function toggleOldVersions() {
+        if (oldVersionsOpen) closeOldVersions();
+        else openOldVersions();
+    }
+
     function openModal(n) {
         // Invalidates any in-flight closeModal() from a rapid re-open (its
         // animationend/fallback would otherwise fire later and rip the
@@ -587,10 +766,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // get a roomIndex/roomTotal, so the position counter (built in
         // showGalleryImage) never counts the bookends.
         const entranceItem = n.entrance && n.entrance.image
-            ? { image: n.entrance.image, label: n.entrance.label || "Entrance", kind: "entrance" }
+            ? { image: n.entrance.image, label: n.entrance.label || "Entrance", kind: "entrance", oldVersions: n.entrance.oldVersions || [] }
             : null;
         const finishItem = n.finish && n.finish.image
-            ? { image: n.finish.image, label: n.finish.label || "Finish", kind: "finish" }
+            ? { image: n.finish.image, label: n.finish.label || "Finish", kind: "finish", oldVersions: n.finish.oldVersions || [] }
             : null;
         const roomItems = (n.gallery || []).map(normalizeGalleryItem);
         // Run-through and bonus rooms (a walk-through / a side quest, not a
@@ -616,15 +795,19 @@ document.addEventListener("DOMContentLoaded", () => {
             activeGallery = combinedGallery;
             modalThumb.classList.add("has-gallery");
             modalThumb.style.backgroundImage = "";
-            modalGalleryImg.style.display = "block";
             galleryPrev.style.display = "flex";
             galleryNext.style.display = "flex";
-            galleryCounter.style.display = "block";
+            galleryCounter.style.display = "inline-flex";
             galleryStrip.style.display = "flex";
-            galleryStrip.innerHTML = activeGallery.map((g, i) =>
-                `<img src="${imgCdn(g.image, 110, 110, 55)}" loading="lazy" alt="${displayLabel(g)}" data-index="${i}">`
+            // A room added without a screenshot yet gets a small "?"
+            // placeholder here instead of a broken <img> — see
+            // .gallery-strip-missing and showGalleryImage's own handling of
+            // the same case for the large image.
+            galleryStrip.innerHTML = activeGallery.map((g, i) => g.image
+                ? `<img src="${imgCdn(g.image, 110, 110, 55)}" loading="lazy" alt="${displayLabel(g)}" data-index="${i}">`
+                : `<div class="gallery-strip-missing" data-index="${i}" title="${displayLabel(g)}">?</div>`
             ).join("");
-            galleryStrip.querySelectorAll("img").forEach(thumb => {
+            galleryStrip.querySelectorAll("img, .gallery-strip-missing").forEach(thumb => {
                 thumb.addEventListener("click", () => {
                     showGalleryImage(Number(thumb.dataset.index));
                     restartAutoAdvance();
@@ -636,6 +819,7 @@ document.addEventListener("DOMContentLoaded", () => {
             activeGallery = null;
             modalThumb.classList.remove("has-gallery");
             modalGalleryImg.style.display = "none";
+            galleryMissingPill.style.display = "none";
             galleryPrev.style.display = "none";
             galleryNext.style.display = "none";
             galleryCounter.style.display = "none";
@@ -646,7 +830,14 @@ document.addEventListener("DOMContentLoaded", () => {
             modalThumb.style.backgroundImage = n.thumb
                 ? `linear-gradient(rgba(10,7,4,0.15), rgba(10,7,4,0.35)), url('${imgCdn(n.thumb, 800, 500, 70)}')`
                 : "";
+            oldVersionsPill.style.display = "none";
         }
+
+        // Old-version images belong to whichever room is currently showing
+        // in the gallery above (not the maze as a whole) — the pill/view
+        // are (re)populated per image in showGalleryImage, reset here so
+        // reopening the modal never starts mid-way through a previous view.
+        resetOldVersionsInstant();
 
         modalOverlay.classList.add("open");
     }
@@ -661,6 +852,14 @@ document.addEventListener("DOMContentLoaded", () => {
         modalOverlay.classList.add("closing");
         stopAutoAdvance();
         closeLightbox();
+
+        // Drop a #event-... hash left over from opening this modal (via the
+        // header widget or a shared link) so a refresh after closing doesn't
+        // reopen it — replaceState instead of clearing location.hash so it
+        // doesn't add a back-button entry or re-fire hashchange.
+        if (/^#event-/.test(location.hash)) {
+            history.replaceState(null, "", location.pathname + location.search);
+        }
 
         const finish = () => {
             if (token !== modalCloseToken) return; // superseded by a reopen
@@ -716,6 +915,10 @@ document.addEventListener("DOMContentLoaded", () => {
     modalOverlay.addEventListener("click", e => {
         if (e.target === modalOverlay) closeModal();
     });
+    oldVersionsPill.addEventListener("click", toggleOldVersions);
+    oldVersionsBackPill.addEventListener("click", toggleOldVersions);
+    oldVersionsPrev.addEventListener("click", () => showOldVersionImage(oldVersionsIndex - 1));
+    oldVersionsNext.addEventListener("click", () => showOldVersionImage(oldVersionsIndex + 1));
     galleryPrev.addEventListener("click", () => { showGalleryImage(activeIndex - 1); restartAutoAdvance(); });
     galleryNext.addEventListener("click", () => { showGalleryImage(activeIndex + 1); restartAutoAdvance(); });
     modalGalleryImg.addEventListener("click", openLightbox);
