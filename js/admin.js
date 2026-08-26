@@ -37,8 +37,10 @@ document.addEventListener("DOMContentLoaded", () => {
     let workingAdmins = [];
     let roomsQuery = "";
     let roomsSortBy = "name";
+    let eventsSortBy = "date";
     const roomsSearchInput = document.getElementById("rooms-search");
     const roomsSortSelect = document.getElementById("rooms-sort");
+    const eventsSortSelect = document.getElementById("events-sort");
     // Which of "rooms"/"events" the floating Save/Cancel currently act on —
     // null whenever neither form is open (they're hidden then too).
     let activeFormKey = null;
@@ -230,7 +232,8 @@ document.addEventListener("DOMContentLoaded", () => {
         label.appendChild(text);
 
         fileInput.addEventListener("change", () => {
-            text.textContent = fileInput.files[0] ? fileInput.files[0].name : placeholder;
+            const n = fileInput.files.length;
+            text.textContent = n > 1 ? `${n} files selected` : n === 1 ? fileInput.files[0].name : placeholder;
         });
 
         ["dragenter", "dragover"].forEach(evt => label.addEventListener(evt, e => {
@@ -242,10 +245,17 @@ document.addEventListener("DOMContentLoaded", () => {
             label.classList.remove("dragover");
         }));
         label.addEventListener("drop", e => {
-            const file = e.dataTransfer.files[0];
-            if (!file) return;
+            const files = e.dataTransfer.files;
+            if (!files.length) return;
+            // A single-file input just takes the first file dropped even if
+            // several were dragged in together; a multi-file one (the
+            // gallery's own batch-upload input) keeps them all.
             const dt = new DataTransfer();
-            dt.items.add(file);
+            if (fileInput.multiple) {
+                Array.from(files).forEach(f => dt.items.add(f));
+            } else {
+                dt.items.add(files[0]);
+            }
             fileInput.files = dt.files;
             fileInput.dispatchEvent(new Event("change", { bubbles: true }));
         });
@@ -296,42 +306,60 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Entrance/Finish upload — mirrors the room-by-room gallery's explicit
-    // "choose a file, then click Add" flow (see wireGalleryEditor's addBtn)
-    // rather than auto-uploading the instant a file is picked, so the two
-    // slot editors behave identically to the numbered room rows.
+    // Entrance/Finish upload — the thumb itself is the upload/replace
+    // target (click or drop a file directly onto it), auto-uploading the
+    // instant a file lands rather than needing a separate explicit button —
+    // same pattern as a gallery room's own thumb, see wireGalleryEditor's
+    // per-row wiring, which this closely mirrors.
     function wireBookendUpload(formEl, kind, uploadPrefix) {
         const fileInput = formEl.querySelector(`.admin-${kind}-file`);
-        const uploadBtn = formEl.querySelector(`.admin-${kind}-upload-btn`);
         const removeBtn = formEl.querySelector(`.admin-${kind}-remove`);
         const textInput = formEl.querySelector(`input[name="${kind}Image"]`);
         const status = formEl.querySelector(`.admin-${kind}-status`);
         const previewEl = formEl.querySelector(`.admin-${kind}-field .admin-gallery-thumb`);
-        if (!uploadBtn) return;
-        wireDropzone(fileInput);
+        if (!fileInput) return;
+        const thumbLabel = fileInput.closest(".admin-gallery-thumb");
 
-        uploadBtn.addEventListener("click", async () => {
+        ["dragenter", "dragover"].forEach(evt => thumbLabel.addEventListener(evt, e => {
+            e.preventDefault();
+            thumbLabel.classList.add("dragover");
+        }));
+        ["dragleave", "drop"].forEach(evt => thumbLabel.addEventListener(evt, e => {
+            e.preventDefault();
+            thumbLabel.classList.remove("dragover");
+        }));
+        thumbLabel.addEventListener("drop", e => {
+            const file = e.dataTransfer.files[0];
+            if (!file) return;
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            fileInput.files = dt.files;
+            fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+
+        fileInput.addEventListener("change", async () => {
             const file = fileInput.files[0];
-            if (!file) {
-                status.textContent = "Choose an image first.";
-                status.style.display = "block";
-                return;
-            }
-            uploadBtn.disabled = true;
+            if (!file) return;
             status.style.display = "block";
             status.textContent = "Uploading…";
             try {
                 const { url } = await uploadImageFile(uploadPrefix, file);
                 textInput.value = url;
-                if (previewEl) previewEl.style.backgroundImage = `url('${imgCdn(url, 100, 100, 55)}')`;
+                if (previewEl) {
+                    previewEl.style.backgroundImage = `url('${imgCdn(url, 100, 100, 55)}')`;
+                    previewEl.classList.add("admin-gallery-thumb-filled");
+                    previewEl.classList.remove("admin-gallery-thumb-empty");
+                    const uploadText = previewEl.querySelector(".admin-gallery-thumb-upload-text");
+                    if (uploadText) {
+                        uploadText.className = "admin-gallery-thumb-replace-text";
+                        uploadText.textContent = "Replace Image";
+                    }
+                }
                 if (removeBtn) removeBtn.disabled = false;
-                fileInput.value = "";
                 status.style.display = "none";
             } catch (err) {
                 if (err.status === 401) { lockOut(); return; }
                 status.textContent = err.message || "Upload failed.";
-            } finally {
-                uploadBtn.disabled = false;
             }
         });
 
@@ -341,7 +369,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 const key = blobKeyFromUrl(textInput.value);
                 if (key) Api.deleteImage(adminToken, key).catch(() => {});
                 textInput.value = "";
-                if (previewEl) previewEl.style.backgroundImage = "";
+                if (previewEl) {
+                    previewEl.style.backgroundImage = "";
+                    previewEl.classList.add("admin-gallery-thumb-empty");
+                    previewEl.classList.remove("admin-gallery-thumb-filled");
+                    const replaceText = previewEl.querySelector(".admin-gallery-thumb-replace-text");
+                    if (replaceText) {
+                        replaceText.className = "admin-gallery-thumb-upload-text";
+                        replaceText.textContent = "Drag or click to upload image";
+                    }
+                }
                 removeBtn.disabled = true;
 
                 // The image's own older-version history goes with it — an
@@ -369,7 +406,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const removeBtn = formEl.querySelector(`.admin-${kind}-remove`);
         if (textInput) textInput.value = image || "";
         if (labelInput) labelInput.value = label || (kind === "entrance" ? "Entrance" : "Finish");
-        if (previewEl) previewEl.style.backgroundImage = image ? `url('${imgCdn(image, 100, 100, 55)}')` : "";
+        if (previewEl) {
+            previewEl.style.backgroundImage = image ? `url('${imgCdn(image, 100, 100, 55)}')` : "";
+            previewEl.classList.toggle("admin-gallery-thumb-filled", !!image);
+            previewEl.classList.toggle("admin-gallery-thumb-empty", !image);
+            const textEl = previewEl.querySelector(".admin-gallery-thumb-replace-text, .admin-gallery-thumb-upload-text");
+            if (textEl) {
+                textEl.className = image ? "admin-gallery-thumb-replace-text" : "admin-gallery-thumb-upload-text";
+                textEl.textContent = image ? "Replace Image" : "Drag or click to upload image";
+            }
+        }
         if (removeBtn) removeBtn.disabled = !image;
     }
 
@@ -496,9 +542,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="modal-body">
                         <p class="room-desc-full">This maze already has a ${kindLabel.toLowerCase()} image ("${existingLabel}"). What should happen to it?</p>
                         <div class="admin-form-actions" style="flex-direction:column; align-items:stretch; gap:8px; margin-top:10px;">
-                            <button type="button" class="btn btn-solid" data-choice="keep">Move it into the room list</button>
-                            <button type="button" class="btn admin-delete-btn" data-choice="discard">Delete it</button>
-                            <button type="button" class="btn" data-choice="cancel">Cancel</button>
+                            <button type="button" class="admin-action-pill admin-pill-solid" data-choice="keep">Move it into the room list</button>
+                            <button type="button" class="admin-action-pill admin-pill-danger" data-choice="discard">Delete it</button>
+                            <button type="button" class="admin-action-pill" data-choice="cancel">Cancel</button>
                         </div>
                     </div>
                 </div>
@@ -536,8 +582,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="modal-body">
                         <p class="room-desc-full confirm-message">${message}</p>
                         <div class="admin-form-actions confirm-actions">
-                            <button type="button" class="btn btn-solid" data-choice="yes">Yes</button>
-                            <button type="button" class="btn" data-choice="no">No</button>
+                            <button type="button" class="admin-action-pill admin-pill-solid" data-choice="yes">Yes</button>
+                            <button type="button" class="admin-action-pill" data-choice="no">No</button>
                         </div>
                     </div>
                 </div>
@@ -708,7 +754,15 @@ document.addEventListener("DOMContentLoaded", () => {
                         ${roomNumber ? `<span class="admin-gallery-room-number" title="Room number on the public site">${roomNumber}</span>` : ""}
                         <div class="admin-gallery-row-top">
                             <span class="admin-gallery-drag-handle" draggable="true" title="Drag to reorder">&#9776;</span>
-                            <div class="admin-gallery-thumb" style="${g.image ? `background-image:url('${imgCdn(g.image, 100, 100, 55)}');` : ""}"></div>
+                            ${g.image
+                                ? `<label class="admin-gallery-thumb admin-gallery-thumb-filled" style="background-image:url('${imgCdn(g.image, 100, 100, 55)}');">
+                                       <input type="file" class="admin-gallery-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp">
+                                       <span class="admin-gallery-thumb-replace-text">Replace Image</span>
+                                   </label>`
+                                : `<label class="admin-gallery-thumb admin-gallery-thumb-empty">
+                                       <input type="file" class="admin-gallery-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp">
+                                       <span class="admin-gallery-thumb-upload-text">Drag or click to upload image</span>
+                                   </label>`}
                             <input type="text" class="admin-gallery-label" value="${g.label || ""}" placeholder="Room label">
                         </div>
                         <div class="admin-gallery-actions">
@@ -719,8 +773,10 @@ document.addEventListener("DOMContentLoaded", () => {
                             <button type="button" class="admin-pill-btn admin-gallery-make-finish" ${g.image ? "" : "disabled"} title="${g.image ? "Make this the Finish image" : "Add an image to this room first"}">End</button>
                         </div>
                         <div class="admin-gallery-actions-secondary">
+                            <button type="button" class="admin-pill-btn admin-gallery-top" ${i === 0 ? "disabled" : ""} title="Send to top (Room 1)">Top</button>
                             <button type="button" class="admin-pill-btn admin-gallery-up" ${i === 0 ? "disabled" : ""} title="Move up">&#9650; Up</button>
                             <button type="button" class="admin-pill-btn admin-gallery-down" ${i === draft.length - 1 ? "disabled" : ""} title="Move down">&#9660; Down</button>
+                            <button type="button" class="admin-pill-btn admin-gallery-bottom" ${i === draft.length - 1 ? "disabled" : ""} title="Send to bottom (last room)">Bottom</button>
                             <button type="button" class="admin-pill-btn admin-pill-danger admin-gallery-remove" title="Remove">Remove</button>
                         </div>
                         ${expanded ? oldVersionsSubpanelHtml(g) : ""}
@@ -757,6 +813,58 @@ document.addEventListener("DOMContentLoaded", () => {
                 row.querySelector(".admin-gallery-label").addEventListener("input", e => {
                     draft[i].label = e.target.value;
                 });
+
+                // Every room's thumb is a live upload target now, not just
+                // an image-less one (see addBtn below for how those start
+                // out) — same drag/drop + click-to-browse pattern as
+                // wireDropzone, just built directly onto the thumb itself
+                // (already the right shape/size) rather than wrapping the
+                // input in a whole separate dropzone element. Dropping or
+                // picking a file here always just overwrites draft[i].image
+                // below, whether that's setting it for the first time or
+                // replacing whatever was already there.
+                const thumbFileInput = row.querySelector(".admin-gallery-thumb-file");
+                if (thumbFileInput) {
+                    const thumbLabel = thumbFileInput.closest(".admin-gallery-thumb");
+                    ["dragenter", "dragover"].forEach(evt => thumbLabel.addEventListener(evt, e => {
+                        e.preventDefault();
+                        thumbLabel.classList.add("dragover");
+                    }));
+                    ["dragleave", "drop"].forEach(evt => thumbLabel.addEventListener(evt, e => {
+                        e.preventDefault();
+                        thumbLabel.classList.remove("dragover");
+                    }));
+                    thumbLabel.addEventListener("drop", e => {
+                        const file = e.dataTransfer.files[0];
+                        if (!file) return;
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        thumbFileInput.files = dt.files;
+                        thumbFileInput.dispatchEvent(new Event("change", { bubbles: true }));
+                    });
+                    thumbFileInput.addEventListener("change", async () => {
+                        const file = thumbFileInput.files[0];
+                        if (!file) return;
+                        status.style.display = "block";
+                        status.textContent = "Uploading…";
+                        try {
+                            const { url } = await uploadImageFile(uploadPrefix, file);
+                            draft[i].image = url;
+                            status.style.display = "none";
+                            renderGalleryList();
+                        } catch (err) {
+                            if (err.status === 401) { lockOut(); return; }
+                            status.textContent = err.message || "Upload failed.";
+                        }
+                    });
+                }
+                row.querySelector(".admin-gallery-top").addEventListener("click", () => {
+                    if (i === 0) return;
+                    expandedOldVersions.clear();
+                    const [moved] = draft.splice(i, 1);
+                    draft.unshift(moved);
+                    renderGalleryList();
+                });
                 row.querySelector(".admin-gallery-up").addEventListener("click", () => {
                     if (i === 0) return;
                     expandedOldVersions.clear();
@@ -767,6 +875,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (i === draft.length - 1) return;
                     expandedOldVersions.clear();
                     [draft[i + 1], draft[i]] = [draft[i], draft[i + 1]];
+                    renderGalleryList();
+                });
+                row.querySelector(".admin-gallery-bottom").addEventListener("click", () => {
+                    if (i === draft.length - 1) return;
+                    expandedOldVersions.clear();
+                    const [moved] = draft.splice(i, 1);
+                    draft.push(moved);
                     renderGalleryList();
                 });
 
@@ -881,9 +996,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         addBtn.addEventListener("click", async () => {
-            const file = fileInput.files[0];
+            // Sorted by file name (numeric-aware, so "Room 2" sorts before
+            // "Room 10") rather than left in whatever order the OS's file
+            // picker or drag-drop happened to hand them over in.
+            const files = Array.from(fileInput.files).sort((a, b) =>
+                a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
+            );
             const draft = formEl._galleryDraft;
-            const label = labelInput.value.trim() || `Room ${draft.length + 1}`;
+            // The typed label only makes sense for a single image — a batch
+            // of several instead names each one after its own file (same
+            // "Room 12.png" -> "Room 12" logic normalizeGalleryEntry already
+            // falls back to for legacy string-only entries).
+            const explicitLabel = files.length <= 1 ? labelInput.value.trim() : "";
 
             // No file chosen isn't an error for rooms any more — one can be
             // added with just a title, e.g. built but not screenshotted
@@ -892,13 +1016,13 @@ document.addEventListener("DOMContentLoaded", () => {
             // in later with a real upload. Events' photo gallery has no
             // equivalent identity without the image itself, so that side
             // keeps the original requirement.
-            if (!file && allowMissingImage) {
-                draft.push({ image: "", label, bonus: false, runThrough: false, oldVersions: [] });
+            if (!files.length && allowMissingImage) {
+                draft.push({ image: "", label: explicitLabel || `Room ${draft.length + 1}`, bonus: false, runThrough: false, oldVersions: [] });
                 labelInput.value = "";
                 renderGalleryList();
                 return;
             }
-            if (!file) {
+            if (!files.length) {
                 status.textContent = "Choose an image first.";
                 status.style.display = "block";
                 return;
@@ -906,14 +1030,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
             addBtn.disabled = true;
             status.style.display = "block";
-            status.textContent = "Uploading…";
             try {
-                const { url } = await uploadImageFile(uploadPrefix, file);
-                draft.push({ image: url, label, bonus: false, runThrough: false, oldVersions: [] });
+                for (let n = 0; n < files.length; n++) {
+                    const file = files[n];
+                    status.textContent = files.length > 1 ? `Uploading ${n + 1} of ${files.length}…` : "Uploading…";
+                    const { url } = await uploadImageFile(uploadPrefix, file);
+                    const label = explicitLabel || deriveGalleryLabel(file.name);
+                    draft.push({ image: url, label, bonus: false, runThrough: false, oldVersions: [] });
+                    renderGalleryList();
+                }
                 fileInput.value = "";
                 labelInput.value = "";
                 status.style.display = "none";
-                renderGalleryList();
             } catch (err) {
                 if (err.status === 401) { lockOut(); return; }
                 status.textContent = err.message || "Upload failed.";
@@ -954,11 +1082,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------- list rendering ----------
 
-    // Search/sort (rooms only, for now) filters and reorders what's shown,
-    // but openForm/deleteItem still need the item's real index into
-    // workingRooms — so this pairs each item with that original index
-    // *before* filtering/sorting, and the row's click handlers close over
-    // that paired index rather than its position in the display list.
+    // Same index-pairing reasoning as visibleRoomEntries below — sorting
+    // reorders what's shown, but openForm/deleteItem still need each
+    // item's real index into workingEvents. No search box for events (only
+    // sort was asked for), so there's no filtering step here.
+    function visibleEventEntries() {
+        const entries = workingEvents.map((item, index) => ({ item, index }));
+        if (eventsSortBy === "name") {
+            entries.sort((a, b) => (a.item.title || "").localeCompare(b.item.title || ""));
+        } else {
+            entries.sort((a, b) => (a.item.date || "").localeCompare(b.item.date || ""));
+        }
+        return entries;
+    }
+
+    // Search/sort filters and reorders what's shown, but openForm/
+    // deleteItem still need the item's real index into workingRooms — so
+    // this pairs each item with that original index *before* filtering/
+    // sorting, and the row's click handlers close over that paired index
+    // rather than its position in the display list.
     function visibleRoomEntries() {
         const q = roomsQuery.trim().toLowerCase();
         let entries = workingRooms.map((item, index) => ({ item, index }));
@@ -988,7 +1130,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderList(key) {
         const cfg = COLLECTIONS[key];
-        const entries = key === "rooms" ? visibleRoomEntries() : cfg.getAll().map((item, index) => ({ item, index }));
+        const entries = key === "rooms" ? visibleRoomEntries()
+            : key === "events" ? visibleEventEntries()
+            : cfg.getAll().map((item, index) => ({ item, index }));
         cfg.listEl.innerHTML = "";
 
         if (!entries.length) {
@@ -1004,24 +1148,27 @@ document.addEventListener("DOMContentLoaded", () => {
         entries.forEach(({ item, index }) => {
             const title = item[cfg.fieldMap.title] || "(untitled)";
             const subtitle = item[cfg.fieldMap.subtitle] || "";
-            // Same fallback as the public site: no thumbnail set falls back
-            // to the entrance shot rather than showing an empty square.
-            const thumbSrc = item.thumb || (item.entrance && item.entrance.image) || "";
+            // Same fallback chain as the public site: no thumbnail set falls
+            // back to the entrance shot, then the first room-by-room
+            // gallery image, rather than showing an empty square.
+            const thumbSrc = item.thumb || (item.entrance && item.entrance.image) || (item.gallery && item.gallery[0] && item.gallery[0].image) || "";
             const row = document.createElement("div");
             row.className = "chrome-list-row admin-row";
             row.innerHTML = `
                 <div class="row-thumb">
                     ${thumbSrc ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(thumbSrc, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
-                    <span class="status-badge status-${item.status}">${item.status}</span>
                 </div>
                 <div class="row-info">
                     <h3>${title}</h3>
                     <p class="row-creator">${subtitle ? "by " + subtitle : ""}</p>
                     <p class="row-desc">${item.description || ""}</p>
                 </div>
-                <div class="admin-row-actions">
-                    <button type="button" class="btn admin-edit-btn">Edit</button>
-                    <button type="button" class="btn admin-delete-btn">Delete</button>
+                <div class="row-side">
+                    <span class="status-badge status-${item.status}">${item.status}</span>
+                    <div class="admin-row-actions">
+                        <button type="button" class="btn admin-edit-btn">Edit</button>
+                        <button type="button" class="btn admin-delete-btn">Delete</button>
+                    </div>
                 </div>
             `;
             row.querySelector(".admin-edit-btn").addEventListener("click", () => openForm(key, index));
@@ -1048,6 +1195,17 @@ document.addEventListener("DOMContentLoaded", () => {
             renderList("rooms");
         });
     }
+    if (eventsSortSelect) {
+        eventsSortSelect.value = eventsSortBy;
+        eventsSortSelect.addEventListener("change", e => {
+            eventsSortBy = e.target.value;
+            renderList("events");
+        });
+    }
+
+    // Type-to-jump now lives in js/letter-jump.js (loaded site-wide, see
+    // admin.html) — it generalizes this same behaviour to every .chrome-list
+    // on the page instead of just this one.
 
     // ---------- form ----------
 
@@ -1121,7 +1279,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="tag-chip-list" id="tag-chip-list"><p class="admin-empty">Loading tags…</p></div>
                     <div class="admin-tag-add">
                         <input type="text" class="admin-tag-new-input" placeholder="Add a new tag...">
-                        <button type="button" class="btn admin-tag-add-btn">+ Add Tag</button>
+                        <button type="button" class="admin-action-pill admin-tag-add-btn">+ Add Tag</button>
                     </div>
                     <p class="admin-tag-status" style="display:none;"></p>
                 </div>
@@ -1129,19 +1287,29 @@ document.addEventListener("DOMContentLoaded", () => {
             : fieldRow("Tags (comma-separated)", `<input type="text" name="tags" value="${(item.tags || []).join(", ")}">`);
 
         // Entrance/Finish share this layout: a live preview + label input
-        // (identical row markup to a gallery room), a hidden field carrying
-        // the actual image URL, and an explicit choose-file-then-upload
-        // control matching the room-by-room gallery's "+ Add" flow — see
-        // wireBookendUpload.
+        // (identical row markup to a gallery room). The thumb itself is the
+        // whole upload/replace target — click or drop a file directly onto
+        // it — same pattern as a gallery room's own thumb (see
+        // wireGalleryEditor); no separate "choose file, then click Upload"
+        // control needed. See wireBookendUpload.
         function bookendSectionHtml(kind, title, hint, entry) {
             const kindLabel = kind === "entrance" ? "Entrance" : "Finish";
+            const thumbHtml = entry.image
+                ? `<label class="admin-gallery-thumb admin-gallery-thumb-filled" style="background-image:url('${imgCdn(entry.image, 100, 100, 55)}');">
+                       <input type="file" class="admin-gallery-thumb-file admin-${kind}-file" accept="image/png,image/jpeg,image/gif,image/webp">
+                       <span class="admin-gallery-thumb-replace-text">Replace Image</span>
+                   </label>`
+                : `<label class="admin-gallery-thumb admin-gallery-thumb-empty">
+                       <input type="file" class="admin-gallery-thumb-file admin-${kind}-file" accept="image/png,image/jpeg,image/gif,image/webp">
+                       <span class="admin-gallery-thumb-upload-text">Drag or click to upload image</span>
+                   </label>`;
             return `
                 <div class="admin-field admin-${kind}-field">
                     <span>${title}</span>
                     <p class="admin-hint">${hint}</p>
                     <div class="admin-gallery-row">
                         <div class="admin-gallery-row-top">
-                            <div class="admin-gallery-thumb" style="${entry.image ? `background-image:url('${imgCdn(entry.image, 100, 100, 55)}');` : ""}"></div>
+                            ${thumbHtml}
                             <input type="text" name="${kind}Label" class="admin-gallery-label" placeholder="Label (e.g. ${kindLabel})" value="${entry.label || kindLabel}">
                         </div>
                         <div class="admin-gallery-actions">
@@ -1151,10 +1319,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         <div class="admin-${kind}-oldversions-container"></div>
                     </div>
                     <input type="hidden" name="${kind}Image" value="${entry.image || ""}">
-                    <div class="admin-gallery-add">
-                        <input type="file" class="admin-${kind}-file" accept="image/png,image/jpeg,image/gif,image/webp">
-                        <button type="button" class="btn admin-${kind}-upload-btn">+ Upload ${kindLabel} Image</button>
-                    </div>
                     <p class="admin-${kind}-status" style="display:none;"></p>
                 </div>
             `;
@@ -1169,18 +1333,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const entrance = item.entrance || {};
         const entranceSectionHtml = hasGallery
-            ? bookendSectionHtml("entrance", "Entrance image (optional)", `Always shown first in the gallery, before every other image — use it for the ${cfg.singular.toLowerCase()}'s entrance or cover screenshot.`, entrance)
+            ? bookendSectionHtml("entrance", "<strong>ENTRANCE IMAGE</strong>", "Use for stand-alone entrance rooms; if an entrance is part of the total room-count, add it as room 1", entrance)
             : "";
 
         const gallerySectionHtml = hasGallery ? `
             <div class="admin-field admin-gallery-field">
-                <span>${isRooms ? "Room-by-room gallery" : "Photo gallery"} (optional)</span>
-                <p class="admin-hint">Upload a screenshot for each ${galleryItemNoun}, in order — drag the &#9776; handle or use the arrows to reorder them.${isRooms ? ' A room can be added with just a label and no image yet — the site shows an "Awaiting Room Image" placeholder until you edit one in.' : ""}</p>
+                <span>${isRooms ? "<strong>ROOM-BY-ROOM GALLERY</strong>" : "Photo gallery (optional)"}</span>
+                <p class="admin-hint">Upload a screenshot for each ${galleryItemNoun}, in order — drag the &#9776; handle or use the arrows to reorder them.${isRooms ? ' A room can be added with just a label and no image yet — the site shows an "Awaiting Room Image" placeholder until you edit one in.' : ""} Select several files at once to add them all in one go, sorted by file name — the label field below only applies when adding a single image.</p>
                 <div class="admin-gallery-list"></div>
                 <div class="admin-gallery-add">
                     <input type="text" class="admin-gallery-new-label" placeholder="${isRooms ? "Room label (e.g. Room 12)" : "Photo label"}">
-                    <input type="file" class="admin-gallery-new-file" accept="image/png,image/jpeg,image/gif,image/webp">
-                    <button type="button" class="btn admin-gallery-add-btn">+ Add ${isRooms ? "Room" : "Photo"} Image</button>
+                    <input type="file" class="admin-gallery-new-file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
+                    <button type="button" class="admin-action-pill admin-gallery-add-btn">+ Add ${isRooms ? "Room" : "Photo"} Image</button>
                 </div>
                 <p class="admin-gallery-status" style="display:none;"></p>
             </div>
@@ -1210,15 +1374,15 @@ document.addEventListener("DOMContentLoaded", () => {
             `)}
             ${fieldRow("Short description (shown on the card)", `<textarea name="description" rows="2">${item.description || ""}</textarea>`)}
             ${fieldRow("Full details (shown in the popup, optional)", `<textarea name="details" rows="4">${item.details || ""}</textarea>`)}
-            ${isRooms ? fieldRow("Links &amp; References (optional, shown directly beneath the description)", `<textarea name="linksReferences" rows="3">${item.linksReferences || ""}</textarea>`) : ""}
+            ${fieldRow("Links &amp; References (optional, shown directly beneath the description)", `<textarea name="linksReferences" rows="3">${item.linksReferences || ""}</textarea>`)}
             ${fieldRow("Habbo link (optional)", `<input type="text" name="habboLink" value="${item.habboLink || ""}" placeholder="https://...">`)}
             ${entranceSectionHtml}
             ${gallerySectionHtml}
             ${finishSectionHtml}
             <p class="admin-form-error" style="display:none;"></p>
             <div class="admin-form-actions">
-                <button type="submit" class="btn btn-solid">Save</button>
-                <button type="button" class="btn admin-cancel-btn">Cancel</button>
+                <button type="submit" class="admin-action-pill admin-pill-solid">Save</button>
+                <button type="button" class="admin-action-pill admin-cancel-btn">Cancel</button>
             </div>
         `;
 
@@ -1376,8 +1540,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (key === "rooms") {
             payload.difficulty = data.difficulty || "";
-            payload.linksReferences = data.linksReferences || "";
         }
+        payload.linksReferences = data.linksReferences || "";
 
         // Rooms and events both get the gallery/entrance/finish fields —
         // same mechanism, same fields, just optional for events too.
@@ -1498,8 +1662,8 @@ document.addEventListener("DOMContentLoaded", () => {
             ${roleFieldHtml}
             <p class="admin-form-error" style="display:none;"></p>
             <div class="admin-form-actions">
-                <button type="submit" class="btn btn-solid">Save</button>
-                <button type="button" class="btn admin-cancel-btn">Cancel</button>
+                <button type="submit" class="admin-action-pill admin-pill-solid">Save</button>
+                <button type="button" class="admin-action-pill admin-cancel-btn">Cancel</button>
             </div>
         `;
         adminsFormEl.dataset.mode = "create";
@@ -1514,8 +1678,8 @@ document.addEventListener("DOMContentLoaded", () => {
             ${fieldRow("Confirm new password", `<input type="password" name="confirm" required minlength="8" autocomplete="new-password">`)}
             <p class="admin-form-error" style="display:none;"></p>
             <div class="admin-form-actions">
-                <button type="submit" class="btn btn-solid">Save</button>
-                <button type="button" class="btn admin-cancel-btn">Cancel</button>
+                <button type="submit" class="admin-action-pill admin-pill-solid">Save</button>
+                <button type="button" class="admin-action-pill admin-cancel-btn">Cancel</button>
             </div>
         `;
         adminsFormEl.dataset.mode = "reset";

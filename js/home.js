@@ -1,12 +1,15 @@
 /* Drives the homepage (home.html) — the only browsing page on the site.
-   "Featured" is the default state (no top nav button active): one
-   highlighted maze, no search. The top row (Mazes / Events) picks which
-   category is being browsed; clicking that same top button again toggles
-   back to Featured. The sub row beneath it always shows exactly 3 filter
-   buttons, but which 3 depends on the active top button — Open/Archived/
-   Collab under Mazes, Upcoming/Past/Archive under Events (see SUB_OPTIONS).
-   Clicking a row opens the full detail modal, with its own gallery viewer
-   and lightbox. */
+   The top row (Mazes / Events) picks which category is being browsed; the
+   sub row beneath it always shows exactly 3 filter buttons, but which 3
+   depends on the active top button — Open/Archived/Collab under Mazes,
+   Upcoming/Past/Archive under Events (see SUB_OPTIONS). The "Featured
+   Mazes" button (#featured-mazes-btn) lives inside its own .featured-frame
+   below that, which opens beneath it to show the featured pick instead —
+   hiding the search/sort row and minimizing .chrome-frame out of the way
+   while it's active (see setFeaturedPanelState) — and stays open until a
+   sub-nav filter or a top-nav category is clicked, both of which drop back
+   to normal browsing (see showFeatured below). Clicking a row opens the
+   full detail modal, with its own gallery viewer and lightbox. */
 document.addEventListener("DOMContentLoaded", () => {
     const grid = document.getElementById("featured-grid");
     const introEl = document.getElementById("featured-intro");
@@ -17,6 +20,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const topNavBtns = document.querySelectorAll("#top-nav .chrome-nav-btn");
     const subNavEl = document.getElementById("sub-nav");
     const subNavBtns = document.querySelectorAll("#sub-nav .chrome-nav-btn");
+    const featuredMazesBtn = document.getElementById("featured-mazes-btn");
+    const featuredRefreshBtn = document.getElementById("featured-refresh-btn");
+    const featuredFrame = document.getElementById("featured-frame");
+    const featuredFrameBody = document.getElementById("featured-frame-body");
+    const featuredFrameList = document.getElementById("featured-frame-list");
+    const featuredFrameEmpty = document.getElementById("featured-frame-empty");
+    const chromeFrameMinimizeToggle = document.getElementById("chrome-frame-minimize-toggle");
+    const chromeFrameMinimizeArrow = chromeFrameMinimizeToggle.querySelector(".chrome-frame-minimize-arrow");
+    const browseChromeFrame = chromeFrameMinimizeToggle.closest(".chrome-frame");
 
     const SUB_OPTIONS = {
         mazes: [["open", "OPEN"], ["archived", "ARCHIVED"], ["collab", "COLLAB"]],
@@ -63,11 +75,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const lightboxNext = document.getElementById("lightbox-next");
     const lightboxCounter = document.getElementById("lightbox-counter");
 
-    let topView = "mazes"; // "featured" | "mazes" | "events" — opens on Mazes by default
+    let topView = "mazes"; // "mazes" | "events" — opens on Mazes by default
     let mazesSub = "open"; // "open" | "archived" | "collab"
     let eventsSub = "upcoming"; // "upcoming" | "past" | "archive"
-    let sortBy = "date"; // "date" | "name" | "difficulty"
+    let sortBy = "name"; // "date" | "name" | "owner" | "difficulty"
     let query = "";
+    // Independent of topView/mazesSub/eventsSub — layers a featured pick
+    // over whichever category is active rather than replacing it, so
+    // dropping back out (via a sub-nav filter or a top-nav click) returns
+    // to exactly where browsing left off.
+    let showFeatured = false;
     let activeGallery = null;
     let activeIndex = 0;
     let autoAdvanceTimer = null;
@@ -83,9 +100,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentItems = [];
 
     function effectiveView() {
-        if (topView === "mazes") return mazesSub;
-        if (topView === "events") return eventsSub;
-        return "featured";
+        return topView === "mazes" ? mazesSub : eventsSub;
     }
 
     const emptyMessagesNoSearch = {
@@ -125,16 +140,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 statusKey: item.status || "upcoming",
                 statusLabel: item.status === "past" ? "Past" : item.status === "archive" ? "Archived" : "Upcoming",
                 hotel: item.hotel,
+                owner: item.host || "",
                 dateFieldLabel: "Date",
                 dateValue: item.date,
                 endDateValue: item.endDate,
-                // Events use the exact same fallback (entrance shot when no
-                // thumb is set) and the same gallery/entrance/finish shape
-                // as mazes, so openModal's gallery-building logic already
+                // Events use the exact same fallback chain (entrance shot,
+                // then the first room-by-room gallery image, when no thumb
+                // is set) and the same gallery/entrance/finish shape as
+                // mazes, so openModal's gallery-building logic already
                 // works unmodified for either kind.
-                thumb: item.thumb || (item.entrance && item.entrance.image) || "",
+                thumb: item.thumb || (item.entrance && item.entrance.image) || (item.gallery && item.gallery[0] && item.gallery[0].image) || "",
                 description: item.description,
                 details: item.details,
+                linksReferences: item.linksReferences,
                 tags: item.tags,
                 habboLink: item.habboLink,
                 gallery: item.gallery,
@@ -149,13 +167,16 @@ document.addEventListener("DOMContentLoaded", () => {
             statusKey: item.status,
             statusLabel: item.status === "open" ? "Open" : item.status === "closed" ? "Closed" : item.status === "collab" ? "Collab" : "Unknown",
             hotel: item.hotel,
+            owner: item.creator || "",
             dateFieldLabel: "Opened",
             dateValue: item.added,
-            // No dedicated thumbnail? Fall back to the entrance shot rather
-            // than showing nothing — it's the same kind of image (a single
-            // screenshot representing the room) and every maze that bothers
-            // uploading an entrance image already has one on hand.
-            thumb: item.thumb || (item.entrance && item.entrance.image) || "",
+            // No dedicated thumbnail? Fall back to the entrance shot, then
+            // the first room-by-room gallery image, rather than showing
+            // nothing — both are the same kind of image (a single
+            // screenshot representing the room), and a maze that skipped
+            // the thumbnail/entrance fields but still has a gallery almost
+            // always has its first room stand in for one anyway.
+            thumb: item.thumb || (item.entrance && item.entrance.image) || (item.gallery && item.gallery[0] && item.gallery[0].image) || "",
             description: item.description,
             details: item.details,
             linksReferences: item.linksReferences,
@@ -251,6 +272,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const sorted = items.slice();
         if (sortBy === "name") {
             sorted.sort((a, b) => a.name.localeCompare(b.name));
+        } else if (sortBy === "owner") {
+            sorted.sort((a, b) => a.owner.localeCompare(b.owner));
         } else if (sortBy === "difficulty-asc" || sortBy === "difficulty-desc") {
             const dir = sortBy === "difficulty-asc" ? 1 : -1;
             sorted.sort((a, b) => {
@@ -327,59 +350,68 @@ document.addEventListener("DOMContentLoaded", () => {
         return `${start.date} ${start.time} UTC – ${end.date} ${end.time} UTC`;
     }
 
+    // Icons for the maze sub-nav's OPEN/ARCHIVED tabs specifically — no
+    // equivalent for Collab, or for any of the events sub-nav's own tabs.
+    const SUB_NAV_ICONS = {
+        open: "door_open_icon_active.png",
+        archived: "door_closed_icon_active.png"
+    };
+
     function renderSubNav() {
-        const isFeatured = topView === "featured";
-        subNavEl.style.display = isFeatured ? "none" : "flex";
-        if (isFeatured) return;
+        // Always visible now (there's no more state that hides it — the
+        // featured view sits on top of whichever category/filter is
+        // already selected here rather than replacing this row).
+        subNavEl.style.display = "flex";
         const options = SUB_OPTIONS[topView];
-        const activeSub = topView === "mazes" ? mazesSub : eventsSub;
+        // null while showFeatured — none of the 3 filters actually apply to
+        // the featured pick, so none of them should read as selected (and,
+        // as a side effect, the active tab's own merge-bridge — pure CSS,
+        // keyed off .active — disappears along with it).
+        const activeSub = showFeatured ? null : (topView === "mazes" ? mazesSub : eventsSub);
         subNavBtns.forEach((btn, i) => {
             const [value, label] = options[i];
-            btn.textContent = label;
+            const icon = SUB_NAV_ICONS[value];
+            // Icon is absolutely positioned (see its own CSS) rather than
+            // laid out inline before the label, specifically so it doesn't
+            // shift the label off the button's own centre — it just floats
+            // in the gap between the label and the button's left edge.
+            btn.innerHTML = icon
+                ? `<img class="chrome-nav-sub-icon" src="assets/img/${icon}" alt="" aria-hidden="true">${label}`
+                : label;
             btn.dataset.subValue = value;
             btn.classList.toggle("active", value === activeSub);
         });
     }
 
     function updateChrome() {
-        const isFeatured = topView === "featured";
-        introEl.style.display = isFeatured ? "block" : "none";
-        searchWrap.style.display = isFeatured ? "none" : "flex";
+        // .chrome-intro/#featured-intro isn't used by any current view —
+        // left in the markup (and kept hidden) rather than removed, in case
+        // a future view wants an intro line above the list again.
+        introEl.style.display = "none";
+        updateSearchWrap();
+        featuredMazesBtn.classList.toggle("active", showFeatured);
+        // Only ever repopulates on the render() call that actually flips
+        // showFeatured to true (the button's own click handler) — every
+        // other render() while still in that state only happens after a
+        // sub-nav/top-nav click has already set it back to false, which
+        // closes the frame instead.
+        renderFeaturedList();
+        // Couples .chrome-frame's minimize state to showFeatured — see this
+        // function's own comment for why the two frames' heights need to be
+        // computed together.
+        setFeaturedPanelState(showFeatured);
         topNavBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.top === topView));
         renderSubNav();
     }
 
-    function render() {
-        updateChrome();
-
-        if (!dataLoaded) {
-            introEl.textContent = "Loading…";
-            grid.innerHTML = "";
-            emptyEl.style.display = "none";
-            return;
-        }
-
-        const isFeatured = topView === "featured";
-        const view = effectiveView();
-        const rawItems = sourceItems(view)
-            .map(item => normalize(item, topView === "events"))
-            .filter(matchesQuery);
-        // The Featured pick always means "newest", regardless of whatever
-        // sort the (hidden, on this view) dropdown was last left on.
-        const items = isFeatured ? rawItems.sort((a, b) => b.sortKey.localeCompare(a.sortKey)) : sortItems(rawItems);
-        currentItems = isFeatured ? items.slice(0, 1) : items;
-
-        if (isFeatured) introEl.textContent = "A featured maze from the collection.";
-
-        // The Open Mazes list trades the short description for the date the
-        // maze opened, shown right next to the owner's name instead.
-        const isOpenView = view === "open";
-
-        grid.innerHTML = currentItems.map(n => `
-            <div class="chrome-list-row featured">
+    // Shared by the main grid and the featured-frame's own list (see
+    // renderFeaturedList) — same row markup either place, just a different
+    // container around it.
+    function roomRowHtml(n, isOpenView) {
+        return `
+            <div class="chrome-list-row featured" data-difficulty="${n.difficulty || ""}">
                 <div class="row-thumb">
                     ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(n.thumb, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
-                    <span class="status-badge status-${n.statusKey}">${n.statusLabel}</span>
                 </div>
                 <div class="row-info">
                     <h3>${n.name}</h3>
@@ -387,18 +419,351 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${isOpenView ? "" : `<p class="row-desc">${n.description || ""}</p>`}
                     <div class="row-tags">${tagsHtml(n)}</div>
                 </div>
-                <span class="chrome-go">Go &#9654;</span>
+                <div class="row-side">
+                    <span class="status-badge status-${n.statusKey}">${n.statusLabel}</span>
+                    <span class="chrome-go">Go &#9654;</span>
+                </div>
             </div>
-        `).join("");
+        `;
+    }
+
+    // .chrome-frame is dedicated to plain Mazes/Events browsing now — the
+    // Featured pick lives entirely in .featured-frame instead (see
+    // renderFeaturedList) — so this always shows effectiveView() regardless
+    // of showFeatured, rather than swapping to the featured pool while that
+    // frame's open (chrome-frame is minimized out of the way then anyway).
+    function render() {
+        updateChrome();
+
+        if (!dataLoaded) {
+            grid.innerHTML = "";
+            emptyEl.style.display = "none";
+            return;
+        }
+
+        const view = effectiveView();
+        const rawItems = sourceItems(view)
+            .map(item => normalize(item, topView === "events"))
+            .filter(matchesQuery);
+        const items = sortItems(rawItems);
+        currentItems = items;
+
+        // The Open Mazes list trades the short description for the date the
+        // maze opened, shown right next to the owner's name instead.
+        const isOpenView = view === "open";
+
+        grid.innerHTML = currentItems.map(n => roomRowHtml(n, isOpenView)).join("");
 
         grid.querySelectorAll(".chrome-list-row").forEach((row, i) => {
             row.addEventListener("click", () => openModal(currentItems[i]));
         });
         wireThumbFadeIn(grid);
 
-        const messages = (!isFeatured && query.trim()) ? emptyMessagesSearch : emptyMessagesNoSearch;
+        const messages = query.trim() ? emptyMessagesSearch : emptyMessagesNoSearch;
         emptyEl.textContent = messages[view];
         emptyEl.style.display = currentItems.length === 0 ? "block" : "none";
+    }
+
+    // Populates .featured-frame's own list — just a couple of random picks
+    // from the featured pool (not the whole thing), reshuffled fresh every
+    // time this view opens rather than sorted/stable, so it reads as a
+    // rotating teaser rather than a real second browsing list — that's
+    // .chrome-frame's job (nested right below, see home.html). Only
+    // actually reshuffles the moment showFeatured flips true (see
+    // updateChrome's own comment) rather than on every render while it
+    // stays open, since nothing that would change this list's contents can
+    // happen while it's open (any sub-nav/top-nav click closes it first).
+    const FEATURED_FRAME_COUNT = 2;
+    let featuredListItems = [];
+
+    function renderFeaturedList() {
+        if (!showFeatured || !dataLoaded) return;
+
+        const pool = sourceItems("featured").map(item => normalize(item, false));
+        // Fisher-Yates, trimmed to however many are needed — every maze in
+        // the pool gets an equal shot rather than always favouring
+        // whichever happened to sort first.
+        const shuffled = pool.slice();
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        featuredListItems = shuffled.slice(0, FEATURED_FRAME_COUNT);
+
+        featuredFrameList.innerHTML = featuredListItems.map(n => roomRowHtml(n, false)).join("");
+        featuredFrameList.querySelectorAll(".chrome-list-row").forEach((row, i) => {
+            row.addEventListener("click", () => openModal(featuredListItems[i]));
+        });
+        wireThumbFadeIn(featuredFrameList);
+
+        featuredFrameEmpty.textContent = emptyMessagesNoSearch.featured;
+        featuredFrameEmpty.style.display = featuredListItems.length === 0 ? "block" : "none";
+    }
+
+    // "Refresh recommendations" — same reshuffle as renderFeaturedList, just
+    // triggered by its own button instead of the panel opening, and with a
+    // clone-and-slide transition (same technique site.js's header-events
+    // ticker uses) so the outgoing pair visibly continues down out of the
+    // frame while the new pair slides down into the spot they vacate,
+    // instead of the swap just cutting instantly.
+    let featuredRefreshInFlight = false;
+
+    function refreshFeaturedList() {
+        if (!showFeatured || !dataLoaded || featuredRefreshInFlight) return;
+        featuredRefreshInFlight = true;
+
+        // Clipped to exactly the area .featured-frame-body was showing at
+        // the moment of the click (fixed height, own overflow: hidden) —
+        // anchored against .featured-frame itself (its own containing
+        // block, see that rule's own comment) rather than left inside
+        // .featured-frame-body, since the recompute below reads *that*
+        // element's scrollHeight to size itself for the new pair, and a
+        // still-present outgoing clone sitting inside it would inflate
+        // that reading with the outgoing pair's own height for as long as
+        // the clone takes to finish sliding away and get removed. Without
+        // its own clip standing in for the one it lost by moving out,
+        // though, the outgoing pair would slide unclipped through
+        // .featured-frame's *whole* remaining height instead of stopping
+        // right where .chrome-frame begins, sliding across its minimized
+        // sliver on the way past instead of disappearing behind the edge
+        // of where the picks used to end.
+        const bodyRect = featuredFrameBody.getBoundingClientRect();
+        const frameRect = featuredFrame.getBoundingClientRect();
+        const outgoingClip = document.createElement("div");
+        outgoingClip.className = "featured-frame-list-outgoing-clip";
+        outgoingClip.style.top = (bodyRect.top - frameRect.top) + "px";
+        outgoingClip.style.height = bodyRect.height + "px";
+        featuredFrame.appendChild(outgoingClip);
+
+        const outgoing = featuredFrameList.cloneNode(true);
+        outgoing.removeAttribute("id");
+        outgoing.classList.add("featured-frame-list-outgoing");
+        outgoingClip.appendChild(outgoing);
+
+        renderFeaturedList();
+
+        // Starts the real (now new-content) list above the frame, no
+        // transition yet, before the reflow below locks that in as the
+        // starting point for the animation to it below.
+        featuredFrameList.style.transition = "none";
+        featuredFrameList.style.transform = "translateY(-100%)";
+
+        void featuredFrameList.offsetWidth;
+
+        outgoing.style.transition = "";
+        featuredFrameList.style.transition = "";
+        outgoing.style.transform = "translateY(100%)";
+        featuredFrameList.style.transform = "translateY(0)";
+
+        // .featured-frame-body's own height (and .chrome-frame's slide
+        // offset below it) were sized for the *previous* pair's combined
+        // height — force is needed here since active isn't changing, just
+        // what it needs to fit; without it the "nothing changed" guard in
+        // setFeaturedPanelState would skip re-measuring entirely.
+        setFeaturedPanelState(true, true);
+
+        outgoing.addEventListener("transitionend", () => {
+            outgoingClip.remove();
+            featuredRefreshInFlight = false;
+        }, { once: true });
+    }
+
+    // #search-wrap's own natural (fully padded) height — cached rather than
+    // re-measured on demand, since the only times it's safe to read (not
+    // mid-collapse, padding genuinely at 14px) are exactly the moments
+    // updateSearchWrap already touches it below. js/home.js's
+    // setFeaturedPanelState needs this value too (to work out how much
+    // space #search-wrap will free up once it finishes collapsing), but by
+    // the time that runs #search-wrap's own collapse is already underway,
+    // so it reads this cache instead of trying to measure a moving target.
+    let searchWrapNaturalHeight = searchWrap.scrollHeight;
+
+    window.addEventListener("resize", () => {
+        // Only safe to trust while genuinely expanded — mid-collapse (or
+        // fully collapsed) this would just measure the squashed size.
+        if (searchWrap.style.maxHeight !== "0px") {
+            searchWrapNaturalHeight = searchWrap.scrollHeight;
+        }
+    });
+
+    // Bumped every call and captured by each pending requestAnimationFrame
+    // callback below, which bails out if this has moved on by the time it
+    // fires — own counter rather than one shared across other animated
+    // pieces on this page (see setFeaturedPanelState's own), since this
+    // function has no early-return guard of its own: every call is real
+    // work, so every call needs to be able to invalidate the previous one's
+    // still-pending callback. A shared counter that other functions bump
+    // even on their own no-op calls would invalidate a legitimately still-
+    // pending callback here that has nothing to do with them.
+    let searchWrapGeneration = 0;
+
+    // Slides up (and, thanks to .chrome-nav-sub's higher z-index, visually
+    // behind it — see #search-wrap's own comment) rather than an instant
+    // display:none/flex toggle, so entering/leaving the featured view reads
+    // as one continuous motion instead of a hard cut.
+    function updateSearchWrap() {
+        const myGeneration = ++searchWrapGeneration;
+        const wasCollapsed = searchWrap.style.maxHeight === "0px";
+        if (showFeatured) {
+            // Lock in the current expanded height as the transition's start
+            // — max-height can't animate *from* "none".
+            searchWrap.style.maxHeight = searchWrap.scrollHeight + "px";
+            requestAnimationFrame(() => {
+                if (myGeneration !== searchWrapGeneration) return;
+                searchWrap.style.maxHeight = "0px";
+                // Padding alone (a fixed 20px top / 12px bottom, unaffected
+                // by max-height/border-box) would otherwise leave a 32px-tall
+                // residual even at max-height: 0 — animated to 0 right
+                // alongside it so the collapse actually reaches 0, which
+                // js/home.js's setFeaturedPanelState relies on when working
+                // out how much space this frees up for .featured-frame.
+                searchWrap.style.paddingTop = "0px";
+                searchWrap.style.paddingBottom = "0px";
+                searchWrap.style.opacity = "0";
+                searchWrap.style.transform = "translateY(-100%)";
+            });
+        } else if (wasCollapsed) {
+            // Genuinely coming back from collapsed — animate the reveal.
+            // Deliberately does NOT re-measure scrollHeight here to refresh
+            // searchWrapNaturalHeight, unlike the two branches below — mid-
+            // transition, with padding/max-height either still animating or
+            // just having been reassigned in this same tick, a flex
+            // container's own children can get laid out against a stale
+            // intermediate size for one frame, reporting a squashed
+            // scrollHeight even though nothing is actually wrong. The
+            // cached value (set at load and refreshed on resize, both times
+            // #search-wrap is genuinely settled) is trustworthy; a fresh
+            // read here isn't.
+            requestAnimationFrame(() => {
+                if (myGeneration !== searchWrapGeneration) return;
+                searchWrap.style.maxHeight = searchWrapNaturalHeight + "px";
+                searchWrap.style.paddingTop = "20px";
+                searchWrap.style.paddingBottom = "12px";
+                searchWrap.style.opacity = "1";
+                searchWrap.style.transform = "translateY(0)";
+            });
+        } else {
+            // First render, or already showing — nothing to animate out of,
+            // so just make sure it's fully visible with no transition
+            // in flight (avoids an unwanted grow-in on page load). Safe to
+            // trust a fresh measurement here — genuinely settled, not
+            // mid-transition.
+            searchWrap.style.maxHeight = "none";
+            searchWrap.style.paddingTop = "20px";
+            searchWrap.style.paddingBottom = "12px";
+            searchWrapNaturalHeight = searchWrap.scrollHeight;
+            searchWrap.style.opacity = "1";
+            searchWrap.style.transform = "translateY(0)";
+        }
+    }
+
+    // Couples .featured-frame-body's open/close to .chrome-frame's minimize
+    // — entering the featured view slides .chrome-frame (now nested
+    // *inside* .featured-frame, see home.html) straight down until only its
+    // own top CHROME_FRAME_VISIBLE_SLIVER worth still shows above
+    // .featured-frame's own clipped bottom edge (see .chrome-frame's own
+    // comment in style.css), while .featured-frame-body opens to show its
+    // own couple of random picks above it. .chrome-frame keeps its real,
+    // full flex: 1 size the whole time — sliding is purely a transform, not
+    // a resize — so it still automatically fills whatever
+    // .featured-frame-body isn't using, the same way it always filled
+    // #browse-window's own leftover space before .featured-frame existed;
+    // the slide distance just has to be measured fresh each time since that
+    // full size isn't a constant — see setFeaturedPanelState's own comment
+    // for why that's worked out by arithmetic rather than just measured.
+    const CHROME_FRAME_VISIBLE_SLIVER = 12;
+    // Must match .featured-frame's own negative margin-top in style.css —
+    // see the comment on featuredFrameTarget below for why this needs
+    // adding back into that calculation.
+    const FEATURED_FRAME_OVERLAP = 15;
+    let chromeFrameMinimized = false;
+    let featuredPanelReady = false;
+
+    function setFeaturedPanelState(active, force) {
+        // Arrow (and the strip itself, see .chrome-frame-minimize-toggle's
+        // own opacity rule) only ever shows while minimized — restoring is
+        // its only job now that minimizing itself happens by pressing
+        // "FEATURED MAZES" instead (see that button's own click handler).
+        chromeFrameMinimizeArrow.innerHTML = active ? "&#9650;" : "";
+        chromeFrameMinimizeToggle.setAttribute("aria-label", active ? "Restore the results" : "Minimise the results");
+        featuredFrame.classList.toggle("is-open", active);
+        browseChromeFrame.classList.toggle("is-minimized", active);
+
+        // force bypasses the "nothing changed" guard below — used by
+        // refreshFeaturedList to re-run the sizing math after swapping in a
+        // new pair of picks whose combined height may differ from the old
+        // one's, even though active/chromeFrameMinimized haven't changed.
+        if (active === chromeFrameMinimized && featuredPanelReady && !force) return;
+        featuredPanelReady = true;
+        chromeFrameMinimized = active;
+
+        // .chrome-frame's slide distance (and .featured-frame-body's own
+        // open target, capped below) are worked out by arithmetic instead
+        // of measuring anything currently mid-transition — .chrome-frame's
+        // own live flex: 1-computed size reflects whatever .featured-
+        // frame-body's height happens to be *this frame* (still easing
+        // towards its target, not there yet), not the final settled size,
+        // and .featured-frame's own total height has the exact same
+        // problem one level up: it's flex: 1 too, and #search-wrap
+        // collapsing/revealing (kicked off by updateSearchWrap, called just
+        // before this from the same updateChrome pass) is *also* still
+        // mid-flight, so .featured-frame's live height reflects a stale
+        // partial reading of that, not what it's about to settle at either.
+        // Reading either one here would bake a mid-transition snapshot into
+        // a fixed number and everything would visibly fall out of step for
+        // the rest of the animation.
+        //
+        // Everything actually needed is stable instead: #search-wrap's own
+        // top edge never moves regardless of its collapsed/expanded state
+        // (ordinary block flow — a box's top is set by what precedes it,
+        // not by its own height), and .featured-frame's own bottom edge is
+        // just as fixed (#browse-window's own height is constant, and
+        // .featured-frame is the only flex: 1 item below #search-wrap, so
+        // it always grows/shrinks from its *top* to soak up whatever
+        // #search-wrap isn't using — its bottom edge never has to move to
+        // do that). Together those bracket the one true constant this
+        // whole calculation rests on: the combined space #search-wrap and
+        // .featured-frame have always divided between them. (browseWindow's
+        // own bottom edge is deliberately NOT used for this — there's a
+        // further fixed gap between .featured-frame's real bottom and
+        // #browse-window's own, so anchoring on the window instead of
+        // .featured-frame directly overshoots by exactly that gap.)
+        // featuredFrame.bottom is .featured-frame's own outer (border-box)
+        // edge, but .chrome-frame's real flex: 1 fill only ever reaches its
+        // *inner* edge — .featured-frame's own border takes up the last bit
+        // past that, subtracted separately below since it's specifically
+        // .chrome-frame's own budget being one border thinner, not
+        // .featured-frame's.
+        //
+        // .featured-frame's own -15px margin-top (see its CSS rule) makes it
+        // overlap up underneath #search-wrap by that same amount, so this
+        // span (#search-wrap's top to .featured-frame's bottom) is now 15px
+        // *shorter* than the two elements' combined real height — that
+        // overlap is permanent (not tied to active/inactive), so it's added
+        // back in below regardless of which branch runs.
+        const featuredFrameBorderBottom = parseFloat(getComputedStyle(featuredFrame).borderBottomWidth) || 0;
+        const totalFlexSpace = featuredFrame.getBoundingClientRect().bottom - searchWrap.getBoundingClientRect().top;
+        const featuredFrameTarget = totalFlexSpace - (active ? 0 : searchWrapNaturalHeight) + FEATURED_FRAME_OVERLAP;
+        const spaceForBodyAndChrome = featuredFrameTarget - featuredMazesBtn.getBoundingClientRect().height - featuredFrameBorderBottom;
+
+        // .featured-frame-body's own open/close — a single assignment
+        // animates it correctly either direction, no lock-in-current-value
+        // dance needed: closing, its previous value was always a real
+        // number (never "none"), and opening, it was already sitting at a
+        // real 0. Capped at leaving .chrome-frame at least its own visible
+        // sliver's worth of room — the couple of featured picks in here are
+        // random every time (see renderFeaturedList), and an unlucky pair
+        // with long descriptions can otherwise want more height than
+        // .featured-frame has to give, leaving .chrome-frame nothing (or
+        // even a negative budget) to work with.
+        const bodyTarget = active
+            ? Math.min(featuredFrameBody.scrollHeight, Math.max(0, spaceForBodyAndChrome - CHROME_FRAME_VISIBLE_SLIVER))
+            : 0;
+        featuredFrameBody.style.maxHeight = bodyTarget + "px";
+
+        const chromeFrameTarget = spaceForBodyAndChrome - bodyTarget;
+        const offset = active ? Math.max(0, chromeFrameTarget - CHROME_FRAME_VISIBLE_SLIVER) : 0;
+        browseChromeFrame.style.transform = `translateY(${offset}px)`;
     }
 
     // Entrance/Finish slides always display as "Entrance"/"Complete" in the
@@ -737,7 +1102,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
         modalName.textContent = n.name;
         modalCreator.textContent = n.subtitle;
-        const dateDisplay = topView === "events" ? formatEventDuration(n.dateValue, n.endDateValue) : formatMazeDate(n.dateValue);
+        // Featured rows are always maze rooms regardless of which top-nav
+        // category is active underneath (see sourceItems' "featured"
+        // branch) — same condition render() uses to decide isEvents for
+        // normalize(), so a featured row opened while Events is the active
+        // category doesn't get formatted as if it were one.
+        // Derived from the item's own shape rather than the current
+        // topView/showFeatured globals — n can come from either the main
+        // grid (topView-dependent) or .featured-frame's own list (always
+        // normalize(item, false) regardless of topView), so only n itself
+        // reliably says which kind it is.
+        const isEventItem = n.dateFieldLabel === "Date";
+        const dateDisplay = isEventItem ? formatEventDuration(n.dateValue, n.endDateValue) : formatMazeDate(n.dateValue);
         modalMeta.innerHTML = `
             <span class="status-badge status-${n.statusKey}">${n.statusLabel}</span>
             <span>Hotel: ${n.hotel || "Unknown"}</span>
@@ -883,14 +1259,14 @@ document.addEventListener("DOMContentLoaded", () => {
         render();
     });
 
-    // Clicking the already-active top button toggles it off, back to the
-    // default Featured state (and hides the sub row) — otherwise it
-    // switches straight to that category, keeping whichever sub-filter was
-    // last picked for it (defaulting to the first one).
+    // Switches straight to that category, keeping whichever sub-filter was
+    // last picked for it (defaulting to the first one) — clicking the
+    // already-active button is a no-op rather than toggling back to a
+    // featured state, now that #featured-mazes-btn is the only way there.
     topNavBtns.forEach(btn => {
         btn.addEventListener("click", () => {
-            const top = btn.dataset.top;
-            topView = topView === top ? "featured" : top;
+            topView = btn.dataset.top;
+            showFeatured = false;
             searchInput.value = "";
             query = "";
             render();
@@ -898,17 +1274,49 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // Sub-row buttons just change the filter within whichever top category
-    // is active — no toggle-off, one of the 3 is always selected.
+    // is active — no toggle-off, one of the 3 is always selected. Also
+    // drops back out of the featured view, same as switching top category.
     subNavBtns.forEach(btn => {
         btn.addEventListener("click", () => {
             const value = btn.dataset.subValue;
             if (!value) return;
             if (topView === "mazes") mazesSub = value;
             else if (topView === "events") eventsSub = value;
+            showFeatured = false;
             searchInput.value = "";
             query = "";
             render();
         });
+    });
+
+    // The one way into the featured view — stays active until a sub-nav
+    // filter or a top-nav category click above drops back to normal
+    // browsing (see their own handlers).
+    // A real toggle now — clicking while already active just flips
+    // showFeatured back off, which on its own already returns to whichever
+    // mazesSub/eventsSub was last selected (neither one gets touched while
+    // showFeatured is on) and restores the search row via updateSearchWrap.
+    featuredMazesBtn.addEventListener("click", () => {
+        showFeatured = !showFeatured;
+        searchInput.value = "";
+        query = "";
+        render();
+    });
+
+    // Sits on top of #featured-mazes-btn's own header strip (see its CSS)
+    // rather than inside it, so this click is its own event, not a bubble
+    // off the button underneath — no stopPropagation needed.
+    featuredRefreshBtn.addEventListener("click", refreshFeaturedList);
+
+    // Restore-only now (see .chrome-frame-minimize-toggle's own opacity
+    // rule in style.css — it's invisible and inert whenever not minimized,
+    // so this only ever fires from the minimized state) — same exit as
+    // pressing "FEATURED MAZES" again.
+    chromeFrameMinimizeToggle.addEventListener("click", () => {
+        showFeatured = false;
+        searchInput.value = "";
+        query = "";
+        render();
     });
 
     modalClose.addEventListener("click", closeModal);

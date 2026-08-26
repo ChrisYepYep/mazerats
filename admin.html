@@ -11,6 +11,7 @@
     <title>Admin — Maze Rats</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css">
+    <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
 </head>
 <body data-page="admin">
 
@@ -78,6 +79,14 @@
                         <div class="chrome-titlebar"><h2>Manage Events</h2></div>
                         <div class="chrome-frame">
                             <div class="chrome-body">
+                                <div class="archive-controls">
+                                    <div class="sort-box">
+                                        <select id="events-sort">
+                                            <option value="date">Sort by: Event Start Date</option>
+                                            <option value="name">Sort by: Event Name</option>
+                                        </select>
+                                    </div>
+                                </div>
                                 <div class="chrome-list" id="events-list"></div>
                                 <button class="admin-action-pill admin-add-btn" id="events-add-btn" type="button">+ Add an Event</button>
                                 <form class="admin-form" id="events-form" style="display:none;"></form>
@@ -172,5 +181,7 @@
     <script src="js/api.js"></script>
     <script src="js/site.js"></script>
     <script src="js/admin.js"></script>
+    <script src="js/custom-scrollbar.js"></script>
+    <script src="js/letter-jump.js"></script>
 </body>
 </html>

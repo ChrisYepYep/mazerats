@@ -62,6 +62,160 @@ html::-webkit-scrollbar-thumb {
    this out is what lets the thumb sit flush against that rounded end. */
 html::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: var(--frame-bg); }
 
+/* Custom pixel-art scrollbar for .home-results/.room-desc-box — built as
+   real DOM elements by js/custom-scrollbar.js rather than through
+   ::-webkit-scrollbar-track/-thumb/-button image styling. That approach
+   turned out not to render its background-images at all in real-world
+   testing (Chrome included), and it's WebKit-only by nature regardless —
+   this version is just normal elements with a normal background-image, so
+   it works identically in every browser and isn't gambling on vendor
+   pseudo-element image support at all.
+
+   The script wraps the target element in .custom-scrollbar-wrap at
+   runtime (no HTML changes needed), hides that element's own native
+   scrollbar below, and adds this bar as an external sibling that mirrors
+   its scroll position — see the script for the drag/click/arrow logic. */
+.custom-scrollbar-wrap {
+    display: flex;
+    min-height: 0;
+}
+
+/* .home-results used to cancel .chrome-body's 18px right padding itself
+   (back when it held its own native scrollbar) — that job belongs to
+   whichever element now touches the frame's actual right edge, which is
+   this wrapper once the script has moved .home-results inside it. */
+.custom-scrollbar-wrap--results {
+    margin-right: -18px;
+}
+
+/* #browse-window .chrome-frame::after paints a 1px highlight line right
+   across this frame's own top edge, above content (z-index:5) — nudge the
+   scrollbar down 1px so its up-arrow isn't sitting under that line. Scoped
+   to --results specifically since .home-results is the only scrollbar
+   target that lives inside that particular chrome-frame. */
+.custom-scrollbar-wrap--results .custom-scrollbar {
+    margin-top: 1px;
+}
+
+/* While the chrome-frame is slid down to its minimized sliver, its content
+   (including this scrollbar) is still fully rendered underneath — just
+   hide the scrollbar itself so it doesn't peek through the visible sliver
+   alongside the minimize toggle. */
+.chrome-frame.is-minimized .custom-scrollbar-wrap--results .custom-scrollbar {
+    opacity: 0;
+}
+
+.custom-scrollbar-target {
+    /* Belt-and-suspenders alongside the script setting the same via JS
+       (scrollbar-gutter/overflow can repaint after script runs on some
+       browsers) — hides the native bar in both engines that matter here. */
+    scrollbar-width: none;
+}
+
+.custom-scrollbar-target::-webkit-scrollbar {
+    display: none;
+}
+
+.custom-scrollbar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 15px;
+    flex-shrink: 0;
+}
+
+.custom-scrollbar-track {
+    position: relative;
+    flex: 1;
+    min-height: 15px;
+    width: 15px;
+    cursor: pointer;
+}
+
+/* The track's own visible fill is split into two segments — one above the
+   thumb, one below (sized/positioned in js/custom-scrollbar.js's refresh())
+   — instead of one background on .custom-scrollbar-track itself, so a
+   click only lights up the specific half between an arrow and the thumb
+   that was actually pressed, not the whole bar. background-position is set
+   per-segment in JS too, phased to the segment's own offset from the top
+   of the track, so the repeat-y tiling still reads as one continuous
+   texture running behind the thumb rather than two independently-tiled
+   pieces that happen to not line up. */
+.custom-scrollbar-track-segment {
+    position: absolute;
+    left: 0;
+    width: 15px;
+    background-image: url('../assets/img/scrollbar_track_inactive.png');
+    background-repeat: repeat-y;
+    image-rendering: pixelated;
+}
+
+/* Active only while its own half is the one being pressed (see the
+   .is-active class toggled in js/custom-scrollbar.js's track mousedown
+   handler) — not on hover, and not just because the thumb or an arrow in
+   the same wrapper happens to be hovered/pressed. */
+.custom-scrollbar-track-segment.is-active {
+    background-image: url('../assets/img/scrollbar_track_active.png');
+}
+
+.custom-scrollbar-thumb {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 15px;
+    /* One sprite, not tiled — height is fixed to the art's own 15px rather
+       than stretched/repeated to represent how much content is visible. */
+    height: 15px;
+    background-image: url('../assets/img/scrollbar_thumb_inactive.png');
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    cursor: grab;
+}
+
+.custom-scrollbar-thumb:hover,
+.custom-scrollbar-thumb.is-dragging {
+    background-image: url('../assets/img/scrollbar_thumb_active.png');
+}
+
+.custom-scrollbar-thumb.is-dragging {
+    cursor: grabbing;
+}
+
+.custom-scrollbar-arrow {
+    display: block;
+    width: 15px;
+    height: 14px;
+    flex-shrink: 0;
+    padding: 0;
+    border: none;
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-position: center;
+    image-rendering: pixelated;
+    cursor: pointer;
+}
+
+.custom-scrollbar-arrow-up { background-image: url('../assets/img/scrollbar_arrow_up_inactive.png'); }
+.custom-scrollbar-arrow-up:hover { background-image: url('../assets/img/scrollbar_arrow_up_active.png'); }
+.custom-scrollbar-arrow-down { background-image: url('../assets/img/scrollbar_arrow_down_inactive.png'); }
+.custom-scrollbar-arrow-down:hover { background-image: url('../assets/img/scrollbar_arrow_down_active.png'); }
+
+/* Set in js/custom-scrollbar.js's refresh() when the content is scrolled
+   all the way to that end — overrides both the plain and :hover images. */
+.custom-scrollbar-arrow.is-disabled,
+.custom-scrollbar-arrow.is-disabled:hover {
+    cursor: default;
+    pointer-events: none;
+}
+.custom-scrollbar-arrow-up.is-disabled,
+.custom-scrollbar-arrow-up.is-disabled:hover {
+    background-image: url('../assets/img/scrollbar_arrow_up_disabled.png');
+}
+.custom-scrollbar-arrow-down.is-disabled,
+.custom-scrollbar-arrow-down.is-disabled:hover {
+    background-image: url('../assets/img/scrollbar_arrow_down_disabled.png');
+}
+
 body {
     margin: 0;
     padding: 0;
@@ -548,12 +702,22 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .chrome-frame {
     margin: 10px;
     background: var(--frame-bg);
-    border: 2px solid var(--chrome-border);
+    border: 1px solid var(--chrome-border);
     border-radius: 8px;
     overflow: hidden;
     box-shadow:
-        inset 0 6px 8px -4px rgba(0, 0, 0, 0.65),
-        inset 6px 0 8px -4px rgba(0, 0, 0, 0.65);
+        /* 1px highlight tracing the top and left edges instead of the old
+           soft dark inset — var(--chrome-highlight) is the same lighter
+           chrome-palette tone already used as a highlight border elsewhere
+           (search-box, admin fields, etc.), just as an inset line here. */
+        inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight),
+        /* Same "solid" (zero blur/spread) treatment as the sub-nav tabs'
+           own top shadow above — a flat offset line rather than a soft
+           glow, cast upward across whatever sits directly above this
+           frame (the full-width button on the homepage, a nav row
+           elsewhere), curving with this element's own 8px radius. */
+        0 -3px 0 rgba(0, 0, 0, 0.45);
 }
 
 /* When a page-level nav sits between the titlebar and the frame (see
@@ -580,7 +744,49 @@ body[data-page="home"] .hero { padding-top: 18px; }
    pulls search-wrap up slightly underneath the whole row (not just the
    active button's own merge-bridge) so all 3 buttons overlap the drawer a
    touch instead of just touching it. */
-.chrome-nav-sub { margin-top: 0; margin-bottom: -5px; position: relative; z-index: 1; }
+/* z-index bumped to 2 (was 1) so this still paints above #search-wrap now
+   that #search-wrap also carries its own z-index: 1 (see its own comment) —
+   equal z-index would fall back to DOM order and let #search-wrap paint
+   over the active tab's merge-bridge (see .chrome-nav-btn.active::after
+   below) instead of the other way around. */
+.chrome-nav-sub { margin-top: -10px; margin-bottom: -5px; position: relative; z-index: 2; }
+
+/* Per-button rather than one flat shadow on the row above — a row-level
+   box-shadow would trace the row's own bounding rectangle, ignoring the
+   3 buttons' individual rounded corners (baked into the btn_inactive.png
+   sprite, not a real border-radius) and reading as a straight bar sitting
+   in front of them instead of a shadow actually cast behind each pill.
+   The border-radius here doesn't touch the border-image itself (border-image
+   ignores border-radius) — it only shapes this box-shadow so it curves to
+   roughly match the sprite's own corner curve at the two outer buttons;
+   the middle button's edges butt straight into its neighbours either way,
+   same as the pills themselves. Zero blur/spread keeps it a flat "solid"
+   offset line, same treatment as .btn's own 0 2px 0 shadow elsewhere. */
+.chrome-nav-sub .chrome-nav-btn {
+    border-radius: 8px;
+    box-shadow: 0 -3px 0 rgba(0, 0, 0, 0.3);
+    /* Containing block for .chrome-nav-sub-icon (OPEN/ARCHIVED only, see
+       js/home.js's renderSubNav) — absolutely positioned rather than laid
+       out inline so it doesn't push the label off-centre. */
+    position: relative;
+}
+
+/* Floats in the gap between the label and the button's left edge without
+   touching the label's own centered position at all. */
+.chrome-nav-sub-icon {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 15px;
+    height: 18px;
+    image-rendering: pixelated;
+    pointer-events: none;
+    /* Above the active tab's own merge-bridge (z-index: 2, see
+       .chrome-nav-sub .chrome-nav-btn.active::after) — without this the
+       bridge painted over the icon once its button went active. */
+    z-index: 3;
+}
 
 /* Pixelify Sans instead of Silkscreen (the Mazes/Events pair above, and
    every other pixel-styled heading site-wide, still use Silkscreen) — a
@@ -594,6 +800,57 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .chrome-nav-sub .chrome-nav-btn {
     font-family: 'Pixelify Sans', 'Silkscreen', monospace;
     font-weight: 400;
+}
+
+/* No font override here (unlike .chrome-nav-sub above) — this button keeps
+   the base .chrome-nav-btn font, i.e. Silkscreen, matching the top-nav
+   tabs' own font rather than the sub-nav's Pixelify Sans. */
+.chrome-nav-btn-recommended {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    text-align: left;
+}
+
+/* Left (◀) at rest, rotated to point down while the button's own .active
+   state is on (see js/home.js's toggle) — 0deg <-> -90deg is a single
+   consistent quarter-turn either direction rather than needing to special-
+   case which way the return trip spins. */
+.chrome-nav-btn-arrow {
+    display: inline-block;
+    transform: rotate(0deg);
+    transition: transform 0.3s ease;
+}
+
+.chrome-nav-btn-recommended.active .chrome-nav-btn-arrow {
+    transform: rotate(-90deg);
+}
+
+/* .featured-frame-scoped like the ::before override further down — the base
+   .chrome-nav-btn's own color comes later in the file, and at equal
+   class-only specificity that later rule was winning over a bare
+   .chrome-nav-btn-recommended selector here.
+
+   Only a touch lighter than .featured-frame's own #2e2418 fill (rather than
+   the standard #f5ecd8 nav-tab cream) with the base .chrome-nav-btn drop
+   shadow swapped for a thin highlight below instead — a raised drop shadow
+   reads as text sitting on top of the panel, while a highlight below (with
+   no dark shadow needed since the color is already close to the fill) reads
+   as the label stamped/pressed into it, letterpress-style. */
+.featured-frame .chrome-nav-btn-recommended {
+    color: #6b563a;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* Stays the same pressed-in tone once active rather than picking up the base
+   .chrome-nav-btn.active rule's #241505 (tuned for the light active-tab
+   fill elsewhere, not this button's own dark, unchanging #2e2418 fill —
+   see .featured-frame) — the label doesn't need to shift at all here, only
+   the arrow rotates (see .chrome-nav-btn-recommended.active). */
+.featured-frame .chrome-nav-btn-recommended.active {
+    color: #6b563a;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 /* The middle of the 3 sub-nav buttons (Archived / Past) widened 1px into
@@ -656,6 +913,46 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-shadow: none;
 }
 
+/* Same offset/blur the inactive label's own text-shadow uses (1px 1px 0),
+   just light instead of dark — a dark shadow cast down-right reads as
+   raised (light source top-left catching the letter, casting a shadow
+   behind it); a light one in that same spot instead reads as a highlight
+   catching the bottom lip of a letter pressed IN to the surface, so the
+   active sub-nav label looks stamped into the button rather than sitting
+   on top of it. */
+.chrome-nav-sub .chrome-nav-btn.active {
+    /* Matches .chrome-nav-top .chrome-nav-btn.active's own color, rather
+       than the shared #241505 the base .chrome-nav-btn.active rule sets. */
+    color: #1a0f04;
+    font-weight: 700;
+    text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* Same "pressed in" light highlight as the sub-nav's active label above,
+   plus a shade darker than the shared #241505 so the two active tabs read
+   as related but not identical — the bigger Mazes/Events pair keeping a
+   slightly deeper tone than the smaller filter tabs beneath it. */
+.chrome-nav-top .chrome-nav-btn.active {
+    color: #1a0f04;
+    text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* Flat fill instead of the shared btn_active.png + recolor-filter approach
+   above — that filter is tuned to land on one specific target color
+   (#d6bb96, see the comment below), so getting a different exact hex here
+   means swapping to a plain color rather than re-tuning the filter. Radius
+   added back by hand since the sprite's own rounded corners go with it. */
+.chrome-nav-top .chrome-nav-btn.active::before {
+    border-image-source: none;
+    /* Without this, the base rule's 13px solid border (defaulting to
+       currentColor, i.e. this tab's own #1a0f04 text color) still rendered
+       as a dark ring around the new fill instead of one uniform block. */
+    border-style: none;
+    border-radius: 8px;
+    background: #c3a886;
+    filter: none;
+}
+
 .chrome-nav-btn.active::before {
     border-image-source: url('../assets/img/btn_active.png');
     /* Solved for #d6bb96 specifically — saturate/brightness/hue-rotate
@@ -699,10 +996,25 @@ body[data-page="home"] .hero { padding-top: 18px; }
    at 50/50 — a bit larger than the filter row beneath it. */
 .chrome-nav-top .chrome-nav-btn {
     font-size: 0.85rem;
-    padding: 18px 12px;
+    /* Bottom padding now 10px past the top/sides (28px vs 18px/12px) — a
+       further +5px on top of the earlier +5px, so the button's bottom edge
+       extends 10px further down total without also pushing the label/icon
+       down off-center. */
+    padding: 18px 12px 28px;
 }
 
 .chrome-nav-top .chrome-nav-btn::before { border-width: 13px; }
+
+/* Same technique as the sub-nav row's middle button above (see
+   .chrome-nav-sub .chrome-nav-btn:nth-child(2)) — Mazes widens 1px into
+   Events and sits a layer above it, so its own right border paints over
+   Events' left border instead of the two hairline edges sitting side by
+   side as a visible 2px seam. */
+.chrome-nav-top .chrome-nav-btn-mazes {
+    position: relative;
+    z-index: 1;
+    margin-right: -1px;
+}
 
 /* 3-column grid, not a centered flex row — a flex row centers the icon+text
    *pair*, which pushes the label itself off the button's true center (where
@@ -727,6 +1039,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 .chrome-nav-icon {
     image-rendering: pixelated;
+}
+
+/* Swaps the icon's own image when its tab is active — content: url() on an
+   <img> overrides what it renders without touching its src attribute, so
+   this stays a pure CSS state change (same as every other active/inactive
+   difference on these tabs) rather than needing JS to rewrite src itself. */
+.chrome-nav-btn-mazes.active .chrome-nav-icon {
+    content: url('../assets/img/mazes_icon_active.png');
+}
+.chrome-nav-btn-events.active .chrome-nav-icon {
+    content: url('../assets/img/events_icon_active.png');
 }
 
 /* The titlebar carries the dotted texture itself — the title sits nested in
@@ -843,7 +1166,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
 #browse-window {
     display: flex;
     flex-direction: column;
-    height: 600px;
+    height: 615px;
     position: relative;
 }
 
@@ -891,7 +1214,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: flex;
     flex-direction: column;
     min-height: 0;
-    box-shadow: none;
+    /* The inset shadows are zeroed here and rebuilt on ::after below (see
+       its comment) since inset shadows paint *behind* child content, and
+       the scrolling list needs to slide under them, not cover them. The new
+       outer top shadow doesn't have that problem — an outer shadow paints
+       outside the box entirely, nothing inside could ever cover it — and it
+       needs to stay on the real element rather than ::after specifically
+       because ::after is a child of this overflow:hidden box, so any of
+       its own shadow reaching past that box's edge would get clipped; an
+       element's OWN box-shadow isn't clipped by its OWN overflow. */
+    box-shadow: 0 -3px 0 rgba(0, 0, 0, 0.45);
 }
 
 #browse-window .chrome-frame::after {
@@ -901,8 +1233,8 @@ body[data-page="home"] .hero { padding-top: 18px; }
     z-index: 5;
     pointer-events: none;
     box-shadow:
-        inset 0 6px 8px -4px rgba(0, 0, 0, 0.65),
-        inset 6px 0 8px -4px rgba(0, 0, 0, 0.65);
+        inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight);
 }
 
 #browse-window .chrome-body {
@@ -924,30 +1256,27 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding-bottom: 1px;
 }
 
-/* Cancels .chrome-body's 18px right padding (a scrollbar renders at this
-   element's own border-box edge, so without this it sits 18px in from the
-   frame, not tight against it) and puts most of that space back as padding
-   instead, so the actual list content keeps roughly its old inset — only
-   the scrollbar itself moves out to the frame's edge. */
+/* The "cancel .chrome-body's 18px right padding so the scrollbar sits flush
+   against the frame edge" trick that used to live here has moved to
+   .custom-scrollbar-wrap--results below — js/custom-scrollbar.js wraps this
+   element in a sibling that holds both it and the new custom scrollbar bar,
+   so it's that wrapper's edge that needs to reach the frame now, not this
+   element's own. This just needs a little breathing room before the bar. */
 .home-results {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    margin-right: -18px;
-    padding-right: 14px;
+    padding-right: 8px;
 }
 
-.home-results::-webkit-scrollbar { width: 10px; }
-.home-results::-webkit-scrollbar-track {
-    background: var(--frame-bg);
-    border: 1px solid var(--chrome-border);
-    border-radius: 6px;
-}
-.home-results::-webkit-scrollbar-thumb {
-    background: var(--wood-dark);
-    border-radius: 6px;
-}
-.home-results::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: var(--frame-bg); }
+/* No .home-results-specific ::-webkit-scrollbar* rules here — this used to
+   duplicate the plain html-level flat-colour treatment directly on this
+   element, but that directly-scoped selector ties the new custom pixel
+   scrollbar's own .chrome-frame ::-webkit-scrollbar* rules on specificity
+   (one class + pseudo-element either way), and being later in the file it
+   was silently winning the tie and overriding the sprite images back to
+   the plain version. Removed so the .chrome-frame-scoped rules near the
+   top of this file are the only thing touching this element's scrollbar. */
 
 /* ---------- room list (Habbo navigator style) ---------- */
 
@@ -959,8 +1288,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
        2px and its .status-badge already sits 8px above the row's own top
        edge, so without this the scrolling container (.home-results,
        overflow-y: auto) clips the badge on the first row the moment it's
-       hovered. */
-    padding: 10px 0 4px;
+       hovered. Left/right padding matches the same 10px so each row has
+       equal breathing room on every side instead of touching the
+       container's edges while a visible gap shows above/below. */
+    padding: 10px 10px 4px;
 }
 
 .chrome-list-row {
@@ -968,18 +1299,23 @@ body[data-page="home"] .hero { padding-top: 18px; }
     align-items: flex-start;
     gap: 14px;
     background: var(--chrome-row);
-    border: 2px solid var(--chrome-border);
+    border: 1px solid var(--chrome-border);
     border-radius: 8px;
     padding: 10px;
     text-align: left;
     text-decoration: none;
     cursor: pointer;
+    /* Flat right/bottom drop, same hard-edged style as the sub-nav tab
+       buttons' own border-image bevel, instead of the row reading as
+       flush/borderless against the frame behind it. Kept (not replaced) on
+       hover below so the row never loses its solid edge, even while lifted. */
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
     transition: transform 0.15s, box-shadow 0.15s;
 }
 
 .chrome-list-row:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4), 0 4px 10px rgba(0, 0, 0, 0.35);
 }
 
 .chrome-list-row.featured { background: var(--chrome-row-featured); }
@@ -988,17 +1324,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
     width: 76px;
     height: 76px;
     border-radius: 10px;
-    border: 2px solid var(--chrome-border);
+    border: 1px solid var(--chrome-border);
     background-color: var(--wood-dark);
     position: relative;
     flex-shrink: 0;
 }
 
-/* Clips the zoomed image to the thumbnail's rounded corners — kept off
-   .row-thumb itself because .status-badge is a child of .row-thumb too,
-   deliberately positioned to poke outside its top-right corner (negative
-   top/right); overflow:hidden there was clipping the badge along with the
-   image instead of just the image. */
+/* Clips the zoomed image to the thumbnail's rounded corners — a separate
+   inner wrapper rather than overflow:hidden on .row-thumb itself, so a
+   sibling that needs to render outside the thumb's own box (like
+   .status-badge used to, before it moved to .row-side) isn't forced to
+   share this element's clipping. */
 .row-thumb-crop {
     width: 100%;
     height: 100%;
@@ -1071,12 +1407,14 @@ body[data-page="home"] .hero { padding-top: 18px; }
     gap: 3px;
     flex-shrink: 0;
     white-space: nowrap;
+    padding-right: 3px;
 }
 
+/* Sits in normal flow now (see .row-side, which stacks this above
+   .chrome-go on the row's own right edge) rather than absolutely
+   positioned over .row-thumb's corner — .modal-meta's own usage already
+   overrides back to inline (see .modal-meta .status-badge). */
 .status-badge {
-    position: absolute;
-    top: -8px;
-    right: -8px;
     font-size: 0.6rem;
     letter-spacing: 0.5px;
     text-transform: uppercase;
@@ -1086,6 +1424,18 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-weight: 700;
     background: rgba(20, 13, 6, 0.85);
     border: 1px solid currentColor;
+}
+
+/* Right-hand column shared by every maze/event row — the status pill
+   stacked above the Go arrow, both pinned to the row's own right edge
+   instead of the pill poking out of the thumbnail's corner. */
+.row-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
 .status-open { color: var(--ok); }
@@ -1197,16 +1547,33 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* Homepage-only: instead of living inside .chrome-frame's padded body,
    search-wrap hangs directly off the sub-nav tabs as its own "drawer" —
    flush against them the same way .chrome-frame itself flushes against a
-   nav row (see the .chrome-nav + .chrome-frame rule above). Its own bottom
-   margin stands in for .chrome-frame's usual top margin (see the collapse
-   rule below) so the gap before the results frame is there when the drawer
-   is visible, and simply vanishes along with it (display:none contributes
-   no margin) on the Featured view where there's no search/sort at all. */
+   nav row (see the .chrome-nav + .chrome-frame rule above). */
 #search-wrap {
     position: relative;
     isolation: isolate;
-    margin: 0 10px 3px;
-    padding: 14px;
+    /* Own stacking context (isolation above) so z-index below is compared
+       only against its own ::before rather than escaping to compare
+       against unrelated elements. Also what makes it disappear *behind*
+       .chrome-nav-sub specifically (see js/home.js's updateSearchWrap)
+       rather than just fading in place — chrome-nav-sub's own z-index: 2
+       is higher, so as this slides upward toward it, chrome-nav-sub
+       already paints on top of the overlap. */
+    z-index: 1;
+    margin: 0 10px;
+    padding: 20px 14px 12px;
+    overflow: hidden;
+    /* Same reasoning as .featured-frame/.chrome-frame.is-minimized's own
+       flex-shrink: 0 — #search-wrap's own reveal measures its natural
+       height with max-height: none (see js/home.js's updateSearchWrap),
+       but max-height: none doesn't stop the flex column's shrink pass from
+       still compressing it if .featured-frame/.chrome-frame haven't
+       animated back to their own final sizes yet at that exact instant
+       (both run from the same updateChrome pass, so neither has "settled"
+       when any of the three first measures anything). Without this, that
+       transient squeeze gets baked in as this element's own "natural"
+       height instead of its real, fully-padded one. */
+    flex-shrink: 0;
+    transition: max-height 0.4s ease, opacity 0.35s ease, transform 0.4s ease, padding-top 0.4s ease, padding-bottom 0.4s ease;
 }
 
 /* Same button_active.png sprite + recolor filter as an active nav tab (see
@@ -1227,8 +1594,305 @@ body[data-page="home"] .hero { padding-top: 18px; }
     filter: saturate(0.54) brightness(1.18) hue-rotate(4deg);
 }
 
-.chrome-nav + #search-wrap,
-#search-wrap + .chrome-frame { margin-top: 0; }
+.chrome-nav + #search-wrap { margin-top: 0; }
+
+/* .chrome-frame now lives *inside* .featured-frame (see home.html) rather
+   than sitting after it as a separate sibling. Its own base margin (10px on
+   every side, see the shared .chrome-frame rule) is trimmed here so its
+   left/right/bottom edges land exactly on .featured-frame's own — flush,
+   not inset — and its top edge sits tight against the header button/
+   .featured-frame-body directly above it instead of leaving a gap. Its own
+   right and bottom borders are dropped too (left and top stay) — with
+   nothing but .featured-frame's own border past them now, a second border
+   right on top of it just doubled the line up rather than reading as one
+   continuous edge. */
+.featured-frame .chrome-frame {
+    margin: 0;
+    border-right-width: 0;
+    border-bottom-width: 0;
+}
+
+/* Minimising now slides the whole frame straight down (see
+   js/home.js's setFeaturedPanelState) rather than shrinking its
+   max-height — .chrome-frame keeps its real, full flex: 1 size the entire
+   time, just translated far enough down that only its own top
+   CHROME_FRAME_VISIBLE_SLIVER worth still falls inside .featured-frame's
+   clipped bounds (overflow: hidden, see .featured-frame), reading as a
+   thin strip of the results peeking out along the bottom rather than a
+   separate collapsed control. */
+#browse-window .chrome-frame {
+    transition: transform 0.4s ease;
+}
+
+/* Sits flush along .chrome-frame's own top edge — the only part of it
+   still inside .featured-frame's clipped bounds once minimized (see
+   .chrome-frame's own comment above) — as a full-width strip rather than a
+   floating pill, sized to fit entirely within that visible sliver instead
+   of spilling past it into the clipped-away region below. */
+.chrome-frame-minimize-toggle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 12px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.35);
+    border: none;
+    cursor: pointer;
+    color: var(--amber-bright);
+    font-size: 0.45rem;
+    line-height: 1;
+    z-index: 4;
+    /* Hidden and inert whenever the frame is active/expanded — minimising
+       is triggered elsewhere entirely (the "FEATURED MAZES" button, see
+       js/home.js's setFeaturedPanelState), so this strip only ever needs
+       to exist as a restore control once already minimized. */
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+.chrome-frame.is-minimized .chrome-frame-minimize-toggle {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Own rounded, bordered box (matching .chrome-frame's own treatment) that
+   now contains the "FEATURED MAZES" header button, its own small 2-maze
+   preview list (.featured-frame-body), AND .chrome-frame itself, nested
+   directly inside (see home.html) — .chrome-frame is flex: 1 in here (see
+   its own shared rule) exactly like it used to be a flex: 1 child of
+   #browse-window directly, so it just naturally absorbs whatever room
+   .featured-frame-body isn't using, with no manual coordination between
+   the two needed (contrast the previous sibling-based approach, which had
+   to compute both frames' heights together by hand). This box is what's
+   flex: 1 in #browse-window's own column now, taking over that role from
+   .chrome-frame. */
+.featured-frame {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    /* Containing block for .featured-refresh-btn, absolutely positioned in
+       the top-right corner over #featured-mazes-btn's own header strip. */
+    position: relative;
+    /* Negative top margin extends this frame's own box 15px upward, behind
+       #search-wrap (whose z-index: 1 paints over the overlap) rather than
+       just growing #browse-window's budget downward — search-wrap ends up
+       visually overlapping the top of this frame instead of just sitting
+       flush above it. */
+    margin: -15px 10px 0;
+    background: #2e2418;
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+}
+
+/* Overrides the base .chrome-nav-btn's own flex: 1 — that's meant for
+   sitting alongside siblings in a horizontal nav row (top-nav, sub-nav),
+   not for a button that's now the fixed-height header of a vertical flex
+   column (see .featured-frame) — flex: 1 there would grow it to compete
+   with .featured-frame-body for the column's available space instead of
+   sizing to its own natural content height. */
+#featured-mazes-btn {
+    flex: 0 0 auto;
+    /* Shifts the label/arrow down from the shared .chrome-nav-btn's own
+       11px padding-top — 4px more at rest, 10px more once active (see
+       #featured-mazes-btn.active below) — js/home.js's
+       setFeaturedPanelState reads this button's real height fresh each
+       time, after its own .active class is toggled, so the taller active
+       padding is already accounted for rather than baked in as a stale
+       number. */
+    padding-top: 19px;
+}
+
+#featured-mazes-btn.active {
+    padding-top: 25px;
+}
+
+/* Text-only "Refresh recommendations" control, floated over the top-right
+   corner of #featured-mazes-btn's own header strip rather than living
+   inside it (nesting a real <button> inside another <button> isn't valid
+   HTML) — matches that button's own padding-top/bottom exactly so its
+   label lines up at the same baseline as "FEATURED MAZES" beside it.
+   Hidden at rest; only ever shown once #featured-mazes-btn picks up its
+   own .active class (see updateChrome in js/home.js) — the sibling
+   selector means no separate JS toggle is needed here. */
+.featured-refresh-btn {
+    display: none;
+    position: absolute;
+    top: 0;
+    right: 14px;
+    z-index: 3;
+    padding: 25px 0 11px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.4px;
+    color: var(--amber-bright);
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+#featured-mazes-btn.active ~ .featured-refresh-btn {
+    display: block;
+}
+
+/* Same glow used by the header's own upcoming-events title on hover (see
+   a.header-events-title:hover) — reused here so both "hover this bit of
+   text to make it light up" affordances read as the same interaction
+   language site-wide. */
+.featured-refresh-btn:hover,
+.featured-refresh-btn:focus-visible {
+    color: #fff8ec;
+    text-shadow: 0 0 6px rgba(255, 248, 236, 0.65);
+}
+
+/* Drops the shared .chrome-nav-btn::before sprite border entirely —
+   .featured-frame's own border now traces the whole component's edge, so a
+   second border/background on just the header read as a visually distinct
+   box nested inside it rather than one continuous panel. border-image
+   renders independent of border-style (it only needs border-width to have
+   room to draw into), so border-style: none alone doesn't suppress it —
+   border-image-source: none is what actually turns it off, in both the
+   resting and .active states (see .chrome-nav-btn.active::before, which
+   would otherwise still win specificity-wise... it doesn't here, this ID
+   selector outranks it, but border-width still needs zeroing regardless). */
+.featured-frame #featured-mazes-btn::before {
+    border-style: none;
+    border-width: 0;
+    border-image-source: none;
+    background: none;
+}
+
+/* Only ever 2 rows' worth of content (see js/home.js's renderFeaturedList),
+   so unlike .chrome-frame right after it, this one doesn't need flex: 1 to
+   fill leftover space — it just animates its own max-height between 0 and
+   its real content height (see js/home.js's setFeaturedPanelState), the
+   same "measure real height, animate to it" pattern used everywhere else
+   on this page (#search-wrap, the old teaser drawer this replaced). Never
+   shrunk by .featured-frame's own flex column for the same reason
+   .chrome-frame.is-minimized isn't — that max-height number needs to stay
+   the final word, not a starting point flex-shrink can still eat into. */
+.featured-frame-body {
+    flex-shrink: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease;
+}
+
+/* Wraps the outgoing clone created by refreshFeaturedList, clipping it to
+   exactly the area .featured-frame-body was showing at the moment of the
+   click (own fixed height + overflow: hidden, both set inline in JS)
+   rather than leaving it inside .featured-frame-body itself, which would
+   inflate that element's own scrollHeight for as long as the clone takes
+   to finish sliding away and get removed — js/home.js's
+   setFeaturedPanelState reads that measurement to resize the frame for
+   the new pair partway through this same animation. Lives as a sibling of
+   .featured-frame-body under .featured-frame (which supplies the
+   containing block, see its own position: relative), positioned (via its
+   own inline top, set in JS) to sit exactly where .featured-frame-body
+   was. Without this standing in for the clip .featured-frame-body used to
+   provide, the outgoing pair would slide unclipped through the frame's
+   *entire* remaining height instead of stopping right where .chrome-frame
+   begins — sliding across its minimized sliver on the way past, instead
+   of disappearing behind the edge where the picks used to end. */
+.featured-frame-list-outgoing-clip {
+    position: absolute;
+    left: 0;
+    right: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+/* Slides within its clip wrapper above via transform — no positioning of
+   its own needed, it's the sole content of that wrapper. */
+.featured-frame-list-outgoing {
+    pointer-events: none;
+}
+
+/* Real list gets the same transition applied inline (see
+   refreshFeaturedList) on the outgoing clone too — declared once here
+   since both need to move in lockstep. */
+#featured-frame-list,
+.featured-frame-list-outgoing {
+    transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.featured-frame .chrome-list {
+    padding: 14px;
+    gap: 10px;
+}
+
+/* Slightly darker than the row's own default background so it still reads
+   against the frame's own #2e2418 fill instead of blending flat into it. */
+.featured-frame .chrome-list-row {
+    background: rgba(0, 0, 0, 0.25);
+}
+
+/* The curated featured-picks list specifically (not the full random grid
+   nested further down in .featured-frame, see #featured-grid) — each row's
+   background tints toward its own maze's difficulty rating instead of the
+   flat rgba(0,0,0,0.25) above, using the same hues as .tag.difficulty-*
+   just translated to a low-alpha fill instead of solid text/border. */
+#featured-frame-list .chrome-list-row[data-difficulty="easy"] { background: rgba(127, 174, 82, 0.6); }
+#featured-frame-list .chrome-list-row[data-difficulty="medium"] { background: rgba(216, 191, 56, 0.6); }
+#featured-frame-list .chrome-list-row[data-difficulty="hard"] { background: rgba(201, 138, 66, 0.6); }
+#featured-frame-list .chrome-list-row[data-difficulty="very-hard"] { background: rgba(194, 105, 47, 0.6); }
+#featured-frame-list .chrome-list-row[data-difficulty="extreme"] { background: rgba(184, 72, 31, 0.6); }
+
+/* The medium tint above is bright/light enough that the shared light-on-
+   dark text colours (h3's --amber-bright, .row-creator/.row-desc's own
+   amber/parchment tones) lose their contrast — darkened just for this one
+   difficulty rather than touching the shared row text colours everywhere
+   else, which all sit on darker fills where the light tones read fine. */
+#featured-frame-list .chrome-list-row[data-difficulty="medium"] h3 {
+    color: #3a2e14;
+}
+
+#featured-frame-list .chrome-list-row[data-difficulty="medium"] .row-creator,
+#featured-frame-list .chrome-list-row[data-difficulty="medium"] .row-desc,
+#featured-frame-list .chrome-list-row[data-difficulty="medium"] .row-date {
+    color: #4a3c1e;
+}
+
+#featured-frame-list .chrome-list-row[data-difficulty="medium"] .chrome-go {
+    color: #3a2e14;
+}
+
+/* Full-bleed thumbnail instead of the shared 76x76 fixed square — stretches
+   to the row's own full height (align-items: stretch, overriding the
+   shared .chrome-list-row's flex-start) with just a thin 2px reveal of the
+   row's own background/border around it. */
+#featured-frame-list .chrome-list-row {
+    align-items: stretch;
+    padding: 2px;
+}
+
+#featured-frame-list .row-thumb {
+    height: auto;
+    /* Matches the row's own 8px border-radius (the shared .row-thumb's 10px
+       was tuned for the old fixed-size square thumbnail, not this full-
+       bleed one nested directly inside the tab). */
+    border-radius: 8px;
+}
+
+/* .tag's own padding is deliberately asymmetric (2.5px top / 0.5px bottom
+   — see its own comment) to visually centre its text, which leaves its
+   actual glyphs sitting ~1px closer to the row's bottom edge than the
+   maze title's own glyphs sit to the row's top edge — nudged up here to
+   even that out (a pure paint-position shift, not a margin, so it doesn't
+   change .row-info's own content height / feed back into .row-thumb's
+   stretch). */
+#featured-frame-list .row-tags {
+    position: relative;
+    top: -1px;
+}
 
 /* Fills whatever space the sort dropdown (pinned to the row's right edge,
    see .sort-box below) doesn't need, rather than spanning the full row on
@@ -1385,6 +2049,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
     /* Solid, slightly darker than --frame-bg (the colour behind the modal's
        text below) rather than the wood/pattern texture. */
     background-color: #453a2c;
+    /* Sizing for the plain background-image fallback used when an item has
+       no gallery/entrance/finish to show instead (almost always events —
+       see openModal in js/home.js) — without this it defaulted to
+       background-size: auto, tiling the image at its native resolution
+       instead of scaling it. Matches .modal-gallery-img's own object-fit:
+       contain so a gallery-less item's thumbnail reads the same as a
+       maze's gallery image would. */
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
     position: relative;
 }
 
@@ -1640,7 +2314,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
        already fills the box; this just crops in further on top of that. */
     transform: scale(1.12);
     border-radius: 8px;
-    border: 2px solid transparent;
+    border: 1px solid transparent;
     cursor: pointer;
     opacity: 0.6;
     flex-shrink: 0;
@@ -1664,7 +2338,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     width: 52px;
     height: 52px;
     border-radius: 8px;
-    border: 2px solid transparent;
+    border: 1px solid transparent;
     cursor: pointer;
     opacity: 0.6;
     flex-shrink: 0;
@@ -1920,26 +2594,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 /* Description (plus Links & References right beneath it, when set) is
-   capped and scrolls internally instead of growing the modal indefinitely —
-   scrollbar styled to match .home-results/.gallery-strip. */
+   capped and scrolls internally instead of growing the modal indefinitely.
+   Custom scrollbar (see js/custom-scrollbar.js) wraps this at runtime, same
+   as .home-results — no scrollbar-width padding needed here beyond normal
+   text breathing room, since the bar itself is now an external sibling. */
 .room-desc-box {
     max-height: 160px;
     overflow-y: auto;
-    padding-right: 10px;
+    padding-right: 8px;
     margin-bottom: 16px;
 }
-
-.room-desc-box::-webkit-scrollbar { width: 10px; }
-.room-desc-box::-webkit-scrollbar-track {
-    background: var(--frame-bg);
-    border: 1px solid var(--chrome-border);
-    border-radius: 6px;
-}
-.room-desc-box::-webkit-scrollbar-thumb {
-    background: var(--wood-dark);
-    border-radius: 6px;
-}
-.room-desc-box::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: var(--frame-bg); }
 
 .modal-body .room-desc-full {
     color: var(--parchment-dim);
@@ -2008,31 +2672,35 @@ body[data-page="home"] .hero { padding-top: 18px; }
     margin: 28px auto 0;
 }
 
-/* Scrolls internally instead of letting the whole page grow to fit every
-   maze/event/admin row — a maze with dozens of rooms in its own list, or
-   just enough mazes archived, would otherwise make the page enormous.
-   Height leaves room for the sticky header above and a bit of breathing
-   room below; .admin-sidebar/.admin-floating-actions are fixed to the
-   viewport already so they aren't affected by this scrolling. */
+/* .admin-main itself just flows normally now — the page scrolls the same
+   way every other page on the site does, with each section's own list
+   scrolling *inside* its chrome-frame instead (#rooms-list/#events-list/
+   #admins-list below), same pattern as .home-results on the homepage. This
+   used to be one long internal scroll region wrapping all three sections
+   together, which also left the "Manage Mazes" chrome-window's own frame
+   sized to whatever the OUTER scroll clipped it to rather than sitting at
+   its own natural height on the page. */
 .admin-main {
-    max-height: calc(100vh - 140px);
-    overflow-y: auto;
-    padding-right: 6px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--wood-dark) var(--frame-bg);
+    padding-right: 0;
 }
 
-.admin-main::-webkit-scrollbar { width: 10px; }
-.admin-main::-webkit-scrollbar-track {
-    background: var(--frame-bg);
-    border: 1px solid var(--chrome-border);
-    border-radius: 6px;
+/* Scrolls internally instead of letting a maze list with dozens of entries
+   (or a maze with dozens of rooms in its own gallery, though that one's
+   still just .admin-gallery-list inside the form) make the whole page
+   enormous. Custom scrollbar (js/custom-scrollbar.js) supplies the actual
+   bar — this just needs the bounded height + overflow it looks for. */
+#rooms-list,
+#events-list,
+#admins-list {
+    max-height: min(520px, 55vh);
+    overflow-y: auto;
+    /* Explicit rather than relying on default flex-item sizing — once
+       js/custom-scrollbar.js wraps this in a flex row alongside the new
+       scrollbar bar, a plain .chrome-list (no width of its own) could
+       shrink to its rows' content width instead of filling the row. */
+    flex: 1;
+    min-width: 0;
 }
-.admin-main::-webkit-scrollbar-thumb {
-    background: var(--wood-dark);
-    border-radius: 6px;
-}
-.admin-main::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: var(--frame-bg); }
 
 /* Fixed rather than absolute — it and everything in it (Log Out, the
    Landing Page title/hint, the three toggle buttons) stay in place in the
@@ -2059,16 +2727,21 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 @media (max-width: 900px) {
     .admin-sidebar { position: static; width: 100%; left: auto; margin-top: 24px; }
-    /* .admin-main's own internal scroll (see below) is a desktop-only
-       convenience — it stops a long maze/event/admin list from making the
-       whole page absurdly tall next to the sidebar, which is fixed in
-       place there. Once the sidebar itself goes static and just stacks
-       below the content at this width, that reason is gone, and a capped-
-       height nested scroll region is exactly the kind of thing that reads
-       as broken on a touchscreen (easy to miss it's even there, awkward to
-       scroll deliberately). Letting it flow as part of the normal page
-       scroll instead matches how every other page already behaves here. */
-    .admin-main { max-height: none; overflow-y: visible; padding-right: 0; }
+    /* Each list's own internal scroll (see #rooms-list etc. above) is a
+       desktop-only convenience — it stops a long maze/event/admin list from
+       making the whole page absurdly tall next to the sidebar, which is
+       fixed in place there. Once the sidebar itself goes static and just
+       stacks below the content at this width, that reason is gone, and a
+       capped-height nested scroll region is exactly the kind of thing that
+       reads as broken on a touchscreen (easy to miss it's even there,
+       awkward to scroll deliberately). Letting it flow as part of the
+       normal page scroll instead matches how every other page behaves. */
+    #rooms-list,
+    #events-list,
+    #admins-list {
+        max-height: none;
+        overflow-y: visible;
+    }
 }
 
 /* Nested inside .admin-sidebar now (see admin.html) so it just flows below
@@ -2180,7 +2853,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
     flex-direction: column;
     gap: 6px;
     flex-shrink: 0;
-    align-self: center;
 }
 
 .admin-row-actions .btn {
@@ -2479,6 +3151,91 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border: 1px solid var(--border);
 }
 
+/* A room added with just a label (see wireGalleryEditor's addBtn — rooms
+   can be created image-less, showing "Awaiting Room Image" on the public
+   site) gets an inline upload target here instead of sitting permanently
+   blank. Wider than the plain 48px square rather than taller, so the row's
+   own height doesn't jump depending on whether an image is set. */
+.admin-gallery-thumb.admin-gallery-thumb-empty {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: auto;
+    min-width: 92px;
+    padding: 4px 8px;
+    cursor: pointer;
+    border-style: dashed;
+}
+
+.admin-gallery-thumb.admin-gallery-thumb-empty:hover,
+.admin-gallery-thumb.admin-gallery-thumb-empty.dragover {
+    border-color: var(--amber);
+    background-color: rgba(201, 151, 79, 0.1);
+}
+
+.admin-gallery-thumb-upload-text {
+    font-size: 0.5rem;
+    line-height: 1.2;
+    text-align: center;
+    color: var(--parchment-dim);
+    pointer-events: none;
+}
+
+/* A room that already has an image gets the same label+hidden-file-input
+   treatment as the empty state above (see wireGalleryEditor) instead of
+   being a plain static swatch — clicking or dropping a file directly onto
+   it uploads a replacement and swaps it in, no separate button needed.
+   Unlike the empty state's always-visible call-to-action text, the
+   "Replace Image" label here only needs to show on hover/drag — the
+   thumbnail itself already reads as interactive once a visitor notices the
+   cursor, and permanently covering the image would just be noise. */
+.admin-gallery-thumb.admin-gallery-thumb-filled {
+    position: relative;
+    cursor: pointer;
+}
+
+.admin-gallery-thumb-replace-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border-radius: 7px;
+    background: rgba(20, 14, 8, 0.72);
+    font-size: 0.45rem;
+    line-height: 1.2;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--amber-bright);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+}
+
+.admin-gallery-thumb.admin-gallery-thumb-filled:hover .admin-gallery-thumb-replace-text,
+.admin-gallery-thumb.admin-gallery-thumb-filled.dragover .admin-gallery-thumb-replace-text {
+    opacity: 1;
+}
+
+.admin-gallery-thumb.admin-gallery-thumb-filled.dragover {
+    outline: 1px solid var(--amber);
+    outline-offset: -1px;
+}
+
+.admin-gallery-thumb-file {
+    /* Same "present for form semantics, invisible otherwise" treatment as
+       .admin-dropzone input[type="file"] — the thumb itself is the whole
+       interactive surface here. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
 .admin-gallery-row .admin-gallery-label {
     flex: 1;
     min-width: 0;
@@ -2554,13 +3311,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 /* Remove reads as destructive even at rest — a dim red border/text instead
    of the neutral pill colour — while still following the same "solid only
-   when active" rule (it just never has an active state to reach). */
-.admin-pill-btn.admin-pill-danger {
+   when active" rule (it just never has an active state to reach). Also
+   works on .admin-action-pill (the larger size, used for e.g. a form's own
+   Delete button) — same modifier, just paired with either size class. */
+.admin-pill-btn.admin-pill-danger,
+.admin-action-pill.admin-pill-danger {
     border-color: rgba(161, 70, 47, 0.7);
     color: #c98468;
 }
 
-.admin-pill-btn.admin-pill-danger:hover:not(:disabled) {
+.admin-pill-btn.admin-pill-danger:hover:not(:disabled),
+.admin-action-pill.admin-pill-danger:hover:not(:disabled) {
     border-color: var(--danger);
     color: #fff0ec;
     box-shadow: 0 0 8px rgba(161, 70, 47, 0.65);
@@ -2712,17 +3473,33 @@ body[data-page="home"] .hero { padding-top: 18px; }
        see .chrome-go above), Edit/Delete can't be dropped, and stacked
        vertically at their normal fixed width they were eating so much of
        the row that .row-info had almost nothing left, wrapping the title/
-       description down to a couple words per line. Forced onto their own
+       description down to a couple words per line. .row-side (status pill
+       + Edit/Delete, see roomRowHtml/renderList) is forced onto its own
        full-width row below the thumb+info instead (flex-basis:100% always
-       starts a fresh line in a wrapped flex row), side by side rather than
-       stacked so that row doesn't cost much extra height either. */
+       starts a fresh line in a wrapped flex row) and switched to a row
+       itself — status pill on the left, Edit/Delete side by side on the
+       right — so that row doesn't cost much extra height either. */
     .admin-row { flex-wrap: wrap; }
-    .admin-row .admin-row-actions {
+    .admin-row .row-side {
         flex: 1 0 100%;
         flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
         margin-top: 4px;
     }
+    .admin-row .admin-row-actions { flex-direction: row; }
     .admin-row .admin-row-actions .btn { flex: 1; }
+
+    /* The active sub-nav tab's merge-bridge (see .chrome-nav-sub
+       .chrome-nav-btn.active::after) is sized for the desktop button —
+       fixed top/height values that, against this breakpoint's much
+       shorter button (padding/font-size both drop further up in this same
+       block), reached up far enough to cut across the bottom of the
+       label's own letters instead of just bridging the seam below them. */
+    .chrome-nav-sub .chrome-nav-btn.active::after {
+        top: calc(100% - 9px);
+        height: 13px;
+    }
 
     .chrome-list-row .row-thumb { width: 56px; height: 56px; }
     .chrome-go { display: none; }

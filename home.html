@@ -19,6 +19,7 @@
     <meta name="twitter:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css">
+    <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
 </head>
 <body data-page="home">
 
@@ -62,25 +63,35 @@
                     <button type="button" class="chrome-nav-btn"></button>
                     <button type="button" class="chrome-nav-btn"></button>
                 </div>
-                <div class="archive-controls" id="search-wrap" style="display:none;">
+                <div class="archive-controls" id="search-wrap">
                     <div class="search-box">
                         <input type="text" id="room-search" placeholder="Search by name, builder, or tag...">
                     </div>
                     <div class="sort-box">
                         <select id="room-sort">
-                            <option value="date">Sort by: Opening Date</option>
                             <option value="name">Sort by: Maze Name</option>
+                            <option value="owner">Sort by: Maze Owner</option>
+                            <option value="date">Sort by: Opening Date</option>
                             <option value="difficulty-asc">Sort by: Difficulty (Easy-Hard)</option>
                             <option value="difficulty-desc">Sort by: Difficulty (Hard-Easy)</option>
                         </select>
                     </div>
                 </div>
-                <div class="chrome-frame">
-                    <div class="chrome-body">
-                        <p class="chrome-intro" id="featured-intro"></p>
-                        <div class="home-results">
-                            <div class="chrome-list" id="featured-grid"></div>
-                            <p class="admin-empty" id="featured-empty" style="display:none;"></p>
+                <div class="featured-frame" id="featured-frame">
+                    <button type="button" class="chrome-nav-btn chrome-nav-btn-recommended" id="featured-mazes-btn"><span class="chrome-nav-btn-arrow" aria-hidden="true">&#9664;</span><span class="chrome-nav-btn-label">Featured Mazes</span></button>
+                    <button type="button" class="featured-refresh-btn" id="featured-refresh-btn">Refresh recommendations</button>
+                    <div class="featured-frame-body" id="featured-frame-body">
+                        <div class="chrome-list" id="featured-frame-list"></div>
+                        <p class="admin-empty" id="featured-frame-empty" style="display:none;"></p>
+                    </div>
+                    <div class="chrome-frame">
+                        <button type="button" class="chrome-frame-minimize-toggle" id="chrome-frame-minimize-toggle" aria-label="Restore the results"><span class="chrome-frame-minimize-arrow" aria-hidden="true"></span></button>
+                        <div class="chrome-body">
+                            <p class="chrome-intro" id="featured-intro"></p>
+                            <div class="home-results">
+                                <div class="chrome-list" id="featured-grid"></div>
+                                <p class="admin-empty" id="featured-empty" style="display:none;"></p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -169,5 +180,7 @@
     <script src="js/api.js"></script>
     <script src="js/site.js"></script>
     <script src="js/home.js"></script>
+    <script src="js/custom-scrollbar.js"></script>
+    <script src="js/letter-jump.js"></script>
 </body>
 </html>
