@@ -1,6 +1,93 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="visibility:hidden">
 <head>
+    <!-- Pre-load Coming Soon/Maintenance gate — first thing in <head>, ahead
+         of every other resource, so it starts the settings/auth check as
+         early as possible. <html>'s own inline visibility:hidden above (set
+         directly in the markup, not by this script, so there's no gap where
+         real content could paint before this runs) keeps the whole page
+         invisible until this resolves — a gated, non-admin visitor never
+         sees home.html's real content flash before being bounced to
+         index.html, unlike the old js/site.js gate, which only ever ran on
+         DOMContentLoaded, well after the page had already painted. Plain
+         fetch() rather than js/api.js's helpers, since that script hasn't
+         loaded yet this early — duplicating the same two calls it wraps. */
+    -->
+    <script>
+    (function () {
+        var TOKEN_KEY = "mazerats_admin_token";
+
+        function reveal() {
+            document.documentElement.style.visibility = "";
+        }
+
+        // Same "Dev Mode" pill js/site.js used to add — the DOM isn't
+        // necessarily parsed yet the moment the settings/auth fetches
+        // resolve, so this waits for it rather than assuming .site-header/
+        // .brand-group already exist.
+        function applyAdminNotice() {
+            function run() {
+                var header = document.querySelector(".site-header");
+                if (header) header.classList.add("site-header-notice");
+                var brandGroup = document.querySelector(".brand-group");
+                if (!brandGroup) return;
+                var pill = document.createElement("span");
+                pill.className = "header-badge header-state-pill";
+                pill.textContent = "Dev Mode";
+                var adminLink = document.createElement("a");
+                adminLink.className = "header-badge header-state-pill header-state-link";
+                adminLink.href = "admin.html";
+                adminLink.textContent = "Admin";
+                brandGroup.appendChild(pill);
+                brandGroup.appendChild(adminLink);
+            }
+            if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", run);
+            } else {
+                run();
+            }
+        }
+
+        fetch("/.netlify/functions/settings")
+            .then(function (res) {
+                if (!res.ok) throw new Error("settings fetch failed");
+                return res.json();
+            })
+            .then(function (settings) {
+                var state = settings.landingState;
+                if (state !== "coming-soon" && state !== "maintenance") {
+                    reveal();
+                    return;
+                }
+
+                var token = localStorage.getItem(TOKEN_KEY);
+                if (!token) {
+                    location.replace("index.html");
+                    return;
+                }
+
+                return fetch("/.netlify/functions/auth", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "x-admin-token": token },
+                    body: JSON.stringify({ action: "verify" })
+                })
+                    .then(function (res) { return res.ok ? res.json() : null; })
+                    .then(function (result) {
+                        if (!result || !result.username) {
+                            location.replace("index.html");
+                            return;
+                        }
+                        applyAdminNotice();
+                        reveal();
+                    });
+            })
+            .catch(function () {
+                // Settings unreachable — fail open rather than lock a
+                // visitor out behind a permanently hidden page.
+                reveal();
+            });
+    })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">

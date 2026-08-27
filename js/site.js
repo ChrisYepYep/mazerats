@@ -1,79 +1,13 @@
 /* Shared site chrome */
 
-// While the landing page is set to Coming Soon or Maintenance (see the
-// admin page's Landing Page controls, netlify/functions/settings.js),
-// every page except admin.html and index.html itself should be off-limits
-// to the public — visitors land back on index.html regardless of what URL
-// they hit. A logged-in admin is the one exception: they can keep roaming
-// normally so they can actually check the site while it's down, but get a
-// visible reminder they're doing it — a faded-orange header and a state
-// pill next to the brand — so it's never mistaken for the site being live
-// for everyone. Runs on every page site.js is loaded on; admin.html is
-// skipped since it's explicitly exempt and would otherwise redirect
-// itself, and index.html (data-page="welcome") is skipped since it's
-// already the redirect target — it only loads site.js at all for the
-// shared header-events ticker below, not this gate.
-document.addEventListener("DOMContentLoaded", async () => {
-    if (document.body.dataset.page === "admin" || document.body.dataset.page === "welcome" || typeof Api === "undefined") return;
-
-    let landingState;
-    try {
-        ({ landingState } = await Api.getSiteSettings());
-    } catch (e) {
-        return; // Settings unreachable — fail open rather than lock visitors out.
-    }
-    if (landingState !== "coming-soon" && landingState !== "maintenance") return;
-
-    // Same localStorage key admin.js's TOKEN_KEY uses — kept in sync
-    // manually since each file already has its own small copy of the auth
-    // plumbing (same pattern as DIFFICULTY_ORDER elsewhere in the admin).
-    // localStorage rather than sessionStorage specifically so a token from
-    // the admin tab is visible here even though this is a separate tab.
-    const token = localStorage.getItem("mazerats_admin_token");
-    let isAdmin = false;
-    if (token) {
-        try {
-            const result = await Api.verifySession(token);
-            isAdmin = !!(result && result.username);
-        } catch (e) {
-            isAdmin = false;
-        }
-    }
-
-    if (!isAdmin) {
-        window.location.href = "index.html";
-        return;
-    }
-
-    const header = document.querySelector(".site-header");
-    if (header) header.classList.add("site-header-notice");
-
-    // home.html is the only page this gate still ever runs on (admin.html
-    // and index.html/welcome are both excluded above) — its .brand-group
-    // already holds the brand next to the Discord badge, so appending here
-    // lands the pill in that same row, right after Discord.
-    const brandGroup = document.querySelector(".brand-group");
-    const pill = document.createElement("span");
-    pill.className = "header-badge header-state-pill";
-    // Same pill text either way — an admin roaming during either state just
-    // needs the reminder that they're seeing something the public can't
-    // right now, not which specific state caused it (that's already on the
-    // admin page's own Landing Page controls if they need it).
-    pill.textContent = "Dev Mode";
-
-    // Quick way back to the admin page from wherever the admin's actually
-    // browsing — sits right after the Dev Mode pill, same spot admin.html's
-    // own matching link back to home.html shows up (see admin.js).
-    const adminLink = document.createElement("a");
-    adminLink.className = "header-badge header-state-pill header-state-link";
-    adminLink.href = "admin.html";
-    adminLink.textContent = "Admin";
-
-    if (brandGroup) {
-        brandGroup.appendChild(pill);
-        brandGroup.appendChild(adminLink);
-    }
-});
+// The old Coming Soon/Maintenance gate (redirecting a non-admin visitor to
+// index.html, plus the "Dev Mode" pill for one who's allowed to stay) used
+// to live here, running on DOMContentLoaded — but that's well after the
+// page had already painted, so a gated visitor briefly saw the real page
+// before being bounced. It only ever ran on home.html anyway (admin.html
+// and index.html/welcome were both excluded), so it's since moved to an
+// early, render-blocking inline script in home.html's own <head> instead —
+// see the comment there for why it has to run that early.
 
 // Routes an image path through Netlify's built-in Image CDN so the browser
 // downloads a resized/compressed version instead of the full original —
@@ -125,8 +59,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         // js/welcome.js listens for it and opens its own lightweight event
         // modal right there, since home.html itself is off-limits to
         // regular visitors during Coming Soon/Maintenance and would just
-        // bounce them straight back here anyway (see js/site.js's own gate
-        // further down this file). Everywhere else it still points at
+        // bounce them straight back here anyway (see the pre-load gate in
+        // home.html's own <head>). Everywhere else it still points at
         // home.html#event-<id> — a normal navigation from any other page,
         // or a same-page hash change already handled by home.js's own
         // openEventFromHash if already there.
