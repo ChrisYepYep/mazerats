@@ -24,7 +24,20 @@ document.addEventListener("DOMContentLoaded", () => {
         thanks: document.getElementById("console-page-thanks")
     };
 
+    function clearPrivacyHash() {
+        if (location.hash === "#privacy") {
+            history.replaceState(null, "", location.pathname + location.search);
+        }
+    }
+
     function showPage(name) {
+        // The footer's Privacy Policy link parks a "#privacy" hash in the
+        // URL to trigger opening straight to this page (see
+        // openPrivacyFromHash below) — once the console-screen moves on to
+        // a different page, that hash no longer describes what's showing,
+        // so clear it. Left alone while name is still "privacy" itself,
+        // including the very showPage("privacy") call that hash triggers.
+        if (name !== "privacy") clearPrivacyHash();
         Object.entries(pages).forEach(([key, el]) => {
             // The thanks page uses a flex column (see .console-page-thanks)
             // so its OK button can be pinned to the bottom — an inline
@@ -45,18 +58,52 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.addEventListener("click", () => showPage(btn.dataset.page));
     });
 
+    // ---------- default position ----------
+
+    // Anchored to #browse-window (the main chrome window) rather than a
+    // fixed spot in the viewport — sits just off its right edge, vertically
+    // centered to it. Computed fresh (via getBoundingClientRect, so it
+    // accounts for the window's actual responsive position) every time the
+    // console opens, right up until the user drags it somewhere themselves
+    // — from then on their placement sticks across closes/reopens, same as
+    // before, instead of snapping back to this default. Declared here,
+    // ahead of openConsole below, since openPrivacyFromHash can call
+    // openConsole synchronously during this same setup pass (a page loaded
+    // straight at #privacy) — any later and hasBeenDragged would still be
+    // in its temporal dead zone at that point.
+    let hasBeenDragged = false;
+
+    function positionConsoleDefault() {
+        const chromeWindow = document.getElementById("browse-window");
+        if (!chromeWindow) return;
+        const winRect = chromeWindow.getBoundingClientRect();
+        // Nudged 128px left and 40px up from dead-flush-and-centered on the
+        // window's right edge, purely by eye/preference.
+        const left = winRect.right - 128;
+        const top = winRect.top + winRect.height / 2 - modal.offsetHeight / 2 - 40;
+        const maxLeft = Math.max(0, window.innerWidth - modal.offsetWidth);
+        const maxTop = Math.max(0, window.innerHeight - modal.offsetHeight);
+        modal.style.left = Math.min(maxLeft, Math.max(0, left)) + "px";
+        modal.style.top = Math.min(maxTop, Math.max(0, top)) + "px";
+        modal.style.transform = "none";
+    }
+
     // ---------- open/close ----------
 
     let dataLoaded = false;
 
-    function openConsole() {
+    function openConsole(defaultPage) {
         modal.style.display = "block";
-        // Always lands on Contact — otherwise the tab buttons' own .active
-        // state (only ever changed by clicking one) could disagree with
-        // which page is actually showing (always Contact, per the static
-        // HTML) after a close/reopen that happened to follow a click on a
-        // different tab.
-        showPage("contact");
+        // Lands on Contact by default — otherwise the tab buttons' own
+        // .active state (only ever changed by clicking one) could disagree
+        // with which page is actually showing after a close/reopen that
+        // happened to follow a click on a different tab. openPrivacyFromHash
+        // below passes "privacy" instead, landing there directly rather
+        // than flashing through Contact first (which would also clear the
+        // #privacy hash immediately via showPage's own cleanup, before the
+        // privacy page ever actually showed).
+        showPage(defaultPage || "contact");
+        if (!hasBeenDragged) positionConsoleDefault();
         if (!dataLoaded) {
             dataLoaded = true;
             loadContributors();
@@ -66,9 +113,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function closeConsole() {
         modal.style.display = "none";
+        clearPrivacyHash();
     }
 
-    openBtn.addEventListener("click", openConsole);
+    openBtn.addEventListener("click", () => openConsole());
     closeBtn.addEventListener("click", closeConsole);
 
     // The footer's Privacy Policy link (js/site.js) points at
@@ -77,8 +125,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // and on hashchange, same pattern as js/home.js's own openEventFromHash.
     function openPrivacyFromHash() {
         if (location.hash !== "#privacy") return;
-        openConsole();
-        showPage("privacy");
+        openConsole("privacy");
     }
     window.addEventListener("hashchange", openPrivacyFromHash);
     openPrivacyFromHash();
@@ -96,6 +143,7 @@ document.addEventListener("DOMContentLoaded", () => {
     frame.addEventListener("mousedown", (e) => {
         if (e.target.closest("button, input, textarea, .console-screen")) return;
         dragging = true;
+        hasBeenDragged = true;
         frame.classList.add("is-dragging");
         const rect = modal.getBoundingClientRect();
         dragOffsetX = e.clientX - rect.left;

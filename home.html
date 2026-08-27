@@ -29,10 +29,10 @@
                 <span class="brand-text">MAZE RATS</span>
                 <span class="brand-tagline">Every maze. One place.</span>
             </div>
+            <button type="button" class="header-console-btn" id="header-console-btn" aria-label="Console"><img src="assets/img/console-icon.png" alt="" aria-hidden="true"></button>
             <a class="header-badge" href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Discord</a>
         </div>
         <div class="header-events-group">
-            <button type="button" class="header-console-btn" id="header-console-btn" aria-label="Console"><img src="assets/img/console-icon-flat.png" alt="" aria-hidden="true"></button>
             <div class="header-events" id="header-events">
                 <p class="header-events-label">Upcoming Events</p>
                 <div class="header-events-viewport" id="header-events-viewport">
@@ -146,17 +146,18 @@
                     </div>
                     <div class="console-page" id="console-page-people" style="display:none;">
                         <h3 class="console-page-title">Contributors</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
                         <div class="console-contributors-list" id="console-contributors-list"></div>
                     </div>
                     <div class="console-page" id="console-page-privacy" style="display:none;">
                         <h3 class="console-page-title">Privacy Policy</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
-                        <p class="console-blurb"><strong>What we collect.</strong> If you use the Contact Us form, we store the message and whatever contact details you choose to include (Origins username, Discord username) so we can follow up. Your Discord username is optional. We also briefly log your IP address against your submission, used only to prevent spam.</p>
-                        <p class="console-blurb"><strong>Why.</strong> Solely to review and respond to your message — maze submissions, corrections, and general contact. We don't use it for marketing.</p>
-                        <p class="console-blurb"><strong>Where it's stored.</strong> In our own database (MongoDB Atlas), accessed only through our own Netlify-hosted backend. A copy of new messages may also be emailed to the site admin via Resend, a transactional email provider, for faster replies.</p>
-                        <p class="console-blurb"><strong>Tracking.</strong> This site doesn't use cookies, analytics, or advertising trackers. The only thing stored in your browser is a login session if you're a site admin — nothing for regular visitors.</p>
-                        <p class="console-blurb"><strong>Sharing.</strong> We don't sell or share your data with third parties beyond the email delivery mentioned above.</p>
-                        <p class="console-blurb"><strong>Questions or removal requests?</strong> Reach out via the Contact Us page and we'll sort it out.</p>
+                        <p class="console-blurb"><strong>What we collect.</strong> When you submit a form via the Contact Us page, we collect the details you provide—such as your message content, Habbo Origins username, and optional Discord handle—solely to process and respond to your inquiry. Short-term IP logging is implemented exclusively for automated spam prevention and security filtering.</p>
+                        <p class="console-blurb"><strong>Use of Data.</strong> Submitted information is used strictly to review, process, and reply to user inquiries, including maze submissions, content corrections, and general feedback. We do not maintain marketing mailing lists or use your details for promotional purposes.</p>
+                        <p class="console-blurb"><strong>Data Storage & Infrastructure.</strong> Submissions are stored securely within a MongoDB Atlas database, accessible strictly via our Netlify-hosted serverless architecture. Instant email notifications for incoming messages are routed through Resend, a privacy-compliant transactional email provider, ensuring prompt administrative responses.</p>
+                        <p class="console-blurb"><strong>Analytics & Privacy.</strong> We use Umami Analytics to monitor aggregate website traffic and performance without compromising user privacy. Umami is a lightweight, privacy-focused tool that does not collect personal data, track users across external sites, or utilize cookies. Browser storage is strictly reserved for administrative authentication sessions and is never placed on standard visitor devices.</p>
+                        <p class="console-blurb"><strong>Third-Party Sharing.</strong> We do not sell, rent, trade, or share your personal information with third parties, except as necessary to deliver transactional system alerts through our integrated infrastructure providers mentioned above.</p>
+                        <p class="console-blurb"><strong>Data Rights & Contact.</strong> If you wish to request the removal, review, or deletion of any stored contact data associated with your account, please send a message through the Contact Us form, and your request will be processed promptly.</p>
                     </div>
                     <div class="console-page" id="console-page-about" style="display:none;">
                         <h3 class="console-page-title">About</h3>
@@ -178,7 +179,6 @@
     <footer class="site-footer">
         <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
         <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
-        <p><a href="about.html">Know a maze room that belongs here?</a></p>
     </footer>
 
     <!-- Room detail modal -->

@@ -45,6 +45,18 @@
     font-display: swap;
 }
 
+/* Same family name, registered as its own weight rather than a separate
+   font-family — any element already set to 'Volter Goldfish' picks this
+   file up automatically the moment its font-weight is 700/bold, no
+   font-family change needed at each call site. */
+@font-face {
+    font-family: 'Volter Goldfish';
+    src: url('../assets/fonts/VolterGoldfishBold.ttf') format('truetype');
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+}
+
 * { box-sizing: border-box; }
 
 /* Site-wide scrollbar treatment — every scrolling element (this page
@@ -278,11 +290,10 @@ p { color: var(--parchment-dim); }
 
 /* ---------- layout shell ---------- */
 
-/* Groups the console button with the events widget so the two move as one
-   right-hand unit against .site-header's own justify-content: space-
-   between — brand-group still pins to the far left, this group to the far
-   right, with the button sitting immediately left of the events widget
-   inside it rather than a third item spread out on its own. */
+/* Pins the events widget to the far right against .site-header's own
+   justify-content: space-between (brand-group pins to the far left). The
+   console button used to live in here too, sitting just left of the
+   widget — it's since moved into .brand-group, next to the Discord pill. */
 .header-events-group {
     display: flex;
     align-items: center;
@@ -299,18 +310,18 @@ p { color: var(--parchment-dim); }
     display: flex;
     align-items: center;
     line-height: 0;
+    transition: transform 0.15s ease;
 }
 
 .header-console-btn img {
     width: 24px;
     height: auto;
     image-rendering: pixelated;
-    transition: filter 0.15s ease;
 }
 
-.header-console-btn:hover img,
-.header-console-btn:focus-visible img {
-    filter: brightness(1.3);
+.header-console-btn:hover,
+.header-console-btn:focus-visible {
+    transform: translateY(-2px);
 }
 
 .site-header {
@@ -582,7 +593,25 @@ main { display: block; flex: 1 0 auto; }
     margin: 0 6px;
     color: var(--parchment-dim);
 }
-.site-footer a { color: var(--amber); }
+
+.footer-dot {
+    margin: 0 6px;
+    color: var(--parchment-dim);
+}
+
+.site-footer a {
+    color: var(--amber);
+    text-decoration: none;
+}
+
+/* Same glow as the header's own upcoming-events title on hover (see
+   a.header-events-title:hover) — reused so both read as the same
+   "hover this link to make it light up" interaction language. */
+.site-footer a:hover,
+.site-footer a:focus-visible {
+    color: #fff8ec;
+    text-shadow: 0 0 6px rgba(255, 248, 236, 0.65);
+}
 
 /* ---------- hero ---------- */
 
@@ -594,12 +623,12 @@ main { display: block; flex: 1 0 auto; }
 }
 
 /* Homepage's shorter top bar — also applied to the admin and welcome
-   (index.html) pages so their headers match height/spacing exactly instead
-   of falling back to the taller generic .site-header padding every other
-   page still uses. */
+   (index.html) pages so every remaining page's header matches height/
+   spacing exactly, rather than the base .site-header padding further up
+   (still there as a fallback, but nothing should actually be using it). */
 body[data-page="home"] .site-header,
 body[data-page="admin"] .site-header,
-body[data-page="welcome"] .site-header { padding: 8px 24px; }
+body[data-page="welcome"] .site-header { padding: 6px 24px; }
 body[data-page="home"] .hero { padding-top: 18px; }
 
 .hero-title {
@@ -912,9 +941,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-weight: 400;
 }
 
-/* No font override here (unlike .chrome-nav-sub above) — this button keeps
-   the base .chrome-nav-btn font, i.e. Silkscreen, matching the top-nav
-   tabs' own font rather than the sub-nav's Pixelify Sans. */
 .chrome-nav-btn-recommended {
     display: flex;
     align-items: center;
@@ -931,6 +957,24 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: inline-block;
     transform: rotate(0deg);
     transition: transform 0.3s ease;
+    /* The ▶ glyph isn't in Volter Goldfish (see .featured-frame
+       .chrome-nav-btn-recommended's font-family below) — left to inherit
+       that stack it would silently fall through to whichever font in the
+       chain actually has it, an unpredictable pick with its own vertical
+       metrics that doesn't line up with the label's own baseline. Pinned
+       explicitly to Silkscreen (what it always rendered as before) so its
+       alignment against the label stays deterministic. */
+    font-family: 'Silkscreen', monospace;
+}
+
+/* Volter Goldfish's line-box sits its glyph ink a couple px higher than
+   Silkscreen's within the same flex-centered row, so even with the arrow
+   and label both vertically centered as boxes (see .chrome-nav-btn-
+   recommended's align-items: center), the label's own text visibly read
+   as sitting too high next to the arrow. Nudged back down to line up. */
+.chrome-nav-btn-recommended .chrome-nav-btn-label {
+    position: relative;
+    top: 2px;
 }
 
 .chrome-nav-btn-recommended.active .chrome-nav-btn-arrow {
@@ -951,15 +995,22 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .featured-frame .chrome-nav-btn-recommended {
     color: #6b563a;
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 700;
+    /* The label's own markup is "Featured Mazes" — Silkscreen (the old
+       font here) has no real lowercase forms so it always read as caps
+       regardless; Volter Goldfish does have real lowercase, so this now
+       needs to be explicit to keep the same all-caps look. */
+    text-transform: uppercase;
 }
 
-/* Stays the same pressed-in tone once active rather than picking up the base
-   .chrome-nav-btn.active rule's #241505 (tuned for the light active-tab
-   fill elsewhere, not this button's own dark, unchanging #2e2418 fill —
-   see .featured-frame) — the label doesn't need to shift at all here, only
-   the arrow rotates (see .chrome-nav-btn-recommended.active). */
+/* Switches to the same color as .featured-refresh-btn (var(--amber-bright)),
+   which only ever shows up alongside this button once it's active — the
+   two read as one matching pair of controls on the panel rather than the
+   label staying in its resting pressed-in tone while its sibling has
+   already switched to the "live" amber. */
 .featured-frame .chrome-nav-btn-recommended.active {
-    color: #6b563a;
+    color: var(--amber-bright);
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
@@ -1843,8 +1894,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
     background: transparent;
     border: none;
     cursor: pointer;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.6rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
     letter-spacing: 0.4px;
     color: var(--amber-bright);
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
@@ -3560,46 +3612,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 
-/* ---------- about / static page content ---------- */
-
-.page-content {
-    padding: 60px 0 40px;
-}
-
-.page-content h1 { font-size: 2.2rem; text-align: center; margin-bottom: 8px; }
-.page-content .subtitle {
-    text-align: center;
-    color: var(--parchment-dim);
-    margin-bottom: 40px;
-}
-
-.prose {
-    max-width: 680px;
-    margin: 0 auto;
-}
-
-.prose h2 {
-    font-size: 1.3rem;
-    margin-top: 34px;
-}
-
-.prose p { margin-bottom: 14px; }
-
-.prose ul { color: var(--parchment-dim); padding-left: 20px; }
-.prose li { margin-bottom: 8px; }
-
-.callout {
-    max-width: 680px;
-    margin: 30px auto 0;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 20px 22px;
-}
-
-.callout h3 { font-size: 1rem; margin-bottom: 8px; }
-.callout p { margin: 0; font-size: 0.88rem; }
-
 /* ---------- console modal ---------- */
 
 /* Draggable Habbo-style console (see js/console.js) — a free-floating
@@ -3726,7 +3738,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding: 0 4px 2px;
     background: #ffcb00;
     color: #996600;
-    font-family: 'Montserrat', sans-serif;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
     font-weight: 700;
     font-size: 0.6rem;
     letter-spacing: 0;
@@ -3815,8 +3827,8 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .console-page-title {
     margin: 0 0 4px;
     font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
-    font-weight: 600;
-    font-size: 0.6rem;
+    font-weight: 700;
+    font-size:  0.5625rem;
     color: #eeeeee;
     text-shadow: none;
     letter-spacing: 0;
@@ -3841,7 +3853,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .console-blurb {
     margin: 0 0 8px;
     font-weight: 400;
-    font-size: 0.55rem;
+    font-size: 0.5625rem;
     line-height: 1.4;
     color: #eeeeee;
 }

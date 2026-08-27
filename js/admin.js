@@ -9,8 +9,8 @@
 document.addEventListener("DOMContentLoaded", () => {
 
     // localStorage, not sessionStorage — an admin checking the live site
-    // (home.html/about.html, see js/site.js's Coming Soon/Maintenance gate)
-    // in a second tab or window needs this same token there too;
+    // (home.html, see js/site.js's Coming Soon/Maintenance gate) in a
+    // second tab or window needs this same token there too;
     // sessionStorage is scoped per-tab and wouldn't be visible outside the
     // tab actually used to log in.
     const TOKEN_KEY = "mazerats_admin_token";
@@ -1993,10 +1993,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------- landing page state ----------
 
-    // Mirrors js/site.js's own Dev Mode pill (shown there on home.html/
-    // about.html while a logged-in admin roams during Coming Soon/
-    // Maintenance) — same pill here in the admin header, plus a link back
-    // to home.html so getting to the gated public site is one click either
+    // Mirrors js/site.js's own Dev Mode pill (shown there on home.html
+    // while a logged-in admin roams during Coming Soon/Maintenance) —
+    // same pill here in the admin header, plus a link back to home.html
+    // so getting to the gated public site is one click either
     // direction. Idempotent (clears any pill it previously added first) so
     // it can just be re-called on every state check/change instead of
     // needing to track whether it's already showing.

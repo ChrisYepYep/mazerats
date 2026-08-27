@@ -48,15 +48,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     const header = document.querySelector(".site-header");
     if (header) header.classList.add("site-header-notice");
 
-    // .brand-group (home.html, admin.html) already holds the brand next to
-    // the Discord/Admin badge, so appending here lands the pill in that
-    // same row, right after Discord — truly next to it, not just somewhere
-    // else in the header's own flex row. about.html has no .brand-group
-    // wrapper at all, so it falls back to sitting right after .brand
-    // instead — still reads fine there, just without a Discord pill beside
-    // it to speak of.
+    // home.html is the only page this gate still ever runs on (admin.html
+    // and index.html/welcome are both excluded above) — its .brand-group
+    // already holds the brand next to the Discord badge, so appending here
+    // lands the pill in that same row, right after Discord.
     const brandGroup = document.querySelector(".brand-group");
-    const brand = document.querySelector(".brand");
     const pill = document.createElement("span");
     pill.className = "header-badge header-state-pill";
     // Same pill text either way — an admin roaming during either state just
@@ -76,9 +72,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (brandGroup) {
         brandGroup.appendChild(pill);
         brandGroup.appendChild(adminLink);
-    } else if (brand) {
-        brand.insertAdjacentElement("afterend", pill);
-        pill.insertAdjacentElement("afterend", adminLink);
     }
 });
 
@@ -228,19 +221,22 @@ document.addEventListener("DOMContentLoaded", () => {
     footer.parentNode.insertBefore(section, footer);
 });
 
-// Privacy Policy link, appended into .site-footer on every page that has
-// one — the policy itself lives on the homepage console modal's Privacy
+// Privacy Policy link, appended onto the end of .site-footer's own
+// copyright line (its last <p>) rather than as a separate line of its
+// own — the policy itself lives on the homepage console modal's Privacy
 // page (js/console.js), not a standalone page, so this always points back
 // there: a same-page hash on home.html itself (no reload, just opens the
 // console via console.js's own hashchange listener), or a normal
 // navigation to home.html#privacy from anywhere else.
 document.addEventListener("DOMContentLoaded", () => {
     const footer = document.querySelector(".site-footer");
-    if (!footer) return;
+    const copyrightLine = footer ? footer.querySelector("p:last-child") : null;
+    if (!copyrightLine) return;
 
     const href = document.body.dataset.page === "home" ? "#privacy" : "home.html#privacy";
-    const p = document.createElement("p");
-    p.innerHTML = `<a href="${href}">Privacy Policy</a>`;
-    footer.appendChild(p);
+    copyrightLine.insertAdjacentHTML(
+        "beforeend",
+        ` <span class="footer-dot" aria-hidden="true">&middot;</span> <a href="${href}">Privacy Policy</a>`
+    );
 });
 
