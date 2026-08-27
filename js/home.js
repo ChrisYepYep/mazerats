@@ -375,9 +375,14 @@ document.addEventListener("DOMContentLoaded", () => {
             // laid out inline before the label, specifically so it doesn't
             // shift the label off the button's own centre — it just floats
             // in the gap between the label and the button's left edge.
-            btn.innerHTML = icon
-                ? `<img class="chrome-nav-sub-icon" src="assets/img/${icon}" alt="" aria-hidden="true">${label}`
-                : label;
+            // Label itself is wrapped in its own span (not left as a bare
+            // text node) so it can be raised above the active tab's merge-
+            // bridge the same way the icon is — plain inline text paints
+            // below any z-index'd descendant in the same stacking context
+            // regardless of DOM order, so the bridge's ::after (z-index: 2)
+            // would otherwise always win against it.
+            const iconHtml = icon ? `<img class="chrome-nav-sub-icon" src="assets/img/${icon}" alt="" aria-hidden="true">` : "";
+            btn.innerHTML = `${iconHtml}<span class="chrome-nav-sub-label">${label}</span>`;
             btn.dataset.subValue = value;
             btn.classList.toggle("active", value === activeSub);
         });

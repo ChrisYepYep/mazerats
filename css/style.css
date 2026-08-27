@@ -31,6 +31,20 @@
     --frame-bg-light: #61513d;
 }
 
+/* Self-hosted rather than a web font service — Volter (Goldfish) isn't
+   distributed through any of those, only circulated as a font file within
+   the Habbo fan community. Loaded here so it's available everywhere
+   (any browser/device that requests this stylesheet gets the file), but
+   not yet assigned to anything via font-family — that's a deliberate
+   follow-up, not an oversight. */
+@font-face {
+    font-family: 'Volter Goldfish';
+    src: url('../assets/fonts/VolterGoldfish.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
 * { box-sizing: border-box; }
 
 /* Site-wide scrollbar treatment — every scrolling element (this page
@@ -122,6 +136,13 @@ html::-webkit-scrollbar-button { display: none; width: 0; height: 0; background:
     align-items: stretch;
     width: 15px;
     flex-shrink: 0;
+}
+
+/* Default for every instance except the console (see the override further
+   down) — not enough content to scroll just hides the whole bar, same as
+   this always worked before .is-unscrollable existed as a real class. */
+.custom-scrollbar.is-unscrollable {
+    visibility: hidden;
 }
 
 .custom-scrollbar-track {
@@ -256,6 +277,41 @@ a { color: var(--amber-bright); }
 p { color: var(--parchment-dim); }
 
 /* ---------- layout shell ---------- */
+
+/* Groups the console button with the events widget so the two move as one
+   right-hand unit against .site-header's own justify-content: space-
+   between — brand-group still pins to the far left, this group to the far
+   right, with the button sitting immediately left of the events widget
+   inside it rather than a third item spread out on its own. */
+.header-events-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-console-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    line-height: 0;
+}
+
+.header-console-btn img {
+    width: 24px;
+    height: auto;
+    image-rendering: pixelated;
+    transition: filter 0.15s ease;
+}
+
+.header-console-btn:hover img,
+.header-console-btn:focus-visible img {
+    filter: brightness(1.3);
+}
 
 .site-header {
     position: sticky;
@@ -480,6 +536,52 @@ main { display: block; flex: 1 0 auto; }
 
 .site-footer p { margin: 0 0 4px; }
 .site-footer p:last-child { margin-bottom: 0; }
+
+/* Injected right before .site-footer on every page (see js/site.js) —
+   its own top margin does the job .site-footer's used to on its own, so
+   .site-footer's is left as-is for the (now smaller) gap beneath this. */
+.fellow-fansites {
+    flex-shrink: 0;
+    margin-top: 40px;
+    padding: 0 24px;
+    text-align: center;
+}
+
+.fellow-fansites-title {
+    margin: 0 0 6px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: var(--amber-bright);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.fellow-fansites-links {
+    margin: 0;
+    font-size: 0.72rem;
+    color: var(--parchment-dim);
+    line-height: 1.6;
+}
+
+.fellow-fansites-links a {
+    color: var(--amber-bright);
+    text-decoration: none;
+}
+
+/* Same glow as the header's own upcoming-events title on hover (see
+   a.header-events-title:hover) — reused so both read as the same
+   "hover this link to make it light up" interaction language. */
+.fellow-fansites-links a:hover,
+.fellow-fansites-links a:focus-visible {
+    color: #fff8ec;
+    text-shadow: 0 0 6px rgba(255, 248, 236, 0.65);
+}
+
+.fellow-fansites-dot {
+    margin: 0 6px;
+    color: var(--parchment-dim);
+}
 .site-footer a { color: var(--amber); }
 
 /* ---------- hero ---------- */
@@ -788,17 +890,25 @@ body[data-page="home"] .hero { padding-top: 18px; }
     z-index: 3;
 }
 
-/* Pixelify Sans instead of Silkscreen (the Mazes/Events pair above, and
-   every other pixel-styled heading site-wide, still use Silkscreen) — a
-   pixel font designed for actual legibility at small sizes, unlike
-   Silkscreen's tall thin strokes which turn to mush this small. Ideally
-   this would be Habbo's own Volter (Goldfish), but that's only ever
-   circulated as a font file within the Habbo fan community, not available
-   from any standard web font service the way Silkscreen is — self-hosting
-   it here is possible in principle if a licensed copy turns up later, but
-   there isn't one to load right now. */
+/* Wraps the button's own label (see js/home.js's renderSubNav) so it's a
+   positioned element instead of a bare text node — plain inline text
+   always paints below any z-index'd sibling in the same stacking context
+   regardless of DOM order, so without this the active tab's merge-bridge
+   (z-index: 2 again, same as above) painted over the label's own glyphs
+   once they got tall/low enough (Volter Goldfish's metrics especially) to
+   reach into the bridge's own band. */
+.chrome-nav-sub-label {
+    position: relative;
+    z-index: 3;
+}
+
+/* Test run for the self-hosted Volter Goldfish (see @font-face near the
+   top of this file) — falls back to Pixelify Sans, then Silkscreen (the
+   Mazes/Events pair above, and every other pixel-styled heading site-
+   wide, still use Silkscreen directly) if Volter's own file fails to
+   load for some reason. */
 .chrome-nav-sub .chrome-nav-btn {
-    font-family: 'Pixelify Sans', 'Silkscreen', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-weight: 400;
 }
 
@@ -813,8 +923,8 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-align: left;
 }
 
-/* Left (◀) at rest, rotated to point down while the button's own .active
-   state is on (see js/home.js's toggle) — 0deg <-> -90deg is a single
+/* Right (▶) at rest, rotated to point down while the button's own .active
+   state is on (see js/home.js's toggle) — 0deg <-> 90deg is a single
    consistent quarter-turn either direction rather than needing to special-
    case which way the return trip spins. */
 .chrome-nav-btn-arrow {
@@ -824,7 +934,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 .chrome-nav-btn-recommended.active .chrome-nav-btn-arrow {
-    transform: rotate(-90deg);
+    transform: rotate(90deg);
 }
 
 /* .featured-frame-scoped like the ::before override further down — the base
@@ -883,7 +993,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: #f5ecd8;
     font-family: 'Silkscreen', monospace;
     font-weight: 700;
-    font-size: 0.72rem;
+    font-size: 0.55rem;
     letter-spacing: 0.75px;
     text-align: center;
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
@@ -1842,7 +1952,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
    just translated to a low-alpha fill instead of solid text/border. */
 #featured-frame-list .chrome-list-row[data-difficulty="easy"] { background: rgba(127, 174, 82, 0.6); }
 #featured-frame-list .chrome-list-row[data-difficulty="medium"] { background: rgba(216, 191, 56, 0.6); }
-#featured-frame-list .chrome-list-row[data-difficulty="hard"] { background: rgba(201, 138, 66, 0.6); }
+#featured-frame-list .chrome-list-row[data-difficulty="hard"] { background: rgba(214, 116, 34, 0.6); }
 #featured-frame-list .chrome-list-row[data-difficulty="very-hard"] { background: rgba(194, 105, 47, 0.6); }
 #featured-frame-list .chrome-list-row[data-difficulty="extreme"] { background: rgba(184, 72, 31, 0.6); }
 
@@ -3009,6 +3119,48 @@ body[data-page="home"] .hero { padding-top: 18px; }
     margin: 0;
 }
 
+/* Splits one admin-section's .chrome-body into multiple logical groups
+   (Contributors, About) without needing a separate chrome-window each —
+   same base heading style used everywhere else (h1-h4), just sized down
+   to read as a subsection rather than the panel's own title. */
+.admin-subheading {
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+}
+
+.admin-subheading-spaced {
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+}
+
+/* Contributor form's multi-select — plain checkboxes rather than a <select
+   multiple>, which is fiddly to use for picking more than one option. */
+.admin-checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: #fff;
+    border: 2px solid var(--chrome-border);
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+.admin-checkbox-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #3a2812;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.admin-contributor-count {
+    font-weight: 400;
+    color: var(--parchment-dim);
+}
+
 /* Thumbnail upload: URL field + file picker + inline status, stacked. */
 .admin-thumb-upload {
     display: flex;
@@ -3448,6 +3600,572 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .callout h3 { font-size: 1rem; margin-bottom: 8px; }
 .callout p { margin: 0; font-size: 0.88rem; }
 
+/* ---------- console modal ---------- */
+
+/* Draggable Habbo-style console (see js/console.js) — a free-floating
+   panel, not a centered blocking overlay like .modal-overlay, so it has
+   no backdrop and doesn't stop the rest of the page from being used while
+   it's open. js/console.js sets left/top in px directly once the user
+   first drags it; this transform only centers its initial resting spot. */
+.console-modal {
+    position: fixed;
+    top: 108px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 200;
+}
+
+.console-frame {
+    position: relative;
+    width: 257px;
+    height: 294px;
+    background: #ffcb00;
+    user-select: none;
+    /* Matches the corner sprites' own curve (measured ~14px, a quarter-
+       circle inscribed in their full 14x14 tile) — without this, the
+       corner images' own transparent pixels just revealed this element's
+       square yellow fill sitting flush behind them instead of genuine
+       transparency, since the frame itself was never actually clipped to
+       match their rounded shape. overflow: hidden clips the fill/edges to
+       that same curve so nothing solid shows past it. */
+    border-radius: 16px;
+    overflow: hidden;
+    /* Solid (unblurred) 2px shadow on the right/bottom sides only. */
+    box-shadow: 2px 0 0 0 rgba(0, 0, 0, 0.45), 0 2px 0 0 rgba(0, 0, 0, 0.45);
+}
+
+/* ---- border: single composited border-image ----
+   Was 4 fixed 14x14 corner divs + 4 tiled edge-strip divs, each
+   hand-positioned with its own top/left/right/bottom — every pixel nudge
+   made to one over the course of this build (lowering the pattern,
+   trimming the bottom edge, re-aligning a corner) had to be re-derived
+   by eye and easily drifted out of sync with its neighbours, which is
+   exactly what caused the seams/misalignment this replaces. Composited
+   into one 32x32 sprite (cnsl-frame-border.png — the 4 corners plus one
+   tile of each edge, assembled by scripts/ad-hoc tooling from the
+   original 8 pieces) and applied as a border-image instead, the same fix
+   already used for .chrome-window's border (window_frame.png) — the
+   browser slices and tiles it automatically, so corners and edges are
+   always pixel-continuous with no manual positioning to drift.
+   border-image-repeat: repeat (not chrome-window's stretch) since these
+   edges are a repeating dotted tile, not a smooth bevel — stretching
+   would blur/distort the pattern instead of tiling it. */
+.console-border {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    border-style: solid;
+    border-width: 14px;
+    border-image-source: url('../assets/img/console/cnsl-frame-border.png');
+    border-image-slice: 14;
+    border-image-width: 14px;
+    border-image-repeat: repeat;
+    image-rendering: pixelated;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* ---- top strip: pattern + title + close ---- */
+
+/* Spans the whole gap between the top border and .console-screen — the
+   title's own opaque background (see .console-title) sits on top of this
+   and masks the pattern directly behind its own letters, rather than this
+   element being clipped/cut around the text. Also the primary drag handle
+   (see js/console.js) — dragging is blocked from originating on real
+   controls (buttons/inputs/the screen itself), so in practice the whole
+   yellow chrome including this strip drags the console. */
+.console-top-pattern {
+    position: absolute;
+    /* Lowered 3px from the modal's own top edge, with the bottom edge kept
+       flush against .console-screen's own top (26px) — height shrinks to
+       match. 3px left/right inset ("padding") keeps it just short of the
+       border's own outer edge. z-index above .console-border (1) so it
+       deliberately overlays the border/corners instead of sitting behind. */
+    top: 3px;
+    left: 3px;
+    right: 0px;
+    height: 23px;
+    /* Lowered 2px within its own unchanged box (background-position, not
+       a transform: translateY) — a transform shifts the whole rendered
+       box including its edges, which would uncover a sliver of whatever
+       sits behind it wherever the box was flush against a true boundary,
+       instead of just shifting the repeating tile in place. */
+    background-position: 0 2px;
+    background-image: url('../assets/img/console/cnsl-top-pattern.png');
+    background-repeat: repeat;
+    image-rendering: pixelated;
+    cursor: grab;
+    z-index: 3;
+}
+
+.console-frame.is-dragging .console-top-pattern,
+.console-frame.is-dragging { cursor: grabbing; }
+
+.console-title {
+    position: absolute;
+    /* top/height tuned by hand (top raised 1px, bottom raised 2px from
+       their previous values) rather than kept flush against .console-
+       screen's own top edge like before — the solid background still
+       masks the pattern behind the text either way (see .console-top-
+       pattern), just over a slightly different band now. align-items:
+       flex-end keeps the text itself sitting near the bottom of the box
+       rather than re-centering within it. */
+    top: 4px;
+    left: 0;
+    right: 0;
+    height: 20px;
+    width: fit-content;
+    max-width: calc(100% - 34px);
+    margin: 0 auto;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 4px 2px;
+    background: #ffcb00;
+    color: #996600;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 700;
+    font-size: 0.6rem;
+    letter-spacing: 0;
+    text-shadow: none;
+    /* Above .console-top-pattern (z-index: 3, now that it overlays the
+       corners too) so this box's own solid background still masks the
+       pattern behind the text — it'd otherwise have gone back to
+       painting over the title now that the pattern outranks the old
+       value (2) this used to only need to beat. */
+    z-index: 4;
+    pointer-events: none;
+}
+
+.console-close-btn {
+    position: absolute;
+    top: 6px;
+    right: 14px;
+    width: 13px;
+    height: 13px;
+    padding: 0;
+    border: none;
+    background-color: transparent;
+    background-image: url('../assets/img/console/cnsl-top-x-close.png');
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    cursor: pointer;
+    /* Above everything else in the top strip, title included, so it's
+       always clickable regardless of what else moves around it. */
+    z-index: 5;
+}
+
+/* ---- screen ---- */
+
+.console-screen {
+    position: absolute;
+    top: 26px;
+    left: 14px;
+    width: 229px;
+    height: 206px;
+    border: 1px solid #000;
+    border-radius: 15px;
+    background-image: url('../assets/img/console/cnsl-bg-tile.png');
+    background-repeat: repeat;
+    image-rendering: pixelated;
+    overflow: hidden;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    color: #eeeeee;
+    /* External 2px shadow on the top/left (the screen reading as recessed,
+       light notionally coming from the bottom-right) and a 1px highlight
+       on the bottom/right to match — these sit outside the box entirely so
+       scrolled content never reaches them. The matching inset shadow lives
+       on .console-screen-shadow instead (see below) rather than here. */
+    box-shadow:
+        -4px 0 0 0 rgba(0, 0, 0, 0.45),
+        0 -2px 0 0 rgba(0, 0, 0, 0.45),
+        1px 0 0 0 rgba(255, 255, 255, 0.5),
+        0 1px 0 0 rgba(255, 255, 255, 0.5);
+}
+
+.console-screen-scroll {
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* A transparent overlay painted after (on top of) the scrolling content,
+   rather than the inset shadow living on .console-screen itself — a
+   parent's own box-shadow always paints before its children, so scrolled
+   text was passing over/hiding the shadow instead of sitting under it like
+   a glass's inner rim should. Same border-radius as the screen (inherited)
+   so the shadow's own curve still matches, and pointer-events: none keeps
+   it from blocking clicks/scroll/the custom scrollbar underneath. */
+.console-screen-shadow {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow:
+        inset 0 6px 0 0 rgba(0, 0, 0, 0.4),
+        inset 6px 0 0 0 rgba(0, 0, 0, 0.4),
+        inset -6px 0 0 0 rgba(0, 0, 0, 0.4),
+        inset 0 -3px 0 0 rgba(0, 0, 0, 0.4);
+}
+
+.console-page { padding: 9px 10px 4px 11px; }
+
+.console-page-title {
+    margin: 0 0 4px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-weight: 600;
+    font-size: 0.6rem;
+    color: #eeeeee;
+    text-shadow: none;
+    letter-spacing: 0;
+}
+
+/* '-' characters rather than a border-bottom — matches the sprite-sheet
+   aesthetic the rest of the console leans on instead of a clean CSS line. */
+.console-hashline {
+    color: #eeeeee;
+    font-size: 0.55rem;
+    line-height: 1;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+    overflow: hidden;
+    white-space: nowrap;
+    height: 8px;
+}
+.console-hashline::before {
+    content: "----------------------------------------";
+}
+
+.console-blurb {
+    margin: 0 0 8px;
+    font-weight: 400;
+    font-size: 0.55rem;
+    line-height: 1.4;
+    color: #eeeeee;
+}
+
+/* Top-left, same as every other page's own title — no more special
+   centering/fixed-height treatment, just plain flow within .console-
+   page's own padding like "Contact Us"/"Contributors"/"About" get. */
+.console-empty-page {
+    margin: 0;
+    font-weight: 700;
+    font-size: 0.55rem;
+    color: #eeeeee;
+}
+
+/* ---- shared console form controls ---- */
+
+.console-input {
+    display: block;
+    width: 100%;
+    background: transparent;
+    border: 1px solid #eeeeee;
+    color: #eeeeee;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.55rem;
+    box-sizing: border-box;
+}
+
+.console-input::placeholder { color: rgba(238, 238, 238, 0.6); }
+
+.console-input-message {
+    height: 58px;
+    width: 183px;
+    padding: 8px 8px 0;
+    resize: none;
+    /* Top-aligned with a normal line-height, always — not just on focus —
+       so the placeholder (a full sentence, not a short word) wraps onto
+       several lines starting at the top of the box with all of it
+       visible, rather than a single vertically-centered line that pushed
+       any wrapped lines below the visible box. */
+    line-height: 1.35;
+    /* No visible scrollbar for overflowing text — this box is small and
+       fixed-size on purpose, not meant to read as a scrollable area. */
+    scrollbar-width: none;
+}
+.console-input-message::-webkit-scrollbar { display: none; }
+
+.console-field-label {
+    display: block;
+    margin: 8px 0 4px;
+    font-size: 0.55rem;
+    color: #eeeeee;
+}
+
+.console-input-username {
+    height: 20px;
+    padding: 0 6px;
+    margin-bottom: 8px;
+}
+
+.console-input-discord {
+    height: 20px;
+    padding: 0 6px;
+    margin-bottom: 8px;
+}
+
+/* Honeypot field (see home.html's console-contact-hp) — off-screen rather
+   than display: none/visibility: hidden, since some bots skip filling
+   fields hidden that way but still fill ones that are merely positioned
+   out of view. */
+.console-hp-field {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.console-contact-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+}
+
+.console-btn {
+    background: transparent;
+    border: 1px solid #eeeeee;
+    border-radius: 2px;
+    color: #eeeeee;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.55rem;
+    padding: 4px 12px;
+    cursor: pointer;
+}
+.console-btn:hover { background: rgba(238, 238, 238, 0.15); }
+
+.console-form-status {
+    margin: 6px 0 0;
+    font-size: 0.55rem;
+    color: #eeeeee;
+}
+.console-form-status.is-error { color: #ff8080; }
+
+/* ---- thanks page (shown after a successful Contact Us send) ---- */
+
+/* Fills the full screen height so the OK button can be pinned to the
+   bottom via margin-top: auto, rather than just sitting in normal flow
+   right under the message like the rest of the console-screen's content. */
+.console-page-thanks {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+.console-thanks-message {
+    margin: 16px 0 0;
+    font-weight: 700;
+    font-size: 0.55rem;
+    line-height: 1.4;
+    color: #eeeeee;
+    text-align: center;
+}
+
+.console-btn-ok {
+    align-self: center;
+    margin-top: auto;
+    margin-bottom: 8px;
+    min-width: 48px;
+}
+
+/* ---- contributors page ---- */
+
+.console-contributor {
+    padding: 8px 0;
+}
+
+.console-contributor-name {
+    margin: 0;
+    font-weight: 700;
+    font-size: 0.55rem;
+    color: #eeeeee;
+}
+
+.console-contributor-count { font-weight: 400; }
+
+.console-contributor-types {
+    margin: 2px 0 0;
+    font-weight: 400;
+    font-size: 0.55rem;
+    color: #eeeeee;
+}
+
+/* Tiled horizontally the same way the border edges above are — a proper
+   repeating dotted rule rather than a CSS border-style: dotted, so it
+   matches the sprite sheet's own pixel weight. */
+.console-dotline {
+    height: 1px;
+    background-image: url('../assets/img/console/cnsl-dotline.png');
+    background-repeat: repeat-x;
+    image-rendering: pixelated;
+}
+
+/* ---- bottom tab group ---- */
+
+.console-buttons {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 48px;
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+    /* Above .console-border (z-index: 1) so sitting flush at bottom: 0
+       actually covers that last strip of border chrome instead of the
+       border poking out on top of the buttons. */
+    z-index: 3;
+}
+
+/* Fixed to each icon's own native size (not flex: 1 stretched across
+   equal-width slots) — stretching left empty transparent space around
+   each smaller sprite inside its own wider slot (background-size:
+   contain, centered), which read as gaps between the icons even though
+   the button boxes themselves were already touching. Native-sized
+   buttons instead butt directly against each other with no such gap; the
+   group is then centered as a whole via .console-buttons' own
+   justify-content. */
+.console-tab-btn {
+    position: relative;
+    flex: 0 0 auto;
+    width: 46px;
+    height: 48px;
+    padding: 0;
+    border: none;
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    image-rendering: pixelated;
+    cursor: pointer;
+}
+
+#about-btn { width: 48px; }
+
+.console-tab-label {
+    position: absolute;
+    top: 27px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.4rem;
+    font-weight: 400;
+    color: #7b4a00;
+    pointer-events: none;
+}
+
+.console-tab-btn.active .console-tab-label {
+    color: #996600;
+}
+
+#contact-btn { background-image: url('../assets/img/console/cnsl-tab-contact-inactive.png'); }
+#contact-btn.active { background-image: url('../assets/img/console/cnsl-tab-contact-active.png'); }
+#people-btn { background-image: url('../assets/img/console/cnsl-tab-people-inactive.png'); }
+#people-btn.active { background-image: url('../assets/img/console/cnsl-tab-people-active.png'); }
+/* Still the "search" sprite pair — no dedicated privacy icon exists yet,
+   only the tab's own label/id/content changed to Privacy Policy. */
+#privacy-btn { background-image: url('../assets/img/console/cnsl-tab-search-inactive.png'); }
+#privacy-btn.active { background-image: url('../assets/img/console/cnsl-tab-search-active.png'); }
+#about-btn { background-image: url('../assets/img/console/cnsl-tab-qmark-inactive.png'); }
+#about-btn.active { background-image: url('../assets/img/console/cnsl-tab-qmark-active.png'); }
+
+/* ---- console's own custom scrollbar — same mechanism as
+   .custom-scrollbar-wrap elsewhere (see js/custom-scrollbar.js), just
+   re-skinned with the console's own sprite set instead of the site's.
+   js/custom-scrollbar.js hardcodes its thumb/tile math to the site's own
+   15px sprites, and the console's own sprites are natively 13px — rather
+   than forking the script for a 2px difference, the box sizes here are
+   left at the shared 15px/14px so that math stays valid, and each swapped
+   sprite is stretched to fill it (background-size: 100% 100%) instead of
+   rendered at its own native size. */
+.custom-scrollbar-wrap--console {
+    height: 100%;
+}
+.custom-scrollbar-wrap--console .custom-scrollbar-target {
+    /* Without an explicit flex-basis, a flex item's width defaults to its
+       content's own size — a page with little content (e.g. Search) left
+       this narrower than .console-screen's fixed width, so the bar next
+       to it landed short of the frame's right edge instead of flush
+       against it like every other, content-filled page. flex: 1 forces it
+       to always claim the full row regardless of which page is showing;
+       min-width: 0 stops that same content from ever pushing back the
+       other way and overflowing the row. */
+    flex: 1;
+    min-width: 0;
+    padding-right: 2px;
+}
+/* .custom-scrollbar has a fixed width: 15px (see its shared base rule) —
+   with box-sizing: border-box, horizontal padding just ate into that
+   fixed width instead of ever pushing the bar's own position, which is
+   why padding-right couldn't shift it away from the screen's edge no
+   matter how large. margin-right actually moves the box itself within
+   .custom-scrollbar-wrap's flex row. Vertical padding works fine here
+   since height isn't fixed the same way (kept for the top/bottom gap). */
+.custom-scrollbar-wrap--console .custom-scrollbar {
+    padding: 7px 0;
+    margin-right: 7px;
+}
+.custom-scrollbar-wrap--console .custom-scrollbar-track-segment {
+    background-image: url('../assets/img/console/cnsl-scrl-track-inactive.png');
+    background-size: 100% 100%;
+}
+.custom-scrollbar-wrap--console .custom-scrollbar-track-segment.is-active {
+    background-image: url('../assets/img/console/cnsl-scrl-track-active.png');
+}
+.custom-scrollbar-wrap--console .custom-scrollbar-thumb {
+    background-image: url('../assets/img/console/cnsl-scrl-bar-inactive.png');
+    background-size: 100% 100%;
+}
+.custom-scrollbar-wrap--console .custom-scrollbar-thumb:hover,
+.custom-scrollbar-wrap--console .custom-scrollbar-thumb.is-dragging {
+    background-image: url('../assets/img/console/cnsl-scrl-bar-active.png');
+}
+
+/* Overrides the base .is-unscrollable rule (hidden) back to visible — a
+   console page without enough content to scroll shows a disabled bar
+   instead of the bar disappearing outright. js/custom-scrollbar.js's
+   refresh() stretches the thumb to fill the whole track in this state
+   (rather than a normal partial-height thumb), so this sprite is stretched
+   to match like the normal inactive/active thumb images below, rather than
+   tiled — repeat-y drew the sprite over and over down the track instead of
+   once. */
+.custom-scrollbar-wrap--console .custom-scrollbar.is-unscrollable {
+    visibility: visible;
+}
+.custom-scrollbar-wrap--console .custom-scrollbar.is-unscrollable .custom-scrollbar-thumb {
+    background-image: url('../assets/img/console/cnsl-scrl-bar-disabled.png');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    cursor: default;
+}
+.custom-scrollbar-wrap--console .custom-scrollbar-arrow-up {
+    background-image: url('../assets/img/console/cnsl-scrl-up-inactive.png');
+    background-size: 100% 100%;
+}
+.custom-scrollbar-wrap--console .custom-scrollbar-arrow-up:hover {
+    background-image: url('../assets/img/console/cnsl-scrl-up-active.png');
+}
+.custom-scrollbar-wrap--console .custom-scrollbar-arrow-up.is-disabled {
+    background-image: url('../assets/img/console/cnsl-scrl-up-disabled.png');
+}
+.custom-scrollbar-wrap--console .custom-scrollbar-arrow-down {
+    background-image: url('../assets/img/console/cnsl-scrl-down-inactive.png');
+    background-size: 100% 100%;
+}
+.custom-scrollbar-wrap--console .custom-scrollbar-arrow-down:hover {
+    background-image: url('../assets/img/console/cnsl-scrl-down-active.png');
+}
+.custom-scrollbar-wrap--console .custom-scrollbar-arrow-down.is-disabled {
+    background-image: url('../assets/img/console/cnsl-scrl-down-disabled.png');
+}
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 640px) {
@@ -3502,7 +4220,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
     }
 
     .chrome-list-row .row-thumb { width: 56px; height: 56px; }
-    .chrome-go { display: none; }
     .chrome-titlebar { padding: 10px 34px; }
     .chrome-titlebar h1, .chrome-titlebar h2, .chrome-titlebar .chrome-title-text { font-size: 0.8rem; }
     .chrome-tab { font-size: 0.56rem; letter-spacing: 0; border-width: 8px; }

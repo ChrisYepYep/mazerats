@@ -22,6 +22,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const adminsListEl = document.getElementById("admins-list");
     const adminsFormEl = document.getElementById("admins-form");
     const adminsAddBtn = document.getElementById("admins-add-btn");
+    const contributorsListEl = document.getElementById("contributors-list");
+    const contributorsFormEl = document.getElementById("contributors-form");
+    const contributorsAddBtn = document.getElementById("contributors-add-btn");
+    const aboutTextInput = document.getElementById("about-text-input");
+    const aboutSaveBtn = document.getElementById("about-save-btn");
+    const aboutSaveStatus = document.getElementById("about-save-status");
+    const contactMessagesListEl = document.getElementById("contact-messages-list");
     const landingToggleEl = document.getElementById("landing-toggle");
     const landingToggleBtns = document.querySelectorAll(".btn-enter-mini");
     const landingToggleStatus = document.getElementById("landing-toggle-status");
@@ -35,9 +42,11 @@ document.addEventListener("DOMContentLoaded", () => {
     let workingRooms = [];
     let workingEvents = [];
     let workingAdmins = [];
+    let workingContributors = [];
+    let workingContactMessages = [];
     let roomsQuery = "";
     let roomsSortBy = "name";
-    let eventsSortBy = "date";
+    let eventsSortBy = "date-desc";
     const roomsSearchInput = document.getElementById("rooms-search");
     const roomsSortSelect = document.getElementById("rooms-sort");
     const eventsSortSelect = document.getElementById("events-sort");
@@ -160,8 +169,11 @@ document.addEventListener("DOMContentLoaded", () => {
         workingRooms = [];
         workingEvents = [];
         workingAdmins = [];
+        workingContributors = [];
+        workingContactMessages = [];
         Object.keys(COLLECTIONS).forEach(key => closeForm(key));
         closeAdminsForm();
+        closeContributorsForm();
         adminContent.style.display = "none";
         landingToggleEl.style.display = "none";
         loginModal.classList.add("open");
@@ -180,6 +192,9 @@ document.addEventListener("DOMContentLoaded", () => {
         renderList("events");
         loadAdmins();
         loadLandingState();
+        loadContributors();
+        loadAboutText();
+        loadContactMessages();
     }
 
     // ---------- image uploads ----------
@@ -1090,8 +1105,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const entries = workingEvents.map((item, index) => ({ item, index }));
         if (eventsSortBy === "name") {
             entries.sort((a, b) => (a.item.title || "").localeCompare(b.item.title || ""));
-        } else {
+        } else if (eventsSortBy === "date-asc") {
             entries.sort((a, b) => (a.item.date || "").localeCompare(b.item.date || ""));
+        } else {
+            entries.sort((a, b) => (b.item.date || "").localeCompare(a.item.date || ""));
         }
         return entries;
     }
@@ -1742,6 +1759,238 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // ---------- console: contributors ----------
+
+    // Same 5 options js/home.js's console modal renders on its People page —
+    // kept in sync manually, same pattern as DIFFICULTY_ORDER elsewhere.
+    const CONTRIBUTION_TYPES = ["Room Images", "Event Images", "Collab Images", "Historical Data", "Web Development"];
+
+    async function loadContributors() {
+        workingContributors = await Api.getContributors();
+        renderContributorsList();
+    }
+
+    function renderContributorsList() {
+        contributorsListEl.innerHTML = "";
+        if (!workingContributors.length) {
+            const empty = document.createElement("p");
+            empty.className = "admin-empty";
+            empty.textContent = "No contributors added yet.";
+            contributorsListEl.appendChild(empty);
+            return;
+        }
+        workingContributors.forEach((contributor, index) => {
+            const row = document.createElement("div");
+            row.className = "chrome-list-row admin-row";
+            row.innerHTML = `
+                <div class="row-info">
+                    <h3>${contributor.username} <span class="admin-contributor-count">- ${contributor.count || 0}</span></h3>
+                    <p class="row-creator">${(contributor.types || []).join(", ")}</p>
+                </div>
+                <div class="admin-row-actions">
+                    <button type="button" class="btn admin-edit-btn">Edit</button>
+                    <button type="button" class="btn admin-delete-btn">Delete</button>
+                </div>
+            `;
+            row.querySelector(".admin-edit-btn").addEventListener("click", () => openContributorForm(index));
+            row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteContributor(contributor.id));
+            contributorsListEl.appendChild(row);
+        });
+    }
+
+    function openContributorForm(editIndex) {
+        const isEdit = editIndex !== undefined && editIndex !== null;
+        const contributor = isEdit ? workingContributors[editIndex] : {};
+        const existingTypes = contributor.types || [];
+
+        const typesHtml = CONTRIBUTION_TYPES.map(type => `
+            <label class="admin-checkbox-option">
+                <input type="checkbox" name="types" value="${type}" ${existingTypes.includes(type) ? "checked" : ""}>
+                <span>${type}</span>
+            </label>
+        `).join("");
+
+        contributorsFormEl.innerHTML = `
+            <h3 class="admin-form-title">${isEdit ? "Edit Contributor" : "Add a New Contributor"}</h3>
+            ${fieldRow("Username (Habbo)", `<input type="text" name="username" value="${contributor.username || ""}" required autocomplete="off">`)}
+            ${fieldRow("Number of contributions", `<input type="number" name="count" min="0" step="1" value="${contributor.count || 0}" required>`)}
+            <label class="admin-field">
+                <span>Contribution type(s)</span>
+                <div class="admin-checkbox-group">${typesHtml}</div>
+            </label>
+            <p class="admin-form-error" style="display:none;"></p>
+            <div class="admin-form-actions">
+                <button type="submit" class="admin-action-pill admin-pill-solid">Save</button>
+                <button type="button" class="admin-action-pill admin-cancel-btn">Cancel</button>
+            </div>
+        `;
+        contributorsFormEl.dataset.id = isEdit ? contributor.id : "";
+        openContributorsForm();
+    }
+
+    function openContributorsForm() {
+        contributorsFormEl.style.display = "flex";
+        contributorsAddBtn.style.display = "none";
+        contributorsFormEl.querySelector(".admin-cancel-btn").addEventListener("click", closeContributorsForm);
+        contributorsFormEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    function closeContributorsForm() {
+        contributorsFormEl.style.display = "none";
+        contributorsFormEl.innerHTML = "";
+        contributorsAddBtn.style.display = "inline-block";
+    }
+
+    contributorsFormEl.addEventListener("submit", async e => {
+        e.preventDefault();
+        const formData = new FormData(contributorsFormEl);
+        const username = (formData.get("username") || "").trim();
+        const count = parseInt(formData.get("count"), 10) || 0;
+        const types = formData.getAll("types");
+        const errorEl = contributorsFormEl.querySelector(".admin-form-error");
+        const submitBtn = contributorsFormEl.querySelector("button[type=submit]");
+
+        if (!username) {
+            errorEl.textContent = "A username is required.";
+            errorEl.style.display = "block";
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Saving…";
+        try {
+            const id = contributorsFormEl.dataset.id;
+            if (id) {
+                await Api.updateContributor(adminToken, { id, username, count, types });
+            } else {
+                await Api.createContributor(adminToken, { username, count, types });
+            }
+            closeContributorsForm();
+            await loadContributors();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            errorEl.textContent = err.message || "Something went wrong saving this.";
+            errorEl.style.display = "block";
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Save";
+        }
+    });
+
+    async function deleteContributor(id) {
+        if (!confirm("Delete this contributor?")) return;
+        try {
+            await Api.deleteContributor(adminToken, id);
+            await loadContributors();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            alert(err.message || "Couldn't delete that — try again.");
+        }
+    }
+
+    contributorsAddBtn.addEventListener("click", () => openContributorForm());
+
+    // ---------- console: about text ----------
+
+    async function loadAboutText() {
+        try {
+            const { aboutText } = await Api.getSiteSettings();
+            aboutTextInput.value = aboutText || "";
+        } catch (e) {
+            // best-effort — the field just stays empty
+        }
+    }
+
+    aboutSaveBtn.addEventListener("click", async () => {
+        aboutSaveBtn.disabled = true;
+        aboutSaveBtn.textContent = "Saving…";
+        aboutSaveStatus.style.display = "none";
+        try {
+            await Api.updateSiteSettings(adminToken, { aboutText: aboutTextInput.value });
+            aboutSaveStatus.textContent = "Saved.";
+            aboutSaveStatus.style.display = "block";
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            aboutSaveStatus.textContent = err.message || "Couldn't save the About text.";
+            aboutSaveStatus.style.display = "block";
+        } finally {
+            aboutSaveBtn.disabled = false;
+            aboutSaveBtn.textContent = "Save About Text";
+        }
+    });
+
+    // ---------- console: contact messages ----------
+
+    async function loadContactMessages() {
+        try {
+            workingContactMessages = await Api.getContactMessages(adminToken);
+            renderContactMessagesList();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+        }
+    }
+
+    function renderContactMessagesList() {
+        contactMessagesListEl.innerHTML = "";
+        if (!workingContactMessages.length) {
+            const empty = document.createElement("p");
+            empty.className = "admin-empty";
+            empty.textContent = "No messages yet.";
+            contactMessagesListEl.appendChild(empty);
+            return;
+        }
+        workingContactMessages.forEach(msg => {
+            const row = document.createElement("div");
+            row.className = "chrome-list-row admin-row";
+
+            const info = document.createElement("div");
+            info.className = "row-info";
+
+            const heading = document.createElement("h3");
+            // Built with real DOM nodes rather than innerHTML — unlike
+            // contributors (admin-entered), this text comes straight from
+            // anonymous public visitors, so it can't be trusted not to
+            // contain markup.
+            heading.appendChild(document.createTextNode(msg.username || "Anonymous"));
+            const when = document.createElement("span");
+            when.className = "admin-contributor-count";
+            when.textContent = ` - ${new Date(msg.createdAt).toLocaleString()}`;
+            heading.appendChild(when);
+            if (msg.discord) {
+                const discordTag = document.createElement("span");
+                discordTag.className = "admin-contributor-count";
+                discordTag.textContent = ` · Discord: ${msg.discord}`;
+                heading.appendChild(discordTag);
+            }
+
+            const body = document.createElement("p");
+            body.className = "row-creator";
+            body.textContent = msg.message;
+
+            info.appendChild(heading);
+            info.appendChild(body);
+
+            const actions = document.createElement("div");
+            actions.className = "admin-row-actions";
+            actions.innerHTML = '<button type="button" class="btn admin-delete-btn">Delete</button>';
+            actions.querySelector(".admin-delete-btn").addEventListener("click", () => deleteContactMessage(msg.id));
+
+            row.appendChild(info);
+            row.appendChild(actions);
+            contactMessagesListEl.appendChild(row);
+        });
+    }
+
+    async function deleteContactMessage(id) {
+        if (!confirm("Delete this message?")) return;
+        try {
+            await Api.deleteContactMessage(adminToken, id);
+            await loadContactMessages();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            alert(err.message || "Couldn't delete that — try again.");
+        }
+    }
+
     // ---------- landing page state ----------
 
     // Mirrors js/site.js's own Dev Mode pill (shown there on home.html/
@@ -1787,7 +2036,7 @@ document.addEventListener("DOMContentLoaded", () => {
         landingToggleBtns.forEach(b => b.disabled = true);
         landingToggleStatus.style.display = "none";
         try {
-            await Api.updateSiteSettings(adminToken, state);
+            await Api.updateSiteSettings(adminToken, { landingState: state });
             landingToggleBtns.forEach(b => b.classList.toggle("active", b === clickedBtn));
             renderDevModeLink(state);
             return true;

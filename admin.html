@@ -82,7 +82,8 @@
                                 <div class="archive-controls">
                                     <div class="sort-box">
                                         <select id="events-sort">
-                                            <option value="date">Sort by: Event Start Date</option>
+                                            <option value="date-desc">Sort by: Event Start Date (Newest First)</option>
+                                            <option value="date-asc">Sort by: Event Start Date (Oldest First)</option>
                                             <option value="name">Sort by: Event Name</option>
                                         </select>
                                     </div>
@@ -103,6 +104,40 @@
                                 <div class="chrome-list" id="admins-list"></div>
                                 <button class="admin-action-pill admin-add-btn" id="admins-add-btn" type="button">+ Add an Admin</button>
                                 <form class="admin-form" id="admins-form" style="display:none;"></form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ---------- Console: Contributors & About ---------- -->
+                    <div class="chrome-window admin-section">
+                        <div class="chrome-titlebar"><h2>Console — Contributors &amp; About</h2></div>
+                        <div class="chrome-frame">
+                            <div class="chrome-body">
+                                <h3 class="admin-subheading">Contributors</h3>
+                                <p class="admin-hint" style="margin-bottom:14px;">Shown on the homepage console's People page.</p>
+                                <div class="chrome-list" id="contributors-list"></div>
+                                <button class="admin-action-pill admin-add-btn" id="contributors-add-btn" type="button">+ Add a Contributor</button>
+                                <form class="admin-form" id="contributors-form" style="display:none;"></form>
+
+                                <h3 class="admin-subheading admin-subheading-spaced">About Text</h3>
+                                <p class="admin-hint" style="margin-bottom:14px;">Shown on the homepage console's About page.</p>
+                                <label class="admin-field">
+                                    <span>About blurb</span>
+                                    <textarea id="about-text-input" rows="6"></textarea>
+                                </label>
+                                <button class="admin-action-pill admin-pill-solid" id="about-save-btn" type="button">Save About Text</button>
+                                <p class="admin-hint" id="about-save-status" style="display:none;"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ---------- Console: Contact Messages ---------- -->
+                    <div class="chrome-window admin-section">
+                        <div class="chrome-titlebar"><h2>Console — Contact Messages</h2></div>
+                        <div class="chrome-frame">
+                            <div class="chrome-body">
+                                <p class="admin-hint" style="margin-bottom:14px;">Submitted from the homepage console's Contact Us page.</p>
+                                <div class="chrome-list" id="contact-messages-list"></div>
                             </div>
                         </div>
                     </div>

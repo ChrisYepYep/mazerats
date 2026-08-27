@@ -31,12 +31,15 @@
             </div>
             <a class="header-badge" href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Discord</a>
         </div>
-        <div class="header-events" id="header-events">
-            <p class="header-events-label">Upcoming Events</p>
-            <div class="header-events-viewport" id="header-events-viewport">
-                <div class="header-events-slide" id="header-events-slide">
-                    <p class="header-events-title"></p>
-                    <p class="header-events-when"></p>
+        <div class="header-events-group">
+            <button type="button" class="header-console-btn" id="header-console-btn" aria-label="Console"><img src="assets/img/console-icon-flat.png" alt="" aria-hidden="true"></button>
+            <div class="header-events" id="header-events">
+                <p class="header-events-label">Upcoming Events</p>
+                <div class="header-events-viewport" id="header-events-viewport">
+                    <div class="header-events-slide" id="header-events-slide">
+                        <p class="header-events-title"></p>
+                        <p class="header-events-when"></p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -78,7 +81,7 @@
                     </div>
                 </div>
                 <div class="featured-frame" id="featured-frame">
-                    <button type="button" class="chrome-nav-btn chrome-nav-btn-recommended" id="featured-mazes-btn"><span class="chrome-nav-btn-arrow" aria-hidden="true">&#9664;</span><span class="chrome-nav-btn-label">Featured Mazes</span></button>
+                    <button type="button" class="chrome-nav-btn chrome-nav-btn-recommended" id="featured-mazes-btn"><span class="chrome-nav-btn-arrow" aria-hidden="true">&#9654;</span><span class="chrome-nav-btn-label">Featured Mazes</span></button>
                     <button type="button" class="featured-refresh-btn" id="featured-refresh-btn">Refresh recommendations</button>
                     <div class="featured-frame-body" id="featured-frame-body">
                         <div class="chrome-list" id="featured-frame-list"></div>
@@ -107,6 +110,69 @@
         <img class="lightbox-img" id="lightbox-img" alt="">
         <button class="gallery-nav lightbox-next" id="lightbox-next" aria-label="Next room">&#10095;</button>
         <span class="gallery-counter lightbox-counter" id="lightbox-counter"></span>
+    </div>
+
+    <!-- Draggable Habbo-style console, opened via the header's console button -->
+    <div class="console-modal" id="console-modal" style="display:none;">
+        <div class="console-frame" id="console-frame">
+            <div class="console-border" aria-hidden="true"></div>
+            <div class="console-top-pattern" id="console-drag-handle" aria-hidden="true"></div>
+            <button type="button" class="console-close-btn" id="console-close-btn" aria-label="Close console"></button>
+            <h2 class="console-title" id="console-drag-handle-title">Habbo Console</h2>
+            <div class="console-screen" id="console-screen">
+                <div class="console-screen-scroll" id="console-screen-scroll">
+                    <div class="console-page" id="console-page-contact">
+                        <h3 class="console-page-title">Contact Us</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <p class="console-blurb">Got a maze you think we should know about? Drop us a message below!</p>
+                        <textarea class="console-input console-input-message" id="console-contact-message" placeholder="Can you add my maze to the archive?"></textarea>
+                        <label class="console-field-label" for="console-contact-username">Your Origins username:</label>
+                        <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="L1C">
+                        <label class="console-field-label" for="console-contact-discord">Your Discord username:</label>
+                        <input type="text" class="console-input console-input-discord" id="console-contact-discord" placeholder="Optional">
+                        <!-- Honeypot — invisible to real visitors (see .console-hp-field),
+                             left blank by them; anything filling it out gets silently
+                             dropped server-side (netlify/functions/contact.js). -->
+                        <input type="text" class="console-hp-field" id="console-contact-hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+                        <div class="console-contact-actions">
+                            <button type="button" class="console-btn console-btn-cancel" id="console-contact-cancel">Cancel</button>
+                            <button type="button" class="console-btn console-btn-send" id="console-contact-send">Send</button>
+                        </div>
+                        <p class="console-form-status" id="console-contact-status" style="display:none;"></p>
+                    </div>
+                    <div class="console-page console-page-thanks" id="console-page-thanks" style="display:none;">
+                        <p class="console-thanks-message">We'll be in touch for more details, thanks!</p>
+                        <button type="button" class="console-btn console-btn-ok" id="console-thanks-ok">OK</button>
+                    </div>
+                    <div class="console-page" id="console-page-people" style="display:none;">
+                        <h3 class="console-page-title">Contributors</h3>
+                        <div class="console-contributors-list" id="console-contributors-list"></div>
+                    </div>
+                    <div class="console-page" id="console-page-privacy" style="display:none;">
+                        <h3 class="console-page-title">Privacy Policy</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <p class="console-blurb"><strong>What we collect.</strong> If you use the Contact Us form, we store the message and whatever contact details you choose to include (Origins username, Discord username) so we can follow up. Your Discord username is optional. We also briefly log your IP address against your submission, used only to prevent spam.</p>
+                        <p class="console-blurb"><strong>Why.</strong> Solely to review and respond to your message — maze submissions, corrections, and general contact. We don't use it for marketing.</p>
+                        <p class="console-blurb"><strong>Where it's stored.</strong> In our own database (MongoDB Atlas), accessed only through our own Netlify-hosted backend. A copy of new messages may also be emailed to the site admin via Resend, a transactional email provider, for faster replies.</p>
+                        <p class="console-blurb"><strong>Tracking.</strong> This site doesn't use cookies, analytics, or advertising trackers. The only thing stored in your browser is a login session if you're a site admin — nothing for regular visitors.</p>
+                        <p class="console-blurb"><strong>Sharing.</strong> We don't sell or share your data with third parties beyond the email delivery mentioned above.</p>
+                        <p class="console-blurb"><strong>Questions or removal requests?</strong> Reach out via the Contact Us page and we'll sort it out.</p>
+                    </div>
+                    <div class="console-page" id="console-page-about" style="display:none;">
+                        <h3 class="console-page-title">About</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <p class="console-blurb console-about-blurb" id="console-about-blurb"></p>
+                    </div>
+                </div>
+                <div class="console-screen-shadow" aria-hidden="true"></div>
+            </div>
+            <div class="console-buttons" id="console-buttons">
+                <button type="button" class="console-tab-btn" id="contact-btn" data-page="contact" aria-label="Contact Us"><span class="console-tab-label">CONTACT</span></button>
+                <button type="button" class="console-tab-btn" id="people-btn" data-page="people" aria-label="Contributors"><span class="console-tab-label">SOURCE</span></button>
+                <button type="button" class="console-tab-btn" id="privacy-btn" data-page="privacy" aria-label="Privacy Policy"><span class="console-tab-label">PRIVACY</span></button>
+                <button type="button" class="console-tab-btn" id="about-btn" data-page="about" aria-label="About"><span class="console-tab-label">ABOUT</span></button>
+            </div>
+        </div>
     </div>
 
     <footer class="site-footer">
@@ -182,5 +248,6 @@
     <script src="js/home.js"></script>
     <script src="js/custom-scrollbar.js"></script>
     <script src="js/letter-jump.js"></script>
+    <script src="js/console.js"></script>
 </body>
 </html>

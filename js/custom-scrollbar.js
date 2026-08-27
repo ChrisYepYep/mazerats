@@ -13,7 +13,7 @@
    work untouched — this only adds a visual bar that mirrors that state and
    offers drag/click/arrow controls of its own. */
 document.addEventListener("DOMContentLoaded", () => {
-    document.querySelectorAll(".home-results, .room-desc-box, #rooms-list, #events-list, #admins-list").forEach(setUp);
+    document.querySelectorAll(".home-results, .room-desc-box, #rooms-list, #events-list, #admins-list, #console-screen-scroll").forEach(setUp);
 
     function setUp(el) {
         if (el.dataset.customScrollbar) return;
@@ -23,6 +23,9 @@ document.addEventListener("DOMContentLoaded", () => {
         wrap.className = "custom-scrollbar-wrap";
         if (el.classList.contains("home-results")) {
             wrap.classList.add("custom-scrollbar-wrap--results");
+        }
+        if (el.id === "console-screen-scroll") {
+            wrap.classList.add("custom-scrollbar-wrap--console");
         }
 
         el.parentNode.insertBefore(wrap, el);
@@ -55,11 +58,31 @@ document.addEventListener("DOMContentLoaded", () => {
         function refresh() {
             const maxScrollTop = el.scrollHeight - el.clientHeight;
             const scrollable = maxScrollTop > 1;
-            bar.style.visibility = scrollable ? "visible" : "hidden";
+            // A class instead of directly setting visibility here — lets
+            // CSS decide what "not enough content" actually looks like per
+            // instance. Every other wrap keeps the old behaviour (hidden
+            // entirely, see the bare .is-unscrollable rule), but
+            // .custom-scrollbar-wrap--console overrides it back to visible
+            // with a disabled look instead of disappearing completely.
+            bar.classList.toggle("is-unscrollable", !scrollable);
             arrowUp.classList.toggle("is-disabled", !scrollable || el.scrollTop <= 0);
             arrowDown.classList.toggle("is-disabled", !scrollable || el.scrollTop >= maxScrollTop - 1);
-            if (!scrollable) return;
+            if (!scrollable) {
+                // Nothing to scroll — the thumb sits at its normal size,
+                // pinned to the top of the track, with the (inactive) track
+                // showing beneath it — same resting position a scrollable
+                // page's thumb sits in when scrolled to the top, just
+                // disabled-looking, rather than stretched into one solid bar.
+                thumb.style.top = "0px";
+                thumb.style.height = THUMB_HEIGHT + "px";
+                segUpper.style.height = "0px";
+                segLower.style.top = THUMB_HEIGHT + "px";
+                segLower.style.height = Math.max(0, track.clientHeight - THUMB_HEIGHT) + "px";
+                segLower.style.backgroundPosition = "0 -" + (THUMB_HEIGHT % TRACK_TILE) + "px";
+                return;
+            }
 
+            thumb.style.height = THUMB_HEIGHT + "px";
             const maxThumbTop = track.clientHeight - THUMB_HEIGHT;
             const thumbTop = Math.round(maxThumbTop * (el.scrollTop / maxScrollTop));
             const thumbBottom = thumbTop + THUMB_HEIGHT;
@@ -81,7 +104,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // a modal description swapping text) without any of the pages that
         // use these elements needing to call back into this file.
         new ResizeObserver(refresh).observe(el);
-        new MutationObserver(refresh).observe(el, { childList: true, subtree: true, characterData: true });
+        new MutationObserver(refresh).observe(el, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style", "class"] });
 
         let dragging = false;
         let dragStartY = 0;

@@ -1,7 +1,9 @@
-/* /.netlify/functions/settings — site-wide settings. Currently just one:
-   which state the welcome page's button is in (enter | coming-soon |
-   maintenance). GET is public; PUT requires an admin session. Stored as a
-   single document with a fixed _id, since there's only ever one. */
+/* /.netlify/functions/settings — site-wide settings: which state the
+   welcome page's button is in (enter | coming-soon | maintenance), and the
+   About blurb shown on the console modal's About page. GET is public; PUT
+   requires an admin session and updates whichever fields are present in
+   the request body, leaving the other untouched. Stored as a single
+   document with a fixed _id, since there's only ever one. */
 const { getDb } = require("./_db");
 const { isAuthorized, UNAUTHORIZED } = require("./_auth");
 
@@ -13,6 +15,7 @@ const json = (statusCode, data) => ({
 
 const VALID_STATES = ["enter", "coming-soon", "maintenance"];
 const DEFAULT_STATE = "enter";
+const DEFAULT_ABOUT_TEXT = "";
 
 exports.handler = async (event) => {
     let db;
@@ -25,7 +28,10 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === "GET") {
         const doc = await settings.findOne({ _id: "site" });
-        return json(200, { landingState: (doc && doc.landingState) || DEFAULT_STATE });
+        return json(200, {
+            landingState: (doc && doc.landingState) || DEFAULT_STATE,
+            aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT
+        });
     }
 
     if (!isAuthorized(event)) return UNAUTHORIZED;
@@ -37,15 +43,29 @@ exports.handler = async (event) => {
         } catch (e) {
             return json(400, { error: "Invalid request body" });
         }
-        if (!VALID_STATES.includes(body.landingState)) {
-            return json(400, { error: "landingState must be one of: " + VALID_STATES.join(", ") });
+        const update = {};
+        if (body.landingState !== undefined) {
+            if (!VALID_STATES.includes(body.landingState)) {
+                return json(400, { error: "landingState must be one of: " + VALID_STATES.join(", ") });
+            }
+            update.landingState = body.landingState;
+        }
+        if (body.aboutText !== undefined) {
+            update.aboutText = String(body.aboutText);
+        }
+        if (Object.keys(update).length === 0) {
+            return json(400, { error: "Nothing to update" });
         }
         await settings.updateOne(
             { _id: "site" },
-            { $set: { landingState: body.landingState } },
+            { $set: update },
             { upsert: true }
         );
-        return json(200, { landingState: body.landingState });
+        const doc = await settings.findOne({ _id: "site" });
+        return json(200, {
+            landingState: (doc && doc.landingState) || DEFAULT_STATE,
+            aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT
+        });
     }
 
     return json(405, { error: "Method not allowed" });

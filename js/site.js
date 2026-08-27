@@ -195,3 +195,52 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 });
 
+// "Fellow Fansites" strip, injected right before .site-footer on every page
+// that has one — kept in one shared place rather than pasted into each
+// HTML file by hand, so the list only ever needs updating here.
+document.addEventListener("DOMContentLoaded", () => {
+    const footer = document.querySelector(".site-footer");
+    if (!footer) return;
+
+    const SITES = [
+        ["Bobba.me", "https://bobba.me/"],
+        ["DuckieWorld", "https://duckieworld.com/"],
+        ["FranklyOrigins", "https://franklyorigins.net/"],
+        ["FurniIndex", "https://furniindex.com/"],
+        ["HabboBase", "https://habbobase.com/"],
+        ["HabboFishing", "https://habbofishing.com/"],
+        ["HabboGardening", "https://habbogardening.com/"],
+        ["Leet.show", "https://leet.show/"],
+        ["RockHabbo", "https://rockhabbo.com/"],
+        ["solochef.io", "https://solochef.io/"]
+    ];
+
+    const section = document.createElement("div");
+    section.className = "fellow-fansites";
+    section.innerHTML = `
+        <p class="fellow-fansites-title">Fellow Fansites</p>
+        <p class="fellow-fansites-links">
+            ${SITES.map(([label, url]) =>
+                `<a href="${url}" target="_blank" rel="noopener">${label}</a>`
+            ).join('<span class="fellow-fansites-dot" aria-hidden="true">•</span>')}
+        </p>
+    `;
+    footer.parentNode.insertBefore(section, footer);
+});
+
+// Privacy Policy link, appended into .site-footer on every page that has
+// one — the policy itself lives on the homepage console modal's Privacy
+// page (js/console.js), not a standalone page, so this always points back
+// there: a same-page hash on home.html itself (no reload, just opens the
+// console via console.js's own hashchange listener), or a normal
+// navigation to home.html#privacy from anywhere else.
+document.addEventListener("DOMContentLoaded", () => {
+    const footer = document.querySelector(".site-footer");
+    if (!footer) return;
+
+    const href = document.body.dataset.page === "home" ? "#privacy" : "home.html#privacy";
+    const p = document.createElement("p");
+    p.innerHTML = `<a href="${href}">Privacy Policy</a>`;
+    footer.appendChild(p);
+});
+

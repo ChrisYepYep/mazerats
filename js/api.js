@@ -119,12 +119,47 @@ const Api = {
             return await res.json();
         } catch (e) {
             console.warn("Live site settings unavailable, defaulting to Enter.", e);
-            return { landingState: "enter" };
+            return { landingState: "enter", aboutText: "" };
         } finally {
             clearTimeout(timeout);
         }
     },
-    updateSiteSettings(token, landingState) {
-        return this._write("/.netlify/functions/settings", "PUT", token, { landingState });
-    }
+    // updates is a partial object — { landingState } and/or { aboutText } —
+    // the function only touches whichever fields are actually present.
+    updateSiteSettings(token, updates) {
+        return this._write("/.netlify/functions/settings", "PUT", token, updates);
+    },
+
+    async getContributors() {
+        try {
+            const res = await fetch("/.netlify/functions/contributors");
+            if (!res.ok) throw new Error(`contributors fetch failed: ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            console.warn("Live contributor data unavailable.", e);
+            return [];
+        }
+    },
+    createContributor(token, contributor) { return this._write("/.netlify/functions/contributors", "POST", token, contributor); },
+    updateContributor(token, contributor) { return this._write("/.netlify/functions/contributors", "PUT", token, contributor); },
+    deleteContributor(token, id) { return this._write(`/.netlify/functions/contributors?id=${encodeURIComponent(id)}`, "DELETE", token); },
+
+    // Public — no admin token, since real visitors submit this straight
+    // from the console modal's Contact Us page.
+    async submitContactMessage(message, username, discord, website) {
+        const res = await fetch("/.netlify/functions/contact", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message, username, discord, website })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            const err = new Error(data.error || `Request failed: ${res.status}`);
+            err.status = res.status;
+            throw err;
+        }
+        return data;
+    },
+    getContactMessages(token) { return this._write("/.netlify/functions/contact", "GET", token); },
+    deleteContactMessage(token, id) { return this._write(`/.netlify/functions/contact?id=${encodeURIComponent(id)}`, "DELETE", token); }
 };
