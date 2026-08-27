@@ -313,9 +313,14 @@ p { color: var(--parchment-dim); }
     transition: transform 0.15s ease;
 }
 
+/* No width/height here — rendered at its own native 20x36 size. It was
+   previously forced to width: 24px (height: auto), a 1.2x non-integer
+   scale-up; pixel art scaled by a non-integer factor doesn't replicate
+   each source pixel evenly even with image-rendering: pixelated, which
+   read as a slightly distorted icon. Left to overflow .brand-group's own
+   fixed height (see that rule) same as before, just by less now that it's
+   not being blown up past its native size to begin with. */
 .header-console-btn img {
-    width: 24px;
-    height: auto;
     image-rendering: pixelated;
 }
 
@@ -3995,6 +4000,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 /* ---- contributors page ---- */
 
+.console-contributors-list {
+    margin-top: -5px;
+}
+
 .console-contributor {
     padding: 8px 0;
 }
@@ -4004,6 +4013,14 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-weight: 700;
     font-size: 0.55rem;
     color: #eeeeee;
+}
+
+/* Only the very first entry in the list — .console-contributor is the
+   first child only for that one, since every later entry is preceded by
+   its own .console-dotline sibling instead. */
+.console-contributor:first-child .console-contributor-name {
+    position: relative;
+    top: -5px;
 }
 
 .console-contributor-count { font-weight: 400; }

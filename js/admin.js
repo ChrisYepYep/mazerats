@@ -8,6 +8,17 @@
    Netlify Blobs — see js/api.js's uploadImage/deleteImage. */
 document.addEventListener("DOMContentLoaded", () => {
 
+    // Rooms/events/admins/contributors are all admin-entered (a single
+    // trusted operator), so the risk here is low — but every list below
+    // still renders its fields via innerHTML, so escaping keeps a stray
+    // "<"/"&" in a title or description from breaking the row's own markup,
+    // and stops a bad paste or a compromised admin account (see
+    // netlify/functions/auth.js's owner/admin role split) from running in
+    // the admin's own authenticated session next time the list renders.
+    function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
     // localStorage, not sessionStorage — an admin checking the live site
     // (home.html, see the pre-load Coming Soon/Maintenance gate in its own
     // <head>) in a second tab or window needs this same token there too;
@@ -218,6 +229,19 @@ document.addEventListener("DOMContentLoaded", () => {
         return m ? decodeURIComponent(m[1]) : null;
     }
 
+    // Fire-and-forget cleanup delete, used everywhere an image is being
+    // discarded/replaced (bookend removal, gallery row removal, old-version
+    // pruning, room/event deletion). Unlike every other admin-gated call in
+    // this file, these used to swallow every error including a 401 — a
+    // session expiring mid-edit would fail the delete silently, leaving the
+    // orphaned blob in storage with no indication anything went wrong.
+    // Routed through the same lockOut() the rest of the file uses instead.
+    function deleteImageSafe(key) {
+        Api.deleteImage(adminToken, key).catch(err => {
+            if (err.status === 401) lockOut();
+        });
+    }
+
     // Wraps a file input in a much larger drag-and-drop target instead of
     // leaving it as the browser's own tiny "Choose File" control — used for
     // every image upload on the page (thumbnail, entrance/finish, gallery
@@ -382,7 +406,7 @@ document.addEventListener("DOMContentLoaded", () => {
             removeBtn.addEventListener("click", async () => {
                 if (!await showConfirmDialog(`Remove the ${kind === "entrance" ? "Entrance" : "Finish"} image? This can't be undone.`)) return;
                 const key = blobKeyFromUrl(textInput.value);
-                if (key) Api.deleteImage(adminToken, key).catch(() => {});
+                if (key) deleteImageSafe(key);
                 textInput.value = "";
                 if (previewEl) {
                     previewEl.style.backgroundImage = "";
@@ -400,7 +424,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 // empty slot with old versions attached doesn't mean anything.
                 (formEl[`_${kind}OldVersions`] || []).forEach(v => {
                     const vKey = blobKeyFromUrl(v.image);
-                    if (vKey) Api.deleteImage(adminToken, vKey).catch(() => {});
+                    if (vKey) deleteImageSafe(vKey);
                 });
                 formEl[`_${kind}OldVersions`] = [];
                 formEl[`_${kind}OldVersionsExpanded`] = false;
@@ -494,7 +518,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     const [removed] = items.splice(vi, 1);
                     render();
                     const key = blobKeyFromUrl(removed.image);
-                    if (key) Api.deleteImage(adminToken, key).catch(() => {});
+                    if (key) deleteImageSafe(key);
                 });
             });
 
@@ -679,10 +703,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 draft.push({ image: existingImage, label: existingLabel, bonus: false, runThrough: false, oldVersions: existingOldVersions });
             } else {
                 const key = blobKeyFromUrl(existingImage);
-                if (key) Api.deleteImage(adminToken, key).catch(() => {});
+                if (key) deleteImageSafe(key);
                 existingOldVersions.forEach(v => {
                     const vKey = blobKeyFromUrl(v.image);
-                    if (vKey) Api.deleteImage(adminToken, vKey).catch(() => {});
+                    if (vKey) deleteImageSafe(vKey);
                 });
             }
         }
@@ -957,10 +981,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     const [removed] = draft.splice(i, 1);
                     renderGalleryList();
                     const key = blobKeyFromUrl(removed.image);
-                    if (key) Api.deleteImage(adminToken, key).catch(() => {});
+                    if (key) deleteImageSafe(key);
                     removed.oldVersions.forEach(v => {
                         const vKey = blobKeyFromUrl(v.image);
-                        if (vKey) Api.deleteImage(adminToken, vKey).catch(() => {});
+                        if (vKey) deleteImageSafe(vKey);
                     });
                 });
 
@@ -976,7 +1000,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         const [removed] = draft[i].oldVersions.splice(vi, 1);
                         renderGalleryList();
                         const key = blobKeyFromUrl(removed.image);
-                        if (key) Api.deleteImage(adminToken, key).catch(() => {});
+                        if (key) deleteImageSafe(key);
                     });
                 });
 
@@ -1092,7 +1116,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (vKey) keys.push(vKey);
             });
         });
-        keys.forEach(key => Api.deleteImage(adminToken, key).catch(() => {}));
+        keys.forEach(key => deleteImageSafe(key));
     }
 
     // ---------- list rendering ----------
@@ -1176,9 +1200,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${thumbSrc ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(thumbSrc, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
                 </div>
                 <div class="row-info">
-                    <h3>${title}</h3>
-                    <p class="row-creator">${subtitle ? "by " + subtitle : ""}</p>
-                    <p class="row-desc">${item.description || ""}</p>
+                    <h3>${escapeHtml(title)}</h3>
+                    <p class="row-creator">${subtitle ? "by " + escapeHtml(subtitle) : ""}</p>
+                    <p class="row-desc">${escapeHtml(item.description || "")}</p>
                 </div>
                 <div class="row-side">
                     <span class="status-badge status-${item.status}">${item.status}</span>
@@ -1188,8 +1212,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     </div>
                 </div>
             `;
-            row.querySelector(".admin-edit-btn").addEventListener("click", () => openForm(key, index));
-            row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteItem(key, index));
+            // By id, not the array index captured here at render time — an
+            // edit form left open while a different row gets deleted (or
+            // the list otherwise re-orders) would otherwise keep pointing
+            // at whatever now sits at that same index instead of the item
+            // actually being edited.
+            row.querySelector(".admin-edit-btn").addEventListener("click", () => openForm(key, item.id));
+            row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteItem(key, item.id));
             const rowImg = row.querySelector(".row-thumb-img");
             if (rowImg) {
                 if (rowImg.complete) rowImg.classList.add("is-loaded");
@@ -1230,12 +1259,24 @@ document.addEventListener("DOMContentLoaded", () => {
         return `<label class="admin-field"><span>${labelText}</span>${inputHtml}</label>`;
     }
 
-    function openForm(key, editIndex) {
+    function openForm(key, editId) {
         const cfg = COLLECTIONS[key];
-        const isEdit = editIndex !== undefined && editIndex !== null;
-        const item = isEdit ? cfg.getAll()[editIndex] : {};
+        const isEdit = editId !== undefined && editId !== null;
+        const item = isEdit ? (cfg.getAll().find(i => i.id === editId) || {}) : {};
         const isEvents = key === "events";
         const isRooms = key === "rooms";
+
+        // _galleryDraft/_selectedTags/_entranceOldVersions/_finishOldVersions
+        // all get freshly reassigned further down for whichever item is
+        // being edited — these 3 "which old-versions panel is expanded"
+        // flags don't, so without resetting them here too, opening Edit on
+        // item A (expanding its panel), then Edit on item B without hitting
+        // Cancel first, carried A's expanded state into B's freshly-loaded
+        // form (closeForm already resets these on the way out, but not on
+        // the way back in for a direct Edit-to-Edit switch).
+        cfg.formEl._expandedOldVersions = null;
+        cfg.formEl._entranceOldVersionsExpanded = null;
+        cfg.formEl._finishOldVersionsExpanded = null;
 
         const statusOptionsHtml = cfg.statusOptions.map(([value, label]) =>
             `<option value="${value}" ${item.status === value ? "selected" : ""}>${label}</option>`
@@ -1403,7 +1444,7 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
         `;
 
-        cfg.formEl.dataset.editIndex = isEdit ? String(editIndex) : "";
+        cfg.formEl.dataset.editId = isEdit ? editId : "";
         cfg.formEl.style.display = "flex";
         cfg.addBtn.style.display = "none";
         cfg.formEl.querySelector(".admin-cancel-btn").addEventListener("click", () => closeForm(key));
@@ -1524,8 +1565,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const form = cfg.formEl;
         const data = Object.fromEntries(new FormData(form).entries());
         const items = cfg.getAll();
-        const editIndex = form.dataset.editIndex !== "" ? Number(form.dataset.editIndex) : null;
-        const existing = editIndex !== null ? items[editIndex] : {};
+        const editId = form.dataset.editId || null;
+        const existing = editId !== null ? (items.find(i => i.id === editId) || {}) : {};
 
         const payload = {
             ...existing,
@@ -1581,9 +1622,16 @@ document.addEventListener("DOMContentLoaded", () => {
         submitBtn.textContent = "Saving…";
 
         try {
-            if (editIndex !== null) {
+            if (editId !== null) {
                 const updated = await cfg.update(payload);
-                items[editIndex] = updated;
+                // Looked up fresh rather than reusing an index captured
+                // before this await — the list could have changed (another
+                // item added/removed/reordered) while this save was in
+                // flight. Falls back to pushing it on if the original item
+                // is somehow gone by now, so the save is never silently lost.
+                const idx = items.findIndex(i => i.id === updated.id);
+                if (idx !== -1) items[idx] = updated;
+                else items.push(updated);
             } else {
                 const created = await cfg.create(payload);
                 items.push(created);
@@ -1599,15 +1647,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    async function deleteItem(key, index) {
+    async function deleteItem(key, id) {
         const cfg = COLLECTIONS[key];
         const items = cfg.getAll();
-        const item = items[index];
+        const item = items.find(i => i.id === id);
+        if (!item) return; // already gone (e.g. deleted from another click before this one's confirm dialog closed)
         const title = item[cfg.fieldMap.title] || "this entry";
         if (!confirm(`Delete "${title}"? This is permanent and affects the live site immediately.`)) return;
         try {
             await cfg.remove(item.id);
-            items.splice(index, 1);
+            // Re-found rather than reusing an index from before this await —
+            // the list could have changed while the confirm dialog was open
+            // or the request was in flight.
+            const idx = items.findIndex(i => i.id === id);
+            if (idx !== -1) items.splice(idx, 1);
             renderList(key);
             cleanupItemImages(item);
         } catch (err) {
@@ -1644,15 +1697,19 @@ document.addEventListener("DOMContentLoaded", () => {
             row.className = "chrome-list-row admin-row admin-account-row";
             row.innerHTML = `
                 <div class="row-info">
-                    <h3>${admin.username}${isSelf ? ' <span class="admin-you-tag">(you)</span>' : ""}</h3>
+                    <h3>${escapeHtml(admin.username)}${isSelf ? ' <span class="admin-you-tag">(you)</span>' : ""}</h3>
                     <p class="row-creator">${role === "owner" ? "Owner" : "Admin"} · ${admin.createdAt ? "Added " + admin.createdAt.slice(0, 10) : ""}</p>
                 </div>
                 <div class="admin-row-actions">
-                    <button type="button" class="btn admin-reset-btn">Reset Password</button>
+                    ${(isSelf || canDelete) ? `<button type="button" class="btn admin-reset-btn">Reset Password</button>` : ""}
                     ${canDelete ? `<button type="button" class="btn admin-delete-btn" ${workingAdmins.length <= 1 ? "disabled" : ""}>Delete</button>` : ""}
                 </div>
             `;
-            row.querySelector(".admin-reset-btn").addEventListener("click", () => openResetForm(admin.username));
+            // Only an owner can reset someone else's password (also enforced
+            // server-side, see netlify/functions/auth.js's PUT handler) — a
+            // standard admin only ever sees this button on their own row.
+            const resetBtn = row.querySelector(".admin-reset-btn");
+            if (resetBtn) resetBtn.addEventListener("click", () => openResetForm(admin.username));
             const deleteBtn = row.querySelector(".admin-delete-btn");
             if (deleteBtn) deleteBtn.addEventListener("click", () => deleteAdmin(admin.username));
             adminsListEl.appendChild(row);
@@ -1784,8 +1841,8 @@ document.addEventListener("DOMContentLoaded", () => {
             row.className = "chrome-list-row admin-row";
             row.innerHTML = `
                 <div class="row-info">
-                    <h3>${contributor.username} <span class="admin-contributor-count">- ${contributor.count || 0}</span></h3>
-                    <p class="row-creator">${(contributor.types || []).join(", ")}</p>
+                    <h3>${escapeHtml(contributor.username)} <span class="admin-contributor-count">- ${escapeHtml(contributor.count || 0)}</span></h3>
+                    <p class="row-creator">${escapeHtml((contributor.types || []).join(", "))}</p>
                 </div>
                 <div class="admin-row-actions">
                     <button type="button" class="btn admin-edit-btn">Edit</button>

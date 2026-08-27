@@ -137,6 +137,16 @@ exports.handler = async (event) => {
         if (!username || !validPassword(password)) {
             return json(400, { error: "Username and an 8+ character password are required" });
         }
+        // Only an owner can reset someone else's password — a standard admin
+        // can still reset their own (self-service), same distinction the
+        // DELETE handler below already draws for removing accounts.
+        const requesterUsername = usernameFromToken(event);
+        if (username !== requesterUsername) {
+            const requester = await admins.findOne({ username: requesterUsername });
+            if (resolveRole(requester) !== "owner") {
+                return json(403, { error: "Only an owner can reset another admin's password" });
+            }
+        }
         const passwordHash = await bcrypt.hash(password, 10);
         const result = await admins.findOneAndUpdate(
             { username },

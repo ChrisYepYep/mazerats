@@ -16,6 +16,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const searchWrap = document.getElementById("search-wrap");
     const searchInput = document.getElementById("room-search");
     const sortSelect = document.getElementById("room-sort");
+    // Events have no difficulty field (see normalize()) — hidden while
+    // viewing Events, see updateChrome().
+    const difficultySortOptions = sortSelect.querySelectorAll('option[value^="difficulty"]');
     const emptyEl = document.getElementById("featured-empty");
     const topNavBtns = document.querySelectorAll("#top-nav .chrome-nav-btn");
     const subNavEl = document.getElementById("sub-nav");
@@ -91,6 +94,11 @@ document.addEventListener("DOMContentLoaded", () => {
     let slideOutgoingEl = null;
     let slideRequestSeq = 0;
     let modalCloseToken = 0;
+    // Whatever had focus right before openModal() ran (a row, or the
+    // header's event-ticker link) — restored once the modal finishes
+    // closing, so a keyboard user lands back where they were instead of
+    // focus silently resetting to the top of the page.
+    let modalTriggerEl = null;
     let oldVersionsGallery = null;
     let oldVersionsIndex = 0;
     let oldVersionsOpen = false;
@@ -135,7 +143,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function normalize(item, isEvents) {
         if (isEvents) {
             return {
-                name: item.title,
+                name: item.title || "",
                 subtitle: item.host ? `by ${item.host}` : "",
                 statusKey: item.status || "upcoming",
                 statusLabel: item.status === "past" ? "Past" : item.status === "archive" ? "Archived" : "Upcoming",
@@ -162,7 +170,7 @@ document.addEventListener("DOMContentLoaded", () => {
             };
         }
         return {
-            name: item.name,
+            name: item.name || "",
             subtitle: item.creator ? `by ${item.creator}` : "",
             statusKey: item.status,
             statusLabel: item.status === "open" ? "Open" : item.status === "closed" ? "Closed" : item.status === "collab" ? "Collab" : "Unknown",
@@ -407,14 +415,44 @@ document.addEventListener("DOMContentLoaded", () => {
         setFeaturedPanelState(showFeatured);
         topNavBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.top === topView));
         renderSubNav();
+
+        // Sorting by difficulty was a silent no-op the whole time while
+        // browsing Events (nothing about it visibly changed, with no
+        // indication why) — hidden in that view instead, and reset back to
+        // the default sort if it was already selected when switching into
+        // it, so a stale hidden option is never left sitting selected.
+        const isEvents = topView === "events";
+        difficultySortOptions.forEach(opt => { opt.hidden = isEvents; });
+        if (isEvents && sortBy.startsWith("difficulty")) {
+            sortBy = "name";
+            sortSelect.value = "name";
+        }
     }
 
     // Shared by the main grid and the featured-frame's own list (see
     // renderFeaturedList) — same row markup either place, just a different
     // container around it.
+    // Rows are plain <div>s (see roomRowHtml's own tabindex/role="button"),
+    // not real <button>s — using real buttons here would mean unpicking a
+    // lot of existing .chrome-list-row/.row-* CSS built assuming a div, so
+    // instead this wires the same click + Enter/Space activation any
+    // interactive element needs by hand. Shared by both the main grid and
+    // .featured-frame's own list (see renderFeaturedList) since they render
+    // the exact same row markup.
+    function wireRowActivation(container, items) {
+        container.querySelectorAll(".chrome-list-row").forEach((row, i) => {
+            row.addEventListener("click", () => openModal(items[i]));
+            row.addEventListener("keydown", e => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault(); // stops Space from also scrolling the page
+                openModal(items[i]);
+            });
+        });
+    }
+
     function roomRowHtml(n, isOpenView) {
         return `
-            <div class="chrome-list-row featured" data-difficulty="${n.difficulty || ""}">
+            <div class="chrome-list-row featured" data-difficulty="${n.difficulty || ""}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}">
                 <div class="row-thumb">
                     ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(n.thumb, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
                 </div>
@@ -459,9 +497,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         grid.innerHTML = currentItems.map(n => roomRowHtml(n, isOpenView)).join("");
 
-        grid.querySelectorAll(".chrome-list-row").forEach((row, i) => {
-            row.addEventListener("click", () => openModal(currentItems[i]));
-        });
+        wireRowActivation(grid, currentItems);
         wireThumbFadeIn(grid);
 
         const messages = query.trim() ? emptyMessagesSearch : emptyMessagesNoSearch;
@@ -496,9 +532,7 @@ document.addEventListener("DOMContentLoaded", () => {
         featuredListItems = shuffled.slice(0, FEATURED_FRAME_COUNT);
 
         featuredFrameList.innerHTML = featuredListItems.map(n => roomRowHtml(n, false)).join("");
-        featuredFrameList.querySelectorAll(".chrome-list-row").forEach((row, i) => {
-            row.addEventListener("click", () => openModal(featuredListItems[i]));
-        });
+        wireRowActivation(featuredFrameList, featuredListItems);
         wireThumbFadeIn(featuredFrameList);
 
         featuredFrameEmpty.textContent = emptyMessagesNoSearch.featured;
@@ -567,10 +601,19 @@ document.addEventListener("DOMContentLoaded", () => {
         // setFeaturedPanelState would skip re-measuring entirely.
         setFeaturedPanelState(true, true);
 
-        outgoing.addEventListener("transitionend", () => {
+        const finish = () => {
             outgoingClip.remove();
             featuredRefreshInFlight = false;
-        }, { once: true });
+        };
+        outgoing.addEventListener("transitionend", finish, { once: true });
+        // Fallback in case transitionend never fires (e.g. the tab was
+        // backgrounded mid-transition and the browser skipped the frame,
+        // same reasoning as closeModal's own fallback below) — without
+        // this, featuredRefreshInFlight could get stuck true forever,
+        // silently disabling every future click on this button for the
+        // rest of the session. .featured-frame-list-outgoing's own
+        // transition is 0.5s (see css/style.css); comfortably clear of that.
+        setTimeout(finish, 600);
     }
 
     // #search-wrap's own natural (fully padded) height — cached rather than
@@ -1104,6 +1147,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // "open"/"closing" classes off this new instance mid-view).
         modalCloseToken++;
         modalOverlay.classList.remove("closing");
+        modalTriggerEl = document.activeElement;
 
         modalName.textContent = n.name;
         modalCreator.textContent = n.subtitle;
@@ -1221,6 +1265,11 @@ document.addEventListener("DOMContentLoaded", () => {
         resetOldVersionsInstant();
 
         modalOverlay.classList.add("open");
+        // Moves keyboard focus into the dialog itself (see modalCard's own
+        // tabindex="-1" in home.html — focusable via script, not Tab) so a
+        // keyboard user's very next Tab press starts cycling the modal's
+        // own contents instead of whatever's still behind the overlay.
+        modalCard.focus();
     }
 
     // Plays modalOut (see style.css) before actually hiding the overlay,
@@ -1246,6 +1295,12 @@ document.addEventListener("DOMContentLoaded", () => {
             if (token !== modalCloseToken) return; // superseded by a reopen
             modalOverlay.classList.remove("open", "closing");
             activeGallery = null;
+            // Back to whatever row (or other trigger) opened this modal —
+            // guarded in case it's no longer in the page (e.g. the list
+            // re-rendered while the modal was open) rather than calling
+            // .focus() on a detached element.
+            if (modalTriggerEl && document.body.contains(modalTriggerEl)) modalTriggerEl.focus();
+            modalTriggerEl = null;
         };
         modalCard.addEventListener("animationend", finish, { once: true });
         // Fallback in case animationend never fires (e.g. the tab was
@@ -1353,6 +1408,25 @@ document.addEventListener("DOMContentLoaded", () => {
         if (activeGallery) {
             if (e.key === "ArrowLeft") { showGalleryImage(activeIndex - 1); restartAutoAdvance(); }
             if (e.key === "ArrowRight") { showGalleryImage(activeIndex + 1); restartAutoAdvance(); }
+        }
+        // Basic focus trap — without this, Tab-ing past the last (or before
+        // the first) focusable element inside the modal would carry focus
+        // out to whatever's sitting behind the overlay instead of wrapping
+        // back around within the dialog, same as any native modal.
+        if (e.key === "Tab") {
+            const focusable = modalCard.querySelectorAll(
+                'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            );
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
         }
     });
 

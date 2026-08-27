@@ -23,9 +23,15 @@ const RATE_LIMIT_COUNT = 5;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 
 function clientIp(event) {
-    return event.headers["x-nf-client-connection-ip"]
-        || (event.headers["x-forwarded-for"] || "").split(",")[0].trim()
-        || "unknown";
+    // Only the Netlify-computed value — never x-forwarded-for, which is
+    // client-settable, so trusting it as a fallback would let an attacker
+    // send an arbitrary/rotating value to dodge the rate limit below
+    // entirely. Netlify always sets this header in production; if it's
+    // ever missing, returns null and the caller just skips rate-limiting
+    // for that one request rather than trusting spoofable data — falling
+    // back to a shared literal like "unknown" would instead let unrelated
+    // visitors prematurely rate-limit each other.
+    return event.headers["x-nf-client-connection-ip"] || null;
 }
 
 // Best-effort — a missing API key/recipient (not yet configured in the
@@ -74,7 +80,12 @@ exports.handler = async (event) => {
     const messages = db.collection("contact_messages");
 
     if (event.httpMethod === "POST") {
-        const body = JSON.parse(event.body || "{}");
+        let body;
+        try {
+            body = JSON.parse(event.body || "{}");
+        } catch (e) {
+            return json(400, { error: "Invalid request body" });
+        }
 
         // Honeypot — a field real visitors never see or fill (hidden off-
         // screen in home.html, see .console-hp-field), so anything that
@@ -94,10 +105,12 @@ exports.handler = async (event) => {
         if (discord.length > DISCORD_MAX) return json(400, { error: `Discord username is too long — keep it under ${DISCORD_MAX} characters` });
 
         const ip = clientIp(event);
-        const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
-        const recentCount = await messages.countDocuments({ ip, createdAt: { $gte: since } });
-        if (recentCount >= RATE_LIMIT_COUNT) {
-            return json(429, { error: "Too many messages sent — please wait a bit before trying again." });
+        if (ip) {
+            const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
+            const recentCount = await messages.countDocuments({ ip, createdAt: { $gte: since } });
+            if (recentCount >= RATE_LIMIT_COUNT) {
+                return json(429, { error: "Too many messages sent — please wait a bit before trying again." });
+            }
         }
 
         const entry = { id: crypto.randomUUID(), username, discord, message, createdAt: new Date().toISOString() };

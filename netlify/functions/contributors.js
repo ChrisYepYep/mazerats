@@ -1,6 +1,6 @@
 /* /.netlify/functions/contributors — CRUD API for the console modal's
    Contributors page. Mirrors rooms.js/events.js. */
-const { getDb } = require("./_db");
+const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, UNAUTHORIZED } = require("./_auth");
 
 const json = (statusCode, data) => ({
@@ -35,17 +35,29 @@ exports.handler = async (event) => {
         const body = JSON.parse(event.body || "{}");
         if (!body.username) return json(400, { error: "A contributor needs at least a username" });
 
+        await ensureUniqueIndex(contributors, "id");
+
+        // Attempt-and-retry-on-collision rather than check-then-insert —
+        // see the identical comment in rooms.js for why (a findOne() check
+        // beforehand can't stop two near-simultaneous requests both seeing
+        // "id free" before either insert lands).
         let id = slugify(body.username);
         let suffix = 2;
-        while (await contributors.findOne({ id })) {
-            id = `${slugify(body.username)}-${suffix++}`;
+        for (let attempt = 0; ; attempt++) {
+            const contributor = { ...body, id };
+            delete contributor._id;
+            try {
+                await contributors.insertOne(contributor);
+                const { _id, ...clean } = contributor;
+                return json(201, clean);
+            } catch (e) {
+                if (e.code === 11000 && attempt < 50) {
+                    id = `${slugify(body.username)}-${suffix++}`;
+                    continue;
+                }
+                throw e;
+            }
         }
-
-        const contributor = { ...body, id };
-        delete contributor._id;
-        await contributors.insertOne(contributor);
-        const { _id, ...clean } = contributor;
-        return json(201, clean);
     }
 
     if (event.httpMethod === "PUT") {

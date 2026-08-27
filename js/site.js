@@ -149,7 +149,14 @@ document.addEventListener("DOMContentLoaded", () => {
         <p class="fellow-fansites-links">
             ${SITES.map(([label, url]) =>
                 `<a href="${url}" target="_blank" rel="noopener">${label}</a>`
-            ).join('<span class="fellow-fansites-dot" aria-hidden="true">•</span>')}
+            // Real spaces around the dot, not just adjacent tags with no
+            // whitespace between them — without them there's no line-break
+            // opportunity anywhere in the whole joined string (inline
+            // elements butted directly together don't wrap on their own),
+            // so on narrow/mobile widths the entire list rendered as one
+            // unbreakable run and ran off the edge of the screen instead
+            // of wrapping.
+            ).join(' <span class="fellow-fansites-dot" aria-hidden="true">•</span> ')}
         </p>
     `;
     footer.parentNode.insertBefore(section, footer);

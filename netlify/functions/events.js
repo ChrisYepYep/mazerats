@@ -1,5 +1,5 @@
 /* /.netlify/functions/events — CRUD API for events. Mirrors rooms.js. */
-const { getDb } = require("./_db");
+const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, UNAUTHORIZED } = require("./_auth");
 
 const json = (statusCode, data) => ({
@@ -34,17 +34,29 @@ exports.handler = async (event) => {
         const body = JSON.parse(event.body || "{}");
         if (!body.title) return json(400, { error: "An event needs at least a title" });
 
+        await ensureUniqueIndex(events, "id");
+
+        // Attempt-and-retry-on-collision rather than check-then-insert —
+        // see the identical comment in rooms.js for why (a findOne() check
+        // beforehand can't stop two near-simultaneous requests both seeing
+        // "id free" before either insert lands).
         let id = slugify(body.title);
         let suffix = 2;
-        while (await events.findOne({ id })) {
-            id = `${slugify(body.title)}-${suffix++}`;
+        for (let attempt = 0; ; attempt++) {
+            const item = { ...body, id };
+            delete item._id;
+            try {
+                await events.insertOne(item);
+                const { _id, ...clean } = item;
+                return json(201, clean);
+            } catch (e) {
+                if (e.code === 11000 && attempt < 50) {
+                    id = `${slugify(body.title)}-${suffix++}`;
+                    continue;
+                }
+                throw e;
+            }
         }
-
-        const item = { ...body, id };
-        delete item._id;
-        await events.insertOne(item);
-        const { _id, ...clean } = item;
-        return json(201, clean);
     }
 
     if (event.httpMethod === "PUT") {

@@ -2,7 +2,7 @@
    GET is public (the site needs to read it to render). POST/PUT/DELETE
    require the x-admin-token header to carry a valid session token from
    logging in on the admin page (see auth.js and _auth.js). */
-const { getDb } = require("./_db");
+const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, UNAUTHORIZED } = require("./_auth");
 
 const json = (statusCode, data) => ({
@@ -37,17 +37,30 @@ exports.handler = async (event) => {
         const body = JSON.parse(event.body || "{}");
         if (!body.name) return json(400, { error: "A room needs at least a name" });
 
+        await ensureUniqueIndex(rooms, "id");
+
+        // Attempt-and-retry-on-collision rather than check-then-insert —
+        // a findOne() check beforehand can't stop two near-simultaneous
+        // requests from both seeing "id free" before either insert lands,
+        // producing two rooms with the same id. The unique index above
+        // makes Mongo itself reject the second insert atomically instead.
         let id = slugify(body.name);
         let suffix = 2;
-        while (await rooms.findOne({ id })) {
-            id = `${slugify(body.name)}-${suffix++}`;
+        for (let attempt = 0; ; attempt++) {
+            const room = { ...body, id };
+            delete room._id;
+            try {
+                await rooms.insertOne(room);
+                const { _id, ...clean } = room;
+                return json(201, clean);
+            } catch (e) {
+                if (e.code === 11000 && attempt < 50) {
+                    id = `${slugify(body.name)}-${suffix++}`;
+                    continue;
+                }
+                throw e;
+            }
         }
-
-        const room = { ...body, id };
-        delete room._id;
-        await rooms.insertOne(room);
-        const { _id, ...clean } = room;
-        return json(201, clean);
     }
 
     if (event.httpMethod === "PUT") {

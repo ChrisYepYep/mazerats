@@ -6,9 +6,11 @@
   directory = "netlify/functions"
 
 # The admin panel is unlinked from the site nav (not discoverable through
-# browsing) and its write actions require the ADMIN_PASSWORD env var via
-# the API, so it no longer needs to be blocked outright — just reachable
-# by anyone who knows the URL, same as any password-gated page.
+# browsing) and its write actions require a real logged-in admin session
+# (username/password against the "admins" collection in MongoDB, see
+# netlify/functions/auth.js — bcrypt-hashed passwords, JWT session tokens),
+# so it no longer needs to be blocked outright — just reachable by anyone
+# who knows the URL, same as any password-gated page.
 
 # Serves admin.html at the clean /admin URL (a rewrite, status 200, so the
 # address bar stays /admin rather than redirecting to /admin.html).
@@ -16,6 +18,21 @@
   from = "/admin"
   to = "/admin.html"
   status = 200
+
+# publish = "." above means the whole repo root — including this directory
+# of function SOURCE files — is otherwise served as plain static assets
+# alongside the real site (e.g. mazerats.net/netlify/functions/contact.js
+# would 200 with the raw source, distinct from the actual function
+# endpoint at /.netlify/functions/contact). Doesn't leak secrets (those
+# only ever live in env vars, never in these files), but it does hand out
+# implementation details for free — exact rate-limit thresholds, the
+# contact form's honeypot field name, etc. — with no reason a visitor
+# should ever be hitting this path directly.
+[[redirects]]
+  from = "/netlify/functions/*"
+  to = "/index.html"
+  status = 404
+  force = true
 
 [[headers]]
   for = "/*"

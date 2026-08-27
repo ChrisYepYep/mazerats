@@ -3,26 +3,36 @@
    username/password on the admin page — see js/admin.js and
    netlify/functions/auth.js. */
 const Api = {
-    async getRooms() {
+    // Shared by every public GET-with-fallback below (rooms/events/tags/
+    // contributors/site settings). A hung request (not just a failing one)
+    // used to only get this timeout treatment on getSiteSettings — a slow
+    // cold start or stalled connection on rooms/events/tags/contributors
+    // would otherwise never reject at all, leaving Promise.all([...]) (see
+    // js/home.js) stuck forever instead of falling through to the bundled
+    // fallback data like an outright failure already does.
+    async _getWithFallback(url, label, fallbackFn) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6000);
         try {
-            const res = await fetch("/.netlify/functions/rooms");
-            if (!res.ok) throw new Error(`rooms fetch failed: ${res.status}`);
+            const res = await fetch(url, { signal: controller.signal });
+            if (!res.ok) throw new Error(`${label} fetch failed: ${res.status}`);
             return await res.json();
         } catch (e) {
-            console.warn("Live room data unavailable, using built-in fallback.", e);
-            return typeof DEFAULT_ROOMS !== "undefined" ? DEFAULT_ROOMS : [];
+            console.warn(`Live ${label} unavailable, using fallback.`, e);
+            return fallbackFn();
+        } finally {
+            clearTimeout(timeout);
         }
     },
 
-    async getEvents() {
-        try {
-            const res = await fetch("/.netlify/functions/events");
-            if (!res.ok) throw new Error(`events fetch failed: ${res.status}`);
-            return await res.json();
-        } catch (e) {
-            console.warn("Live event data unavailable, using built-in fallback.", e);
-            return typeof DEFAULT_EVENTS !== "undefined" ? DEFAULT_EVENTS : [];
-        }
+    getRooms() {
+        return this._getWithFallback("/.netlify/functions/rooms", "room data",
+            () => typeof DEFAULT_ROOMS !== "undefined" ? DEFAULT_ROOMS : []);
+    },
+
+    getEvents() {
+        return this._getWithFallback("/.netlify/functions/events", "event data",
+            () => typeof DEFAULT_EVENTS !== "undefined" ? DEFAULT_EVENTS : []);
     },
 
     async _write(url, method, token, body) {
@@ -94,35 +104,18 @@ const Api = {
         return this._write(`/.netlify/functions/auth?username=${encodeURIComponent(username)}`, "DELETE", token);
     },
 
-    async getTags() {
-        try {
-            const res = await fetch("/.netlify/functions/tags");
-            if (!res.ok) throw new Error(`tags fetch failed: ${res.status}`);
-            return await res.json();
-        } catch (e) {
-            console.warn("Live tag list unavailable, using built-in fallback.", e);
-            return ["FURNI MAZE", "ILLUSION", "FLOATING", "FUNCTIONAL", "LONG-FORM"];
-        }
+    getTags() {
+        return this._getWithFallback("/.netlify/functions/tags", "tag list",
+            () => ["FURNI MAZE", "ILLUSION", "FLOATING", "FUNCTIONAL", "LONG-FORM"]);
     },
     createTag(token, label) { return this._write("/.netlify/functions/tags", "POST", token, { label }); },
 
-    async getSiteSettings() {
-        // The welcome button ships disabled and only this call can enable it,
-        // so a request that hangs instead of failing outright would otherwise
-        // leave visitors stuck forever. The timeout guarantees it always lands
-        // in the same catch as a normal fetch failure, within a few seconds.
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6000);
-        try {
-            const res = await fetch("/.netlify/functions/settings", { signal: controller.signal });
-            if (!res.ok) throw new Error(`settings fetch failed: ${res.status}`);
-            return await res.json();
-        } catch (e) {
-            console.warn("Live site settings unavailable, defaulting to Enter.", e);
-            return { landingState: "enter", aboutText: "" };
-        } finally {
-            clearTimeout(timeout);
-        }
+    // The welcome button ships disabled and only this call can enable it —
+    // relies on _getWithFallback's timeout so a hung (not just failing)
+    // request can't leave visitors stuck on the disabled button forever.
+    getSiteSettings() {
+        return this._getWithFallback("/.netlify/functions/settings", "site settings",
+            () => ({ landingState: "enter", aboutText: "" }));
     },
     // updates is a partial object — { landingState } and/or { aboutText } —
     // the function only touches whichever fields are actually present.
@@ -130,15 +123,8 @@ const Api = {
         return this._write("/.netlify/functions/settings", "PUT", token, updates);
     },
 
-    async getContributors() {
-        try {
-            const res = await fetch("/.netlify/functions/contributors");
-            if (!res.ok) throw new Error(`contributors fetch failed: ${res.status}`);
-            return await res.json();
-        } catch (e) {
-            console.warn("Live contributor data unavailable.", e);
-            return [];
-        }
+    getContributors() {
+        return this._getWithFallback("/.netlify/functions/contributors", "contributor data", () => []);
     },
     createContributor(token, contributor) { return this._write("/.netlify/functions/contributors", "POST", token, contributor); },
     updateContributor(token, contributor) { return this._write("/.netlify/functions/contributors", "PUT", token, contributor); },
