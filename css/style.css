@@ -412,11 +412,19 @@ p { color: var(--parchment-dim); }
 
 /* Groups the brand link with whatever small pill sits next to it (the
    "Admin" tag, the Discord link) so they read as one unit at the header's
-   left edge instead of competing with .site-nav for the space-between. */
+   left edge instead of competing with .site-nav for the space-between.
+   Fixed height (matching .brand's own natural content height) rather than
+   left to size itself to its tallest child — .header-console-btn's icon
+   is taller than that at its own natural size, and flex's default
+   behaviour would otherwise stretch this whole row (and so .site-header
+   itself, via its own align-items: center) to fit it. Fixed here instead,
+   so the icon just overflows past the bottom of this row when it doesn't
+   fit, rather than growing the header around it. */
 .brand-group {
     display: flex;
     align-items: center;
     gap: 10px;
+    height: 32px;
 }
 
 /* Small pill-style tag next to the brand — shared by the "Admin" label
