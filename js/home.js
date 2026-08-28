@@ -41,6 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalOverlay = document.getElementById("room-modal");
     const modalCard = modalOverlay.querySelector(".modal");
     const modalThumb = document.getElementById("modal-thumb");
+    const modalThumbFrame = document.getElementById("modal-thumb-frame");
     const galleryViewport = document.getElementById("gallery-viewport");
     const modalGalleryImg = document.getElementById("modal-gallery-img");
     const galleryMissingPill = document.getElementById("gallery-missing-pill");
@@ -52,7 +53,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const galleryStrip = document.getElementById("gallery-strip");
     const modalName = document.getElementById("modal-name");
     const modalCreator = document.getElementById("modal-creator");
-    const modalMeta = document.getElementById("modal-meta");
+    const modalBuilder = document.getElementById("modal-builder");
+    const modalMeta = document.getElementById("modal-meta-items");
     const modalDesc = document.getElementById("modal-desc");
     const modalLinksWrap = document.getElementById("modal-links-wrap");
     const modalLinks = document.getElementById("modal-links");
@@ -814,13 +816,15 @@ document.addEventListener("DOMContentLoaded", () => {
         browseChromeFrame.style.transform = `translateY(${offset}px)`;
     }
 
-    // Entrance/Finish slides always display as "Entrance"/"Complete" in the
-    // viewer, regardless of whatever label the admin typed for them (that
-    // label still names the underlying image everywhere else, e.g. the
-    // admin's own editor) — only kind:"room" entries show their real label.
+    // Every slide shows whatever the admin actually named that image in its
+    // own label field — the entrance and finish bookends included, so a maze
+    // can title its own way in and out ("Front Door", "The Vault") instead
+    // of every maze reading the same two words. Blank fields still fall back
+    // to "Entrance"/"Finish", applied where entranceItem/finishItem are
+    // built rather than here. Left as a function rather than inlined at its
+    // three call sites (the pill, and the strip's alt/title) so label policy
+    // still has one place to live.
     function displayLabel(g) {
-        if (g.kind === "entrance") return "Entrance";
-        if (g.kind === "finish") return "Complete";
         return g.label;
     }
 
@@ -1141,6 +1145,116 @@ document.addEventListener("DOMContentLoaded", () => {
         else openOldVersions();
     }
 
+    // Builder cards — the Habbo Origins profiles behind a maze's creator
+    // line (see netlify/functions/habbo.js). Entirely additive: the plain
+    // creator line is rendered first and unconditionally, and these only
+    // ever appear on top of it if a lookup succeeds.
+    //
+    // A token guards against the modal being reopened on a different maze
+    // while lookups are still in flight — without it a slow response for
+    // maze A could land after the visitor has opened maze B and paint B's
+    // modal with A's builders.
+    let builderToken = 0;
+
+    // A maze's creator field can credit several people, comma-separated
+    // ("Vincent, LanceS, ChrisYepYep"). Capped so an unusually long credit
+    // list can't fire off a dozen lookups on a single modal open.
+    const MAX_BUILDER_CARDS = 3;
+
+    function creatorNames(owner) {
+        return String(owner || "")
+            .split(",")
+            .map(s => s.trim())
+            .filter(Boolean)
+            .slice(0, MAX_BUILDER_CARDS);
+    }
+
+    function relativeLastSeen(iso) {
+        const then = new Date(iso);
+        if (isNaN(then)) return "";
+        const mins = Math.floor((Date.now() - then.getTime()) / 60000);
+        if (mins < 1) return "just now";
+        if (mins < 60) return mins + (mins === 1 ? " minute ago" : " minutes ago");
+        const hours = Math.floor(mins / 60);
+        if (hours < 24) return hours + (hours === 1 ? " hour ago" : " hours ago");
+        const days = Math.floor(hours / 24);
+        if (days < 30) return days + (days === 1 ? " day ago" : " days ago");
+        return formatMazeDate(then.toISOString().slice(0, 10)) || "a while ago";
+    }
+
+    function builderCard(profile) {
+        const card = document.createElement("div");
+        card.className = "builder-card";
+
+        if (profile.avatar) {
+            const avatar = document.createElement("img");
+            avatar.className = "builder-avatar";
+            avatar.src = profile.avatar;
+            avatar.alt = "";
+            avatar.loading = "lazy";
+            // The avatar comes from www.habbo.com's imaging service, which
+            // is outside this site's control — if it fails, drop just the
+            // image and keep the name/motto rather than leaving a broken
+            // icon behind.
+            avatar.addEventListener("error", () => avatar.remove());
+            card.appendChild(avatar);
+        }
+
+        const text = document.createElement("div");
+        text.className = "builder-text";
+
+        const nameLine = document.createElement("p");
+        nameLine.className = "builder-name";
+        // Text nodes throughout: names and mottos are written by Habbo
+        // users, not by an admin here.
+        nameLine.appendChild(document.createTextNode(profile.name));
+
+        const status = document.createElement("span");
+        status.className = profile.online ? "builder-status is-online" : "builder-status";
+        status.textContent = profile.online
+            ? "Online"
+            : (profile.lastAccessTime ? "Last seen " + relativeLastSeen(profile.lastAccessTime) : "");
+        if (status.textContent) nameLine.appendChild(status);
+        text.appendChild(nameLine);
+
+        if (profile.motto) {
+            const motto = document.createElement("p");
+            motto.className = "builder-motto";
+            motto.textContent = profile.motto;
+            text.appendChild(motto);
+        }
+
+        card.appendChild(text);
+        return card;
+    }
+
+    async function showBuilderCard(n) {
+        const token = ++builderToken;
+        modalBuilder.hidden = true;
+        modalCreator.hidden = false;
+        modalBuilder.innerHTML = "";
+
+        const names = creatorNames(n.owner);
+        if (!names.length) return;
+
+        // In parallel, and individually tolerant: one builder who is not
+        // on Origins does not cost the others their card. The function
+        // itself decides which hotel to ask and whether the name is even
+        // credited in this archive, so there is no hotel check here.
+        const profiles = (await Promise.all(names.map(name => Api.getHabboProfile(name))))
+            .filter(Boolean);
+
+        // Stale response for a maze the visitor has already navigated away
+        // from, or nobody resolved — either way, leave the list hidden.
+        if (token !== builderToken || !profiles.length) return;
+
+        profiles.forEach(profile => modalBuilder.appendChild(builderCard(profile)));
+        // The cards carry the builders' names themselves, so the plain
+        // "by <name>" line would just repeat them.
+        modalCreator.hidden = true;
+        modalBuilder.hidden = false;
+    }
+
     function openModal(n) {
         // Invalidates any in-flight closeModal() from a rapid re-open (its
         // animationend/fallback would otherwise fire later and rip the
@@ -1151,6 +1265,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         modalName.textContent = n.name;
         modalCreator.textContent = n.subtitle;
+        showBuilderCard(n);
         // Featured rows are always maze rooms regardless of which top-nav
         // category is active underneath (see sourceItems' "featured"
         // branch) — same condition render() uses to decide isEvents for
@@ -1219,7 +1334,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (combinedGallery.length) {
             activeGallery = combinedGallery;
             modalThumb.classList.add("has-gallery");
-            modalThumb.style.backgroundImage = "";
+            modalThumbFrame.style.backgroundImage = "";
             galleryPrev.style.display = "flex";
             galleryNext.style.display = "flex";
             galleryCounter.style.display = "inline-flex";
@@ -1252,7 +1367,7 @@ document.addEventListener("DOMContentLoaded", () => {
             galleryBonusTab.style.display = "none";
             galleryStrip.style.display = "none";
             galleryStrip.innerHTML = "";
-            modalThumb.style.backgroundImage = n.thumb
+            modalThumbFrame.style.backgroundImage = n.thumb
                 ? `linear-gradient(rgba(10,7,4,0.15), rgba(10,7,4,0.35)), url('${imgCdn(n.thumb, 800, 500, 70)}')`
                 : "";
             oldVersionsPill.style.display = "none";

@@ -106,6 +106,17 @@ exports.handler = async (event) => {
 
         const ip = clientIp(event);
         if (ip) {
+            // A banned address gets the same silent, normal-looking success the
+            // honeypot returns above, for the same reason: an explicit "you are
+            // banned" (or even a 429, which the rate limit below does send) tells
+            // whoever it is that they've been noticed and is an invitation to come
+            // back from a different address. Nothing is written and no email goes
+            // out. Bans are managed in bans.js.
+            const banned = await db.collection("bans").countDocuments({ ip }, { limit: 1 });
+            if (banned) {
+                return json(201, { id: crypto.randomUUID(), username: "", discord: "", message: "", createdAt: new Date().toISOString() });
+            }
+
             const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
             const recentCount = await messages.countDocuments({ ip, createdAt: { $gte: since } });
             if (recentCount >= RATE_LIMIT_COUNT) {

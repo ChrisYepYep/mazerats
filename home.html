@@ -239,12 +239,7 @@
                     <div class="console-page" id="console-page-privacy" style="display:none;">
                         <h3 class="console-page-title">Privacy Policy</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
-                        <p class="console-blurb"><strong>What we collect.</strong> When you submit a form via the Contact Us page, we collect the details you provide—such as your message content, Habbo Origins username, and optional Discord handle—solely to process and respond to your inquiry. Short-term IP logging is implemented exclusively for automated spam prevention and security filtering.</p>
-                        <p class="console-blurb"><strong>Use of Data.</strong> Submitted information is used strictly to review, process, and reply to user inquiries, including maze submissions, content corrections, and general feedback. We do not maintain marketing mailing lists or use your details for promotional purposes.</p>
-                        <p class="console-blurb"><strong>Data Storage & Infrastructure.</strong> Submissions are stored securely within a MongoDB Atlas database, accessible strictly via our Netlify-hosted serverless architecture. Instant email notifications for incoming messages are routed through Resend, a privacy-compliant transactional email provider, ensuring prompt administrative responses.</p>
-                        <p class="console-blurb"><strong>Analytics & Privacy.</strong> We use Umami Analytics to monitor aggregate website traffic and performance without compromising user privacy. Umami is a lightweight, privacy-focused tool that does not collect personal data, track users across external sites, or utilize cookies. Browser storage is strictly reserved for administrative authentication sessions and is never placed on standard visitor devices.</p>
-                        <p class="console-blurb"><strong>Third-Party Sharing.</strong> We do not sell, rent, trade, or share your personal information with third parties, except as necessary to deliver transactional system alerts through our integrated infrastructure providers mentioned above.</p>
-                        <p class="console-blurb"><strong>Data Rights & Contact.</strong> If you wish to request the removal, review, or deletion of any stored contact data associated with your account, please send a message through the Contact Us form, and your request will be processed promptly.</p>
+                        <div class="console-privacy-body" id="console-privacy-body"></div>
                     </div>
                     <div class="console-page" id="console-page-about" style="display:none;">
                         <h3 class="console-page-title">About</h3>
@@ -278,36 +273,62 @@
             <div class="chrome-frame">
                 <div class="modal-viewport" id="modal-viewport">
                     <div class="modal-primary-view" id="modal-primary-view">
-                        <div class="modal-thumb" id="modal-thumb">
-                            <div class="gallery-viewport" id="gallery-viewport">
-                                <img class="modal-gallery-img" id="modal-gallery-img" alt="" style="display:none;">
-                                <span class="gallery-missing-pill" id="gallery-missing-pill" style="display:none;">Awaiting Room Image</span>
+                        <!-- The image area and everything under it now share one box. The
+                             nav arrows and the pills are positioned against
+                             .modal-thumb-frame rather than .modal-thumb, so extending the
+                             thumb downward to hold the body does not drag them with it —
+                             the frame keeps the image's own fixed height. The old-versions
+                             view still uses a plain .modal-thumb and is unaffected. -->
+                        <div class="modal-thumb modal-thumb-full" id="modal-thumb">
+                            <div class="modal-thumb-frame" id="modal-thumb-frame">
+                                <div class="gallery-viewport" id="gallery-viewport">
+                                    <img class="modal-gallery-img" id="modal-gallery-img" alt="" style="display:none;">
+                                    <span class="gallery-missing-pill" id="gallery-missing-pill" style="display:none;">Awaiting Room Image</span>
+                                </div>
+                                <button class="gallery-nav gallery-prev" id="gallery-prev" aria-label="Previous room" style="display:none;">&#10094;</button>
+                                <button class="gallery-nav gallery-next" id="gallery-next" aria-label="Next room" style="display:none;">&#10095;</button>
+                                <span class="gallery-bonus-tab" id="gallery-bonus-tab" style="display:none;">Bonus Room</span>
+                                <span class="gallery-counter" id="gallery-counter" style="display:none;"></span>
+                                <span class="gallery-counter gallery-position" id="gallery-position" style="display:none;"></span>
+                                <button type="button" class="old-versions-pill" id="old-versions-pill" style="display:none;"></button>
                             </div>
-                            <button class="gallery-nav gallery-prev" id="gallery-prev" aria-label="Previous room" style="display:none;">&#10094;</button>
-                            <button class="gallery-nav gallery-next" id="gallery-next" aria-label="Next room" style="display:none;">&#10095;</button>
-                            <span class="gallery-bonus-tab" id="gallery-bonus-tab" style="display:none;">Bonus Room</span>
-                            <span class="gallery-counter" id="gallery-counter" style="display:none;"></span>
-                            <span class="gallery-counter gallery-position" id="gallery-position" style="display:none;"></span>
-                            <button type="button" class="old-versions-pill" id="old-versions-pill" style="display:none;"></button>
-                        </div>
-                        <div class="modal-body">
-                            <div class="modal-top-row">
-                                <p class="room-creator" id="modal-creator"></p>
-                                <div class="room-tags" id="modal-tags"></div>
-                            </div>
-                            <div class="modal-meta" id="modal-meta"></div>
-                            <div class="room-desc-box" id="room-desc-box">
-                                <p class="room-desc-full" id="modal-desc"></p>
-                                <div class="room-links-refs" id="modal-links-wrap" style="display:none;">
-                                    <span class="room-links-refs-label">Links &amp; References</span>
-                                    <p class="room-links-refs-text" id="modal-links"></p>
+                            <div class="modal-body">
+                                <div class="modal-top-row">
+                                    <p class="room-creator" id="modal-creator"></p>
+                                    <!-- Filled in by js/home.js when the maze is an Origins one and
+                                         its builder resolves on the hotel; stays empty and hidden
+                                         otherwise, so the plain creator line above is always the
+                                         baseline and this is purely additive. -->
+                                    <div class="builder-list" id="modal-builder" hidden></div>
+                                    <div class="room-tags" id="modal-tags"></div>
+                                </div>
+                                <p class="modal-visit-link">
+                                <a class="btn" id="modal-link" href="#" target="_blank" rel="noopener">Visit Room</a>
+                                </p>
+                                <!-- One panel running to the modal's own edges: the meta items on
+                                     top, then the description (and the thumbnail strip inside it)
+                                     directly below. #modal-meta-items rather than #modal-meta is
+                                     what js/home.js fills, so rewriting the meta line each time a
+                                     maze opens cannot wipe the description nested alongside it. -->
+                                <div class="modal-meta">
+                                    <div class="modal-meta-items" id="modal-meta-items"></div>
+                                    <!-- The framed panel is this element, not the wrapper
+                                         js/custom-scrollbar.js builds at runtime — that only ever
+                                         surrounds the scrolling box itself, so the thumbnail strip
+                                         could not sit inside it while staying out of the scroll. -->
+                                    <div class="room-desc-panel">
+                                        <div class="room-desc-box" id="room-desc-box">
+                                            <p class="room-desc-full" id="modal-desc"></p>
+                                            <div class="room-links-refs" id="modal-links-wrap" style="display:none;">
+                                                <span class="room-links-refs-label">Links &amp; References</span>
+                                                <p class="room-links-refs-text" id="modal-links"></p>
+                                            </div>
+                                        </div>
+                                        <div class="gallery-strip" id="gallery-strip" style="display:none;"></div>
+                                    </div>
                                 </div>
                             </div>
-                            <p class="modal-visit-link">
-                                <a class="btn" id="modal-link" href="#" target="_blank" rel="noopener">Visit Room</a>
-                            </p>
                         </div>
-                        <div class="gallery-strip" id="gallery-strip" style="display:none;"></div>
                     </div>
                     <div class="modal-oldversions-view" id="modal-oldversions-view">
                         <button type="button" class="old-versions-back-tab" id="old-versions-back-pill">
@@ -331,6 +352,7 @@
     <script src="js/rooms-data.js"></script>
     <script src="js/events-data.js"></script>
     <script src="js/api.js"></script>
+    <script src="js/privacy-content.js"></script>
     <script src="js/site.js"></script>
     <script src="js/home.js"></script>
     <script src="js/custom-scrollbar.js"></script>

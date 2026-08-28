@@ -147,5 +147,35 @@ const Api = {
         return data;
     },
     getContactMessages(token) { return this._write("/.netlify/functions/contact", "GET", token); },
-    deleteContactMessage(token, id) { return this._write(`/.netlify/functions/contact?id=${encodeURIComponent(id)}`, "DELETE", token); }
+    deleteContactMessage(token, id) { return this._write(`/.netlify/functions/contact?id=${encodeURIComponent(id)}`, "DELETE", token); },
+
+    // Admin-only in both directions — there is no public half here, so
+    // these all go through _write (which carries the token) rather than
+    // _getWithFallback. See netlify/functions/bans.js.
+    getBans(token) { return this._write("/.netlify/functions/bans", "GET", token); },
+    createBan(token, ip, reason) { return this._write("/.netlify/functions/bans", "POST", token, { ip, reason }); },
+    deleteBan(token, id) { return this._write(`/.netlify/functions/bans?id=${encodeURIComponent(id)}`, "DELETE", token); },
+    // Unban straight from a contact message, where the ban's own id
+    // isn't to hand but the address is.
+    deleteBanByIp(token, ip) { return this._write(`/.netlify/functions/bans?ip=${encodeURIComponent(ip)}`, "DELETE", token); },
+
+    // Public. Not routed through _getWithFallback: there is no bundled
+    // fallback for a live third-party lookup, and every caller already
+    // treats "no profile" as the normal case (the maze modal just shows
+    // the plain username), so a null here is an answer rather than a
+    // failure worth warning about. 404 is expected and common — a builder
+    // whose name is not on Origins, or is not in the archive at all.
+    async getHabboProfile(name) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        try {
+            const res = await fetch(`/.netlify/functions/habbo?name=${encodeURIComponent(name)}`, { signal: controller.signal });
+            if (!res.ok) return null;
+            return await res.json();
+        } catch (e) {
+            return null;
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
 };

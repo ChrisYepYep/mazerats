@@ -249,6 +249,92 @@ html::-webkit-scrollbar-button { display: none; width: 0; height: 0; background:
     background-image: url('../assets/img/scrollbar_arrow_down_disabled.png');
 }
 
+/* ---------- horizontal variant ----------
+   Same DOM as the vertical bar (js/custom-scrollbar.js builds one shape
+   for both axes, with the two arrows meaning "start" and "end" rather
+   than up and down) — this class is the only thing that turns it on its
+   side. The sprites are the vertical ones rotated 90° anticlockwise into
+   their own scrollbar_h_* files, so "up" reads as left and "down" as
+   right, rather than a CSS transform: rotate() which would fight the
+   track's repeat tiling and the arrows' own layout boxes. */
+.custom-scrollbar-wrap--horizontal {
+    flex-direction: column;
+}
+
+/* The strip carries its own outer margin; that belongs to the wrapper, so
+   the bar lines up with the strip rather than sitting inside its margin.
+   Inside the description panel it needs far less inset than it did as a
+   standalone band, so the side margins are gone. */
+.custom-scrollbar-wrap--strip {
+    margin: 10px 0 0;
+    gap: 4px;
+}
+
+.custom-scrollbar-wrap--strip .gallery-strip {
+    margin: 0;
+}
+
+.custom-scrollbar--horizontal {
+    flex-direction: row;
+    width: auto;
+    height: 15px;
+}
+
+.custom-scrollbar--horizontal .custom-scrollbar-track {
+    width: auto;
+    height: 15px;
+    min-width: 15px;
+    min-height: 0;
+}
+
+/* left/width are set per-segment in JS, the same way top/height are on
+   the vertical bar; top/height are the fixed pair here. */
+.custom-scrollbar--horizontal .custom-scrollbar-track-segment {
+    top: 0;
+    left: auto;
+    height: 15px;
+    width: auto;
+    background-image: url('../assets/img/scrollbar_h_track_inactive.png');
+    background-repeat: repeat-x;
+}
+
+.custom-scrollbar--horizontal .custom-scrollbar-track-segment.is-active {
+    background-image: url('../assets/img/scrollbar_h_track_active.png');
+}
+
+.custom-scrollbar--horizontal .custom-scrollbar-thumb {
+    top: 0;
+    width: 15px;
+    height: 15px;
+    background-image: url('../assets/img/scrollbar_h_thumb_inactive.png');
+}
+
+.custom-scrollbar--horizontal .custom-scrollbar-thumb:hover,
+.custom-scrollbar--horizontal .custom-scrollbar-thumb.is-dragging {
+    background-image: url('../assets/img/scrollbar_h_thumb_active.png');
+}
+
+/* The rotated arrow sprites are 14x15 where the vertical ones are 15x14. */
+.custom-scrollbar--horizontal .custom-scrollbar-arrow {
+    width: 14px;
+    height: 15px;
+}
+
+.custom-scrollbar--horizontal .custom-scrollbar-arrow-up { background-image: url('../assets/img/scrollbar_h_arrow_left_inactive.png'); }
+.custom-scrollbar--horizontal .custom-scrollbar-arrow-up:hover { background-image: url('../assets/img/scrollbar_h_arrow_left_active.png'); }
+.custom-scrollbar--horizontal .custom-scrollbar-arrow-down { background-image: url('../assets/img/scrollbar_h_arrow_right_inactive.png'); }
+.custom-scrollbar--horizontal .custom-scrollbar-arrow-down:hover { background-image: url('../assets/img/scrollbar_h_arrow_right_active.png'); }
+
+.custom-scrollbar--horizontal .custom-scrollbar-arrow-up.is-disabled,
+.custom-scrollbar--horizontal .custom-scrollbar-arrow-up.is-disabled:hover {
+    background-image: url('../assets/img/scrollbar_h_arrow_left_disabled.png');
+}
+
+.custom-scrollbar--horizontal .custom-scrollbar-arrow-down.is-disabled,
+.custom-scrollbar--horizontal .custom-scrollbar-arrow-down.is-disabled:hover {
+    background-image: url('../assets/img/scrollbar_h_arrow_right_disabled.png');
+}
+
 body {
     margin: 0;
     padding: 0;
@@ -581,11 +667,30 @@ main { display: block; flex: 1 0 auto; }
     letter-spacing: 0.5px;
 }
 
+/* A centred, wrapping flex row rather than a run of inline text: with
+   inline links the literal spaces around each "bullet" separator stayed
+   on the line they broke at, so a wrapped list sat visibly off-centre.
+   As flex items each line centres on its own content instead. */
 .fellow-fansites-links {
     margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    /* Row gap doubles as the space after each dot; the dot adds its own
+       matching space before itself. */
+    gap: 0 6px;
     font-size: 0.72rem;
     color: var(--parchment-dim);
     line-height: 1.6;
+}
+
+/* Link + its separator travel together, so the dot always trails a name
+   and never begins a line. */
+.fellow-fansites-item {
+    display: inline-flex;
+    align-items: baseline;
+    white-space: nowrap;
 }
 
 .fellow-fansites-links a {
@@ -603,8 +708,14 @@ main { display: block; flex: 1 0 auto; }
 }
 
 .fellow-fansites-dot {
-    margin: 0 6px;
+    margin-left: 6px;
     color: var(--parchment-dim);
+}
+
+/* Trailing separator on the final name is removed here rather than
+   skipped when building the list, so the markup stays uniform. */
+.fellow-fansites-item:last-child .fellow-fansites-dot {
+    display: none;
 }
 
 .footer-dot {
@@ -1489,7 +1600,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 .chrome-list-row:hover {
     transform: translateY(-2px);
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4), 0 4px 10px rgba(0, 0, 0, 0.35);
+    /* The lift keeps the row's own solid shadow and nothing else — the soft
+       0 4px 10px blur that used to come with it read as a different, softer
+       shadow language than every other edge on the site. */
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
 }
 
 .chrome-list-row.featured { background: var(--chrome-row-featured); }
@@ -1541,9 +1655,13 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 .chrome-list-row h3 {
-    font-family: 'Silkscreen', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    /* 700 is what selects VolterGoldfishBold.ttf — the bold cut is
+       registered under the same family as the regular one and told apart
+       by weight alone (see the @font-face pair at the top of this file). */
     font-weight: 700;
-    font-size: 0.9rem;
+    font-size: 0.5625rem;
+    line-height: 21.6px;
     color: var(--amber-bright);
     text-shadow: none;
     margin: 0 0 3px;
@@ -1551,7 +1669,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 .chrome-list-row .row-creator {
-    font-size: 0.74rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: 17.76px;
     color: var(--amber);
     margin: 0 0 4px;
 }
@@ -1559,9 +1680,20 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .row-date { color: var(--parchment-dim); }
 
 .chrome-list-row .row-desc {
-    font-size: 0.8rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: 19.2px;
     color: var(--parchment-dim);
     margin: 0;
+}
+
+/* Featured rows keep the default line-height — the explicit values above
+   exist only to hold the plain rows' spacing where it was. */
+#featured-frame-list .chrome-list-row h3,
+#featured-frame-list .chrome-list-row .row-creator,
+#featured-frame-list .chrome-list-row .row-desc {
+    line-height: normal;
 }
 
 .chrome-list-row .row-tags {
@@ -1661,11 +1793,13 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* Difficulty pill — same shape as a regular .tag, just colour-coded easiest
    (green) to hardest (deep orange). Kept subtle (border + text colour on
    the same dark fill as every other tag) rather than a solid colour block. */
-.difficulty-easy { color: #7fae52; border-color: #7fae52; }
-.difficulty-medium { color: #b3a24c; border-color: #b3a24c; }
-.difficulty-hard { color: #c98a42; border-color: #c98a42; }
-.difficulty-very-hard { color: #c2692f; border-color: #c2692f; }
-.difficulty-extreme { color: #b8481f; border-color: #b8481f; }
+.difficulty-easy { color: #63c07f; border-color: #63c07f; }
+.difficulty-medium { color: #ebcd5d; border-color: #ebcd5d; }
+.difficulty-hard { color: #fa7646; border-color: #fa7646; }
+.difficulty-very-hard { color: #ec434a; border-color: #ec434a; }
+/* Text lifted off the deep red so the label is legible on the tag's own
+   dark fill; the outline keeps the difficulty colour itself. */
+.difficulty-extreme { color: #d47979; border-color: #731418; }
 
 /* ---------- tabs (docked directly under the titlebar, like Habbo's own
    Public Spaces / Rooms tabs) — each tab is the actual btn_active.png /
@@ -2015,29 +2149,51 @@ body[data-page="home"] .hero { padding-top: 18px; }
    background tints toward its own maze's difficulty rating instead of the
    flat rgba(0,0,0,0.25) above, using the same hues as .tag.difficulty-*
    just translated to a low-alpha fill instead of solid text/border. */
-#featured-frame-list .chrome-list-row[data-difficulty="easy"] { background: rgba(127, 174, 82, 0.6); }
-#featured-frame-list .chrome-list-row[data-difficulty="medium"] { background: rgba(216, 191, 56, 0.6); }
-#featured-frame-list .chrome-list-row[data-difficulty="hard"] { background: rgba(214, 116, 34, 0.6); }
-#featured-frame-list .chrome-list-row[data-difficulty="very-hard"] { background: rgba(194, 105, 47, 0.6); }
-#featured-frame-list .chrome-list-row[data-difficulty="extreme"] { background: rgba(184, 72, 31, 0.6); }
+#featured-frame-list .chrome-list-row[data-difficulty="easy"] { background: #63c07f; }
+#featured-frame-list .chrome-list-row[data-difficulty="medium"] { background: #ebcd5d; }
+#featured-frame-list .chrome-list-row[data-difficulty="hard"] { background: #fa7646; }
+#featured-frame-list .chrome-list-row[data-difficulty="very-hard"] { background: #ec434a; }
+#featured-frame-list .chrome-list-row[data-difficulty="extreme"] { background: #731418; }
 
-/* The medium tint above is bright/light enough that the shared light-on-
-   dark text colours (h3's --amber-bright, .row-creator/.row-desc's own
-   amber/parchment tones) lose their contrast — darkened just for this one
-   difficulty rather than touching the shared row text colours everywhere
-   else, which all sit on darker fills where the light tones read fine. */
-#featured-frame-list .chrome-list-row[data-difficulty="medium"] h3 {
-    color: #3a2e14;
+/* The row tints above are solid, mid-to-light colours that the shared
+   light-on-dark text tones (h3's --amber-bright, .row-creator/.row-desc's
+   amber/parchment) disappear against — so every featured row's own text
+   goes flat black instead, set here rather than by touching the shared row
+   colours used everywhere else on darker fills. The pills (.tag,
+   .status-badge) keep their own colours: they carry their own dark fill,
+   so they stay readable and still colour-code at a glance. */
+#featured-frame-list .chrome-list-row h3,
+#featured-frame-list .chrome-list-row .row-creator,
+#featured-frame-list .chrome-list-row .row-desc,
+#featured-frame-list .chrome-list-row .row-date,
+#featured-frame-list .chrome-list-row .chrome-go {
+    color: #000;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
 }
 
-#featured-frame-list .chrome-list-row[data-difficulty="medium"] .row-creator,
-#featured-frame-list .chrome-list-row[data-difficulty="medium"] .row-desc,
-#featured-frame-list .chrome-list-row[data-difficulty="medium"] .row-date {
-    color: #4a3c1e;
+/* The maze name itself in the bold cut. VolterGoldfishBold.ttf is
+   registered under the same family as the regular file and told apart by
+   weight alone (see the @font-face pair at the top), so 700 here is what
+   loads that file — the shared rule above leaves the rest of the row at
+   400 on the regular cut. Size stays as the rest of the row. */
+#featured-frame-list .chrome-list-row h3 {
+    font-weight: 700;
 }
 
-#featured-frame-list .chrome-list-row[data-difficulty="medium"] .chrome-go {
-    color: #3a2e14;
+/* Extreme is the one difficulty whose fill is darker than its text needs:
+   black on #731418 measures 1.83:1, well under any readable threshold,
+   where the other four sit between 5.5:1 and 9.4:1. A light rose lifts it
+   to 3.73:1 against that same fill. The [data-difficulty] attribute makes
+   these more specific than the shared black rule above, so only this one
+   difficulty is affected. */
+#featured-frame-list .chrome-list-row[data-difficulty="extreme"] h3,
+#featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-creator,
+#featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-desc,
+#featured-frame-list .chrome-list-row[data-difficulty="extreme"] .row-date,
+#featured-frame-list .chrome-list-row[data-difficulty="extreme"] .chrome-go {
+    color: #d47979;
 }
 
 /* Full-bleed thumbnail instead of the shared 76x76 fixed square — stretches
@@ -2193,6 +2349,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
     animation: modalIn 0.2s ease-out;
 }
 
+/* See the note above .chrome-frame: its upward shadow is meant to fall on
+   whatever sits above the frame. Inside the modal that is the titlebar,
+   where it reads as a dark band across the top of the image panel, so this
+   drops it and keeps only the highlights. Scoped to .modal so the
+   homepage and admin frames keep theirs. */
+.modal .chrome-frame {
+    box-shadow:
+        inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight);
+}
+
 .modal .chrome-titlebar {
     padding-left: 28px;
     padding-right: 28px;
@@ -2218,12 +2385,60 @@ body[data-page="home"] .hero { padding-top: 18px; }
     to { opacity: 0; transform: translateY(10px) scale(0.98); }
 }
 
+/* The primary view's thumb holds the whole modal: the image frame, then
+   the body beneath it. Height comes from those contents rather than the
+   fixed 220px the old-versions thumb still uses, and the divider line is
+   dropped — with the body inside, it would draw underneath everything
+   instead of between the image and the text. */
+/* Two classes deep so it beats .modal-thumb's own fixed height no
+   matter which of the two rules the file happens to reach first. */
+.modal-thumb.modal-thumb-full {
+    height: auto;
+    border-bottom: none;
+}
+
+/* The image area proper. Keeps the height the thumb's content box used
+   to have, and is the positioning context for the arrows and pills that
+   used to hang off .modal-thumb — so their offsets below are stated
+   relative to the image itself. */
+.modal-thumb-frame {
+    position: relative;
+    height: 180px;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+/* Cancels the thumb's 20px padding on both sides and beneath, so the
+   body spans its full width and reaches its bottom edge — which is what
+   lets .modal-meta inside it still meet the window's own border. */
+.modal-thumb-full .modal-body {
+    margin: 20px -20px -20px;
+}
+
+/* Same offsets these carried against .modal-thumb, restated against the
+   image frame: each is the old value minus the thumb's 20px padding, so
+   they sit exactly where they did. Scoped to .modal-thumb-frame, since
+   the old-versions view still positions its own copies off .modal-thumb.
+   The two counters are addressed by id — .gallery-position also carries
+   .gallery-counter, and a class-based rule here would overwrite the
+   bottom: auto that puts it at the top right. */
+.modal-thumb-frame .gallery-prev { left: -13.5px; }
+.modal-thumb-frame .gallery-next { right: -13.5px; }
+.modal-thumb-frame #gallery-counter { bottom: -10px; }
+/* Inside the image now rather than out in the padding ring above it —
+   .modal-thumb-frame and .gallery-viewport share the same box, so 2px
+   here is 2px in from the screenshot's own top-right corner. */
+.modal-thumb-frame #gallery-position { top: 2px; right: 2px; }
+.modal-thumb-frame .gallery-bonus-tab { bottom: 12px; }
+.modal-thumb-frame .old-versions-pill { bottom: -31px; }
+
 .modal-thumb {
     height: 220px;
     padding: 20px;
     /* Solid, slightly darker than --frame-bg (the colour behind the modal's
        text below) rather than the wood/pattern texture. */
-    background-color: #453a2c;
+    background-color: #211a11;
     /* Sizing for the plain background-image fallback used when an item has
        no gallery/entrance/finish to show instead (almost always events —
        see openModal in js/home.js) — without this it defaulted to
@@ -2235,49 +2450,74 @@ body[data-page="home"] .hero { padding-top: 18px; }
     background-repeat: no-repeat;
     background-position: center;
     position: relative;
+    /* Separates the image panel from the text below with the same fine
+       black line the frames use, instead of the two areas meeting on a
+       colour change alone. */
+    border-bottom: 1px solid var(--chrome-border);
 }
 
-/* .chrome-frame's own inset shadow (top+left) is drawn on its own box,
-   which sits *behind* this element's opaque background — without this,
-   the shadow is completely hidden under modal-thumb instead of visible on
-   top of it. A plain box-shadow on .modal-thumb itself would still be a
-   box-shadow, though: children (the nav arrows, the room-name pill, the
-   image) always paint *above* their parent's own box-shadow regardless of
-   z-index, so anything opaque sitting near the left/top edge — the prev
-   arrow in particular, vertically centred right where the shadow is
-   strongest — breaks the gradient wherever it overlaps. A ::after overlay
-   sidesteps that: given z-index, it paints in its own stacking level above
-   every normal-flow child, so the shadow is never interrupted. */
-.modal-thumb::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: 5;
-    pointer-events: none;
-    box-shadow:
-        inset 0 6px 8px -4px rgba(0, 0, 0, 0.65),
-        inset 6px 0 8px -4px rgba(0, 0, 0, 0.65);
-}
+/* The inset shadow overlay that used to sit here is gone: the image panel
+   now reads as a flat frame like the rest of the window, and the framed
+   .gallery-viewport inside it supplies the only depth this area needs.
+   Applies to .old-versions-thumb too, since that shares .modal-thumb. */
 
 /* The image sits inset within the frame rather than flush against its
    edges, with its own corners rounded to match .chrome-frame's — the
    frame's background (and its own inset shadow, cast from .chrome-frame)
    shows around it instead of a faked shadow drawn over the image. */
-.modal-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; display: block; }
+/* Scoped to the image inside .gallery-viewport, not to every img in the
+   thumb. When the body moved inside .modal-thumb it brought the builder
+   card with it, and a bare ".modal-thumb img" stretched that avatar to
+   100% of the box. Both views nest their screenshot in .gallery-viewport,
+   so this still covers the old-versions one too. */
+.modal-thumb .gallery-viewport img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-.modal-thumb.has-gallery {
-    height: 340px;
+/* Taller image area when there is a gallery to page through. Applied to
+   the frame, since the thumb itself is now sized by its contents. */
+.modal-thumb-full.has-gallery .modal-thumb-frame {
+    height: 300px;
 }
 
 /* Clips the incoming/outgoing pair while they slide past each other —
    a plain sibling of the nav arrows/counters inside .modal-thumb, so
    clipping the image never clips them too. */
+/* A frame within the image panel: the same fine black edge and hard
+   offset shadow every row, tag and field on the site carries, so the
+   screenshot reads as mounted inside the window rather than bled into
+   its background. */
 .gallery-viewport {
     position: relative;
     width: 100%;
     height: 100%;
     overflow: hidden;
+    border: 1px solid var(--chrome-border);
     border-radius: 8px;
+    /* Only the drop shadow lives on the element itself. The 1px highlight
+       is drawn by ::after below instead: an inset shadow paints on this
+       box behind its children, and .modal-gallery-img is absolutely
+       positioned across the whole viewport, so it covered the highlight
+       completely. Same overlay technique .chrome-frame::after uses. */
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* The highlight, painted in its own stacking level above every
+   normal-flow child of the viewport — so it stays visible over the room
+   screenshot rather than under it. border-radius: inherit keeps the two
+   lines curving with the viewport's own corners; pointer-events: none so
+   it never intercepts a click meant for the image beneath. */
+.gallery-viewport::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    border-radius: inherit;
+    /* Cream rather than the brown --chrome-highlight, and held well back
+       in alpha — a faint lit edge on the screenshot rather than a drawn
+       line around it. */
+    box-shadow:
+        inset 0 1px 0 rgba(255, 248, 236, 0.22),
+        inset 1px 0 0 rgba(255, 248, 236, 0.22);
 }
 
 .modal-gallery-img {
@@ -2288,7 +2528,12 @@ body[data-page="home"] .hero { padding-top: 18px; }
     object-fit: contain;
     background: transparent;
     cursor: zoom-in;
-    border-radius: 8px;
+    /* No radius of its own. The viewport rounds to 8px but carries a 1px
+       border, so the opening the image actually sits in curves at 7px —
+       an 8px image corner is rounder than that and pulled away from the
+       frame, showing a sliver of background at each corner. Left square,
+       the viewport's own overflow: hidden clips it to exactly the right
+       curve. */
     transition: transform 0.95s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -2363,17 +2608,21 @@ body[data-page="home"] .hero { padding-top: 18px; }
     transform: translateX(-50%);
 }
 
+/* 27px — a quarter off the old 36 — and straddling the image frame's own
+   left/right edge rather than floating inside it. .modal-thumb's 20px
+   padding puts that edge 20px in, so half the button (13.5px) sits
+   outside it and half over the image. */
 .gallery-nav {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    width: 36px;
-    height: 36px;
+    width: 27px;
+    height: 27px;
     border-radius: 50%;
     background: rgba(0,0,0,0.55);
     border: 1px solid var(--border);
     color: var(--parchment);
-    font-size: 0.85rem;
+    font-size: 0.64rem;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -2382,8 +2631,8 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 .gallery-nav:hover { background: rgba(0,0,0,0.8); border-color: var(--amber); }
-.gallery-prev { left: 10px; }
-.gallery-next { right: 10px; }
+.gallery-prev { left: 6.5px; }
+.gallery-next { right: 6.5px; }
 
 .gallery-counter {
     position: absolute;
@@ -2410,6 +2659,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* The room-name pill specifically (#gallery-counter), not every pill
+   sharing the .gallery-counter shape — .gallery-position, the lightbox
+   counter and the old-versions counter all keep the bolder default. */
+#gallery-counter {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
 }
 
 /* The room's number/total sits separately, top-right of the image, in the
@@ -2458,27 +2716,26 @@ body[data-page="home"] .hero { padding-top: 18px; }
     overflow-x: auto;
     margin: 12px 22px 10px;
     padding: 8px 10px;
-    background: var(--frame-bg-light);
+    background: #554736;
     border-radius: 8px;
+    /* Dotted rather than the solid black edge the other panels use — this
+       one frames a row of thumbnails, so a lighter broken rule reads as a
+       tray they sit in instead of another hard-bordered box. The mask below
+       fades the left and right edges out, so in practice it is the top and
+       bottom that read as lines. */
+    border: 1px dashed #403528;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
     scrollbar-color: var(--wood-dark) var(--frame-bg);
     -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
     mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
 }
 
-/* Same colours as every other scrollbar on the site (.home-results,
-   .modal-overlay, .room-desc-box, html) — this one very deliberately
-   doesn't get its own custom treatment, it should just look like the rest. */
-.gallery-strip::-webkit-scrollbar { height: 10px; }
-.gallery-strip::-webkit-scrollbar-track {
-    background: var(--frame-bg);
-    border: 1px solid var(--chrome-border);
-    border-radius: 6px;
-}
-.gallery-strip::-webkit-scrollbar-thumb {
-    background: var(--wood-dark);
-    border-radius: 6px;
-}
-.gallery-strip::-webkit-scrollbar-button { display: none; width: 0; height: 0; background: var(--frame-bg); }
+/* The strip now gets the site's own pixel scrollbar instead of a native
+   one (js/custom-scrollbar.js, horizontal variant), which also adds
+   .custom-scrollbar-target to hide whatever the browser would draw. The
+   old ::-webkit-scrollbar-* block that used to style this is gone with
+   it — it was WebKit-only anyway, which is the reason the custom bar
+   exists at all. */
 
 .gallery-strip img {
     width: 52px;
@@ -2699,7 +2956,34 @@ body[data-page="home"] .hero { padding-top: 18px; }
     flex-shrink: 0;
 }
 
-.modal-body { padding: 20px 22px 24px; }
+/* Rounded at the top to echo the frames it sits under; the bottom corners
+   are clipped by .chrome-frame's own radius anyway. overflow: hidden so
+   the full-bleed .modal-meta below cannot poke past that curve. */
+.modal-body {
+    padding: 20px 22px 24px;
+    background: #2e2418;
+    /* Same hard top edge .modal-meta and the description panel carry, so
+       the body reads as another band stacked in front of the image above
+       it rather than simply a colour change. */
+    box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.4);
+    /* Top and bottom only. The side borders sat 1px inside the thumb, and
+       .modal-meta and the description panel bleed out to this element's
+       padding box — so they stopped 1px short of the thumb's own edges.
+       With no side borders that padding box reaches the border box, and
+       all three run flush to the sides of the thumb containing them. */
+    /* Top only. The bottom border sat under .modal-meta, holding it 1px off
+       the bottom of the thumb this body fills; without it the meta panel
+       closes flush against that edge. */
+    border-width: 1px 0 0;
+    border-style: solid;
+    border-color: var(--chrome-border);
+    border-radius: 4px;
+    /* Deliberately NOT overflow: hidden. The builder card's avatar stands
+       taller than its card and overhangs this box's top edge on purpose,
+       up across the image panel above — clipping here cut it off at the
+       join. .chrome-frame already clips to the same rounded corners, so
+       nothing escapes the window either way. */
+}
 
 /* Small, centered pop-up used for the landing-page Yes/No confirmations and
    their follow-up "done" message — .modal's default 600px max-width and
@@ -2728,6 +3012,142 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-align: center;
 }
 
+/* Builder cards — the maze creators' live Habbo Origins avatars and
+   mottos (see showBuilderCard in js/home.js). These stand in for the
+   plain "by <name>" line rather than sitting under it: js/home.js hides
+   .room-creator once cards actually render, and shows it again whenever
+   they do not, so the text line remains the baseline for a maze on a
+   hotel this does not cover, an unknown builder, or Origins being
+   unreachable. */
+.builder-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    /* Takes the creator line's place in .modal-top-row and grows into all
+       the space up to .room-tags, so the card meets the difficulty pill
+       instead of hugging its own content. min-width:0 lets a long motto
+       wrap rather than forcing the row wider than the modal. */
+    flex: 1;
+    min-width: 0;
+}
+
+.builder-list[hidden] {
+    display: none;
+}
+
+.builder-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    /* Barely any at the top: the avatar breaks out above the card
+       entirely (see .builder-avatar), so top padding would only push the
+       text down inside an already short box. */
+    padding: 2px 10px 6px;
+    /* The card stays a slim bar; the avatar is deliberately taller than
+       it and spills out of the top rather than setting the height. */
+    max-height: 40px;
+    overflow: visible;
+    position: relative;
+    background: var(--chrome-row);
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    border-radius: 8px;
+}
+
+/* Half size. Habbo's imaging service returns this figure at 128x220 for
+   size=l, so 64px wide is an exact 1:2 reduction — and since size=l is a
+   2x render of the same art, halving it lands back on whole source pixels
+   rather than resampling to a fractional grid. Left to smooth (rather
+   than image-rendering: pixelated) for that reason: averaging each 2x2
+   block reconstructs the original pixel, where nearest-neighbour would
+   throw away half of them.
+
+   align-self pins the figure's feet to the bottom of the card while it
+   stands a good deal taller than one, so it breaks out over the card's
+   own top border and up across the room image above — the same way a
+   Habbo avatar overlaps whatever it is standing in front of. Nothing
+   between here and .chrome-frame clips, and z-index clears
+   anything in the image panel above, so the figure paints over the
+   image rather than under its inner shadow. */
+.builder-avatar {
+    width: 64px;
+    height: auto;
+    flex-shrink: 0;
+    align-self: flex-end;
+    position: relative;
+    z-index: 6;
+    /* Pulled out through the card's own 10px left padding so the figure
+       stands against the card's left edge rather than inset from it,
+       matching how it already breaks out of the top. */
+    margin-left: -10px;
+}
+
+.builder-text {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+}
+
+/* nowrap keeps the status on the name's line rather than dropping it
+   underneath once the card is narrow. */
+.builder-name {
+    margin: 0;
+    display: flex;
+    align-items: baseline;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 8px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    color: var(--amber-bright);
+}
+
+.builder-status {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    /* Matches the name it sits beside. .is-online overrides this to green
+       below; the "Last seen …" wording keeps the name colour. */
+    color: var(--amber-bright);
+    white-space: nowrap;
+}
+
+/* Separator between the name and the status. On ::before rather than in
+   the markup so it appears only when there is a status to separate —
+   js/home.js leaves the span off entirely for a builder with no last-seen
+   time.
+
+   Set in Roboto rather than inheriting the card's Volter Goldfish: that is
+   what .tag resolves to (the pills set no family of their own and inherit
+   it from body), and a round dot from the same face as the pills beside it
+   reads better here than the pixel font's squarer one. Colour is restated
+   too, so the mark keeps the name's amber even when .is-online turns the
+   status text next to it green. The 8px matches .builder-name's flex gap
+   on the other side, so the dot sits evenly between the two. */
+.builder-status::before {
+    /* U+2022, bullet. */
+    content: "\2022";
+    font-family: 'Roboto', sans-serif;
+    margin-right: 8px;
+    color: var(--amber-bright);
+}
+
+/* Same green as the Easy difficulty, so "online" reads as the one positive
+   status colour the site already uses. */
+.builder-status.is-online {
+    color: #63c07f;
+}
+
+.builder-motto {
+    margin: 2px 0 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    color: var(--parchment-dim);
+    overflow-wrap: anywhere;
+}
+
 /* Creator on the left, difficulty/tag pills on the right, both riding the
    same line — .room-tags wraps onto further lines from the right edge if
    there are enough pills to need it, rather than pushing the creator down. */
@@ -2735,7 +3155,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 12px;
+    /* No gap: the builder card is meant to run right up to the tag pills.
+       Nothing was capping its width — it already filled its own column —
+       this 12px was the whole separation. The creator fallback keeps its
+       own margin below, for when no builder card renders. */
+    gap: 0;
+    /* Pulled up into the space under the image: the builder card's avatar
+       overhangs its own top edge, and the row sat low enough that the gap
+       above it read as a hole. */
+    margin-top: -10px;
 }
 
 .modal-body .room-creator {
@@ -2743,22 +3171,53 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-size: 0.85rem;
     margin: 0;
     flex-shrink: 0;
+    margin-right: 12px;
 }
 
+/* Sized to its own pills and capped at 185px, hard against the right edge,
+   wrapping onto further lines once it hits that cap. flex: 0 0 auto is the
+   point: a fixed 185px basis reserved the full column even on a maze with
+   one tag, leaving the builder card beside it stopping well short of the
+   pills. Content-sized instead, the card (flex: 1) takes everything the
+   pills do not, so the two always meet on the row's own 12px gap however
+   many tags there are. No shrink, so the pills keep their natural size and
+   wrap rather than being squeezed. */
 .modal-top-row .room-tags {
     display: flex;
+    flex: 0 0 auto;
+    max-width: 185px;
     flex-wrap: wrap;
+    align-content: flex-start;
     justify-content: flex-end;
     gap: 5px;
 }
 
+/* The lower half of the modal as one panel. Negative margins cancel
+   .modal-body's own padding on both sides and beneath, so it runs out to
+   the frame's inner border left and right and finishes flush with the
+   bottom of the window rather than floating above it. The hard 2px shadow
+   sits on its top edge, reading as the panel stacked in front of the body
+   above it. */
 .modal-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin: 10px 0 16px;
+    margin: 10px -22px -24px;
+    padding: 9px 22px 0;
+    background: #403528;
+    border-top: 1px solid var(--chrome-border);
+    border-radius: 4px;
+    box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.4);
     font-size: 0.78rem;
     color: var(--parchment-dim);
+}
+
+/* The status/hotel/date line itself — js/home.js writes into this, not
+   into the panel around it, so rewriting the meta on each open cannot
+   wipe the description nested alongside it. */
+.modal-meta-items {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 9px;
 }
 
 .modal-meta span { display: flex; align-items: center; gap: 5px; }
@@ -2773,12 +3232,31 @@ body[data-page="home"] .hero { padding-top: 18px; }
    Custom scrollbar (see js/custom-scrollbar.js) wraps this at runtime, same
    as .home-results — no scrollbar-width padding needed here beyond normal
    text breathing room, since the bar itself is now an external sibling. */
+/* The scrolling region inside the description panel below — text only;
+   the strip below it, which is a sibling again rather than a child. */
 .room-desc-box {
     max-height: 160px;
     overflow-y: auto;
     padding-right: 8px;
-    margin-bottom: 16px;
 }
+
+/* The description panel: the scrolling text, then the thumbnail strip
+   beneath it, both inside one frame. Bled out to the modal's edges and
+   carrying the same hard top shadow as .modal-meta above it, so the two
+   read as stacked bands. Its own bottom padding spaces the strip off
+   the bottom edge — .modal-meta has none, so this panel finishes flush
+   against the bottom of the thumb containing it. */
+.room-desc-panel {
+    margin: 0 -22px;
+    padding: 10px 22px 12px;
+    background: #554736;
+    border-top: 1px solid var(--chrome-border);
+    border-radius: 4px;
+    box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* js/custom-scrollbar.js still tags its wrapper --desc; the framing
+   lives on .room-desc-panel above, so nothing is drawn on it here. */
 
 .modal-body .room-desc-full {
     color: var(--parchment-dim);
@@ -2866,7 +3344,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
    bar — this just needs the bounded height + overflow it looks for. */
 #rooms-list,
 #events-list,
-#admins-list {
+#admins-list,
+#contact-messages-list,
+#bans-list {
     max-height: min(520px, 55vh);
     overflow-y: auto;
     /* Explicit rather than relying on default flex-item sizing — once
@@ -2992,6 +3472,12 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-align: left;
 }
 
+/* The heading is the whole notice now that the explanatory paragraph is
+   gone, so it carries the warning on its own. */
+.admin-notice h3 {
+    color: #ffcc00;
+}
+
 .admin-notice code {
     background: rgba(0, 0, 0, 0.35);
     padding: 1px 5px;
@@ -2999,7 +3485,49 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-size: 0.85em;
 }
 
-.admin-section { margin-top: 26px; }
+/* ---------- the single tabbed admin window ---------- */
+
+/* Same construction as home.html's #browse-window: titlebar, a
+   .chrome-nav rows of tabs, then one .chrome-frame body. Two rows of
+   three, since six tabs across .admin-center's fixed 538px leave each
+   one too narrow for its own label. */
+.admin-window {
+    margin-top: 26px;
+}
+
+/* The two rows butt straight up against each other, and the frame sits
+   flush under the second — .chrome-nav's own 10px top margin and the
+   existing ".chrome-nav + .chrome-frame" rule both key off a .chrome-nav
+   that is now nested one level deeper inside .admin-nav. */
+.admin-nav .chrome-nav + .chrome-nav {
+    margin-top: 0;
+}
+
+.admin-nav + .chrome-frame {
+    margin-top: 0;
+}
+
+/* Only the selected panel is in flow. [hidden] is set/cleared by
+   js/admin.js; the explicit display:none keeps that working regardless
+   of the UA default for <section>. */
+.admin-panel[hidden] {
+    display: none;
+}
+
+/* The live-database warning sits above the panels and applies to all of
+   them, so it needs the gap the old per-section windows used to get
+   from .admin-section's own top margin. */
+.chrome-body > .admin-notice {
+    margin-bottom: 18px;
+}
+
+/* The IP itself is the identifying detail on a ban row, so it reads as
+   data rather than prose — the same monospace treatment the rest of the
+   pixel chrome uses. */
+.admin-ban-ip {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.62rem;
+}
 
 .admin-toolbar {
     display: flex;
@@ -3456,6 +3984,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .admin-gallery-row .admin-gallery-label {
     flex: 1;
     min-width: 0;
+}
+
+/* The room image name inputs (per-image label, the "add new" label, and
+   the old-version sub-labels, which all share these two classes) — the
+   text you type here reads back as the room label on the public site, so
+   it's typed in the same face it will be displayed in. */
+.admin-gallery-label,
+.admin-gallery-new-label {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
 }
 
 .admin-gallery-actions {

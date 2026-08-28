@@ -44,100 +44,122 @@
             <div class="admin-center">
                 <div id="admin-content" class="admin-main" style="display:none;">
 
-                    <div class="callout admin-notice">
-                        <h3>This is live</h3>
-                        <p>Adding, editing, or deleting here writes straight to the real database — every visitor sees it immediately, same as the Archive page. There's no undo beyond editing or re-adding it yourself, so double-check before deleting something.</p>
-                    </div>
+                    <!-- One window for the whole admin, laid out like home.html's
+                         own browse window (titlebar, then a .chrome-nav row of
+                         tabs, then a single .chrome-frame body) instead of the
+                         five separate stacked .chrome-window sections this page
+                         used to be. Only the selected panel is in the DOM flow at
+                         a time, so the page is one screen of controls rather than
+                         one long scroll through every section at once. Every
+                         element id below is unchanged — js/admin.js addresses all
+                         of these by id, and none of its own queries depend on how
+                         they are nested. -->
+                    <div class="chrome-window admin-window">
+                        <div class="chrome-titlebar"><h2>Maze Rats Admin</h2></div>
 
-                    <!-- ---------- Mazes ---------- -->
-                    <div class="chrome-window admin-section">
-                        <div class="chrome-titlebar"><h2>Manage Mazes</h2></div>
+                        <!-- Two rows of three rather than one row of six: at
+                             .admin-center's fixed width six tabs leave ~82px each,
+                             and "Messages" alone needs 96px, so a single row wrapped
+                             every label onto two lines. Two rows is also what
+                             home.html's own nav does. #admin-nav wraps both rows —
+                             js/admin.js delegates its click handler from the wrapper,
+                             so the split makes no difference to it. -->
+                        <div class="admin-nav" id="admin-nav" role="tablist">
+                            <div class="chrome-nav chrome-nav-top">
+                                <button type="button" class="chrome-nav-btn active" data-panel="rooms" role="tab" aria-selected="true"><span class="chrome-nav-btn-label">Mazes</span></button>
+                                <button type="button" class="chrome-nav-btn" data-panel="events" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Events</span></button>
+                                <button type="button" class="chrome-nav-btn" data-panel="console" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Console</span></button>
+                            </div>
+                            <div class="chrome-nav chrome-nav-top">
+                                <button type="button" class="chrome-nav-btn" data-panel="messages" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Messages</span></button>
+                                <button type="button" class="chrome-nav-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
+                                <button type="button" class="chrome-nav-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
+                            </div>
+                        </div>
+
                         <div class="chrome-frame">
                             <div class="chrome-body">
-                                <div class="archive-controls">
-                                    <div class="search-box">
-                                        <input type="text" id="rooms-search" placeholder="Search by name, builder, or tag...">
-                                    </div>
-                                    <div class="sort-box">
-                                        <select id="rooms-sort">
-                                            <option value="name">Sort by: Maze Name</option>
-                                            <option value="date">Sort by: Opening Date</option>
-                                            <option value="difficulty-asc">Sort by: Difficulty (Easy-Hard)</option>
-                                            <option value="difficulty-desc">Sort by: Difficulty (Hard-Easy)</option>
-                                        </select>
-                                    </div>
+
+                                <!-- Sits above the panels rather than inside one of
+                                     them — it is equally true of every tab. -->
+                                <div class="callout admin-notice">
+                                    <h3>THIS IS LIVE</h3>
                                 </div>
-                                <div class="chrome-list" id="rooms-list"></div>
-                                <button class="admin-action-pill admin-add-btn" id="rooms-add-btn" type="button">+ Add a Maze</button>
-                                <form class="admin-form" id="rooms-form" style="display:none;"></form>
-                            </div>
-                        </div>
-                    </div>
 
-                    <!-- ---------- Events ---------- -->
-                    <div class="chrome-window admin-section">
-                        <div class="chrome-titlebar"><h2>Manage Events</h2></div>
-                        <div class="chrome-frame">
-                            <div class="chrome-body">
-                                <div class="archive-controls">
-                                    <div class="sort-box">
-                                        <select id="events-sort">
-                                            <option value="date-desc">Sort by: Event Start Date (Newest First)</option>
-                                            <option value="date-asc">Sort by: Event Start Date (Oldest First)</option>
-                                            <option value="name">Sort by: Event Name</option>
-                                        </select>
+                                <!-- ---------- Mazes ---------- -->
+                                <section class="admin-panel" data-panel="rooms">
+                                    <div class="archive-controls">
+                                        <div class="search-box">
+                                            <input type="text" id="rooms-search" placeholder="Search by name, builder, or tag...">
+                                        </div>
+                                        <div class="sort-box">
+                                            <select id="rooms-sort">
+                                                <option value="name">Sort by: Maze Name</option>
+                                                <option value="date">Sort by: Opening Date</option>
+                                                <option value="difficulty-asc">Sort by: Difficulty (Easy-Hard)</option>
+                                                <option value="difficulty-desc">Sort by: Difficulty (Hard-Easy)</option>
+                                            </select>
+                                        </div>
                                     </div>
-                                </div>
-                                <div class="chrome-list" id="events-list"></div>
-                                <button class="admin-action-pill admin-add-btn" id="events-add-btn" type="button">+ Add an Event</button>
-                                <form class="admin-form" id="events-form" style="display:none;"></form>
-                            </div>
-                        </div>
-                    </div>
+                                    <div class="chrome-list" id="rooms-list"></div>
+                                    <button class="admin-action-pill admin-add-btn" id="rooms-add-btn" type="button">+ Add a Maze</button>
+                                    <form class="admin-form" id="rooms-form" style="display:none;"></form>
+                                </section>
 
-                    <!-- ---------- Admins ---------- -->
-                    <div class="chrome-window admin-section">
-                        <div class="chrome-titlebar"><h2>Manage Admins</h2></div>
-                        <div class="chrome-frame">
-                            <div class="chrome-body">
-                                <p class="admin-hint" style="margin-bottom:14px;">Sessions expire automatically after 12 hours.</p>
-                                <div class="chrome-list" id="admins-list"></div>
-                                <button class="admin-action-pill admin-add-btn" id="admins-add-btn" type="button">+ Add an Admin</button>
-                                <form class="admin-form" id="admins-form" style="display:none;"></form>
-                            </div>
-                        </div>
-                    </div>
+                                <!-- ---------- Events ---------- -->
+                                <section class="admin-panel" data-panel="events" hidden>
+                                    <div class="archive-controls">
+                                        <div class="sort-box">
+                                            <select id="events-sort">
+                                                <option value="date-desc">Sort by: Event Start Date (Newest First)</option>
+                                                <option value="date-asc">Sort by: Event Start Date (Oldest First)</option>
+                                                <option value="name">Sort by: Event Name</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="chrome-list" id="events-list"></div>
+                                    <button class="admin-action-pill admin-add-btn" id="events-add-btn" type="button">+ Add an Event</button>
+                                    <form class="admin-form" id="events-form" style="display:none;"></form>
+                                </section>
 
-                    <!-- ---------- Console: Contributors & About ---------- -->
-                    <div class="chrome-window admin-section">
-                        <div class="chrome-titlebar"><h2>Console — Contributors &amp; About</h2></div>
-                        <div class="chrome-frame">
-                            <div class="chrome-body">
-                                <h3 class="admin-subheading">Contributors</h3>
-                                <p class="admin-hint" style="margin-bottom:14px;">Shown on the homepage console's People page.</p>
-                                <div class="chrome-list" id="contributors-list"></div>
-                                <button class="admin-action-pill admin-add-btn" id="contributors-add-btn" type="button">+ Add a Contributor</button>
-                                <form class="admin-form" id="contributors-form" style="display:none;"></form>
+                                <!-- ---------- Console: Contributors & About ---------- -->
+                                <section class="admin-panel" data-panel="console" hidden>
+                                    <h3 class="admin-subheading">Contributors</h3>
+                                    <p class="admin-hint" style="margin-bottom:14px;">Shown on the homepage console's People page.</p>
+                                    <div class="chrome-list" id="contributors-list"></div>
+                                    <button class="admin-action-pill admin-add-btn" id="contributors-add-btn" type="button">+ Add a Contributor</button>
+                                    <form class="admin-form" id="contributors-form" style="display:none;"></form>
 
-                                <h3 class="admin-subheading admin-subheading-spaced">About Text</h3>
-                                <p class="admin-hint" style="margin-bottom:14px;">Shown on the homepage console's About page.</p>
-                                <label class="admin-field">
-                                    <span>About blurb</span>
-                                    <textarea id="about-text-input" rows="6"></textarea>
-                                </label>
-                                <button class="admin-action-pill admin-pill-solid" id="about-save-btn" type="button">Save About Text</button>
-                                <p class="admin-hint" id="about-save-status" style="display:none;"></p>
-                            </div>
-                        </div>
-                    </div>
+                                    <h3 class="admin-subheading admin-subheading-spaced">About Text</h3>
+                                    <p class="admin-hint" style="margin-bottom:14px;">Shown on the homepage console's About page.</p>
+                                    <label class="admin-field">
+                                        <span>About blurb</span>
+                                        <textarea id="about-text-input" rows="6"></textarea>
+                                    </label>
+                                    <button class="admin-action-pill admin-pill-solid" id="about-save-btn" type="button">Save About Text</button>
+                                    <p class="admin-hint" id="about-save-status" style="display:none;"></p>
+                                </section>
 
-                    <!-- ---------- Console: Contact Messages ---------- -->
-                    <div class="chrome-window admin-section">
-                        <div class="chrome-titlebar"><h2>Console — Contact Messages</h2></div>
-                        <div class="chrome-frame">
-                            <div class="chrome-body">
-                                <p class="admin-hint" style="margin-bottom:14px;">Submitted from the homepage console's Contact Us page.</p>
-                                <div class="chrome-list" id="contact-messages-list"></div>
+                                <!-- ---------- Console: Contact Messages ---------- -->
+                                <section class="admin-panel" data-panel="messages" hidden>
+                                    <p class="admin-hint" style="margin-bottom:14px;">Submitted from the homepage console's Contact Us page. "Ban IP" blocks any further submissions from that address — see the Bans tab.</p>
+                                    <div class="chrome-list" id="contact-messages-list"></div>
+                                </section>
+
+                                <!-- ---------- Bans ---------- -->
+                                <section class="admin-panel" data-panel="bans" hidden>
+                                    <p class="admin-hint" style="margin-bottom:14px;">Addresses blocked from the contact form. A banned sender still sees a normal "sent" confirmation — nothing is saved and no email goes out — so they are not nudged into simply switching address.</p>
+                                    <div class="chrome-list" id="bans-list"></div>
+                                </section>
+
+                                <!-- ---------- Admins ---------- -->
+                                <section class="admin-panel" data-panel="admins" hidden>
+                                    <p class="admin-hint" style="margin-bottom:14px;">Sessions expire automatically after 12 hours.</p>
+                                    <div class="chrome-list" id="admins-list"></div>
+                                    <button class="admin-action-pill admin-add-btn" id="admins-add-btn" type="button">+ Add an Admin</button>
+                                    <form class="admin-form" id="admins-form" style="display:none;"></form>
+                                </section>
+
                             </div>
                         </div>
                     </div>

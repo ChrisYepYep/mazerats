@@ -40,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const aboutSaveBtn = document.getElementById("about-save-btn");
     const aboutSaveStatus = document.getElementById("about-save-status");
     const contactMessagesListEl = document.getElementById("contact-messages-list");
+    const bansListEl = document.getElementById("bans-list");
     const landingToggleEl = document.getElementById("landing-toggle");
     const landingToggleBtns = document.querySelectorAll(".btn-enter-mini");
     const landingToggleStatus = document.getElementById("landing-toggle-status");
@@ -55,6 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let workingAdmins = [];
     let workingContributors = [];
     let workingContactMessages = [];
+    let workingBans = [];
     let roomsQuery = "";
     let roomsSortBy = "name";
     let eventsSortBy = "date-desc";
@@ -96,6 +98,18 @@ document.addEventListener("DOMContentLoaded", () => {
         ["hard", "Hard"],
         ["very-hard", "Very Hard"],
         ["extreme", "Extreme"]
+    ];
+
+    // The hotels this archive covers, as a fixed list rather than the free
+    // text field this used to be — the values are matched exactly
+    // elsewhere (netlify/functions/habbo.js maps them to the Origins hotel
+    // to look a builder up on), so a typo or an old spelling like
+    // "Origins" silently cost that maze its builder cards.
+    const HOTEL_OPTIONS = [
+        ["", "Unknown"],
+        ["COM", "COM"],
+        ["ES", "ES"],
+        ["BR", "BR"]
     ];
 
     const COLLECTIONS = {
@@ -206,6 +220,7 @@ document.addEventListener("DOMContentLoaded", () => {
         loadContributors();
         loadAboutText();
         loadContactMessages();
+        loadBans();
     }
 
     // ---------- image uploads ----------
@@ -500,7 +515,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <p class="admin-hint">Older screenshots of this ${kind === "entrance" ? "entrance" : "finish"} image — shown behind a "See older version(s)" pill on the site.</p>
                     <div class="admin-gallery-list">${rows || `<p class="admin-empty">No older versions added yet.</p>`}</div>
                     <div class="admin-gallery-add">
-                        <input type="text" class="admin-${kind}-oldversions-new-label" placeholder="Label (optional)">
+                        <input type="text" class="admin-gallery-new-label admin-${kind}-oldversions-new-label" placeholder="Label (optional)">
                         <input type="file" class="admin-${kind}-oldversions-new-file" accept="image/png,image/jpeg,image/gif,image/webp">
                         <button type="button" class="admin-pill-btn admin-${kind}-oldversions-add-btn">+ Add Older Version</button>
                     </div>
@@ -1260,6 +1275,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function openForm(key, editId) {
+        // The sidebar quick-add buttons work from whichever tab is showing,
+        // and Edit can be reached the same way — so bring the owning panel
+        // up first, or the form would open inside a hidden panel and appear
+        // to do nothing at all.
+        showPanel(PANEL_FOR_COLLECTION[key] || key);
         const cfg = COLLECTIONS[key];
         const isEdit = editId !== undefined && editId !== null;
         const item = isEdit ? (cfg.getAll().find(i => i.id === editId) || {}) : {};
@@ -1420,7 +1440,14 @@ document.addEventListener("DOMContentLoaded", () => {
             ${fieldRow(cfg.subtitleLabel, `<input type="text" name="subtitle" value="${item[cfg.fieldMap.subtitle] || ""}">`)}
             ${fieldRow("Status", `<select name="status">${statusOptionsHtml}</select>`)}
             ${difficultyFieldHtml}
-            ${fieldRow("Hotel", `<input type="text" name="hotel" value="${item.hotel || ""}" placeholder="e.g. Origins, US, NL">`)}
+            ${fieldRow("Hotel", `<select name="hotel">${HOTEL_OPTIONS.map(([value, label]) =>
+                // An existing maze whose stored hotel is not in the list
+                // (older free-text entries) would otherwise silently show as
+                // the first option and get rewritten to it on the next save,
+                // so its own value is carried as an extra selected option.
+                `<option value="${value}" ${(item.hotel || "") === value ? "selected" : ""}>${label}</option>`
+            ).join("")}${HOTEL_OPTIONS.some(([value]) => value === (item.hotel || "")) ? "" :
+                `<option value="${item.hotel}" selected>${item.hotel} (unrecognised)</option>`}</select>`)}
             ${dateFieldHtml}
             ${tagsFieldHtml}
             ${fieldRow("Thumbnail image", `
@@ -2031,6 +2058,21 @@ document.addEventListener("DOMContentLoaded", () => {
             actions.innerHTML = '<button type="button" class="btn admin-delete-btn">Delete</button>';
             actions.querySelector(".admin-delete-btn").addEventListener("click", () => deleteContactMessage(msg.id));
 
+            // Ban/unban the address this message came from. Messages
+            // predating IP logging (and any submitted while Netlify did not
+            // supply the header — see clientIp in contact.js) have no address
+            // to act on, so they get no button rather than a dead one.
+            if (msg.ip) {
+                const banned = isBanned(msg.ip);
+                const banBtn = document.createElement("button");
+                banBtn.type = "button";
+                banBtn.className = "btn admin-ban-btn";
+                banBtn.textContent = banned ? "Unban IP" : "Ban IP";
+                banBtn.title = msg.ip;
+                banBtn.addEventListener("click", () => (banned ? unbanIp(msg.ip) : banIp(msg.ip)));
+                actions.insertBefore(banBtn, actions.firstChild);
+            }
+
             row.appendChild(info);
             row.appendChild(actions);
             contactMessagesListEl.appendChild(row);
@@ -2174,6 +2216,149 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!activeFormKey) return;
         closeForm(activeFormKey);
     });
+
+    // ---------- tab panels ----------
+
+    // Which panel each editable collection lives in. Contributors share
+    // the Console panel with the About text; the rest map to a tab of
+    // their own name.
+    const PANEL_FOR_COLLECTION = {
+        rooms: "rooms",
+        events: "events",
+        admins: "admins",
+        contributors: "console"
+    };
+
+    const adminNavEl = document.getElementById("admin-nav");
+    const adminPanelEls = Array.from(document.querySelectorAll(".admin-panel"));
+
+    function showPanel(name) {
+        if (!adminNavEl) return;
+        adminPanelEls.forEach(panel => {
+            panel.hidden = panel.dataset.panel !== name;
+        });
+        adminNavEl.querySelectorAll(".chrome-nav-btn").forEach(btn => {
+            const on = btn.dataset.panel === name;
+            btn.classList.toggle("active", on);
+            btn.setAttribute("aria-selected", on ? "true" : "false");
+        });
+    }
+
+    if (adminNavEl) {
+        adminNavEl.addEventListener("click", e => {
+            const btn = e.target.closest(".chrome-nav-btn");
+            if (btn) showPanel(btn.dataset.panel);
+        });
+    }
+
+    // ---------- bans ----------
+
+    async function loadBans() {
+        try {
+            workingBans = await Api.getBans(adminToken);
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            workingBans = [];
+        }
+        renderBansList();
+        // Each message row shows Ban or Unban depending on whether its own
+        // address is on this list, so those have to be redrawn too.
+        renderContactMessagesList();
+    }
+
+    function isBanned(ip) {
+        return Boolean(ip) && workingBans.some(ban => ban.ip === ip);
+    }
+
+    function renderBansList() {
+        bansListEl.innerHTML = "";
+        if (!workingBans.length) {
+            const empty = document.createElement("p");
+            empty.className = "admin-empty";
+            empty.textContent = "No bans yet.";
+            bansListEl.appendChild(empty);
+            return;
+        }
+        workingBans.forEach(ban => {
+            const row = document.createElement("div");
+            row.className = "chrome-list-row admin-row";
+
+            const info = document.createElement("div");
+            info.className = "row-info";
+
+            // Same reasoning as the contact message rows: the reason is
+            // admin-entered but the address is not, so both go in as text
+            // nodes rather than through innerHTML.
+            const heading = document.createElement("h3");
+            const ipEl = document.createElement("span");
+            ipEl.className = "admin-ban-ip";
+            ipEl.textContent = ban.ip;
+            heading.appendChild(ipEl);
+
+            const when = document.createElement("span");
+            when.className = "admin-contributor-count";
+            const bannedBy = ban.createdBy ? (" by " + ban.createdBy) : "";
+            when.textContent = " - " + new Date(ban.createdAt).toLocaleString() + bannedBy;
+            heading.appendChild(when);
+
+            info.appendChild(heading);
+
+            if (ban.reason) {
+                const reason = document.createElement("p");
+                reason.className = "row-creator";
+                reason.textContent = ban.reason;
+                info.appendChild(reason);
+            }
+
+            const actions = document.createElement("div");
+            actions.className = "admin-row-actions";
+            const unbanBtn = document.createElement("button");
+            unbanBtn.type = "button";
+            unbanBtn.className = "btn admin-delete-btn";
+            unbanBtn.textContent = "Unban";
+            unbanBtn.addEventListener("click", () => removeBan(ban));
+            actions.appendChild(unbanBtn);
+
+            row.appendChild(info);
+            row.appendChild(actions);
+            bansListEl.appendChild(row);
+        });
+    }
+
+    async function removeBan(ban) {
+        if (!confirm("Unban " + ban.ip + "? They will be able to use the contact form again.")) return;
+        try {
+            await Api.deleteBan(adminToken, ban.id);
+            await loadBans();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            alert(err.message || "Could not unban that address — try again.");
+        }
+    }
+
+    async function banIp(ip) {
+        const reason = prompt("Ban " + ip + " from the contact form?\n\nOptional note about why (leave blank to skip):");
+        // prompt() returns null on Cancel and "" on an empty OK — only the
+        // first of those should abort the ban.
+        if (reason === null) return;
+        try {
+            await Api.createBan(adminToken, ip, reason);
+            await loadBans();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            alert(err.message || "Could not ban that address — try again.");
+        }
+    }
+
+    async function unbanIp(ip) {
+        try {
+            await Api.deleteBanByIp(adminToken, ip);
+            await loadBans();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            alert(err.message || "Could not unban that address — try again.");
+        }
+    }
 
     if (adminToken) {
         // Re-check the stored token is still valid (and not expired) before

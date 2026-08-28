@@ -173,3 +173,57 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     checkHash();
 });
+
+// Privacy policy modal for this page. The footer link js/site.js injects
+// points at "#privacy" here (rather than home.html#privacy) because
+// home.html turns regular visitors away during Coming Soon/Maintenance —
+// exactly the states in which the landing page is all anyone can see. The
+// policy text and its markup are shared with the homepage console modal;
+// see js/privacy-content.js.
+document.addEventListener("DOMContentLoaded", () => {
+    const modal = document.getElementById("privacy-modal");
+    if (!modal || typeof renderPrivacySections !== "function") return;
+
+    const closeBtn = document.getElementById("privacy-modal-close");
+
+    renderPrivacySections(document.getElementById("welcome-privacy-body"));
+
+    function openPrivacyModal() {
+        modal.classList.add("open");
+    }
+
+    function closePrivacyModal() {
+        modal.classList.remove("open");
+        // Drop the hash without a history entry or a re-fired hashchange,
+        // same as closeEventModal above.
+        if (location.hash === "#privacy") {
+            history.replaceState(null, "", location.pathname + location.search);
+        }
+    }
+
+    function checkPrivacyHash() {
+        if (location.hash === "#privacy") openPrivacyModal();
+    }
+
+    // The footer link is a same-page hash, so clicking it while the modal
+    // is already closed-but-hash-still-set fires no hashchange — hence the
+    // direct click handler as well as the hashchange listener.
+    document.addEventListener("click", e => {
+        const link = e.target.closest('a[href="#privacy"]');
+        if (!link) return;
+        e.preventDefault();
+        if (location.hash !== "#privacy") {
+            history.replaceState(null, "", location.pathname + location.search + "#privacy");
+        }
+        openPrivacyModal();
+    });
+
+    window.addEventListener("hashchange", checkPrivacyHash);
+    closeBtn.addEventListener("click", closePrivacyModal);
+    modal.addEventListener("click", e => { if (e.target === modal) closePrivacyModal(); });
+    document.addEventListener("keydown", e => {
+        if (e.key === "Escape" && modal.classList.contains("open")) closePrivacyModal();
+    });
+
+    checkPrivacyHash();
+});

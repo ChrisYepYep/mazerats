@@ -148,15 +148,15 @@ document.addEventListener("DOMContentLoaded", () => {
         <p class="fellow-fansites-title">Fellow Fansites</p>
         <p class="fellow-fansites-links">
             ${SITES.map(([label, url]) =>
-                `<a href="${url}" target="_blank" rel="noopener">${label}</a>`
-            // Real spaces around the dot, not just adjacent tags with no
-            // whitespace between them — without them there's no line-break
-            // opportunity anywhere in the whole joined string (inline
-            // elements butted directly together don't wrap on their own),
-            // so on narrow/mobile widths the entire list rendered as one
-            // unbreakable run and ran off the edge of the screen instead
-            // of wrapping.
-            ).join(' <span class="fellow-fansites-dot" aria-hidden="true">•</span> ')}
+                // Each link and the dot that follows it are one wrapping unit.
+                // The list is a centred flex row (see .fellow-fansites-links),
+                // so the separators are laid out as real boxes with real gaps
+                // rather than as inline text: every wrapped line then centres on
+                // its own items instead of being pushed off-centre by a dangling
+                // dot and its surrounding spaces. The last item's dot is hidden
+                // in CSS rather than skipped here.
+                `<span class="fellow-fansites-item"><a href="${url}" target="_blank" rel="noopener">${label}</a><span class="fellow-fansites-dot" aria-hidden="true">&bull;</span></span>`
+            ).join("")}
         </p>
     `;
     footer.parentNode.insertBefore(section, footer);
@@ -174,7 +174,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const copyrightLine = footer ? footer.querySelector("p:last-child") : null;
     if (!copyrightLine) return;
 
-    const href = document.body.dataset.page === "home" ? "#privacy" : "home.html#privacy";
+    // index.html gets a same-page hash too, not a link to home.html:
+    // during Coming Soon/Maintenance that page bounces every non-admin
+    // straight back here (see its own pre-load gate), which made the
+    // policy unreachable for precisely the visitors who can only see
+    // the landing page. js/welcome.js opens its own modal off this hash.
+    const page = document.body.dataset.page;
+    const href = (page === "home" || page === "welcome") ? "#privacy" : "home.html#privacy";
     copyrightLine.insertAdjacentHTML(
         "beforeend",
         ` <span class="footer-dot" aria-hidden="true">&middot;</span> <a href="${href}">Privacy Policy</a>`

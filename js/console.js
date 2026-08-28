@@ -263,7 +263,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function contributorHtml(contributor) {
         return `
             <div class="console-contributor">
-                <p class="console-contributor-name">${escapeHtml(contributor.username)} <span class="console-contributor-count">- ${escapeHtml(contributor.count || 0)}</span></p>
+                <p class="console-contributor-name">${escapeHtml(contributor.username)} <span class="console-contributor-count">- ${escapeHtml(contributor.count || 0)} ${(contributor.count || 0) === 1 ? "Maze" : "Mazes"}</span></p>
                 <p class="console-contributor-types">${escapeHtml((contributor.types || []).join(", "))}</p>
             </div>
         `;
@@ -286,6 +286,16 @@ document.addEventListener("DOMContentLoaded", () => {
             .map(contributorHtml)
             .join('<div class="console-dotline"></div>');
     }
+
+// ---------- privacy page ----------
+
+// Text and markup both come from js/privacy-content.js, shared with the
+// landing page's own privacy modal (js/welcome.js) so the two can never
+// drift apart. Rendered once at load rather than on each open — it never
+// changes between opens.
+if (typeof renderPrivacySections === "function") {
+    renderPrivacySections(document.getElementById("console-privacy-body"));
+}
 
     // ---------- about page ----------
 
