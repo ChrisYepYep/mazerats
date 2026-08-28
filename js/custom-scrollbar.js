@@ -46,7 +46,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    document.querySelectorAll(".home-results, .room-desc-box, #rooms-list, #events-list, #admins-list, #console-screen-scroll")
+    document.querySelectorAll(".home-results, .room-desc-box, #rooms-list, #events-list, #admins-list, #console-screen-scroll, #glyph-palette-list")
         .forEach(el => setUp(el, "y"));
 
     // The maze modal's thumbnail strip (and the old-versions strip, which is
@@ -75,7 +75,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (el.classList.contains("gallery-strip")) {
             wrap.classList.add("custom-scrollbar-wrap--strip");
         }
-        if (el.id === "console-screen-scroll") {
+        // The glyph palette borrows the console's bar art too — same
+        // pixel sprites, so the two read as the same control rather than
+        // the admin page growing a second scrollbar style of its own.
+        if (el.id === "console-screen-scroll" || el.id === "glyph-palette-list") {
             wrap.classList.add("custom-scrollbar-wrap--console");
         }
 

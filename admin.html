@@ -166,6 +166,16 @@
 
                 </div>
 
+                <!-- Volter Goldfish picture glyphs. Mirrors .admin-sidebar on the
+                     other side of .admin-center, and like it is only shown once the
+                     login modal is unlocked. See js/glyph-palette.js. -->
+                <aside class="glyph-palette" id="glyph-palette" style="display:none;">
+                    <h3 class="admin-sidebar-title">Glyphs</h3>
+                    <p class="admin-hint">Click to type at your cursor.</p>
+                    <div class="glyph-palette-list" id="glyph-palette-list"></div>
+                    <p class="glyph-palette-status" id="glyph-palette-status" aria-live="polite"></p>
+                </aside>
+
                 <!-- ---------- Landing page state ---------- -->
                 <aside class="admin-sidebar" id="landing-toggle" style="display:none;">
                     <div class="admin-toolbar">
@@ -238,6 +248,7 @@
     <script src="js/api.js"></script>
     <script src="js/site.js"></script>
     <script src="js/admin.js"></script>
+    <script src="js/glyph-palette.js"></script>
     <script src="js/custom-scrollbar.js"></script>
     <script src="js/letter-jump.js"></script>
 </body>

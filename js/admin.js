@@ -210,6 +210,10 @@ document.addEventListener("DOMContentLoaded", () => {
         loginModal.classList.remove("open");
         adminContent.style.display = "block";
         landingToggleEl.style.display = "flex";
+        // Same gate as the sidebar — nothing on this page shows until the
+        // login modal is unlocked.
+        const glyphPalette = document.getElementById("glyph-palette");
+        if (glyphPalette) glyphPalette.style.display = "flex";
         const [rooms, events] = await Promise.all([Api.getRooms(), Api.getEvents()]);
         workingRooms = rooms;
         workingEvents = events;
@@ -771,7 +775,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <p class="admin-hint">Older screenshots of this room (e.g. before a rebuild) — shown behind a "See older version(s)" pill on the site, kept separate from the main image above.</p>
                     <div class="admin-gallery-list">${rows || `<p class="admin-empty">No older versions added yet.</p>`}</div>
                     <div class="admin-gallery-add">
-                        <input type="text" class="admin-oldversions-new-label" placeholder="Label (optional)">
+                        <input type="text" class="admin-gallery-new-label admin-oldversions-new-label" placeholder="Label (optional)">
                         <input type="file" class="admin-oldversions-new-file" accept="image/png,image/jpeg,image/gif,image/webp">
                         <button type="button" class="admin-pill-btn admin-oldversions-add-btn">+ Add Older Version</button>
                     </div>
@@ -1143,7 +1147,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function visibleEventEntries() {
         const entries = workingEvents.map((item, index) => ({ item, index }));
         if (eventsSortBy === "name") {
-            entries.sort((a, b) => (a.item.title || "").localeCompare(b.item.title || ""));
+            entries.sort((a, b) => compareNames(a.item.title, b.item.title));
         } else if (eventsSortBy === "date-asc") {
             entries.sort((a, b) => (a.item.date || "").localeCompare(b.item.date || ""));
         } else {
@@ -1179,7 +1183,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 return (ai - bi) * dir;
             });
         } else {
-            entries.sort((a, b) => (a.item.name || "").localeCompare(b.item.name || ""));
+            entries.sort((a, b) => compareNames(a.item.name, b.item.name));
         }
         return entries;
     }

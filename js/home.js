@@ -281,7 +281,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function sortItems(items) {
         const sorted = items.slice();
         if (sortBy === "name") {
-            sorted.sort((a, b) => a.name.localeCompare(b.name));
+            sorted.sort((a, b) => compareNames(a.name, b.name));
         } else if (sortBy === "owner") {
             sorted.sort((a, b) => a.owner.localeCompare(b.owner));
         } else if (sortBy === "difficulty-asc" || sortBy === "difficulty-desc") {
@@ -507,31 +507,68 @@ document.addEventListener("DOMContentLoaded", () => {
         emptyEl.style.display = currentItems.length === 0 ? "block" : "none";
     }
 
-    // Populates .featured-frame's own list — just a couple of random picks
-    // from the featured pool (not the whole thing), reshuffled fresh every
-    // time this view opens rather than sorted/stable, so it reads as a
-    // rotating teaser rather than a real second browsing list — that's
-    // .chrome-frame's job (nested right below, see home.html). Only
-    // actually reshuffles the moment showFeatured flips true (see
-    // updateChrome's own comment) rather than on every render while it
-    // stays open, since nothing that would change this list's contents can
-    // happen while it's open (any sub-nav/top-nav click closes it first).
+    // Populates .featured-frame's own list — one maze per difficulty, two
+    // difficulties, reshuffled each time this view opens rather than
+    // sorted/stable across visits, so it reads as a rotating teaser rather
+    // than a real second browsing list (that's .chrome-frame's job, nested
+    // right below — see home.html). Only actually reshuffles the moment
+    // showFeatured flips true (see updateChrome's own comment) rather than
+    // on every render while it stays open, since nothing that would change
+    // this list's contents can happen while it's open (any sub-nav/top-nav
+    // click closes it first).
     const FEATURED_FRAME_COUNT = 2;
     let featuredListItems = [];
+
+    // Fisher-Yates — every entry gets an equal shot rather than always
+    // favouring whichever happened to sort first.
+    function shuffle(arr) {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+    }
+
+    // Position in DIFFICULTY_ORDER, with anything unrated sorted to the end
+    // rather than the front (indexOf would hand back -1 for it).
+    function difficultyRank(difficulty) {
+        const i = DIFFICULTY_ORDER.indexOf(difficulty || "");
+        return i === -1 ? DIFFICULTY_ORDER.length : i;
+    }
+
+    // One maze per difficulty rating, so the two picks are always two
+    // different colours rather than, say, two Hard mazes in a row — the
+    // row tint is the whole point of this list. Difficulties are drawn at
+    // random but the result is returned easiest-first, so the list always
+    // reads as a ramp regardless of which two came up.
+    function pickFeatured(pool) {
+        const byDifficulty = new Map();
+        pool.forEach(n => {
+            const key = n.difficulty || "";
+            if (!byDifficulty.has(key)) byDifficulty.set(key, []);
+            byDifficulty.get(key).push(n);
+        });
+
+        // Rated difficulties are drawn from first; an unrated maze only gets
+        // pulled in when there are fewer than two real ratings to fill the
+        // list with, since it has no colour of its own to contribute.
+        const rated = shuffle(DIFFICULTY_ORDER.filter(d => byDifficulty.has(d)));
+        const unrated = byDifficulty.has("") ? [""] : [];
+
+        return rated.concat(unrated)
+            .slice(0, FEATURED_FRAME_COUNT)
+            .map(key => {
+                const group = byDifficulty.get(key);
+                return group[Math.floor(Math.random() * group.length)];
+            })
+            .sort((a, b) => difficultyRank(a.difficulty) - difficultyRank(b.difficulty));
+    }
 
     function renderFeaturedList() {
         if (!showFeatured || !dataLoaded) return;
 
         const pool = sourceItems("featured").map(item => normalize(item, false));
-        // Fisher-Yates, trimmed to however many are needed — every maze in
-        // the pool gets an equal shot rather than always favouring
-        // whichever happened to sort first.
-        const shuffled = pool.slice();
-        for (let i = shuffled.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-        featuredListItems = shuffled.slice(0, FEATURED_FRAME_COUNT);
+        featuredListItems = pickFeatured(pool);
 
         featuredFrameList.innerHTML = featuredListItems.map(n => roomRowHtml(n, false)).join("");
         wireRowActivation(featuredFrameList, featuredListItems);
@@ -544,8 +581,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // "Refresh recommendations" — same reshuffle as renderFeaturedList, just
     // triggered by its own button instead of the panel opening, and with a
     // clone-and-slide transition (same technique site.js's header-events
-    // ticker uses) so the outgoing pair visibly continues down out of the
-    // frame while the new pair slides down into the spot they vacate,
+    // ticker uses) so the outgoing set visibly continues down out of the
+    // frame while the new set slides down into the spot they vacate,
     // instead of the swap just cutting instantly.
     let featuredRefreshInFlight = false;
 
@@ -560,7 +597,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // .featured-frame-body, since the recompute below reads *that*
         // element's scrollHeight to size itself for the new pair, and a
         // still-present outgoing clone sitting inside it would inflate
-        // that reading with the outgoing pair's own height for as long as
+        // that reading with the outgoing set's own height for as long as
         // the clone takes to finish sliding away and get removed. Without
         // its own clip standing in for the one it lost by moving out,
         // though, the outgoing pair would slide unclipped through
@@ -597,7 +634,7 @@ document.addEventListener("DOMContentLoaded", () => {
         featuredFrameList.style.transform = "translateY(0)";
 
         // .featured-frame-body's own height (and .chrome-frame's slide
-        // offset below it) were sized for the *previous* pair's combined
+        // offset below it) were sized for the *previous* set's combined
         // height — force is needed here since active isn't changing, just
         // what it needs to fit; without it the "nothing changed" guard in
         // setFeaturedPanelState would skip re-measuring entirely.
@@ -802,7 +839,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // number (never "none"), and opening, it was already sitting at a
         // real 0. Capped at leaving .chrome-frame at least its own visible
         // sliver's worth of room — the couple of featured picks in here are
-        // random every time (see renderFeaturedList), and an unlucky pair
+        // random every time (see renderFeaturedList), and an unlucky set
         // with long descriptions can otherwise want more height than
         // .featured-frame has to give, leaving .chrome-frame nothing (or
         // even a negative budget) to work with.
@@ -1156,17 +1193,18 @@ document.addEventListener("DOMContentLoaded", () => {
     // modal with A's builders.
     let builderToken = 0;
 
-    // A maze's creator field can credit several people, comma-separated
-    // ("Vincent, LanceS, ChrisYepYep"). Capped so an unusually long credit
-    // list can't fire off a dozen lookups on a single modal open.
-    const MAX_BUILDER_CARDS = 3;
+    // A maze's creator field can credit any number of people, comma-
+    // separated ("Vincent, LanceS, ChrisYepYep"), and every one of them gets
+    // a card. Each name costs one lookup, but those are cached server-side
+    // and the endpoint only answers for names actually credited in this
+    // archive (see netlify/functions/habbo.js), so the count is bounded by
+    // what an admin has typed rather than by anything a visitor controls.
 
     function creatorNames(owner) {
         return String(owner || "")
             .split(",")
             .map(s => s.trim())
-            .filter(Boolean)
-            .slice(0, MAX_BUILDER_CARDS);
+            .filter(Boolean);
     }
 
     function relativeLastSeen(iso) {
@@ -1182,9 +1220,13 @@ document.addEventListener("DOMContentLoaded", () => {
         return formatMazeDate(then.toISOString().slice(0, 10)) || "a while ago";
     }
 
-    function builderCard(profile) {
+    // mirrored flips the card: avatar on the right, text to its left. Used
+    // for every other card when a maze credits more than one builder, so a
+    // stack of them alternates rather than repeating the same silhouette
+    // down the left edge.
+    function builderCard(profile, mirrored) {
         const card = document.createElement("div");
-        card.className = "builder-card";
+        card.className = mirrored ? "builder-card builder-card--mirrored" : "builder-card";
 
         if (profile.avatar) {
             const avatar = document.createElement("img");
@@ -1228,6 +1270,41 @@ document.addEventListener("DOMContentLoaded", () => {
         return card;
     }
 
+    // One card for the whole team on a maze marked Collab: the avatars
+    // together on the left, overlapping slightly so they read as a group
+    // rather than a list, and just the names beside them. No motto or
+    // last-seen here — those belong to one person, and there is no one
+    // person to attach them to.
+    function collabCard(profiles) {
+        const card = document.createElement("div");
+        card.className = "builder-card builder-card--collab";
+
+        const avatars = document.createElement("div");
+        avatars.className = "builder-avatars";
+        profiles.forEach(profile => {
+            if (!profile.avatar) return;
+            const avatar = document.createElement("img");
+            avatar.className = "builder-avatar";
+            avatar.src = profile.avatar;
+            avatar.alt = "";
+            avatar.loading = "lazy";
+            avatar.addEventListener("error", () => avatar.remove());
+            avatars.appendChild(avatar);
+        });
+        if (avatars.children.length) card.appendChild(avatars);
+
+        const text = document.createElement("div");
+        text.className = "builder-text";
+        const nameLine = document.createElement("p");
+        nameLine.className = "builder-name";
+        // Text node, not innerHTML — these names come from Habbo.
+        nameLine.appendChild(document.createTextNode(profiles.map(pr => pr.name).join(", ")));
+        text.appendChild(nameLine);
+        card.appendChild(text);
+
+        return card;
+    }
+
     async function showBuilderCard(n) {
         const token = ++builderToken;
         modalBuilder.hidden = true;
@@ -1248,7 +1325,17 @@ document.addEventListener("DOMContentLoaded", () => {
         // from, or nobody resolved — either way, leave the list hidden.
         if (token !== builderToken || !profiles.length) return;
 
-        profiles.forEach(profile => modalBuilder.appendChild(builderCard(profile)));
+        // Combined into one card once a maze credits three or more people —
+        // past a pair, a column of separate cards is taller than the modal
+        // wants to be and says the same thing less clearly. A Collab drops to
+        // the combined card at two, since crediting a team is the point of
+        // that status; anything else keeps a card each at two so both
+        // builders still get their motto and last-seen.
+        if (profiles.length >= 3 || (n.statusKey === "collab" && profiles.length > 1)) {
+            modalBuilder.appendChild(collabCard(profiles));
+        } else {
+            profiles.forEach((profile, i) => modalBuilder.appendChild(builderCard(profile, i % 2 === 1)));
+        }
         // The cards carry the builders' names themselves, so the plain
         // "by <name>" line would just repeat them.
         modalCreator.hidden = true;

@@ -9,6 +9,52 @@
 // early, render-blocking inline script in home.html's own <head> instead —
 // see the comment there for why it has to run that early.
 
+// Alphabetical sorting starts at the first real letter or number in a name,
+// ignoring anything before it. Maze names can open with one of Volter
+// Goldfish's picture glyphs (a star, a skull — see the palette on the admin
+// page), which sort by codepoint and dumped every decorated name into a
+// clump of its own instead of filing it under its actual name.
+//
+// A plain /\p{L}/ test is not enough to spot them: the font draws several of
+// its pictures on codepoints Unicode classifies as letters — U+00AA and
+// U+00BA are ordinal indicators, U+00B5 is micro, U+00CC-CE and U+00E6 are
+// accented Latin — so those have to be named explicitly. Accented letters
+// the font draws as actual letters (É, Ñ, ü and the rest) are deliberately
+// absent, since a name starting with one should file under that letter.
+//
+// Keep this list in step with the picture group in js/glyph-palette.js.
+const PICTURE_GLYPHS = new Set([
+    0x0192, 0x2020, 0x2021, 0x2018, 0x2022, 0x2014, 0x00A5, 0x00AA,
+    0x00AC, 0x00B1, 0x00B5, 0x00B6, 0x00BA, 0x00BB, 0x00CC, 0x00CD,
+    0x00CE, 0x00D5, 0x00E6, 0x00EC, 0x00ED, 0x00EE, 0x00F5, 0x00F7
+]);
+
+// Digits count as real, so a name like "100% CONFUSED MAZE" still files
+// under 1 rather than jumping to C.
+function sortableName(name) {
+    const text = String(name || "");
+    let i = 0;
+    // for...of walks codepoints, not UTF-16 units, so a surrogate pair is
+    // never split in half.
+    for (const ch of text) {
+        if (!PICTURE_GLYPHS.has(ch.codePointAt(0)) && /[\p{L}\p{N}]/u.test(ch)) {
+            return text.slice(i);
+        }
+        i += ch.length;
+    }
+    // Nothing but glyphs and punctuation — sort on what it has.
+    return text;
+}
+
+// Used by the maze and event sorts on both the homepage and the admin page,
+// so the two always agree on the order. Falls back to the raw strings so two
+// names differing only in their leading glyph still order predictably rather
+// than comparing equal.
+function compareNames(a, b) {
+    const byLetter = sortableName(a).localeCompare(sortableName(b));
+    return byLetter !== 0 ? byLetter : String(a || "").localeCompare(String(b || ""));
+}
+
 // Routes an image path through Netlify's built-in Image CDN so the browser
 // downloads a resized/compressed version instead of the full original —
 // the room screenshots this site archives run 100-750KB each, but most

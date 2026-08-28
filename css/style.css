@@ -1781,7 +1781,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border: 1.5px solid var(--chrome-highlight);
     border-radius: 10px;
     color: var(--parchment-dim);
-    background: rgba(0, 0, 0, 0.2);
+    /* Near-opaque, the same fill .status-badge uses. At the old
+       rgba(0,0,0,0.2) the chip was only 20% black over whatever sat
+       behind it, which on the featured rows' solid difficulty colours
+       left it barely distinguishable from the row (1.5:1) and its text
+       unreadable against it (1.1-2.0:1). An opaque chip gives every pill
+       its own dark surface regardless of the row behind it, which is why
+       .status-badge was the one pill that always read cleanly.
+       REVERT: background: rgba(0, 0, 0, 0.2); */
+    background: rgba(20, 13, 6, 0.85);
     /* Without these, a flex parent with limited width (e.g. .room-tags
        squeezed against .room-creator in the modal) shrinks each pill below
        its label's natural width instead of wrapping it to a new line,
@@ -2032,10 +2040,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .featured-refresh-btn {
     display: none;
     position: absolute;
-    top: 0;
+    /* The 25px that used to sit in padding-top lives here instead. Padding is
+       part of a button's hit area, so positioning the label that way made the
+       whole 46px box clickable — it reached up over the Featured Mazes nav
+       button above and swallowed clicks meant for it. As an offset it places
+       the text identically while the box stays the size of the text. */
+    top: 25px;
     right: 14px;
     z-index: 3;
-    padding: 25px 0 11px;
+    padding: 0;
     appearance: none;
     -webkit-appearance: none;
     background: transparent;
@@ -2091,7 +2104,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
    the final word, not a starting point flex-shrink can still eat into. */
 .featured-frame-body {
     flex-shrink: 0;
-    overflow: hidden;
+    /* Scrolls rather than clips. The open height is capped at whatever is
+       left once .chrome-frame keeps its own visible sliver (see
+       setFeaturedPanelState), and three picks need roughly 228px against
+       the ~158px two used to — so on a short viewport the last row fell
+       past the cap and was simply cut off. overflow-x stays hidden so the
+       rows still cannot push the panel sideways. On a tall enough window
+       the content fits inside the cap and no scrollbar appears at all. */
+    overflow-x: hidden;
+    overflow-y: auto;
+    /* Same bar colours as every other native scroll region on the site. */
+    scrollbar-color: var(--wood-dark) var(--frame-bg);
     transition: max-height 0.4s ease;
 }
 
@@ -2223,6 +2246,25 @@ body[data-page="home"] .hero { padding-top: 18px; }
 #featured-frame-list .row-tags {
     position: relative;
     top: -1px;
+}
+
+/* The row is align-items: stretch, so .row-info already fills its full
+   height — making it a column lets the tag row take the slack above it
+   with margin-top: auto and settle against the bottom, whatever length
+   the name and description run to. */
+#featured-frame-list .row-info {
+    display: flex;
+    flex-direction: column;
+}
+
+#featured-frame-list .row-tags {
+    margin-top: auto;
+}
+
+/* Sits the name 3px lower in the row without moving anything under it —
+   the tag row is bottom-anchored now, so this only eats into the slack. */
+#featured-frame-list .chrome-list-row h3 {
+    margin-top: 3px;
 }
 
 /* Fills whatever space the sort dropdown (pinned to the row's right edge,
@@ -2365,7 +2407,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding-right: 28px;
 }
 
-.modal .chrome-titlebar h2 { font-size: 0.8rem; }
+/* The maze name in the modal titlebar. Scoped to .modal so the homepage and
+   admin titlebars keep their Silkscreen. 700 is what selects
+   VolterGoldfishBold.ttf — the bold cut shares the regular's family name and
+   is told apart by weight alone (see the @font-face pair at the top of this
+   file), so 400 would quietly hand back the regular face instead. */
+.modal .chrome-titlebar h2 {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 700;
+}
 
 @keyframes modalIn {
     from { opacity: 0; transform: translateY(10px) scale(0.98); }
@@ -2438,7 +2489,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding: 20px;
     /* Solid, slightly darker than --frame-bg (the colour behind the modal's
        text below) rather than the wood/pattern texture. */
-    background-color: #211a11;
+    background-color: #1b160e;
     /* Sizing for the plain background-image fallback used when an item has
        no gallery/entrance/finish to show instead (almost always events —
        see openModal in js/home.js) — without this it defaulted to
@@ -2961,7 +3012,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
    the full-bleed .modal-meta below cannot poke past that curve. */
 .modal-body {
     padding: 20px 22px 24px;
-    background: #2e2418;
+    background: #31281d;
     /* Same hard top edge .modal-meta and the description panel carry, so
        the body reads as another band stacked in front of the image above
        it rather than simply a colour change. */
@@ -3082,6 +3133,62 @@ body[data-page="home"] .hero { padding-top: 18px; }
     margin-left: -10px;
 }
 
+/* Every other card in a multi-builder stack is flipped — avatar to the
+   right, text to its left. row-reverse does the swap; the avatar's pull
+   out through the card's padding has to change sides with it. */
+.builder-card--mirrored {
+    flex-direction: row-reverse;
+}
+
+.builder-card--mirrored .builder-avatar {
+    margin-left: 0;
+    margin-right: -10px;
+}
+
+/* Text sits at the card's left edge when the avatar is on the right, so
+   it needs its own inset the way the avatar side has the card padding. */
+.builder-card--mirrored .builder-text {
+    padding-left: 10px;
+}
+
+/* A collab's avatars, grouped at the left of the one shared card. The
+   group takes the pull out through the padding that a lone avatar would
+   have taken; within it each figure overlaps the one before by 2px, and
+   later ones paint on top by document order. */
+.builder-avatars {
+    display: flex;
+    align-items: flex-end;
+    /* .builder-card centres its items, which left this whole group floating
+       mid-card while a lone .builder-avatar (align-self: flex-end) stood on
+       the bottom edge — so the collab figures sat higher than a single
+       builder's did. Bottom-aligning the group puts them back on the same
+       line; align-items above then keeps the figures level within it. */
+    align-self: flex-end;
+    flex-shrink: 0;
+    margin-left: -10px;
+}
+
+.builder-avatars .builder-avatar {
+    /* Overlaps the figure before it. Habbo renders each avatar centred in
+       a much wider transparent box, so most of this number is closing that
+       empty margin rather than covering the character itself. Measure that
+       gutter on the source file and halve it: the natural render is 128px
+       wide and .builder-avatar scales it to 64px, so a gutter measured at
+       natural size is worth half as much here. Past -64px the boxes start
+       landing left of the one before and the row reverses. */
+    margin-left: -36px;
+}
+
+.builder-avatars .builder-avatar:first-child {
+    margin-left: 0;
+}
+
+/* The collab card lists names only, so this line is plain wrapping text
+   rather than the flex row that carries a name plus its status. */
+.builder-card--collab .builder-name {
+    display: block;
+}
+
 .builder-text {
     flex: 1;
     min-width: 0;
@@ -3155,15 +3262,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    /* No gap: the builder card is meant to run right up to the tag pills.
-       Nothing was capping its width — it already filled its own column —
-       this 12px was the whole separation. The creator fallback keeps its
-       own margin below, for when no builder card renders. */
-    gap: 0;
+    /* The builder card fills everything the pills leave, so this gap is the
+       whole separation between the two — 10px keeps the card off the pills
+       without pulling it noticeably short of them. */
+    gap: 10px;
     /* Pulled up into the space under the image: the builder card's avatar
        overhangs its own top edge, and the row sat low enough that the gap
        above it read as a hole. */
     margin-top: -10px;
+    background: #31281d;
 }
 
 .modal-body .room-creator {
@@ -3171,7 +3278,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-size: 0.85rem;
     margin: 0;
     flex-shrink: 0;
-    margin-right: 12px;
+    /* Plus the row's own 10px, keeping the plain-text fallback at the 12px
+       of clearance it had before the gap was ever changed. */
+    margin-right: 2px;
 }
 
 /* Sized to its own pills and capped at 185px, hard against the right edge,
@@ -3373,6 +3482,151 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: flex;
     flex-direction: column;
     gap: 10px;
+}
+
+/* Mirrors .admin-sidebar on the opposite side of .admin-center — anchored
+   with right: rather than left: so the same centring arithmetic reflects
+   without restating it. Holds the font's whole mapped set at a scale that
+   fits a sidebar, so it scrolls within the viewport rather than running off
+   the bottom of the page. */
+.glyph-palette {
+    position: fixed;
+    top: 70px;
+    right: calc(50vw + 289px);
+    width: 150px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 231px;
+}
+
+/* The scrolling part is the glyph list alone, so the heading and the
+   status line stay put while the grids move under them. */
+/* The scroll target itself. js/custom-scrollbar.js wraps this at runtime
+   and supplies the visible bar; it still has to be genuinely scrollable
+   for the script to have anything to mirror. */
+.glyph-palette-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* The box the glyphs sit in. js/custom-scrollbar.js builds this wrapper
+   around the list and puts the bar inside it, so the frame has to be
+   drawn here rather than on the list — otherwise the bar would sit
+   outside the box it belongs to. The --console variant sets height:100%
+   for its own fixed-height panel; here it needs to take the leftover
+   space in the palette column instead. */
+.glyph-palette .custom-scrollbar-wrap {
+    flex: 1;
+    min-height: 0;
+    height: auto;
+    padding: 6px 2px 6px 4px;
+    background: var(--chrome-row);
+    border: 1px solid var(--chrome-border);
+    border-radius: 4px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* The console panel gives its bar a 7px right margin to clear that
+   screen's own bezel; inside this box the frame is the border itself, so
+   the bar sits closer in. */
+.glyph-palette .custom-scrollbar-wrap--console .custom-scrollbar {
+    margin-right: 0;
+    padding: 2px 0;
+}
+
+.glyph-group-title {
+    margin: 6px 0 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.5rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--amber);
+}
+.glyph-group-title:first-child { margin-top: 0; }
+
+/* minmax(0, 1fr), not plain 1fr: a bare 1fr keeps an automatic minimum of
+   the column's own content, so one wide glyph pushed its column out and
+   squeezed the rest — tiles ranged 21px to 35px across. Zeroing that
+   minimum makes every column identical regardless of what it holds, which
+   evens the tiles without touching the glyph size inside them. */
+.glyph-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 3px;
+}
+
+/* Same chip treatment as the admin pill buttons, shrunk: chrome-row fill,
+   fine black edge, hard offset shadow. */
+/* Same chip treatment as the admin pill buttons, shrunk to a square cell.
+   aspect-ratio rather than a fixed height so the tile stays square at
+   whatever width the column resolves to; overflow keeps an unusually wide
+   glyph inside its own box instead of spilling into its neighbour. */
+.glyph-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1 / 1;
+    padding: 0;
+    overflow: hidden;
+    background: var(--chrome-row);
+    border: 1px solid var(--chrome-border);
+    border-radius: 3px;
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.8rem;
+    line-height: 1;
+    color: var(--parchment);
+    cursor: pointer;
+    transition: background 0.12s, transform 0.12s;
+}
+
+.glyph-btn:hover {
+    background: var(--chrome-row-featured);
+    color: #fff8ec;
+    transform: translateY(-1px);
+}
+
+.glyph-btn:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 1px;
+}
+
+/* Mapped in the font but drawing nothing — flagged by js/glyph-palette.js,
+   which measures each glyph rather than assuming. Kept clickable, since the
+   character itself is still real. */
+.glyph-btn.is-blank {
+    opacity: 0.35;
+}
+
+.glyph-palette-status {
+    margin: 0;
+    min-height: 12px;
+    font-size: 0.58rem;
+    color: var(--amber-bright);
+}
+
+/* Below this the sidebar stops being fixed and stacks under the content
+   (see .admin-sidebar's own query); the palette does the same rather than
+   floating over the form on a narrow screen. */
+@media (max-width: 900px) {
+    .glyph-palette {
+        position: static;
+        width: 100%;
+        right: auto;
+        margin-top: 24px;
+        max-height: none;
+    }
+    .glyph-palette-list { overflow-y: visible; }
+    .glyph-grid { grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .glyph-btn { transition: none; }
+    .glyph-btn:hover { transform: none; }
 }
 
 .admin-sidebar-title {
@@ -3674,6 +3928,19 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .admin-field textarea:focus {
     outline: none;
     border-color: var(--amber);
+}
+
+/* Every text field on the admin page in the site's own pixel face, matching
+   the image-label inputs that already used it. Scoped to the admin page so
+   the contact form and search box on the public side keep Roboto. Selects
+   are deliberately left alone — a dropdown is not a text field, and the
+   native menu it opens will not honour the face anyway. */
+body[data-page="admin"] .admin-field input,
+body[data-page="admin"] .admin-field textarea,
+body[data-page="admin"] .search-box input {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
 }
 
 .admin-date-parts {
