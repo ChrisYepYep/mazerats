@@ -2557,12 +2557,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
    bottom: auto that puts it at the top right. */
 .modal-thumb-frame .gallery-prev { left: -13.5px; }
 .modal-thumb-frame .gallery-next { right: -13.5px; }
-.modal-thumb-frame #gallery-counter { bottom: -10px; }
+/* Sat below the frame until the furni icons moved in underneath it, where
+   the two overlapped. Now inside the screenshot, 2px up from its bottom
+   edge — the same treatment #gallery-position already gets at the top. */
+.modal-thumb-frame #gallery-counter { bottom: 2px; }
 /* Inside the image now rather than out in the padding ring above it —
    .modal-thumb-frame and .gallery-viewport share the same box, so 2px
    here is 2px in from the screenshot's own top-right corner. */
 .modal-thumb-frame #gallery-position { top: 4px; right: 4px; }
-.modal-thumb-frame .gallery-bonus-tab { bottom: 12px; }
+/* Keeps its 22px stand-off above the room pill, which moved. */
+.modal-thumb-frame .gallery-bonus-tab { bottom: 24px; }
 .modal-thumb-frame .old-versions-pill { bottom: -31px; }
 
 .modal-thumb {
@@ -3087,7 +3091,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .furni-strip {
     display: flex;
     justify-content: flex-end;
-    padding: 8px 0 4px;
+    /* Bottom padding leaves room for the half of the "Furni Info" pill that
+       hangs below the icons. */
+    padding: 8px 0 10px;
 }
 
 /* Positioning context for the pill, and the thing that gets right-aligned
@@ -3096,6 +3102,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .furni-strip-inner {
     position: relative;
     max-width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 2px;
 }
 
 /* Twelve icons wide: 12 x 34px plus the 11 x 3px gaps between them.
@@ -3109,17 +3118,58 @@ body[data-page="home"] .hero { padding-top: 18px; }
     max-width: 441px;
     overflow-x: auto;
     overflow-y: hidden;
-    padding-bottom: 3px;
+    /* No scrollbar: at this size it took as much height as the icons and
+       cut across the chrome underneath. Touch still swipes the row as
+       normal, and the arrows either side carry the hint that it moves. */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
 }
 
-/* Straddles the icons' own bottom edge — measured up from the bottom of
-   the wrapper, which also contains the scroller's padding and, when the row
-   overflows, its scrollbar. pointer-events off so it can never swallow a
-   click meant for the icon underneath it. */
+.furni-strip-scroll::-webkit-scrollbar { display: none; }
+
+/* Only drawn when the row actually overflows — see wireFurniScrollHints.
+   Kept out of the layout entirely rather than merely invisible, so a short
+   row stays hard against the right edge. */
+.furni-strip-arrow {
+    display: none;
+    flex: 0 0 auto;
+    width: 0;
+    height: 0;
+    padding: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    background: none;
+    /* The clickable area is bigger than the triangle, which is only 7px
+       across — too small to rest a pointer on, and resting on it is the
+       whole interaction. */
+    box-sizing: content-box;
+    transition: opacity 150ms ease;
+}
+
+.furni-strip-inner.has-overflow .furni-strip-arrow { display: block; }
+
+.furni-strip-arrow.is-left {
+    border-right: 7px solid var(--parchment);
+    padding: 6px 4px 6px 2px;
+}
+
+.furni-strip-arrow.is-right {
+    border-left: 7px solid var(--parchment);
+    padding: 6px 2px 6px 4px;
+}
+
+/* Dimmed, not hidden: the row has reached this end, but the arrow is still
+   the only thing saying the row scrolls at all. */
+.furni-strip-arrow.is-spent { opacity: 0.4; }
+
+/* Straddles the icons' own bottom edge. The wrapper is exactly icon-height
+   now that the scrollbar is gone, so this hangs half a pill below it.
+   pointer-events off so it can never swallow a click meant for the icon
+   underneath it. */
 .furni-strip-label {
     position: absolute;
     left: 50%;
-    bottom: 11px;
+    bottom: -8px;
     transform: translateX(-50%);
     pointer-events: none;
     padding: 1px 7px;
@@ -4788,10 +4838,50 @@ body[data-page="admin"] .search-box input {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 6px;
 }
 
-.admin-furni-room-head .admin-hint { margin: 0; flex: 1; }
+/* Collapsed, a room is just this head — a narrow tab. The margin only
+   appears once it is open, so a stack of closed rooms reads as a tight
+   list rather than a column of gaps. */
+.admin-furni-room.is-open .admin-furni-room-head { margin-bottom: 6px; }
+
+.admin-furni-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+
+.admin-furni-toggle .admin-hint { margin: 0; }
+
+.admin-furni-toggle:hover strong { color: var(--amber-bright); }
+
+/* A solid triangle rather than a glyph, so it stays crisp at this size and
+   matches the pixel-art chrome around it. Points right when closed, down
+   when open. */
+.admin-furni-caret {
+    flex: 0 0 auto;
+    width: 0;
+    height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 6px solid var(--parchment-dim);
+    transition: transform 120ms ease;
+}
+
+.admin-furni-room.is-open .admin-furni-caret {
+    transform: rotate(90deg) translateX(1px);
+}
+
+.admin-furni-panel { display: none; }
+.admin-furni-room.is-open .admin-furni-panel { display: block; }
 
 .admin-furni-item {
     display: flex;

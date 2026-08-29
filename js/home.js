@@ -1333,9 +1333,80 @@ document.addEventListener("DOMContentLoaded", () => {
             scroller.appendChild(btn);
         });
 
+        const left = makeFurniArrow(scroller, -1);
+        const right = makeFurniArrow(scroller, 1);
+        inner.appendChild(left);
         inner.appendChild(scroller);
+        inner.appendChild(right);
         inner.appendChild(label);
         furniStrip.appendChild(inner);
+        wireFurniScrollHints(inner, scroller, left, right);
+    }
+
+    // How fast a hovered arrow drags the row along, in pixels per SECOND —
+    // under two icons a second, slow enough to read what is coming past
+    // rather than a flick. Measured against elapsed time rather than per
+    // frame, or the same hover would run at half speed on a 60Hz screen and
+    // double on a 144Hz one.
+    const FURNI_HOVER_SCROLL = 60;
+
+    /* One end-cap of the icon row: a solid arrow that scrolls the row while
+       the pointer rests on it, and jumps a full row-width when clicked.
+       There is no scrollbar to grab — it ate more height than the icons
+       could spare and cut across the chrome — so these are the only visible
+       sign the row goes further, which is why they dim rather than vanish
+       at the ends: an arrow that disappears takes the hint with it. */
+    function makeFurniArrow(scroller, dir) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "furni-strip-arrow " + (dir < 0 ? "is-left" : "is-right");
+        btn.setAttribute("aria-label", dir < 0 ? "Scroll furni left" : "Scroll furni right");
+        btn.tabIndex = -1;
+
+        let frame = null;
+        let last = 0;
+        const step = now => {
+            // Capped so a backgrounded tab, where frames stop arriving,
+            // doesn't come back and jump the row a long way in one step.
+            const dt = Math.min(now - last, 100) / 1000;
+            last = now;
+            scroller.scrollLeft += FURNI_HOVER_SCROLL * dt * dir;
+            frame = requestAnimationFrame(step);
+        };
+        const start = () => {
+            if (frame !== null) return;
+            frame = requestAnimationFrame(now => { last = now; step(now); });
+        };
+        const stop = () => { if (frame !== null) cancelAnimationFrame(frame); frame = null; };
+
+        // Pointer events rather than mouseenter/leave so a touch that lands
+        // on the arrow doesn't leave it scrolling forever with no pointer to
+        // move away — on touch it is a tap, handled by the click below.
+        btn.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") start(); });
+        btn.addEventListener("pointerleave", stop);
+        btn.addEventListener("pointerdown", stop);
+        btn.addEventListener("click", () => {
+            stop();
+            scroller.scrollBy({ left: scroller.clientWidth * dir, behavior: "smooth" });
+        });
+        return btn;
+    }
+
+    /* Keeps the arrows honest: hidden entirely when the row fits (nothing to
+       hint at), and the one pointing at an end the row has already reached
+       is dimmed. The observer matters because the strip is built while the
+       modal is still hidden, where every width reads as zero — the first
+       real measurement only arrives once it is shown. */
+    function wireFurniScrollHints(inner, scroller, left, right) {
+        const update = () => {
+            const max = scroller.scrollWidth - scroller.clientWidth;
+            inner.classList.toggle("has-overflow", max > 1);
+            left.classList.toggle("is-spent", scroller.scrollLeft <= 1);
+            right.classList.toggle("is-spent", scroller.scrollLeft >= max - 1);
+        };
+        scroller.addEventListener("scroll", update);
+        if (typeof ResizeObserver === "function") new ResizeObserver(update).observe(scroller);
+        update();
     }
 
     // Cards opened by hovering are "transient" — the next hover replaces

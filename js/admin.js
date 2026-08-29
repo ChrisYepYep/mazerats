@@ -550,6 +550,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!wrap) return;
         const listEl = wrap.querySelector(".admin-furni-list");
         formEl._furniDraft = JSON.parse(JSON.stringify(item.furni || {}));
+        // Which rooms are expanded. Every room starts collapsed to a single
+        // tab: a scanned maze can run to a hundred-odd detections, which
+        // buries the rest of the form. Kept out here because Hide and Remove
+        // both re-render, and rebuilding from scratch would otherwise close
+        // the room being worked on after every click.
+        const openRooms = new Set();
 
         // Room images in the order they appear on the site, so this reads in
         // the same order as the gallery above rather than by object key.
@@ -588,17 +594,34 @@ document.addEventListener("DOMContentLoaded", () => {
                         '<button type="button" class="admin-pill-btn admin-furni-hide">' + (f.hidden ? "Show" : "Hide") + '</button>' +
                         '<button type="button" class="admin-pill-btn admin-pill-danger admin-furni-remove">Remove</button>' +
                     '</div>').join("");
+                const open = openRooms.has(image);
                 return '' +
-                    '<div class="admin-furni-room">' +
+                    '<div class="admin-furni-room' + (open ? " is-open" : "") + '">' +
                         '<div class="admin-furni-room-head">' +
-                            '<strong>' + escapeHtml(label) + '</strong>' +
-                            '<span class="admin-hint">' + shown + ' shown of ' + items.length + '</span>' +
+                            // The whole head is the toggle, with the buttons
+                            // inside it stopping the click so "Remove all"
+                            // never doubles as a collapse.
+                            '<button type="button" class="admin-furni-toggle" data-image="' + escapeHtml(image) + '" aria-expanded="' + open + '">' +
+                                '<span class="admin-furni-caret" aria-hidden="true"></span>' +
+                                '<strong>' + escapeHtml(label) + '</strong>' +
+                                '<span class="admin-hint">' + shown + ' shown of ' + items.length + '</span>' +
+                            '</button>' +
                             '<button type="button" class="admin-pill-btn admin-pill-danger admin-furni-clear" data-image="' + escapeHtml(image) + '">Remove all</button>' +
-                        '</div>' + note +
-                        '<div class="admin-furni-items">' + rows + '</div>' +
+                        '</div>' +
+                        '<div class="admin-furni-panel">' + note +
+                            '<div class="admin-furni-items">' + rows + '</div>' +
+                        '</div>' +
                     '</div>';
             }).join("");
 
+            listEl.querySelectorAll(".admin-furni-toggle").forEach(btn => {
+                btn.addEventListener("click", () => {
+                    const image = btn.dataset.image;
+                    if (openRooms.has(image)) openRooms.delete(image);
+                    else openRooms.add(image);
+                    render();
+                });
+            });
             listEl.querySelectorAll(".admin-furni-item").forEach(row => {
                 const image = row.dataset.image;
                 const idx = Number(row.dataset.index);
