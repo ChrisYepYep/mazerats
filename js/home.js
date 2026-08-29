@@ -2672,12 +2672,104 @@ document.addEventListener("DOMContentLoaded", () => {
         render();
     }, 15000);
 
-    Promise.all([Api.getRooms(), Api.getEvents()]).then(([rooms, events]) => {
+    /* ---------- Loading screen ----------
+       The shell paints almost immediately; what takes seconds is the maze
+       list and its thumbnails. Rather than let the page assemble itself in
+       front of the visitor, everything is fetched behind the loader and the
+       whole archive appears at once.
+
+       The bar tracks real work — two API calls, then one step per thumbnail —
+       so it moves when something has actually happened. */
+    const loaderEl = document.getElementById("site-loader");
+    const loaderFill = document.getElementById("site-loader-fill");
+    const loaderLabel = document.getElementById("site-loader-label");
+    const LOADER_BLOCK = 8;   // px per drawn block, matching the CSS gradient
+    // A stalled thumbnail must never hold the page hostage. Whatever has
+    // arrived by now is shown regardless.
+    const LOADER_MAX_WAIT = 8000;
+
+    /* Weighted rather than one step per task, because the tasks are nothing
+       like equal: the maze list is a single 2.4MB response that accounts for
+       roughly half the wait, while a thumbnail is under a kilobyte. Counting
+       them evenly parked the bar at 4% for the first two thirds of the load
+       and then threw it to 100%. These weights are measured shares of the
+       real thing, so the bar moves roughly in step with the waiting. */
+    const LOAD_WEIGHT_ROOMS = 45;
+    const LOAD_WEIGHT_EVENTS = 5;
+    const LOAD_WEIGHT_THUMBS = 50;
+
+    let loadDone = 0;
+    const loadTotal = 100;
+
+    function drawLoader() {
+        if (!loaderEl) return;
+        const pct = loadTotal ? Math.min(1, loadDone / loadTotal) : 1;
+        const track = loaderFill.parentElement.clientWidth;
+        // Snapped down to whole blocks so none is ever drawn half-width.
+        loaderFill.style.width = (Math.floor((pct * track) / LOADER_BLOCK) * LOADER_BLOCK) + "px";
+        loaderLabel.textContent = "LOADING " + Math.round(pct * 100) + "%";
+    }
+
+    function hideLoader() {
+        if (!loaderEl || loaderEl.dataset.done) return;
+        loaderEl.dataset.done = "1";
+        loadDone = loadTotal;
+        drawLoader();
+        loaderEl.classList.add("is-done");
+        setTimeout(() => loaderEl.remove(), 300);
+    }
+
+    /* Waits for every thumbnail, counting each as it lands. Resolves on error
+       too: a broken image is one fewer thing to wait for, not a reason to sit
+       on the loading screen. */
+    function preloadThumbs(urls) {
+        const each = urls.length ? LOAD_WEIGHT_THUMBS / urls.length : 0;
+        return Promise.all(urls.map(url => new Promise(resolve => {
+            const img = new Image();
+            let settled = false;
+            const done = () => {
+                if (settled) return;
+                settled = true;
+                loadDone += each;
+                drawLoader();
+                resolve();
+            };
+            img.onload = done;
+            img.onerror = done;
+            // Neither fired: a stalled connection. One thumbnail must not be
+            // able to hold the whole page behind the loader.
+            setTimeout(done, 5000);
+            img.src = url;
+        })));
+    }
+
+    drawLoader();
+    setTimeout(hideLoader, LOADER_MAX_WAIT);
+
+    // Counted separately rather than through Promise.all, so the bar moves
+    // when the first of the two lands instead of waiting for both.
+    const roomsReq = Api.getRooms().then(r => { loadDone += LOAD_WEIGHT_ROOMS; drawLoader(); return r; });
+    const eventsReq = Api.getEvents().then(e => { loadDone += LOAD_WEIGHT_EVENTS; drawLoader(); return e; });
+
+    Promise.all([roomsReq, eventsReq]).then(async ([rooms, events]) => {
         ROOMS = rooms;
         EVENTS = events;
+
+        // Exactly the images the cards will ask for, deduplicated — normalize
+        // is what decides a card's thumbnail, so asking it is the only way to
+        // be sure the preload and the render want the same files.
+        const thumbs = [...new Set([
+            ...rooms.map(r => normalize(r, false).thumb),
+            ...events.map(e => normalize(e, true).thumb)
+        ].filter(Boolean))];
+        drawLoader();
+
         dataLoaded = true;
         lastStatusSignature = eventStatusSignature();
         render();
         openEventFromHash();
-    });
+
+        await preloadThumbs(thumbs);
+        hideLoader();
+    }).catch(() => hideLoader());
 });

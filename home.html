@@ -115,6 +115,20 @@
 </head>
 <body data-page="home">
 
+    <!-- Held over the page until the archive is actually ready to look at.
+         The shell paints in well under a tenth of a second, but the maze list
+         and its 47 thumbnails take a few seconds more, so without this the
+         page arrives empty and fills in piece by piece. Removed by
+         js/home.js once the data and every thumbnail are in. -->
+    <div class="site-loader" id="site-loader">
+        <div class="site-loader-inner">
+            <p class="site-loader-label" id="site-loader-label">LOADING</p>
+            <div class="site-loader-track">
+                <div class="site-loader-fill" id="site-loader-fill"></div>
+            </div>
+        </div>
+    </div>
+
     <header class="site-header">
         <div class="brand-group">
             <div class="brand">

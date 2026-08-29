@@ -3436,10 +3436,14 @@ body[data-page="home"] .hero { padding-top: 18px; }
     transition: color 0.15s;
 }
 
-/* Colour change only on hover — no halo. */
+/* Colour change only on hover — no halo. The link deepens rather than
+   lightens: it sits on pale paper (rgb(236,217,190)), where going lighter
+   washes out — white measured 1.38:1 and read as the text vanishing. This is
+   the resting colour taken darker, 11.46:1 against the paper and the most
+   perceptibly different from #8c3600 of the options in its hue. */
 .furni-card-link:hover,
 .furni-card-link:focus-visible {
-    color: #ffffff;
+    color: #3d1800;
     outline: none;
 }
 
@@ -6197,4 +6201,73 @@ body[data-page="admin"] .search-box input {
         max-width: none;
         justify-content: flex-start;
     }
+}
+
+/* ---------- Loading screen ---------- */
+
+/* Covers the page until the archive is worth looking at. Inherits the body's
+   own background so the reveal is a fade from the same surface, not a cut
+   between two different ones. */
+.site-loader {
+    position: fixed;
+    inset: 0;
+    z-index: 400;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-black);
+    background-image: linear-gradient(rgba(10, 7, 4, 0.7), rgba(10, 7, 4, 0.78));
+    transition: opacity 260ms ease;
+}
+
+.site-loader.is-done {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.site-loader-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 9px;
+}
+
+.site-loader-label {
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.6875rem;
+    font-weight: 400;
+    letter-spacing: 1px;
+    color: var(--parchment);
+    /* Tabular so the percentage does not jiggle the label as it counts up. */
+    font-variant-numeric: tabular-nums;
+}
+
+/* Square corners, hard border, no gradient fill — the same pixel-drawn
+   language as the Volter lettering above it. */
+.site-loader-track {
+    width: 240px;
+    height: 14px;
+    padding: 2px;
+    border: 2px solid var(--chrome-border);
+    background: var(--chrome-row);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+/* Drawn as discrete blocks rather than one continuous bar: 6px of cream then
+   2px of gap, repeating. js/home.js snaps the width to whole 8px units so a
+   block is never half-drawn — a partial block is exactly the soft edge this
+   is meant to avoid. */
+.site-loader-fill {
+    width: 0;
+    height: 100%;
+    background-image: repeating-linear-gradient(
+        to right,
+        var(--parchment) 0, var(--parchment) 6px,
+        transparent 6px, transparent 8px
+    );
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .site-loader { transition: none; }
 }
