@@ -1489,38 +1489,54 @@ document.addEventListener("DOMContentLoaded", () => {
         const img = card.querySelector(".furni-card-icon");
         const link = card.querySelector(".furni-card-link");
         const apply = () => {
-            if (!img.naturalWidth || !img.naturalHeight) return;
-            // One scale for both axes so the sprite keeps its shape, and
-            // never above 1 — upscaling pixel art is worse than showing it
-            // small.
-            const scale = Math.min(1,
-                FURNI_CARD_MAX_W / img.naturalWidth,
-                FURNI_CARD_MAX_H / img.naturalHeight);
-            const w = Math.round(img.naturalWidth * scale);
-            const h = Math.round(img.naturalHeight * scale);
-            img.style.maxWidth = `${w}px`;
-            img.style.maxHeight = `${h}px`;
+            let grewW = 0;
+            if (img.naturalWidth && img.naturalHeight) {
+                // One scale for both axes so the sprite keeps its shape, and
+                // never above 1 — upscaling pixel art is worse than showing
+                // it small.
+                const scale = Math.min(1,
+                    FURNI_CARD_MAX_W / img.naturalWidth,
+                    FURNI_CARD_MAX_H / img.naturalHeight);
+                const w = Math.round(img.naturalWidth * scale);
+                const h = Math.round(img.naturalHeight * scale);
+                img.style.maxWidth = `${w}px`;
+                img.style.maxHeight = `${h}px`;
 
-            // Only the footer decides the width now: the description above it
-            // runs the full card either way, so the question is just whether
-            // the sprite and the link still fit on one line beside each
-            // other. Height is left to the CSS, which follows the content.
-            const linkW = link ? Math.ceil(link.getBoundingClientRect().width) : 0;
-            const needed = FURNI_CARD_PAD + w + (linkW ? FURNI_CARD_FOOT_GAP + linkW : 0);
-            // The card only ever grows: a small sprite leaves it at its base
-            // width rather than shrinking it into a different shape for
-            // every furni.
-            const grewW = Math.max(0, needed - FURNI_CARD_W);
-            if (!grewW) return;
-            card.style.width = `${FURNI_CARD_W + grewW}px`;
-            // Only re-place a card still sitting where it was put. A slow
+                // Only the footer decides the width now: the description
+                // above it runs the full card either way, so the question is
+                // just whether the sprite and the link still fit on one line
+                // beside each other. Height is left to the CSS, which follows
+                // the content.
+                const linkW = link ? Math.ceil(link.getBoundingClientRect().width) : 0;
+                const needed = FURNI_CARD_PAD + w + (linkW ? FURNI_CARD_FOOT_GAP + linkW : 0);
+                // The card only ever grows: a small sprite leaves it at its
+                // base width rather than shrinking it into a different shape
+                // for every furni.
+                grewW = Math.max(0, needed - FURNI_CARD_W);
+                if (grewW) card.style.width = `${FURNI_CARD_W + grewW}px`;
+            }
+            // ALWAYS place again here, whether or not the width moved. The
+            // card's height follows its sprite, and the sprite's final size
+            // is only known at this point — before it, the card is either an
+            // empty box or one holding a stand-in at the CSS fallback cap.
+            // The first placement can only work from that provisional height,
+            // and since the top edge is what gets set, every pixel the card
+            // gains afterwards pushes its BOTTOM further below the icon it is
+            // supposed to be sitting on.
+            //
+            // Only re-place a card still sitting where it was put: a slow
             // sprite could load after the card has been dragged, and yanking
             // it back out from under the pointer would be worse than leaving
             // it a little off its anchor.
             if (card.style.left === card.dataset.placedLeft) place(grewW);
         };
         if (img.complete) apply();
-        else img.addEventListener("load", apply, { once: true });
+        else {
+            img.addEventListener("load", apply, { once: true });
+            // A sprite that 404s still settles the card's height — at the
+            // alt-text box rather than an image — so it still needs placing.
+            img.addEventListener("error", apply, { once: true });
+        }
     }
 
     function closeFurniCard(card) {
