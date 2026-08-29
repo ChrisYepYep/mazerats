@@ -1479,15 +1479,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
        The caps clear every sprite in the catalogue's normal range; the rare
        giant (they go up to 287x259) is still scaled down, just far less. */
-    const FURNI_CARD_W = 205;      // must match .furni-card width in the CSS
-    const FURNI_CARD_H = 148;      // and its height
-    const FURNI_CARD_SLOT_W = 92;  // and .furni-card-icon's max-width
-    const FURNI_CARD_SLOT_H = 78;  // and its max-height
+    const FURNI_CARD_W = 240;       // must match .furni-card width in the CSS
+    const FURNI_CARD_PAD = 28;      // its left + right border
+    const FURNI_CARD_FOOT_GAP = 8;  // .furni-card-foot's gap
     const FURNI_CARD_MAX_W = 160;
     const FURNI_CARD_MAX_H = 160;
 
     function growFurniCardForImage(card, place) {
         const img = card.querySelector(".furni-card-icon");
+        const link = card.querySelector(".furni-card-link");
         const apply = () => {
             if (!img.naturalWidth || !img.naturalHeight) return;
             // One scale for both axes so the sprite keeps its shape, and
@@ -1501,14 +1501,18 @@ document.addEventListener("DOMContentLoaded", () => {
             img.style.maxWidth = `${w}px`;
             img.style.maxHeight = `${h}px`;
 
-            // The card only ever grows: a sprite smaller than the base box
-            // leaves the card at its normal size rather than shrinking it
-            // into a different shape for every furni.
-            const grewW = Math.max(0, w - FURNI_CARD_SLOT_W);
-            const grewH = Math.max(0, h - FURNI_CARD_SLOT_H);
-            if (!grewW && !grewH) return;
-            if (grewW) card.style.width = `${FURNI_CARD_W + grewW}px`;
-            if (grewH) card.style.height = `${FURNI_CARD_H + grewH}px`;
+            // Only the footer decides the width now: the description above it
+            // runs the full card either way, so the question is just whether
+            // the sprite and the link still fit on one line beside each
+            // other. Height is left to the CSS, which follows the content.
+            const linkW = link ? Math.ceil(link.getBoundingClientRect().width) : 0;
+            const needed = FURNI_CARD_PAD + w + (linkW ? FURNI_CARD_FOOT_GAP + linkW : 0);
+            // The card only ever grows: a small sprite leaves it at its base
+            // width rather than shrinking it into a different shape for
+            // every furni.
+            const grewW = Math.max(0, needed - FURNI_CARD_W);
+            if (!grewW) return;
+            card.style.width = `${FURNI_CARD_W + grewW}px`;
             // Only re-place a card still sitting where it was put. A slow
             // sprite could load after the card has been dragged, and yanking
             // it back out from under the pointer would be worse than leaving

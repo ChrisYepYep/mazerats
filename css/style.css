@@ -3259,11 +3259,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .furni-card {
     position: fixed;
     z-index: 320;
-    /* 205 = 14px border + 92px image column + 6px gap + 79px text + 14px
-       border. The text column is fixed, so this width and the image column
-       move together — see FURNI_CARD_W in js/home.js, which mirrors it. */
-    width: 205px;
-    height: 148px;
+    /* The description runs the full width now that the image has moved down
+       to the footer, so this is all its column: 240 - 28px of border = 212px
+       of text, against the 79px it used to get beside a big sprite. Height
+       follows the content, since the sprite in the footer decides it — the
+       minimum keeps a small one from squashing the note out of shape.
+       See FURNI_CARD_W in js/home.js, which mirrors the width. */
+    width: 240px;
+    height: auto;
+    min-height: 148px;
     border-style: solid;
     border-width: 19px 14px 14px 14px;
     border-image-source: url('../assets/img/stickies-photos/sticky-furni.png');
@@ -3329,10 +3333,18 @@ body[data-page="home"] .hero { padding-top: 18px; }
     overflow-wrap: anywhere;
 }
 
-.furni-card-body {
+/* Sprite on the left, Furni Index link on the right, sitting on one line.
+   Aligned to the bottom so the link keeps the footing it had when it was
+   pinned to the card's bottom-right corner, whatever height the sprite is.
+   The link is allowed to shrink and the sprite is not: js/home.js widens
+   the card so both fit at full size, and if anything ever slips through
+   that, losing a little of the link reads better than a clipped sprite. */
+.furni-card-foot {
     display: flex;
-    align-items: flex-start;
-    gap: 6px;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 6px;
 }
 
 /* Own size, same as the strip's icons — these are trimmed pixel art in
@@ -3342,19 +3354,20 @@ body[data-page="home"] .hero { padding-top: 18px; }
    box — these come in every shape, and forcing one distorts it. */
 .furni-card-icon {
     flex: 0 0 auto;
+    display: block;
     width: auto;
     height: auto;
-    max-width: 92px;
-    max-height: 78px;
+    /* Overridden per sprite in js/home.js, which sizes the card to suit.
+       These are the no-JS fallback. */
+    max-width: 120px;
+    max-height: 120px;
     image-rendering: pixelated;
 }
 
-/* Elastic, so a narrow sprite hands its unused width to the motto instead of
-   leaving a dead strip down the right of the card. A wide one still gets the
-   room it needs: growFurniCardForImage widens the CARD to suit the image,
-   which leaves the text its usual ~79px either way. */
+/* Full width of the card, which is the whole point of moving the sprite down
+   to the footer — the description used to be squeezed into whatever a big
+   sprite left of the row. */
 .furni-card-text {
-    flex: 1;
     min-width: 0;
 }
 
@@ -3375,12 +3388,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: #8a7d6c;
 }
 
-/* Bottom right of the writable area — clear of the folded corner, which
-   lives out in the border. */
+/* Right-hand end of the footer row, level with the bottom of the sprite
+   beside it — clear of the folded corner, which lives out in the border. */
 .furni-card-link {
-    position: absolute;
-    right: 0;
-    bottom: 0;
+    flex: 0 1 auto;
     color: #8c3600;
     text-decoration: none;
     white-space: nowrap;
