@@ -2560,14 +2560,23 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* Sat below the frame until the furni icons moved in underneath it, where
    the two overlapped. Now inside the screenshot, 2px up from its bottom
    edge — the same treatment #gallery-position already gets at the top. */
-.modal-thumb-frame #gallery-counter { bottom: 2px; }
+.modal-thumb-frame #gallery-counter { bottom: 4px; }
 /* Inside the image now rather than out in the padding ring above it —
    .modal-thumb-frame and .gallery-viewport share the same box, so 2px
    here is 2px in from the screenshot's own top-right corner. */
 .modal-thumb-frame #gallery-position { top: 4px; right: 4px; }
 /* Keeps its 22px stand-off above the room pill, which moved. */
-.modal-thumb-frame .gallery-bonus-tab { bottom: 24px; }
-.modal-thumb-frame .old-versions-pill { bottom: -31px; }
+.modal-thumb-frame .gallery-bonus-tab { bottom: 26px; }
+/* Top-left corner of the screenshot, mirroring #gallery-position's 4px
+   inset at the top right. It used to hang below the frame, where it sat
+   under the furni row. bottom/transform are reset because the base rule
+   centres it horizontally against the bottom edge. */
+.modal-thumb-frame .old-versions-pill {
+    top: 4px;
+    left: 4px;
+    bottom: auto;
+    transform: none;
+}
 
 .modal-thumb {
     height: 220px;
@@ -3091,9 +3100,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .furni-strip {
     display: flex;
     justify-content: flex-end;
-    /* Bottom padding leaves room for the half of the "Furni Info" pill that
-       hangs below the icons. */
-    padding: 8px 0 10px;
+    /* Even above and below. The "Furni Info" pill hangs past the bottom
+       edge, but it is pointer-events:none and overlaps rather than
+       displacing, so it needs no padding reserved for it. */
+    padding: 8px 0;
 }
 
 /* Positioning context for the pill, and the thing that gets right-aligned
@@ -3198,12 +3208,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
     bottom: -8px;
     transform: translateX(-50%);
     pointer-events: none;
-    padding: 1px 7px;
-    border: 1px solid var(--chrome-border);
-    border-radius: 10px;
-    background: var(--chrome-fill);
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
-    color: var(--parchment);
+    /* Same pill as the room name on the screenshot above it (.gallery-counter
+       plus #gallery-counter's font), so the two read as one family rather
+       than two different labels that happen to sit near each other. */
+    padding: 3px 10px;
+    border: 1px solid var(--amber);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.65);
+    color: var(--amber-bright);
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
     font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
     font-size: 0.5625rem;
     font-weight: 400;
