@@ -43,7 +43,7 @@ async function loadSprites(catalogue) {
                 buffer = await res.arrayBuffer();
                 await store.set(s.blobKey, buffer).catch(() => {});
             }
-            sprites.push({ key: s.key, buffer: Buffer.from(buffer) });
+            sprites.push({ key: s.key, url: s.url, buffer: Buffer.from(buffer) });
         }));
     }
     return sprites;
@@ -86,7 +86,10 @@ exports.handler = async (event) => {
 
     await setProgress({
         startedAt: new Date().toISOString(),
-        finishedAt: null, done: 0, total: 0, current: "Loading catalogue…", errors: 0
+        // error is cleared explicitly: progress lives in ONE document that
+        // each run overwrites field by field, so without this a new run
+        // inherits the last failure and reports itself failed on finishing.
+        finishedAt: null, error: null, done: 0, total: 0, current: "Loading catalogue…", errors: 0
     });
 
     // Everything past this point is wrapped: a throw in a background
@@ -147,6 +150,9 @@ exports.handler = async (event) => {
                             name: item.name,
                             motto: item.motto,
                             icon: item.icon,
+                            // Room-scale art in the matched rotation; the card
+                            // shows this and falls back to icon without it.
+                            sprite: h.sprite || null,
                             url: item.url,
                             releaseDate: item.releaseDate,
                             matched: h.matched,

@@ -1280,9 +1280,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // Furni detected in the room image showing above (see the admin scan).
     // One icon per item; the strip is rebuilt on every gallery change, since
     // each room image has its own furni.
-    function renderFurniStrip(list) {
+    function renderFurniStrip(record) {
         furniStrip.innerHTML = "";
-        const furni = (list || []).filter(f => f && f.icon);
+        // The scan stores a record per room image — { scannedAt,
+        // roomColours, items } — not a bare list, so a room that found
+        // nothing can still say whether it was scanned and skipped or
+        // simply had no furni in it. A plain array is accepted too, for
+        // anything added by hand.
+        const list = Array.isArray(record) ? record : (record && record.items) || [];
+        const furni = list.filter(f => f && (f.sprite || f.icon));
         furniStrip.hidden = !furni.length;
         if (!furni.length) return;
 
@@ -1346,7 +1352,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const card = furniCardTemplate.content.firstElementChild.cloneNode(true);
         card.dataset.furni = entry.url || entry.name || String(furniCardSeq++);
-        card.querySelector(".furni-card-icon").src = entry.icon || "";
+        // The room-scale sprite in the rotation it was matched in, where the
+        // scan recorded one. Older results, and anything added by hand, only
+        // carry the small catalogue icon.
+        card.querySelector(".furni-card-icon").src = entry.sprite || entry.icon || "";
         card.querySelector(".furni-card-icon").alt = entry.name || "";
         card.querySelector(".furni-card-name").textContent = entry.name || "";
         card.querySelector(".furni-card-motto").textContent = entry.motto || "";

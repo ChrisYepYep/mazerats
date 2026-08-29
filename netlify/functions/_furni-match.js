@@ -114,7 +114,7 @@ function scanRoom(roomBuffer, sprites) {
         if (!probes.length) continue;
 
         const seen = new Set();
-        let tested = 0, bestMatched = 0, bestAt = null, bestColours = 0;
+        let tested = 0, bestMatched = 0, bestAt = null, bestColours = 0, bestSprite = null;
         for (const { p, hits } of probes) {
             if (tested >= MAX_POSITIONS) break;
             for (const packed of hits) {
@@ -140,6 +140,7 @@ function scanRoom(roomBuffer, sprites) {
                 if (cols.size < MIN_COLOURS) continue;
                 if (ok > bestMatched) {
                     bestMatched = ok; bestAt = [ox, oy]; bestColours = cols.size;
+                    bestSprite = sprite.url || null;
                 }
             }
         }
@@ -149,6 +150,10 @@ function scanRoom(roomBuffer, sprites) {
         if (!prev || bestMatched > prev.matched) {
             best.set(sprite.key, {
                 key: sprite.key,
+                // The winning sprite is this furni in the rotation it was
+                // actually placed in — better to show than a generic
+                // front-facing catalogue thumbnail.
+                sprite: bestSprite,
                 matched: bestMatched,
                 total: solid.length,
                 colours: bestColours,

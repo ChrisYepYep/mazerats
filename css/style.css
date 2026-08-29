@@ -3143,7 +3143,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     position: fixed;
     z-index: 320;
     width: 185px;
-    height: 96px;
+    height: 148px;
     border-style: solid;
     border-width: 19px 14px 14px 14px;
     border-image-source: url('../assets/img/stickies-photos/sticky-furni.png');
@@ -3216,13 +3216,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 /* Own size, same as the strip's icons — these are trimmed pixel art in
-   whatever shape the furni is, and scaling them distorts. */
+/* The room-scale sprite rather than the catalogue icon (median 58x70, up
+   to 287x259). Capped by max-width/height with width and height left auto,
+   so an oversized one scales down whole instead of being squashed into a
+   box — these come in every shape, and forcing one distorts it. */
 .furni-card-icon {
     flex: 0 0 auto;
     width: auto;
     height: auto;
-    max-width: 30px;
-    max-height: 30px;
+    max-width: 72px;
+    max-height: 78px;
     image-rendering: pixelated;
 }
 
