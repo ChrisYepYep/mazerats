@@ -1400,9 +1400,15 @@ document.addEventListener("DOMContentLoaded", () => {
     function wireFurniScrollHints(inner, scroller, left, right) {
         const update = () => {
             const max = scroller.scrollWidth - scroller.clientWidth;
+            const atStart = scroller.scrollLeft <= 1;
+            const atEnd = scroller.scrollLeft >= max - 1;
             inner.classList.toggle("has-overflow", max > 1);
-            left.classList.toggle("is-spent", scroller.scrollLeft <= 1);
-            right.classList.toggle("is-spent", scroller.scrollLeft >= max - 1);
+            // Mirrored onto the wrapper because the fade at each end lives on
+            // the scroller, which can't be styled off a sibling arrow.
+            inner.classList.toggle("at-start", atStart);
+            inner.classList.toggle("at-end", atEnd);
+            left.classList.toggle("is-spent", atStart);
+            right.classList.toggle("is-spent", atEnd);
         };
         scroller.addEventListener("scroll", update);
         if (typeof ResizeObserver === "function") new ResizeObserver(update).observe(scroller);

@@ -3102,9 +3102,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .furni-strip-inner {
     position: relative;
     max-width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 2px;
 }
 
 /* Twelve icons wide: 12 x 34px plus the 11 x 3px gaps between them.
@@ -3123,44 +3120,73 @@ body[data-page="home"] .hero { padding-top: 18px; }
        normal, and the arrows either side carry the hint that it moves. */
     scrollbar-width: none;
     -ms-overflow-style: none;
+    /* Icons fade out into each end rather than stopping at a hard edge, so
+       a half-scrolled row reads as continuing past the frame. Only the end
+       that can still be scrolled towards is faded — see the at-start /
+       at-end classes — since a fade over a row that has nowhere left to go
+       just dims a perfectly reachable icon. */
+    --furni-fade-left: 0px;
+    --furni-fade-right: 0px;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--furni-fade-left), #000 calc(100% - var(--furni-fade-right)), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 var(--furni-fade-left), #000 calc(100% - var(--furni-fade-right)), transparent 100%);
 }
+
+.furni-strip-inner.has-overflow .furni-strip-scroll {
+    --furni-fade-left: 26px;
+    --furni-fade-right: 26px;
+}
+
+.furni-strip-inner.at-start .furni-strip-scroll { --furni-fade-left: 0px; }
+.furni-strip-inner.at-end .furni-strip-scroll { --furni-fade-right: 0px; }
 
 .furni-strip-scroll::-webkit-scrollbar { display: none; }
 
-/* Only drawn when the row actually overflows — see wireFurniScrollHints.
-   Kept out of the layout entirely rather than merely invisible, so a short
-   row stays hard against the right edge. */
+/* Laid over the faded end of the row rather than flanking it, so the icons
+   keep the full width and the arrow reads as sitting on the fade it
+   explains. Only drawn when the row actually overflows — see
+   wireFurniScrollHints. The button is the full 26px of the fade even
+   though the triangle inside it is a fraction of that: resting the pointer
+   on it is the whole interaction, and a 6px target is not restable. */
 .furni-strip-arrow {
     display: none;
-    flex: 0 0 auto;
-    width: 0;
-    height: 0;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 26px;
     padding: 0;
-    border-top: 6px solid transparent;
-    border-bottom: 6px solid transparent;
+    border: 0;
     background: none;
-    /* The clickable area is bigger than the triangle, which is only 7px
-       across — too small to rest a pointer on, and resting on it is the
-       whole interaction. */
-    box-sizing: content-box;
+    align-items: center;
+    z-index: 2;
     transition: opacity 150ms ease;
 }
 
-.furni-strip-inner.has-overflow .furni-strip-arrow { display: block; }
+.furni-strip-inner.has-overflow .furni-strip-arrow { display: flex; }
 
-.furni-strip-arrow.is-left {
-    border-right: 7px solid var(--parchment);
-    padding: 6px 4px 6px 2px;
+.furni-strip-arrow.is-left { left: 0; justify-content: flex-start; }
+.furni-strip-arrow.is-right { right: 0; justify-content: flex-end; }
+
+/* Sized just under the 15x14 sprite arrows on the chrome-list scrollbar,
+   which are the site's existing "this scrolls" mark. */
+.furni-strip-arrow::before {
+    content: "";
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
 }
 
-.furni-strip-arrow.is-right {
-    border-left: 7px solid var(--parchment);
-    padding: 6px 2px 6px 4px;
-}
+.furni-strip-arrow.is-left::before { border-right: 6px solid var(--parchment); }
+.furni-strip-arrow.is-right::before { border-left: 6px solid var(--parchment); }
 
 /* Dimmed, not hidden: the row has reached this end, but the arrow is still
-   the only thing saying the row scrolls at all. */
-.furni-strip-arrow.is-spent { opacity: 0.4; }
+   the only thing saying the row scrolls at all. Inert too — with no fade
+   on this end the icon underneath is fully visible, and an invisible hit
+   area sitting on top of it would swallow the click. */
+.furni-strip-arrow.is-spent {
+    opacity: 0.4;
+    pointer-events: none;
+}
 
 /* Straddles the icons' own bottom edge. The wrapper is exactly icon-height
    now that the scrollbar is gone, so this hangs half a pill below it.
