@@ -61,7 +61,7 @@ exports.handler = async (event) => {
 
     let body;
     try { body = JSON.parse(event.body || "{}"); } catch { body = {}; }
-    const { collection = "rooms", ids = [], images = null, onlyUnscanned = false } = body;
+    const { collection = "rooms", ids = [], images = null, onlyUnscanned = false, runId: bodyRunId } = body;
     if (!ids.length) return { statusCode: 400, body: "no ids given" };
 
     const siteUrl = process.env.URL || `https://${event.headers.host}`;
@@ -75,7 +75,9 @@ exports.handler = async (event) => {
     // hold a hundred images and a bar that sat still for all of them would
     // look hung.
     const progressCol = db.collection("furni_scans");
-    const runId = `${Date.now()}`;
+    // The caller names the run so it can recognise its own progress record.
+    // Falls back to a local id for anything invoked outside the admin page.
+    const runId = bodyRunId || `${Date.now()}`;
     async function setProgress(fields) {
         await progressCol.updateOne(
             { _id: "current" },

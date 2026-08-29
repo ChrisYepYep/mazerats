@@ -2628,6 +2628,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // job, rather than stopping on the first empty answer.
     let furniEmptyPolls = 0;
     const FURNI_EMPTY_POLL_LIMIT = 48; // ~2 minutes at 2.5s
+    // Which run the bar is currently following. Progress lives in ONE record
+    // that every run overwrites, so until the new background function has
+    // cold-started and stamped its own id on it, that record still describes
+    // the PREVIOUS run — finished, and possibly failed. Without this the
+    // first poll after clicking Scan read the old record, saw a finished run
+    // with an error on it, and announced "Scan failed" a second after a
+    // perfectly healthy scan had been started. null means "adopt whatever is
+    // genuinely running", used when the page is reloaded mid-scan.
+    let furniRunId = null;
 
     function renderFurniProgress(p) {
         furniProgress.hidden = false;
@@ -2647,7 +2656,19 @@ document.addEventListener("DOMContentLoaded", () => {
     async function pollFurniProgress() {
         try {
             const p = await Api.furniScanStatus(adminToken);
-            if (!p || (!p.running && !p.total)) {
+            // Someone else's record — the run we started hasn't written yet.
+            // Treated as nothing reported in, so the cold-start grace below
+            // applies rather than the previous run's outcome being shown.
+            const foreign = furniRunId && p && p.runId !== furniRunId;
+            // On a page reload there is no run to match against, so only a
+            // record that is actually still going is worth picking up; a
+            // finished or failed one is last time's news and stays quiet.
+            if (!furniRunId && p && !p.running) {
+                stopFurniPolling();
+                furniProgress.hidden = true;
+                return;
+            }
+            if (!p || foreign || (!p.running && !p.total)) {
                 if (++furniEmptyPolls >= FURNI_EMPTY_POLL_LIMIT) {
                     stopFurniPolling();
                     furniScanStatus.style.display = "block";
@@ -2679,11 +2700,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    function startFurniPolling() {
+    function startFurniPolling(runId = null) {
         clearInterval(furniPollTimer);
+        furniRunId = runId;
         furniEmptyPolls = 0;
         pollFurniProgress();
         furniPollTimer = setInterval(pollFurniProgress, 2500);
+    }
+
+    // Unique per click, so two admins scanning at once can each tell whether
+    // the record belongs to their run.
+    function newFurniRunId() {
+        return Date.now() + "-" + Math.random().toString(36).slice(2, 8);
     }
 
     function stopFurniPolling() {
@@ -2729,12 +2757,14 @@ document.addEventListener("DOMContentLoaded", () => {
         furniProgressFill.style.width = "0%";
         furniProgressLabel.textContent = "Starting…";
         try {
+            const runId = newFurniRunId();
             await Api.scanFurni(adminToken, {
                 collection: "rooms",
                 ids: rooms.map(r => r.id),
-                onlyUnscanned
+                onlyUnscanned,
+                runId
             });
-            startFurniPolling();
+            startFurniPolling(runId);
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
             furniProgress.hidden = true;
@@ -2774,8 +2804,9 @@ document.addEventListener("DOMContentLoaded", () => {
         furniProgressFill.style.width = "0%";
         furniProgressLabel.textContent = "Starting \u201c" + title + "\u201d\u2026";
         try {
-            await Api.scanFurni(adminToken, { collection, ids: [id] });
-            startFurniPolling();
+            const runId = newFurniRunId();
+            await Api.scanFurni(adminToken, { collection, ids: [id], runId });
+            startFurniPolling(runId);
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
             furniProgress.hidden = true;
