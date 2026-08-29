@@ -2494,6 +2494,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // request that starts it — progress is polled from furni-scan-status
     // and drawn into the bar until the run reports itself finished.
     let furniPollTimer = null;
+    // Polls that came back with nothing at all, in a row. A background
+    // function takes a few seconds to cold-start and write its first
+    // progress record, during which the status endpoint honestly reports
+    // nothing running — so give it a window before concluding there is no
+    // job, rather than stopping on the first empty answer.
+    let furniEmptyPolls = 0;
+    const FURNI_EMPTY_POLL_LIMIT = 48; // ~2 minutes at 2.5s
 
     function renderFurniProgress(p) {
         furniProgress.hidden = false;
@@ -2513,13 +2520,31 @@ document.addEventListener("DOMContentLoaded", () => {
     async function pollFurniProgress() {
         try {
             const p = await Api.furniScanStatus(adminToken);
-            if (!p || (!p.running && !p.total)) { stopFurniPolling(); return; }
+            if (!p || (!p.running && !p.total)) {
+                if (++furniEmptyPolls >= FURNI_EMPTY_POLL_LIMIT) {
+                    stopFurniPolling();
+                    furniScanStatus.style.display = "block";
+                    furniScanStatus.textContent = "No scan reported in after two minutes. " +
+                        "Check the furni-scan-background function log in Netlify — background " +
+                        "functions need a paid plan, and 404 there is the usual cause.";
+                    furniProgress.hidden = true;
+                }
+                return;
+            }
+            furniEmptyPolls = 0;
             renderFurniProgress(p);
             if (!p.running) {
                 stopFurniPolling();
                 furniScanStatus.style.display = "block";
-                furniScanStatus.textContent = "Scan finished — " + p.done + " room images" +
-                    (p.errors ? ", " + p.errors + " failed" : "") + ". Reopen a maze to see what it found.";
+                if (p.error) {
+                    // The run recorded a failure rather than finishing — say
+                    // so, instead of reporting a crash as a completed scan.
+                    furniProgress.hidden = true;
+                    furniScanStatus.textContent = "Scan failed: " + p.error;
+                } else {
+                    furniScanStatus.textContent = "Scan finished — " + p.done + " room images" +
+                        (p.errors ? ", " + p.errors + " failed" : "") + ". Reopen a maze to see what it found.";
+                }
             }
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
@@ -2529,6 +2554,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function startFurniPolling() {
         clearInterval(furniPollTimer);
+        furniEmptyPolls = 0;
         pollFurniProgress();
         furniPollTimer = setInterval(pollFurniProgress, 2500);
     }

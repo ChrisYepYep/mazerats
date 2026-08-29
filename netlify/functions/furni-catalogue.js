@@ -11,7 +11,7 @@
    raw, ~213KB trimmed to what a picker needs, refreshed once a day.
 */
 
-const { getStore } = require("@netlify/blobs");
+const { blobStore } = require("./_blobs.js");
 
 const ENDPOINT = "https://furniindex.com/api/mazerats/all";
 const PAGE_SIZE = 100;          // their cap; anything larger is ignored
@@ -60,7 +60,7 @@ async function fetchCatalogue() {
 }
 
 async function getCatalogue({ force = false } = {}) {
-    const store = getStore("furni");
+    const store = blobStore("furni");
     if (!force) {
         const cached = await store.get(CACHE_KEY, { type: "json" }).catch(() => null);
         if (cached && Date.now() - cached.fetchedAt < MAX_AGE_MS) return cached;

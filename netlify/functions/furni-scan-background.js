@@ -12,7 +12,7 @@
    are reused by every scan after.
 */
 
-const { getStore } = require("@netlify/blobs");
+const { blobStore } = require("./_blobs.js");
 const { getDb } = require("./_db.js");
 const { isAuthorized, UNAUTHORIZED } = require("./_auth.js");
 const { scanRoom } = require("./_furni-match.js");
@@ -24,7 +24,7 @@ const SPRITE_CONCURRENCY = 12;
    facing away matches only its own rotation's sprite, and an early test that
    used just the first sprite of each furni found nothing at all. */
 async function loadSprites(catalogue) {
-    const store = getStore("furni-sprites");
+    const store = blobStore("furni-sprites");
     const wanted = [];
     catalogue.items.forEach((item, itemIndex) => {
         (item.largeImages || []).forEach((state, si) => state.forEach((url, ri) => {
@@ -89,6 +89,12 @@ exports.handler = async (event) => {
         finishedAt: null, done: 0, total: 0, current: "Loading catalogue…", errors: 0
     });
 
+    // Everything past this point is wrapped: a throw in a background
+    // function goes nowhere a human will see it, and the first version of
+    // this died inside getCatalogue() leaving a progress record frozen on
+    // its opening line with no indication why. Any failure now lands on the
+    // record, which is what the admin is already watching.
+    try {
     const catalogue = await getCatalogue();
     await setProgress({ current: "Loading furni sprites…" });
     const sprites = await loadSprites(catalogue);
@@ -162,4 +168,12 @@ exports.handler = async (event) => {
 
     await setProgress({ done, total: totalImages, current: null, errors, finishedAt: new Date().toISOString() });
     return { statusCode: 200, body: "scan complete" };
+    } catch (err) {
+        await setProgress({
+            error: err && err.message ? err.message : String(err),
+            current: null,
+            finishedAt: new Date().toISOString()
+        });
+        return { statusCode: 500, body: "scan failed: " + err.message };
+    }
 };
