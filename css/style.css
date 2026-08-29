@@ -3299,8 +3299,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
        minimum keeps a small one from squashing the note out of shape.
        See FURNI_CARD_W in js/home.js, which mirrors the width. */
     width: 240px;
+    /* No minimum. A floor of 148px left up to 38px of dead paper under the
+       Furni Index link whenever the sprite was short — the card now ends
+       where its content does. */
     height: auto;
-    min-height: 148px;
     border-style: solid;
     border-width: 19px 14px 14px 14px;
     border-image-source: url('../assets/img/stickies-photos/sticky-furni.png');
