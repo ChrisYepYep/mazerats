@@ -1346,15 +1346,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Icons live in their own scroller so a room holding thirty furni
         // scrolls instead of running the row across the whole modal. The
-        // wrapper around it is what the "Furni Info" pill is positioned
-        // against — inside the scroller it would slide away with the icons.
+        // wrapper around it is what the end arrows are positioned against —
+        // inside the scroller they would slide away with the icons.
         const inner = document.createElement("div");
         inner.className = "furni-strip-inner";
         const scroller = document.createElement("div");
         scroller.className = "furni-strip-scroll";
-        const label = document.createElement("span");
-        label.className = "furni-strip-label";
-        label.textContent = "Furni Info";
 
         furni.forEach(entry => {
             const btn = document.createElement("button");
@@ -1404,7 +1401,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         inner.appendChild(scroller);
         inner.appendChild(right);
-        inner.appendChild(label);
         furniStrip.appendChild(inner);
         wireFurniScrollHints(inner, scroller, left, right);
     }
@@ -1512,58 +1508,19 @@ document.addEventListener("DOMContentLoaded", () => {
     let transientFurniCard = null;
     let furniCardSeq = 0;
 
-    /* Room-scale sprites come in every shape, and the base card's image box
-       shrank nearly all of them to fit: a 114px dining table shown at 72px,
-       a 156px-tall fireplace at 78px. These are pixel art, where a 0.46
-       scale is not a smaller picture but a blurred one, so the card is
-       sized to the SPRITE instead — 1:1 wherever it fits.
+    /* The card's height follows its content, and part of that content is a
+       sprite that has not arrived yet. Until it loads the card is short, and
+       since placement sets the TOP edge, every pixel gained afterwards
+       pushes the BOTTOM further below the icon it is supposed to sit on. So
+       the card is placed once immediately and again once the sprite has
+       settled its height.
 
-       It grows up and to the left, holding the bottom-right corner: the
-       card is placed with its bottom lapping over the icon it came from and
-       already overhangs the modal's right edge, so growing the other way
-       would both unstick it from its icon and push it further off screen.
-       place() recomputes the top from the card's height every time, so
-       growing upward needs nothing more than resizing before calling it.
-
-       The caps clear every sprite in the catalogue's normal range; the rare
-       giant (they go up to 287x259) is still scaled down, just far less. */
-    const FURNI_CARD_W = 240;       // must match .furni-card width in the CSS
-    const FURNI_CARD_PAD = 28;      // its left + right border
-    const FURNI_CARD_FOOT_GAP = 8;  // .furni-card-foot's gap
-    const FURNI_CARD_MAX_W = 160;
-    const FURNI_CARD_MAX_H = 160;
-
-    function growFurniCardForImage(card, place) {
+       The sprite is capped small in the CSS and sits beside the description,
+       so nothing here resizes the card any more — this only re-places it. */
+    function placeFurniCardWhenReady(card, place) {
         const img = card.querySelector(".furni-card-icon");
-        const link = card.querySelector(".furni-card-link");
         const apply = () => {
-            let grewW = 0;
-            if (img.naturalWidth && img.naturalHeight) {
-                // One scale for both axes so the sprite keeps its shape, and
-                // never above 1 — upscaling pixel art is worse than showing
-                // it small.
-                const scale = Math.min(1,
-                    FURNI_CARD_MAX_W / img.naturalWidth,
-                    FURNI_CARD_MAX_H / img.naturalHeight);
-                const w = Math.round(img.naturalWidth * scale);
-                const h = Math.round(img.naturalHeight * scale);
-                img.style.maxWidth = `${w}px`;
-                img.style.maxHeight = `${h}px`;
-
-                // Only the footer decides the width now: the description
-                // above it runs the full card either way, so the question is
-                // just whether the sprite and the link still fit on one line
-                // beside each other. Height is left to the CSS, which follows
-                // the content.
-                const linkW = link ? Math.ceil(link.getBoundingClientRect().width) : 0;
-                const needed = FURNI_CARD_PAD + w + (linkW ? FURNI_CARD_FOOT_GAP + linkW : 0);
-                // The card only ever grows: a small sprite leaves it at its
-                // base width rather than shrinking it into a different shape
-                // for every furni.
-                grewW = Math.max(0, needed - FURNI_CARD_W);
-                if (grewW) card.style.width = `${FURNI_CARD_W + grewW}px`;
-            }
-            // ALWAYS place again here, whether or not the width moved. The
+            // Place again now the sprite has arrived. The
             // card's height follows its sprite, and the sprite's final size
             // is only known at this point — before it, the card is either an
             // empty box or one holding a stand-in at the CSS fallback cap.
@@ -1576,7 +1533,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // sprite could load after the card has been dragged, and yanking
             // it back out from under the pointer would be worse than leaving
             // it a little off its anchor.
-            if (card.style.left === card.dataset.placedLeft) place(grewW);
+            if (card.style.left === card.dataset.placedLeft) place();
         };
         if (img.complete) apply();
         else {
@@ -1645,12 +1602,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // clampToViewport pulls it back on screen near an edge.
         const r = anchor.getBoundingClientRect();
         const OVERLAP = 8;
-        const place = extra => {
-            clampToViewport(card, r.left - OVERLAP - extra, r.top - card.offsetHeight + OVERLAP);
+        const place = () => {
+            clampToViewport(card, r.left - OVERLAP, r.top - card.offsetHeight + OVERLAP);
             card.dataset.placedLeft = card.style.left;
         };
-        place(0);
-        growFurniCardForImage(card, place);
+        place();
+        placeFurniCardWhenReady(card, place);
 
         if (pinNow) pinFurniCard(card);
         else transientFurniCard = card;

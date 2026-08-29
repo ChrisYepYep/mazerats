@@ -3198,33 +3198,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
     pointer-events: none;
 }
 
-/* Straddles the icons' own bottom edge. The wrapper is exactly icon-height
-   now that the scrollbar is gone, so this hangs half a pill below it.
-   pointer-events off so it can never swallow a click meant for the icon
-   underneath it. */
-.furni-strip-label {
-    position: absolute;
-    left: 50%;
-    bottom: -8px;
-    transform: translateX(-50%);
-    pointer-events: none;
-    /* Same pill as the room name on the screenshot above it (.gallery-counter
-       plus #gallery-counter's font), so the two read as one family rather
-       than two different labels that happen to sit near each other. */
-    padding: 3px 10px;
-    border: 1px solid var(--amber);
-    border-radius: 12px;
-    background: rgba(0, 0, 0, 0.65);
-    color: var(--amber-bright);
-    letter-spacing: 0.4px;
-    text-transform: uppercase;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    white-space: nowrap;
-}
 
 .furni-strip[hidden] { display: none; }
+
+/* .modal-body carries a 20px top margin for the case where it follows the
+   screenshot directly. With the furni row in between, that margin stacked on
+   the row's own 8px and left the icons with 8px above them and 28px below.
+   Dropped only when the row is actually showing — the [hidden] guard matters
+   because the element stays in the DOM for rooms with no furni, and an
+   unguarded sibling selector would collapse the gap for those too. */
+.furni-strip:not([hidden]) + .modal-body { margin-top: 0; }
 
 /* Each furni's own catalogue icon, on a small recessed tile so a row of
    them reads as a shelf of items rather than loose cut-outs. */
@@ -3347,18 +3330,22 @@ body[data-page="home"] .hero { padding-top: 18px; }
     overflow-wrap: anywhere;
 }
 
-/* Sprite on the left, Furni Index link on the right, sitting on one line.
-   Aligned to the bottom so the link keeps the footing it had when it was
-   pinned to the card's bottom-right corner, whatever height the sprite is.
-   The link is allowed to shrink and the sprite is not: js/home.js widens
-   the card so both fit at full size, and if anything ever slips through
-   that, losing a little of the link reads better than a clipped sprite. */
+/* Sprite left, description right — the two read together as one block. */
+.furni-card-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+/* The link on its own line, ruled off from the description above it with
+   the same dashes that underline the name — so the card is bracketed top
+   and bottom by the same mark. */
 .furni-card-foot {
     display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 8px;
-    margin-top: 6px;
+    justify-content: flex-end;
+    margin-top: 5px;
+    padding-top: 3px;
+    border-top: 1px dashed #a98a6b;
 }
 
 /* Own size, same as the strip's icons — these are trimmed pixel art in
@@ -3371,17 +3358,19 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: block;
     width: auto;
     height: auto;
-    /* Overridden per sprite in js/home.js, which sizes the card to suit.
-       These are the no-JS fallback. */
-    max-width: 120px;
-    max-height: 120px;
+    /* Small again, and beside the description rather than sized to fill the
+       card. width/height stay auto so an oversized sprite scales down whole
+       instead of being squashed — these come in every shape. */
+    max-width: 92px;
+    max-height: 78px;
     image-rendering: pixelated;
 }
 
-/* Full width of the card, which is the whole point of moving the sprite down
-   to the footer — the description used to be squeezed into whatever a big
-   sprite left of the row. */
+/* Takes whatever the sprite beside it leaves. The card is wider than it was
+   when this last sat next to a sprite, so the description still gets ~114px
+   rather than the 79px it used to. */
 .furni-card-text {
+    flex: 1;
     min-width: 0;
 }
 
