@@ -30,6 +30,12 @@ async function fetchPage(page) {
         headers.Authorization = `Bearer ${process.env.FURNIINDEX_API_KEY}`;
     }
     const res = await fetch(`${ENDPOINT}?page=${page}&limit=${PAGE_SIZE}`, { headers });
+    if (res.status === 401 && !headers.Authorization) {
+        // Names the actual cause. FurniIndex began requiring the header
+        // partway through this being built, so an unset variable turns into
+        // a bare 401 that says nothing about which knob to turn.
+        throw new Error("FurniIndex returned 401 and no API key was sent — set FURNIINDEX_API_KEY in the Netlify environment variables, then redeploy.");
+    }
     if (!res.ok) throw new Error(`FurniIndex page ${page} returned ${res.status}`);
     return res.json();
 }
