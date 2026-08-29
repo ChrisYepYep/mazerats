@@ -3097,9 +3097,11 @@ body[data-page="home"] .hero { padding-top: 18px; }
    right: the builder's avatar breaks out of its card and up over the left
    of this row (see .builder-avatar), so icons starting on the left were
    sitting behind it. */
+/* Caption at the left end, icons at the right. */
 .furni-strip {
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
     /* Even above and below. The "Furni Info" pill hangs past the bottom
        edge, but it is pointer-events:none and overlaps rather than
        displacing, so it needs no padding reserved for it. */
@@ -3112,6 +3114,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .furni-strip-inner {
     position: relative;
     max-width: 100%;
+    /* Lets the row give up width to the caption beside it. Without this a
+       flex item refuses to shrink below its content, so the row kept its
+       full twelve icons, overflowed the strip and widened the whole modal. */
+    min-width: 0;
 }
 
 /* Twelve icons wide: 12 x 34px plus the 11 x 3px gaps between them.
@@ -3198,6 +3204,35 @@ body[data-page="home"] .hero { padding-top: 18px; }
     pointer-events: none;
 }
 
+
+/* A quiet label rather than another badge — the viewport above already
+   carries two pills and a third would crowd them. Sits in the dead space at
+   the left, which the right-aligned icons never use, and fades out while
+   they are being used: by then the reader knows what they are looking at. */
+.furni-strip-caption {
+    /* Never shrinks. A full row of icons wants more width than the strip
+       has, and letting the caption give way meant it vanished on exactly the
+       rooms with the most furni — the ones most worth labelling. The row
+       yields instead: it scrolls and has arrows, so a narrower row shows
+       fewer icons at once rather than losing any. */
+    flex: 0 0 auto;
+    /* Clear of the builder avatar. It belongs to the meta row below, but it
+       is 64px wide and tall enough to stand up into this one, so it covers
+       exactly the space this caption would otherwise occupy: 64px plus the
+       2px it starts in from the strip's edge, plus a gap. */
+    margin-left: 72px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    color: var(--parchment-dim);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    transition: opacity 150ms ease;
+}
+
+.furni-strip.is-busy .furni-strip-caption { opacity: 0; }
 
 .furni-strip[hidden] { display: none; }
 
