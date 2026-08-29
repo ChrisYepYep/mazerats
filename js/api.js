@@ -80,8 +80,13 @@ const Api = {
             });
     },
 
-    scanFurni(token, { collection = "rooms", ids, images } = {}) {
-        return this._write("/.netlify/functions/furni-scan-background", "POST", token, { collection, ids, images });
+    // runId is the caller's, not the function's: the admin has to be able to
+    // tell the run it just started from the one before it, and it can only do
+    // that if it names the run itself. onlyUnscanned was being dropped here
+    // entirely, which quietly turned "Scan unscanned only" into a full rescan.
+    scanFurni(token, { collection = "rooms", ids, images, onlyUnscanned = false, runId } = {}) {
+        return this._write("/.netlify/functions/furni-scan-background", "POST", token,
+            { collection, ids, images, onlyUnscanned, runId });
     },
 
     deleteImage(token, key) {
