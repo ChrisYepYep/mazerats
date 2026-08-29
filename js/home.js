@@ -1292,6 +1292,18 @@ document.addEventListener("DOMContentLoaded", () => {
         furniStrip.hidden = !furni.length;
         if (!furni.length) return;
 
+        // Icons live in their own scroller so a room holding thirty furni
+        // scrolls instead of running the row across the whole modal. The
+        // wrapper around it is what the "Furni Info" pill is positioned
+        // against — inside the scroller it would slide away with the icons.
+        const inner = document.createElement("div");
+        inner.className = "furni-strip-inner";
+        const scroller = document.createElement("div");
+        scroller.className = "furni-strip-scroll";
+        const label = document.createElement("span");
+        label.className = "furni-strip-label";
+        label.textContent = "Furni Info";
+
         furni.forEach(entry => {
             const btn = document.createElement("button");
             btn.type = "button";
@@ -1315,8 +1327,12 @@ document.addEventListener("DOMContentLoaded", () => {
             // is no pointer to move into it.
             btn.addEventListener("focus", () => openFurniCard(entry, btn));
             btn.addEventListener("click", () => openFurniCard(entry, btn, true));
-            furniStrip.appendChild(btn);
+            scroller.appendChild(btn);
         });
+
+        inner.appendChild(scroller);
+        inner.appendChild(label);
+        furniStrip.appendChild(inner);
     }
 
     // Cards opened by hovering are "transient" — the next hover replaces
@@ -1397,6 +1413,15 @@ document.addEventListener("DOMContentLoaded", () => {
             }, 120);
         }, { once: true });
     }
+
+    // Anywhere that is not a card and not one of the icons dismisses them.
+    // Registered once, in the capture phase, so it still sees the click when
+    // something inside the modal stops propagation on its own handler.
+    document.addEventListener("mousedown", e => {
+        if (!openFurniCards.length) return;
+        if (e.target.closest(".furni-card") || e.target.closest(".furni-icon-btn")) return;
+        closeAllFurniCards();
+    }, true);
 
     function closeAllFurniCards() {
         openFurniCards.slice().forEach(closeFurniCard);

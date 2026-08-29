@@ -3086,11 +3086,52 @@ body[data-page="home"] .hero { padding-top: 18px; }
    sitting behind it. */
 .furni-strip {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
     justify-content: flex-end;
+    padding: 8px 0 4px;
+}
+
+/* Positioning context for the pill, and the thing that gets right-aligned
+   as a block — so a short row still sits hard right, while a long one caps
+   at twelve icons and scrolls within itself. */
+.furni-strip-inner {
+    position: relative;
+    max-width: 100%;
+}
+
+/* Twelve icons wide: 12 x 34px plus the 11 x 3px gaps between them.
+   Scrolling lives on this inner element rather than on the right-aligned
+   flex parent, where overflowing content is clipped off the left edge with
+   no way to scroll back to it — a long-standing flexbox trap. */
+.furni-strip-scroll {
+    display: flex;
+    align-items: center;
     gap: 3px;
-    padding: 8px 0 2px;
+    max-width: 441px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 3px;
+}
+
+/* Straddles the icons' own bottom edge — measured up from the bottom of
+   the wrapper, which also contains the scroller's padding and, when the row
+   overflows, its scrollbar. pointer-events off so it can never swallow a
+   click meant for the icon underneath it. */
+.furni-strip-label {
+    position: absolute;
+    left: 50%;
+    bottom: 11px;
+    transform: translateX(-50%);
+    pointer-events: none;
+    padding: 1px 7px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 10px;
+    background: var(--chrome-fill);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+    color: var(--parchment);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    white-space: nowrap;
 }
 
 .furni-strip[hidden] { display: none; }
