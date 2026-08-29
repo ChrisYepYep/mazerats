@@ -3221,6 +3221,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
        exactly the space this caption would otherwise occupy: 64px plus the
        2px it starts in from the strip's edge, plus a gap. */
     margin-left: 72px;
+    padding-right: 5px;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;

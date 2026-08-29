@@ -1408,7 +1408,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // are and the caption is only restating it.
         const caption = document.createElement("span");
         caption.className = "furni-strip-caption";
-        caption.textContent = "Furni in this room";
+        caption.textContent = "FURNI INFO";
         furniStrip.appendChild(caption);
 
         furniStrip.appendChild(inner);
@@ -1548,16 +1548,28 @@ document.addEventListener("DOMContentLoaded", () => {
     // difference rather than scaling the sprite down.
     const FURNI_CARD_W = 240;      // must match .furni-card width in the CSS
     const FURNI_CARD_CHROME = 148; // 28px border + 6px gap + 114px description
+    // Exactly half. Of all the ratios this could take, a half is the one that
+    // stays sharp: with image-rendering: pixelated the browser takes every
+    // other pixel, landing square on the grid, where an arbitrary ratio has
+    // to invent pixels between two source ones and softens every edge.
+    const FURNI_CARD_SCALE = 0.5;
 
     function placeFurniCardForImage(card, place) {
         const img = card.querySelector(".furni-card-icon");
         const apply = () => {
-            // The sprite is never scaled — no max-width, no max-height — so
-            // the card takes whatever width the sprite needs beside the
-            // description. It only ever grows: a small sprite leaves the card
-            // at its base width rather than reshaping it for every furni.
+            // Sized here rather than capped in the CSS, so the card can be
+            // built around whatever the sprite turns out to be. It only ever
+            // grows: a small sprite leaves the card at its base width rather
+            // than reshaping it for every furni.
             if (img.naturalWidth) {
-                const needed = img.naturalWidth + FURNI_CARD_CHROME;
+                // Rounded to whole pixels so the halved image still starts
+                // and ends on the pixel grid — a fractional width would blur
+                // the very edges the scale was chosen to keep sharp.
+                const w = Math.round(img.naturalWidth * FURNI_CARD_SCALE);
+                const h = Math.round(img.naturalHeight * FURNI_CARD_SCALE);
+                img.style.width = `${w}px`;
+                img.style.height = `${h}px`;
+                const needed = w + FURNI_CARD_CHROME;
                 card.style.width = needed > FURNI_CARD_W ? `${needed}px` : "";
             }
             // Place again now the sprite has arrived. The card's height
