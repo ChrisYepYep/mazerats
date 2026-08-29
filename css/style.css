@@ -29,6 +29,15 @@
     --chrome-row-featured: #4a3018;
     --frame-bg: #554736;
     --frame-bg-light: #61513d;
+
+    /* The site's own pointing hand, in place of the browser's. The two
+       numbers are the hotspot — the pixel the cursor actually points with,
+       here the tip of the finger at (2, 0) in an 8x8 sprite. The trailing
+       `pointer` is a required fallback: if the image can't be fetched, or
+       the browser rejects it, the standard hand is used rather than
+       nothing. Held in a variable so every clickable thing on the site can
+       reference one definition. */
+    --cursor-pointer: url('../assets/img/pointer.png') 2 0, pointer;
 }
 
 /* Self-hosted rather than a web font service — Volter (Goldfish) isn't
@@ -53,6 +62,21 @@
     font-family: 'Volter Goldfish';
     src: url('../assets/fonts/VolterGoldfishBold.ttf') format('truetype');
     font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* The same bold file once more, under a family name of its own. The
+   declaration above registers it as the 700 weight of 'Volter Goldfish',
+   which is the right default — but it also means the bold face can only be
+   reached by asking for bold, and the photo-frame caption is specified as
+   this typeface at weight 400. Registered here as the normal weight of its
+   own family so it can be asked for directly at 400, with no synthetic
+   emboldening applied on top of an already-bold face. */
+@font-face {
+    font-family: 'Volter Goldfish Bold';
+    src: url('../assets/fonts/VolterGoldfishBold.ttf') format('truetype');
+    font-weight: normal;
     font-style: normal;
     font-display: swap;
 }
@@ -162,7 +186,7 @@ html::-webkit-scrollbar-button { display: none; width: 0; height: 0; background:
     flex: 1;
     min-height: 15px;
     width: 15px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 /* The track's own visible fill is split into two segments — one above the
@@ -225,7 +249,7 @@ html::-webkit-scrollbar-button { display: none; width: 0; height: 0; background:
     background-repeat: no-repeat;
     background-position: center;
     image-rendering: pixelated;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .custom-scrollbar-arrow-up { background-image: url('../assets/img/scrollbar_arrow_up_inactive.png'); }
@@ -356,9 +380,24 @@ body {
        headings/paragraphs (anything with cursor: auto, which is most text
        on the page) — cursor inherits, so setting it here once gives every
        non-interactive element a plain arrow. Actual controls (buttons,
-       links, clickable rows, tags) all set their own cursor: pointer
-       explicitly and take priority over this regardless. */
+       links, clickable rows, tags) all set their own pointer cursor
+       explicitly — see --cursor-pointer — and take priority over this
+       regardless. */
     cursor: default;
+}
+
+/* Links take their pointer from the browser's own stylesheet, and a rule
+   matching the element directly beats the cursor: default inherited from
+   body above — so they never passed through any rule in this file, and had
+   to be named here for the custom cursor to reach them. Same for the few
+   other things browsers point at without being asked. Disabled controls
+   and the scrollbar parts set cursor: default on their own selectors and
+   are unaffected by this. */
+a[href],
+area[href],
+summary,
+[role="button"] {
+    cursor: var(--cursor-pointer);
 }
 
 h1, h2, h3, h4 {
@@ -392,7 +431,7 @@ p { color: var(--parchment-dim); }
     background: transparent;
     border: none;
     padding: 0;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     display: flex;
     align-items: center;
     line-height: 0;
@@ -879,7 +918,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* Coming Soon / Maintenance — still looks clickable (pointer cursor stays,
    since removing href would otherwise reset it to the default arrow), but
    doesn't actually go anywhere, so no hover lift either. */
-.btn-enter.is-disabled { cursor: pointer; }
+.btn-enter.is-disabled { cursor: var(--cursor-pointer); }
 .btn-enter.is-disabled:hover { transform: none; }
 
 /* ---------- buttons ---------- */
@@ -898,7 +937,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     background: rgba(201, 151, 79, 0.08);
     box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
     transition: background 0.2s, color 0.2s, transform 0.15s;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .btn:hover { background: var(--amber); color: #1a1108; transform: translateY(-1px); }
@@ -1005,6 +1044,30 @@ body[data-page="home"] .hero { padding-top: 18px; }
    over the active tab's merge-bridge (see .chrome-nav-btn.active::after
    below) instead of the other way around. */
 .chrome-nav-sub { margin-top: -10px; margin-bottom: -5px; position: relative; z-index: 2; }
+
+/* Events > Archive only: sits at the top right of the results panel,
+   directly above the listing it describes. Not in the sub-nav row above —
+   the three tab pills are each flex: 1 and so fill that row completely at
+   every width, leaving no corner to sit in without printing over ARCHIVE
+   itself. */
+.events-archive-note {
+    display: block;
+    text-align: left;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    color: var(--parchment-dim);
+    pointer-events: none;
+    /* Top padding sets it off from the sub-nav row directly above rather
+       than having it sit tight under the tabs. No bottom margin: the
+       results list below already brings its own 14px of top padding (shared
+       with the Mazes view, so it isn't this note's to remove), and stacking
+       a margin on top of that pushed the note away from the listing it
+       belongs to. */
+    padding-top: 16px;
+    margin: 0;
+}
+.events-archive-note[hidden] { display: none; }
 
 /* Per-button rather than one flat shadow on the row above — a row-level
    box-shadow would trace the row's own bounding rectangle, ignoring the
@@ -1173,7 +1236,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-align: center;
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
     padding: 11px 10px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     outline: none;
 }
 
@@ -1391,7 +1454,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
     text-decoration: none;
     flex-shrink: 0;
@@ -1589,7 +1652,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding: 10px;
     text-align: left;
     text-decoration: none;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     /* Flat right/bottom drop, same hard-edged style as the sub-nav tab
        buttons' own border-image bevel, instead of the row reading as
        flush/borderless against the frame behind it. Kept (not replaced) on
@@ -1752,6 +1815,24 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .status-past { color: var(--unknown); }
 .status-archive { color: var(--danger); }
 
+/* LIVE is the one status that's time-critical rather than descriptive — an
+   event happening right now. Brighter than --danger (which Archive already
+   uses, and which is muted enough to read as "old" rather than "now"), plus
+   a slow ring pulse so it's picked out of a list at a glance. */
+.status-live {
+    color: #e8563f;
+    animation: status-live-pulse 1.9s ease-in-out infinite;
+}
+
+@keyframes status-live-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(232, 86, 63, 0.5); }
+    70%, 100% { box-shadow: 0 0 0 5px rgba(232, 86, 63, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .status-live { animation: none; }
+}
+
 /* Every pill-shaped badge/tag on the site centers its text both ways —
    padding alone still leaves it reading slightly off vertically, since a
    font's line-height isn't symmetric around its glyphs at these small
@@ -1840,7 +1921,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-size: 0.68rem;
     letter-spacing: 0.5px;
     padding: 1px 4px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     outline: none;
 }
 
@@ -1957,7 +2038,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     justify-content: center;
     background: rgba(0, 0, 0, 0.35);
     border: none;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     color: var(--amber-bright);
     font-size: 0.45rem;
     line-height: 1;
@@ -2053,7 +2134,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     -webkit-appearance: none;
     background: transparent;
     border: none;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-weight: 400;
     font-size: 0.5625rem;
@@ -2306,7 +2387,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-radius: 5px;
     font-size: 0.74rem;
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     /* Tints the native dropdown's own selected/hover highlight — support
        varies by browser (Chromium respects accent-color + option:checked
        fairly well, Firefox honours the option rules too; the exact native
@@ -2480,7 +2561,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* Inside the image now rather than out in the padding ring above it —
    .modal-thumb-frame and .gallery-viewport share the same box, so 2px
    here is 2px in from the screenshot's own top-right corner. */
-.modal-thumb-frame #gallery-position { top: 2px; right: 2px; }
+.modal-thumb-frame #gallery-position { top: 4px; right: 4px; }
 .modal-thumb-frame .gallery-bonus-tab { bottom: 12px; }
 .modal-thumb-frame .old-versions-pill { bottom: -31px; }
 
@@ -2595,6 +2676,602 @@ body[data-page="home"] .hero { padding-top: 18px; }
     pointer-events: none;
 }
 
+/* ---------- event thumbnails: viewport hugs the image ---------- */
+
+/* Maze screenshots are all the same shape, so a fixed-size viewport suits
+   them. Event thumbnails are whatever shape they were made at — posters,
+   banners, square art — and letterboxing them inside the same box left a
+   framed rectangle with the image floating in the middle of it. For events
+   the framed box sizes itself to the image instead.
+
+   Done entirely in CSS off the .is-event class (set in openModal): the
+   image is returned to normal flow with max-width/max-height caps, so it
+   scales down to fit the frame on its own, and the viewport shrink-wraps
+   whatever size it lands at. No measuring in JS, and it re-fits for free on
+   resize and on rotation. */
+/* One source of truth for how tall an event's image panel is: the frame
+   takes its height from this, and the image is capped by the same value.
+   It has to be a real length rather than a percentage — the viewport
+   between the two is sized to its own content (which is the entire point
+   here), so a max-height: 100% on the image would be resolving against an
+   indefinite height and get dropped, letting the image overflow the panel.
+   Kept in step with the mobile frame heights at the bottom of this file. */
+.modal-thumb-full.is-event { --event-thumb-h: 180px; }
+.modal-thumb-full.is-event.has-gallery { --event-thumb-h: 300px; }
+
+.modal-thumb-full.is-event .modal-thumb-frame {
+    height: var(--event-thumb-h);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-thumb-full.is-event .gallery-viewport {
+    width: fit-content;
+    height: fit-content;
+    max-width: 100%;
+}
+
+/* Overrides both .modal-gallery-img's absolute fill and the
+   ".modal-thumb .gallery-viewport img" cover rule above. */
+.modal-thumb-full.is-event .gallery-viewport img {
+    position: static;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: var(--event-thumb-h);
+    object-fit: contain;
+}
+
+/* The in-flight slide clone has to stay absolutely positioned even here —
+   left in normal flow it would stack below the incoming image and double
+   the viewport's height for the length of the transition. The incoming
+   image alone sizes the box. */
+.modal-thumb-full.is-event .gallery-viewport img.gallery-slide-outgoing {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* Nothing to zoom into without a gallery (openLightbox needs one), so the
+   zoom-in cursor would be promising something that doesn't happen. */
+.modal-thumb-full.is-event:not(.has-gallery) .modal-gallery-img {
+    cursor: default;
+}
+
+/* ---------- Related Images: photo-wall icons + photo frame ---------- */
+
+/* Laid out as the last item of .modal-meta-items' flex row rather than
+   positioned over the image — margin-left: auto pushes it past the status
+   pill and hotel/date text to the right-hand end of that row. In flow, so
+   nothing here needs a z-index or an anchor to fight over. */
+.gallery-photos {
+    display: flex;
+    /* Laid out right to left, so the first related image in the admin list
+       is the right-hand icon and the rest run back from it. The strip is
+       right-aligned in the meta row, so it grows leftwards as icons are
+       added and its right edge never moves. */
+    flex-direction: row-reverse;
+    align-items: center;
+    margin-left: auto;
+}
+
+/* Anchored by its right edge, so each additional icon extends the strip
+   leftwards and the stack as a whole stays pinned to the right corner. */
+.gallery-photo-btn {
+    width: 14px;
+    height: 23px;
+    flex: 0 0 auto;
+    padding: 0;
+    border: 0;
+    background: url('../assets/img/stickies-photos/photo-wall.png') no-repeat center;
+    cursor: var(--cursor-pointer);
+    /* Pixel art at 1:1 — never let a browser zoom smooth it. */
+    image-rendering: pixelated;
+    transition: transform 0.12s;
+}
+
+/* Each icon after the first tucks 4px under its neighbour, so a row of
+   them reads as one overlapping stack rather than separate buttons. Which
+   one sits on top can't be left to DOM order — each icon overlaps the one
+   to its right, so renderRelatedImages counts a z-index up the list, the
+   later (further left) the higher. position is what makes it apply. */
+/* margin-right, not margin-left. The row is reversed, so items are placed
+   from the right and an item's left margin governs the gap to the item
+   after it — which left the very first icon (the rightmost) with nothing
+   pulling it in, sitting 4px clear while every other pair overlapped. */
+.gallery-photo-btn + .gallery-photo-btn {
+    margin-right: -4px;
+}
+
+.gallery-photo-btn {
+    position: relative;
+}
+
+.gallery-photo-btn:hover,
+.gallery-photo-btn:focus-visible {
+    transform: translateY(-2px);
+    outline: none;
+}
+
+.gallery-photo-btn:focus-visible {
+    filter: drop-shadow(0 0 2px var(--amber-bright));
+}
+
+/* ---------- more than five: fold the tail away ---------- */
+
+/* Everything past the fifth icon is out of the row by default. display
+   rather than opacity, so the folded icons take no width and the collapsed
+   strip really is five icons plus the "+".
+
+   .is-open and .is-closing are put on by js/home.js rather than this being
+   a :hover rule, because folding back up has to animate too — display
+   can't be transitioned, so the icons have to stay in the row until their
+   exit animation has finished. */
+.gallery-photos.has-overflow .gallery-photo-btn.is-overflow {
+    display: none;
+}
+
+.gallery-photos.has-overflow.is-open .gallery-photo-btn.is-overflow {
+    display: block;
+    /* backwards fill so an icon waiting out its stagger delay holds the
+       animation's first frame — invisible — instead of appearing at full
+       size and then popping. */
+    animation: photo-icon-pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+    animation-delay: var(--pop-in-delay, 0ms);
+}
+
+/* The same movement run backwards, and staggered the other way round, so
+   they leave left-to-right — the reverse of the order they arrived in.
+   forwards fill holds the last frame (invisible) until the class comes off
+   and display:none takes over. */
+.gallery-photos.has-overflow.is-closing .gallery-photo-btn.is-overflow {
+    display: block;
+    animation: photo-icon-unpop 260ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    animation-delay: var(--pop-out-delay, 0ms);
+}
+
+/* Overshoots slightly past full size before settling — the bounce. */
+@keyframes photo-icon-pop {
+    0% { opacity: 0; transform: scale(0.4); }
+    60% { opacity: 1; transform: scale(1.14); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes photo-icon-unpop {
+    0% { opacity: 1; transform: scale(1); }
+    40% { opacity: 1; transform: scale(1.14); }
+    100% { opacity: 0; transform: scale(0.4); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gallery-photos.has-overflow .gallery-photo-btn.is-overflow { animation-duration: 1ms; }
+}
+
+/* Stands in the sixth icon's place. Same footprint as an icon and the same
+   4px tuck under its neighbour, so the collapsed row reads as one stack
+   rather than five icons and a separate button. */
+/* Sized to its own text now it carries a count, rather than standing in an
+   icon's 14px slot. Set in the same face, size and colour as the hotel/date
+   text it shares the meta row with, so it reads as a note about the stack
+   rather than another thing in it — which is also why it takes a small gap
+   here instead of the icons' 4px overlap. margin-right is the side facing
+   the icons in this reversed row. */
+.gallery-photo-more {
+    height: 23px;
+    flex: 0 0 auto;
+    margin-right: 4px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: var(--cursor-pointer);
+    position: relative;
+    /* Lifted clear of the icons' own baseline. */
+    top: -2px;
+    color: var(--parchment-dim);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 23px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.gallery-photo-more:hover,
+.gallery-photo-more:focus-visible {
+    color: var(--amber-bright);
+    outline: none;
+}
+
+/* Gone once the tail is out — its whole job is to say there is more. Held
+   away through the fold-back too, so it doesn't reappear and shunt the row
+   sideways while the icons are still animating out. */
+.gallery-photos.has-overflow.is-open .gallery-photo-more,
+.gallery-photos.has-overflow.is-closing .gallery-photo-more {
+    display: none;
+}
+
+/* Exactly the artwork's own 175x194. Fixed, and above both the room modal
+   (100) and the lightbox (200), since the whole point is that it can be
+   dragged anywhere on the page and left there while browsing continues. */
+.photo-frame {
+    position: fixed;
+    z-index: 300;
+    width: 175px;
+    height: 194px;
+    background: url('../assets/img/stickies-photos/photo-frame.png') no-repeat 0 0;
+    image-rendering: pixelated;
+    /* The same hard, blur-free right/bottom drop every row, tag and frame
+       on the site carries. drop-shadow rather than box-shadow: the artwork's
+       bottom-right corner is a transparent fold, and box-shadow traces the
+       element's rectangle, so it would paint a solid square behind the very
+       corner that is meant to be cut away. A filter works off what is
+       actually painted, so the shadow follows the fold. */
+    filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.4));
+    /* left/top/z-index are set in JS the moment a frame is created — it
+       opens centred, stepped down-right past any frames already out, and
+       raised above them. Nothing to declare here. */
+}
+
+/* Doubled by transform rather than by rewriting its width/height: every
+   offset inside this frame is a pixel measurement taken off the artwork,
+   so scaling the whole thing keeps the picture, caption and X in register
+   for free where re-deriving each one at 2x would not. transform-origin is
+   the top left so it grows down and right from where it already sits
+   instead of lurching off-centre; clampFrame pulls it back on-screen after.
+   The artwork is pixel art and this is an exact 2x, so it stays crisp. */
+.photo-frame.is-2x {
+    transform: scale(2);
+    transform-origin: top left;
+}
+
+/* The top 16px is the drag handle. Full width: the close button below
+   carries a higher z-index, so it stays clickable through this strip
+   rather than needing a gap cut out of it. */
+.photo-frame-drag {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 16px;
+    z-index: 1;
+    cursor: grab;
+}
+
+.photo-frame.is-dragging .photo-frame-drag { cursor: grabbing; }
+
+/* Transparent hit area laid exactly over the X drawn into the artwork
+   (x 157-166, y 4-13 in the source image). Nothing is painted here — the
+   pixels the user sees are the frame's own. */
+.photo-frame-close {
+    position: absolute;
+    left: 157px;
+    top: 4px;
+    width: 10px;
+    height: 10px;
+    z-index: 2;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: var(--cursor-pointer);
+}
+
+.photo-frame-close:focus-visible {
+    outline: 1px solid var(--amber-bright);
+    outline-offset: 1px;
+}
+
+/* The orange box in the artwork, measured off it: x 8-166, y 19-133. The
+   box is what holds those bounds and does the clipping; the picture inside
+   is scaled on width alone and left to run over the bottom edge, so it
+   always fills the frame's full width at its own aspect ratio and is cut
+   off rather than shrunk to fit. Clicking it toggles .is-2x on the frame. */
+.photo-frame-photo-box {
+    position: absolute;
+    left: 8px;
+    top: 19px;
+    width: 159px;
+    height: 115px;
+    overflow: hidden;
+    cursor: zoom-in;
+}
+
+/* At full size, so the next click takes it back to the fitted view. */
+.photo-frame.is-photo-max .photo-frame-photo-box { cursor: zoom-out; }
+
+/* Held, and being dragged around its window. */
+.photo-frame.is-panning .photo-frame-photo-box { cursor: grabbing; }
+
+.photo-frame-photo {
+    display: block;
+    width: 100%;
+    height: auto;
+    /* The zoom maths in js/home.js works in the picture's own top-left
+       coordinates — translate then scale, both measured from 0,0. Any other
+       origin would make the "keep the point under the cursor still" step
+       wrong. */
+    transform-origin: 0 0;
+    /* .photo-frame sets pixelated for its own artwork and image-rendering
+       inherits, which would have the browser drop pixels rather than
+       resample when fitting a large screenshot into a 159px window. The
+       photograph wants normal filtering; the frame around it doesn't. */
+    image-rendering: auto;
+}
+
+/* The picture sits under a colour wash until it's handled. Done as an
+   overlay on the box rather than a filter on the image, because a filter
+   can only approximate a named colour by chaining sepia/hue-rotate, where
+   mix-blend-mode: color takes the hue and saturation straight from this
+   fill and keeps the photo's own luminance — an exact #8c3600 duotone.
+   Sits on the box, so it stays put over the picture as that is panned and
+   zoomed underneath it. */
+.photo-frame-photo-box::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: #8c3600;
+    mix-blend-mode: color;
+    /* Never in the way of a click, drag or wheel meant for the picture. */
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 1s ease;
+}
+
+/* Zooming or panning clears it. Set on the first real interaction and left
+   set — once someone has gone looking inside a picture, fading the wash
+   back in on them would just be in the way. */
+.photo-frame.is-explored .photo-frame-photo-box::after {
+    opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .photo-frame-photo-box::after { transition: none; }
+}
+
+/* The white band under the picture. Stops short of y=180, where the
+   artwork's folded bottom-right corner starts eating into the paper. */
+.photo-frame-name {
+    position: absolute;
+    left: 10px;
+    top: 138px;
+    width: 155px;
+    max-height: 40px;
+    margin: 0;
+    overflow: hidden;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.35;
+    text-align: left;
+    color: #2f2a24;
+    overflow-wrap: anywhere;
+}
+
+/* Progress of a running furni scan (admin sidebar). The scan is a
+   background job, so this is fed by polling rather than by the request that
+   started it. */
+.furni-progress { margin-top: 8px; }
+.furni-progress[hidden] { display: none; }
+
+.furni-progress-track {
+    height: 10px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    background: var(--chrome-row);
+    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+}
+
+.furni-progress-fill {
+    height: 100%;
+    width: 0;
+    background: linear-gradient(180deg, var(--amber-bright), var(--amber));
+    /* Eased rather than jumping — the bar advances one room image at a
+       time, and each of those is ~20 seconds apart. */
+    transition: width 0.4s ease;
+}
+
+.furni-progress-label {
+    margin: 4px 0 0;
+    overflow-wrap: anywhere;
+}
+
+/* ---------- furni found in a room: icon strip + card ---------- */
+
+/* Sits directly under the room image, above the builder/tag row. Aligned
+   right: the builder's avatar breaks out of its card and up over the left
+   of this row (see .builder-avatar), so icons starting on the left were
+   sitting behind it. */
+.furni-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 3px;
+    padding: 8px 0 2px;
+}
+
+.furni-strip[hidden] { display: none; }
+
+/* Each furni's own catalogue icon, on a small recessed tile so a row of
+   them reads as a shelf of items rather than loose cut-outs. */
+.furni-icon-btn {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--chrome-border);
+    border-radius: 5px;
+    background: var(--chrome-row) center no-repeat;
+    box-shadow: inset 0 1px 0 rgba(255, 248, 236, 0.12);
+    cursor: var(--cursor-pointer);
+    transition: transform 0.12s, border-color 0.12s;
+}
+
+/* Shown at their own size, never scaled. The catalogue's icons are already
+   trimmed to their artwork and come in whatever shape the furni is —
+   15x30, 30x21, 22x30 — so forcing them into a square stretched them. The
+   tile centres them instead; none exceeds 30px in either direction. */
+.furni-icon-btn img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 30px;
+    max-height: 30px;
+    margin: auto;
+    image-rendering: pixelated;
+}
+
+.furni-icon-btn:hover,
+.furni-icon-btn:focus-visible {
+    transform: translateY(-2px);
+    border-color: var(--amber);
+    outline: none;
+}
+
+/* The card itself. Its box is the artwork's own geometry: the border widths
+   are the header band (19px), the folded-corner margin (14px) and the side
+   borders, with border-image painting them unscaled — so the X, the header
+   and the fold stay pixel-exact at any card size, and only the flat middle
+   stretches. The content box that leaves is exactly the writable area. */
+.furni-card {
+    position: fixed;
+    z-index: 320;
+    width: 185px;
+    height: 96px;
+    border-style: solid;
+    border-width: 19px 14px 14px 14px;
+    border-image-source: url('../assets/img/stickies-photos/sticky-furni.png');
+    border-image-slice: 19 14 14 14 fill;
+    border-image-repeat: stretch;
+    image-rendering: pixelated;
+    /* Same hard drop the photo frame uses, following the artwork's own
+       silhouette so the folded corner isn't squared off behind it. */
+    filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.4));
+    color: #2f2a24;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.35;
+}
+
+/* The header band is the drag handle. Full width — the close button below
+   carries a higher z-index so it stays clickable through it. */
+.furni-card-drag {
+    position: absolute;
+    left: 0;
+    top: -19px;
+    width: 100%;
+    height: 19px;
+    z-index: 1;
+    cursor: grab;
+}
+
+.furni-card.is-dragging .furni-card-drag { cursor: grabbing; }
+
+/* Transparent hit area over the X drawn into the artwork: 10x10 at 7px in
+   from the right and 5px down, measured off the source image. Offsets are
+   negative because they're relative to the content box, which starts
+   inside the border the artwork occupies. */
+.furni-card-close {
+    position: absolute;
+    right: -7px;
+    top: -14px;
+    width: 10px;
+    height: 10px;
+    z-index: 2;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: var(--cursor-pointer);
+}
+
+.furni-card-close:focus-visible {
+    outline: 1px solid var(--amber);
+    outline-offset: 1px;
+}
+
+/* Title row, ruled off from the detail below it. The dashes sit tight
+   under the name rather than on a padded divider — it should read as an
+   underline on the heading, not a separator between two blocks. */
+.furni-card-name {
+    margin: 0 0 3px;
+    padding-bottom: 2px;
+    color: #703f20;
+    font-weight: 700;
+    text-align: left;
+    border-bottom: 1px dashed #a98a6b;
+    overflow-wrap: anywhere;
+}
+
+.furni-card-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+/* Own size, same as the strip's icons — these are trimmed pixel art in
+   whatever shape the furni is, and scaling them distorts. */
+.furni-card-icon {
+    flex: 0 0 auto;
+    width: auto;
+    height: auto;
+    max-width: 30px;
+    max-height: 30px;
+    image-rendering: pixelated;
+}
+
+.furni-card-text {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Clamped: a long motto would otherwise push the release date and the link
+   out through the bottom of the card. */
+.furni-card-motto {
+    margin: 0;
+    color: #5d5142;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* A shade lighter than the motto — supporting detail, not the point. */
+.furni-card-date {
+    margin: 2px 0 0;
+    color: #8a7d6c;
+}
+
+/* Bottom right of the writable area — clear of the folded corner, which
+   lives out in the border. */
+.furni-card-link {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    color: #8c3600;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: var(--cursor-pointer);
+    transition: color 0.15s, text-shadow 0.15s;
+}
+
+/* The same "hover this link and it lights up" glow the fansite links use —
+   one 6px halo, not a stack of two. Orange rather than their cream: this
+   sits on pale paper, where a light glow would wash the text out instead of
+   lifting it. */
+.furni-card-link:hover,
+.furni-card-link:focus-visible {
+    color: #c25200;
+    text-shadow: 0 0 6px rgba(194, 82, 0, 0.65);
+    outline: none;
+}
+
 /* ---------- image lightbox ---------- */
 
 .lightbox-overlay {
@@ -2636,7 +3313,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border: 1px solid var(--border);
     color: var(--parchment);
     font-size: 1.2rem;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2674,7 +3351,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border: 1px solid var(--border);
     color: var(--parchment);
     font-size: 0.64rem;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2798,7 +3475,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     transform: scale(1.12);
     border-radius: 8px;
     border: 1px solid transparent;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     opacity: 0.6;
     flex-shrink: 0;
     transition: opacity 0.15s, border-color 0.15s;
@@ -2822,7 +3499,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     height: 52px;
     border-radius: 8px;
     border: 1px solid transparent;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     opacity: 0.6;
     flex-shrink: 0;
     background: rgba(0, 0, 0, 0.3);
@@ -2883,7 +3560,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding: 3px 11px;
     border-radius: 12px;
     white-space: nowrap;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     z-index: 3;
 }
 
@@ -2937,7 +3614,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     letter-spacing: 0.6px;
     text-transform: uppercase;
     font-weight: 700;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     /* Bounce animates from the top edge, not the element's centre — that
        edge is flush with the frame and never moves, so the hover bounce
        (see backTabBounce) only ever stretches/squashes the tab in place
@@ -3099,9 +3776,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
     max-height: 40px;
     overflow: visible;
     position: relative;
-    background: var(--chrome-row);
-    border: 1px solid var(--chrome-border);
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    /* Card chrome deliberately dropped — the builder now reads as a bare
+       avatar + name against the modal rather than a boxed row. To put the
+       card back, restore these three lines:
+           background: var(--chrome-row);
+           border: 1px solid var(--chrome-border);
+           box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+       border-radius is kept below so a revert is those 3 lines alone. */
+    background: none;
+    border: none;
+    box-shadow: none;
     border-radius: 8px;
 }
 
@@ -3127,6 +3811,33 @@ body[data-page="home"] .hero { padding-top: 18px; }
     align-self: flex-end;
     position: relative;
     z-index: 6;
+    /* Habbo's own ground shadow, painted behind the figure so it stands on
+       the card instead of floating above it. On the <img> itself rather
+       than a pseudo-element: a replaced element can't carry one, and this
+       way the shadow exists exactly where an avatar does — it can't be left
+       behind when a failed image is removed (see builderCard in
+       js/home.js), and every figure in a collab card's row gets its own
+       without any extra markup.
+
+       The padding/negative-margin pair is what puts the ellipse under the
+       feet rather than around the ankles. A background can't paint outside
+       its own box, and "center bottom" alone therefore stacks the whole
+       ellipse above the sprite's baseline — but a shadow on the ground
+       wants its centre at the point of contact, half of it below. The
+       padding extends the box the background is drawn into 8px lower (a
+       little over half the shadow's 17px height); the matching negative
+       margin takes those 8px back out of the layout, so the figure itself
+       stays exactly where it was. */
+    padding-bottom: 8px;
+    margin-bottom: -8px;
+    background: url('../assets/img/avatar-shadow.png') no-repeat;
+    /* Nudged off dead-centre/bottom to sit where the feet actually are — the
+       figure doesn't stand in the exact middle of its own sprite, and isn't
+       flush with the bottom of it either. Tuned by eye against the rendered
+       avatar. Kept as offsets from 50%/100% rather than fixed pixels so the
+       shadow still tracks the middle of the avatar if its 64px width is
+       ever changed. */
+    background-position: calc(50% + 2px) calc(100% - 8px);
     /* Pulled out through the card's own 10px left padding so the figure
        stands against the card's left edge rather than inset from it,
        matching how it already breaks out of the top. */
@@ -3580,7 +4291,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-size: 0.8rem;
     line-height: 1;
     color: var(--parchment);
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     transition: background 0.12s, transform 0.12s;
 }
 
@@ -3700,7 +4411,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: #fff8ec;
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
     text-align: center;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     appearance: none;
     -webkit-appearance: none;
 }
@@ -3841,7 +4552,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-radius: 16px;
     background: rgba(0, 0, 0, 0.2);
     color: var(--parchment-dim);
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     transition: color 0.15s, border-color 0.15s, background-color 0.15s, box-shadow 0.2s;
 }
 
@@ -3943,6 +4654,83 @@ body[data-page="admin"] .search-box input {
     font-weight: 400;
 }
 
+/* The events form's read-only Status (see wireDerivedStatus in
+   js/admin.js). Deliberately not styled as a field: no white input fill or
+   inset border, because there is nothing here to type into — just the badge
+   the site itself will show, sitting under the dates it comes from. */
+.admin-derived-status-value {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    min-height: 26px;
+}
+
+/* The list badges size themselves against a row; this one stands alone. */
+.admin-derived-status .status-badge {
+    font-size: 0.65rem;
+    padding: 4px 10px;
+}
+
+/* ---------- password fields (see js/password-field.js) ---------- */
+
+/* The wrapper the script puts around each password input so the eye button
+   has something to sit inside. It stands in for the input as the flex item
+   in .admin-field, so it has to fill the column the same way. */
+.password-field {
+    position: relative;
+    display: flex;
+    width: 100%;
+}
+
+.password-field input {
+    flex: 1;
+    min-width: 0;
+    /* Clears the eye button's column so a long password never runs under it. */
+    padding-right: 40px;
+}
+
+/* Mask glyphs run together at this size without a little air between them,
+   which makes the length of what you have typed hard to judge. Only while
+   concealed — a real password is spaced as it was written. */
+.password-field input[data-masked="true"] {
+    letter-spacing: 0.14em;
+}
+
+.password-toggle {
+    position: absolute;
+    right: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: calc(100% - 7px);
+    padding: 0;
+    border: 0;
+    background: none;
+    border-radius: 5px;
+    /* Against the field's white fill, not the panel behind it. */
+    color: #7a6344;
+    cursor: var(--cursor-pointer);
+}
+
+.password-toggle:hover {
+    color: #3a2812;
+}
+
+.password-toggle:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: -2px;
+    color: #3a2812;
+}
+
+.password-toggle svg { display: block; }
+
+/* Backing stroke for the struck-through eye, in the field's own fill so the
+   slash reads as a break across the icon rather than a line drawn over it. */
+.password-toggle .pw-slash-bg { stroke: #fff; }
+
 .admin-date-parts {
     display: flex;
     gap: 8px;
@@ -4013,7 +4801,7 @@ body[data-page="admin"] .search-box input {
     color: #3a2812;
     font-family: 'Roboto', sans-serif;
     font-size: 0.85rem;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .admin-contributor-count {
@@ -4063,7 +4851,7 @@ body[data-page="admin"] .search-box input {
     font-size: 0.78rem;
     text-align: center;
     line-height: 1.4;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     transition: border-color 0.15s, background-color 0.15s, color 0.15s;
 }
 
@@ -4176,7 +4964,7 @@ body[data-page="admin"] .search-box input {
     width: auto;
     min-width: 92px;
     padding: 4px 8px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     border-style: dashed;
 }
 
@@ -4204,7 +4992,7 @@ body[data-page="admin"] .search-box input {
    cursor, and permanently covering the image would just be noise. */
 .admin-gallery-thumb.admin-gallery-thumb-filled {
     position: relative;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 .admin-gallery-thumb-replace-text {
@@ -4311,7 +5099,7 @@ body[data-page="admin"] .search-box input {
     border-radius: 10px;
     background: rgba(0, 0, 0, 0.2);
     color: var(--parchment-dim);
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     transition: color 0.15s, border-color 0.15s, background-color 0.15s, box-shadow 0.2s;
 }
 
@@ -4398,7 +5186,7 @@ body[data-page="admin"] .search-box input {
     border-radius: 12px;
     color: var(--parchment-dim);
     background: rgba(0, 0, 0, 0.2);
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 
@@ -4583,7 +5371,7 @@ body[data-page="admin"] .search-box input {
     background-image: url('../assets/img/console/cnsl-top-x-close.png');
     background-repeat: no-repeat;
     image-rendering: pixelated;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
     /* Above everything else in the top strip, title included, so it's
        always clickable regardless of what else moves around it. */
     z-index: 5;
@@ -4765,7 +5553,7 @@ body[data-page="admin"] .search-box input {
     font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
     font-size: 0.55rem;
     padding: 4px 12px;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 .console-btn:hover { background: rgba(238, 238, 238, 0.15); }
 
@@ -4886,7 +5674,7 @@ body[data-page="admin"] .search-box input {
     background-position: center;
     background-size: contain;
     image-rendering: pixelated;
-    cursor: pointer;
+    cursor: var(--cursor-pointer);
 }
 
 #about-btn { width: 48px; }
@@ -5063,6 +5851,27 @@ body[data-page="admin"] .search-box input {
     }
 
     .chrome-list-row .row-thumb { width: 56px; height: 56px; }
+
+    /* .row-info was being left about 50px to lay a maze title out in —
+       enough for one short word per line, which is what made the list
+       unreadable on a phone. Three things were taking the width: the "GO"
+       affordance (the .admin-row rules below already assume it is hidden at
+       this width, but nothing ever hid it), the status pill beside it, and
+       the row's own 14px gaps. GO goes, the pill takes its own line under
+       the thumb and title the way .admin-row's actions already do, and the
+       gap tightens — between them .row-info gets roughly triple the width.
+       Scoped off .admin-row, which has its own arrangement just below. */
+    .chrome-list-row:not(.admin-row) .chrome-go { display: none; }
+    .chrome-list-row { flex-wrap: wrap; gap: 10px; }
+    .chrome-list-row:not(.admin-row) .row-side {
+        flex: 1 0 100%;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        margin-top: 2px;
+    }
+    /* Every px here comes straight off the row's usable width. */
+    .chrome-body { padding: 12px; }
     .chrome-titlebar { padding: 10px 34px; }
     .chrome-titlebar h1, .chrome-titlebar h2, .chrome-titlebar .chrome-title-text { font-size: 0.8rem; }
     .chrome-tab { font-size: 0.56rem; letter-spacing: 0; border-width: 8px; }
@@ -5088,7 +5897,42 @@ body[data-page="admin"] .search-box input {
     .modal-overlay { padding: 12px; }
     .modal-body { padding: 14px 18px 16px; }
     .gallery-strip { margin: 8px 16px 8px; padding: 6px 8px; }
-    .modal-thumb { height: min(220px, 32vh); }
-    .modal-thumb.has-gallery { height: min(340px, 28vh); }
+    /* These two cap the *image panel*, and have to name .modal-thumb-frame
+       to do it. They used to be written against .modal-thumb, from back
+       when that element was the image panel and nothing else. The body
+       later moved inside it (see .modal-thumb.modal-thumb-full, which
+       sets height:auto for exactly that reason), so on a phone these were
+       pinning the whole modal — image, builder card, description, tags,
+       links, the lot — to ~227px and letting .modal-viewport's
+       overflow:hidden cut everything below the image clean off. Being two
+       classes deep, .modal-thumb.has-gallery also outranked
+       .modal-thumb-full's height:auto, so the modal had no way to grow.
+       Pointed at the frame instead, both caps do what they were meant to
+       and the thumb goes back to sizing to its contents. */
+    .modal-thumb-frame { height: min(220px, 32vh); }
+    .modal-thumb-full.has-gallery .modal-thumb-frame { height: min(340px, 28vh); }
+    /* Same two caps restated for events, whose image is capped by this
+       variable rather than by the frame it sits in — see --event-thumb-h. */
+    .modal-thumb-full.is-event { --event-thumb-h: min(220px, 32vh); }
+    .modal-thumb-full.is-event.has-gallery { --event-thumb-h: min(340px, 28vh); }
     .room-desc-box { max-height: min(160px, 18vh); }
+
+    /* Builder card and tag pills share one row on desktop, which at this
+       width left the card around 130px — most of it spent on the avatar,
+       so the builder's name and motto spilled sideways underneath the
+       pills. The pills take a full row of their own instead (flex-basis
+       100% always starts a fresh line in a wrapped flex row, the same
+       trick .admin-row .row-side uses above), giving the card the full
+       width for its text. */
+    .modal-top-row { flex-wrap: wrap; }
+    .modal-top-row .room-tags {
+        flex: 0 0 100%;
+        /* The base rule's 185px cap has to go with it: flex wrapping is
+           decided on the basis *after* min/max clamping, so a 100% basis
+           clamped back to 185px still fits beside the card and the row
+           never breaks — which is what left the card at 70px and its
+           motto reading one letter per line. */
+        max-width: none;
+        justify-content: flex-start;
+    }
 }

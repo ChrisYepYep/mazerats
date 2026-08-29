@@ -30,6 +30,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const loginError = document.getElementById("login-error");
     const adminContent = document.getElementById("admin-content");
     const logoutBtn = document.getElementById("logout-btn");
+    const furniScanAllBtn = document.getElementById("furni-scan-all-btn");
+    const furniScanStatus = document.getElementById("furni-scan-status");
+    const furniScanNewBtn = document.getElementById("furni-scan-new-btn");
+    const furniProgress = document.getElementById("furni-progress");
+    const furniProgressFill = document.getElementById("furni-progress-fill");
+    const furniProgressLabel = document.getElementById("furni-progress-label");
     const adminsListEl = document.getElementById("admins-list");
     const adminsFormEl = document.getElementById("admins-form");
     const adminsAddBtn = document.getElementById("admins-add-btn");
@@ -276,13 +282,26 @@ document.addEventListener("DOMContentLoaded", () => {
     // once that button is actually pressed; wireThumbUpload's own change
     // handler is the one exception (it has no separate button to press),
     // unaffected either way by drag vs. click-to-browse.
+    // Puts a dropzone's label back to its "drop something here" prompt.
+    // wireDropzone swaps that for the chosen file's name on selection, which
+    // is right while a file is waiting to be acted on — but wrong once it
+    // has been uploaded and the zone is free again.
+    function resetDropzoneText(fileInput) {
+        const text = fileInput && fileInput.closest(".admin-dropzone")
+            ? fileInput.closest(".admin-dropzone").querySelector(".admin-dropzone-text")
+            : null;
+        if (text) text.textContent = DROPZONE_PLACEHOLDER;
+    }
+
+    const DROPZONE_PLACEHOLDER = "Drag & drop an image here, or click to browse";
+
     function wireDropzone(fileInput) {
         if (!fileInput || fileInput.closest(".admin-dropzone")) return;
         const label = document.createElement("label");
         label.className = "admin-dropzone";
         const text = document.createElement("span");
         text.className = "admin-dropzone-text";
-        const placeholder = "Drag & drop an image here, or click to browse";
+        const placeholder = DROPZONE_PLACEHOLDER;
         text.textContent = placeholder;
 
         fileInput.insertAdjacentElement("beforebegin", label);
@@ -341,6 +360,182 @@ document.addEventListener("DOMContentLoaded", () => {
             runThrough: !!entry.runThrough,
             oldVersions: (entry.oldVersions || []).map(normalizeOldVersionEntry)
         };
+    }
+
+    // Related Images are a flat {image, name} list — no ordering rules, no
+    // bonus/run-through flags, no older versions. Deliberately a much
+    // smaller thing than the room-by-room gallery above, since these are
+    // extra pictures hung off a maze/event rather than part of its sequence.
+    function normalizeRelatedEntry(entry) {
+        if (typeof entry === "string") return { image: entry, name: "" };
+        return { image: entry.image || "", name: entry.name || "" };
+    }
+
+    // Mirrors wireGalleryEditor's shape (draft array on the form element,
+    // re-render on every change) and reuses its row classes for styling, but
+    // without the reordering, promotion and sub-panel machinery none of
+    // which applies here.
+    function wireRelatedEditor(formEl, uploadPrefix) {
+        const listEl = formEl.querySelector(".admin-related-list");
+        if (!listEl) return;
+        const fileInput = formEl.querySelector(".admin-related-new-file");
+        const status = formEl.querySelector(".admin-related-status");
+        wireDropzone(fileInput);
+
+        function renderRelatedList() {
+            const draft = formEl._relatedDraft;
+            if (!draft.length) {
+                listEl.innerHTML = `<p class="admin-empty">No related images added yet.</p>`;
+                return;
+            }
+            listEl.innerHTML = draft.map((r, i) => `
+                <div class="admin-gallery-row" data-index="${i}">
+                    <div class="admin-gallery-row-top">
+                        <span class="admin-gallery-drag-handle admin-related-drag-handle" draggable="true" title="Drag to reorder">&#9776;</span>
+                        <label class="admin-gallery-thumb admin-gallery-thumb-filled" style="background-image:url('${imgCdn(r.image, 100, 100, 55)}');">
+                            <!-- Carries .admin-gallery-thumb-file too: that
+                                 class is what hides the native control so
+                                 the thumbnail itself is the click target. -->
+                            <input type="file" class="admin-gallery-thumb-file admin-related-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp">
+                            <span class="admin-gallery-thumb-replace-text">Replace Image</span>
+                        </label>
+                        <input type="text" class="admin-gallery-label admin-related-name" value="${r.name || ""}" placeholder="Image name">
+                    </div>
+                    <div class="admin-gallery-actions-secondary">
+                        <button type="button" class="admin-pill-btn admin-related-up" ${i === 0 ? "disabled" : ""} title="Move up">&#9650; Up</button>
+                        <button type="button" class="admin-pill-btn admin-related-down" ${i === draft.length - 1 ? "disabled" : ""} title="Move down">&#9660; Down</button>
+                        <button type="button" class="admin-pill-btn admin-pill-danger admin-related-remove" title="Remove">Remove</button>
+                    </div>
+                </div>
+            `).join("");
+
+            listEl.querySelectorAll(".admin-gallery-row").forEach(row => {
+                const i = Number(row.dataset.index);
+                row.querySelector(".admin-related-name").addEventListener("input", e => {
+                    draft[i].name = e.target.value;
+                });
+                row.querySelector(".admin-related-remove").addEventListener("click", () => {
+                    const key = blobKeyFromUrl(draft[i].image);
+                    if (key) deleteImageSafe(key);
+                    draft.splice(i, 1);
+                    renderRelatedList();
+                });
+
+                // The order here is the order the photo icons appear in on
+                // the public site, left to right.
+                row.querySelector(".admin-related-up").addEventListener("click", () => {
+                    if (i === 0) return;
+                    [draft[i - 1], draft[i]] = [draft[i], draft[i - 1]];
+                    renderRelatedList();
+                });
+                row.querySelector(".admin-related-down").addEventListener("click", () => {
+                    if (i === draft.length - 1) return;
+                    [draft[i + 1], draft[i]] = [draft[i], draft[i + 1]];
+                    renderRelatedList();
+                });
+
+                // Drag to reorder, same handle-and-row arrangement the
+                // room gallery uses. The Files guard matters for the same
+                // reason it does there: dragging an image from the desktop
+                // onto a row bubbles dragover/drop up here too, and without
+                // it that would be read as a reorder from index 0 — the
+                // getData call returns "" for a file drag, and Number("")
+                // is 0 rather than NaN.
+                const dragHandle = row.querySelector(".admin-related-drag-handle");
+                dragHandle.addEventListener("dragstart", e => {
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", String(i));
+                    row.classList.add("dragging");
+                });
+                dragHandle.addEventListener("dragend", () => row.classList.remove("dragging"));
+
+                row.addEventListener("dragover", e => {
+                    if (e.dataTransfer.types.includes("Files")) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    const before = e.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2;
+                    row.classList.toggle("drag-over-top", before);
+                    row.classList.toggle("drag-over-bottom", !before);
+                });
+                row.addEventListener("dragleave", () => {
+                    row.classList.remove("drag-over-top", "drag-over-bottom");
+                });
+                row.addEventListener("drop", e => {
+                    if (e.dataTransfer.types.includes("Files")) return;
+                    e.preventDefault();
+                    row.classList.remove("drag-over-top", "drag-over-bottom");
+                    const from = Number(e.dataTransfer.getData("text/plain"));
+                    if (Number.isNaN(from) || from === i) return;
+                    const before = e.clientY < row.getBoundingClientRect().top + row.offsetHeight / 2;
+                    let to = before ? i : i + 1;
+                    if (from < to) to--;
+                    const [moved] = draft.splice(from, 1);
+                    draft.splice(to, 0, moved);
+                    renderRelatedList();
+                });
+                row.querySelector(".admin-related-thumb-file").addEventListener("change", async e => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    status.textContent = "Uploading…";
+                    status.style.display = "block";
+                    try {
+                        const { url } = await uploadImageFile(uploadPrefix, file);
+                        const oldKey = blobKeyFromUrl(draft[i].image);
+                        if (oldKey) deleteImageSafe(oldKey);
+                        draft[i].image = url;
+                        status.style.display = "none";
+                        renderRelatedList();
+                    } catch (err) {
+                        if (err.status === 401) { lockOut(); return; }
+                        status.textContent = err.message || "Upload failed.";
+                    }
+                });
+            });
+        }
+
+        // Uploads the moment files land, rather than staging them behind an
+        // "Add" button. The two-step version read as broken: choosing a file
+        // changed nothing on screen except the dropzone's own label, so there
+        // was no sign anything had happened until you found the separate
+        // button below it. This is the same auto-upload the entrance/finish
+        // fields already use — drop images, rows appear, name them in place.
+        fileInput.addEventListener("change", async () => {
+            const files = Array.from(fileInput.files).sort((a, b) =>
+                a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
+            );
+            if (!files.length) return;
+
+            status.style.display = "block";
+            try {
+                for (let f = 0; f < files.length; f++) {
+                    status.textContent = files.length > 1
+                        ? `Uploading ${f + 1} of ${files.length}…`
+                        : "Uploading…";
+                    const { url } = await uploadImageFile(uploadPrefix, files[f]);
+                    // Named after the file to start with — a real name beats
+                    // an empty box, and it's editable in the row right away.
+                    formEl._relatedDraft.push({
+                        image: url,
+                        name: files[f].name.replace(/\.[a-z0-9]+$/i, "")
+                    });
+                    // Rendered per file, so a batch fills in visibly as it
+                    // goes instead of sitting still until the last one lands.
+                    renderRelatedList();
+                }
+                status.style.display = "none";
+            } catch (err) {
+                if (err.status === 401) { lockOut(); return; }
+                status.textContent = err.message || "Upload failed.";
+            } finally {
+                // Cleared so re-picking the same file fires "change" again,
+                // and the dropzone goes back to inviting the next drop
+                // rather than naming the file it has already dealt with.
+                fileInput.value = "";
+                resetDropzoneText(fileInput);
+            }
+        });
+
+        renderRelatedList();
     }
 
     function wireThumbUpload(formEl, uploadPrefix) {
@@ -1227,6 +1422,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span class="status-badge status-${item.status}">${item.status}</span>
                     <div class="admin-row-actions">
                         <button type="button" class="btn admin-edit-btn">Edit</button>
+                        <button type="button" class="btn admin-scan-btn">Scan</button>
                         <button type="button" class="btn admin-delete-btn">Delete</button>
                     </div>
                 </div>
@@ -1238,6 +1434,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // actually being edited.
             row.querySelector(".admin-edit-btn").addEventListener("click", () => openForm(key, item.id));
             row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteItem(key, item.id));
+            row.querySelector(".admin-scan-btn").addEventListener("click", () => scanOneItem(key, item.id));
             const rowImg = row.querySelector(".row-thumb-img");
             if (rowImg) {
                 if (rowImg.complete) rowImg.classList.add("is-loaded");
@@ -1278,6 +1475,55 @@ document.addEventListener("DOMContentLoaded", () => {
         return `<label class="admin-field"><span>${labelText}</span>${inputHtml}</label>`;
     }
 
+    // Keeps the events form's read-only Status in step with whatever is
+    // currently in its four date/time boxes, so it answers the question
+    // while the event is still being written rather than only once it has
+    // been saved and re-listed. Same derivation the public site uses, off
+    // the same module, so what's shown here is what visitors will get.
+    function wireDerivedStatus(formEl) {
+        const wrap = formEl.querySelector(".admin-derived-status");
+        if (!wrap) return;
+
+        const badge = wrap.querySelector(".status-badge");
+        const hidden = wrap.querySelector('input[name="status"]');
+        const valueOf = name => {
+            const field = formEl.querySelector(`[name="${name}"]`);
+            return field ? field.value : "";
+        };
+
+        function update() {
+            const startDate = valueOf("startDate");
+            const startTime = valueOf("startTime");
+            const endDate = valueOf("endDate");
+            const endTime = valueOf("endTime");
+            const startIso = startDate && startTime ? `${startDate}T${startTime}:00Z` : "";
+            const endIso = endDate && endTime ? `${endDate}T${endTime}:00Z` : "";
+
+            if (!startIso) {
+                // Nothing to derive from yet — say so rather than showing a
+                // confident status that's really just the default.
+                badge.textContent = "Awaiting dates";
+                badge.className = "status-badge status-unknown";
+                // Left at a sane value regardless: the four date fields are
+                // required, so a save can't actually reach here empty.
+                hidden.value = "upcoming";
+                return;
+            }
+
+            const status = EventStatus.fromDates(startIso, endIso, "upcoming");
+            badge.textContent = EventStatus.LABELS[status] || status;
+            badge.className = `status-badge status-${status}`;
+            hidden.value = status;
+        }
+
+        ["startDate", "startTime", "endDate", "endTime"].forEach(name => {
+            const field = formEl.querySelector(`[name="${name}"]`);
+            if (field) field.addEventListener("input", update);
+        });
+
+        update();
+    }
+
     function openForm(key, editId) {
         // The sidebar quick-add buttons work from whichever tab is showing,
         // and Edit can be reached the same way — so bring the owning panel
@@ -1305,6 +1551,33 @@ document.addEventListener("DOMContentLoaded", () => {
         const statusOptionsHtml = cfg.statusOptions.map(([value, label]) =>
             `<option value="${value}" ${item.status === value ? "selected" : ""}>${label}</option>`
         ).join("");
+
+        // Mazes still pick their own status. Events don't get the dropdown:
+        // the site works an event's status out from its start/end dates
+        // (js/event-status.js), so a control here would only be a second,
+        // disagreeing answer that quietly did nothing. It's shown read-only
+        // instead — and further down the form, directly under the date
+        // fields it's derived from, where it reads as a consequence of them
+        // rather than something to fill in.
+        const statusFieldHtml = isEvents
+            ? ""
+            : fieldRow("Status", `<select name="status">${statusOptionsHtml}</select>`);
+
+        // The hidden input keeps `status` in the submitted form data (the
+        // save handler reads data.status for both kinds), so the stored
+        // field is written in step with what's derived rather than left to
+        // drift. wireDerivedStatus keeps both it and the badge current as
+        // the dates are edited.
+        const derivedStatusFieldHtml = isEvents
+            ? `
+                <div class="admin-field admin-derived-status">
+                    <span>Status</span>
+                    <p class="admin-derived-status-value"><span class="status-badge"></span></p>
+                    <input type="hidden" name="status" value="${item.status || "upcoming"}">
+                    <p class="admin-hint">Set automatically from the dates above: LIVE once the start passes, Past once the end does, Archived after ${EventStatus.ARCHIVE_YEARS} year${EventStatus.ARCHIVE_YEARS === 1 ? "" : "s"}.</p>
+                </div>
+              `
+            : "";
 
         const difficultyOptionsHtml = DIFFICULTY_OPTIONS.map(([value, label]) =>
             `<option value="${value}" ${(item.difficulty || "") === value ? "selected" : ""}>${label}</option>`
@@ -1432,6 +1705,20 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
         ` : "";
 
+        // Shown for both mazes and events. These don't join the gallery
+        // sequence — each one gets a photo-wall icon on the corner of the
+        // gallery viewport on the public site, opening a draggable photo
+        // frame with the picture and the name given here.
+        const relatedSectionHtml = `
+            <div class="admin-field admin-related-field">
+                <span>Related images (optional)</span>
+                <p class="admin-hint">Extra pictures attached to this ${cfg.singular.toLowerCase()} — press cuttings, posters, before-and-afters. Each one appears as a small photo icon on the bottom-right of the image viewer, opening a draggable photo frame with its name underneath. Drop images here (several at once is fine) and they upload straight away; name each one in the row it adds. Drag the &#9776; handle or use the arrows to reorder them — that order is the order their icons appear in, left to right.</p>
+                <div class="admin-related-list"></div>
+                <input type="file" class="admin-related-new-file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
+                <p class="admin-related-status" style="display:none;"></p>
+            </div>
+        `;
+
         const finish = item.finish || {};
         const finishSectionHtml = hasGallery
             ? bookendSectionHtml("finish", "Finish image (optional)", `Always shown last in the gallery, after every other image — use it for the ${cfg.singular.toLowerCase()}'s finish or closing screenshot.`, finish)
@@ -1442,7 +1729,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <h3 class="admin-form-title">${isEdit ? "Edit " + cfg.singular : "Add a New " + cfg.singular}</h3>
             ${fieldRow(cfg.titleLabel, `<input type="text" name="title" required value="${item[cfg.fieldMap.title] || ""}">`)}
             ${fieldRow(cfg.subtitleLabel, `<input type="text" name="subtitle" value="${item[cfg.fieldMap.subtitle] || ""}">`)}
-            ${fieldRow("Status", `<select name="status">${statusOptionsHtml}</select>`)}
+            ${statusFieldHtml}
             ${difficultyFieldHtml}
             ${fieldRow("Hotel", `<select name="hotel">${HOTEL_OPTIONS.map(([value, label]) =>
                 // An existing maze whose stored hotel is not in the list
@@ -1453,6 +1740,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ).join("")}${HOTEL_OPTIONS.some(([value]) => value === (item.hotel || "")) ? "" :
                 `<option value="${item.hotel}" selected>${item.hotel} (unrecognised)</option>`}</select>`)}
             ${dateFieldHtml}
+            ${derivedStatusFieldHtml}
             ${tagsFieldHtml}
             ${fieldRow("Thumbnail image", `
                 <div class="admin-thumb-upload">
@@ -1468,6 +1756,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ${entranceSectionHtml}
             ${gallerySectionHtml}
             ${finishSectionHtml}
+            ${relatedSectionHtml}
             <p class="admin-form-error" style="display:none;"></p>
             <div class="admin-form-actions">
                 <button type="submit" class="admin-action-pill admin-pill-solid">Save</button>
@@ -1488,6 +1777,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const uploadPrefix = item.id || `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
         wireThumbUpload(cfg.formEl, uploadPrefix);
+        if (isEvents) wireDerivedStatus(cfg.formEl);
+        cfg.formEl._relatedDraft = (item.relatedImages || []).map(normalizeRelatedEntry);
+        wireRelatedEditor(cfg.formEl, uploadPrefix);
         if (hasGallery) {
             wireBookendUpload(cfg.formEl, "entrance", uploadPrefix);
             wireBookendUpload(cfg.formEl, "finish", uploadPrefix);
@@ -1514,6 +1806,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl.style.display = "none";
         cfg.formEl.innerHTML = "";
         cfg.formEl._galleryDraft = null;
+        cfg.formEl._relatedDraft = null;
         cfg.formEl._selectedTags = null;
         cfg.formEl._expandedOldVersions = null;
         cfg.formEl._entranceOldVersions = null;
@@ -1635,6 +1928,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // Rooms and events both get the gallery/entrance/finish fields —
         // same mechanism, same fields, just optional for events too.
         payload.gallery = form._galleryDraft || [];
+        // Dropped if an upload left a row without an image — a related
+        // image with nothing to show has no meaning on the public side.
+        payload.relatedImages = (form._relatedDraft || []).filter(r => r.image);
         const entranceImage = (data.entranceImage || "").trim();
         payload.entrance = entranceImage ? { image: entranceImage, label: (data.entranceLabel || "").trim() || "Entrance", oldVersions: form._entranceOldVersions || [] } : null;
         const finishImage = (data.finishImage || "").trim();
@@ -2193,6 +2489,155 @@ document.addEventListener("DOMContentLoaded", () => {
     // ---------- wire up ----------
 
     logoutBtn.addEventListener("click", doLogout);
+
+    // The scan runs as a background job, so nothing comes back on the
+    // request that starts it — progress is polled from furni-scan-status
+    // and drawn into the bar until the run reports itself finished.
+    let furniPollTimer = null;
+
+    function renderFurniProgress(p) {
+        furniProgress.hidden = false;
+        const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+        furniProgressFill.style.width = pct + "%";
+        if (p.current && !p.total) {
+            // Still setting up — the catalogue and sprite library load
+            // before there is any denominator to show.
+            furniProgressLabel.textContent = p.current;
+        } else {
+            const name = p.current ? String(p.current).split("/").pop() : "";
+            furniProgressLabel.textContent = p.done + " of " + p.total + " room images (" + pct + "%)" +
+                (name ? " — " + name : "") + (p.errors ? " · " + p.errors + " failed" : "");
+        }
+    }
+
+    async function pollFurniProgress() {
+        try {
+            const p = await Api.furniScanStatus(adminToken);
+            if (!p || (!p.running && !p.total)) { stopFurniPolling(); return; }
+            renderFurniProgress(p);
+            if (!p.running) {
+                stopFurniPolling();
+                furniScanStatus.style.display = "block";
+                furniScanStatus.textContent = "Scan finished — " + p.done + " room images" +
+                    (p.errors ? ", " + p.errors + " failed" : "") + ". Reopen a maze to see what it found.";
+            }
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            stopFurniPolling();
+        }
+    }
+
+    function startFurniPolling() {
+        clearInterval(furniPollTimer);
+        pollFurniProgress();
+        furniPollTimer = setInterval(pollFurniProgress, 2500);
+    }
+
+    function stopFurniPolling() {
+        clearInterval(furniPollTimer);
+        furniPollTimer = null;
+    }
+
+    function roomsWithImages() {
+        return workingRooms.filter(r => (r.gallery || []).length || (r.entrance && r.entrance.image));
+    }
+
+    function countImages(rooms, onlyUnscanned) {
+        return rooms.reduce((n, r) => {
+            const imgs = [
+                ...(r.entrance && r.entrance.image ? [r.entrance.image] : []),
+                ...(r.gallery || []).map(g => g.image).filter(Boolean)
+            ];
+            const already = r.furni || {};
+            return n + (onlyUnscanned ? imgs.filter(i => !already[i]).length : imgs.length);
+        }, 0);
+    }
+
+    // Both buttons run the same job; they differ only in whether images that
+    // already carry a result are skipped. Confirmed either way — it is long,
+    // and the full version replaces what previous runs recorded.
+    async function startFurniScan(onlyUnscanned) {
+        const rooms = roomsWithImages();
+        const images = countImages(rooms, onlyUnscanned);
+        if (!images) {
+            furniScanStatus.style.display = "block";
+            furniScanStatus.textContent = onlyUnscanned
+                ? "Every room image has already been scanned."
+                : "No mazes have room images to scan yet.";
+            return;
+        }
+        const ok = await showConfirmDialog(onlyUnscanned
+            ? "Scan " + images + " room images that have no furni recorded yet? This runs in the background."
+            : "Scan all " + rooms.length + " mazes (" + images + " room images) for furni? " +
+              "This runs in the background and replaces any furni already recorded against them.");
+        if (!ok) return;
+        furniScanStatus.style.display = "none";
+        furniProgress.hidden = false;
+        furniProgressFill.style.width = "0%";
+        furniProgressLabel.textContent = "Starting…";
+        try {
+            await Api.scanFurni(adminToken, {
+                collection: "rooms",
+                ids: rooms.map(r => r.id),
+                onlyUnscanned
+            });
+            startFurniPolling();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            furniProgress.hidden = true;
+            furniScanStatus.style.display = "block";
+            furniScanStatus.textContent = err.message || "Couldn't start the scan.";
+        }
+    }
+
+    // Scans one maze/event on its own. Same background job and the same
+    // progress bar as the full scan — it just hands it a single id, which is
+    // how you try this on one maze without committing to every image on the
+    // site.
+    async function scanOneItem(key, id) {
+        const collection = key === "events" ? "events" : "rooms";
+        const item = COLLECTIONS[key].getAll().find(i => i.id === id);
+        if (!item) return;
+        const imgs = [
+            ...(item.entrance && item.entrance.image ? [item.entrance.image] : []),
+            ...(item.gallery || []).map(g => g.image).filter(Boolean),
+            ...(item.finish && item.finish.image ? [item.finish.image] : [])
+        ];
+        const title = item[COLLECTIONS[key].fieldMap.title] || "this one";
+        if (!imgs.length) {
+            furniScanStatus.style.display = "block";
+            furniScanStatus.textContent = "\u201c" + title + "\u201d has no room images to scan.";
+            return;
+        }
+        const already = Object.keys(item.furni || {}).length;
+        const ok = await showConfirmDialog(
+            "Scan \u201c" + title + "\u201d for furni? " + imgs.length + " room image" +
+            (imgs.length === 1 ? "" : "s") + ", roughly " + Math.ceil(imgs.length * 20 / 60) +
+            " minute" + (Math.ceil(imgs.length * 20 / 60) === 1 ? "" : "s") + "." +
+            (already ? " This replaces the furni already recorded against it." : ""));
+        if (!ok) return;
+        furniScanStatus.style.display = "none";
+        furniProgress.hidden = false;
+        furniProgressFill.style.width = "0%";
+        furniProgressLabel.textContent = "Starting \u201c" + title + "\u201d\u2026";
+        try {
+            await Api.scanFurni(adminToken, { collection, ids: [id] });
+            startFurniPolling();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            furniProgress.hidden = true;
+            furniScanStatus.style.display = "block";
+            furniScanStatus.textContent = err.message || "Couldn't start the scan.";
+        }
+    }
+
+    if (furniScanAllBtn) furniScanAllBtn.addEventListener("click", () => startFurniScan(false));
+    if (furniScanNewBtn) furniScanNewBtn.addEventListener("click", () => startFurniScan(true));
+
+    // Picks a scan back up if the admin page is reloaded while one is still
+    // going — otherwise the bar would vanish and it would look stalled.
+    if (furniScanAllBtn) startFurniPolling();
+
     adminsAddBtn.addEventListener("click", openCreateAdminForm);
 
     Object.keys(COLLECTIONS).forEach(key => {

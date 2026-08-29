@@ -23,6 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const topNavBtns = document.querySelectorAll("#top-nav .chrome-nav-btn");
     const subNavEl = document.getElementById("sub-nav");
     const subNavBtns = document.querySelectorAll("#sub-nav .chrome-nav-btn");
+    const eventsArchiveNote = document.getElementById("events-archive-note");
     const featuredMazesBtn = document.getElementById("featured-mazes-btn");
     const featuredRefreshBtn = document.getElementById("featured-refresh-btn");
     const featuredFrame = document.getElementById("featured-frame");
@@ -51,6 +52,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const galleryPosition = document.getElementById("gallery-position");
     const galleryBonusTab = document.getElementById("gallery-bonus-tab");
     const galleryStrip = document.getElementById("gallery-strip");
+    const photoFrameTemplate = document.getElementById("photo-frame-template");
+    const furniStrip = document.getElementById("furni-strip");
+    const furniCardTemplate = document.getElementById("furni-card-template");
     const modalName = document.getElementById("modal-name");
     const modalCreator = document.getElementById("modal-creator");
     const modalBuilder = document.getElementById("modal-builder");
@@ -83,6 +87,9 @@ document.addEventListener("DOMContentLoaded", () => {
     let topView = "mazes"; // "mazes" | "events" — opens on Mazes by default
     let mazesSub = "open"; // "open" | "archived" | "collab"
     let eventsSub = "upcoming"; // "upcoming" | "past" | "archive"
+    // Whether the visitor has picked an Events sub-tab themselves. Until they
+    // have, the landing tab is chosen for them — see resolvedEventsSub().
+    let eventsSubTouched = false;
     let sortBy = "name"; // "date" | "name" | "owner" | "difficulty"
     let query = "";
     // Independent of topView/mazesSub/eventsSub — layers a featured pick
@@ -91,6 +98,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // to exactly where browsing left off.
     let showFeatured = false;
     let activeGallery = null;
+    // Furni per room image for whatever is open, keyed by image path.
+    let activeFurni = null;
     let activeIndex = 0;
     let autoAdvanceTimer = null;
     let slideOutgoingEl = null;
@@ -109,8 +118,31 @@ document.addEventListener("DOMContentLoaded", () => {
     let dataLoaded = false;
     let currentItems = [];
 
+    // An event's status comes from its own start/end dates — see
+    // js/event-status.js, which the header ticker and the admin form read
+    // from too so all three can't drift apart.
+    const eventStatus = EventStatus.derive;
+    const isUpcomingTabEvent = EventStatus.isUpcomingish;
+
+    // Written from the shared module rather than left hardcoded in
+    // home.html, so the note can never claim a cutoff the code doesn't
+    // apply — it follows ARCHIVE_YEARS from 1 to 2 on its own.
+    if (eventsArchiveNote) {
+        eventsArchiveNote.textContent = EventStatus.noticeText();
+    }
+
+    // "Upcoming" is the natural landing tab for Events, but it's a dead end
+    // when nothing is scheduled — fall back to Past so the tab opens on
+    // something with content in it. Only applies until the visitor picks a
+    // sub-tab themselves, and never before the data has loaded, so the row
+    // can't briefly show Past and then jump to Upcoming as events arrive.
+    function resolvedEventsSub() {
+        if (eventsSubTouched || !dataLoaded) return eventsSub;
+        return EVENTS.some(isUpcomingTabEvent) ? eventsSub : "past";
+    }
+
     function effectiveView() {
-        return topView === "mazes" ? mazesSub : eventsSub;
+        return topView === "mazes" ? mazesSub : resolvedEventsSub();
     }
 
     const emptyMessagesNoSearch = {
@@ -135,9 +167,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (view === "featured" || view === "open") return ROOMS.filter(r => r.status === "open" || r.status === "unknown");
         if (view === "archived") return ROOMS.filter(r => r.status === "closed");
         if (view === "collab") return ROOMS.filter(r => r.status === "collab");
-        if (view === "upcoming") return EVENTS.filter(e => (e.status || "upcoming") === "upcoming");
-        if (view === "past") return EVENTS.filter(e => e.status === "past");
-        return EVENTS.filter(e => e.status === "archive");
+        // A live event belongs in Upcoming, not stranded in Past — it's
+        // still happening, and this is the tab someone checks to find
+        // something to go to. sortItems pins them to the top of it.
+        if (view === "upcoming") return EVENTS.filter(isUpcomingTabEvent);
+        if (view === "past") return EVENTS.filter(e => eventStatus(e) === "past");
+        return EVENTS.filter(e => eventStatus(e) === "archive");
     }
 
     // Normalizes a room or event into one shared shape so rendering and the
@@ -145,10 +180,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function normalize(item, isEvents) {
         if (isEvents) {
             return {
+                isEvent: true,
                 name: item.title || "",
                 subtitle: item.host ? `by ${item.host}` : "",
-                statusKey: item.status || "upcoming",
-                statusLabel: item.status === "past" ? "Past" : item.status === "archive" ? "Archived" : "Upcoming",
+                statusKey: eventStatus(item),
+                statusLabel: EventStatus.labelFor(item),
                 hotel: item.hotel,
                 owner: item.host || "",
                 dateFieldLabel: "Date",
@@ -168,10 +204,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 gallery: item.gallery,
                 entrance: item.entrance,
                 finish: item.finish,
+                // Extra images attached to this maze/event in the admin panel, shown
+                // in the floating photo frame off the gallery viewport's photo-wall
+                // icons. Normalized here so a missing field is just an empty list.
+                relatedImages: (item.relatedImages || []).filter(r => r && r.image),
+                // Furni detected in this maze/event's room images by the admin
+                // scan, keyed by gallery image — see renderFurniStrip.
+                furni: item.furni || {},
                 sortKey: item.date || ""
             };
         }
         return {
+            isEvent: false,
             name: item.name || "",
             subtitle: item.creator ? `by ${item.creator}` : "",
             statusKey: item.status,
@@ -195,6 +239,13 @@ document.addEventListener("DOMContentLoaded", () => {
             gallery: item.gallery,
             entrance: item.entrance,
             finish: item.finish,
+            // Extra images attached to this maze/event in the admin panel, shown
+            // in the floating photo frame off the gallery viewport's photo-wall
+            // icons. Normalized here so a missing field is just an empty list.
+            relatedImages: (item.relatedImages || []).filter(r => r && r.image),
+            // Furni detected in this maze/event's room images by the admin
+            // scan, keyed by gallery image — see renderFurniStrip.
+            furni: item.furni || {},
             difficulty: item.difficulty || "",
             sortKey: item.added || ""
         };
@@ -300,6 +351,12 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
             sorted.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
         }
+        // An event happening right now is the one thing someone opening the
+        // Events tab needs to see first, so LIVE is lifted to the top of
+        // whichever sort is active rather than being subject to it. Array
+        // sort is stable, so this only moves the live entries — everything
+        // else keeps the order the sort above just gave it.
+        sorted.sort((a, b) => (b.statusKey === "live" ? 1 : 0) - (a.statusKey === "live" ? 1 : 0));
         return sorted;
     }
 
@@ -377,7 +434,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // the featured pick, so none of them should read as selected (and,
         // as a side effect, the active tab's own merge-bridge — pure CSS,
         // keyed off .active — disappears along with it).
-        const activeSub = showFeatured ? null : (topView === "mazes" ? mazesSub : eventsSub);
+        const activeSub = showFeatured ? null : (topView === "mazes" ? mazesSub : resolvedEventsSub());
         subNavBtns.forEach((btn, i) => {
             const [value, label] = options[i];
             const icon = SUB_NAV_ICONS[value];
@@ -424,6 +481,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // the default sort if it was already selected when switching into
         // it, so a stale hidden option is never left sitting selected.
         const isEvents = topView === "events";
+        // Explains the auto-archiving rule (see eventStatus) at the point it
+        // actually matters — sitting in the Archive listing itself, rather
+        // than as a note somewhere the visitor has to go looking for.
+        if (eventsArchiveNote) {
+            eventsArchiveNote.hidden = !(isEvents && !showFeatured && resolvedEventsSub() === "archive");
+        }
         difficultySortOptions.forEach(opt => { opt.hidden = isEvents; });
         if (isEvents && sortBy.startsWith("difficulty")) {
             sortBy = "name";
@@ -884,6 +947,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // counter only ever reflects g.roomIndex/g.roomTotal, which are only
         // set on kind:"room" entries, so it's hidden for the bookends.
         const position = (g.kind === "room" && g.roomIndex) ? `${g.roomIndex} of ${g.roomTotal}` : "";
+        // Furni is recorded against the individual room image, so the strip
+        // changes with the picture rather than listing the whole maze at once.
+        renderFurniStrip(activeFurni && g.image ? activeFurni[g.image] : null);
         const newAlt = `${modalName.textContent} — ${label}`;
         const oldSrc = modalGalleryImg.getAttribute("src");
 
@@ -1029,6 +1095,630 @@ document.addEventListener("DOMContentLoaded", () => {
         preload.src = newSrc;
         if (preload.complete) startSlide();
     }
+
+    // ---------- Related Images ----------
+
+    // How many photo icons show before the rest fold away behind a "+",
+    // how long one icon's pop takes, and how far apart they're staggered.
+    const PHOTO_ICON_VISIBLE = 5;
+    const PHOTO_ICON_POP_MS = 260;
+    const PHOTO_ICON_POP_STEP_MS = 55;
+
+    // Opening and closing the folded tail is driven from here rather than a
+    // :hover rule, because closing has to animate: display can't be
+    // transitioned, so the icons have to stay laid out until their exit
+    // animation has played out. .is-closing keeps them in the row for
+    // exactly that long, then hands back to the default display:none.
+    function expandPhotoStrip(strip) {
+        if (!strip || !strip.classList.contains("has-overflow")) return;
+        clearTimeout(strip._collapseTimer);
+        strip.classList.remove("is-closing");
+        strip.classList.add("is-open");
+    }
+
+    function collapsePhotoStrip(strip) {
+        if (!strip || !strip.classList.contains("has-overflow")) return;
+        // Held open for as long as a photo frame is up: the icons are how
+        // you reach the other pictures, and folding them away the moment
+        // the pointer moved across to the frame would be perverse.
+        if (openPhotoFrames.length) return;
+        if (!strip.classList.contains("is-open")) return;
+        strip.classList.remove("is-open");
+        strip.classList.add("is-closing");
+        clearTimeout(strip._collapseTimer);
+        strip._collapseTimer = setTimeout(() => {
+            strip.classList.remove("is-closing");
+        }, Number(strip.dataset.popOutMs) || PHOTO_ICON_POP_MS);
+    }
+
+    // Called whenever a frame opens or the last one closes.
+    function syncPhotoStripToFrames() {
+        const strip = modalMeta.querySelector(".gallery-photos");
+        if (!strip) return;
+        if (openPhotoFrames.length) expandPhotoStrip(strip);
+        else if (!strip.matches(":hover")) collapsePhotoStrip(strip);
+    }
+
+    // One photo-wall icon per related image, sitting at the right-hand end
+    // of the modal's meta row. The strip is rebuilt per modal open and left
+    // out entirely when a maze/event has no related images, so nothing is
+    // left hanging off the end of that row for one that has none.
+    function renderRelatedImages(n) {
+        const existing = modalMeta.querySelector(".gallery-photos");
+        if (existing) existing.remove();
+
+        const related = n.relatedImages || [];
+        if (!related.length) return;
+
+        const strip = document.createElement("div");
+        strip.className = "gallery-photos";
+        // Past this many, the tail is folded away behind a "+" until the
+        // strip is hovered — a maze with a dozen related images would
+        // otherwise run its icons across the whole meta row.
+        const overflows = related.length > PHOTO_ICON_VISIBLE;
+        if (overflows) strip.classList.add("has-overflow");
+
+        related.forEach((entry, i) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "gallery-photo-btn";
+            // The row runs right to left (see .gallery-photos), so later
+            // entries sit further left — and the left one overlaps the right
+            // one, which means the z-index has to climb with the index.
+            btn.style.zIndex = String(i + 1);
+            const label = entry.name || "Related image";
+            btn.setAttribute("aria-label", `View related image: ${label}`);
+            btn.title = label;
+            btn.addEventListener("click", () => openPhotoFrame(entry));
+
+            if (overflows && i >= PHOTO_ICON_VISIBLE) {
+                btn.classList.add("is-overflow");
+                // The folded icons all sit to the left of the visible five,
+                // and the first of them is the rightmost of that group — so
+                // stepping the delay up the list runs the reveal right to
+                // left, starting alongside the icons already showing. The
+                // fold-back runs the stagger the other way, leaving them
+                // left to right.
+                btn.style.setProperty("--pop-in-delay", `${(i - PHOTO_ICON_VISIBLE) * PHOTO_ICON_POP_STEP_MS}ms`);
+                btn.style.setProperty("--pop-out-delay", `${(related.length - 1 - i) * PHOTO_ICON_POP_STEP_MS}ms`);
+            }
+            strip.appendChild(btn);
+        });
+
+        if (overflows) {
+            // Sits where the sixth icon would be. Hovering the strip is what
+            // normally opens it; this is here for the tap that has no hover
+            // to give, and to say plainly that there are more.
+            const more = document.createElement("button");
+            more.type = "button";
+            more.className = "gallery-photo-more";
+            // One above the last visible icon, so it overlaps it the same
+            // way every icon overlaps its right-hand neighbour. It only
+            // exists while the folded icons are hidden, so it can't collide
+            // with theirs.
+            more.style.zIndex = String(PHOTO_ICON_VISIBLE + 1);
+            const hiddenCount = related.length - PHOTO_ICON_VISIBLE;
+            // The count says how many are still folded away, so the row
+            // states what it is holding back rather than only hinting.
+            more.textContent = `+${hiddenCount}`;
+            more.title = `${hiddenCount} more related image${hiddenCount === 1 ? "" : "s"}`;
+            more.setAttribute("aria-label", more.title);
+            more.addEventListener("click", () => expandPhotoStrip(strip));
+            strip.appendChild(more);
+
+            // How long the whole fold-back takes: one icon's animation plus
+            // the last one's stagger. Read back by collapsePhotoStrip.
+            const lastDelay = (related.length - 1 - PHOTO_ICON_VISIBLE) * PHOTO_ICON_POP_STEP_MS;
+            strip.dataset.popOutMs = String(PHOTO_ICON_POP_MS + lastDelay);
+
+            strip.addEventListener("mouseenter", () => expandPhotoStrip(strip));
+            strip.addEventListener("mouseleave", () => collapsePhotoStrip(strip));
+            // Opens on Tab too, and folds away once focus leaves entirely
+            // (relatedTarget is where focus went — null when it left the page).
+            strip.addEventListener("focusin", () => expandPhotoStrip(strip));
+            strip.addEventListener("focusout", e => {
+                if (!strip.contains(e.relatedTarget)) collapsePhotoStrip(strip);
+            });
+        }
+
+        // Appended to the meta row, which openModal fills in above this —
+        // rebuilding that row wipes anything already inside it, so this has
+        // to run after, not before.
+        modalMeta.appendChild(strip);
+    }
+
+    // Every open frame, in the order they were opened. Each photo-wall icon
+    // opens its own, so a visitor can put two pictures side by side and
+    // compare them rather than one replacing the other in a single window.
+    const openPhotoFrames = [];
+    // Cascade counter, so a second frame doesn't land exactly on top of the
+    // first and look like nothing happened.
+    let photoFrameSeq = 0;
+    // Raised past the base z-index each time a frame is touched, so whatever
+    // was clicked last comes to the front of the pile.
+    let photoFrameTopZ = 300;
+
+    const PHOTO_FRAME_W = 175;
+    const PHOTO_FRAME_H = 194;
+
+    // Measured off the rendered box rather than offsetWidth/offsetHeight:
+    // those report the frame's unscaled 175x194 even while it's being shown
+    // at 2x (see .is-2x), which would let a zoomed frame sit half off the
+    // screen. Needs the frame to already be in the document to measure.
+    function clampFrame(frame, left, top) {
+        const rect = frame.getBoundingClientRect();
+        const maxLeft = Math.max(0, window.innerWidth - rect.width);
+        const maxTop = Math.max(0, window.innerHeight - rect.height);
+        frame.style.left = `${Math.min(maxLeft, Math.max(0, left))}px`;
+        frame.style.top = `${Math.min(maxTop, Math.max(0, top))}px`;
+    }
+
+    function bringPhotoFrameToFront(frame) {
+        frame.style.zIndex = ++photoFrameTopZ;
+    }
+
+    // The photo frame and the furni card are both fixed-position, draggable,
+    // X-closable boxes, so they share the positioning and the drag outright
+    // rather than each carrying its own copy. Named for what they do here so
+    // the furni-card code doesn't read as if it were operating on a frame.
+    const clampToViewport = clampFrame;
+    const startCardDrag = startFrameDrag;
+
+    function closePhotoFrame(frame) {
+        const i = openPhotoFrames.indexOf(frame);
+        if (i !== -1) openPhotoFrames.splice(i, 1);
+        frame.remove();
+        syncPhotoStripToFrames();
+    }
+
+    function closeAllPhotoFrames() {
+        openPhotoFrames.slice().forEach(closePhotoFrame);
+    }
+
+    // ---------- furni found in a room ----------
+
+    // Furni detected in the room image showing above (see the admin scan).
+    // One icon per item; the strip is rebuilt on every gallery change, since
+    // each room image has its own furni.
+    function renderFurniStrip(list) {
+        furniStrip.innerHTML = "";
+        const furni = (list || []).filter(f => f && f.icon);
+        furniStrip.hidden = !furni.length;
+        if (!furni.length) return;
+
+        furni.forEach(entry => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "furni-icon-btn";
+            // No title attribute: it would raise the browser's own tooltip
+            // next to the cursor at the same moment the card opens, saying
+            // the same thing twice. aria-label carries the name for screen
+            // readers without drawing anything.
+            btn.setAttribute("aria-label", `Details for ${entry.name || "this furni"}`);
+            const img = document.createElement("img");
+            img.src = entry.icon;
+            img.alt = "";
+            img.loading = "lazy";
+            btn.appendChild(img);
+
+            // Hovering opens the card; the card decides for itself whether to
+            // stay (see openFurniCard).
+            btn.addEventListener("mouseenter", () => openFurniCard(entry, btn));
+            // Keyboard and touch have no hover to give, so the same thing on
+            // focus and on click — and a click pins it outright, since there
+            // is no pointer to move into it.
+            btn.addEventListener("focus", () => openFurniCard(entry, btn));
+            btn.addEventListener("click", () => openFurniCard(entry, btn, true));
+            furniStrip.appendChild(btn);
+        });
+    }
+
+    // Cards opened by hovering are "transient" — the next hover replaces
+    // them. Moving the pointer into one, or dragging it, pins it, so it can
+    // be read, dragged around and closed on its own terms. Without that a
+    // hover-opened card could never be reached to use its link or its X.
+    const openFurniCards = [];
+    let transientFurniCard = null;
+    let furniCardSeq = 0;
+
+    function closeFurniCard(card) {
+        const i = openFurniCards.indexOf(card);
+        if (i !== -1) openFurniCards.splice(i, 1);
+        if (transientFurniCard === card) transientFurniCard = null;
+        card.remove();
+    }
+
+    function pinFurniCard(card) {
+        card.dataset.pinned = "true";
+        if (transientFurniCard === card) transientFurniCard = null;
+    }
+
+    function openFurniCard(entry, anchor, pinNow) {
+        // Already showing this one? Just keep it.
+        const existing = openFurniCards.find(c => c.dataset.furni === (entry.url || entry.name));
+        if (existing) {
+            if (pinNow) pinFurniCard(existing);
+            return;
+        }
+        // Only ever one card at a time — opening another closes whatever
+        // was up, pinned or not.
+        closeAllFurniCards();
+
+        const card = furniCardTemplate.content.firstElementChild.cloneNode(true);
+        card.dataset.furni = entry.url || entry.name || String(furniCardSeq++);
+        card.querySelector(".furni-card-icon").src = entry.icon || "";
+        card.querySelector(".furni-card-icon").alt = entry.name || "";
+        card.querySelector(".furni-card-name").textContent = entry.name || "";
+        card.querySelector(".furni-card-motto").textContent = entry.motto || "";
+        card.querySelector(".furni-card-date").textContent =
+            entry.releaseDate ? `Released ${formatMazeDate(entry.releaseDate)}` : "";
+        const link = card.querySelector(".furni-card-link");
+        if (entry.url) link.href = entry.url;
+        else link.remove();
+
+        card.querySelector(".furni-card-close").addEventListener("click", () => closeFurniCard(card));
+        card.querySelector(".furni-card-drag").addEventListener("mousedown", e => {
+            pinFurniCard(card);
+            startCardDrag(card, e);
+        });
+        // Reaching the card at all means it's wanted — from here it stays
+        // until it's closed.
+        card.addEventListener("mouseenter", () => pinFurniCard(card));
+
+        document.body.appendChild(card);
+        openFurniCards.push(card);
+
+        // Sits above its icon with the card's bottom-left corner lapping
+        // over it, so the card visibly belongs to the icon it came from
+        // rather than floating loose near it. Measured from the card's own
+        // height, since that is what puts its BOTTOM at the icon.
+        // clampToViewport pulls it back on screen near an edge.
+        const r = anchor.getBoundingClientRect();
+        const OVERLAP = 8;
+        clampToViewport(card, r.left - OVERLAP, r.top - card.offsetHeight + OVERLAP);
+
+        if (pinNow) pinFurniCard(card);
+        else transientFurniCard = card;
+
+        // A transient card closes when the pointer leaves both it and its
+        // icon without ever entering it.
+        anchor.addEventListener("mouseleave", () => {
+            setTimeout(() => {
+                if (transientFurniCard === card && !card.matches(":hover")) closeFurniCard(card);
+            }, 120);
+        }, { once: true });
+    }
+
+    function closeAllFurniCards() {
+        openFurniCards.slice().forEach(closeFurniCard);
+    }
+
+    // ---------- zooming inside a photo frame ----------
+
+    // Scroll wheel and single click zoom the picture within its window;
+    // double click doubles the whole frame instead (see .is-2x).
+    const PHOTO_ZOOM_WHEEL_STEP = 1.15;
+    // How far the pointer may travel between press and release and still
+    // count as a click rather than a drag of the picture.
+    const PHOTO_PAN_SLOP = 4;
+    // How long a first click waits to see whether a second one is coming.
+    // Any lower and a genuine double click starts leaking through as a
+    // single one first.
+    const PHOTO_DOUBLE_CLICK_MS = 220;
+
+    // The frame itself may be transform-scaled (.is-2x), which doubles what
+    // a screen pixel is worth inside it. Every measurement below is taken in
+    // the frame's own unscaled coordinates, so pointer positions coming from
+    // the page have to be divided by this to match.
+    function frameScale(frame) {
+        return frame.classList.contains("is-2x") ? 2 : 1;
+    }
+
+    function photoZoomState(frame) {
+        if (!frame._photoZoom) frame._photoZoom = { scale: 1, x: 0, y: 0 };
+        return frame._photoZoom;
+    }
+
+    // The zoomed-out state: the smallest the picture is allowed to get,
+    // which is whatever covers the window. The image is laid out at the
+    // window's width, so it already covers horizontally at scale 1 — this
+    // only ever has work to do vertically, for a picture wider in aspect
+    // than the window it sits in. Covering rather than merely fitting is
+    // what keeps the orange filled now the picture arrives uncropped.
+    function photoBaseScale(frame) {
+        const box = frame.querySelector(".photo-frame-photo-box");
+        const img = frame.querySelector(".photo-frame-photo");
+        if (!img.offsetWidth || !img.offsetHeight) return 1;
+        return Math.max(box.clientWidth / img.offsetWidth, box.clientHeight / img.offsetHeight);
+    }
+
+    // Full size: the picture at its own resolution, one image pixel to one
+    // screen pixel. Also the zoom ceiling — past 1:1 there's no more detail
+    // in the file to show, only interpolation. Never below the base scale,
+    // for a picture whose delivered size is smaller than its window.
+    function photoMaxScale(frame) {
+        const img = frame.querySelector(".photo-frame-photo");
+        if (!img.naturalWidth || !img.offsetWidth) return 1;
+        return Math.max(photoBaseScale(frame), img.naturalWidth / img.offsetWidth);
+    }
+
+    function isPhotoAtFullSize(frame) {
+        return photoZoomState(frame).scale >= photoMaxScale(frame) - 0.001;
+    }
+
+    function applyPhotoZoom(frame) {
+        const state = photoZoomState(frame);
+        const box = frame.querySelector(".photo-frame-photo-box");
+        const img = frame.querySelector(".photo-frame-photo");
+        // Layout size, unaffected by the transform we're about to set.
+        const width = img.offsetWidth * state.scale;
+        const height = img.offsetHeight * state.scale;
+
+        // The picture always covers its window: no gap can open at an edge,
+        // and it can't be pushed off into nowhere. Anything smaller than the
+        // window in an axis is centred on it instead.
+        state.x = width <= box.clientWidth
+            ? (box.clientWidth - width) / 2
+            : Math.min(0, Math.max(box.clientWidth - width, state.x));
+        state.y = height <= box.clientHeight
+            ? (box.clientHeight - height) / 2
+            : Math.min(0, Math.max(box.clientHeight - height, state.y));
+
+        img.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+        frame.classList.toggle("is-photo-max", isPhotoAtFullSize(frame));
+    }
+
+    // Back to the zoomed-out view, centred on the picture rather than
+    // pinned to its top-left corner — the middle is what you want to see
+    // first of a shot that's wider than its window.
+    function resetPhotoZoom(frame) {
+        const box = frame.querySelector(".photo-frame-photo-box");
+        const img = frame.querySelector(".photo-frame-photo");
+        const state = photoZoomState(frame);
+        state.scale = photoBaseScale(frame);
+        state.x = (box.clientWidth - img.offsetWidth * state.scale) / 2;
+        state.y = (box.clientHeight - img.offsetHeight * state.scale) / 2;
+        applyPhotoZoom(frame);
+    }
+
+    // Zooms about a point, so whatever is under the cursor stays under it
+    // rather than the picture growing from a fixed corner and carrying the
+    // thing you were looking at off the edge.
+    function zoomPhotoAt(frame, factor, pointX, pointY) {
+        setPhotoScaleAt(frame, photoZoomState(frame).scale * factor, pointX, pointY);
+    }
+
+    // The picture sits under a sepia tint until it's actually handled —
+    // zoomed or panned — at which point the tint fades off and stays off.
+    // Set here rather than in applyPhotoZoom, which also runs on load and
+    // would clear the tint before anyone had touched anything.
+    function markPhotoExplored(frame) {
+        frame.classList.add("is-explored");
+    }
+
+    function setPhotoScaleAt(frame, scale, pointX, pointY) {
+        const state = photoZoomState(frame);
+        const next = Math.min(photoMaxScale(frame), Math.max(photoBaseScale(frame), scale));
+        if (next === state.scale) return;
+        markPhotoExplored(frame);
+        const ratio = next / state.scale;
+        state.x = pointX - (pointX - state.x) * ratio;
+        state.y = pointY - (pointY - state.y) * ratio;
+        state.scale = next;
+        applyPhotoZoom(frame);
+    }
+
+    function wirePhotoZoom(frame) {
+        const box = frame.querySelector(".photo-frame-photo-box");
+        const img = frame.querySelector(".photo-frame-photo");
+
+        // Where the pointer is, in the picture window's own coordinates.
+        function pointIn(e) {
+            const rect = box.getBoundingClientRect();
+            const scale = frameScale(frame);
+            return [(e.clientX - rect.left) / scale, (e.clientY - rect.top) / scale];
+        }
+
+        // Set up once the picture has loaded: both the covering scale and
+        // the clamping need its real dimensions, and it has none before it
+        // arrives.
+        img.addEventListener("load", () => resetPhotoZoom(frame));
+
+        box.addEventListener("wheel", e => {
+            // Otherwise the page scrolls behind the frame at the same time.
+            e.preventDefault();
+            const [x, y] = pointIn(e);
+            zoomPhotoAt(frame, e.deltaY < 0 ? PHOTO_ZOOM_WHEEL_STEP : 1 / PHOTO_ZOOM_WHEEL_STEP, x, y);
+        }, { passive: false });
+
+        // Drag the picture around inside its window. Worth having even
+        // unzoomed: fitting on width alone already leaves most pictures
+        // taller than the window, so there is something to move.
+        //
+        // Pointer events with capture, rather than mousedown plus listeners
+        // on window. The window is 159px wide and a picture at full size is
+        // wider than that, so crossing it means dragging past the frame's
+        // own edge almost immediately — and once the pointer is out there,
+        // the page behind starts selecting text and swallowing the drag, so
+        // the far side of the picture could never be reached. Capturing the
+        // pointer routes every move and release back here until the button
+        // comes up, wherever it happens to be. It also means no listeners
+        // are left on window for each frame that gets opened.
+        let panning = false;
+        let panMoved = false;
+        let panPointerId = null;
+        let panStartX = 0;
+        let panStartY = 0;
+        let panFromX = 0;
+        let panFromY = 0;
+
+        // Otherwise the browser starts its own native image-drag and the
+        // picture never follows the pointer at all.
+        img.addEventListener("dragstart", e => e.preventDefault());
+
+        box.addEventListener("pointerdown", e => {
+            if (e.button !== 0) return;
+            const state = photoZoomState(frame);
+            panning = true;
+            panMoved = false;
+            panPointerId = e.pointerId;
+            panStartX = e.clientX;
+            panStartY = e.clientY;
+            panFromX = state.x;
+            panFromY = state.y;
+            frame.classList.add("is-panning");
+            box.setPointerCapture(e.pointerId);
+            // Belt and braces alongside the capture: stops the drag leaving
+            // a trail of selected text across the page behind it.
+            document.body.style.userSelect = "none";
+            e.preventDefault();
+        });
+
+        box.addEventListener("pointermove", e => {
+            if (!panning || e.pointerId !== panPointerId) return;
+            const scale = frameScale(frame);
+            const dx = (e.clientX - panStartX) / scale;
+            const dy = (e.clientY - panStartY) / scale;
+            // Past a few pixels this is a drag, and the click that follows
+            // on release is a by-product of it rather than a zoom request.
+            if (Math.abs(dx) > PHOTO_PAN_SLOP || Math.abs(dy) > PHOTO_PAN_SLOP) {
+                panMoved = true;
+                markPhotoExplored(frame);
+            }
+            const state = photoZoomState(frame);
+            state.x = panFromX + dx;
+            state.y = panFromY + dy;
+            applyPhotoZoom(frame);
+        });
+
+        function endPan(e) {
+            if (!panning || e.pointerId !== panPointerId) return;
+            panning = false;
+            panPointerId = null;
+            frame.classList.remove("is-panning");
+            document.body.style.userSelect = "";
+            if (box.hasPointerCapture(e.pointerId)) box.releasePointerCapture(e.pointerId);
+        }
+
+        box.addEventListener("pointerup", endPan);
+        box.addEventListener("pointercancel", endPan);
+
+        // A single click switches between the fitted view and full size; a
+        // double click doubles the whole frame. Both start with a "click",
+        // so the single-click action is held briefly and dropped if a second
+        // click follows.
+        let clickTimer = null;
+
+        box.addEventListener("click", e => {
+            // The tail end of a drag, not a click on the spot.
+            if (panMoved) {
+                panMoved = false;
+                return;
+            }
+            if (clickTimer) return; // second of a pair — dblclick takes it
+            const [x, y] = pointIn(e);
+            clickTimer = setTimeout(() => {
+                clickTimer = null;
+                // Straight to full size, and straight back to fitted — two
+                // states, not a ladder of steps.
+                if (isPhotoAtFullSize(frame)) resetPhotoZoom(frame);
+                else setPhotoScaleAt(frame, photoMaxScale(frame), x, y);
+            }, PHOTO_DOUBLE_CLICK_MS);
+        });
+
+        box.addEventListener("dblclick", e => {
+            clearTimeout(clickTimer);
+            clickTimer = null;
+            e.preventDefault();
+            frame.classList.toggle("is-2x");
+            // Re-clamped because at 2x it's twice the size and may now hang
+            // off the bottom or right of the window.
+            const rect = frame.getBoundingClientRect();
+            clampFrame(frame, rect.left, rect.top);
+        });
+    }
+
+    function openPhotoFrame(entry) {
+        // Clicking the same icon again raises the frame it already opened
+        // rather than stacking a second identical copy of it — "one frame
+        // per picture", not "one frame per click".
+        const already = openPhotoFrames.find(f => f.dataset.image === entry.image);
+        if (already) {
+            bringPhotoFrameToFront(already);
+            return;
+        }
+
+        const frame = photoFrameTemplate.content.firstElementChild.cloneNode(true);
+        frame.dataset.image = entry.image;
+        // Width only, no height: passing both makes imgCdn ask the CDN for
+        // fit=cover, which crops the picture to that aspect before it is
+        // ever sent. Zooming and panning could then only explore the crop —
+        // the sides of a wide room shot were gone before the browser saw
+        // them. Asked for at 1200 wide so "full size" has real detail in it.
+        frame.querySelector(".photo-frame-photo").src = imgCdn(entry.image, 1200, null, 80);
+        frame.querySelector(".photo-frame-photo").alt = entry.name || "";
+        frame.querySelector(".photo-frame-name").textContent = entry.name || "";
+
+        bringPhotoFrameToFront(frame);
+        frame.querySelector(".photo-frame-close").addEventListener("click", () => closePhotoFrame(frame));
+        // Anywhere on the frame raises it, not just the drag strip — picking
+        // a buried frame's picture out of a pile shouldn't require grabbing
+        // its 16px handle first.
+        frame.addEventListener("mousedown", () => bringPhotoFrameToFront(frame));
+        frame.querySelector(".photo-frame-drag").addEventListener("mousedown", e => startFrameDrag(frame, e));
+
+        wirePhotoZoom(frame);
+
+        // Appended before positioning: clampFrame measures the rendered box,
+        // and a frame still detached from the document measures as zero.
+        document.body.appendChild(frame);
+
+        // Opens centred, stepped down-right by however many frames are
+        // already out, wrapping after six so a long session can't walk them
+        // off the bottom of the screen. clampFrame keeps the result
+        // on-screen whatever the viewport size.
+        const step = 18;
+        const offset = (photoFrameSeq++ % 6) * step;
+        clampFrame(
+            frame,
+            Math.round((window.innerWidth - PHOTO_FRAME_W) / 2) + offset,
+            Math.round((window.innerHeight - PHOTO_FRAME_H) / 2) + offset
+        );
+
+        openPhotoFrames.push(frame);
+        syncPhotoStripToFrames();
+        frame.querySelector(".photo-frame-close").focus();
+    }
+
+    // One shared drag, tracking whichever frame is currently held, rather
+    // than a pair of window listeners per open frame. Same approach as the
+    // console's own drag (js/console.js), clamped on every move so a frame
+    // can't be dragged out of reach.
+    let dragFrame = null;
+    let frameOffsetX = 0;
+    let frameOffsetY = 0;
+
+    function startFrameDrag(frame, e) {
+        dragFrame = frame;
+        frame.classList.add("is-dragging");
+        const rect = frame.getBoundingClientRect();
+        frameOffsetX = e.clientX - rect.left;
+        frameOffsetY = e.clientY - rect.top;
+        document.body.style.userSelect = "none";
+        e.preventDefault();
+    }
+
+    window.addEventListener("mousemove", e => {
+        if (!dragFrame) return;
+        clampFrame(dragFrame, e.clientX - frameOffsetX, e.clientY - frameOffsetY);
+    });
+
+    window.addEventListener("mouseup", () => {
+        if (!dragFrame) return;
+        dragFrame.classList.remove("is-dragging");
+        dragFrame = null;
+        document.body.style.userSelect = "";
+    });
 
     function openLightbox() {
         if (!activeGallery || !activeGallery.length) return;
@@ -1418,6 +2108,14 @@ document.addEventListener("DOMContentLoaded", () => {
             ...(finishItem ? [finishItem] : [])
         ];
 
+        // Events size the framed viewport to whatever thumbnail is showing
+        // rather than letterboxing it inside the fixed-height frame — see
+        // .is-event's rules in css/style.css, which do the sizing in CSS off
+        // this one class.
+        modalThumb.classList.toggle("is-event", !!n.isEvent);
+        activeFurni = n.furni || null;
+        renderRelatedImages(n);
+
         if (combinedGallery.length) {
             activeGallery = combinedGallery;
             modalThumb.classList.add("has-gallery");
@@ -1444,8 +2142,8 @@ document.addEventListener("DOMContentLoaded", () => {
             restartAutoAdvance();
         } else {
             activeGallery = null;
+            renderFurniStrip(null);
             modalThumb.classList.remove("has-gallery");
-            modalGalleryImg.style.display = "none";
             galleryMissingPill.style.display = "none";
             galleryPrev.style.display = "none";
             galleryNext.style.display = "none";
@@ -1454,9 +2152,25 @@ document.addEventListener("DOMContentLoaded", () => {
             galleryBonusTab.style.display = "none";
             galleryStrip.style.display = "none";
             galleryStrip.innerHTML = "";
-            modalThumbFrame.style.backgroundImage = n.thumb
-                ? `linear-gradient(rgba(10,7,4,0.15), rgba(10,7,4,0.35)), url('${imgCdn(n.thumb, 800, 500, 70)}')`
-                : "";
+            // A gallery-less event puts its single thumbnail in the
+            // viewport's own <img> rather than painting it as a background
+            // on the frame behind it: the frame is a fixed height, so a
+            // background can only ever be letterboxed inside it, where a
+            // real <img> lets the framed box shrink to the image itself
+            // (.is-event's CSS). Mazes keep the background treatment, tint
+            // overlay and all.
+            if (n.isEvent && n.thumb) {
+                modalGalleryImg.src = imgCdn(n.thumb, 800, 500, 70);
+                modalGalleryImg.alt = n.name || "";
+                modalGalleryImg.style.transform = "translateX(0)";
+                modalGalleryImg.style.display = "block";
+                modalThumbFrame.style.backgroundImage = "";
+            } else {
+                modalGalleryImg.style.display = "none";
+                modalThumbFrame.style.backgroundImage = n.thumb
+                    ? `linear-gradient(rgba(10,7,4,0.15), rgba(10,7,4,0.35)), url('${imgCdn(n.thumb, 800, 500, 70)}')`
+                    : "";
+            }
             oldVersionsPill.style.display = "none";
         }
 
@@ -1484,6 +2198,11 @@ document.addEventListener("DOMContentLoaded", () => {
         modalOverlay.classList.add("closing");
         stopAutoAdvance();
         closeLightbox();
+        // These belong to the maze/event being viewed — leaving them
+        // floating over the page after its maze has been closed strands
+        // pictures with nothing to explain them.
+        closeAllPhotoFrames();
+        closeAllFurniCards();
 
         // Drop a #event-... hash left over from opening this modal (via the
         // header widget or a shared link) so a refresh after closing doesn't
@@ -1543,7 +2262,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const value = btn.dataset.subValue;
             if (!value) return;
             if (topView === "mazes") mazesSub = value;
-            else if (topView === "events") eventsSub = value;
+            else if (topView === "events") {
+                eventsSub = value;
+                eventsSubTouched = true;
+            }
             showFeatured = false;
             searchInput.value = "";
             query = "";
@@ -1649,10 +2371,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
     render();
 
+    // A derived status is only as fresh as the last render: an event that
+    // starts at 19:00 was still showing its "Upcoming" pill at 19:05 on a
+    // page that had been sitting open since 18:00, because nothing had asked
+    // the question again. This re-checks on a timer and re-renders only when
+    // a status has actually moved, so an open listing flips to LIVE by
+    // itself (and to Past when the event ends) without a reload.
+    //
+    // Held off while the modal is open, so the list behind it never rebuilds
+    // out from under someone reading it — the next tick after it closes
+    // picks the change up.
+    let lastStatusSignature = null;
+
+    function eventStatusSignature() {
+        return EVENTS.map(e => `${e.id}:${eventStatus(e)}`).join("|");
+    }
+
+    setInterval(() => {
+        if (!dataLoaded || modalOverlay.classList.contains("open")) return;
+        const signature = eventStatusSignature();
+        if (signature === lastStatusSignature) return;
+        lastStatusSignature = signature;
+        render();
+    }, 15000);
+
     Promise.all([Api.getRooms(), Api.getEvents()]).then(([rooms, events]) => {
         ROOMS = rooms;
         EVENTS = events;
         dataLoaded = true;
+        lastStatusSignature = eventStatusSignature();
         render();
         openEventFromHash();
     });
