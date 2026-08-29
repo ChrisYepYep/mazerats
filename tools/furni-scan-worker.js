@@ -11,6 +11,7 @@ const path = require("path");
 const { parentPort, workerData } = require("worker_threads");
 
 const { scanRoom } = require("../netlify/functions/_furni-match.js");
+const { imageUrl } = require("../netlify/functions/_url.js");
 
 const { cacheDir, wanted, site } = workerData;
 
@@ -31,7 +32,7 @@ parentPort.on("message", async msg => {
     if (msg.stop) process.exit(0);
     const { image } = msg;
     try {
-        const url = /^https?:/i.test(image) ? image : site + image;
+        const url = imageUrl(site, image);
         const res = await fetch(url);
         if (!res.ok) throw new Error(`room image ${res.status}`);
         const buffer = Buffer.from(await res.arrayBuffer());

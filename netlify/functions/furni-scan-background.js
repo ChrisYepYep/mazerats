@@ -16,6 +16,7 @@ const { blobStore } = require("./_blobs.js");
 const { getDb } = require("./_db.js");
 const { isAuthorized, UNAUTHORIZED } = require("./_auth.js");
 const { scanRoom } = require("./_furni-match.js");
+const { imageUrl } = require("./_url.js");
 const { getCatalogue } = require("./furni-catalogue.js");
 
 const SPRITE_CONCURRENCY = 12;
@@ -50,7 +51,7 @@ async function loadSprites(catalogue) {
 }
 
 async function fetchRoomImage(siteUrl, imagePath) {
-    const url = /^https?:/i.test(imagePath) ? imagePath : `${siteUrl}${imagePath}`;
+    const url = imageUrl(siteUrl, imagePath);
     const res = await fetch(url);
     if (!res.ok) throw new Error(`room image ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
