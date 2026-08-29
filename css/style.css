@@ -3137,10 +3137,11 @@ body[data-page="home"] .hero { padding-top: 18px; }
     scrollbar-width: none;
     -ms-overflow-style: none;
     /* Icons fade out into each end rather than stopping at a hard edge, so
-       a half-scrolled row reads as continuing past the frame. Only the end
-       that can still be scrolled towards is faded — see the at-start /
-       at-end classes — since a fade over a row that has nowhere left to go
-       just dims a perfectly reachable icon. */
+       a half-scrolled row reads as continuing past the frame. Both ends
+       fade, always: the fade is what makes an arrow look like it sits
+       beside the row rather than on top of it, so suppressing it at the end
+       the row has reached left the spent arrow squarely over a solid icon
+       while the live one appeared to stand clear. */
     --furni-fade-left: 0px;
     --furni-fade-right: 0px;
     -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--furni-fade-left), #000 calc(100% - var(--furni-fade-right)), transparent 100%);
@@ -3151,9 +3152,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
     --furni-fade-left: 26px;
     --furni-fade-right: 26px;
 }
-
-.furni-strip-inner.at-start .furni-strip-scroll { --furni-fade-left: 0px; }
-.furni-strip-inner.at-end .furni-strip-scroll { --furni-fade-right: 0px; }
 
 .furni-strip-scroll::-webkit-scrollbar { display: none; }
 
@@ -3230,10 +3228,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
     font-size: 0.5625rem;
     font-weight: 400;
-    transition: opacity 150ms ease;
 }
-
-.furni-strip.is-busy .furni-strip-caption { opacity: 0; }
 
 .furni-strip[hidden] { display: none; }
 
@@ -3952,6 +3947,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
     max-height: 40px;
     overflow: visible;
     position: relative;
+    /* Nudged 20px left of where the meta row would put it. Offset rather
+       than a margin so it shifts without changing its width or moving
+       anything beside it. */
+    left: -20px;
     /* Card chrome deliberately dropped — the builder now reads as a bare
        avatar + name against the modal rather than a boxed row. To put the
        card back, restore these three lines:

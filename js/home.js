@@ -1403,9 +1403,7 @@ document.addEventListener("DOMContentLoaded", () => {
         inner.appendChild(right);
 
         // Names the row from the empty space at its left end — the icons are
-        // right-aligned, so this costs no room. It steps out of the way while
-        // the row is being used, since by then the reader knows what these
-        // are and the caption is only restating it.
+        // right-aligned, so this costs no room.
         const caption = document.createElement("span");
         caption.className = "furni-strip-caption";
         caption.textContent = "FURNI INFO";
@@ -1414,9 +1412,6 @@ document.addEventListener("DOMContentLoaded", () => {
         furniStrip.appendChild(inner);
         wireFurniScrollHints(inner, scroller, left, right);
 
-        scroller.addEventListener("pointerenter", syncFurniCaption);
-        scroller.addEventListener("pointerleave", syncFurniCaption);
-        syncFurniCaption();
     }
 
     // How fast a hovered arrow drags the row along, in pixels per SECOND —
@@ -1492,10 +1487,6 @@ document.addEventListener("DOMContentLoaded", () => {
             const atStart = scroller.scrollLeft <= 1;
             const atEnd = scroller.scrollLeft >= max - 1;
             inner.classList.toggle("has-overflow", max > 1);
-            // Mirrored onto the wrapper because the fade at each end lives on
-            // the scroller, which can't be styled off a sibling arrow.
-            inner.classList.toggle("at-start", atStart);
-            inner.classList.toggle("at-end", atEnd);
             left.classList.toggle("is-spent", atStart);
             right.classList.toggle("is-spent", atEnd);
         };
@@ -1520,16 +1511,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return openFurniCards.length > 0 || furniStrip.matches(":hover");
     }
 
-    /* Hides the row's caption while the icons are being used. Deliberately
-       narrower than furniInUse: that one counts the whole strip, including
-       the caption itself, which would make the caption vanish the moment the
-       pointer touched it. This asks only about the icons and any card they
-       opened. */
-    function syncFurniCaption() {
-        const scroller = furniStrip.querySelector(".furni-strip-scroll");
-        furniStrip.classList.toggle("is-busy",
-            openFurniCards.length > 0 || !!(scroller && scroller.matches(":hover")));
-    }
     let transientFurniCard = null;
     let furniCardSeq = 0;
 
@@ -1599,7 +1580,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (i !== -1) openFurniCards.splice(i, 1);
         if (transientFurniCard === card) transientFurniCard = null;
         card.remove();
-        syncFurniCaption();
         if (!furniInUse()) restartAutoAdvance();
     }
 
@@ -1645,7 +1625,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         document.body.appendChild(card);
         openFurniCards.push(card);
-        syncFurniCaption();
 
         // Sits above its icon with the card's bottom-left corner lapping
         // over it, so the card visibly belongs to the icon it came from
