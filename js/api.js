@@ -64,6 +64,26 @@ const Api = {
     uploadImage(token, prefix, filename, dataUrl) {
         return this._write("/.netlify/functions/upload", "POST", token, { prefix, filename, dataUrl });
     },
+    // Starts the furni scan. A background function, so this returns as soon
+    // as Netlify has accepted the job (202) rather than when scanning ends —
+    // results land on the records themselves as it works through them.
+    // Progress of the running scan, polled while one is going.
+    furniScanStatus(token) {
+        return fetch("/.netlify/functions/furni-scan-status", { headers: { "x-admin-token": token } })
+            .then(async res => {
+                if (!res.ok) {
+                    const err = new Error("Couldn't read scan progress");
+                    err.status = res.status;
+                    throw err;
+                }
+                return res.json();
+            });
+    },
+
+    scanFurni(token, { collection = "rooms", ids, images } = {}) {
+        return this._write("/.netlify/functions/furni-scan-background", "POST", token, { collection, ids, images });
+    },
+
     deleteImage(token, key) {
         return this._write(`/.netlify/functions/upload?key=${encodeURIComponent(key)}`, "DELETE", token);
     },

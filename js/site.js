@@ -124,9 +124,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         events = [];
     }
 
+    // Date-derived, same as the listings on home.html (see
+    // js/event-status.js) — reading the stored status here meant the ticker
+    // went on advertising an event that had already finished, and a live one
+    // dropped out of it entirely. A live event sorts to the front: it's the
+    // one someone can act on right now.
     const upcoming = events
-        .filter(e => (e.status || "upcoming") === "upcoming" && e.date)
-        .sort((a, b) => a.date.localeCompare(b.date));
+        .filter(e => e.date && EventStatus.isUpcomingish(e))
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .sort((a, b) => (EventStatus.derive(b) === "live" ? 1 : 0) - (EventStatus.derive(a) === "live" ? 1 : 0));
 
     widget.style.display = "block";
     let index = 0;
@@ -184,6 +190,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ["HabboFishing", "https://habbofishing.com/"],
         ["HabboGardening", "https://habbogardening.com/"],
         ["Leet.show", "https://leet.show/"],
+        ["Liminal Labyrinth", "https://liminallabyrinth.quest/"],
         ["RockHabbo", "https://rockhabbo.com/"],
         ["solochef.io", "https://solochef.io/"]
     ];

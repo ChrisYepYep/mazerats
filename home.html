@@ -177,6 +177,8 @@
                     <div class="chrome-frame">
                         <button type="button" class="chrome-frame-minimize-toggle" id="chrome-frame-minimize-toggle" aria-label="Restore the results"><span class="chrome-frame-minimize-arrow" aria-hidden="true"></span></button>
                         <div class="chrome-body">
+                            <!-- Only shown on Events > Archive (see updateChrome in js/home.js) -->
+                            <span class="events-archive-note" id="events-archive-note" hidden>Events are archived after 2 years.</span>
                             <p class="chrome-intro" id="featured-intro"></p>
                             <div class="home-results">
                                 <div class="chrome-list" id="featured-grid"></div>
@@ -198,6 +200,49 @@
         <button class="gallery-nav lightbox-next" id="lightbox-next" aria-label="Next room">&#10095;</button>
         <span class="gallery-counter lightbox-counter" id="lightbox-counter"></span>
     </div>
+
+    <!-- Floating "Related Images" photo frame, opened from the photo-wall
+         icons on a maze/event's gallery viewport. Sized to
+         assets/img/stickies-photos/photo-frame.png exactly (175x194): every
+         offset in its CSS is measured off that artwork, so the picture and
+         caption stay in register with the frame drawn behind them. Dragged
+         by its top strip; the X is part of the artwork, so the close button
+         is a transparent hit area sitting exactly over it. -->
+    <!-- A template, not a single instance: each photo-wall icon opens its
+         own frame, so several can sit on the page at once (see
+         openPhotoFrame in js/home.js). Addressed by class throughout —
+         nothing in here can carry an id, since there may be many copies. -->
+    <template id="photo-frame-template">
+        <div class="photo-frame">
+            <div class="photo-frame-drag"></div>
+            <button type="button" class="photo-frame-close" aria-label="Close"></button>
+            <div class="photo-frame-photo-box">
+                <img class="photo-frame-photo" alt="">
+            </div>
+            <p class="photo-frame-name"></p>
+        </div>
+    </template>
+
+    <!-- Furni card, opened by hovering a furni icon under a room image. Drawn
+         from assets/img/stickies-photos/sticky-furni.png via border-image, so
+         the artwork's header band, X and folded corner stay pixel-exact while
+         the card itself is a shorter rectangle than the source square. A
+         template rather than one element: several can be pinned at once. -->
+    <template id="furni-card-template">
+        <div class="furni-card">
+            <div class="furni-card-drag"></div>
+            <button type="button" class="furni-card-close" aria-label="Close"></button>
+            <p class="furni-card-name"></p>
+            <div class="furni-card-body">
+                <img class="furni-card-icon" alt="">
+                <div class="furni-card-text">
+                    <p class="furni-card-motto"></p>
+                    <p class="furni-card-date"></p>
+                </div>
+            </div>
+            <a class="furni-card-link" target="_blank" rel="noopener">View on Furni Index &rsaquo;</a>
+        </div>
+    </template>
 
     <!-- Draggable Habbo-style console, opened via the header's console button -->
     <div class="console-modal" id="console-modal" style="display:none;">
@@ -292,6 +337,12 @@
                                 <span class="gallery-counter gallery-position" id="gallery-position" style="display:none;"></span>
                                 <button type="button" class="old-versions-pill" id="old-versions-pill" style="display:none;"></button>
                             </div>
+                            <!-- Furni detected in the room image above, one icon each.
+                                 Rebuilt per gallery image by renderFurniStrip in
+                                 js/home.js, and left out entirely for a room with
+                                 none. -->
+                            <div class="furni-strip" id="furni-strip" hidden></div>
+
                             <div class="modal-body">
                                 <div class="modal-top-row">
                                     <p class="room-creator" id="modal-creator"></p>
@@ -352,6 +403,7 @@
     <script src="js/rooms-data.js"></script>
     <script src="js/events-data.js"></script>
     <script src="js/api.js"></script>
+    <script src="js/event-status.js"></script>
     <script src="js/privacy-content.js"></script>
     <script src="js/site.js"></script>
     <script src="js/home.js"></script>
