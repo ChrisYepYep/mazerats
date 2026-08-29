@@ -30,11 +30,18 @@ async function fetchPage(page) {
         headers.Authorization = `Bearer ${process.env.FURNIINDEX_API_KEY}`;
     }
     const res = await fetch(`${ENDPOINT}?page=${page}&limit=${PAGE_SIZE}`, { headers });
-    if (res.status === 401 && !headers.Authorization) {
-        // Names the actual cause. FurniIndex began requiring the header
-        // partway through this being built, so an unset variable turns into
-        // a bare 401 that says nothing about which knob to turn.
-        throw new Error("FurniIndex returned 401 and no API key was sent — set FURNIINDEX_API_KEY in the Netlify environment variables, then redeploy.");
+    if (res.status === 401) {
+        // FurniIndex began requiring the header partway through this being
+        // built, so a 401 is nearly always about the key rather than about
+        // them. Reports whether this deploy could SEE the variable — the
+        // length only, never the value — because "set in Netlify" and
+        // "visible to this function" are different things: variables are
+        // scoped per deploy context, so one saved for Production alone is
+        // absent from a branch deploy or deploy preview.
+        const key = process.env.FURNIINDEX_API_KEY;
+        throw new Error(key
+            ? `FurniIndex returned 401 even though a key was sent (${key.length} characters). Check the value is right.`
+            : "FurniIndex returned 401 and this deploy has no FURNIINDEX_API_KEY. It may be set for Production only — check the variable applies to all deploy contexts, since this is a branch deploy, then redeploy.");
     }
     if (!res.ok) throw new Error(`FurniIndex page ${page} returned ${res.status}`);
     return res.json();
