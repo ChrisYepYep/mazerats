@@ -13,7 +13,12 @@
 
 function imageUrl(siteUrl, imagePath) {
     if (/^https?:/i.test(imagePath)) return imagePath;
-    return `${String(siteUrl).replace(/\/+$/, "")}/${String(imagePath).replace(/^\/+/, "")}`;
+    const joined = `${String(siteUrl).replace(/\/+$/, "")}/${String(imagePath).replace(/^\/+/, "")}`;
+    // 101 of the stored paths carry spaces ("Room 065.png"), which fetch
+    // rejects outright. Only the characters that actually break a URL are
+    // escaped, one at a time: encodeURI would do the spaces but also escapes
+    // %, so a path already containing %20 would come back as %2520.
+    return joined.replace(/[ "'<>`{}|\\^]/g, c => encodeURIComponent(c));
 }
 
 module.exports = { imageUrl };

@@ -18,6 +18,7 @@
 
      node tools/furni-scan-local.js --dry-run          # plan only, no writes
      node tools/furni-scan-local.js --only-unscanned   # skip finished images
+     node tools/furni-scan-local.js --only-skipped     # retry refused/failed
      node tools/furni-scan-local.js --maze "Old School Maze"
      node tools/furni-scan-local.js --workers 12
 
@@ -51,6 +52,10 @@ const opt = (name, fallback) => {
 
 const DRY = flag("dry-run");
 const ONLY_UNSCANNED = flag("only-unscanned");
+// Revisits images a previous run produced no result for — either refused
+// (the colour gate, which has moved once already) or failed outright. Both
+// are "it did not get scanned", and both are worth another go after a fix.
+const ONLY_SKIPPED = flag("only-skipped");
 const MAZE = opt("maze", null);
 const LIMIT = Number(opt("limit", 0)) || 0;
 // Two cores left for the OS, this script's own writes, and whatever else is
@@ -123,7 +128,9 @@ function imagesOf(doc) {
     for (const doc of docs) {
         furniByMaze.set(doc.id, { ...(doc.furni || {}) });
         for (const image of imagesOf(doc)) {
-            if (ONLY_UNSCANNED && (doc.furni || {})[image]) continue;
+            const existing = (doc.furni || {})[image];
+            if (ONLY_UNSCANNED && existing) continue;
+            if (ONLY_SKIPPED && !(existing && (existing.skipped || existing.error))) continue;
             jobs.push({ id: doc.id, name: doc.name, image });
         }
     }

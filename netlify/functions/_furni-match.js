@@ -37,9 +37,26 @@ const MIN_MATCHED = 150;
 const MIN_COLOURS = 8;
 const PROBES = 6;
 const MAX_POSITIONS = 900;
-// Above this many distinct colours, a screenshot has lighting effects on it
-// and nothing will match exactly.
-const MAX_ROOM_COLOURS = 4000;
+/* Above this many distinct colours a screenshot is treated as unmatchable.
+   The first value here was 4,000, picked from a single bad example, and it
+   turned out to be far too strict: it skipped 252 of the site's 553 images,
+   and re-running some of those with the gate lifted found plenty. Measured:
+
+     Maze Quest      5,480 colours -> 41 furni
+     Temu Maze       6,163         -> 64
+     Original Maze   7,894         -> 20
+     The Little Maze 49,233        ->  8
+     Alt Maze       15,416         ->  0
+     Doors of Myst. 73,996         ->  0
+     The Trip      120,221         ->  0
+
+   Colour count barely predicts anything — 49k matched where 15k did not.
+   What it does predict is nothing useful below about 60k and nothing at all
+   above it, so the gate now sits there. It is a time guard, not a
+   correctness one: false positives are held off by MIN_MATCHED and
+   MIN_COLOURS, and an unmatchable image simply returns no hits after
+   spending ~27s doing so. */
+const MAX_ROOM_COLOURS = 60000;
 
 function buildColourIndex(img) {
     const { width, height, data } = img;
