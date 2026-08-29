@@ -1423,37 +1423,56 @@ document.addEventListener("DOMContentLoaded", () => {
     let transientFurniCard = null;
     let furniCardSeq = 0;
 
-    /* Room-scale sprites come in every shape, and one wider than the card's
-       image column was simply scaled down to fit it — a 114px dining table
-       shown at 72px, on top of whatever the height cap had already taken.
-       Anything that needs more room widens the card LEFTWARDS instead,
-       holding the right edge where it was: the card already overhangs the
-       modal's right edge, so growing the other way would push it further off
-       screen. Capped, or a wide, low sprite would drag the card halfway
-       across the modal. */
+    /* Room-scale sprites come in every shape, and the base card's image box
+       shrank nearly all of them to fit: a 114px dining table shown at 72px,
+       a 156px-tall fireplace at 78px. These are pixel art, where a 0.46
+       scale is not a smaller picture but a blurred one, so the card is
+       sized to the SPRITE instead — 1:1 wherever it fits.
+
+       It grows up and to the left, holding the bottom-right corner: the
+       card is placed with its bottom lapping over the icon it came from and
+       already overhangs the modal's right edge, so growing the other way
+       would both unstick it from its icon and push it further off screen.
+       place() recomputes the top from the card's height every time, so
+       growing upward needs nothing more than resizing before calling it.
+
+       The caps clear every sprite in the catalogue's normal range; the rare
+       giant (they go up to 287x259) is still scaled down, just far less. */
     const FURNI_CARD_W = 205;      // must match .furni-card width in the CSS
-    const FURNI_CARD_SLOT = 92;    // and .furni-card-icon's max-width
-    const FURNI_CARD_SLOT_MAX = 130;
-    const FURNI_CARD_IMG_H = 78;   // and its max-height
+    const FURNI_CARD_H = 148;      // and its height
+    const FURNI_CARD_SLOT_W = 92;  // and .furni-card-icon's max-width
+    const FURNI_CARD_SLOT_H = 78;  // and its max-height
+    const FURNI_CARD_MAX_W = 160;
+    const FURNI_CARD_MAX_H = 160;
 
     function growFurniCardForImage(card, place) {
         const img = card.querySelector(".furni-card-icon");
         const apply = () => {
             if (!img.naturalWidth || !img.naturalHeight) return;
-            // What the image will actually render at, once the height cap
-            // has had its say — the width alone doesn't decide this.
-            const h = Math.min(img.naturalHeight, FURNI_CARD_IMG_H);
-            const w = Math.ceil(img.naturalWidth * (h / img.naturalHeight));
-            const slot = Math.min(Math.max(w, FURNI_CARD_SLOT), FURNI_CARD_SLOT_MAX);
-            const extra = slot - FURNI_CARD_SLOT;
-            if (extra <= 0) return;
-            img.style.maxWidth = `${slot}px`;
-            card.style.width = `${FURNI_CARD_W + extra}px`;
+            // One scale for both axes so the sprite keeps its shape, and
+            // never above 1 — upscaling pixel art is worse than showing it
+            // small.
+            const scale = Math.min(1,
+                FURNI_CARD_MAX_W / img.naturalWidth,
+                FURNI_CARD_MAX_H / img.naturalHeight);
+            const w = Math.round(img.naturalWidth * scale);
+            const h = Math.round(img.naturalHeight * scale);
+            img.style.maxWidth = `${w}px`;
+            img.style.maxHeight = `${h}px`;
+
+            // The card only ever grows: a sprite smaller than the base box
+            // leaves the card at its normal size rather than shrinking it
+            // into a different shape for every furni.
+            const grewW = Math.max(0, w - FURNI_CARD_SLOT_W);
+            const grewH = Math.max(0, h - FURNI_CARD_SLOT_H);
+            if (!grewW && !grewH) return;
+            if (grewW) card.style.width = `${FURNI_CARD_W + grewW}px`;
+            if (grewH) card.style.height = `${FURNI_CARD_H + grewH}px`;
             // Only re-place a card still sitting where it was put. A slow
             // sprite could load after the card has been dragged, and yanking
             // it back out from under the pointer would be worse than leaving
             // it a little off its anchor.
-            if (card.style.left === card.dataset.placedLeft) place(extra);
+            if (card.style.left === card.dataset.placedLeft) place(grewW);
         };
         if (img.complete) apply();
         else img.addEventListener("load", apply, { once: true });
