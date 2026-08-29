@@ -1517,17 +1517,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
        The sprite is capped small in the CSS and sits beside the description,
        so nothing here resizes the card any more — this only re-places it. */
-    function placeFurniCardWhenReady(card, place) {
+    // Base card, and the widths the sprite shares its row with: 28px of
+    // border, a 6px gap, and the description column. At the base width the
+    // sprite's share is 92px — anything wider makes the CARD wider by the
+    // difference rather than scaling the sprite down.
+    const FURNI_CARD_W = 240;      // must match .furni-card width in the CSS
+    const FURNI_CARD_CHROME = 148; // 28px border + 6px gap + 114px description
+
+    function placeFurniCardForImage(card, place) {
         const img = card.querySelector(".furni-card-icon");
         const apply = () => {
-            // Place again now the sprite has arrived. The
-            // card's height follows its sprite, and the sprite's final size
-            // is only known at this point — before it, the card is either an
-            // empty box or one holding a stand-in at the CSS fallback cap.
-            // The first placement can only work from that provisional height,
-            // and since the top edge is what gets set, every pixel the card
-            // gains afterwards pushes its BOTTOM further below the icon it is
-            // supposed to be sitting on.
+            // The sprite is never scaled — no max-width, no max-height — so
+            // the card takes whatever width the sprite needs beside the
+            // description. It only ever grows: a small sprite leaves the card
+            // at its base width rather than reshaping it for every furni.
+            if (img.naturalWidth) {
+                const needed = img.naturalWidth + FURNI_CARD_CHROME;
+                card.style.width = needed > FURNI_CARD_W ? `${needed}px` : "";
+            }
+            // Place again now the sprite has arrived. The card's height
+            // follows it, and its final size is only known at this point —
+            // before it, the card is an empty box. The first placement can
+            // only work from that provisional height, and since the top edge
+            // is what gets set, every pixel gained afterwards pushes the
+            // BOTTOM further below the icon it is supposed to sit on.
             //
             // Only re-place a card still sitting where it was put: a slow
             // sprite could load after the card has been dragged, and yanking
@@ -1603,11 +1616,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const r = anchor.getBoundingClientRect();
         const OVERLAP = 8;
         const place = () => {
-            clampToViewport(card, r.left - OVERLAP, r.top - card.offsetHeight + OVERLAP);
+            // Held by its bottom-RIGHT corner: the card laps over the icon it
+            // came from and already overhangs the modal's right edge, so a
+            // wide sprite has to grow it leftwards, not further off screen.
+            const grew = Math.max(0, card.offsetWidth - FURNI_CARD_W);
+            clampToViewport(card, r.left - OVERLAP - grew, r.top - card.offsetHeight + OVERLAP);
             card.dataset.placedLeft = card.style.left;
         };
         place();
-        placeFurniCardWhenReady(card, place);
+        placeFurniCardForImage(card, place);
 
         if (pinNow) pinFurniCard(card);
         else transientFurniCard = card;

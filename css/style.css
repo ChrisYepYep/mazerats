@@ -3358,11 +3358,12 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: block;
     width: auto;
     height: auto;
-    /* Small again, and beside the description rather than sized to fill the
-       card. width/height stay auto so an oversized sprite scales down whole
-       instead of being squashed — these come in every shape. */
-    max-width: 92px;
-    max-height: 78px;
+    /* Never scaled. Sprites are pixel art, where anything but 1:1 is a
+       blurred picture rather than a smaller one, so the CARD is sized to fit
+       the sprite instead — see placeFurniCardForImage in js/home.js. No cap
+       here at all: a cap is a resize. */
+    max-width: none;
+    max-height: none;
     image-rendering: pixelated;
 }
 
