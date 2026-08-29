@@ -1026,7 +1026,15 @@ document.addEventListener("DOMContentLoaded", () => {
         stopAutoAdvance();
         if (!activeGallery || activeGallery.length < 2) return;
         if (lightboxOverlay.classList.contains("open")) return;
-        autoAdvanceTimer = setInterval(() => showGalleryImage(activeIndex + 1), 12000);
+        autoAdvanceTimer = setInterval(() => {
+            // Reading the furni row is a deliberate act, and advancing the
+            // room out from under it swaps every icon and closes the card
+            // mid-sentence. The timer keeps ticking and simply declines;
+            // leaving the row restarts it for a full fresh countdown rather
+            // than whatever was left of the interval it interrupted.
+            if (furniInUse()) return;
+            showGalleryImage(activeIndex + 1);
+        }, 12000);
     }
 
     // Slides the outgoing image out one side while the new one slides in
@@ -1336,6 +1344,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const left = makeFurniArrow(scroller, -1);
         const right = makeFurniArrow(scroller, 1);
         inner.appendChild(left);
+        // Leaving the row hands the carousel back — see furniInUse. Bound
+        // once on the container, which outlives the icons inside it.
+        // ("furni-strip pointerleave")
+        if (!furniStrip.dataset.pauseWired) {
+            furniStrip.dataset.pauseWired = "1";
+            furniStrip.addEventListener("pointerleave", () => {
+                if (!furniInUse()) restartAutoAdvance();
+            });
+        }
+
         inner.appendChild(scroller);
         inner.appendChild(right);
         inner.appendChild(label);
@@ -1365,16 +1383,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
         let frame = null;
         let last = 0;
+        // scrollLeft rounds to whole pixels: assigning 0.9 lands on 1, but
+        // assigning 0.33 lands on 0. A per-frame movement below half a pixel
+        // therefore does not move the row AT ALL — it reads back the same
+        // value it started from, every frame, forever. At 60px/second that
+        // is any display above 120Hz. So the fraction is banked here and
+        // only whole pixels are ever handed to scrollLeft.
+        let carry = 0;
         const step = now => {
             // Capped so a backgrounded tab, where frames stop arriving,
             // doesn't come back and jump the row a long way in one step.
             const dt = Math.min(now - last, 100) / 1000;
             last = now;
-            scroller.scrollLeft += FURNI_HOVER_SCROLL * dt * dir;
+            carry += FURNI_HOVER_SCROLL * dt * dir;
+            const whole = Math.trunc(carry);
+            if (whole) {
+                scroller.scrollLeft += whole;
+                carry -= whole;
+            }
             frame = requestAnimationFrame(step);
         };
         const start = () => {
             if (frame !== null) return;
+            carry = 0;
             frame = requestAnimationFrame(now => { last = now; step(now); });
         };
         const stop = () => { if (frame !== null) cancelAnimationFrame(frame); frame = null; };
@@ -1420,6 +1451,16 @@ document.addEventListener("DOMContentLoaded", () => {
     // be read, dragged around and closed on its own terms. Without that a
     // hover-opened card could never be reached to use its link or its X.
     const openFurniCards = [];
+
+    /* Whether the furni row is currently being used, which holds the room
+       carousel where it is. Hover is read from the DOM rather than tracked
+       in a variable: the modal can close with the pointer still over the
+       strip, and a missed pointerleave would otherwise leave the carousel
+       paused for good. Touch has no hover, but a tap opens a card, and an
+       open card counts. */
+    function furniInUse() {
+        return openFurniCards.length > 0 || furniStrip.matches(":hover");
+    }
     let transientFurniCard = null;
     let furniCardSeq = 0;
 
@@ -1483,6 +1524,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (i !== -1) openFurniCards.splice(i, 1);
         if (transientFurniCard === card) transientFurniCard = null;
         card.remove();
+        if (!furniInUse()) restartAutoAdvance();
     }
 
     function pinFurniCard(card) {
