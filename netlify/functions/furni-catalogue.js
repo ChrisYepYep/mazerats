@@ -39,9 +39,20 @@ async function fetchPage(page) {
         // scoped per deploy context, so one saved for Production alone is
         // absent from a branch deploy or deploy preview.
         const key = process.env.FURNIINDEX_API_KEY;
-        throw new Error(key
-            ? `FurniIndex returned 401 even though a key was sent (${key.length} characters). Check the value is right.`
-            : "FurniIndex returned 401 and this deploy has no FURNIINDEX_API_KEY. It may be set for Production only — check the variable applies to all deploy contexts, since this is a branch deploy, then redeploy.");
+        if (key) {
+            throw new Error(`FurniIndex returned 401 even though a key was sent (${key.length} characters). Check the value is right.`);
+        }
+        // Lists which FURNI-ish variables this function CAN see, by name
+        // only, never a value. A near-miss name and a variable scoped to
+        // Builds rather than Functions look identical from in here; this
+        // tells the two apart at a glance.
+        const seen = Object.keys(process.env).filter(k => /FURNI/i.test(k));
+        throw new Error(
+            "FurniIndex returned 401 and this function cannot see FURNIINDEX_API_KEY. " +
+            (seen.length
+                ? `It can see these, so the name may differ: ${seen.join(", ")}.`
+                : "It can see no FURNI* variable at all — check the exact name, and that the variable scope includes Functions, not Builds only.")
+        );
     }
     if (!res.ok) throw new Error(`FurniIndex page ${page} returned ${res.status}`);
     return res.json();
