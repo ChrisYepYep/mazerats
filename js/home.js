@@ -1423,6 +1423,42 @@ document.addEventListener("DOMContentLoaded", () => {
     let transientFurniCard = null;
     let furniCardSeq = 0;
 
+    /* Room-scale sprites come in every shape, and one wider than the card's
+       image column was simply scaled down to fit it — a 114px dining table
+       shown at 72px, on top of whatever the height cap had already taken.
+       Anything that needs more room widens the card LEFTWARDS instead,
+       holding the right edge where it was: the card already overhangs the
+       modal's right edge, so growing the other way would push it further off
+       screen. Capped, or a wide, low sprite would drag the card halfway
+       across the modal. */
+    const FURNI_CARD_W = 205;      // must match .furni-card width in the CSS
+    const FURNI_CARD_SLOT = 92;    // and .furni-card-icon's max-width
+    const FURNI_CARD_SLOT_MAX = 130;
+    const FURNI_CARD_IMG_H = 78;   // and its max-height
+
+    function growFurniCardForImage(card, place) {
+        const img = card.querySelector(".furni-card-icon");
+        const apply = () => {
+            if (!img.naturalWidth || !img.naturalHeight) return;
+            // What the image will actually render at, once the height cap
+            // has had its say — the width alone doesn't decide this.
+            const h = Math.min(img.naturalHeight, FURNI_CARD_IMG_H);
+            const w = Math.ceil(img.naturalWidth * (h / img.naturalHeight));
+            const slot = Math.min(Math.max(w, FURNI_CARD_SLOT), FURNI_CARD_SLOT_MAX);
+            const extra = slot - FURNI_CARD_SLOT;
+            if (extra <= 0) return;
+            img.style.maxWidth = `${slot}px`;
+            card.style.width = `${FURNI_CARD_W + extra}px`;
+            // Only re-place a card still sitting where it was put. A slow
+            // sprite could load after the card has been dragged, and yanking
+            // it back out from under the pointer would be worse than leaving
+            // it a little off its anchor.
+            if (card.style.left === card.dataset.placedLeft) place(extra);
+        };
+        if (img.complete) apply();
+        else img.addEventListener("load", apply, { once: true });
+    }
+
     function closeFurniCard(card) {
         const i = openFurniCards.indexOf(card);
         if (i !== -1) openFurniCards.splice(i, 1);
@@ -1480,7 +1516,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // clampToViewport pulls it back on screen near an edge.
         const r = anchor.getBoundingClientRect();
         const OVERLAP = 8;
-        clampToViewport(card, r.left - OVERLAP, r.top - card.offsetHeight + OVERLAP);
+        const place = extra => {
+            clampToViewport(card, r.left - OVERLAP - extra, r.top - card.offsetHeight + OVERLAP);
+            card.dataset.placedLeft = card.style.left;
+        };
+        place(0);
+        growFurniCardForImage(card, place);
 
         if (pinNow) pinFurniCard(card);
         else transientFurniCard = card;

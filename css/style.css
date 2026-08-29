@@ -3259,7 +3259,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .furni-card {
     position: fixed;
     z-index: 320;
-    width: 185px;
+    /* 205 = 14px border + 92px image column + 6px gap + 79px text + 14px
+       border. The text column is fixed, so this width and the image column
+       move together — see FURNI_CARD_W in js/home.js, which mirrors it. */
+    width: 205px;
     height: 148px;
     border-style: solid;
     border-width: 19px 14px 14px 14px;
@@ -3317,7 +3320,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
    under the name rather than on a padded divider — it should read as an
    underline on the heading, not a separator between two blocks. */
 .furni-card-name {
-    margin: 0 0 3px;
+    margin: 2px 0 3px;
     padding-bottom: 2px;
     color: #703f20;
     font-weight: 700;
@@ -3341,11 +3344,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
     flex: 0 0 auto;
     width: auto;
     height: auto;
-    max-width: 72px;
+    max-width: 92px;
     max-height: 78px;
     image-rendering: pixelated;
 }
 
+/* Elastic, so a narrow sprite hands its unused width to the motto instead of
+   leaving a dead strip down the right of the card. A wide one still gets the
+   room it needs: growFurniCardForImage widens the CARD to suit the image,
+   which leaves the text its usual ~79px either way. */
 .furni-card-text {
     flex: 1;
     min-width: 0;
