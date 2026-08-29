@@ -1288,6 +1288,47 @@ document.addEventListener("DOMContentLoaded", () => {
     // Furni detected in the room image showing above (see the admin scan).
     // One icon per item; the strip is rebuilt on every gallery change, since
     // each room image has its own furni.
+    /* Fetches every room's icons the moment the maze opens, not just the
+       room on screen. Paging through a maze otherwise re-runs the same wait
+       at every room, even though the icons repeat heavily between them — the
+       whole site only has 374 distinct ones. They go straight into the HTTP
+       cache, so by the time a room is reached its icons are already there.
+
+       Deliberately unawaited and error-swallowing: this is a nicety, and a
+       furni whose icon 404s should cost nothing more than that icon. */
+    const warmedFurniIcons = new Set();
+    const FURNI_WARM_BATCH = 12;
+    function warmFurniIcons(furni) {
+        if (!furni) return;
+        const queue = [];
+        for (const record of Object.values(furni)) {
+            for (const item of (record && record.items) || []) {
+                if (!item || item.hidden || !item.icon) continue;
+                if (warmedFurniIcons.has(item.icon)) continue;
+                warmedFurniIcons.add(item.icon);
+                queue.push(item.icon);
+            }
+        }
+        if (!queue.length) return;
+
+        // In idle-time batches at low priority, never in one go. A 35-room
+        // maze queues 227 icons, and firing those at once puts 227 requests
+        // in front of the room screenshot — which is 100-750KB, is the thing
+        // the visitor is actually looking at, and matters far more than an
+        // icon three rooms ahead.
+        const idle = window.requestIdleCallback || (fn => setTimeout(fn, 200));
+        const pump = () => {
+            for (const url of queue.splice(0, FURNI_WARM_BATCH)) {
+                const img = new Image();
+                img.decoding = "async";
+                img.fetchPriority = "low";
+                img.src = url;
+            }
+            if (queue.length) idle(pump);
+        };
+        idle(pump);
+    }
+
     function renderFurniStrip(record) {
         furniStrip.innerHTML = "";
         // The scan stores a record per room image — { scannedAt,
@@ -1327,7 +1368,14 @@ document.addEventListener("DOMContentLoaded", () => {
             const img = document.createElement("img");
             img.src = entry.icon;
             img.alt = "";
-            img.loading = "lazy";
+            // NOT lazy. The row caps at twelve icons and scrolls, so the
+            // browser considered everything past the twelfth off-screen and
+            // never requested it — a room with 32 furni loaded 12 of them and
+            // left the other 20 blank until they were scrolled to. These
+            // average 823 bytes; the whole site's 374 distinct icons come to
+            // 300KB, less than one room screenshot. There is nothing here
+            // worth deferring.
+            img.decoding = "async";
             btn.appendChild(img);
 
             // Hovering opens the card; the card decides for itself whether to
@@ -2350,6 +2398,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // this one class.
         modalThumb.classList.toggle("is-event", !!n.isEvent);
         activeFurni = n.furni || null;
+        warmFurniIcons(activeFurni);
         renderRelatedImages(n);
 
         if (combinedGallery.length) {

@@ -90,6 +90,11 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Furni icons are served by FurniIndex. Opening the connection up front
+         saves the DNS and TLS round trips that otherwise land on the first
+         icon of the first maze opened — measured at 590ms, against 70-100ms
+         for every icon after it. -->
+    <link rel="preconnect" href="https://furniindex.com">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
