@@ -4775,6 +4775,53 @@ body[data-page="admin"] .search-box input {
    slash reads as a break across the icon rather than a line drawn over it. */
 .password-toggle .pw-slash-bg { stroke: #fff; }
 
+/* The furni editor on a maze form: what the scan found per room image. */
+.admin-furni-room {
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    background: var(--chrome-row);
+    padding: 8px 10px;
+    margin-bottom: 8px;
+}
+
+.admin-furni-room-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.admin-furni-room-head .admin-hint { margin: 0; flex: 1; }
+
+.admin-furni-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+}
+
+.admin-furni-item img {
+    width: auto;
+    height: auto;
+    max-width: 26px;
+    max-height: 26px;
+    image-rendering: pixelated;
+}
+
+.admin-furni-name { flex: 1; overflow-wrap: anywhere; }
+
+/* How much of the sprite actually matched — the quickest read on whether a
+   detection is solid or worth a second look. */
+.admin-furni-score {
+    color: var(--parchment-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Still listed, but dimmed and struck through: it is in the record and can
+   be brought back, it just does not reach the site. */
+.admin-furni-item.is-hidden { opacity: 0.45; }
+.admin-furni-item.is-hidden .admin-furni-name { text-decoration: line-through; }
+
 .admin-date-parts {
     display: flex;
     gap: 8px;

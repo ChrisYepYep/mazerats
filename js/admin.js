@@ -538,6 +538,93 @@ document.addEventListener("DOMContentLoaded", () => {
         renderRelatedList();
     }
 
+    /* What the furni scan found, per room image, with a way to correct it.
+       Scanning is confident but not infallible — a sprite that shares enough
+       pixels with whatever is behind it can land a false hit — so each
+       detection can be hidden (kept in the record but not shown on the site)
+       or removed outright. Hiding is the safer of the two: a rescan will
+       find a false positive again, and a hidden one stays hidden with its
+       reasoning visible, where a removed one silently comes back. */
+    function wireFurniEditor(formEl, item) {
+        const wrap = formEl.querySelector(".admin-furni-field");
+        if (!wrap) return;
+        const listEl = wrap.querySelector(".admin-furni-list");
+        formEl._furniDraft = JSON.parse(JSON.stringify(item.furni || {}));
+
+        // Room images in the order they appear on the site, so this reads in
+        // the same order as the gallery above rather than by object key.
+        function imagesInOrder() {
+            const out = [];
+            if (item.entrance && item.entrance.image) out.push({ image: item.entrance.image, label: "Entrance" });
+            (formEl._galleryDraft || item.gallery || []).forEach((g, i) => {
+                if (g.image) out.push({ image: g.image, label: g.label || ("Room " + (i + 1)) });
+            });
+            if (item.finish && item.finish.image) out.push({ image: item.finish.image, label: "Finish" });
+            return out;
+        }
+
+        function render() {
+            const draft = formEl._furniDraft;
+            const rooms = imagesInOrder().filter(r => draft[r.image]);
+            if (!rooms.length) {
+                listEl.innerHTML = '<p class="admin-empty">No furni recorded yet — run a scan on this maze.</p>';
+                return;
+            }
+            listEl.innerHTML = rooms.map(({ image, label }) => {
+                const rec = draft[image] || {};
+                const items = rec.items || [];
+                const shown = items.filter(i => !i.hidden).length;
+                let note = "";
+                if (rec.skipped === "lighting-effects") {
+                    note = '<p class="admin-hint">Skipped: this screenshot has lighting effects on it (' + rec.roomColours + ' colours), which shifts every pixel and makes exact matching impossible.</p>';
+                } else if (rec.error) {
+                    note = '<p class="admin-hint">Failed: ' + escapeHtml(rec.error) + '</p>';
+                }
+                const rows = items.map((f, i) => '' +
+                    '<div class="admin-furni-item ' + (f.hidden ? "is-hidden" : "") + '" data-image="' + escapeHtml(image) + '" data-index="' + i + '">' +
+                        '<img src="' + escapeHtml(f.icon || "") + '" alt="">' +
+                        '<span class="admin-furni-name">' + escapeHtml(f.name || "") + '</span>' +
+                        '<span class="admin-furni-score">' + Math.round((f.coverage || 0) * 100) + '%</span>' +
+                        '<button type="button" class="admin-pill-btn admin-furni-hide">' + (f.hidden ? "Show" : "Hide") + '</button>' +
+                        '<button type="button" class="admin-pill-btn admin-pill-danger admin-furni-remove">Remove</button>' +
+                    '</div>').join("");
+                return '' +
+                    '<div class="admin-furni-room">' +
+                        '<div class="admin-furni-room-head">' +
+                            '<strong>' + escapeHtml(label) + '</strong>' +
+                            '<span class="admin-hint">' + shown + ' shown of ' + items.length + '</span>' +
+                            '<button type="button" class="admin-pill-btn admin-pill-danger admin-furni-clear" data-image="' + escapeHtml(image) + '">Remove all</button>' +
+                        '</div>' + note +
+                        '<div class="admin-furni-items">' + rows + '</div>' +
+                    '</div>';
+            }).join("");
+
+            listEl.querySelectorAll(".admin-furni-item").forEach(row => {
+                const image = row.dataset.image;
+                const idx = Number(row.dataset.index);
+                row.querySelector(".admin-furni-hide").addEventListener("click", () => {
+                    const f = draft[image].items[idx];
+                    f.hidden = !f.hidden;
+                    render();
+                });
+                row.querySelector(".admin-furni-remove").addEventListener("click", () => {
+                    draft[image].items.splice(idx, 1);
+                    render();
+                });
+            });
+            listEl.querySelectorAll(".admin-furni-clear").forEach(btn => {
+                btn.addEventListener("click", async () => {
+                    const image = btn.dataset.image;
+                    if (!await showConfirmDialog("Remove every furni recorded for this room image? A rescan would find them again.")) return;
+                    draft[image].items = [];
+                    render();
+                });
+            });
+        }
+
+        render();
+    }
+
     function wireThumbUpload(formEl, uploadPrefix) {
         const fileInput = formEl.querySelector(".admin-thumb-file");
         const textInput = formEl.querySelector('input[name="thumb"]');
@@ -1705,6 +1792,16 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
         ` : "";
 
+        // Only rendered once a scan has recorded something against this
+        // maze; there is nothing to correct before that.
+        const furniSectionHtml = Object.keys(item.furni || {}).length ? `
+            <div class="admin-field admin-furni-field">
+                <span>Furni found in these rooms</span>
+                <p class="admin-hint">What the scan detected in each room image. Hide keeps a detection in the record but stops the site showing it &mdash; better than Remove for a false positive, since a rescan would find it again either way.</p>
+                <div class="admin-furni-list"></div>
+            </div>
+        ` : "";
+
         // Shown for both mazes and events. These don't join the gallery
         // sequence — each one gets a photo-wall icon on the corner of the
         // gallery viewport on the public site, opening a draggable photo
@@ -1757,6 +1854,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ${gallerySectionHtml}
             ${finishSectionHtml}
             ${relatedSectionHtml}
+            ${furniSectionHtml}
             <p class="admin-form-error" style="display:none;"></p>
             <div class="admin-form-actions">
                 <button type="submit" class="admin-action-pill admin-pill-solid">Save</button>
@@ -1780,6 +1878,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (isEvents) wireDerivedStatus(cfg.formEl);
         cfg.formEl._relatedDraft = (item.relatedImages || []).map(normalizeRelatedEntry);
         wireRelatedEditor(cfg.formEl, uploadPrefix);
+        wireFurniEditor(cfg.formEl, item);
         if (hasGallery) {
             wireBookendUpload(cfg.formEl, "entrance", uploadPrefix);
             wireBookendUpload(cfg.formEl, "finish", uploadPrefix);
@@ -1807,6 +1906,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl.innerHTML = "";
         cfg.formEl._galleryDraft = null;
         cfg.formEl._relatedDraft = null;
+        cfg.formEl._furniDraft = null;
         cfg.formEl._selectedTags = null;
         cfg.formEl._expandedOldVersions = null;
         cfg.formEl._entranceOldVersions = null;
@@ -1931,6 +2031,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // Dropped if an upload left a row without an image — a related
         // image with nothing to show has no meaning on the public side.
         payload.relatedImages = (form._relatedDraft || []).filter(r => r.image);
+        // Only written when the form actually rendered the furni editor —
+        // otherwise saving a maze that has never been scanned would write
+        // an empty object over results a scan added in the meantime.
+        if (form._furniDraft) payload.furni = form._furniDraft;
         const entranceImage = (data.entranceImage || "").trim();
         payload.entrance = entranceImage ? { image: entranceImage, label: (data.entranceLabel || "").trim() || "Entrance", oldVersions: form._entranceOldVersions || [] } : null;
         const finishImage = (data.finishImage || "").trim();

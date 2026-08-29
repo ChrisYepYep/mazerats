@@ -1288,7 +1288,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // simply had no furni in it. A plain array is accepted too, for
         // anything added by hand.
         const list = Array.isArray(record) ? record : (record && record.items) || [];
-        const furni = list.filter(f => f && (f.sprite || f.icon));
+        // Hidden ones stay in the record — the admin can put them back, and
+        // a rescan would only find a false positive again — but never reach
+        // the site.
+        const furni = list.filter(f => f && !f.hidden && (f.sprite || f.icon));
         furniStrip.hidden = !furni.length;
         if (!furni.length) return;
 
