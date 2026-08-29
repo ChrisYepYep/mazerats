@@ -6205,18 +6205,26 @@ body[data-page="admin"] .search-box input {
 
 /* ---------- Loading screen ---------- */
 
-/* Covers the page until the archive is worth looking at. Inherits the body's
-   own background so the reveal is a fade from the same surface, not a cut
-   between two different ones. */
+/* Covers the page until the archive is worth looking at — but only the page.
+   It sits UNDER .site-header (z-index 50), so the top bar is there from the
+   first paint rather than arriving with everything else, and it repeats the
+   body's exact background so the loading screen and the site behind it are
+   the same surface. The reveal is then a fade of the middle of the page, not
+   a cut between two different-looking screens. */
 .site-loader {
     position: fixed;
     inset: 0;
-    z-index: 400;
+    z-index: 40;
     display: flex;
     align-items: center;
     justify-content: center;
     background-color: var(--bg-black);
-    background-image: linear-gradient(rgba(10, 7, 4, 0.7), rgba(10, 7, 4, 0.78));
+    background-image:
+        linear-gradient(rgba(10, 7, 4, 0.7), rgba(10, 7, 4, 0.78)),
+        url('../assets/img/MazeBG.png');
+    background-repeat: repeat;
+    background-size: 220px;
+    background-attachment: fixed;
     transition: opacity 260ms ease;
 }
 
