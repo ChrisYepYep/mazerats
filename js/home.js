@@ -271,8 +271,11 @@ document.addEventListener("DOMContentLoaded", () => {
         extreme: "Extreme"
     };
 
+    // String(), like admin.js's copy: every caller happens to pass a string
+    // today, but a number or a null reaching this used to throw rather than
+    // escape, and the callers are spread across every render path here.
     function escapeHtml(str) {
-        return str.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+        return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
     // Turns any bare URL in the Links & References text into a real,
@@ -322,11 +325,17 @@ document.addEventListener("DOMContentLoaded", () => {
     // Shared by the row card and the modal — difficulty (if set) always
     // leads, styled as a tag but colour-coded, followed by the room's own
     // tags in whatever order they were saved.
+    /* Everything interpolated here is admin-entered and lands in innerHTML,
+       so it is escaped on the way in — the same rule js/admin.js already
+       applies to every list it renders. Not because a visitor can reach these
+       fields, but because a maze name with a "<" in it should show that
+       character rather than open a tag, and a compromised admin account
+       should not be able to run script in a visitor's session. */
     function tagsHtml(n) {
         const difficultyHtml = n.difficulty
-            ? `<span class="tag difficulty-${n.difficulty}">${DIFFICULTY_LABELS[n.difficulty] || n.difficulty}</span>`
+            ? `<span class="tag difficulty-${escapeHtml(n.difficulty)}">${escapeHtml(DIFFICULTY_LABELS[n.difficulty] || n.difficulty)}</span>`
             : "";
-        return difficultyHtml + (n.tags || []).map(t => `<span class="tag">${t}</span>`).join("");
+        return difficultyHtml + (n.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("");
     }
 
     function sortItems(items) {
@@ -526,9 +535,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(n.thumb, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
                 </div>
                 <div class="row-info">
-                    <h3>${n.name}</h3>
-                    <p class="row-creator">${n.subtitle}${isOpenView && n.dateValue ? ` <span class="row-date">· ${n.dateFieldLabel} ${formatMazeDate(n.dateValue)}</span>` : ""}</p>
-                    ${isOpenView ? "" : `<p class="row-desc">${n.description || ""}</p>`}
+                    <h3>${escapeHtml(n.name || "")}</h3>
+                    <p class="row-creator">${escapeHtml(n.subtitle || "")}${isOpenView && n.dateValue ? ` <span class="row-date">· ${escapeHtml(n.dateFieldLabel)} ${escapeHtml(formatMazeDate(n.dateValue))}</span>` : ""}</p>
+                    ${isOpenView ? "" : `<p class="row-desc">${escapeHtml(n.description || "")}</p>`}
                     <div class="row-tags">${tagsHtml(n)}</div>
                 </div>
                 <div class="row-side">
@@ -1333,6 +1342,99 @@ document.addEventListener("DOMContentLoaded", () => {
         idle(pump);
     }
 
+    /* Ordering the furni row: theme, then type, then name.
+
+       The row arrives in the order the SCANNER produced it, which is
+       descending matched-pixel count — an artefact of the matching algorithm
+       and meaningless to a reader. A room image holds sixteen furni at the
+       median and up to sixty-four, and two thirds of them hold more than the
+       twelve the row shows before it scrolls, so the order is doing real
+       work.
+
+       FurniIndex has no category or type field — the whole of what it
+       returns is id, name, className, motto, icon, the two sprite grids,
+       releaseDate and url. So both keys below are derived from className and
+       the display name.
+
+       Hand-added furni sorts exactly like scanned furni and needs no special
+       case: the admin picker stores className with each entry it adds, and
+       netlify/functions/_furni-payload.js backfills it from the catalogue by
+       icon for anything recorded before that existed. An entry that somehow
+       still has none falls back to matching on its display name alone, which
+       is why the type words below cover ordinary English as well as the
+       Habbo class vocabulary. */
+
+    /* Type words, checked against className tokens AND the display name.
+       Habbo class names are not all English — sohva is a sofa, amme a bath,
+       kaappi a cabinet — so the Finnish shows up here alongside the obvious.
+       Order matters: the first list to match wins, which is what keeps
+       "turntable" out of Table. Covers 83% of the archive's furni; the rest
+       fall to (untyped), which sorts last within its theme. */
+    const FURNI_TYPES = [
+        ["Bathroom",     ["bath", "toilet", "sink", "shower", "tub", "loo", "portaloo", "amme", "hcamme", "wc"]],
+        ["Media",        ["tv", "television", "turntable", "radio", "jukebox", "telephone", "phone", "speaker", "camera", "monitor"]],
+        ["Machine",      ["machine", "vendro", "dicemaster", "dice", "fesh", "mtd", "provider", "lever", "switch", "button"]],
+        ["Seating",      ["chair", "sofa", "sohva", "stool", "bench", "seat", "throne", "armchair", "sofachair", "tuoli", "pouffe"]],
+        ["Table",        ["table", "poyta", "desk", "counter", "nightstand", "coffeetable"]],
+        ["Bed",          ["bed", "cot", "bunk", "hammock", "sanky"]],
+        ["Plant",        ["plant", "cactus", "bonsai", "tree", "flower", "bush", "palm", "yukka", "pineapple", "garland", "ivy", "fern", "rose"]],
+        ["Lighting",     ["lamp", "lantern", "light", "candle", "torch", "chandelier", "bblamp", "dragonlamp", "lamppu"]],
+        ["Wall art",     ["poster", "painting", "picture", "banner", "mural", "frame"]],
+        ["Storage",      ["shelf", "shelves", "cabinet", "drawer", "wardrobe", "chest", "bookcase", "crate", "box", "kaappi", "limukaappi", "locker"]],
+        ["Flooring",     ["rug", "carpet", "mat", "matto", "tile", "tile1", "floor"]],
+        ["Divider",      ["door", "gate", "fence", "divider", "screen", "curtain", "wall", "post", "pillar", "column"]],
+        ["Food & drink", ["tray", "barrel", "bottle", "cup", "drink", "food", "fruit", "cake", "juice", "icecream", "bar", "tea", "coffee"]],
+        ["Decoration",   ["statue", "trophy", "urn", "vase", "fountain", "pillow", "cushion", "parasol", "fan", "balloon", "figure", "ornament", "sign", "flag", "clock", "mirror", "rocket", "teleport", "duck", "elephant", "bunny", "pumpkin", "fireplace", "snowman", "tubes", "pipe"]],
+    ];
+    const FURNI_TYPE_WORDS = new Set(FURNI_TYPES.reduce((all, [, words]) => all.concat(words), []));
+
+    function furniTokens(entry) {
+        return (String(entry.className || "") + " " + String(entry.name || ""))
+            .split(/[^a-z0-9]+/i)
+            .filter(Boolean)
+            .map(t => t.toLowerCase());
+    }
+
+    function furniType(entry) {
+        const tokens = furniTokens(entry);
+        for (const [label, words] of FURNI_TYPES) {
+            if (tokens.some(t => words.indexOf(t) !== -1)) return label;
+        }
+        return null;
+    }
+
+    /* The className prefix is the furni's line — gothic_chair, arabian_table,
+       tiki_torch. But plenty of prefixes are the OBJECT rather than a line
+       (plant_yukka, poster_fox), and those name no theme at all, so a prefix
+       counts only when it isn't itself a type word. That rule needs no
+       curated list of themes, which is the point: new Habbo lines classify
+       themselves. Covers 54% of the archive; the rest sort as unthemed. */
+    function furniTheme(entry) {
+        const className = String(entry.className || "");
+        if (className.indexOf("_") === -1) return null;
+        const prefix = className.split(/[_*]/)[0].toLowerCase();
+        if (!prefix || /^\d+$/.test(prefix) || FURNI_TYPE_WORDS.has(prefix)) return null;
+        return prefix;
+    }
+
+    // Anything with no theme sorts after everything that has one, and the
+    // same for type within a theme — a known group beats a leftover.
+    function compareFurni(a, b) {
+        const at = furniTheme(a), bt = furniTheme(b);
+        if (at !== bt) {
+            if (!at) return 1;
+            if (!bt) return -1;
+            return at.localeCompare(bt);
+        }
+        const ak = furniType(a), bk = furniType(b);
+        if (ak !== bk) {
+            if (!ak) return 1;
+            if (!bk) return -1;
+            return ak.localeCompare(bk);
+        }
+        return String(a.name || "").localeCompare(String(b.name || ""), undefined, { numeric: true });
+    }
+
     function renderFurniStrip(record) {
         furniStrip.innerHTML = "";
         // The scan stores a record per room image — { scannedAt,
@@ -1344,7 +1446,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // Hidden ones stay in the record — the admin can put them back, and
         // a rescan would only find a false positive again — but never reach
         // the site.
-        const furni = list.filter(f => f && !f.hidden && (f.sprite || f.icon));
+        const furni = list.filter(f => f && !f.hidden && (f.sprite || f.icon)).sort(compareFurni);
         furniStrip.hidden = !furni.length;
         if (!furni.length) return;
 
@@ -1590,6 +1692,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const i = openFurniCards.indexOf(card);
         if (i !== -1) openFurniCards.splice(i, 1);
         if (transientFurniCard === card) transientFurniCard = null;
+        // The hover watch lives partly on the ICON, which outlives the card,
+        // so it has to be taken off again or every open leaves another pair
+        // of listeners on it pointing at a card that no longer exists.
+        if (card._teardownHoverWatch) card._teardownHoverWatch();
         card.remove();
         if (!furniInUse()) restartAutoAdvance();
     }
@@ -1606,9 +1712,10 @@ document.addEventListener("DOMContentLoaded", () => {
             if (pinNow) pinFurniCard(existing);
             return;
         }
-        // Only ever one card at a time — opening another closes whatever
-        // was up, pinned or not.
-        closeAllFurniCards();
+        // Only the card nobody has moved gives way. Anything dragged out
+        // of place stays where it was put — that is what moving one means,
+        // and it is what lets several stand open side by side.
+        if (transientFurniCard) closeFurniCard(transientFurniCard);
 
         const card = furniCardTemplate.content.firstElementChild.cloneNode(true);
         card.dataset.furni = entry.url || entry.name || String(furniCardSeq++);
@@ -1634,13 +1741,7 @@ document.addEventListener("DOMContentLoaded", () => {
         else link.remove();
 
         card.querySelector(".furni-card-close").addEventListener("click", () => closeFurniCard(card));
-        card.querySelector(".furni-card-drag").addEventListener("mousedown", e => {
-            pinFurniCard(card);
-            startCardDrag(card, e);
-        });
-        // Reaching the card at all means it's wanted — from here it stays
-        // until it's closed.
-        card.addEventListener("mouseenter", () => pinFurniCard(card));
+        card.querySelector(".furni-card-drag").addEventListener("pointerdown", e => startCardDrag(card, e));
 
         document.body.appendChild(card);
         openFurniCards.push(card);
@@ -1666,19 +1767,42 @@ document.addEventListener("DOMContentLoaded", () => {
         if (pinNow) pinFurniCard(card);
         else transientFurniCard = card;
 
-        // A transient card closes when the pointer leaves both it and its
-        // icon without ever entering it.
-        anchor.addEventListener("mouseleave", () => {
-            setTimeout(() => {
-                if (transientFurniCard === card && !card.matches(":hover")) closeFurniCard(card);
-            }, 120);
-        }, { once: true });
+        /* An unmoved card lives exactly as long as the pointer is on it or on
+           the icon it came from, and reading it means travelling from one to
+           the other. So both ends are watched, and leaving either only
+           SCHEDULES the close — arriving at the other cancels it. Without the
+           delay the card would die in the gap between them; the card overlaps
+           its icon by 8px, but a pointer moving diagonally still crosses open
+           ground for an instant.
+
+           A pinned card ignores all of this. Once it has been moved it
+           answers only to its X, or to a click landing away from every
+           card. */
+        let closeTimer = null;
+        const cancelClose = () => { clearTimeout(closeTimer); closeTimer = null; };
+        const scheduleClose = () => {
+            cancelClose();
+            closeTimer = setTimeout(() => {
+                if (card.dataset.pinned === "true") return;
+                if (card.matches(":hover") || anchor.matches(":hover")) return;
+                closeFurniCard(card);
+            }, 160);
+        };
+        anchor.addEventListener("mouseenter", cancelClose);
+        anchor.addEventListener("mouseleave", scheduleClose);
+        card.addEventListener("mouseenter", cancelClose);
+        card.addEventListener("mouseleave", scheduleClose);
+        card._teardownHoverWatch = () => {
+            cancelClose();
+            anchor.removeEventListener("mouseenter", cancelClose);
+            anchor.removeEventListener("mouseleave", scheduleClose);
+        };
     }
 
     // Anywhere that is not a card and not one of the icons dismisses them.
     // Registered once, in the capture phase, so it still sees the click when
     // something inside the modal stops propagation on its own handler.
-    document.addEventListener("mousedown", e => {
+    document.addEventListener("pointerdown", e => {
         if (!openFurniCards.length) return;
         if (e.target.closest(".furni-card") || e.target.closest(".furni-icon-btn")) return;
         closeAllFurniCards();
@@ -2027,8 +2151,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // Anywhere on the frame raises it, not just the drag strip — picking
         // a buried frame's picture out of a pile shouldn't require grabbing
         // its 16px handle first.
-        frame.addEventListener("mousedown", () => bringPhotoFrameToFront(frame));
-        frame.querySelector(".photo-frame-drag").addEventListener("mousedown", e => startFrameDrag(frame, e));
+        frame.addEventListener("pointerdown", () => bringPhotoFrameToFront(frame));
+        frame.querySelector(".photo-frame-drag").addEventListener("pointerdown", e => startFrameDrag(frame, e));
 
         wirePhotoZoom(frame);
 
@@ -2061,27 +2185,59 @@ document.addEventListener("DOMContentLoaded", () => {
     let frameOffsetX = 0;
     let frameOffsetY = 0;
 
+    /* Pointer events, not mouse events. A touch drag emits touchmove and no
+       mousemove at all, so on a phone the handle could be pressed and the
+       frame would simply never move — photo frames and furni cards were both
+       undraggable on every touchscreen. Pointer events cover mouse, touch and
+       pen through one path.
+
+       The pointer is captured on the handle so the move and release still
+       arrive after the finger leaves it, which it does immediately: these
+       frames are small and a drag crosses their edge at once. The handles
+       also carry touch-action: none in the CSS, without which the browser
+       claims the gesture as a page scroll and cancels the stream mid-drag. */
+    let dragPointerId = null;
+
     function startFrameDrag(frame, e) {
+        // Touch and pen report button 0 like a left click; this only rejects
+        // a real middle or right mouse button.
+        if (e.pointerType === "mouse" && e.button !== 0) return;
         dragFrame = frame;
+        dragPointerId = e.pointerId;
         frame.classList.add("is-dragging");
         const rect = frame.getBoundingClientRect();
         frameOffsetX = e.clientX - rect.left;
         frameOffsetY = e.clientY - rect.top;
         document.body.style.userSelect = "none";
+        const handle = e.currentTarget;
+        if (handle && handle.setPointerCapture) {
+            try { handle.setPointerCapture(e.pointerId); } catch (err) { /* already gone */ }
+        }
         e.preventDefault();
     }
 
-    window.addEventListener("mousemove", e => {
-        if (!dragFrame) return;
+    window.addEventListener("pointermove", e => {
+        if (!dragFrame || e.pointerId !== dragPointerId) return;
+        // Moving a furni card is what makes it stay: the reader has put it
+        // somewhere deliberately, so it stops being a hover tooltip and
+        // becomes theirs to dismiss. Here rather than on the handle's
+        // pointerdown so that merely grabbing it and letting go doesn't count.
+        if (dragFrame.classList.contains("furni-card")) pinFurniCard(dragFrame);
         clampFrame(dragFrame, e.clientX - frameOffsetX, e.clientY - frameOffsetY);
     });
 
-    window.addEventListener("mouseup", () => {
-        if (!dragFrame) return;
+    function endFrameDrag(e) {
+        if (!dragFrame || (e && e.pointerId !== dragPointerId)) return;
         dragFrame.classList.remove("is-dragging");
         dragFrame = null;
+        dragPointerId = null;
         document.body.style.userSelect = "";
-    });
+    }
+
+    window.addEventListener("pointerup", endFrameDrag);
+    // A cancelled pointer (the browser taking over the gesture, a call
+    // arriving) must not leave a frame stuck to the cursor forever.
+    window.addEventListener("pointercancel", endFrameDrag);
 
     function openLightbox() {
         if (!activeGallery || !activeGallery.length) return;
@@ -2126,7 +2282,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // showing can change between opens.
     function renderOldVersionsStrip() {
         oldVersionsStrip.innerHTML = oldVersionsGallery.map((v, i) =>
-            `<img src="${imgCdn(v.image, 110, 110, 55)}" loading="lazy" alt="${v.label || "Older version"}" data-index="${i}">`
+            `<img src="${imgCdn(v.image, 110, 110, 55)}" loading="lazy" alt="${escapeHtml(v.label || "Older version")}" data-index="${i}">`
         ).join("");
         oldVersionsStrip.querySelectorAll("img").forEach(thumb => {
             thumb.addEventListener("click", () => showOldVersionImage(Number(thumb.dataset.index)));
@@ -2419,9 +2575,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const isEventItem = n.dateFieldLabel === "Date";
         const dateDisplay = isEventItem ? formatEventDuration(n.dateValue, n.endDateValue) : formatMazeDate(n.dateValue);
         modalMeta.innerHTML = `
-            <span class="status-badge status-${n.statusKey}">${n.statusLabel}</span>
-            <span>Hotel: ${n.hotel || "Unknown"}</span>
-            <span>${n.dateFieldLabel}: ${dateDisplay || "Unknown"}</span>
+            <span class="status-badge status-${escapeHtml(n.statusKey)}">${escapeHtml(n.statusLabel)}</span>
+            <span>Hotel: ${escapeHtml(n.hotel || "Unknown")}</span>
+            <span>${escapeHtml(n.dateFieldLabel)}: ${escapeHtml(dateDisplay || "Unknown")}</span>
         `;
         modalDesc.textContent = n.details || n.description || "";
         if (n.linksReferences) {
@@ -2493,8 +2649,8 @@ document.addEventListener("DOMContentLoaded", () => {
             // .gallery-strip-missing and showGalleryImage's own handling of
             // the same case for the large image.
             galleryStrip.innerHTML = activeGallery.map((g, i) => g.image
-                ? `<img src="${imgCdn(g.image, 110, 110, 55)}" loading="lazy" alt="${displayLabel(g)}" data-index="${i}">`
-                : `<div class="gallery-strip-missing" data-index="${i}" title="${displayLabel(g)}">?</div>`
+                ? `<img src="${imgCdn(g.image, 110, 110, 55)}" loading="lazy" alt="${escapeHtml(displayLabel(g))}" data-index="${i}">`
+                : `<div class="gallery-strip-missing" data-index="${i}" title="${escapeHtml(displayLabel(g))}">?</div>`
             ).join("");
             galleryStrip.querySelectorAll("img, .gallery-strip-missing").forEach(thumb => {
                 thumb.addEventListener("click", () => {
@@ -2838,9 +2994,39 @@ document.addEventListener("DOMContentLoaded", () => {
     const roomsReq = Api.getRooms().then(r => { loadDone += LOAD_WEIGHT_ROOMS; drawLoader(); return r; });
     const eventsReq = Api.getEvents().then(e => { loadDone += LOAD_WEIGHT_EVENTS; drawLoader(); return e; });
 
+    /* Says out loud that the archive on screen is the bundled stand-in
+       rather than the real thing.
+
+       Without this the failure is invisible: the page lays itself out
+       perfectly, the loader clears, and the visitor is looking at one maze
+       where there are thirty-seven, with no reason to think anything went
+       wrong. A quiet line and a way to try again is the least this owes
+       them. Built here rather than in home.html because it should not exist
+       in the markup at all on the ordinary path. */
+    function showDegradedNotice() {
+        if (!Api._degraded || !Api._degraded.size) return;
+        if (document.getElementById("data-degraded-notice")) return;
+        const host = document.getElementById("browse-window") || document.querySelector(".chrome-window");
+        if (!host || !host.parentNode) return;
+
+        const notice = document.createElement("div");
+        notice.id = "data-degraded-notice";
+        notice.className = "callout data-degraded-notice";
+        notice.setAttribute("role", "status");
+        const what = [...Api._degraded].join(" and ");
+        notice.innerHTML =
+            "<p>Couldn’t load the live " + escapeHtml(what) + ". Showing a small offline copy — " +
+            "most of the archive is missing.</p>" +
+            '<button type="button" class="btn" id="data-degraded-retry">Try again</button>';
+        host.parentNode.insertBefore(notice, host);
+        const retry = notice.querySelector("#data-degraded-retry");
+        if (retry) retry.addEventListener("click", () => location.reload());
+    }
+
     Promise.all([roomsReq, eventsReq]).then(async ([rooms, events]) => {
         ROOMS = rooms;
         EVENTS = events;
+        showDegradedNotice();
 
         // Exactly the images the cards will ask for, deduplicated — normalize
         // is what decides a card's thumbnail, so asking it is the only way to

@@ -366,11 +366,86 @@ body {
     display: flex;
     flex-direction: column;
     background-color: var(--bg-black);
+    /* Top-down gradient over the maze tile: heavy at the head of the screen,
+       easing to a floor by halfway down. The tile is busy and evenly lit, so
+       page furniture — the header, the hero, a window's titlebar — was
+       sitting on exactly the same visual weight as the pattern behind it.
+       Darkening the top pushes the pattern back where the type is and lets
+       it come forward again lower down.
+
+       ONE gradient doing the darkening, not a scrim layered over a flat
+       overlay. That distinction is the whole difference between this working
+       and not: MazeBG.png averages RGB 47,30,16 and a flat 0.78 crushes it
+       to 18,12,7, leaving anything above it almost no range to work with — a
+       first attempt did exactly that and moved the page by nine levels of
+       red top to bottom, which is arithmetically a gradient and visually
+       nothing. Running 0.88 down to 0.30 instead uses most of what is really
+       there, landing the foot of the page about 2.4x brighter than the head
+       (14,10,5 -> 36,23,12).
+
+       The stops are generated from a smootherstep curve (6t^5-15t^4+10t^3)
+       between the peak and the floor, sampled every 5% of the screen and
+       finishing at 65% of it. Hand-placing them from the reference image was
+       what the first few passes did, and it left visible kinks: seven stops
+       with straight-line interpolation between them meant the slope jumped
+       at every one — nearly flat for the first tenth of the page, then 3.6x
+       steeper in a single step, then stopping dead at the floor. Smootherstep
+       has zero first AND second derivative at both ends, so the curve leaves
+       the peak and arrives at the floor without a corner at either, and the
+       slope in between ramps up and back down instead of stepping.
+
+       The floor is not zero: bare tile behind small print is a chore to
+       read, and the foot of a page is where small print lives.
+
+       Three numbers are doing the work, and they are baked in rather than
+       set as properties because CSS has no per-layer background opacity:
+
+         · The gradient is drawn in OVERLAY at 90%. The blend mode is real
+           (background-blend-mode below); the 90% is multiplied into every
+           stop's alpha, which is exactly what a layer opacity does — the
+           blended result is mixed back into the backdrop by source alpha.
+           So the stops read 0.792 down to 0.270, being 0.88 to 0.30 at 90%.
+
+         · The tile sits at 90%. There is no way to say that either, so the
+           flat rgba(18, 12, 7, 0.1) layer between the two IS the missing
+           10% — 18,12,7 is --bg-black, the colour the tile would be
+           compositing against anyway, so laying a tenth of it over the top
+           is indistinguishable from the tile itself being one-tenth
+           transparent.
+
+         · Overlay against a dark backdrop behaves close to multiply, so a
+           dark source over this tile darkens rather than lifting. That is
+           why the numbers above still land in much the same place as the
+           plain version they replaced.
+
+       background-attachment: fixed pins this to the VIEWPORT, so the dark
+       band stays at the top of the screen instead of scrolling away on a
+       long page. Each layer needs its own size and repeat: one
+       background-size applies to every layer, and a full-height gradient
+       inheriting the tile's 220px would repeat down the page as a row of
+       dark bands. */
     background-image:
-        linear-gradient(rgba(10, 7, 4, 0.7), rgba(10, 7, 4, 0.78)),
+        linear-gradient(to bottom,
+            rgba(10, 7, 4, 0.7920) 0%,
+            rgba(10, 7, 4, 0.7899) 5%,
+            rgba(10, 7, 4, 0.7771) 10%,
+            rgba(10, 7, 4, 0.7480) 15%,
+            rgba(10, 7, 4, 0.7015) 20%,
+            rgba(10, 7, 4, 0.6400) 25%,
+            rgba(10, 7, 4, 0.5685) 30%,
+            rgba(10, 7, 4, 0.4935) 35%,
+            rgba(10, 7, 4, 0.4220) 40%,
+            rgba(10, 7, 4, 0.3605) 45%,
+            rgba(10, 7, 4, 0.3140) 50%,
+            rgba(10, 7, 4, 0.2849) 55%,
+            rgba(10, 7, 4, 0.2721) 60%,
+            rgba(10, 7, 4, 0.2700) 65%,
+            rgba(10, 7, 4, 0.2700) 100%),
+        linear-gradient(rgba(18, 12, 7, 0.1), rgba(18, 12, 7, 0.1)),
         url('../assets/img/MazeBG.png');
-    background-repeat: repeat;
-    background-size: 220px;
+    background-repeat: no-repeat, no-repeat, repeat;
+    background-size: 100% 100%, 100% 100%, 220px;
+    background-blend-mode: overlay, normal, normal;
     background-attachment: fixed;
     color: var(--parchment);
     font-family: 'Roboto', sans-serif;
@@ -816,6 +891,28 @@ body[data-page="home"] .hero { padding-top: 18px; }
     margin: 0 auto;
     font-size: 0.9rem;
     color: var(--parchment-dim);
+}
+
+/* Shown only when the live archive could not be fetched and the bundled
+   stand-in is on screen instead (see showDegradedNotice in js/home.js).
+   Deliberately plain and in the way: the whole problem it solves is that
+   the failure is otherwise completely invisible. */
+.data-degraded-notice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    max-width: 720px;
+    margin: 0 auto 18px;
+    padding: 12px 16px;
+    text-align: center;
+}
+
+.data-degraded-notice p {
+    margin: 0;
+    color: var(--parchment);
+    font-size: 0.85rem;
 }
 
 /* ---------- welcome / splash screen ---------- */
@@ -2953,6 +3050,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 .photo-frame.is-dragging .photo-frame-drag { cursor: grabbing; }
+
+/* The drag handles own their gesture. Without this a touch drag starting on
+   one is taken as a page scroll and the pointer stream is cancelled, which
+   is what made these frames immovable on a touchscreen (see startFrameDrag
+   in js/home.js). */
+.photo-frame-drag,
+.furni-card-drag {
+    touch-action: none;
+}
 
 /* Transparent hit area laid exactly over the X drawn into the artwork
    (x 157-166, y 4-13 in the source image). Nothing is painted here — the
@@ -6337,11 +6443,31 @@ body[data-page="admin"] .search-box input {
     align-items: center;
     justify-content: center;
     background-color: var(--bg-black);
+    /* Matches body's own background exactly (gradient included) — this
+       covers the page while it loads, so any difference between the two
+       shows up as the backdrop jumping when the loader fades. */
     background-image:
-        linear-gradient(rgba(10, 7, 4, 0.7), rgba(10, 7, 4, 0.78)),
+        linear-gradient(to bottom,
+            rgba(10, 7, 4, 0.7920) 0%,
+            rgba(10, 7, 4, 0.7899) 5%,
+            rgba(10, 7, 4, 0.7771) 10%,
+            rgba(10, 7, 4, 0.7480) 15%,
+            rgba(10, 7, 4, 0.7015) 20%,
+            rgba(10, 7, 4, 0.6400) 25%,
+            rgba(10, 7, 4, 0.5685) 30%,
+            rgba(10, 7, 4, 0.4935) 35%,
+            rgba(10, 7, 4, 0.4220) 40%,
+            rgba(10, 7, 4, 0.3605) 45%,
+            rgba(10, 7, 4, 0.3140) 50%,
+            rgba(10, 7, 4, 0.2849) 55%,
+            rgba(10, 7, 4, 0.2721) 60%,
+            rgba(10, 7, 4, 0.2700) 65%,
+            rgba(10, 7, 4, 0.2700) 100%),
+        linear-gradient(rgba(18, 12, 7, 0.1), rgba(18, 12, 7, 0.1)),
         url('../assets/img/MazeBG.png');
-    background-repeat: repeat;
-    background-size: 220px;
+    background-repeat: no-repeat, no-repeat, repeat;
+    background-size: 100% 100%, 100% 100%, 220px;
+    background-blend-mode: overlay, normal, normal;
     background-attachment: fixed;
     transition: opacity 260ms ease;
 }

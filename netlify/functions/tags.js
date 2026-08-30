@@ -40,8 +40,18 @@ exports.handler = async (event) => {
     // anything. See _auth.js.
     if (!(await canWrite(event))) return READ_ONLY;
 
+    // Parsed once, and guarded: an unparseable body used to throw straight
+    // out of the handler, which Netlify turns into a bare 502 with nothing
+    // in it for the caller. The other write endpoints on this site have
+    // always answered 400 here.
+    let body;
+    try {
+        body = JSON.parse(event.body || "{}");
+    } catch (e) {
+        return json(400, { error: "Invalid request body" });
+    }
+
     if (event.httpMethod === "POST") {
-        const body = JSON.parse(event.body || "{}");
         const label = (body.label || "").trim();
         if (!label) return json(400, { error: "A tag needs a label" });
 

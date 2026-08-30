@@ -48,13 +48,36 @@
             }
         }
 
+        // Shared with js/api.js, which writes it on every successful read.
+        var LANDING_STATE_KEY = "mazerats_landing_state";
+        function rememberState(state) {
+            try { localStorage.setItem(LANDING_STATE_KEY, state); } catch (e) { /* private mode */ }
+        }
+        function lastKnownState() {
+            try { return localStorage.getItem(LANDING_STATE_KEY); } catch (e) { return null; }
+        }
+
         fetch("/.netlify/functions/settings")
             .then(function (res) {
                 if (!res.ok) throw new Error("settings fetch failed");
                 return res.json();
             })
             .then(function (settings) {
-                var state = settings.landingState;
+                rememberState(settings.landingState);
+                return settings.landingState;
+            })
+            .catch(function () {
+                /* Settings unreachable. This used to reveal() outright — fail
+                   open — which meant an outage or a slow cold start put the
+                   whole site in front of visitors while it was still gated,
+                   and js/api.js's own fallback did the same thing on the page
+                   that links here. Falling back to the last state actually
+                   seen keeps a live site working through a hiccup for anyone
+                   who has been here before, without opening a gated one to
+                   someone who hasn't. */
+                return lastKnownState() || "coming-soon";
+            })
+            .then(function (state) {
                 if (state !== "coming-soon" && state !== "maintenance") {
                     reveal();
                     return;
@@ -82,9 +105,10 @@
                     });
             })
             .catch(function () {
-                // Settings unreachable — fail open rather than lock a
-                // visitor out behind a permanently hidden page.
-                reveal();
+                // Reached only if the admin verify call itself fails. The
+                // state says this page is gated and the token could not be
+                // confirmed, so the answer is the same as no token at all.
+                location.replace("index.html");
             });
     })();
     </script>

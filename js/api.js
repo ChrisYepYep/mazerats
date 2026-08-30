@@ -10,18 +10,40 @@ const Api = {
     // would otherwise never reject at all, leaving Promise.all([...]) (see
     // js/home.js) stuck forever instead of falling through to the bundled
     // fallback data like an outright failure already does.
+    /* Which of the bundled fallbacks are currently standing in for real
+       data. The site used to drop to them in complete silence: a visitor
+       whose rooms request timed out saw a page that looked entirely healthy
+       — loader gone, layout intact — holding the ONE maze in
+       js/rooms-data.js instead of the thirty-seven that exist, with nothing
+       but a console warning to say so. js/home.js reads this and says so on
+       the page. */
+    _degraded: new Set(),
+
+    /* Two attempts before giving up. The first keeps its short leash so a
+       genuinely dead endpoint can't hold the page; the second is generous,
+       because by far the likeliest cause is a cold function on a slow
+       connection rather than an outage, and one 6s window was easy to miss
+       by a fraction. */
     async _getWithFallback(url, label, fallbackFn) {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6000);
-        try {
-            const res = await fetch(url, { signal: controller.signal });
-            if (!res.ok) throw new Error(`${label} fetch failed: ${res.status}`);
-            return await res.json();
-        } catch (e) {
-            console.warn(`Live ${label} unavailable, using fallback.`, e);
-            return fallbackFn();
-        } finally {
-            clearTimeout(timeout);
+        const attempts = [6000, 12000];
+        for (let i = 0; i < attempts.length; i++) {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), attempts[i]);
+            try {
+                const res = await fetch(url, { signal: controller.signal });
+                if (!res.ok) throw new Error(`${label} fetch failed: ${res.status}`);
+                const data = await res.json();
+                this._degraded.delete(label);
+                return data;
+            } catch (e) {
+                if (i === attempts.length - 1) {
+                    console.warn(`Live ${label} unavailable after ${attempts.length} attempts, using fallback.`, e);
+                    this._degraded.add(label);
+                    return fallbackFn();
+                }
+            } finally {
+                clearTimeout(timeout);
+            }
         }
     },
 
@@ -194,12 +216,41 @@ const Api = {
     },
     createTag(token, label) { return this._write("/.netlify/functions/tags", "POST", token, { label }); },
 
+    /* The landing state, and why its fallback is not "enter".
+
+       Both halves of the gate — this, and home.html's own pre-load check —
+       used to fail OPEN. A settings request that merely timed out (6s, which
+       a cold function on mobile data reaches easily) produced
+       landingState: "enter", and an unreleased site went public until the
+       next load. Two independent defences, both failing the same way.
+
+       So a good answer is remembered, and a failure falls back to whatever
+       was last seen rather than to a guess. With nothing remembered at all
+       the answer is "coming-soon": a visitor who has never once loaded this
+       site successfully is exactly the case where being wrong in the open
+       direction costs most, and it corrects itself the moment a real
+       response arrives.
+
+       The cost of the other direction is small and self-healing — a
+       first-time visitor during an outage sees Coming Soon for one load.
+       Anyone who has been here before while it was live remembers "enter"
+       and is unaffected. */
+    rememberLandingState(state) {
+        try { localStorage.setItem("mazerats_landing_state", state); } catch (e) { /* private mode */ }
+    },
+
+    lastKnownLandingState() {
+        try { return localStorage.getItem("mazerats_landing_state"); } catch (e) { return null; }
+    },
+
     // The welcome button ships disabled and only this call can enable it —
     // relies on _getWithFallback's timeout so a hung (not just failing)
     // request can't leave visitors stuck on the disabled button forever.
-    getSiteSettings() {
-        return this._getWithFallback("/.netlify/functions/settings", "site settings",
-            () => ({ landingState: "enter", aboutText: "" }));
+    async getSiteSettings() {
+        const settings = await this._getWithFallback("/.netlify/functions/settings", "site settings",
+            () => ({ landingState: this.lastKnownLandingState() || "coming-soon", aboutText: "", fromCache: true }));
+        if (!settings.fromCache && settings.landingState) this.rememberLandingState(settings.landingState);
+        return settings;
     },
     // updates is a partial object — { landingState } and/or { aboutText } —
     // the function only touches whichever fields are actually present.

@@ -712,6 +712,12 @@ document.addEventListener("DOMContentLoaded", () => {
                                 '<strong>' + escapeHtml(label) + '</strong>' +
                                 '<span class="admin-hint">' + summary + '</span>' +
                             '</button>' +
+                            // On the head, not in the panel: a room tab is
+                            // collapsed until you click it, so a control that
+                            // only appears once it is open cannot tell you it
+                            // is there in the first place. This opens the room
+                            // and its picker in one go.
+                            '<button type="button" class="admin-pill-btn admin-furni-add-head" data-image="' + escapeHtml(image) + '" title="Add furni to this room by hand">+ Add Furni</button>' +
                             (items.length ? '<button type="button" class="admin-pill-btn admin-pill-danger admin-furni-clear" data-image="' + escapeHtml(image) + '">Remove all</button>' : '') +
                         '</div>' +
                         '<div class="admin-furni-panel">' + note +
@@ -758,6 +764,14 @@ document.addEventListener("DOMContentLoaded", () => {
                     const image = btn.dataset.image;
                     if (!await showConfirmDialog("Remove every furni recorded for this room image? A rescan would find the detected ones again, but anything added by hand would be gone for good.")) return;
                     draft[image].items = [];
+                    render();
+                });
+            });
+            listEl.querySelectorAll(".admin-furni-add-head").forEach(btn => {
+                btn.addEventListener("click", () => {
+                    const image = btn.dataset.image;
+                    openRooms.add(image);
+                    pickerFor = image;
                     render();
                 });
             });
@@ -1009,6 +1023,33 @@ document.addEventListener("DOMContentLoaded", () => {
     // formEl (`_render${kind}OldVersions`) so promoteToBookend and the
     // bookend's own Remove button can refresh this panel after they change
     // formEl[`_${kind}OldVersions`] out from under it.
+    /* Reordering a list of older versions. Two panels need this — the
+       gallery rooms' and the entrance/finish bookends' — and they address
+       their rows by different class prefixes so that one panel's buttons
+       can't be picked up by the other's querySelectorAll while both are
+       open on screen at once. Hence the prefix parameter rather than one
+       fixed class.
+
+       Up/Down only, no Top/Bottom: a room's older versions run to two or
+       three, where the main gallery they sit inside runs to a hundred and
+       earns the extra pair. */
+    function oldVersionMoveButtonsHtml(prefix, index, total) {
+        return `
+            <button type="button" class="admin-pill-btn ${prefix}-subup" ${index === 0 ? "disabled" : ""} title="Move up">&#9650; Up</button>
+            <button type="button" class="admin-pill-btn ${prefix}-subdown" ${index === total - 1 ? "disabled" : ""} title="Move down">&#9660; Down</button>
+        `;
+    }
+
+    // The order here is the order the site steps through them behind the
+    // "See older versions of this room" pill (see js/home.js), so this is
+    // the whole feature — no other bookkeeping travels with a version.
+    function moveOldVersion(list, from, to) {
+        if (to < 0 || to >= list.length) return false;
+        const [moved] = list.splice(from, 1);
+        list.splice(to, 0, moved);
+        return true;
+    }
+
     function wireBookendOldVersions(formEl, kind, uploadPrefix) {
         const toggleBtn = formEl.querySelector(`.admin-${kind}-oldversions-toggle`);
         const container = formEl.querySelector(`.admin-${kind}-oldversions-container`);
@@ -1032,6 +1073,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <input type="text" class="admin-gallery-label admin-${kind}-oldversions-sublabel" value="${v.label || ""}" placeholder="Label (optional)">
                     </div>
                     <div class="admin-gallery-actions-secondary">
+                        ${oldVersionMoveButtonsHtml(`admin-${kind}-oldversions`, vi, items.length)}
                         <button type="button" class="admin-pill-btn admin-pill-danger admin-${kind}-oldversions-subremove" title="Remove">Remove</button>
                     </div>
                 </div>
@@ -1054,6 +1096,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 const vi = Number(row.dataset.subIndex);
                 row.querySelector(`.admin-${kind}-oldversions-sublabel`).addEventListener("input", e => {
                     items[vi].label = e.target.value;
+                });
+                row.querySelector(`.admin-${kind}-oldversions-subup`).addEventListener("click", () => {
+                    if (moveOldVersion(items, vi, vi - 1)) render();
+                });
+                row.querySelector(`.admin-${kind}-oldversions-subdown`).addEventListener("click", () => {
+                    if (moveOldVersion(items, vi, vi + 1)) render();
                 });
                 row.querySelector(`.admin-${kind}-oldversions-subremove`).addEventListener("click", async () => {
                     if (!await showConfirmDialog("Remove this older version image?")) return;
@@ -1289,6 +1337,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <input type="text" class="admin-gallery-label admin-oldversions-sublabel" value="${v.label || ""}" placeholder="Label (optional)">
                     </div>
                     <div class="admin-gallery-actions-secondary">
+                        ${oldVersionMoveButtonsHtml("admin-oldversions", vi, g.oldVersions.length)}
                         <button type="button" class="admin-pill-btn admin-pill-danger admin-oldversions-subremove" title="Remove">Remove</button>
                     </div>
                 </div>
@@ -1536,6 +1585,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     const vi = Number(subRow.dataset.subIndex);
                     subRow.querySelector(".admin-oldversions-sublabel").addEventListener("input", e => {
                         draft[i].oldVersions[vi].label = e.target.value;
+                    });
+                    subRow.querySelector(".admin-oldversions-subup").addEventListener("click", () => {
+                        if (moveOldVersion(draft[i].oldVersions, vi, vi - 1)) renderGalleryList();
+                    });
+                    subRow.querySelector(".admin-oldversions-subdown").addEventListener("click", () => {
+                        if (moveOldVersion(draft[i].oldVersions, vi, vi + 1)) renderGalleryList();
                     });
                     subRow.querySelector(".admin-oldversions-subremove").addEventListener("click", async () => {
                         if (!await showConfirmDialog("Remove this older version image?")) return;

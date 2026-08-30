@@ -50,6 +50,9 @@ const PREFIX = "https://furniindex.com/image/furni/furni-";
 let cachedIndex = null;
 let cachedAt = 0;
 const MAP_TTL_MS = 10 * 60 * 1000;
+// How long an EMPTY result (the catalogue was unreachable) is held before
+// trying again — far shorter than a good one, but not zero.
+const FAILED_TTL_MS = 60 * 1000;
 
 async function catalogueIndex() {
     if (cachedIndex && Date.now() - cachedAt < MAP_TTL_MS) return cachedIndex;
@@ -65,11 +68,19 @@ async function catalogueIndex() {
             }));
         }
     } catch (e) {
-        // An unreachable catalogue must not cost the site its furni. Empty
-        // maps mean every sprite falls through to the large URL below and
-        // className is simply absent — which is what the site showed before
-        // any of this existed.
-        return { smallByLarge, classByIcon };
+        /* An unreachable catalogue must not cost the site its furni. Empty
+           maps mean every sprite falls through to the large URL below and
+           className is simply absent — which is what the site showed before
+           any of this existed.
+
+           The empty result is cached too, for a short while. Returning
+           without caching meant a failing catalogue was retried on EVERY
+           request — a Blobs read per visitor, at exactly the moment things
+           are already unwell. A minute is long enough to stop the pile-up
+           and short enough that recovery is quick. */
+        cachedIndex = { smallByLarge, classByIcon };
+        cachedAt = Date.now() - (MAP_TTL_MS - FAILED_TTL_MS);
+        return cachedIndex;
     }
     cachedIndex = { smallByLarge, classByIcon };
     cachedAt = Date.now();
