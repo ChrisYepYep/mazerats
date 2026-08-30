@@ -3203,7 +3203,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     left: 10px;
     top: 138px;
     width: 155px;
-    max-height: 40px;
+    max-height: 28px;
     margin: 0;
     overflow: hidden;
     font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
@@ -7002,7 +7002,7 @@ body[data-page="admin"] .site-footer p {
 .photo-frame-hint {
     position: absolute;
     left: 10px;
-    top: 178px;
+    top: 168px;
     width: 155px;
     margin: 0;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
@@ -7099,10 +7099,21 @@ body[data-page="admin"] .site-footer p {
 .admin-activity-row.is-warn h3 { color: var(--danger); }
 
 /* The raw event list runs long, so it scrolls inside itself the way every
-   other list on this page does. */
+   other list on this page does.
+
+   overflow-y is the important half. These two were given a max-height and
+   nothing else, and a bounded box with no overflow rule does not clip or
+   scroll — it simply spills, so a long list ran straight out of the bottom
+   and printed over the heading beneath it. flex/min-width match the other
+   lists for the same reason theirs carry them: js/custom-scrollbar.js wraps
+   the element in a flex row, and a .chrome-list with no width of its own
+   would otherwise shrink to its content. */
 body[data-page="admin"] #activity-events,
 body[data-page="admin"] #activity-sessions {
     max-height: calc(50vh - 120px);
+    overflow-y: auto;
+    flex: 1;
+    min-width: 0;
 }
 
 /* ---------- what visitors use ---------- */

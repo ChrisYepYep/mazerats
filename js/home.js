@@ -2173,16 +2173,35 @@ document.addEventListener("DOMContentLoaded", () => {
         // and a frame still detached from the document measures as zero.
         document.body.appendChild(frame);
 
-        // Opens centred, stepped down-right by however many frames are
-        // already out, wrapping after six so a long session can't walk them
-        // off the bottom of the screen. clampFrame keeps the result
-        // on-screen whatever the viewport size.
+        /* Opens ABOVE the row of photo icons, not in the middle of the
+           screen. Centred, it landed squarely on the strip it was launched
+           from — so opening one picture covered the icons for all the
+           others, which is exactly where the reader is most likely to click
+           next.
+
+           Horizontally it stays centred as before; it is only the vertical
+           that changes, so the frame still sits over the maze image (which
+           is what a picture viewer is expected to cover) and leaves the meta
+           row clear.
+
+           The cascade now steps UPWARD, away from the strip, so a second and
+           third frame move further clear rather than creeping back over it.
+           clampFrame keeps whatever comes out of this on-screen, which is
+           also what catches the case of a strip too near the top of the
+           window to fit a frame above it. */
         const step = 18;
         const offset = (photoFrameSeq++ % 6) * step;
+        const GAP = 10;
+        const strip = document.querySelector(".gallery-photos");
+        // No strip means the modal has been closed under a frame that is
+        // still out; the old centred behaviour is the sensible fallback.
+        const top = strip
+            ? Math.round(strip.getBoundingClientRect().top - PHOTO_FRAME_H - GAP) - offset
+            : Math.round((window.innerHeight - PHOTO_FRAME_H) / 2) + offset;
         clampFrame(
             frame,
             Math.round((window.innerWidth - PHOTO_FRAME_W) / 2) + offset,
-            Math.round((window.innerHeight - PHOTO_FRAME_H) / 2) + offset
+            top
         );
 
         openPhotoFrames.push(frame);
