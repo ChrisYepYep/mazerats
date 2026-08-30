@@ -2,7 +2,7 @@
    room-by-room gallery screenshots) in Netlify Blobs, gated by the same
    x-admin-token used by rooms.js/events.js. Images are served back out
    through image.js. */
-const { isAuthorized, UNAUTHORIZED } = require("./_auth");
+const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { imagesStore } = require("./_images");
 
 const json = (statusCode, data) => ({
@@ -27,6 +27,10 @@ function slugify(text) {
 
 exports.handler = async (event) => {
     if (!isAuthorized(event)) return UNAUTHORIZED;
+    // canWrite, not isAuthorized: a viewer is a real logged-in account and
+    // passes isAuthorized quite correctly — it just isn't allowed to change
+    // anything. See _auth.js.
+    if (!(await canWrite(event))) return READ_ONLY;
 
     const store = imagesStore();
 

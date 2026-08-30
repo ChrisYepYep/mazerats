@@ -2,17 +2,17 @@
    Maze Rats — password fields
 
    Upgrades every <input type="password"> on the admin page into a field
-   that conceals with "Õ" instead of the browser's own bullet, with an
-   eye button on the right to show/hide what's typed.
+   that masks with a bullet and carries an eye button on the right to
+   show/hide what's typed.
 
-   Why this is more than a CSS rule: a real type="password" draws its own
-   mask character and nothing in CSS can change it (-webkit-text-security
-   only offers disc/circle/square). Showing a different glyph means the
-   field has to be a type="text" that never actually holds the password —
-   so each one is rewired as:
+   Why this is more than a CSS rule: the mask has to be able to turn OFF.
+   A real type="password" draws its own mask and nothing in CSS can lift it
+   (-webkit-text-security only swaps one shape for another), so a field
+   whose contents can be revealed has to be a type="text" that never
+   actually holds the password — each one is rewired as:
 
        .password-field
-           input  (type=text, shows "ÕÕÕÕ" or the real value, no name)
+           input  (type=text, shows "••••" or the real value, no name)
            button (the eye)
        input (type=hidden, carries the real value under the original name)
 
@@ -34,8 +34,13 @@
 (function () {
     "use strict";
 
-    // Alt+0213. U+00D5 LATIN CAPITAL LETTER O WITH TILDE.
-    const MASK_CHAR = "Õ";
+    // U+2022 BULLET — the ordinary password dot. Deliberately a character
+    // every font on the fallback stack actually has: this is drawn in
+    // whatever face the field is set in, and the login fields are Arial
+    // (see #login-form in css/style.css), where the pixel font's old
+    // Alt+0213 "Õ" would have rendered as a row of capital O-tildes rather
+    // than as a mask.
+    const MASK_CHAR = "•";
     const ENHANCED_FLAG = "passwordField";
 
     const EYE_SHOW = `

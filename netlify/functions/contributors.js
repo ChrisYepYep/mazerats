@@ -1,7 +1,7 @@
 /* /.netlify/functions/contributors — CRUD API for the console modal's
    Contributors page. Mirrors rooms.js/events.js. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, UNAUTHORIZED } = require("./_auth");
+const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -30,6 +30,10 @@ exports.handler = async (event) => {
     }
 
     if (!isAuthorized(event)) return UNAUTHORIZED;
+    // canWrite, not isAuthorized: a viewer is a real logged-in account and
+    // passes isAuthorized quite correctly — it just isn't allowed to change
+    // anything. See _auth.js.
+    if (!(await canWrite(event))) return READ_ONLY;
 
     if (event.httpMethod === "POST") {
         const body = JSON.parse(event.body || "{}");

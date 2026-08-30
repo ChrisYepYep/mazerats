@@ -30,6 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const loginError = document.getElementById("login-error");
     const adminContent = document.getElementById("admin-content");
     const logoutBtn = document.getElementById("logout-btn");
+    const furniSidebar = document.getElementById("furni-sidebar");
     const furniScanAllBtn = document.getElementById("furni-scan-all-btn");
     const furniScanStatus = document.getElementById("furni-scan-status");
     const furniScanNewBtn = document.getElementById("furni-scan-new-btn");
@@ -47,6 +48,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const aboutSaveStatus = document.getElementById("about-save-status");
     const contactMessagesListEl = document.getElementById("contact-messages-list");
     const bansListEl = document.getElementById("bans-list");
+    const adminRailEl = document.getElementById("admin-rail");
+    const adminSessionUserEl = document.getElementById("admin-session-user");
     const landingToggleEl = document.getElementById("landing-toggle");
     const landingToggleBtns = document.querySelectorAll(".btn-enter-mini");
     const landingToggleStatus = document.getElementById("landing-toggle-status");
@@ -186,6 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
         currentUsername = "";
         currentUserRole = "admin";
         adminContent.style.display = "none";
+        if (adminRailEl) adminRailEl.style.display = "none";
         landingToggleEl.style.display = "none";
         loginModal.classList.add("open");
         loginError.textContent = "Session expired — log in again.";
@@ -206,25 +210,94 @@ document.addEventListener("DOMContentLoaded", () => {
         closeAdminsForm();
         closeContributorsForm();
         adminContent.style.display = "none";
+        if (adminRailEl) adminRailEl.style.display = "none";
         landingToggleEl.style.display = "none";
         loginModal.classList.add("open");
         loginError.style.display = "none";
         loginForm.reset();
     }
 
+    /* Running a furni scan is owner-only — see the handler in
+       netlify/functions/furni-scan-background.js, which is where the rule
+       actually lives. Everything here is presentation: a standard admin
+       never sees a scan control rather than seeing one that 403s. They keep
+       full use of the furni EDITOR (hide/remove/add by hand) — it is only
+       starting a scan that is restricted. */
+    function canScanFurni() {
+        return currentUserRole === "owner";
+    }
+
+    /* A view-only account can read every screen here and change nothing. The
+       rule is enforced server-side — every write endpoint refuses them, see
+       canWrite in netlify/functions/_auth.js — so everything below is about
+       not showing somebody a page full of buttons that would only fail.
+
+       Done with a class on <body> rather than by editing each of the dozen
+       renderers that emit an Edit or Delete button: a blanket rule cannot be
+       forgotten when the next list is added, whereas a per-renderer check
+       silently isn't there. */
+    function canWrite() {
+        return currentUserRole !== "viewer";
+    }
+
+    /* The greying-out in the CSS uses pointer-events: none, which stops a
+       mouse but says nothing about tabbing to a button and pressing Enter —
+       that still fires a click, on the button itself.
+
+       So rather than keep a second copy of the list of disabled controls in
+       here (two lists that would drift apart the first time either was
+       edited), this asks the CSS: if the element the click landed on is
+       pointer-inert, the stylesheet has already decided it is off, and the
+       click is dropped. A mouse click can never reach such an element in the
+       first place, so in practice this only ever fires for the keyboard. */
+    document.addEventListener("click", e => {
+        if (!document.body.classList.contains("is-viewer")) return;
+        const control = e.target.closest("button, a");
+        if (!control || getComputedStyle(control).pointerEvents !== "none") return;
+        e.preventDefault();
+        e.stopPropagation();
+    }, true);
+
+    function applyRoleVisibility() {
+        const owner = canScanFurni();
+        document.body.classList.toggle("is-viewer", !canWrite());
+        // readOnly as well as the CSS: a field nobody can save is still a
+        // field somebody can type a paragraph into and then lose.
+        const aboutInput = document.getElementById("about-text-input");
+        if (aboutInput) aboutInput.readOnly = !canWrite();
+        if (furniSidebar) furniSidebar.hidden = !owner;
+        // Only an owner has anything to poll for, and furni-scan-status
+        // would just be an authenticated request answering "nothing" every
+        // 2.5s for everyone else.
+        if (owner) startFurniPolling();
+        else stopFurniPolling();
+    }
+
     async function enterAdmin() {
         loginModal.classList.remove("open");
         adminContent.style.display = "block";
+        if (adminRailEl) adminRailEl.style.display = "flex";
+        if (adminSessionUserEl) {
+            adminSessionUserEl.textContent = currentUsername || "";
+            adminSessionUserEl.title = currentUserRole === "owner" ? "Owner" : "Admin";
+        }
         landingToggleEl.style.display = "flex";
         // Same gate as the sidebar — nothing on this page shows until the
         // login modal is unlocked.
         const glyphPalette = document.getElementById("glyph-palette");
         if (glyphPalette) glyphPalette.style.display = "flex";
-        const [rooms, events] = await Promise.all([Api.getRooms(), Api.getEvents()]);
+        // The full records, not the packed public ones — the furni editor
+        // works on coverage, hidden flags and the rest, none of which the
+        // site's own payload carries.
+        const [rooms, events] = await Promise.all([
+            Api.getRoomsFull(adminToken),
+            Api.getEventsFull(adminToken)
+        ]);
         workingRooms = rooms;
         workingEvents = events;
         renderList("rooms");
         renderList("events");
+        applyRoleVisibility();
         loadAdmins();
         loadLandingState();
         loadContributors();
@@ -538,13 +611,23 @@ document.addEventListener("DOMContentLoaded", () => {
         renderRelatedList();
     }
 
-    /* What the furni scan found, per room image, with a way to correct it.
+    /* What the furni scan found, per room image, with a way to correct it —
+       and to add furni the scan will never find.
+
        Scanning is confident but not infallible — a sprite that shares enough
        pixels with whatever is behind it can land a false hit — so each
        detection can be hidden (kept in the record but not shown on the site)
        or removed outright. Hiding is the safer of the two: a rescan will
        find a false positive again, and a hidden one stays hidden with its
-       reasoning visible, where a removed one silently comes back. */
+       reasoning visible, where a removed one silently comes back.
+
+       The other direction is adding by hand, which is the only way to record
+       furni the scan cannot see: anything under a lighting effect (those
+       images are skipped wholesale), anything mostly hidden behind something
+       else, and every room in a maze nobody has scanned yet. Hand-added
+       entries carry manual: true, which is what keeps them alive through a
+       rescan — see netlify/functions/furni-scan-background.js, which merges
+       them back over its own results rather than replacing them. */
     function wireFurniEditor(formEl, item) {
         const wrap = formEl.querySelector(".admin-furni-field");
         if (!wrap) return;
@@ -556,6 +639,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // both re-render, and rebuilding from scratch would otherwise close
         // the room being worked on after every click.
         const openRooms = new Set();
+        // Which room's "add by hand" picker is open, if any. Only ever one:
+        // two open search boxes in a column of rooms is more noise than help,
+        // and the results list is tall.
+        let pickerFor = null;
 
         // Room images in the order they appear on the site, so this reads in
         // the same order as the gallery above rather than by object key.
@@ -569,11 +656,23 @@ document.addEventListener("DOMContentLoaded", () => {
             return out;
         }
 
+        // A room with no record at all is a normal state now rather than an
+        // absence — you can add furni to a room nothing has ever scanned —
+        // so every write goes through this instead of assuming a record.
+        function recordFor(image) {
+            const draft = formEl._furniDraft;
+            if (!draft[image]) draft[image] = { items: [] };
+            if (!draft[image].items) draft[image].items = [];
+            return draft[image];
+        }
+
         function render() {
             const draft = formEl._furniDraft;
-            const rooms = imagesInOrder().filter(r => draft[r.image]);
+            // Every room image, not only the ones carrying a record: an
+            // unscanned room still needs somewhere to add furni by hand.
+            const rooms = imagesInOrder();
             if (!rooms.length) {
-                listEl.innerHTML = '<p class="admin-empty">No furni recorded yet — run a scan on this maze.</p>';
+                listEl.innerHTML = '<p class="admin-empty">Add some room images first — furni is recorded against them.</p>';
                 return;
             }
             listEl.innerHTML = rooms.map(({ image, label }) => {
@@ -582,19 +681,26 @@ document.addEventListener("DOMContentLoaded", () => {
                 const shown = items.filter(i => !i.hidden).length;
                 let note = "";
                 if (rec.skipped === "lighting-effects") {
-                    note = '<p class="admin-hint">Skipped: this screenshot has lighting effects on it (' + rec.roomColours + ' colours), which shifts every pixel and makes exact matching impossible.</p>';
+                    note = '<p class="admin-hint">Skipped: this screenshot has lighting effects on it (' + rec.roomColours + ' colours), which shifts every pixel and makes exact matching impossible. Anything in it has to be added by hand.</p>';
                 } else if (rec.error) {
                     note = '<p class="admin-hint">Failed: ' + escapeHtml(rec.error) + '</p>';
+                } else if (!rec.scannedAt && !items.length) {
+                    note = '<p class="admin-hint">Not scanned yet — you can still add furni by hand.</p>';
                 }
                 const rows = items.map((f, i) => '' +
-                    '<div class="admin-furni-item ' + (f.hidden ? "is-hidden" : "") + '" data-image="' + escapeHtml(image) + '" data-index="' + i + '">' +
-                        '<img src="' + escapeHtml(f.icon || "") + '" alt="">' +
+                    '<div class="admin-furni-item ' + (f.hidden ? "is-hidden" : "") + (f.manual ? " is-manual" : "") + '" data-image="' + escapeHtml(image) + '" data-index="' + i + '">' +
+                        '<img src="' + escapeHtml(f.sprite || f.icon || "") + '" alt="">' +
                         '<span class="admin-furni-name">' + escapeHtml(f.name || "") + '</span>' +
-                        '<span class="admin-furni-score">' + Math.round((f.coverage || 0) * 100) + '%</span>' +
+                        // A hand-added entry has no coverage to report, and
+                        // showing it as "0%" read as a failed match rather
+                        // than as something deliberately put there.
+                        '<span class="admin-furni-score">' + (f.manual ? "by hand" : Math.round((f.coverage || 0) * 100) + "%") + '</span>' +
                         '<button type="button" class="admin-pill-btn admin-furni-hide">' + (f.hidden ? "Show" : "Hide") + '</button>' +
                         '<button type="button" class="admin-pill-btn admin-pill-danger admin-furni-remove">Remove</button>' +
                     '</div>').join("");
                 const open = openRooms.has(image);
+                const picking = pickerFor === image;
+                const summary = items.length ? shown + ' shown of ' + items.length : 'nothing yet';
                 return '' +
                     '<div class="admin-furni-room' + (open ? " is-open" : "") + '">' +
                         '<div class="admin-furni-room-head">' +
@@ -604,12 +710,21 @@ document.addEventListener("DOMContentLoaded", () => {
                             '<button type="button" class="admin-furni-toggle" data-image="' + escapeHtml(image) + '" aria-expanded="' + open + '">' +
                                 '<span class="admin-furni-caret" aria-hidden="true"></span>' +
                                 '<strong>' + escapeHtml(label) + '</strong>' +
-                                '<span class="admin-hint">' + shown + ' shown of ' + items.length + '</span>' +
+                                '<span class="admin-hint">' + summary + '</span>' +
                             '</button>' +
-                            '<button type="button" class="admin-pill-btn admin-pill-danger admin-furni-clear" data-image="' + escapeHtml(image) + '">Remove all</button>' +
+                            (items.length ? '<button type="button" class="admin-pill-btn admin-pill-danger admin-furni-clear" data-image="' + escapeHtml(image) + '">Remove all</button>' : '') +
                         '</div>' +
                         '<div class="admin-furni-panel">' + note +
                             '<div class="admin-furni-items">' + rows + '</div>' +
+                            '<div class="admin-furni-add">' +
+                                '<button type="button" class="admin-pill-btn admin-furni-add-toggle" data-image="' + escapeHtml(image) + '">' + (picking ? "Done adding" : "+ Add furni by hand") + '</button>' +
+                                (picking ? '' +
+                                    '<div class="admin-furni-picker">' +
+                                        '<input type="text" class="admin-furni-search" placeholder="Search furni by name…" autocomplete="off">' +
+                                        '<p class="admin-hint admin-furni-picker-status">Type at least two letters.</p>' +
+                                        '<div class="admin-furni-results"></div>' +
+                                    '</div>' : '') +
+                            '</div>' +
                         '</div>' +
                     '</div>';
             }).join("");
@@ -619,6 +734,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     const image = btn.dataset.image;
                     if (openRooms.has(image)) openRooms.delete(image);
                     else openRooms.add(image);
+                    // Collapsing the room the picker is in closes the picker
+                    // too, rather than leaving it live inside a shut panel.
+                    if (!openRooms.has(image) && pickerFor === image) pickerFor = null;
                     render();
                 });
             });
@@ -638,11 +756,111 @@ document.addEventListener("DOMContentLoaded", () => {
             listEl.querySelectorAll(".admin-furni-clear").forEach(btn => {
                 btn.addEventListener("click", async () => {
                     const image = btn.dataset.image;
-                    if (!await showConfirmDialog("Remove every furni recorded for this room image? A rescan would find them again.")) return;
+                    if (!await showConfirmDialog("Remove every furni recorded for this room image? A rescan would find the detected ones again, but anything added by hand would be gone for good.")) return;
                     draft[image].items = [];
                     render();
                 });
             });
+            listEl.querySelectorAll(".admin-furni-add-toggle").forEach(btn => {
+                btn.addEventListener("click", () => {
+                    const image = btn.dataset.image;
+                    pickerFor = pickerFor === image ? null : image;
+                    // Opening the picker on a collapsed room would put it
+                    // somewhere nobody can see.
+                    if (pickerFor) openRooms.add(image);
+                    render();
+                });
+            });
+
+            if (pickerFor) wirePicker(pickerFor);
+        }
+
+        /* The search box inside one room's panel. Deliberately does NOT go
+           through render() on each keystroke — that rebuilds the whole list
+           and would take the focus (and the half-typed word) with it. Only
+           the results container is redrawn. */
+        function wirePicker(image) {
+            const picker = listEl.querySelector(".admin-furni-picker");
+            if (!picker) return;
+            const input = picker.querySelector(".admin-furni-search");
+            const status = picker.querySelector(".admin-furni-picker-status");
+            const results = picker.querySelector(".admin-furni-results");
+            input.focus();
+
+            let timer = null;
+            // Rises with every search started, and a response is only drawn
+            // if it is still the newest — otherwise a slow "ch" landing after
+            // a fast "chair" would replace the right results with stale ones.
+            let seq = 0;
+
+            function drawResults(items) {
+                if (!items.length) {
+                    results.innerHTML = "";
+                    status.textContent = "Nothing matches that.";
+                    return;
+                }
+                // Read, not recordFor: opening the picker on a room must
+                // not leave an empty record behind on a room nobody added to.
+                const already = new Set(((formEl._furniDraft[image] || {}).items || []).map(f => f.name));
+                results.innerHTML = items.map((f, i) => '' +
+                    '<button type="button" class="admin-furni-result' + (already.has(f.name) ? " is-added" : "") + '" data-index="' + i + '"' + (already.has(f.name) ? " disabled" : "") + '>' +
+                        '<img src="' + escapeHtml(f.icon || "") + '" alt="">' +
+                        '<span class="admin-furni-result-name">' + escapeHtml(f.name || "") + '</span>' +
+                        '<span class="admin-hint">' + (already.has(f.name) ? "added" : escapeHtml((f.releaseDate || "").slice(0, 4))) + '</span>' +
+                    '</button>').join("");
+                results.querySelectorAll(".admin-furni-result").forEach(btn => {
+                    btn.addEventListener("click", () => addFurni(image, items[Number(btn.dataset.index)]));
+                });
+                status.textContent = items.length + " match" + (items.length === 1 ? "" : "es") + " — click one to add it.";
+            }
+
+            input.addEventListener("input", () => {
+                const q = input.value.trim();
+                clearTimeout(timer);
+                if (q.length < 2) {
+                    results.innerHTML = "";
+                    status.textContent = "Type at least two letters.";
+                    return;
+                }
+                // Waits for a pause in typing: the catalogue is proxied and
+                // cached, but it is still a request per keystroke otherwise.
+                timer = setTimeout(async () => {
+                    const mine = ++seq;
+                    status.textContent = "Searching…";
+                    try {
+                        const data = await Api.getFurniCatalogue(q);
+                        if (mine !== seq) return;
+                        drawResults(data.items || []);
+                    } catch (err) {
+                        if (mine !== seq) return;
+                        results.innerHTML = "";
+                        status.textContent = err.message || "Couldn't reach the furni catalogue.";
+                    }
+                }, 250);
+            });
+        }
+
+        /* Records one catalogue entry against a room image, in the same shape
+           the scan writes, so the site needs to know nothing about where an
+           entry came from (see renderFurniStrip in js/home.js). sprite is the
+           first state/rotation's room-scale art — the scan uses whichever
+           rotation it actually matched, and that is not a choice anyone can
+           make for a furni that was never detected. */
+        function addFurni(image, f) {
+            const rec = recordFor(image);
+            if ((rec.items || []).some(x => x.name === f.name)) return;
+            rec.items.push({
+                name: f.name,
+                motto: f.motto || "",
+                icon: f.icon,
+                sprite: (f.largeImages && f.largeImages[0] && f.largeImages[0][0]) || null,
+                url: f.url,
+                releaseDate: f.releaseDate || "",
+                className: f.className || "",
+                manual: true,
+                addedAt: new Date().toISOString()
+            });
+            render();
         }
 
         render();
@@ -1532,7 +1750,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span class="status-badge status-${item.status}">${item.status}</span>
                     <div class="admin-row-actions">
                         <button type="button" class="btn admin-edit-btn">Edit</button>
-                        <button type="button" class="btn admin-scan-btn">Scan</button>
+                        ${canScanFurni() ? '<button type="button" class="btn admin-scan-btn">Scan</button>' : ""}
                         <button type="button" class="btn admin-delete-btn">Delete</button>
                     </div>
                 </div>
@@ -1544,7 +1762,8 @@ document.addEventListener("DOMContentLoaded", () => {
             // actually being edited.
             row.querySelector(".admin-edit-btn").addEventListener("click", () => openForm(key, item.id));
             row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteItem(key, item.id));
-            row.querySelector(".admin-scan-btn").addEventListener("click", () => scanOneItem(key, item.id));
+            const scanBtn = row.querySelector(".admin-scan-btn");
+            if (scanBtn) scanBtn.addEventListener("click", () => scanOneItem(key, item.id));
             const rowImg = row.querySelector(".row-thumb-img");
             if (rowImg) {
                 if (rowImg.complete) rowImg.classList.add("is-loaded");
@@ -1815,12 +2034,19 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
         ` : "";
 
-        // Only rendered once a scan has recorded something against this
-        // maze; there is nothing to correct before that.
-        const furniSectionHtml = Object.keys(item.furni || {}).length ? `
+        // Rendered whenever the maze has room images at all, not just once
+        // a scan has recorded something: furni can now be added by hand, and
+        // an unscanned maze is precisely where you would want to. Rooms with
+        // nothing against them show as empty tabs with an Add button.
+        const hasRoomImages = Boolean(
+            (item.entrance && item.entrance.image) ||
+            (item.gallery || []).some(g => g && g.image) ||
+            (item.finish && item.finish.image)
+        );
+        const furniSectionHtml = hasRoomImages ? `
             <div class="admin-field admin-furni-field">
-                <span>Furni found in these rooms</span>
-                <p class="admin-hint">What the scan detected in each room image. Hide keeps a detection in the record but stops the site showing it &mdash; better than Remove for a false positive, since a rescan would find it again either way.</p>
+                <span>Furni in these rooms</span>
+                <p class="admin-hint">What the scan detected in each room image, plus anything added by hand. Hide keeps a detection in the record but stops the site showing it &mdash; better than Remove for a false positive, since a rescan would find it again either way. Hand-added furni is kept through a rescan; detections are not.</p>
                 <div class="admin-furni-list"></div>
             </div>
         ` : "";
@@ -1886,7 +2112,7 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
 
         cfg.formEl.dataset.editId = isEdit ? editId : "";
-        cfg.formEl.style.display = "flex";
+        cfg.formEl.classList.add("is-open");
         cfg.addBtn.style.display = "none";
         cfg.formEl.querySelector(".admin-cancel-btn").addEventListener("click", () => closeForm(key));
 
@@ -1925,7 +2151,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function closeForm(key) {
         const cfg = COLLECTIONS[key];
-        cfg.formEl.style.display = "none";
+        cfg.formEl.classList.remove("is-open");
         cfg.formEl.innerHTML = "";
         cfg.formEl._galleryDraft = null;
         cfg.formEl._relatedDraft = null;
@@ -2134,6 +2360,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    const ROLE_LABELS = { owner: "Owner", admin: "Admin", viewer: "View only" };
+
     function renderAdminsList() {
         adminsListEl.innerHTML = "";
         if (!workingAdmins.length) {
@@ -2152,7 +2380,7 @@ document.addEventListener("DOMContentLoaded", () => {
             row.innerHTML = `
                 <div class="row-info">
                     <h3>${escapeHtml(admin.username)}${isSelf ? ' <span class="admin-you-tag">(you)</span>' : ""}</h3>
-                    <p class="row-creator">${role === "owner" ? "Owner" : "Admin"} · ${admin.createdAt ? "Added " + admin.createdAt.slice(0, 10) : ""}</p>
+                    <p class="row-creator">${ROLE_LABELS[role] || "Admin"} · ${admin.createdAt ? "Added " + admin.createdAt.slice(0, 10) : ""}</p>
                 </div>
                 <div class="admin-row-actions">
                     ${(isSelf || canDelete) ? `<button type="button" class="btn admin-reset-btn">Reset Password</button>` : ""}
@@ -2171,16 +2399,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function openCreateAdminForm() {
-        // Only an owner can grant owner privileges (also enforced server-side) —
-        // everyone else just creates standard admins, no selector shown.
-        const roleFieldHtml = currentUserRole === "owner"
-            ? fieldRow("Privileges", `
+        // Owner is owner-only to grant (also enforced server-side); admin and
+        // view-only are open to anyone who can create an account at all, so
+        // the selector is now shown to every admin rather than to owners
+        // alone — a standard admin having no way to make a read-only account
+        // would defeat the point of having the role.
+        const roleFieldHtml = fieldRow("Privileges", `
                 <select name="role">
                     <option value="admin">Standard Admin</option>
-                    <option value="owner">Owner (can delete other admins)</option>
+                    <option value="viewer">View Only (read-only)</option>
+                    ${currentUserRole === "owner" ? '<option value="owner">Owner (can delete other admins)</option>' : ""}
                 </select>
-              `)
-            : "";
+              `);
 
         adminsFormEl.innerHTML = `
             <h3 class="admin-form-title">Add a New Admin</h3>
@@ -2216,14 +2446,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function openAdminsForm() {
-        adminsFormEl.style.display = "flex";
+        adminsFormEl.classList.add("is-open");
         adminsAddBtn.style.display = "none";
         adminsFormEl.querySelector(".admin-cancel-btn").addEventListener("click", closeAdminsForm);
         adminsFormEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
     function closeAdminsForm() {
-        adminsFormEl.style.display = "none";
+        adminsFormEl.classList.remove("is-open");
         adminsFormEl.innerHTML = "";
         adminsAddBtn.style.display = "inline-block";
     }
@@ -2340,14 +2570,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function openContributorsForm() {
-        contributorsFormEl.style.display = "flex";
+        contributorsFormEl.classList.add("is-open");
         contributorsAddBtn.style.display = "none";
         contributorsFormEl.querySelector(".admin-cancel-btn").addEventListener("click", closeContributorsForm);
         contributorsFormEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
     function closeContributorsForm() {
-        contributorsFormEl.style.display = "none";
+        contributorsFormEl.classList.remove("is-open");
         contributorsFormEl.innerHTML = "";
         contributorsAddBtn.style.display = "inline-block";
     }
@@ -2818,9 +3048,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (furniScanAllBtn) furniScanAllBtn.addEventListener("click", () => startFurniScan(false));
     if (furniScanNewBtn) furniScanNewBtn.addEventListener("click", () => startFurniScan(true));
 
-    // Picks a scan back up if the admin page is reloaded while one is still
-    // going — otherwise the bar would vanish and it would look stalled.
-    if (furniScanAllBtn) startFurniPolling();
+    // Picking a scan back up after a page reload (so the bar doesn't
+    // vanish mid-run and look stalled) is handled by applyRoleVisibility,
+    // which runs once the session's role is known — starting the poll here
+    // would fire it before that, for admins who can't scan at all.
 
     adminsAddBtn.addEventListener("click", openCreateAdminForm);
 

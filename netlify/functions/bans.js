@@ -7,7 +7,7 @@
    manages the list. */
 const crypto = require("crypto");
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, usernameFromToken, UNAUTHORIZED } = require("./_auth");
+const { isAuthorized, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -28,10 +28,17 @@ exports.handler = async (event) => {
 
     if (!isAuthorized(event)) return UNAUTHORIZED;
 
+    // Reading the ban list is part of viewing the admin page, so it stops at
+    // isAuthorized above. Everything past here changes something.
     if (event.httpMethod === "GET") {
         const all = await bans.find({}, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
         return json(200, all);
     }
+
+    // canWrite, not isAuthorized: a viewer is a real logged-in account and
+    // passes isAuthorized quite correctly — it just isn't allowed to change
+    // anything. See _auth.js.
+    if (!(await canWrite(event))) return READ_ONLY;
 
     if (event.httpMethod === "POST") {
         let body;

@@ -4,11 +4,14 @@
    admins. Issues a JWT session token (see _auth.js) that expires after 12
    hours, so a stolen token stops working on its own.
 
-   Roles: every admin has a role of "owner" or "admin". Only owners can
-   delete admin accounts or create new owner accounts — a standard admin
-   can still create accounts, but only as "admin", and can't remove anyone.
+   Roles: every account is "owner", "admin" or "viewer" (see _auth.js).
+   Only owners can delete accounts or create new owner accounts — a standard
+   admin can still create accounts, but only as "admin" or "viewer", and
+   can't remove anyone. A viewer can do none of it, and cannot change
+   anything anywhere else on the site either.
    The username ChrisYepYep is always treated as owner regardless of what's
-   stored (see resolveRole) — that account predates the role field, and this
+   stored (see resolveRole in _auth.js, shared with every other owner-only
+   endpoint) — that account predates the role field, and this
    guarantees it can never end up locked out of owner-only actions just
    because its stored document doesn't have role: "owner" set.
 
@@ -21,20 +24,13 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { getDb } = require("./_db");
-const { isAuthorized, usernameFromToken, UNAUTHORIZED } = require("./_auth");
+const { isAuthorized, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY, ROLES, resolveRole } = require("./_auth");
 
 const json = (statusCode, data) => ({
     statusCode,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data)
 });
-
-const PERMANENT_OWNER = "ChrisYepYep";
-
-function resolveRole(admin) {
-    if (admin && admin.username === PERMANENT_OWNER) return "owner";
-    return (admin && admin.role) || "admin";
-}
 
 function signToken(username) {
     return jwt.sign({ sub: username }, process.env.SESSION_SECRET, { expiresIn: "12h" });
@@ -97,9 +93,13 @@ exports.handler = async (event) => {
 
         if (body.action === "create") {
             if (!isAuthorized(event)) return UNAUTHORIZED;
+            if (!(await canWrite(event))) return READ_ONLY;
             const username = (body.username || "").trim();
             const password = body.password || "";
-            const role = body.role === "owner" ? "owner" : "admin";
+            // Anything unrecognised lands on "admin" rather than being taken
+            // at face value, so a bad value can't create an account whose
+            // powers nothing has defined.
+            const role = ROLES.includes(body.role) ? body.role : "admin";
             if (!username || !validPassword(password)) {
                 return json(400, { error: "Username and an 8+ character password are required" });
             }
@@ -140,6 +140,7 @@ exports.handler = async (event) => {
         // Only an owner can reset someone else's password — a standard admin
         // can still reset their own (self-service), same distinction the
         // DELETE handler below already draws for removing accounts.
+        if (!(await canWrite(event))) return READ_ONLY;
         const requesterUsername = usernameFromToken(event);
         if (username !== requesterUsername) {
             const requester = await admins.findOne({ username: requesterUsername });
@@ -159,6 +160,7 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === "DELETE") {
         if (!isAuthorized(event)) return UNAUTHORIZED;
+        if (!(await canWrite(event))) return READ_ONLY;
         const requester = await admins.findOne({ username: usernameFromToken(event) });
         if (resolveRole(requester) !== "owner") {
             return json(403, { error: "Only an owner can delete admin accounts" });

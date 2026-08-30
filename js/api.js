@@ -25,15 +25,59 @@ const Api = {
         }
     },
 
-    getRooms() {
-        return this._getWithFallback("/.netlify/functions/rooms", "room data",
-            () => typeof DEFAULT_ROOMS !== "undefined" ? DEFAULT_ROOMS : []);
+    /* Turns the packed wire format back into the records the rest of the
+       site is written against (see netlify/functions/_furni-payload.js for
+       what was packed and why). A plain array comes straight back untouched,
+       so the bundled fallback data and any older response still work.
+
+       The furni each detection is put back together from: the shared table
+       entry, and the sprite the detection itself carried. sprite is now the
+       SMALL image where one is known — that is what the furni card draws —
+       falling back to the icon when a hand-added entry has no sprite of its
+       own. */
+    _unpack(payload) {
+        if (Array.isArray(payload)) return payload;
+        if (!payload || payload.v !== 2 || !Array.isArray(payload.f)) return [];
+        const prefix = payload.p || "";
+        const table = payload.f.map(t => ({
+            name: t.n || "",
+            className: t.c || "",
+            motto: t.m || "",
+            icon: prefix + (t.i || ""),
+            url: t.u || "",
+            releaseDate: t.d || ""
+        }));
+        return (payload.rooms || []).map(record => {
+            if (!record.furni) return record;
+            const furni = {};
+            for (const [image, hits] of Object.entries(record.furni)) {
+                furni[image] = {
+                    items: hits.map(([index, sprite]) => {
+                        const base = table[index];
+                        if (!base) return null;
+                        return { ...base, sprite: sprite ? prefix + sprite : base.icon };
+                    }).filter(Boolean)
+                };
+            }
+            return { ...record, furni };
+        });
     },
 
-    getEvents() {
-        return this._getWithFallback("/.netlify/functions/events", "event data",
-            () => typeof DEFAULT_EVENTS !== "undefined" ? DEFAULT_EVENTS : []);
+    async getRooms() {
+        return this._unpack(await this._getWithFallback("/.netlify/functions/rooms", "room data",
+            () => typeof DEFAULT_ROOMS !== "undefined" ? DEFAULT_ROOMS : []));
     },
+
+    async getEvents() {
+        return this._unpack(await this._getWithFallback("/.netlify/functions/events", "event data",
+            () => typeof DEFAULT_EVENTS !== "undefined" ? DEFAULT_EVENTS : []));
+    },
+
+    /* The admin page's own read: the records exactly as stored, with the
+       reviewer fields and hidden detections the packed public form drops.
+       Uncached, so a save is always read back in full. */
+    getRoomsFull(token) { return this._write("/.netlify/functions/rooms?full=1", "GET", token); },
+    getEventsFull(token) { return this._write("/.netlify/functions/events?full=1", "GET", token); },
 
     async _write(url, method, token, body) {
         const res = await fetch(url, {
@@ -87,6 +131,21 @@ const Api = {
     scanFurni(token, { collection = "rooms", ids, images, onlyUnscanned = false, runId } = {}) {
         return this._write("/.netlify/functions/furni-scan-background", "POST", token,
             { collection, ids, images, onlyUnscanned, runId });
+    },
+
+    /* The FurniIndex catalogue, for the admin page's "add furni by hand"
+       picker. Filtering happens in the function (their API has no search of
+       its own), so a query keeps the response small enough to ask for
+       sprites with it — the room-scale art the site prefers over the little
+       catalogue icon. Without a query that same flag would drag the whole
+       ~557KB library down, so don't. */
+    async getFurniCatalogue(q, limit = 24) {
+        const params = new URLSearchParams({ q: q || "", limit: String(limit) });
+        if (q) params.set("sprites", "1");
+        const res = await fetch("/.netlify/functions/furni-catalogue?" + params);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Furni catalogue unavailable (${res.status})`);
+        return data;
     },
 
     deleteImage(token, key) {

@@ -1,6 +1,8 @@
 /* /.netlify/functions/events — CRUD API for events. Mirrors rooms.js. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, UNAUTHORIZED } = require("./_auth");
+const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { packRecords } = require("./_furni-payload");
+const { cachedJson } = require("./_cache");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -25,10 +27,33 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === "GET") {
         const all = await events.find({}, { projection: { _id: 0 } }).toArray();
-        return json(200, all);
+        // ?full=1 is the admin page's route: the records exactly as stored,
+        // every reviewer field and hidden detection included, because that is
+        // what the admin editor works on.
+        //
+        // It requires a token and is never cached — and it 401s rather than
+        // quietly falling back to the public payload, because a cacheable
+        // fallback on this URL is a trap: the CDN would store whatever the
+        // first caller got and hand that same body to the next one, so one
+        // unauthenticated request could leave an admin reading the packed
+        // public form for the next minute.
+        //
+        // Everything else gets the packed public form (see _furni-payload.js),
+        // which is the same event data at a fraction of the size, cached at
+        // the edge. js/api.js unpacks it.
+        const params = event.queryStringParameters || {};
+        if (params.full === "1") {
+            if (!isAuthorized(event)) return UNAUTHORIZED;
+            return cachedJson(event, all, { cache: false });
+        }
+        return cachedJson(event, await packRecords(all));
     }
 
     if (!isAuthorized(event)) return UNAUTHORIZED;
+    // canWrite, not isAuthorized: a viewer is a real logged-in account and
+    // passes isAuthorized quite correctly — it just isn't allowed to change
+    // anything. See _auth.js.
+    if (!(await canWrite(event))) return READ_ONLY;
 
     if (event.httpMethod === "POST") {
         const body = JSON.parse(event.body || "{}");

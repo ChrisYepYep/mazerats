@@ -89,9 +89,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
+    // Same "TBC" as the event modals use for a dateless event (see
+    // formatEventDuration in js/home.js and js/welcome.js) — the header
+    // ticker would otherwise show the event's title over an empty line.
     function formatEventWhen(iso) {
         const d = new Date(iso);
-        if (isNaN(d)) return "";
+        if (isNaN(d)) return "TBC";
         const date = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
         const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
         return `${date}, ${time} UTC`;

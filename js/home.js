@@ -407,8 +407,12 @@ document.addEventListener("DOMContentLoaded", () => {
         return parts ? parts.date : iso;
     }
 
+    /* An event with no date yet reads "TBC" rather than going blank. A date
+       is often the last thing settled about an event, and an empty field
+       looks like the page failed to load it rather than like nobody has
+       picked one — which is the actual state of affairs and worth saying. */
     function formatEventDuration(startIso, endIso) {
-        if (!startIso) return "";
+        if (!startIso) return "TBC";
         const start = formatUtcParts(startIso);
         if (!start) return startIso;
         const end = endIso ? formatUtcParts(endIso) : null;
@@ -992,7 +996,7 @@ document.addEventListener("DOMContentLoaded", () => {
         oldVersionsGallery = (g.oldVersions || []).filter(v => v && v.image);
         if (oldVersionsOpen) resetOldVersionsInstant();
         oldVersionsPill.style.display = oldVersionsGallery.length ? "inline-flex" : "none";
-        oldVersionsPill.textContent = `See older version${oldVersionsGallery.length > 1 ? "s" : ""}`;
+        oldVersionsPill.textContent = `See older version${oldVersionsGallery.length > 1 ? "s" : ""} of this room`;
 
         galleryStrip.querySelectorAll("img, .gallery-strip-missing").forEach((thumb, i) => {
             thumb.classList.toggle("active", i === activeIndex);
@@ -1529,11 +1533,18 @@ document.addEventListener("DOMContentLoaded", () => {
     // difference rather than scaling the sprite down.
     const FURNI_CARD_W = 240;      // must match .furni-card width in the CSS
     const FURNI_CARD_CHROME = 148; // 28px border + 6px gap + 114px description
-    // Exactly half. Of all the ratios this could take, a half is the one that
-    // stays sharp: with image-rendering: pixelated the browser takes every
-    // other pixel, landing square on the grid, where an arbitrary ratio has
-    // to invent pixels between two source ones and softens every edge.
-    const FURNI_CARD_SCALE = 0.5;
+    // 1:1, because the card is now given FurniIndex's own small artwork
+    // rather than the large sprite the scanner matched against (see
+    // netlify/functions/_furni-payload.js). The two sizes are exactly a
+    // factor of two apart — the Study Desk is 82x90 large and 42x45 small —
+    // so this used to halve the large one to arrive at the small one's
+    // dimensions by downsampling. Now the real asset is to hand, drawing it
+    // untouched is both sharper and simpler: no resampling at all, rather
+    // than a resample chosen to be the least damaging one available.
+    //
+    // Sizes hold up: the widest small sprite in the archive is 76px against
+    // the 92px the card gives a sprite, so none of them widens the card.
+    const FURNI_CARD_SCALE = 1;
 
     function placeFurniCardForImage(card, place) {
         const img = card.querySelector(".furni-card-icon");
@@ -1543,9 +1554,9 @@ document.addEventListener("DOMContentLoaded", () => {
             // grows: a small sprite leaves the card at its base width rather
             // than reshaping it for every furni.
             if (img.naturalWidth) {
-                // Rounded to whole pixels so the halved image still starts
-                // and ends on the pixel grid — a fractional width would blur
-                // the very edges the scale was chosen to keep sharp.
+                // Rounded to whole pixels: at 1:1 this is already exact,
+                // but the rounding keeps the sizing honest if the scale is
+                // ever moved off 1 again.
                 const w = Math.round(img.naturalWidth * FURNI_CARD_SCALE);
                 const h = Math.round(img.naturalHeight * FURNI_CARD_SCALE);
                 img.style.width = `${w}px`;
@@ -1601,12 +1612,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const card = furniCardTemplate.content.firstElementChild.cloneNode(true);
         card.dataset.furni = entry.url || entry.name || String(furniCardSeq++);
-        // The room-scale sprite in the rotation it was matched in, where the
-        // scan recorded one. Older results, and anything added by hand, only
-        // carry the small catalogue icon.
+        // The furni's own small art in the rotation it was matched in.
+        // netlify/functions/_furni-payload.js resolves that from the large
+        // sprite the scan actually compared against, and falls back to the
+        // large one for the 82 sprites with no small twin; an entry with no
+        // sprite at all (hand-added, before any rotation is known) gets the
+        // catalogue icon.
         card.querySelector(".furni-card-icon").src = entry.sprite || entry.icon || "";
         card.querySelector(".furni-card-icon").alt = entry.name || "";
-        card.querySelector(".furni-card-name").textContent = entry.name || "";
+        card.querySelector(".furni-card-name-text").textContent = entry.name || "";
+        // Habbo's own name for the furni, alongside the display name. Absent
+        // rather than empty when unknown, so no gap opens after the name.
+        const classEl = card.querySelector(".furni-card-class");
+        if (entry.className) classEl.textContent = entry.className;
+        else classEl.remove();
         card.querySelector(".furni-card-motto").textContent = entry.motto || "";
         card.querySelector(".furni-card-date").textContent =
             entry.releaseDate ? `Released ${formatMazeDate(entry.releaseDate)}` : "";
@@ -1807,9 +1826,9 @@ document.addEventListener("DOMContentLoaded", () => {
             zoomPhotoAt(frame, e.deltaY < 0 ? PHOTO_ZOOM_WHEEL_STEP : 1 / PHOTO_ZOOM_WHEEL_STEP, x, y);
         }, { passive: false });
 
-        // Drag the picture around inside its window. Worth having even
-        // unzoomed: fitting on width alone already leaves most pictures
-        // taller than the window, so there is something to move.
+        // Drag the picture around inside its window, and pinch to zoom it.
+        // Worth having even unzoomed: fitting on width alone already leaves
+        // most pictures taller than the window, so there is something to move.
         //
         // Pointer events with capture, rather than mousedown plus listeners
         // on window. The window is 159px wide and a picture at full size is
@@ -1820,30 +1839,62 @@ document.addEventListener("DOMContentLoaded", () => {
         // pointer routes every move and release back here until the button
         // comes up, wherever it happens to be. It also means no listeners
         // are left on window for each frame that gets opened.
-        let panning = false;
-        let panMoved = false;
-        let panPointerId = null;
-        let panStartX = 0;
-        let panStartY = 0;
+        //
+        // Every live pointer is tracked, not just one, because a pinch is two
+        // of them. The previous version took whichever pointer went down last
+        // and panned from it, so putting a second finger down mid-gesture
+        // made the picture jump to follow that finger instead of zooming.
+        // One pointer pans; two pinch. The CSS sets touch-action: none on
+        // this box, without which none of it runs on a touchscreen at all —
+        // the browser claims the gesture as a page scroll or a page zoom and
+        // cancels the pointer stream mid-drag.
+        const pointers = new Map();   // pointerId -> [x, y] in the box's own coordinates
+        let panMoved = false;         // a drag happened, so the click that follows isn't a zoom request
         let panFromX = 0;
         let panFromY = 0;
+        let panStart = null;          // where the single panning pointer went down
+        let pinchDist = 0;            // finger separation at the last pinch frame
+        let pinchMid = null;          // midpoint at the last pinch frame
 
         // Otherwise the browser starts its own native image-drag and the
         // picture never follows the pointer at all.
         img.addEventListener("dragstart", e => e.preventDefault());
 
-        box.addEventListener("pointerdown", e => {
-            if (e.button !== 0) return;
+        const points = () => [...pointers.values()];
+        const distance = ([a, b]) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+        const midpoint = ([a, b]) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+
+        // Called whenever the number of live pointers changes, so a gesture
+        // always restarts from where the fingers are NOW. Without this,
+        // lifting one finger of a pinch would resume panning from wherever
+        // the remaining one first went down, snapping the picture across the
+        // window.
+        function rebaseGesture() {
             const state = photoZoomState(frame);
-            panning = true;
-            panMoved = false;
-            panPointerId = e.pointerId;
-            panStartX = e.clientX;
-            panStartY = e.clientY;
-            panFromX = state.x;
-            panFromY = state.y;
+            const live = points();
+            panStart = null;
+            pinchMid = null;
+            pinchDist = 0;
+            if (live.length === 1) {
+                panStart = live[0];
+                panFromX = state.x;
+                panFromY = state.y;
+            } else if (live.length >= 2) {
+                const two = live.slice(0, 2);
+                pinchDist = distance(two);
+                pinchMid = midpoint(two);
+            }
+        }
+
+        box.addEventListener("pointerdown", e => {
+            // Touch and pen report button 0 the same as a left click; this
+            // only rejects a genuine middle/right mouse button.
+            if (e.pointerType === "mouse" && e.button !== 0) return;
+            pointers.set(e.pointerId, pointIn(e));
+            if (pointers.size === 1) panMoved = false;
             frame.classList.add("is-panning");
             box.setPointerCapture(e.pointerId);
+            rebaseGesture();
             // Belt and braces alongside the capture: stops the drag leaving
             // a trail of selected text across the page behind it.
             document.body.style.userSelect = "none";
@@ -1851,29 +1902,65 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         box.addEventListener("pointermove", e => {
-            if (!panning || e.pointerId !== panPointerId) return;
-            const scale = frameScale(frame);
-            const dx = (e.clientX - panStartX) / scale;
-            const dy = (e.clientY - panStartY) / scale;
-            // Past a few pixels this is a drag, and the click that follows
-            // on release is a by-product of it rather than a zoom request.
-            if (Math.abs(dx) > PHOTO_PAN_SLOP || Math.abs(dy) > PHOTO_PAN_SLOP) {
+            if (!pointers.has(e.pointerId)) return;
+            pointers.set(e.pointerId, pointIn(e));
+            const state = photoZoomState(frame);
+            const live = points();
+
+            if (live.length >= 2) {
+                // Pinch. Scale by how much the fingers' separation changed,
+                // about their midpoint, so whatever is between them stays
+                // between them — then follow the midpoint itself, which is
+                // what lets a pinch drag and zoom in one movement.
+                const two = live.slice(0, 2);
+                const dist = distance(two);
+                const mid = midpoint(two);
+                if (pinchDist > 0 && dist > 0) {
+                    setPhotoScaleAt(frame, state.scale * (dist / pinchDist), mid[0], mid[1]);
+                }
+                if (pinchMid) {
+                    state.x += mid[0] - pinchMid[0];
+                    state.y += mid[1] - pinchMid[1];
+                    applyPhotoZoom(frame);
+                }
+                pinchDist = dist;
+                pinchMid = mid;
                 panMoved = true;
                 markPhotoExplored(frame);
+                return;
             }
-            const state = photoZoomState(frame);
-            state.x = panFromX + dx;
-            state.y = panFromY + dy;
-            applyPhotoZoom(frame);
+
+            if (live.length === 1 && panStart) {
+                const [x, y] = live[0];
+                const dx = x - panStart[0];
+                const dy = y - panStart[1];
+                // Past a few pixels this is a drag, and the click that follows
+                // on release is a by-product of it rather than a zoom request.
+                if (Math.abs(dx) > PHOTO_PAN_SLOP || Math.abs(dy) > PHOTO_PAN_SLOP) {
+                    panMoved = true;
+                    markPhotoExplored(frame);
+                }
+                state.x = panFromX + dx;
+                state.y = panFromY + dy;
+                applyPhotoZoom(frame);
+            }
         });
 
         function endPan(e) {
-            if (!panning || e.pointerId !== panPointerId) return;
-            panning = false;
-            panPointerId = null;
+            if (!pointers.has(e.pointerId)) return;
+            pointers.delete(e.pointerId);
+            if (box.hasPointerCapture(e.pointerId)) box.releasePointerCapture(e.pointerId);
+            if (pointers.size) {
+                // Still holding: a pinch that lost a finger becomes a pan
+                // from where the remaining one is.
+                rebaseGesture();
+                return;
+            }
+            panStart = null;
+            pinchMid = null;
+            pinchDist = 0;
             frame.classList.remove("is-panning");
             document.body.style.userSelect = "";
-            if (box.hasPointerCapture(e.pointerId)) box.releasePointerCapture(e.pointerId);
         }
 
         box.addEventListener("pointerup", endPan);

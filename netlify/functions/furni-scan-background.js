@@ -14,7 +14,7 @@
 
 const { blobStore } = require("./_blobs.js");
 const { getDb } = require("./_db.js");
-const { isAuthorized, UNAUTHORIZED } = require("./_auth.js");
+const { isOwner, isAuthorized, UNAUTHORIZED, forbidden } = require("./_auth.js");
 const { scanRoom } = require("./_furni-match.js");
 const { imageUrl } = require("./_url.js");
 const { getCatalogue } = require("./furni-catalogue.js");
@@ -58,7 +58,16 @@ async function fetchRoomImage(siteUrl, imagePath) {
 }
 
 exports.handler = async (event) => {
+    // Owner-only, not merely admin-only. A scan is the most expensive thing
+    // this site can be asked to do — fifteen minutes of compute and thousands
+    // of sprite fetches — and it overwrites the furni already recorded on
+    // every image it covers, including corrections an admin has made by hand
+    // (and, now, anything added by hand in the first place). There is also
+    // exactly one progress record, so a second scan started by anyone stamps
+    // on the first one's. Enforced here rather than only hidden in the admin
+    // page: the button being invisible is a courtesy, this is the rule.
     if (!isAuthorized(event)) return UNAUTHORIZED;
+    if (!(await isOwner(event))) return forbidden("Only an owner can run a furni scan.");
 
     let body;
     try { body = JSON.parse(event.body || "{}"); } catch { body = {}; }
@@ -133,13 +142,20 @@ exports.handler = async (event) => {
 
         const furni = { ...(doc.furni || {}) };
         for (const image of todo) {
+            // Anything an admin added by hand survives this run. A scan
+            // replaces its own findings wholesale — that is the point of
+            // rescanning — but hand-added entries are exactly the ones it
+            // could never find on its own (furni under a lighting effect,
+            // or mostly hidden behind something else), so wiping them would
+            // make a rescan destructive rather than merely repetitive.
+            const kept = ((furni[image] || {}).items || []).filter(f => f && f.manual);
             try {
                 const buffer = await fetchRoomImage(siteUrl, image);
                 const result = scanRoom(buffer, sprites);
                 if (result.skipped) {
                     // Recorded rather than silently empty, so the admin can
                     // say WHY a room found nothing.
-                    furni[image] = { skipped: result.skipped, roomColours: result.roomColours, items: [] };
+                    furni[image] = { skipped: result.skipped, roomColours: result.roomColours, items: kept };
                     done++;
                     await setProgress({ done, current: image });
                     continue;
@@ -147,7 +163,7 @@ exports.handler = async (event) => {
                 furni[image] = {
                     scannedAt: new Date().toISOString(),
                     roomColours: result.roomColours,
-                    items: result.hits.map(h => {
+                    items: kept.concat(result.hits.map(h => {
                         const item = catalogue.items[h.key];
                         return {
                             name: item.name,
@@ -163,10 +179,10 @@ exports.handler = async (event) => {
                             at: h.at,
                             alternates: (h.alternates || []).map(k => catalogue.items[k].name)
                         };
-                    })
+                    }))
                 };
             } catch (err) {
-                furni[image] = { error: err.message, items: [] };
+                furni[image] = { error: err.message, items: kept };
                 errors++;
             }
             done++;

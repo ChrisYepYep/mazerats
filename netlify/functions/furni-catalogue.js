@@ -1,14 +1,15 @@
 /* FurniIndex catalogue, proxied and cached.
 
    The API key never reaches the browser: this runs server-side and reads it
-   from FURNIINDEX_API_KEY. (As of writing their endpoint returns identical
-   data with no key at all — worth them knowing — but the key is sent anyway
-   so nothing breaks when they enforce it.)
+   from FURNIINDEX_API_KEY. They enforce it now — a request without the header
+   is a 401, where it used to be served anyway.
 
-   Cached because their endpoint has no search: filtering to "chair" means
-   holding the whole catalogue, and re-fetching all 13 pages for every admin
-   keystroke would be absurd — and unkind to them. The whole thing is ~557KB
-   raw, ~213KB trimmed to what a picker needs, refreshed once a day.
+   Cached because their endpoint still has no search of its own: filtering to
+   "chair" means holding the whole catalogue, and re-fetching all 13 pages for
+   every admin keystroke would be absurd — and unkind to them. Nor does it
+   sort or filter on anything else; q/search/name/sort/since are all accepted
+   and ignored, so every bit of that happens down in the handler here. ~931KB
+   raw over 1,278 rows, refreshed once a day.
 */
 
 const { blobStore } = require("./_blobs.js");
@@ -58,10 +59,15 @@ async function fetchPage(page) {
     return res.json();
 }
 
-/* Every furni FurniIndex holds. The icon URL is the identity: their own
-   numeric url id is a PRODUCT id shared by colour variants (653 unique ids
-   across 1263 rows — one id covers both the yellow and the tangerine dining
-   table), whereas the icon is unique to every row. */
+/* Every furni FurniIndex holds.
+
+   On identity: their numeric url id is a PRODUCT id shared by colour
+   variants (one id covers both the yellow and the tangerine dining table),
+   so it does not identify a row — 1,274 unique urls across 1,278 rows.
+   className and id are both unique per row, as is the icon URL. className
+   is the useful one of the three: it is Habbo's own name for the furni
+   (`anniv_balloongift_2`), stable across their site and ours, where an
+   icon URL is only a CDN path that can be rewritten under us. */
 async function fetchCatalogue() {
     const first = await fetchPage(1);
     const all = first.results.slice();
@@ -74,11 +80,18 @@ async function fetchCatalogue() {
         total: first.total,
         items: all.map(r => ({
             name: r.name,
+            className: r.className || "",
             motto: r.motto || "",
             icon: r.icon,
             url: r.url,
             releaseDate: r.releaseDate || "",
-            largeImages: r.largeImages || []
+            // Both grids. largeImages is what the scanner compares against;
+            // smallImages is what the furni card shows, and the two share a
+            // [state][rotation] shape on every row, so a sprite matched in
+            // one has an exact counterpart at the same position in the
+            // other (see _furni-payload.js).
+            largeImages: r.largeImages || [],
+            smallImages: r.smallImages || []
         }))
     };
 }
@@ -101,9 +114,10 @@ exports.handler = async (event) => {
         const q = (params.q || "").trim().toLowerCase();
         let items = catalogue.items;
         if (q) items = items.filter(i => i.name.toLowerCase().includes(q));
-        // largeImages is only wanted by the scanner, never by a picker — it
-        // is by far the biggest part of the payload.
-        if (params.sprites !== "1") items = items.map(({ largeImages, ...rest }) => rest);
+        // The sprite grids are wanted by the scanner and by the admin's
+        // add-by-hand picker, never by anything else — and they are by far
+        // the biggest part of the payload.
+        if (params.sprites !== "1") items = items.map(({ largeImages, smallImages, ...rest }) => rest);
         return json(200, {
             total: catalogue.total,
             fetchedAt: catalogue.fetchedAt,

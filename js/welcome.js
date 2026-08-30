@@ -60,8 +60,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         };
     }
 
+    /* An event with no date yet reads "TBC" rather than going blank. A date
+       is often the last thing settled about an event, and an empty field
+       looks like the page failed to load it rather than like nobody has
+       picked one — which is the actual state of affairs and worth saying. */
     function formatEventDuration(startIso, endIso) {
-        if (!startIso) return "";
+        if (!startIso) return "TBC";
         const start = formatUtcParts(startIso);
         if (!start) return startIso;
         const end = endIso ? formatUtcParts(endIso) : null;

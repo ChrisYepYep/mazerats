@@ -4,7 +4,7 @@
    are private submissions rather than public site content. */
 const crypto = require("crypto");
 const { getDb } = require("./_db");
-const { isAuthorized, UNAUTHORIZED } = require("./_auth");
+const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -132,10 +132,17 @@ exports.handler = async (event) => {
 
     if (!isAuthorized(event)) return UNAUTHORIZED;
 
+    // Reading the messages is part of viewing the admin page, so it stops at
+    // isAuthorized above. Deleting one does not.
     if (event.httpMethod === "GET") {
         const all = await messages.find({}, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
         return json(200, all);
     }
+
+    // canWrite, not isAuthorized: a viewer is a real logged-in account and
+    // passes isAuthorized quite correctly — it just isn't allowed to change
+    // anything. See _auth.js.
+    if (!(await canWrite(event))) return READ_ONLY;
 
     if (event.httpMethod === "DELETE") {
         const id = (event.queryStringParameters || {}).id;
