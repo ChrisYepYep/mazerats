@@ -5,19 +5,33 @@
    database round-trip and naturally rejects once it expires. */
 const jwt = require("jsonwebtoken");
 const { getDb } = require("./_db.js");
+const { recordWrite } = require("./_audit.js");
 
 function isAuthorized(event) {
     return Boolean(usernameFromToken(event));
 }
 
-function usernameFromToken(event) {
+function tokenPayload(event) {
     const token = event.headers["x-admin-token"] || "";
     if (!token || !process.env.SESSION_SECRET) return null;
     try {
-        return jwt.verify(token, process.env.SESSION_SECRET).sub || null;
+        return jwt.verify(token, process.env.SESSION_SECRET);
     } catch (e) {
         return null;
     }
+}
+
+function usernameFromToken(event) {
+    const payload = tokenPayload(event);
+    return (payload && payload.sub) || null;
+}
+
+/* Which sign-in a request belongs to. The JWT's issued-at claim is minted
+   once per login and never changes for the life of that token, so it
+   identifies a session without anything having to store one. */
+function sessionOf(event) {
+    const payload = tokenPayload(event);
+    return (payload && payload.iat) || null;
 }
 
 /* The three roles. Lives here rather than in auth.js because it is no
@@ -70,7 +84,14 @@ async function isOwner(event) {
    is the entire point of the role. */
 async function canWrite(event) {
     const role = await roleOf(event);
-    return role === "owner" || role === "admin";
+    const allowed = role === "owner" || role === "admin";
+    /* Every mutating endpoint on the site passes through here, which makes it
+       the one place an action log can be kept without threading a call
+       through ten handlers — and the one place that cannot be forgotten when
+       an eleventh is added. Not awaited: the log must never hold up a save,
+       or take one down with it. */
+    if (allowed) recordWrite(event, usernameFromToken(event), sessionOf(event));
+    return allowed;
 }
 
 const UNAUTHORIZED = {
@@ -94,7 +115,7 @@ const forbidden = (message) => ({
 const READ_ONLY = forbidden("This account is view-only and cannot make changes.");
 
 module.exports = {
-    isAuthorized, usernameFromToken, UNAUTHORIZED,
+    isAuthorized, usernameFromToken, sessionOf, UNAUTHORIZED,
     PERMANENT_OWNER, ROLES, resolveRole, roleOf, isOwner, canWrite,
     forbidden, READ_ONLY
 };

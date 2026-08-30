@@ -217,6 +217,169 @@ document.addEventListener("DOMContentLoaded", () => {
         loginForm.reset();
     }
 
+    /* ---------- activity log (owner only) ----------
+
+       Admin accounts only: sign-ins, sessions and changes. The server refuses
+       a non-owner outright (see netlify/functions/admin-activity.js), so this
+       is presentation; the tab is hidden for anyone else by
+       applyRoleVisibility rather than showing a panel that would only 403. */
+    const activityNavBtn = document.getElementById("activity-nav-btn");
+    const activitySummaryEl = document.getElementById("activity-summary");
+    const activityVisitorsEl = document.getElementById("activity-visitors");
+    const activitySessionsEl = document.getElementById("activity-sessions");
+    const activityEventsEl = document.getElementById("activity-events");
+    const activityRefreshBtn = document.getElementById("activity-refresh-btn");
+    const activityRangeEl = document.getElementById("activity-range");
+
+    function formatWhen(iso) {
+        const d = new Date(iso);
+        if (isNaN(d)) return "—";
+        return d.toLocaleString("en-GB", {
+            day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false
+        });
+    }
+
+    // Reads as a duration rather than a number of seconds — "under a minute"
+    // is the honest answer for most single-action sessions.
+    function formatDuration(seconds) {
+        if (!seconds || seconds < 60) return "under a minute";
+        const m = Math.round(seconds / 60);
+        if (m < 60) return m + " min";
+        const h = Math.floor(m / 60);
+        return h + "h " + (m % 60) + "m";
+    }
+
+    // The browser family is the useful part of a user-agent string; the rest
+    // is noise, and storing more of it than this would be a fingerprint.
+    function browserOf(agent) {
+        if (!agent) return "";
+        if (/Edg\//.test(agent)) return "Edge";
+        if (/OPR\//.test(agent)) return "Opera";
+        if (/Firefox\//.test(agent)) return "Firefox";
+        if (/Chrome\//.test(agent)) return "Chrome";
+        if (/Safari\//.test(agent)) return "Safari";
+        return "other";
+    }
+
+    const ACTIVITY_LABELS = {
+        "login": "Signed in",
+        "login-failed": "Failed sign-in",
+        "session": "Opened the admin",
+        "write": "Changed something",
+    };
+
+    // A bar per row, sized against the biggest count, so the shape of the
+    // list is readable at a glance without a charting library.
+    function activityBars(rows, empty) {
+        if (!rows || !rows.length) return '<p class="admin-empty">' + empty + '</p>';
+        const max = Math.max.apply(null, rows.map(r => r.n)) || 1;
+        return rows.map(r => '' +
+            '<div class="admin-visitor-row">' +
+                '<span class="admin-visitor-label">' + escapeHtml(r.label || r.name || r.day || "—") + '</span>' +
+                '<span class="admin-visitor-bar"><i style="width:' + Math.round((r.n / max) * 100) + '%"></i></span>' +
+                '<span class="admin-visitor-count">' + r.n + '</span>' +
+            '</div>').join("");
+    }
+
+    let activityRangeLabel = "";
+
+    function renderVisitors(v) {
+        if (!v) { activityVisitorsEl.innerHTML = ""; return; }
+        activityVisitorsEl.innerHTML = "" +
+            '<div class="admin-activity-summary">' +
+                '<span class="admin-activity-stat"><strong>' + v.sessions + '</strong> ' + (v.sessions === 1 ? "visit" : "visits") + '</span>' +
+                '<span class="admin-activity-stat"><strong>' + v.events + '</strong> ' + (v.events === 1 ? "interaction" : "interactions") + '</span>' +
+                '<span class="admin-hint">' + escapeHtml(activityRangeLabel) + '</span>' +
+            '</div>' +
+            '<div class="admin-visitor-grid">' +
+                '<div><h4 class="admin-visitor-head">By day</h4>' + activityBars(v.byDay, "Nothing yet.") + '</div>' +
+                '<div><h4 class="admin-visitor-head">What happened</h4>' + activityBars(v.byName, "Nothing yet.") + '</div>' +
+                '<div><h4 class="admin-visitor-head">Most opened mazes</h4>' + activityBars(v.topMazes, "No mazes opened yet.") + '</div>' +
+                '<div><h4 class="admin-visitor-head">Most opened furni</h4>' + activityBars(v.topFurni, "No furni opened yet.") + '</div>' +
+            '</div>';
+    }
+
+    const RANGE_WORDS = {
+        "24h": "in the past 24 hours",
+        "today": "today",
+        "week": "this week",
+        "7d": "in the past 7 days",
+        "30d": "in the past 30 days",
+        "all": "in everything still kept",
+    };
+
+    function renderActivity(data) {
+        activityRangeLabel = RANGE_WORDS[data.range] || "";
+        renderVisitors(data.visitors);
+        const c = data.counts || {};
+        activitySummaryEl.innerHTML = "" +
+            '<span class="admin-activity-stat"><strong>' + c.sessions + '</strong> ' + (c.sessions === 1 ? "session" : "sessions") + '</span>' +
+            '<span class="admin-activity-stat"><strong>' + c.logins + '</strong> ' + (c.logins === 1 ? "sign-in" : "sign-ins") + '</span>' +
+            '<span class="admin-activity-stat' + (c.failedLogins ? " is-warn" : "") + '"><strong>' +
+                c.failedLogins + '</strong> failed</span>' +
+            '<span class="admin-activity-stat"><strong>' + c.writes + '</strong> ' + (c.writes === 1 ? "change" : "changes") + '</span>' +
+            '<span class="admin-hint">' + escapeHtml(activityRangeLabel) + '</span>' +
+            (data.truncated ? '<span class="admin-hint">showing the most recent ' + c.events + '</span>' : "");
+
+        if (!data.sessions.length) {
+            activitySessionsEl.innerHTML = '<p class="admin-empty">No sessions recorded yet.</p>';
+        } else {
+            activitySessionsEl.innerHTML = data.sessions.map(s => '' +
+                '<div class="chrome-list-row admin-row admin-activity-row">' +
+                    '<div class="row-info">' +
+                        '<h3>' + escapeHtml(s.username) + '</h3>' +
+                        '<p class="row-creator">' + escapeHtml(formatWhen(s.startedAt)) +
+                            ' &middot; active for ' + escapeHtml(formatDuration(s.activeSeconds)) + '</p>' +
+                    '</div>' +
+                    '<div class="row-side">' +
+                        '<span class="admin-activity-meta">' + s.writes + ' change' + (s.writes === 1 ? "" : "s") + '</span>' +
+                        '<span class="admin-activity-meta">' + escapeHtml(s.ip || "no address") + '</span>' +
+                        '<span class="admin-activity-meta">' + escapeHtml(browserOf(s.agent)) + '</span>' +
+                    '</div>' +
+                '</div>').join("");
+        }
+
+        if (!data.events.length) {
+            activityEventsEl.innerHTML = '<p class="admin-empty">Nothing logged yet.</p>';
+        } else {
+            activityEventsEl.innerHTML = data.events.map(e => {
+                const what = e.type === "write"
+                    ? e.method + " " + (e.endpoint || "") + (e.target ? " → " + e.target : "")
+                    : (e.reason || e.note || "");
+                return '' +
+                    '<div class="chrome-list-row admin-row admin-activity-row' +
+                        (e.type === "login-failed" ? " is-warn" : "") + '">' +
+                        '<div class="row-info">' +
+                            '<h3>' + escapeHtml(ACTIVITY_LABELS[e.type] || e.type) +
+                                (e.username ? ' <span class="admin-you-tag">' + escapeHtml(e.username) + '</span>' : "") + '</h3>' +
+                            (what ? '<p class="row-creator">' + escapeHtml(what) + '</p>' : "") +
+                        '</div>' +
+                        '<div class="row-side">' +
+                            '<span class="admin-activity-meta">' + escapeHtml(formatWhen(e.at)) + '</span>' +
+                            '<span class="admin-activity-meta">' + escapeHtml(e.ip || "") + '</span>' +
+                        '</div>' +
+                    '</div>';
+            }).join("");
+        }
+    }
+
+    async function loadActivity() {
+        if (!canReadActivity()) return;
+        activitySummaryEl.innerHTML = '<span class="admin-hint">Loading…</span>';
+        try {
+            renderActivity(await Api.getAdminActivity(adminToken, activityRangeEl && activityRangeEl.value));
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            activitySummaryEl.innerHTML = '<span class="admin-hint">' +
+                escapeHtml(err.message || "Couldn't load the activity log.") + '</span>';
+            activitySessionsEl.innerHTML = "";
+            activityEventsEl.innerHTML = "";
+        }
+    }
+
+    if (activityRefreshBtn) activityRefreshBtn.addEventListener("click", loadActivity);
+    if (activityRangeEl) activityRangeEl.addEventListener("change", loadActivity);
+
     /* Running a furni scan is owner-only — see the handler in
        netlify/functions/furni-scan-background.js, which is where the rule
        actually lives. Everything here is presentation: a standard admin
@@ -224,6 +387,14 @@ document.addEventListener("DOMContentLoaded", () => {
        full use of the furni EDITOR (hide/remove/add by hand) — it is only
        starting a scan that is restricted. */
     function canScanFurni() {
+        return currentUserRole === "owner";
+    }
+
+    // The activity log answers "what have my admins been doing", which is an
+    // owner's question about their colleagues, not an admin's about
+    // themselves. Same rule as the scan, named separately so the reason each
+    // one is restricted stays legible.
+    function canReadActivity() {
         return currentUserRole === "owner";
     }
 
@@ -261,6 +432,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function applyRoleVisibility() {
         const owner = canScanFurni();
         document.body.classList.toggle("is-viewer", !canWrite());
+        if (activityNavBtn) activityNavBtn.hidden = !canReadActivity();
         // readOnly as well as the CSS: a field nobody can save is still a
         // field somebody can type a paragraph into and then lose.
         const aboutInput = document.getElementById("about-text-input");
@@ -298,6 +470,7 @@ document.addEventListener("DOMContentLoaded", () => {
         renderList("rooms");
         renderList("events");
         applyRoleVisibility();
+        loadActivity();
         loadAdmins();
         loadLandingState();
         loadContributors();

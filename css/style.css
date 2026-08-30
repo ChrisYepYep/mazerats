@@ -2852,11 +2852,23 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 /* ---------- Related Images: photo-wall icons + photo frame ---------- */
 
-/* Laid out as the last item of .modal-meta-items' flex row rather than
-   positioned over the image — margin-left: auto pushes it past the status
-   pill and hotel/date text to the right-hand end of that row. In flow, so
-   nothing here needs a z-index or an anchor to fight over. */
+/* Pinned to the right-hand end of .modal-meta-items and taken OUT of its
+   flex flow. In flow it was a flex item, so a maze with a lot of related
+   images made the strip wide enough to wrap onto a second line and the meta
+   row grew a whole line taller. Absolute, it simply keeps extending
+   leftwards over the opening-date text, which is the space going spare.
+
+   It carries the meta row's own background so text passes behind it rather
+   than through it, and ::before fades the last stretch of that text out
+   instead of cutting it mid-word. */
 .gallery-photos {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 9px;              /* clears .modal-meta-items' own padding */
+    z-index: 2;
+    padding-left: 2px;
+    background: #403528;
     display: flex;
     /* Laid out right to left, so the first related image in the admin list
        is the right-hand icon and the rest run back from it. The strip is
@@ -2864,7 +2876,27 @@ body[data-page="home"] .hero { padding-top: 18px; }
        added and its right edge never moves. */
     flex-direction: row-reverse;
     align-items: center;
-    margin-left: auto;
+}
+
+/* The hand-off between text and icons: 22px of the row's own colour, fading
+   in from nothing, so a date running underneath disappears rather than
+   colliding with the first icon.
+
+   Only while the strip is EXPANDED. Collapsed it is narrow enough to sit in
+   the row's spare space without reaching the text, and a gradient there
+   would be dimming a date nothing is covering. .is-closing keeps it up for
+   the closing animation, so it leaves with the icons rather than snapping
+   off the instant the strip starts to shut. */
+.gallery-photos.has-overflow.is-open::before,
+.gallery-photos.has-overflow.is-closing::before {
+    content: "";
+    position: absolute;
+    right: 100%;
+    top: 0;
+    bottom: 0;
+    width: 22px;
+    background: linear-gradient(to right, rgba(64, 53, 40, 0), #403528);
+    pointer-events: none;
 }
 
 /* Anchored by its right edge, so each additional icon extends the strip
@@ -3093,7 +3125,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
     width: 159px;
     height: 115px;
     overflow: hidden;
-    cursor: zoom-in;
+    /* grab, not zoom-in: this surface both pans and zooms, and the drag is
+       what people reach for first. The zoom is signalled by the magnifier
+       badge instead, and reported by .photo-frame-zoom-pip. */
+    cursor: grab;
     /* Every touch gesture that starts in here belongs to the picture, not to
        the page. Without this the browser arbitrates first and always wins:
        a one-finger drag is taken as a page scroll and the pointer stream is
@@ -3107,7 +3142,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 /* At full size, so the next click takes it back to the fitted view. */
-.photo-frame.is-photo-max .photo-frame-photo-box { cursor: zoom-out; }
+/* Still grab at full size — the picture is at its largest and panning is
+   all that is left to do there. The pip says which state it is in. */
+.photo-frame.is-photo-max .photo-frame-photo-box { cursor: grab; }
 
 /* Held, and being dragged around its window. */
 .photo-frame.is-panning .photo-frame-photo-box { cursor: grabbing; }
@@ -4347,6 +4384,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
    into the panel around it, so rewriting the meta on each open cannot
    wipe the description nested alongside it. */
 .modal-meta-items {
+    position: relative;       /* the photo strip anchors to this */
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -6889,4 +6927,236 @@ body[data-page="admin"] .site-footer p {
         bottom: 0;
         margin: 0;
     }
+}
+
+/* ---------- telling the reader the photo frame can be handled ----------
+
+   The frame carries seven interactions — pan, wheel-zoom, click to toggle
+   1:1, double-click to double the frame, pinch, drag the strip to move it,
+   and close — and used to signal them almost entirely through the mouse
+   cursor. On a touchscreen that is nothing at all: only the X was
+   discoverable. What follows is the visible half.
+
+   Everything here is drawn in colours photo-frame.png already uses (white,
+   black, and the greys from its X button), and everything that is a HINT
+   rather than a control fades out on first interaction, riding the
+   .is-explored class the duotone wash already used. The frame says its piece
+   once and then gets out of the way. */
+
+/* 1. Grip ridges on the drag strip. It was blank white card with nothing to
+      say it was a handle — the same device every Habbo and Win95 titlebar
+      uses, and unlike a cursor it works on touch. */
+/* Three rows of 1px ridges, running the width of the card: from x=8, where
+   the photo window's own left edge sits, to x=152, stopping just short of
+   the close button at 157. Spanning the full width rather than a token patch
+   in the middle makes the whole strip read as the handle, which is what it
+   actually is. */
+.photo-frame-drag::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 7px;
+    width: 144px;
+    height: 5px;
+    /* A 1px dot with a 1px gap, in both directions: the gradients give the
+       horizontal spacing, the 2px steps between rows give the vertical. */
+    background-image:
+        repeating-linear-gradient(to right, #ccc 0 1px, transparent 1px 2px),
+        repeating-linear-gradient(to right, #ccc 0 1px, transparent 1px 2px),
+        repeating-linear-gradient(to right, #ccc 0 1px, transparent 1px 2px);
+    background-size: 144px 1px, 144px 1px, 144px 1px;
+    background-position: 0 0, 0 2px, 0 4px;
+    background-repeat: no-repeat;
+    pointer-events: none;
+}
+
+/* 2 and 3. Corner brackets and the magnifier badge, both on one overlay
+   above the picture — "this is a viewport, and there is more in it than
+   fits". Two background images rather than two elements because the box's
+   ::after is already the duotone wash. */
+.photo-frame-photo-box::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background-image:
+        url('../assets/img/stickies-photos/photo-brackets.png'),
+        url('../assets/img/stickies-photos/photo-magnifier.png');
+    background-position: 0 0, right 5px bottom 5px;
+    background-repeat: no-repeat, no-repeat;
+    image-rendering: pixelated;
+    /* Never in the way of a drag, click or wheel meant for the picture. */
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 420ms ease;
+}
+
+/* Said once. From here the picture is uncovered. */
+.photo-frame.is-explored .photo-frame-photo-box::before {
+    opacity: 0;
+}
+
+/* 4. The wheel is the one gesture nothing visual can imply, so it is
+      written down — under the caption rather than replacing it, quiet enough
+      to read as part of the card. */
+.photo-frame-hint {
+    position: absolute;
+    left: 10px;
+    top: 178px;
+    width: 155px;
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.2;
+    text-align: left;
+    /* The caption's own #2f2a24, lightened well past it: this is a note to
+       a first-time reader, not a second caption, and it should be the last
+       thing on the card the eye lands on. */
+    color: #bfb8ae;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+/* 6. Which state the zoom is in, in the same face as the hint. Rides the
+      .is-photo-max class js/home.js already sets in applyPhotoZoom, so this
+      needs no state of its own. */
+.photo-frame-zoom-pip {
+    position: absolute;
+    left: 4px;
+    bottom: 4px;
+    z-index: 3;
+    display: none;
+    padding: 1px 3px;
+    background: rgba(0, 0, 0, 0.62);
+    color: #fff;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.1;
+    pointer-events: none;
+}
+
+.photo-frame.is-photo-max .photo-frame-zoom-pip {
+    display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .photo-frame-photo-box::before { transition: none; }
+}
+
+/* ---------- the activity log (owner only) ---------- */
+
+.admin-activity-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+}
+
+.admin-activity-controls .sort-box { margin: 0; }
+
+.admin-activity-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 18px;
+    margin-bottom: 18px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.admin-activity-stat {
+    color: var(--parchment-dim);
+    font-size: 0.78rem;
+}
+
+.admin-activity-stat strong {
+    color: var(--amber-bright);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.95rem;
+    margin-right: 4px;
+}
+
+/* A run of these against a real account is the thing worth noticing, so
+   failures are the one row type that gets its own colour. */
+.admin-activity-stat.is-warn strong { color: var(--danger); }
+
+.admin-activity-row .row-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+.admin-activity-meta {
+    color: var(--parchment-dim);
+    font-size: 0.68rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.admin-activity-row.is-warn h3 { color: var(--danger); }
+
+/* The raw event list runs long, so it scrolls inside itself the way every
+   other list on this page does. */
+body[data-page="admin"] #activity-events,
+body[data-page="admin"] #activity-sessions {
+    max-height: calc(50vh - 120px);
+}
+
+/* ---------- what visitors use ---------- */
+
+.admin-visitor-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 18px 26px;
+    margin-bottom: 22px;
+}
+
+.admin-visitor-head {
+    margin: 0 0 8px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: var(--amber-bright);
+}
+
+.admin-visitor-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 0.72rem;
+    color: var(--parchment-dim);
+}
+
+.admin-visitor-label {
+    flex: 0 0 42%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The bar is the point: a column of numbers takes reading, a column of bars
+   takes a glance. */
+.admin-visitor-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--chrome-border);
+}
+
+.admin-visitor-bar i {
+    display: block;
+    height: 100%;
+    background: var(--amber-bright);
+}
+
+.admin-visitor-count {
+    flex: 0 0 auto;
+    min-width: 22px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--parchment);
 }

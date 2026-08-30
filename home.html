@@ -261,8 +261,21 @@
             <button type="button" class="photo-frame-close" aria-label="Close"></button>
             <div class="photo-frame-photo-box">
                 <img class="photo-frame-photo" alt="">
+                <!-- Only shown once the picture is actually at 1:1, off the
+                     .is-photo-max class js/home.js already maintains. -->
+                <span class="photo-frame-zoom-pip" aria-hidden="true">1:1</span>
             </div>
             <p class="photo-frame-name"></p>
+            <!-- The one gesture nothing else can signal is the scroll wheel,
+                 so it is spelled out under the caption. aria-hidden because
+                 it describes a pointer gesture a screen reader user has no
+                 use for.
+
+                 Worded without a separator character on purpose: Volter
+                 Goldfish has neither a middot nor a hyphen, and both came out
+                 as a blank gap. Naming the two gestures outright is clearer
+                 anyway, and at 144px it still fits the 155px caption. -->
+            <p class="photo-frame-hint" aria-hidden="true">Drag to pan, scroll to zoom</p>
         </div>
     </template>
 
@@ -455,5 +468,6 @@
     <script src="js/custom-scrollbar.js"></script>
     <script src="js/letter-jump.js"></script>
     <script src="js/console.js"></script>
+    <script src="js/track.js"></script>
 </body>
 </html>

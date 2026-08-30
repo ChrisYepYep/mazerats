@@ -22,7 +22,11 @@ const PRIVACY_SECTIONS = [
     },
     {
         heading: "Analytics & Privacy.",
-        body: "We use a lightweight, privacy-focused tool to monitor aggregate website traffic and performance without tracking individual users. This analytics solution does not collect personal data, track activity across other websites, or rely on cookies. Local browser storage is strictly reserved for administrative logins and is never used on standard visitor devices."
+        body: "We use a lightweight, privacy-focused third-party tool to monitor aggregate website traffic and performance, and we keep our own record of which parts of the site are used - for example which mazes are opened, which tabs are viewed, or when an image is enlarged. These interaction records are not linked to you: no IP address or account is stored against them, nothing is shared with other websites, and the only identifier attached is a random value that lasts for a single browsing session and is discarded when you close the tab. What you type into the search box is never recorded, only that a search happened. We honour \"Do Not Track\" and Global Privacy Control signals and log nothing at all when either is set, and every interaction record is deleted automatically after 60 days."
+    },
+    {
+        heading: "Browser Storage.",
+        body: "Your browser holds a small amount of information for this site on your own device. For visitors that is a short-lived session identifier used only for the interaction records described above, and a note of whether the site was last seen as open, so the page still behaves correctly if our server is briefly unreachable. For signed-in administrators it also holds a session token. None of it is used to follow you across other websites, none of it is sold or shared, and clearing your browser data removes all of it."
     },
     {
         heading: "Third-Party Sharing.",

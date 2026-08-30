@@ -69,6 +69,7 @@
                     <button type="button" class="chrome-nav-btn" data-panel="messages" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Messages</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
+                    <button type="button" class="chrome-nav-btn" data-panel="activity" id="activity-nav-btn" role="tab" aria-selected="false" hidden><span class="chrome-nav-btn-label">Activity</span></button>
                 </nav>
 
                 <!-- The rail's own scrolling part. The session block and the
@@ -236,6 +237,45 @@
                                     </div>
                                 </header>
                                 <div class="chrome-list" id="bans-list"></div>
+                            </section>
+
+                            <!-- ---------- Activity (owner only) ----------
+                                 Admin accounts only: who signed in, from
+                                 where, and what they changed. Visitors are
+                                 deliberately not in here — see the note at
+                                 the top of netlify/functions/admin-activity.js
+                                 for why that line sits where it does. -->
+                            <section class="admin-panel" data-panel="activity" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Activity</h3>
+                                        <p class="admin-hint">Sign-ins and changes made by admin accounts. Owner-only, and kept for 90 days before it prunes itself.</p>
+                                    </div>
+                                    <div class="admin-activity-controls">
+                                        <div class="sort-box">
+                                            <select id="activity-range" aria-label="Time range">
+                                                <option value="24h">Past 24 hours</option>
+                                                <option value="today">Today</option>
+                                                <option value="week">This week</option>
+                                                <option value="7d" selected>Past 7 days</option>
+                                                <option value="30d">Past 30 days</option>
+                                                <option value="all">Everything kept</option>
+                                            </select>
+                                        </div>
+                                        <button class="admin-action-pill" id="activity-refresh-btn" type="button">Refresh</button>
+                                    </div>
+                                </header>
+                                <div class="admin-activity-summary" id="activity-summary"></div>
+
+                                <h3 class="admin-subheading">What visitors use</h3>
+                                <p class="admin-hint">Counted, never listed: these records carry no address and no account, the session id is discarded when a visitor closes their tab, and search terms are never stored. Anyone sending "Do Not Track" or Global Privacy Control is not counted at all. Kept for 60 days.</p>
+                                <div class="admin-visitors" id="activity-visitors"></div>
+
+                                <h3 class="admin-subheading admin-subheading-spaced">Sessions</h3>
+                                <p class="admin-hint">One row per sign-in. "Active for" is the gap between the first and last thing that session did, so it measures work rather than an open tab.</p>
+                                <div class="chrome-list" id="activity-sessions"></div>
+                                <h3 class="admin-subheading admin-subheading-spaced">Everything, newest first</h3>
+                                <div class="chrome-list" id="activity-events"></div>
                             </section>
 
                             <!-- ---------- Admins ---------- -->

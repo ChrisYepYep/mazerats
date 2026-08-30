@@ -338,6 +338,15 @@ document.addEventListener("DOMContentLoaded", () => {
         return difficultyHtml + (n.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("");
     }
 
+    /* Counted once per burst of typing rather than per keystroke, and
+       without the query — see the note in js/track.js. */
+    let searchTracked = null;
+    function noteSearch() {
+        if (!window.Track) return;
+        clearTimeout(searchTracked);
+        searchTracked = setTimeout(() => window.Track.event("search"), 1200);
+    }
+
     function sortItems(items) {
         const sorted = items.slice();
         if (sortBy === "name") {
@@ -530,7 +539,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function roomRowHtml(n, isOpenView) {
         return `
-            <div class="chrome-list-row featured" data-difficulty="${n.difficulty || ""}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}">
+            <div class="chrome-list-row featured" data-difficulty="${n.difficulty || ""}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
                 <div class="row-thumb">
                     ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(n.thumb, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
                 </div>
@@ -1190,6 +1199,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const label = entry.name || "Related image";
             btn.setAttribute("aria-label", `View related image: ${label}`);
             btn.title = label;
+            btn.dataset.track = "photo-open";
+            btn.dataset.trackLabel = (entry.name || "").slice(0, 60);
             btn.addEventListener("click", () => openPhotoFrame(entry));
 
             if (overflows && i >= PHOTO_ICON_VISIBLE) {
@@ -1488,6 +1499,8 @@ document.addEventListener("DOMContentLoaded", () => {
             // focus and on click — and a click pins it outright, since there
             // is no pointer to move into it.
             btn.addEventListener("focus", () => openFurniCard(entry, btn));
+            btn.dataset.track = "furni-open";
+            btn.dataset.trackLabel = entry.name || "";
             btn.addEventListener("click", () => openFurniCard(entry, btn, true));
             scroller.appendChild(btn);
         });
@@ -2752,6 +2765,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     searchInput.addEventListener("input", e => {
         query = e.target.value;
+        // Notes that a search happened. The term itself never leaves the page.
+        if (e.target.value.trim()) noteSearch();
         render();
     });
 
@@ -2765,6 +2780,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // already-active button is a no-op rather than toggling back to a
     // featured state, now that #featured-mazes-btn is the only way there.
     topNavBtns.forEach(btn => {
+        // Which of the two categories people actually browse.
+        btn.dataset.track = "tab";
+        btn.dataset.trackLabel = btn.dataset.top || "";
         btn.addEventListener("click", () => {
             topView = btn.dataset.top;
             showFeatured = false;

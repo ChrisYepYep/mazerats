@@ -24,7 +24,8 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { getDb } = require("./_db");
-const { isAuthorized, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY, ROLES, resolveRole } = require("./_auth");
+const { isAuthorized, canWrite, usernameFromToken, sessionOf, UNAUTHORIZED, READ_ONLY, ROLES, resolveRole } = require("./_auth");
+const { record } = require("./_audit");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -69,25 +70,37 @@ exports.handler = async (event) => {
             const count = await admins.countDocuments();
             if (count === 0) {
                 if (!process.env.ADMIN_PASSWORD || password !== process.env.ADMIN_PASSWORD) {
+                    record(event, "login-failed", { username, reason: "bootstrap password" });
                     return json(401, { error: "Invalid username or password" });
                 }
                 const passwordHash = await bcrypt.hash(password, 10);
                 const newAdmin = { username, passwordHash, role: "owner", createdAt: new Date().toISOString() };
                 await admins.insertOne(newAdmin);
+                record(event, "login", { username, role: "owner", note: "first account, bootstrapped" });
                 return json(200, { token: signToken(username), username, role: resolveRole(newAdmin) });
             }
 
             const admin = await admins.findOne({ username });
             if (!admin || !(await bcrypt.compare(password, admin.passwordHash))) {
+                /* Logged with the username that was TRIED, which is the point:
+                   a run of failures against a real account is the thing worth
+                   noticing. The password itself is never recorded. */
+                record(event, "login-failed", { username, reason: admin ? "wrong password" : "no such account" });
                 return json(401, { error: "Invalid username or password" });
             }
-            return json(200, { token: signToken(username), username, role: resolveRole(admin) });
+            const token = signToken(username);
+            record(event, "login", { username, role: resolveRole(admin), session: sessionOf({ headers: { "x-admin-token": token } }) });
+            return json(200, { token, username, role: resolveRole(admin) });
         }
 
         if (body.action === "verify") {
             const username = usernameFromToken(event);
             if (!username) return UNAUTHORIZED;
             const admin = await admins.findOne({ username });
+            /* Every admin page load verifies its token, so this is a free
+               heartbeat: the gap between a session's first and last record is
+               how long that person had the admin open. */
+            record(event, "session", { username, session: sessionOf(event) });
             return json(200, { username, role: resolveRole(admin || { username }) });
         }
 

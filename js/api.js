@@ -287,6 +287,13 @@ const Api = {
     // Admin-only in both directions — there is no public half here, so
     // these all go through _write (which carries the token) rather than
     // _getWithFallback. See netlify/functions/bans.js.
+    /* The admin activity log. Owner-only server-side, so a standard admin
+       calling this gets a 403 rather than anything to render. */
+    getAdminActivity(token, range) {
+        const q = range ? "?range=" + encodeURIComponent(range) : "";
+        return this._write("/.netlify/functions/admin-activity" + q, "GET", token);
+    },
+
     getBans(token) { return this._write("/.netlify/functions/bans", "GET", token); },
     createBan(token, ip, reason) { return this._write("/.netlify/functions/bans", "POST", token, { ip, reason }); },
     deleteBan(token, id) { return this._write(`/.netlify/functions/bans?id=${encodeURIComponent(id)}`, "DELETE", token); },
