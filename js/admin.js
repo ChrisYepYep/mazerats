@@ -1829,12 +1829,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const endIso = endDate && endTime ? `${endDate}T${endTime}:00Z` : "";
 
             if (!startIso) {
-                // Nothing to derive from yet — say so rather than showing a
-                // confident status that's really just the default.
-                badge.textContent = "Awaiting dates";
-                badge.className = "status-badge status-unknown";
-                // Left at a sane value regardless: the four date fields are
-                // required, so a save can't actually reach here empty.
+                // A date is no longer required, and an event without one is
+                // genuinely upcoming rather than in an unknown state — it has
+                // been announced, it just isn't scheduled. This says exactly
+                // what the site will say about it (see js/event-status.js).
+                badge.textContent = EventStatus.LABELS.upcoming;
+                badge.className = "status-badge status-upcoming";
                 hidden.value = "upcoming";
                 return;
             }
@@ -1938,11 +1938,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const dateFieldHtml = isEvents
             ? `
-                ${fieldRow("Event start date (UTC)", `<input type="date" name="startDate" required value="${start.date}">`)}
-                ${fieldRow("Event start time (UTC, 24-hour)", `<input type="time" name="startTime" required value="${start.time}">`)}
-                ${fieldRow("Event end date (UTC)", `<input type="date" name="endDate" required value="${end.date}">`)}
-                ${fieldRow("Event end time (UTC, 24-hour)", `<input type="time" name="endTime" required value="${end.time}">`)}
+                ${fieldRow("Event start date (UTC)", `<input type="date" name="startDate" value="${start.date}">`)}
+                ${fieldRow("Event start time (UTC, 24-hour)", `<input type="time" name="startTime" value="${start.time}">`)}
+                ${fieldRow("Event end date (UTC)", `<input type="date" name="endDate" value="${end.date}">`)}
+                ${fieldRow("Event end time (UTC, 24-hour)", `<input type="time" name="endTime" value="${end.time}">`)}
                 <p class="admin-hint">All four fields are UTC. The site shows this as-is — it does not convert to a visitor's local timezone.</p>
+                <p class="admin-hint">Leave them blank for an event that has no date set yet. It counts as upcoming and shows on the site with its date reading "TBC", so it can be announced before it is scheduled.</p>
               `
             : `
                 <div class="admin-field admin-date-field">

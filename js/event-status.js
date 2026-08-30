@@ -9,6 +9,7 @@
 
    Status comes from the event's own start/end dates, not the stored field:
 
+       no start date at all                            -> upcoming
        start and end both more than ARCHIVE_YEARS old  -> archive
        end in the past                                 -> past
        started but not yet ended                       -> live
@@ -47,6 +48,13 @@
     // date/time boxes, without having to assemble an event object first.
     // `fallback` is only reached when the dates can't be parsed at all.
     function fromDates(startIso, endIso, fallback) {
+        // No start date at all is a state in its own right, not a parse
+        // failure: an event can be announced before it is scheduled, and
+        // until a date is set it is upcoming by definition. Deliberately
+        // ahead of the fallback — an event whose dates were cleared would
+        // otherwise keep whatever status it was last saved with, and sit in
+        // Past forever with nothing to age it out.
+        if (!startIso) return "upcoming";
         const start = new Date(startIso);
         // No end date means the event is treated as ending the moment it
         // starts, so a one-off with only a start still ages out normally.

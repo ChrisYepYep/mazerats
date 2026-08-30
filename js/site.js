@@ -89,12 +89,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
-    // Same "TBC" as the event modals use for a dateless event (see
-    // formatEventDuration in js/home.js and js/welcome.js) — the header
-    // ticker would otherwise show the event's title over an empty line.
+    // An event can be announced before it is scheduled, so this line has to
+    // carry its own label: everywhere else "TBC" sits after a "Date:" the
+    // caller supplied, but here it is the whole line and a bare "TBC" under
+    // a title says nothing about what is to be confirmed.
     function formatEventWhen(iso) {
         const d = new Date(iso);
-        if (isNaN(d)) return "TBC";
+        if (isNaN(d)) return "Date TBC";
         const date = d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
         const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" });
         return `${date}, ${time} UTC`;
@@ -133,8 +134,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     // dropped out of it entirely. A live event sorts to the front: it's the
     // one someone can act on right now.
     const upcoming = events
-        .filter(e => e.date && EventStatus.isUpcomingish(e))
-        .sort((a, b) => a.date.localeCompare(b.date))
+        // No longer requires a date. An event with none is upcoming (see
+        // js/event-status.js) and belongs in the ticker — being announced
+        // before it is scheduled is the normal way round.
+        .filter(e => EventStatus.isUpcomingish(e))
+        // Soonest first, with the undated ones after everything scheduled:
+        // they can't be placed on the calendar, and they are the least
+        // urgent thing in the list precisely because no date is set. The
+        // empty string this leans on also can't throw the way a missing
+        // .date would have.
+        .sort((a, b) => {
+            const ad = a.date || "", bd = b.date || "";
+            if (!ad !== !bd) return ad ? -1 : 1;
+            return ad.localeCompare(bd);
+        })
         .sort((a, b) => (EventStatus.derive(b) === "live" ? 1 : 0) - (EventStatus.derive(a) === "live" ? 1 : 0));
 
     widget.style.display = "block";

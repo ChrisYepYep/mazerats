@@ -65,7 +65,9 @@ document.addEventListener("DOMContentLoaded", async () => {
        looks like the page failed to load it rather than like nobody has
        picked one — which is the actual state of affairs and worth saying. */
     function formatEventDuration(startIso, endIso) {
-        if (!startIso) return "TBC";
+        // Labelled, because this line stands alone here — see the same note
+        // on formatEventWhen in js/site.js.
+        if (!startIso) return "Date TBC";
         const start = formatUtcParts(startIso);
         if (!start) return startIso;
         const end = endIso ? formatUtcParts(endIso) : null;
