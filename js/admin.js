@@ -34,6 +34,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const furniScanAllBtn = document.getElementById("furni-scan-all-btn");
     const furniScanStatus = document.getElementById("furni-scan-status");
     const furniScanNewBtn = document.getElementById("furni-scan-new-btn");
+    const furniScanLocalEl = document.getElementById("furni-scan-local");
+    const furniScanRemoteEl = document.getElementById("furni-scan-remote");
     const furniProgress = document.getElementById("furni-progress");
     const furniProgressFill = document.getElementById("furni-progress-fill");
     const furniProgressLabel = document.getElementById("furni-progress-label");
@@ -381,13 +383,32 @@ document.addEventListener("DOMContentLoaded", () => {
     if (activityRangeEl) activityRangeEl.addEventListener("change", loadActivity);
 
     /* Running a furni scan is owner-only — see the handler in
-       netlify/functions/furni-scan-background.js, which is where the rule
+       netlify/functions/furni-scan-local.js, which is where the rule
        actually lives. Everything here is presentation: a standard admin
        never sees a scan control rather than seeing one that 403s. They keep
        full use of the furni EDITOR (hide/remove/add by hand) — it is only
        starting a scan that is restricted. */
     function canScanFurni() {
         return currentUserRole === "owner";
+    }
+
+    /* A scan runs on the machine serving this page, so it can only be
+       started from a page this machine is serving. Judged by hostname
+       rather than by asking the server: the answer never changes for the
+       life of the page, and a button that appears and then explains itself
+       away after a round trip is worse than one that was never there.
+
+       The server refuses regardless (netlify/functions/furni-scan-local.js
+       returns 501 when NETLIFY_DEV is unset) — this only decides which of
+       the two explanations the owner sees. */
+    function isLocalSite() {
+        return ["localhost", "127.0.0.1", "[::1]", "::1"].includes(location.hostname);
+    }
+
+    function updateFurniLocality() {
+        const local = isLocalSite();
+        if (furniScanLocalEl) furniScanLocalEl.hidden = !local;
+        if (furniScanRemoteEl) furniScanRemoteEl.hidden = local;
     }
 
     // The activity log answers "what have my admins been doing", which is an
@@ -438,6 +459,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const aboutInput = document.getElementById("about-text-input");
         if (aboutInput) aboutInput.readOnly = !canWrite();
         if (furniSidebar) furniSidebar.hidden = !owner;
+        if (owner) updateFurniLocality();
         // Only an owner has anything to poll for, and furni-scan-status
         // would just be an authenticated request answering "nothing" every
         // 2.5s for everyone else.
@@ -799,7 +821,7 @@ document.addEventListener("DOMContentLoaded", () => {
        images are skipped wholesale), anything mostly hidden behind something
        else, and every room in a maze nobody has scanned yet. Hand-added
        entries carry manual: true, which is what keeps them alive through a
-       rescan — see netlify/functions/furni-scan-background.js, which merges
+       rescan — see tools/furni-scan-local.js, which merges
        them back over its own results rather than replacing them. */
     function wireFurniEditor(formEl, item) {
         const wrap = formEl.querySelector(".admin-furni-field");
@@ -1978,7 +2000,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span class="status-badge status-${item.status}">${item.status}</span>
                     <div class="admin-row-actions">
                         <button type="button" class="btn admin-edit-btn">Edit</button>
-                        ${canScanFurni() ? '<button type="button" class="btn admin-scan-btn">Scan</button>' : ""}
+                        ${canScanFurni() && isLocalSite() ? '<button type="button" class="btn admin-scan-btn">Scan</button>' : ""}
                         <button type="button" class="btn admin-delete-btn">Delete</button>
                     </div>
                 </div>
@@ -3132,8 +3154,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     stopFurniPolling();
                     furniScanStatus.style.display = "block";
                     furniScanStatus.textContent = "No scan reported in after two minutes. " +
-                        "Check the furni-scan-background function log in Netlify — background " +
-                        "functions need a paid plan, and 404 there is the usual cause.";
+                        "The scan runs on your own machine — check the dev server window for an " +
+                        "error, and that the sprite cache finished downloading.";
                     furniProgress.hidden = true;
                 }
                 return;
@@ -3193,6 +3215,15 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 0);
     }
 
+    /* Roughly how long a scan of N images takes on this machine, in whole
+       minutes. Measured, not guessed: a full 562-image run took 15 minutes
+       across 16 workers, which is about 1.6 seconds per image once the
+       sprite library is already cached. The first run after the catalogue
+       changes is slower, because it refills that library first. */
+    function scanMinutes(images) {
+        return Math.max(1, Math.round((images * 1.6) / 60));
+    }
+
     // Both buttons run the same job; they differ only in whether images that
     // already carry a result are skipped. Confirmed either way — it is long,
     // and the full version replaces what previous runs recorded.
@@ -3206,10 +3237,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 : "No mazes have room images to scan yet.";
             return;
         }
+        const mins = scanMinutes(images);
         const ok = await showConfirmDialog(onlyUnscanned
-            ? "Scan " + images + " room images that have no furni recorded yet? This runs in the background."
+            ? "Scan " + images + " room images that have no furni recorded yet? " +
+              "Runs on this PC, roughly " + mins + " minute" + (mins === 1 ? "" : "s") + "."
             : "Scan all " + rooms.length + " mazes (" + images + " room images) for furni? " +
-              "This runs in the background and replaces any furni already recorded against them.");
+              "Runs on this PC, roughly " + mins + " minute" + (mins === 1 ? "" : "s") + ". " +
+              "Replaces the furni already recorded against them — anything you added by hand is kept.");
         if (!ok) return;
         furniScanStatus.style.display = "none";
         furniProgress.hidden = false;
@@ -3217,12 +3251,7 @@ document.addEventListener("DOMContentLoaded", () => {
         furniProgressLabel.textContent = "Starting…";
         try {
             const runId = newFurniRunId();
-            await Api.scanFurni(adminToken, {
-                collection: "rooms",
-                ids: rooms.map(r => r.id),
-                onlyUnscanned,
-                runId
-            });
+            await Api.scanFurni(adminToken, { ids: rooms.map(r => r.id), onlyUnscanned, runId });
             startFurniPolling(runId);
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
@@ -3252,11 +3281,12 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         const already = Object.keys(item.furni || {}).length;
+        const mins = scanMinutes(imgs.length);
         const ok = await showConfirmDialog(
             "Scan \u201c" + title + "\u201d for furni? " + imgs.length + " room image" +
-            (imgs.length === 1 ? "" : "s") + ", roughly " + Math.ceil(imgs.length * 20 / 60) +
-            " minute" + (Math.ceil(imgs.length * 20 / 60) === 1 ? "" : "s") + "." +
-            (already ? " This replaces the furni already recorded against it." : ""));
+            (imgs.length === 1 ? "" : "s") + " on this PC, roughly " + mins +
+            " minute" + (mins === 1 ? "" : "s") + "." +
+            (already ? " This replaces the furni already recorded against it \u2014 anything you added by hand is kept." : ""));
         if (!ok) return;
         furniScanStatus.style.display = "none";
         furniProgress.hidden = false;

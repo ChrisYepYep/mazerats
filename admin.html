@@ -93,20 +93,34 @@
                         <p class="admin-hint" id="landing-toggle-status" style="display:none;"></p>
                     </div>
 
-                    <!-- Furni scanning. Runs as a background function (a room
-                         image takes ~20s, well past a normal function's 10s
-                         ceiling), so these only start the job — results appear
-                         on the records as it works through them.
+                    <!-- Furni scanning. Runs on the owner's OWN MACHINE, as a
+                         separate process started by
+                         netlify/functions/furni-scan-local.js — which only
+                         works when this page is being served by `netlify dev`
+                         at localhost. The hosted scan it replaced was capped
+                         at fifteen minutes, could not finish the archive in
+                         one go, and billed for every minute of trying.
 
-                         Owner-only, and hidden outright for a standard admin
-                         (see applyRoleVisibility in js/admin.js). The real
-                         check is server-side in the function itself — this
-                         just keeps a button nobody can use off the page. -->
+                         So the buttons are shown only on localhost (see
+                         updateFurniLocality in js/admin.js); everywhere else
+                         the note below explains where to run them instead.
+
+                         Owner-only on top of that, and hidden outright for a
+                         standard admin (see applyRoleVisibility). The real
+                         checks are server-side in the function itself — this
+                         just keeps buttons nobody can use off the page. -->
                     <div class="admin-rail-group" id="furni-sidebar" hidden>
                         <h3 class="admin-sidebar-title">Furni</h3>
-                        <p class="admin-hint">Scans every room image for furni and records what it finds. Long job — it runs in the background.</p>
-                        <button type="button" class="admin-action-pill" id="furni-scan-all-btn">Run Full Furni Scan</button>
-                        <button type="button" class="admin-action-pill" id="furni-scan-new-btn">Scan Unscanned Only</button>
+                        <p class="admin-hint">Scans every room image for furni and records what it finds. Runs on your PC, across every core — the whole archive takes about 15 minutes.</p>
+                        <div id="furni-scan-local">
+                            <button type="button" class="admin-action-pill" id="furni-scan-all-btn">Run Full Furni Scan</button>
+                            <button type="button" class="admin-action-pill" id="furni-scan-new-btn">Scan Unscanned Only</button>
+                        </div>
+                        <p class="admin-hint" id="furni-scan-remote" hidden>
+                            Scans run on your own PC, not on the server. Open the
+                            <strong>Maze Rats Dev Server</strong> shortcut on your Desktop, then use this
+                            page at <strong>localhost:8888/admin.html</strong> to run one.
+                        </p>
                         <div class="furni-progress" id="furni-progress" hidden>
                             <div class="furni-progress-track"><div class="furni-progress-fill" id="furni-progress-fill"></div></div>
                             <p class="admin-hint furni-progress-label" id="furni-progress-label"></p>

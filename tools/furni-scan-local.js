@@ -1,26 +1,33 @@
 /* Scans every room image for furni, on this machine, across every core.
 
-   The site's own scan runs as a Netlify background function, which is fine
-   for one maze but cannot do the whole archive: it is capped at 15 minutes,
-   which is about six images, and it writes a maze's results only after
-   finishing ALL of that maze's images — so a run cut off inside a 102-image
-   maze saves nothing at all. 553 images at Netlify's pace is 22 hours of
-   billed function time that can never complete in one go.
+   THIS IS THE ONLY SCANNER NOW. It used to be the fast alternative to a
+   Netlify background function; that function has been deleted. It was capped
+   at 15 minutes — about six images — and wrote a maze's results only after
+   finishing ALL of that maze's images, so a run cut off inside a 102-image
+   maze saved nothing at all. 553 images at Netlify's pace was 22 hours of
+   billed function time that could never complete in one go, and every hour
+   of it cost real money.
 
    None of that is inherent. The matcher is plain JavaScript, the database is
-   reachable from here, and this machine turns out to be about five times
-   faster per image than Netlify's container. Run across the cores it has,
-   the whole archive is minutes rather than hours, and costs nothing.
+   reachable from here, and this machine is about five times faster per image
+   than Netlify's container. Across the cores it has, the whole archive is
+   about fifteen minutes, and costs nothing.
 
-   Results go to the same MongoDB the site reads, in the same shape the
-   Netlify scan writes, so the site and the admin panel cannot tell which one
-   produced them.
+   Results go to the same MongoDB the site reads, in the shape the site and
+   admin already expect.
 
      node tools/furni-scan-local.js --dry-run          # plan only, no writes
      node tools/furni-scan-local.js --only-unscanned   # skip finished images
      node tools/furni-scan-local.js --only-skipped     # retry refused/failed
      node tools/furni-scan-local.js --maze "Old School Maze"
+     node tools/furni-scan-local.js --ids abc,def      # specific maze ids
      node tools/furni-scan-local.js --workers 12
+
+   The admin page's scan buttons run exactly this, via
+   netlify/functions/furni-scan-local.js, which spawns it with --ids and
+   --run-id. That is also why it reports progress into the furni_scans
+   record: the admin's progress bar polls that, and knows nothing about
+   which process is doing the work.
 
    Interrupting is safe: every image is written as it lands, so a re-run with
    --only-unscanned picks up exactly where it stopped.
@@ -70,6 +77,21 @@ const ONLY_UNSCANNED = flag("only-unscanned");
 // are "it did not get scanned", and both are worth another go after a fix.
 const ONLY_SKIPPED = flag("only-skipped");
 const MAZE = opt("maze", null);
+// Specific maze ids, comma-separated. How the admin page asks for a scan —
+// it already knows exactly which records it means, so it says so rather than
+// sending a name to be pattern-matched.
+const IDS = (opt("ids", "") || "").split(",").map(s => s.trim()).filter(Boolean);
+/* Events hold room images in the same shape mazes do, and the admin's
+   per-item scan button offers them, so the same scan has to be able to
+   reach them. Nothing but "events" is accepted — this string names a
+   database collection, and it arrives from an HTTP request. */
+const COLLECTION = opt("collection", "rooms") === "events" ? "events" : "rooms";
+/* Names this run in the furni_scans progress record the admin polls. Absent
+   on a hand-run scan from the terminal, which has the terminal to report to
+   and no bar to drive — progress writes are skipped entirely in that case,
+   so a command-line run can never make the admin page think a scan it did
+   not start is under way. */
+const RUN_ID = opt("run-id", null);
 const LIMIT = Number(opt("limit", 0)) || 0;
 // Two cores left for the OS, this script's own writes, and whatever else is
 // running — a machine pinned at 100% is a machine that cannot be used.
@@ -146,24 +168,52 @@ function imagesOf(doc) {
 (async () => {
     console.log("Local furni scan\n");
 
+    const db = await getDb();
+
+    /* The admin's progress bar polls furni_scans for a record named by the
+       run id it generated (netlify/functions/furni-scan-status.js). Writing
+       it is the whole reason the button can show a bar for work happening in
+       a completely separate process. A terminal run passes no --run-id and
+       so writes nothing at all. */
+    const progressCol = db.collection("furni_scans");
+    const setProgress = RUN_ID
+        ? (fields) => progressCol.updateOne(
+            { _id: "current" },
+            { $set: { runId: RUN_ID, updatedAt: new Date().toISOString(), ...fields } },
+            { upsert: true }
+        ).catch(() => { /* progress is a courtesy; never fail a scan over it */ })
+        : async () => {};
+
+    // Cleared explicitly, not merely overwritten: progress lives in ONE
+    // document, so without this a new run inherits the last run's
+    // finishedAt/error and reports itself finished before it starts.
+    await setProgress({
+        startedAt: new Date().toISOString(),
+        finishedAt: null, error: null, done: 0, total: 0, errors: 0,
+        current: "Loading catalogue…"
+    });
+
+    try {
+
     const catalogue = await getCatalogue();
     const all = spriteList(catalogue);
+    await setProgress({ current: "Loading furni sprites…" });
     const wanted = await ensureSpriteCache(catalogue);
     const share = all.length ? wanted.length / all.length : 0;
     console.log(`catalogue ${catalogue.items.length} furni · ${wanted.length}/${all.length} sprites cached (${(share * 100).toFixed(1)}%)`);
     if (share < MIN_SPRITE_COVERAGE) {
-        console.error(
-            `\nStopping: only ${(share * 100).toFixed(1)}% of the sprite library is cached, and a scan ` +
-            `against a part-filled library records fewer furni without recording why.\n` +
-            `FurniIndex rate-limits bursts, so this usually means waiting a while and running again — ` +
-            `the cache is resumable and keeps what it already has.`
-        );
+        const why = `Only ${(share * 100).toFixed(1)}% of the sprite library is cached. ` +
+            `A scan against a part-filled library records fewer furni without recording why. ` +
+            `FurniIndex rate-limits bursts — wait a while and run again; the cache is resumable.`;
+        console.error("\nStopping: " + why);
+        await setProgress({ finishedAt: new Date().toISOString(), error: why });
         process.exit(1);
     }
 
-    const db = await getDb();
-    const query = MAZE ? { name: new RegExp(MAZE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") } : {};
-    const docs = await db.collection("rooms").find(query).toArray();
+    const query = IDS.length ? { id: { $in: IDS } }
+        : MAZE ? { name: new RegExp(MAZE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") }
+        : {};
+    const docs = await db.collection(COLLECTION).find(query).toArray();
 
     // Flat list of every image to do, each remembering the maze it belongs
     // to. Flat rather than nested so the workers stay fed: a maze with one
@@ -182,7 +232,21 @@ function imagesOf(doc) {
     if (LIMIT) jobs.length = Math.min(jobs.length, LIMIT);
 
     console.log(`${docs.length} mazes · ${jobs.length} images to scan · ${WORKERS} workers`);
-    if (!jobs.length) { console.log("\nNothing to do."); process.exit(0); }
+    if (!jobs.length) {
+        console.log("\nNothing to do.");
+        // Finished, not merely silent — otherwise the admin's bar waits out
+        // its two-minute grace on a run that was over immediately.
+        await setProgress({ total: 0, done: 0, finishedAt: new Date().toISOString(), current: null });
+        process.exit(0);
+    }
+    /* Each worker reads the whole 3,417-sprite library from disk before it
+       can take its first image — around half a minute during which nothing
+       completes. Said out loud, because a bar sitting on "0 of 562" for
+       thirty seconds looks stalled rather than busy. */
+    await setProgress({
+        total: jobs.length, done: 0,
+        current: `Loading the furni library into ${WORKERS} workers…`
+    });
     console.log(`writing to: ${DRY ? "NOTHING (dry run)" : "MongoDB rooms collection"}\n`);
     if (DRY) {
         const byMaze = {};
@@ -203,7 +267,7 @@ function imagesOf(doc) {
     let writeChain = Promise.resolve();
     const write = (id) => {
         writeChain = writeChain.then(() =>
-            db.collection("rooms").updateOne({ id }, { $set: { furni: furniByMaze.get(id) } })
+            db.collection(COLLECTION).updateOne({ id }, { $set: { furni: furniByMaze.get(id) } })
         ).catch(err => console.error("\nwrite failed:", err.message));
         return writeChain;
     };
@@ -269,6 +333,11 @@ function imagesOf(doc) {
                     `\r  ${done}/${jobs.length}  ${found} furni  ${failed} failed` +
                     `  ${secs(each)}/image  eta ${clock(each * (jobs.length - done))}   `
                 );
+                // Every image rather than every maze: one maze can hold a
+                // hundred images, and a bar that sat still through all of
+                // them would look hung. Not awaited — a slow progress write
+                // must never hold up feeding the next image to a worker.
+                setProgress({ done, current: job.image, errors: failed });
                 feed(w);
             });
             w.on("error", err => { console.error("\nworker error:", err.message); if (--alive === 0) resolve(); });
@@ -278,5 +347,22 @@ function imagesOf(doc) {
 
     await writeChain;
     console.log(`\n\nDone in ${clock(Date.now() - started)} — ${done} images, ${found} furni, ${failed} failed.`);
+    await setProgress({
+        done, total: jobs.length, errors: failed,
+        current: null, finishedAt: new Date().toISOString()
+    });
     process.exit(0);
+
+    } catch (err) {
+        /* A crash in here is invisible to whoever pressed the button — the
+           admin page is watching the progress record, not this terminal — so
+           the failure is written where they are actually looking before it
+           is printed where they are not. */
+        console.error("\n" + (err && err.stack ? err.stack : err));
+        await setProgress({
+            finishedAt: new Date().toISOString(),
+            error: (err && err.message) ? err.message : String(err)
+        });
+        process.exit(1);
+    }
 })().catch(err => { console.error(err); process.exit(1); });

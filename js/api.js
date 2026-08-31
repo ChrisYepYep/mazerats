@@ -146,13 +146,18 @@ const Api = {
             });
     },
 
-    // runId is the caller's, not the function's: the admin has to be able to
-    // tell the run it just started from the one before it, and it can only do
-    // that if it names the run itself. onlyUnscanned was being dropped here
-    // entirely, which quietly turned "Scan unscanned only" into a full rescan.
-    scanFurni(token, { collection = "rooms", ids, images, onlyUnscanned = false, runId } = {}) {
-        return this._write("/.netlify/functions/furni-scan-background", "POST", token,
-            { collection, ids, images, onlyUnscanned, runId });
+    /* Starts a scan on the machine running `netlify dev` — see
+       netlify/functions/furni-scan-local.js. Against the deployed site this
+       answers 501 with an explanation, because there is no scanner there;
+       the caller shows that message rather than treating it as a crash.
+
+       runId is the caller's, not the function's: the admin has to be able to
+       tell the run it just started from the one before it, and it can only do
+       that if it names the run itself. onlyUnscanned was being dropped here
+       entirely, which quietly turned "Scan unscanned only" into a full rescan. */
+    scanFurni(token, { collection = "rooms", ids, onlyUnscanned = false, runId } = {}) {
+        return this._write("/.netlify/functions/furni-scan-local", "POST", token,
+            { collection, ids, onlyUnscanned, runId });
     },
 
     /* The FurniIndex catalogue, for the admin page's "add furni by hand"

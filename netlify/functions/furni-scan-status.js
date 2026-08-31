@@ -1,10 +1,12 @@
 /* Progress of the running furni scan.
 
-   The scan is a background function, which by definition can't report back
-   to whoever started it — so it writes its progress to a single record as it
-   works (see furni-scan-background.js) and the admin polls this to draw the
-   bar. Deliberately tiny and cheap: it gets called every couple of seconds
-   for as long as a scan is running.
+   The scan runs as a separate process on the owner's own machine
+   (tools/furni-scan-local.js, started by furni-scan-local.js), so there is
+   no request left open for it to answer through. It writes its progress to
+   a single record as it works, and the admin polls this to draw the bar —
+   which is how a browser can show a progress bar for work happening in a
+   process it has no connection to. Deliberately tiny and cheap: it gets
+   called every couple of seconds for as long as a scan is running.
 */
 
 const { getDb } = require("./_db.js");
