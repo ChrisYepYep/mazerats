@@ -155,9 +155,9 @@ const Api = {
        tell the run it just started from the one before it, and it can only do
        that if it names the run itself. onlyUnscanned was being dropped here
        entirely, which quietly turned "Scan unscanned only" into a full rescan. */
-    scanFurni(token, { collection = "rooms", ids, onlyUnscanned = false, runId } = {}) {
+    scanFurni(token, { collection = "rooms", ids, onlyUnscanned = false, additive = false, runId } = {}) {
         return this._write("/.netlify/functions/furni-scan-local", "POST", token,
-            { collection, ids, onlyUnscanned, runId });
+            { collection, ids, onlyUnscanned, additive, runId });
     },
 
     /* The FurniIndex catalogue, for the admin page's "add furni by hand"

@@ -65,7 +65,7 @@ exports.handler = async (event) => {
 
     let body;
     try { body = JSON.parse(event.body || "{}"); } catch { body = {}; }
-    const { ids = [], onlyUnscanned = false, runId, collection = "rooms" } = body;
+    const { ids = [], onlyUnscanned = false, additive = false, runId, collection = "rooms" } = body;
     if (!Array.isArray(ids) || !ids.length) return json(400, { error: "no ids given" });
     // These become command-line arguments to a spawned process. ids are
     // constrained to what an id can contain and the collection to one of two
@@ -92,6 +92,10 @@ exports.handler = async (event) => {
     const args = [SCANNER, "--ids", ids.join(",")];
     if (collection === "events") args.push("--collection", "events");
     if (onlyUnscanned) args.push("--only-unscanned");
+    // Adds newly-findable furni without touching what is already recorded —
+    // for when FurniIndex has catalogued something that was always in the
+    // room but could not be matched before. See the flag in the scanner.
+    if (additive) args.push("--additive");
     if (runId) args.push("--run-id", String(runId));
 
     try {

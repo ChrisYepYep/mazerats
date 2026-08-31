@@ -19,6 +19,7 @@
      node tools/furni-scan-local.js --dry-run          # plan only, no writes
      node tools/furni-scan-local.js --only-unscanned   # skip finished images
      node tools/furni-scan-local.js --only-skipped     # retry refused/failed
+     node tools/furni-scan-local.js --additive         # only ADD new finds
      node tools/furni-scan-local.js --maze "Old School Maze"
      node tools/furni-scan-local.js --ids abc,def      # specific maze ids
      node tools/furni-scan-local.js --workers 12
@@ -76,6 +77,23 @@ const ONLY_UNSCANNED = flag("only-unscanned");
 // (the colour gate, which has moved once already) or failed outright. Both
 // are "it did not get scanned", and both are worth another go after a fix.
 const ONLY_SKIPPED = flag("only-skipped");
+/* Adds furni the scan has never recorded for an image, and changes nothing
+   that is already there.
+
+   The reason this mode exists: FurniIndex's catalogue is still being filled
+   in, so furni that genuinely IS in a room simply cannot be found until they
+   add it. Re-running the ordinary scan would find those — but it would also
+   throw away and rebuild every existing entry on its way past, and by then
+   those entries have been looked at, corrected and pruned by hand. This
+   keeps the curated result and only appends what is newly findable.
+
+   "Already there" is judged by furni NAME, across manual and scanned
+   entries alike: if an image lists a Bonsai Tree, this run's Bonsai Tree is
+   not a discovery, whatever its coverage or position. That is deliberately
+   coarser than position-matching — the same furni placed twice in one room
+   dedupes to one entry either way (see dedupeByPosition in _furni-match.js),
+   so name is the identity that actually distinguishes a NEW find. */
+const ADDITIVE = flag("additive");
 const MAZE = opt("maze", null);
 // Specific maze ids, comma-separated. How the admin page asks for a scan —
 // it already knows exactly which records it means, so it says so rather than
@@ -232,6 +250,7 @@ function imagesOf(doc) {
     if (LIMIT) jobs.length = Math.min(jobs.length, LIMIT);
 
     console.log(`${docs.length} mazes · ${jobs.length} images to scan · ${WORKERS} workers`);
+    if (ADDITIVE) console.log("additive — existing furni is left alone, only new names are added");
     if (!jobs.length) {
         console.log("\nNothing to do.");
         // Finished, not merely silent — otherwise the admin's bar waits out
@@ -292,23 +311,36 @@ function imagesOf(doc) {
             w.on("message", msg => {
                 if (msg.ready) { feed(w); return; }
                 const job = w._job;
-                /* Anything an admin added by hand survives this run, exactly
-                   as it does in the Netlify scan (furni-scan-background.js).
-                   A scan replaces its own findings wholesale — that is the
-                   point of rescanning — but hand-added entries are the ones
-                   it could never find on its own, so wiping them would make
-                   a rescan destructive rather than merely repetitive. This
-                   tool used to drop them; a full run would have quietly
-                   destroyed every correction ever made. */
-                const kept = ((furniByMaze.get(job.id)[job.image] || {}).items || [])
-                    .filter(f => f && f.manual);
+                const previous = (furniByMaze.get(job.id)[job.image] || {}).items || [];
+                /* What survives this image being rescanned.
+
+                   Normally: anything an admin added by hand. A scan replaces
+                   its own findings wholesale — that is the point of
+                   rescanning — but hand-added entries are the ones it could
+                   never find on its own, so wiping them would make a rescan
+                   destructive rather than merely repetitive. (This tool used
+                   to drop them; a full run would have quietly destroyed every
+                   correction ever made.)
+
+                   In --additive: everything survives, and only genuinely new
+                   names are appended. See the flag's own comment. */
+                const kept = ADDITIVE ? previous.slice() : previous.filter(f => f && f.manual);
+                // Names already spoken for, so a "find" that is really just
+                // the same furni again can be recognised and dropped.
+                const known = new Set(kept.map(f => f && f.name).filter(Boolean));
                 if (msg.error) {
-                    furniByMaze.get(job.id)[job.image] = { error: msg.error, items: kept };
+                    // In additive mode a failed image must not lose the furni
+                    // it already had — the run promised to change nothing
+                    // that is already there, and failing is not an exception
+                    // to that.
+                    furniByMaze.get(job.id)[job.image] = ADDITIVE
+                        ? { ...(furniByMaze.get(job.id)[job.image] || {}), error: msg.error, items: kept }
+                        : { error: msg.error, items: kept };
                     failed++;
                 } else if (msg.result.skipped) {
-                    furniByMaze.get(job.id)[job.image] = {
-                        skipped: msg.result.skipped, roomColours: msg.result.roomColours, items: kept
-                    };
+                    furniByMaze.get(job.id)[job.image] = ADDITIVE
+                        ? { ...(furniByMaze.get(job.id)[job.image] || {}), items: kept }
+                        : { skipped: msg.result.skipped, roomColours: msg.result.roomColours, items: kept };
                 } else {
                     const items = msg.result.hits.map(h => {
                         const item = catalogue.items[h.key];
@@ -318,8 +350,9 @@ function imagesOf(doc) {
                             matched: h.matched, coverage: Number(h.coverage.toFixed(3)), at: h.at,
                             alternates: (h.alternates || []).map(k => catalogue.items[k].name)
                         };
-                    });
+                    }).filter(it => !ADDITIVE || !known.has(it.name));
                     furniByMaze.get(job.id)[job.image] = {
+                        ...(ADDITIVE ? (furniByMaze.get(job.id)[job.image] || {}) : {}),
                         scannedAt: new Date().toISOString(),
                         roomColours: msg.result.roomColours,
                         items: kept.concat(items)
@@ -337,7 +370,7 @@ function imagesOf(doc) {
                 // hundred images, and a bar that sat still through all of
                 // them would look hung. Not awaited — a slow progress write
                 // must never hold up feeding the next image to a worker.
-                setProgress({ done, current: job.image, errors: failed });
+                setProgress({ done, current: job.image, errors: failed, found, additive: ADDITIVE });
                 feed(w);
             });
             w.on("error", err => { console.error("\nworker error:", err.message); if (--alive === 0) resolve(); });
@@ -348,7 +381,7 @@ function imagesOf(doc) {
     await writeChain;
     console.log(`\n\nDone in ${clock(Date.now() - started)} — ${done} images, ${found} furni, ${failed} failed.`);
     await setProgress({
-        done, total: jobs.length, errors: failed,
+        done, total: jobs.length, errors: failed, found, additive: ADDITIVE,
         current: null, finishedAt: new Date().toISOString()
     });
     process.exit(0);

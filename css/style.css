@@ -3218,7 +3218,18 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* Progress of a running furni scan (admin sidebar). The scan is a
    background job, so this is fed by polling rather than by the request that
    started it. */
-.furni-progress { margin-top: 8px; }
+/* The three scan buttons, stacked. .admin-action-pill is inline-flex, so
+   without a column flex container they sit shoulder to shoulder and wrap
+   mid-word down a 240px sidebar. Same 8px rhythm as .admin-sidebar-add
+   directly above them, so the rail reads as one list rather than two. */
+.furni-scan-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.furni-progress { margin-top: 10px; }
 .furni-progress[hidden] { display: none; }
 
 .furni-progress-track {

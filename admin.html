@@ -112,9 +112,10 @@
                     <div class="admin-rail-group" id="furni-sidebar" hidden>
                         <h3 class="admin-sidebar-title">Furni</h3>
                         <p class="admin-hint">Scans every room image for furni and records what it finds. Runs on your PC, across every core — the whole archive takes about 15 minutes.</p>
-                        <div id="furni-scan-local">
-                            <button type="button" class="admin-action-pill" id="furni-scan-all-btn">Run Full Furni Scan</button>
-                            <button type="button" class="admin-action-pill" id="furni-scan-new-btn">Scan Unscanned Only</button>
+                        <div class="furni-scan-actions" id="furni-scan-local">
+                            <button type="button" class="admin-action-pill" id="furni-scan-all-btn">Full Rescan</button>
+                            <button type="button" class="admin-action-pill" id="furni-scan-add-btn">Find New Furni</button>
+                            <button type="button" class="admin-action-pill" id="furni-scan-new-btn">Unscanned Images Only</button>
                         </div>
                         <p class="admin-hint" id="furni-scan-remote" hidden>
                             Scans run on your own PC, not on the server. Open the

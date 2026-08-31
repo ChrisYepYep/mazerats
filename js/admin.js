@@ -34,6 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const furniScanAllBtn = document.getElementById("furni-scan-all-btn");
     const furniScanStatus = document.getElementById("furni-scan-status");
     const furniScanNewBtn = document.getElementById("furni-scan-new-btn");
+    const furniScanAddBtn = document.getElementById("furni-scan-add-btn");
     const furniScanLocalEl = document.getElementById("furni-scan-local");
     const furniScanRemoteEl = document.getElementById("furni-scan-remote");
     const furniProgress = document.getElementById("furni-progress");
@@ -3171,8 +3172,18 @@ document.addEventListener("DOMContentLoaded", () => {
                     furniProgress.hidden = true;
                     furniScanStatus.textContent = "Scan failed: " + p.error;
                 } else {
-                    furniScanStatus.textContent = "Scan finished — " + p.done + " room images" +
-                        (p.errors ? ", " + p.errors + " failed" : "") + ". Reopen a maze to see what it found.";
+                    /* "0 new furni" is a real and useful answer for an
+                       additive run — it means FurniIndex has nothing to add
+                       yet — so the count is always stated rather than being
+                       left to "reopen a maze and look". ("furni" is already
+                       plural, hence not going through plural().) */
+                    const parts = [plural(p.done, "room image")];
+                    if (typeof p.found === "number") {
+                        parts.push(p.found + (p.additive ? " new furni" : " furni"));
+                    }
+                    if (p.errors) parts.push(p.errors + " failed");
+                    furniScanStatus.textContent = "Scan finished — " + parts.join(", ") +
+                        ". Reopen a maze to see what it found.";
                 }
             }
         } catch (err) {
@@ -3224,26 +3235,66 @@ document.addEventListener("DOMContentLoaded", () => {
         return Math.max(1, Math.round((images * 1.6) / 60));
     }
 
-    // Both buttons run the same job; they differ only in whether images that
-    // already carry a result are skipped. Confirmed either way — it is long,
-    // and the full version replaces what previous runs recorded.
-    async function startFurniScan(onlyUnscanned) {
+    function plural(n, word) {
+        return n + " " + word + (n === 1 ? "" : "s");
+    }
+
+    /* One shape for every scan confirmation: the question, then how long it
+       takes, then what happens to the furni already recorded. That last line
+       is the one that matters — the three scans differ almost entirely in
+       what they do to existing data, and a dialog that buried it left the
+       destructive option looking the same as the safe one. */
+    function scanConfirm(question, images, consequence) {
+        const mins = scanMinutes(images);
+        return `<strong>${question}</strong><br><br>` +
+               `${plural(images, "room image")}, about ${plural(mins, "minute")} on this PC.<br>` +
+               `${consequence}`;
+    }
+
+    /* The three sidebar scans. They run the same job over the same images and
+       differ only in what they do with what is already there:
+
+         full       replace every scanned entry with this run's findings
+         additive   change nothing; add only furni not already listed
+         unscanned  skip any image that already has a result at all
+
+       "additive" exists because FurniIndex's catalogue is still being filled
+       in: furni that was always in a room becomes findable months later, and
+       there needs to be a way to pick it up without discarding results that
+       have since been corrected by hand. */
+    const SCAN_MODES = {
+        full: {
+            onlyUnscanned: false, additive: false,
+            question: "Rescan every room image for furni?",
+            consequence: "Everything currently listed is replaced by what this run finds. " +
+                         "Furni you added by hand is kept.",
+            empty: "No mazes have room images to scan yet."
+        },
+        additive: {
+            onlyUnscanned: false, additive: true,
+            question: "Look for furni that isn't listed yet?",
+            consequence: "Nothing already listed is changed or removed — this only adds furni " +
+                         "FurniIndex can match now but couldn't before.",
+            empty: "No mazes have room images to scan yet."
+        },
+        unscanned: {
+            onlyUnscanned: true, additive: false,
+            question: "Scan the room images that have never been scanned?",
+            consequence: "Images that already have a result are left alone.",
+            empty: "Every room image has already been scanned."
+        }
+    };
+
+    async function startFurniScan(modeName) {
+        const mode = SCAN_MODES[modeName];
         const rooms = roomsWithImages();
-        const images = countImages(rooms, onlyUnscanned);
+        const images = countImages(rooms, mode.onlyUnscanned);
         if (!images) {
             furniScanStatus.style.display = "block";
-            furniScanStatus.textContent = onlyUnscanned
-                ? "Every room image has already been scanned."
-                : "No mazes have room images to scan yet.";
+            furniScanStatus.textContent = mode.empty;
             return;
         }
-        const mins = scanMinutes(images);
-        const ok = await showConfirmDialog(onlyUnscanned
-            ? "Scan " + images + " room images that have no furni recorded yet? " +
-              "Runs on this PC, roughly " + mins + " minute" + (mins === 1 ? "" : "s") + "."
-            : "Scan all " + rooms.length + " mazes (" + images + " room images) for furni? " +
-              "Runs on this PC, roughly " + mins + " minute" + (mins === 1 ? "" : "s") + ". " +
-              "Replaces the furni already recorded against them — anything you added by hand is kept.");
+        const ok = await showConfirmDialog(scanConfirm(mode.question, images, mode.consequence));
         if (!ok) return;
         furniScanStatus.style.display = "none";
         furniProgress.hidden = false;
@@ -3251,7 +3302,12 @@ document.addEventListener("DOMContentLoaded", () => {
         furniProgressLabel.textContent = "Starting…";
         try {
             const runId = newFurniRunId();
-            await Api.scanFurni(adminToken, { ids: rooms.map(r => r.id), onlyUnscanned, runId });
+            await Api.scanFurni(adminToken, {
+                ids: rooms.map(r => r.id),
+                onlyUnscanned: mode.onlyUnscanned,
+                additive: mode.additive,
+                runId
+            });
             startFurniPolling(runId);
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
@@ -3281,12 +3337,16 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         const already = Object.keys(item.furni || {}).length;
-        const mins = scanMinutes(imgs.length);
-        const ok = await showConfirmDialog(
-            "Scan \u201c" + title + "\u201d for furni? " + imgs.length + " room image" +
-            (imgs.length === 1 ? "" : "s") + " on this PC, roughly " + mins +
-            " minute" + (mins === 1 ? "" : "s") + "." +
-            (already ? " This replaces the furni already recorded against it \u2014 anything you added by hand is kept." : ""));
+        // escapeHtml because showConfirmDialog sets the message as innerHTML
+        // and this one carries a maze title straight from the record.
+        const ok = await showConfirmDialog(scanConfirm(
+            "Rescan \u201c" + escapeHtml(title) + "\u201d for furni?",
+            imgs.length,
+            already
+                ? "Everything currently listed against it is replaced by what this run finds. " +
+                  "Furni you added by hand is kept."
+                : "Nothing is recorded against it yet, so nothing can be lost."
+        ));
         if (!ok) return;
         furniScanStatus.style.display = "none";
         furniProgress.hidden = false;
@@ -3304,8 +3364,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    if (furniScanAllBtn) furniScanAllBtn.addEventListener("click", () => startFurniScan(false));
-    if (furniScanNewBtn) furniScanNewBtn.addEventListener("click", () => startFurniScan(true));
+    if (furniScanAllBtn) furniScanAllBtn.addEventListener("click", () => startFurniScan("full"));
+    if (furniScanAddBtn) furniScanAddBtn.addEventListener("click", () => startFurniScan("additive"));
+    if (furniScanNewBtn) furniScanNewBtn.addEventListener("click", () => startFurniScan("unscanned"));
 
     // Picking a scan back up after a page reload (so the bar doesn't
     // vanish mid-run and look stalled) is handled by applyRoleVisibility,
