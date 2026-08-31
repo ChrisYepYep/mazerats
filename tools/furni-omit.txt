@@ -1,0 +1,18 @@
+# Furni the scan must never add.
+#
+# Edited from the dev console: OPTIONS -> EDIT LIST. Editable by hand
+# too -- one name per line, '#' starts a comment, case is ignored, and
+# '*' matches any run of characters, so "Dungeon Floor*" covers every
+# colour of it without listing them all.
+#
+# This is for the handful of furni that keep turning up in rooms that do
+# not contain them -- usually something large, flat and common that finds
+# honest agreement against the wrong background. Raising the strictness
+# for the whole archive to silence one of those costs real finds
+# everywhere else, so they are dealt with one by one here instead.
+#
+# Only scans are governed by this list. Furni added by hand in the admin
+# page stays put whatever is written here.
+#
+# Takes effect on the next scan; nothing needs restarting.
+

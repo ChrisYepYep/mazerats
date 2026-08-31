@@ -24,10 +24,7 @@
 const fs = require("fs");
 const path = require("path");
 
-for (const line of fs.readFileSync(path.join(__dirname, "..", ".env"), "utf8").split(/\r?\n/)) {
-    const m = /^([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line.trim());
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+require("./_env.js").loadEnv(["MONGODB_URI"]);
 
 const { decodePng } = require("../netlify/functions/_png.js");
 const { scanRoom } = require("../netlify/functions/_furni-match.js");

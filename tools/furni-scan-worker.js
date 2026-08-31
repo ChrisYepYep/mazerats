@@ -13,7 +13,11 @@ const { parentPort, workerData } = require("worker_threads");
 const { scanRoom } = require("../netlify/functions/_furni-match.js");
 const { imageUrl } = require("../netlify/functions/_url.js");
 
-const { cacheDir, wanted, site } = workerData;
+/* matchOpts carries the run's strictness (see --strictness in
+   furni-scan-local.js). Passed in workerData rather than with each image,
+   because it cannot change partway through a run — a scan whose thresholds
+   moved halfway would produce a database nobody could reason about. */
+const { cacheDir, wanted, site, matchOpts } = workerData;
 
 const sprites = [];
 for (const s of wanted) {
@@ -36,7 +40,7 @@ parentPort.on("message", async msg => {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`room image ${res.status}`);
         const buffer = Buffer.from(await res.arrayBuffer());
-        const result = scanRoom(buffer, sprites);
+        const result = scanRoom(buffer, sprites, matchOpts || {});
         parentPort.postMessage({ image, result });
     } catch (err) {
         parentPort.postMessage({ image, error: err && err.message ? err.message : String(err) });

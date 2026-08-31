@@ -24,6 +24,19 @@
      node tools/furni-scan-local.js --ids abc,def      # specific maze ids
      node tools/furni-scan-local.js --workers 12
 
+   How sure a match has to be, and what to never record:
+
+     node tools/furni-scan-local.js --strictness strict     # a named preset
+     node tools/furni-scan-local.js --coverage 0.22         # or the number
+     node tools/furni-scan-local.js --omit "Bonsai Tree,Dungeon Floor*"
+     node tools/furni-scan-local.js --omit-file other.txt   # default:
+                                                            # tools/furni-omit.txt
+     node tools/furni-scan-local.js --no-omit               # ignore the list
+
+   Both are printed at the top of every run, because a scan that quietly
+   used different thresholds than the last one is a scan whose results
+   cannot be compared with it.
+
    The admin page's scan buttons run exactly this, via
    netlify/functions/furni-scan-local.js, which spawns it with --ids and
    --run-id. That is also why it reports progress into the furni_scans
@@ -39,10 +52,9 @@ const os = require("os");
 const path = require("path");
 const { Worker } = require("worker_threads");
 
-for (const line of fs.readFileSync(path.join(__dirname, "..", ".env"), "utf8").split(/\r?\n/)) {
-    const m = /^([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line.trim());
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-}
+// Stops here, with an explanation, if .env is missing or has no connection
+// string — rather than several seconds later inside the Mongo driver.
+require("./_env.js").loadEnv(["MONGODB_URI"]);
 
 const { getCatalogue } = require("../netlify/functions/furni-catalogue.js");
 const { blobStore } = require("../netlify/functions/_blobs.js");
@@ -115,6 +127,116 @@ const LIMIT = Number(opt("limit", 0)) || 0;
 // running — a machine pinned at 100% is a machine that cannot be used.
 const WORKERS = Number(opt("workers", Math.max(1, Math.min(16, os.cpus().length - 2))));
 
+/* ---------- how sure a hit has to be ----------
+
+   MIN_COVERAGE in _furni-match.js is the one number that decides how much
+   of a sprite has to actually be visible before the scan believes it. That
+   file's own comment is the evidence for where the default sits, and is
+   worth reading before moving this: 0.15 is a cliff edge, not a taste.
+
+   Named presets rather than only a raw number, because "0.22" means nothing
+   to whoever presses the button in the dev console, and the useful range is
+   narrow enough to enumerate:
+
+     loose    0.10  finds more, and roughly half of the extra is wrong
+     normal   0.15  the default the archive was scanned at
+     strict   0.20  noticeably fewer false positives, loses some real finds
+     strictest 0.25 everything it reports was correct in the sample, but it
+                    only reports what is plainly visible
+
+   The other two gates move with it, gently: a stricter run should not also
+   start demanding an absurd absolute pixel count, so MIN_MATCHED is scaled
+   about half as hard and MIN_COLOURS is left alone entirely (it exists to
+   reject flat black surrounds, which is not a strictness question). */
+const STRICTNESS = {
+    loose:     { minCoverage: 0.10, minMatched: 120 },
+    normal:    { minCoverage: 0.15, minMatched: 150 },
+    strict:    { minCoverage: 0.20, minMatched: 180 },
+    strictest: { minCoverage: 0.25, minMatched: 210 }
+};
+const STRICTNESS_NAME = String(opt("strictness", "normal")).toLowerCase();
+if (!STRICTNESS[STRICTNESS_NAME]) {
+    console.error(`Unknown --strictness "${STRICTNESS_NAME}". Use one of: ${Object.keys(STRICTNESS).join(", ")}.`);
+    process.exit(1);
+}
+const MATCH_OPTS = { ...STRICTNESS[STRICTNESS_NAME] };
+// An explicit number always wins over the preset it was combined with —
+// --strictness is a convenience for the console's cycling button, not a
+// ceiling on what can be asked for from a terminal.
+if (opt("coverage", null) !== null) MATCH_OPTS.minCoverage = Number(opt("coverage"));
+if (opt("min-matched", null) !== null) MATCH_OPTS.minMatched = Number(opt("min-matched"));
+if (opt("min-colours", null) !== null) MATCH_OPTS.minColours = Number(opt("min-colours"));
+if (!(MATCH_OPTS.minCoverage > 0 && MATCH_OPTS.minCoverage <= 1)) {
+    console.error(`--coverage must be a share between 0 and 1 (got ${MATCH_OPTS.minCoverage}).`);
+    process.exit(1);
+}
+// Only mentioned in the run header when it is not the archive's own setting,
+// so an ordinary run does not look like it is doing something unusual.
+const CUSTOM_MATCH = MATCH_OPTS.minCoverage !== 0.15 || MATCH_OPTS.minMatched !== 150
+    || MATCH_OPTS.minColours != null;
+
+/* ---------- furni to never record ----------
+
+   Some furni are found again and again in rooms that do not contain them.
+   Usually it is a large, flat, common sprite — a plain floor, a dark wall
+   panel — that finds enough agreement against the right background to pass
+   every gate honestly. Raising the strictness for the whole archive to
+   silence one of those costs real finds everywhere else, so the omit list
+   exists to deal with them one by one instead.
+
+   Names, one per line, in tools/furni-omit.txt. '#' starts a comment, case
+   is ignored, and '*' matches any run of characters — "Dungeon Floor*"
+   covers all sixteen colours of it without listing them.
+
+   This only governs what a SCAN adds. Anything added by hand in the admin
+   page stays, omit list or not: a person putting a furni on a room is a
+   deliberate act, and this list is about what the matcher gets wrong. */
+const OMIT_FILE = path.resolve(__dirname, opt("omit-file", "furni-omit.txt"));
+const omitPatterns = [];
+if (!flag("no-omit")) {
+    let raw = "";
+    try { raw = fs.readFileSync(OMIT_FILE, "utf8"); } catch { /* no list is a valid state */ }
+    for (const line of raw.split(/\r?\n/).concat(String(opt("omit", "")).split(","))) {
+        const name = line.replace(/#.*$/, "").trim();
+        if (name) omitPatterns.push(name);
+    }
+}
+/* One regex for the whole list rather than a test per pattern per hit: a
+   full rescan asks this question a few hundred thousand times. Escaped
+   first, then '*' alone is restored as a wildcard, so a furni whose real
+   name contains regex punctuation ("Bar Stool (Red)") still matches. */
+const omitRe = omitPatterns.length
+    ? new RegExp("^(?:" + omitPatterns
+        .map(p => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\*/g, ".*"))
+        .join("|") + ")$", "i")
+    : null;
+const isOmitted = name => !!(omitRe && name && omitRe.test(name));
+
+/* ---------- so the dev console can see this run ----------
+
+   tools/dev-console.ps1 needs to know whether a scan is in progress, and it
+   asks about once a second. It used to ask Windows, enumerating every
+   process on the machine to look for this script in a command line — a
+   200-500ms freeze of its own window, every time. A scan that announces
+   itself in a file costs the console a directory lookup instead.
+
+   The pid is written, not just the file, because a scan killed outright
+   (the console's STOP button does exactly that) never gets to clean up
+   after itself. A stale file naming a pid that no longer exists is easy to
+   recognise; a stale empty file is not. */
+const LOCK_FILE = path.join(__dirname, ".cache", "furni-scan.pid");
+function claimLock() {
+    fs.mkdirSync(path.dirname(LOCK_FILE), { recursive: true });
+    fs.writeFileSync(LOCK_FILE, String(process.pid));
+    // Covers every process.exit() in this file as well as falling off the
+    // end. A taskkill /F is the one case it cannot cover, hence the pid.
+    process.on("exit", () => {
+        try {
+            if (fs.readFileSync(LOCK_FILE, "utf8").trim() === String(process.pid)) fs.unlinkSync(LOCK_FILE);
+        } catch { /* already gone, or never ours */ }
+    });
+}
+
 const secs = ms => (ms / 1000).toFixed(1) + "s";
 const clock = ms => {
     const s = Math.round(ms / 1000);
@@ -185,6 +307,7 @@ function imagesOf(doc) {
 
 (async () => {
     console.log("Local furni scan\n");
+    claimLock();
 
     const db = await getDb();
 
@@ -251,6 +374,12 @@ function imagesOf(doc) {
 
     console.log(`${docs.length} mazes · ${jobs.length} images to scan · ${WORKERS} workers`);
     if (ADDITIVE) console.log("additive — existing furni is left alone, only new names are added");
+    // Said every run, not only when it is unusual: the number that decided
+    // what is in the database belongs in the record of how it got there.
+    console.log(`strictness ${STRICTNESS_NAME} — coverage ${(MATCH_OPTS.minCoverage * 100).toFixed(0)}%`
+        + `, ${MATCH_OPTS.minMatched} px` + (CUSTOM_MATCH ? "  (not the archive default)" : ""));
+    if (omitRe) console.log(`omitting ${omitPatterns.length} furni: ${omitPatterns.slice(0, 4).join(", ")}`
+        + (omitPatterns.length > 4 ? `, +${omitPatterns.length - 4} more` : ""));
     if (!jobs.length) {
         console.log("\nNothing to do.");
         // Finished, not merely silent — otherwise the admin's bar waits out
@@ -304,7 +433,7 @@ function imagesOf(doc) {
 
         for (let i = 0; i < WORKERS; i++) {
             const w = new Worker(path.join(__dirname, "furni-scan-worker.js"), {
-                workerData: { cacheDir: CACHE, wanted, site: SITE }
+                workerData: { cacheDir: CACHE, wanted, site: SITE, matchOpts: MATCH_OPTS }
             });
             workers.push(w);
             alive++;
@@ -342,6 +471,12 @@ function imagesOf(doc) {
                         ? { ...(furniByMaze.get(job.id)[job.image] || {}), items: kept }
                         : { skipped: msg.result.skipped, roomColours: msg.result.roomColours, items: kept };
                 } else {
+                    /* The omit list is applied here rather than in the
+                       matcher: the matcher works in sprite keys and knows
+                       nothing about names, and this is the first point where
+                       a hit HAS a name to compare. Scan finds only — `kept`
+                       above is hand-added work, which the omit list has no
+                       business deleting. */
                     const items = msg.result.hits.map(h => {
                         const item = catalogue.items[h.key];
                         return {
@@ -350,7 +485,8 @@ function imagesOf(doc) {
                             matched: h.matched, coverage: Number(h.coverage.toFixed(3)), at: h.at,
                             alternates: (h.alternates || []).map(k => catalogue.items[k].name)
                         };
-                    }).filter(it => !ADDITIVE || !known.has(it.name));
+                    }).filter(it => !isOmitted(it.name))
+                      .filter(it => !ADDITIVE || !known.has(it.name));
                     furniByMaze.get(job.id)[job.image] = {
                         ...(ADDITIVE ? (furniByMaze.get(job.id)[job.image] || {}) : {}),
                         scannedAt: new Date().toISOString(),

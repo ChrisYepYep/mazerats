@@ -1,0 +1,21 @@
+# Keep line endings sane across machines.
+#
+# Text files are normalised to LF in the repository and given the platform's
+# own endings on checkout, which is the default and is fine for everything
+# here EXCEPT the Windows launchers below.
+* text=auto
+
+# These are read by cmd.exe and the Windows Script Host, both of which are
+# genuinely fussy about line endings -- a .bat checked out with bare LF can
+# misparse labels and multi-line blocks. They are Windows-only files by
+# nature, so they are pinned to CRLF wherever they are checked out.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.vbs text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary, so git never tries to "fix" them.
+*.png binary
+*.ico binary
+*.ttf binary
+*.aseprite binary
