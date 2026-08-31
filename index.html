@@ -98,6 +98,13 @@
                     <div class="modal-body">
                         <div class="modal-top-row">
                             <p class="room-creator" id="event-modal-host"></p>
+                            <!-- The host's Habbo card — avatar, online/last-seen
+                                 and motto — exactly as home.html's modal shows a
+                                 maze's builders. Filled in by js/welcome.js when
+                                 the name resolves on the hotel; stays hidden
+                                 otherwise, so the plain "by <host>" line above is
+                                 always the baseline and this is purely additive. -->
+                            <div class="builder-list" id="event-modal-builder" hidden></div>
                             <div class="room-tags" id="event-modal-tags"></div>
                         </div>
                         <!-- js/welcome.js writes the status/hotel/date line into

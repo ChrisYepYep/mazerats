@@ -41,6 +41,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const frameEl = document.getElementById("event-modal-frame");
     const imgEl = document.getElementById("event-modal-img");
     const hostEl = document.getElementById("event-modal-host");
+    const builderEl = document.getElementById("event-modal-builder");
     const tagsEl = document.getElementById("event-modal-tags");
     const metaEl = document.getElementById("event-modal-meta");
     const descEl = document.getElementById("event-modal-desc");
@@ -50,6 +51,108 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    /* ---- the host's Habbo card ----
+
+       The same avatar / online-or-last-seen / motto card home.html builds
+       for a maze's builders, for the event's host. It is the last thing
+       that made this modal look like a different, plainer component than
+       the one it mirrors: everything else matched and the host was still a
+       bare "by ChrisYepYep".
+
+       Kept as its own small copy rather than shared with js/home.js, for
+       the same reason the rest of this file is a copy — home.js is 157KB of
+       grid, carousel and lightbox machinery this page must never load, and
+       it is not written to be imported. What is duplicated here is the
+       markup contract with css/style.css (.builder-list / .builder-card /
+       .builder-avatar / .builder-name / .builder-status / .builder-motto),
+       which is where the styling actually lives. */
+    function creatorNames(host) {
+        return String(host || "").split(",").map(s => s.trim()).filter(Boolean);
+    }
+
+    function relativeLastSeen(iso) {
+        const then = new Date(iso);
+        if (isNaN(then)) return "";
+        const mins = Math.floor((Date.now() - then.getTime()) / 60000);
+        if (mins < 1) return "just now";
+        if (mins < 60) return mins + (mins === 1 ? " minute ago" : " minutes ago");
+        const hours = Math.floor(mins / 60);
+        if (hours < 24) return hours + (hours === 1 ? " hour ago" : " hours ago");
+        const days = Math.floor(hours / 24);
+        if (days < 30) return days + (days === 1 ? " day ago" : " days ago");
+        return then.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    }
+
+    function builderCard(profile, mirrored) {
+        const card = document.createElement("div");
+        card.className = mirrored ? "builder-card builder-card--mirrored" : "builder-card";
+
+        if (profile.avatar) {
+            const avatar = document.createElement("img");
+            avatar.className = "builder-avatar";
+            avatar.src = profile.avatar;
+            avatar.alt = "";
+            avatar.loading = "lazy";
+            // habbo.com's imaging service is outside this site's control —
+            // if it fails, drop just the image rather than leaving a broken
+            // icon next to a perfectly good name and motto.
+            avatar.addEventListener("error", () => avatar.remove());
+            card.appendChild(avatar);
+        }
+
+        const text = document.createElement("div");
+        text.className = "builder-text";
+
+        const nameLine = document.createElement("p");
+        nameLine.className = "builder-name";
+        // Text nodes throughout: names and mottos are written by Habbo
+        // users, not by an admin here.
+        nameLine.appendChild(document.createTextNode(profile.name));
+
+        const status = document.createElement("span");
+        status.className = profile.online ? "builder-status is-online" : "builder-status";
+        status.textContent = profile.online
+            ? "Online"
+            : (profile.lastAccessTime ? "Last seen " + relativeLastSeen(profile.lastAccessTime) : "");
+        if (status.textContent) nameLine.appendChild(status);
+        text.appendChild(nameLine);
+
+        if (profile.motto) {
+            const motto = document.createElement("p");
+            motto.className = "builder-motto";
+            motto.textContent = profile.motto;
+            text.appendChild(motto);
+        }
+
+        card.appendChild(text);
+        return card;
+    }
+
+    // Guards against a slow profile lookup landing after the visitor has
+    // opened a different event — the same token pattern home.js uses.
+    let builderToken = 0;
+
+    async function showHostCard(event) {
+        const token = ++builderToken;
+        builderEl.hidden = true;
+        builderEl.innerHTML = "";
+        hostEl.hidden = false;
+
+        const names = creatorNames(event.host);
+        if (!names.length) return;
+
+        // In parallel and individually tolerant: a co-host who is not on the
+        // hotel does not cost the others their card.
+        const profiles = (await Promise.all(names.map(n => Api.getHabboProfile(n)))).filter(Boolean);
+        if (token !== builderToken || !profiles.length) return;
+
+        profiles.forEach((p, i) => builderEl.appendChild(builderCard(p, i % 2 === 1)));
+        // The cards carry the names themselves, so "by <host>" would only
+        // repeat them.
+        hostEl.hidden = true;
+        builderEl.hidden = false;
     }
 
     function formatUtcParts(iso) {
@@ -129,6 +232,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         nameEl.textContent = event.title || "";
         hostEl.textContent = event.host ? `by ${event.host}` : "";
+        showHostCard(event);
         tagsEl.innerHTML = (event.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("");
         /* The same status / hotel / date line home.html's modal writes, in
            the same order and markup. This was a bare date string before,
