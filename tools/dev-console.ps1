@@ -2,16 +2,15 @@
     The Maze Rats dev tools, as the site's own Habbo console.
 
     Not "a WinForms window with yellow in it" — the actual sprites the
-    website uses (assets/img/console/), at the actual measurements from
-    .console-modal in css/style.css, drawn at 2x with nearest-neighbour so
-    the pixel art stays pixel art. Everything is custom-painted: Windows'
-    title bar is gone, and the close and minimise buttons are the console's
-    own 13x13 sprites.
+    website loads (assets/img/console/), at the measurements in
+    .console-modal, at the size the website itself draws it. Everything is
+    custom-painted: Windows' title bar is gone, and the close and minimise
+    buttons are the console's own 13x13 sprites.
 
-    Geometry is the stylesheet's, doubled. Frame 257x294, border slice 14,
+    Geometry is the stylesheet's, verbatim. Frame 257x294, border slice 14,
     screen at 14,26 sized 229x206, tab strip 48 tall pinned to the bottom.
-    Change SCALE and every part follows, because nothing is hardcoded in
-    window pixels — see $Scale and the Px helper.
+    $Scale drives every position through Px(), so the whole console can be
+    drawn larger by changing one number and nothing else.
 
     Tabs: SERVER runs the dev server, FURNI runs the scans that used to live
     only in the admin page, MESSAGES reads what people sent through the
@@ -39,7 +38,19 @@ Add-Type -Namespace Native -Name Win -MemberDefinition @"
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
 [DllImport("user32.dll")] public static extern bool ReleaseCapture();
 [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+[DllImport("shell32.dll")] public static extern int SetCurrentProcessExplicitAppUserModelID(string id);
 "@
+
+<# The taskbar showed PowerShell's blue prompt icon, not the console.
+
+   Setting Form.Icon is not enough: without an explicit AppUserModelID the
+   shell groups the window under the process that hosts it — powershell.exe,
+   launched by wscript.exe — and uses THAT executable's icon for the taskbar
+   button. Giving the process its own identity detaches it from the host, and
+   the window's own icon is used.
+
+   Must be called before the first window exists, so it lives up here. #>
+[void][Native.Win]::SetCurrentProcessExplicitAppUserModelID("OriginsMazeRats.DevConsole")
 
 # A plain Panel repaints in visible bands while this much art is being
 # drawn; UserPaint + OptimizedDoubleBuffer is what makes it a clean frame.
@@ -73,7 +84,7 @@ $AdminUrl = "http://localhost:$Port/admin.html"
    the nine-slice border's tile step went from 8px to 56px, and the frame
    drew corner artwork all the way along every edge. Nothing warned; the
    picture was just wrong. #>
-$Scale = 2                                  # everything below is in site pixels
+$Scale = 1                                  # 1 = exactly the size the website draws it
 function Px([int]$n) { return $n * $Scale }
 
 $FrameW = 257; $FrameH = 294            # .console-frame
@@ -153,6 +164,9 @@ $script:MessageLines = New-Object System.Collections.ArrayList
 $script:LogRead = 0
 $script:ScanRead = 0
 $script:SawForeignScan = $false   # a scan running that this window did not start
+$script:PortUp = $false          # measured by the timer, never by paint
+$script:ScanRunning = $false     # ditto - see the note above Measure-Port
+$script:ScanTick = 0
 $script:Hot = ""            # which hit region the mouse is over
 $script:Buttons = @()       # rebuilt every paint, used for hit-testing
 
@@ -170,12 +184,21 @@ if (Test-Path $IconPath) { $form.Icon = New-Object System.Drawing.Icon($IconPath
 
 # The frame's own rounded corners (border-radius: 16px), so the desktop shows
 # through where the sprite is transparent instead of a square of yellow.
+<# AddArc takes the bounding box of the WHOLE ellipse, so a corner of radius
+   R needs a 2R box. Passing R produced corners of half the intended radius,
+   which cut a visible diagonal chamfer straight through the border sprite's
+   own arc — the frame looked chipped at all four corners.
+
+   16 is not arbitrary either: the border sprite is a circle of radius 16
+   inscribed in its 32x32 tile (centre 15.5,15.5), so a 16px corner is
+   exactly the curve the artwork draws. #>
 $radius = Px 16
+$arcBox = $radius * 2
 $gp = New-Object System.Drawing.Drawing2D.GraphicsPath
-$gp.AddArc(0, 0, $radius, $radius, 180, 90)
-$gp.AddArc((Px $FrameW) - $radius, 0, $radius, $radius, 270, 90)
-$gp.AddArc((Px $FrameW) - $radius, (Px $FrameH) - $radius, $radius, $radius, 0, 90)
-$gp.AddArc(0, (Px $FrameH) - $radius, $radius, $radius, 90, 90)
+$gp.AddArc(0, 0, $arcBox, $arcBox, 180, 90)
+$gp.AddArc((Px $FrameW) - $arcBox, 0, $arcBox, $arcBox, 270, 90)
+$gp.AddArc((Px $FrameW) - $arcBox, (Px $FrameH) - $arcBox, $arcBox, $arcBox, 0, 90)
+$gp.AddArc(0, (Px $FrameH) - $arcBox, $arcBox, $arcBox, 90, 90)
 $gp.CloseFigure()
 $form.Region = New-Object System.Drawing.Region($gp)
 
@@ -245,15 +268,42 @@ function Draw-Tiled($g, $img, [int]$x, [int]$y, [int]$w, [int]$h, [int]$offsetY 
     $g.Clip = $clip
 }
 
+<# Text goes through TextRenderer (GDI), not Graphics.DrawString (GDI+).
+
+   GDI+ anti-aliases even with TextRenderingHint set, and a pixel font that
+   has been anti-aliased is just a blurry font — at the website's own 257px
+   width the labels came out with grey halos around every letter. GDI renders
+   Volter on the pixel grid it was drawn for. NoPadding matters too: GDI adds
+   a few pixels of its own margin otherwise, which throws off every centred
+   label by an amount that changes with the string. #>
+$TextFlags = [System.Windows.Forms.TextFormatFlags]::NoPadding -bor
+             [System.Windows.Forms.TextFormatFlags]::NoPrefix -bor
+             [System.Windows.Forms.TextFormatFlags]::SingleLine
+
+function Measure-Text($g, [string]$text, $font) {
+    return [System.Windows.Forms.TextRenderer]::MeasureText($g, $text, $font,
+        (New-Object System.Drawing.Size(10000, 100)), $TextFlags)
+}
+
 function Draw-Text($g, [string]$text, $font, $colour, [int]$x, [int]$y) {
-    $brush = New-Object System.Drawing.SolidBrush($colour)
-    $g.DrawString($text, $font, $brush, [single]$x, [single]$y)
-    $brush.Dispose()
+    [System.Windows.Forms.TextRenderer]::DrawText($g, $text, $font,
+        (New-Object System.Drawing.Point($x, $y)), $colour, $TextFlags)
 }
 
 function Draw-TextCentred($g, [string]$text, $font, $colour, [int]$cx, [int]$y) {
-    $size = $g.MeasureString($text, $font)
+    $size = Measure-Text $g $text $font
     Draw-Text $g $text $font $colour ([int]($cx - $size.Width / 2)) $y
+}
+
+# Trims a string until it fits, so nothing has to guess a character count for
+# a proportional font in a box whose width depends on $Scale.
+function Fit-Text($g, [string]$text, $font, [int]$w, [string]$cut = ".") {
+    if ((Measure-Text $g $text $font).Width -le $w) { return $text }
+    for ($n = $text.Length - 1; $n -gt 1; $n--) {
+        $try = $text.Substring(0, $n) + $cut
+        if ((Measure-Text $g $try $font).Width -le $w) { return $try }
+    }
+    return ""
 }
 
 <# An in-screen button, styled like .console-btn: 1px #eeeeee border, 2px
@@ -269,7 +319,7 @@ function Draw-Button($g, [string]$id, [string]$text, [int]$x, [int]$y, [int]$w, 
     }
     $pen = New-Object System.Drawing.Pen($colour, $Scale)
     $g.DrawRectangle($pen, $rect); $pen.Dispose()
-    $size = $g.MeasureString($text, $FontBody)
+    $size = Measure-Text $g $text $FontBody
     Draw-Text $g $text $FontBody $colour ([int]($x + ($w - $size.Width) / 2)) ([int]($y + ($h - $size.Height) / 2))
     $script:Buttons += @{ Id = $id; Rect = $rect; Enabled = $enabled }
 }
@@ -278,19 +328,20 @@ function Draw-Button($g, [string]$id, [string]$text, [int]$x, [int]$y, [int]$w, 
    characters rather than a drawn line, which is what the stylesheet does
    too: a clean 1px rule looks wrong against sprite-sheet chrome. #>
 function Draw-Hashline($g, [int]$x, [int]$y, [int]$w) {
-    $dashW = $g.MeasureString("-", $FontBody).Width
-    $n = [Math]::Max(1, [int]($w / [Math]::Max(1, $dashW - (Px 1))))
-    Draw-Text $g ("-" * $n) $FontBody $ScreenDim $x $y
+    # Built long and then trimmed to the box, rather than divided out from a
+    # single dash's width — a dash carries side bearing, so n * dashWidth
+    # overshoots and the rule ran out past the screen's own edge.
+    Draw-Text $g (Fit-Text $g ("-" * 80) $FontBody $w "") $FontBody $ScreenDim $x $y
 }
 
 function Draw-Lines($g, $lines, [int]$x, [int]$y, [int]$w, [int]$h) {
-    $lineH = [int]($g.MeasureString("Ag", $FontSmall).Height)
+    $lineH = [int]((Measure-Text $g "Ag" $FontSmall).Height)
     $max = [Math]::Floor($h / $lineH)
     $start = [Math]::Max(0, $lines.Count - $max)
     $clip = $g.Clip
     $g.SetClip((New-Object System.Drawing.Rectangle($x, $y, $w, $h)))
     for ($i = $start; $i -lt $lines.Count; $i++) {
-        Draw-Text $g $lines[$i] $FontSmall $ScreenDim $x ($y + ($i - $start) * $lineH)
+        Draw-Text $g (Fit-Text $g $lines[$i] $FontSmall $w) $FontSmall $ScreenDim $x ($y + ($i - $start) * $lineH)
     }
     $g.Clip = $clip
 }
@@ -303,7 +354,7 @@ function Draw-PageServer($g, [int]$x, [int]$y, [int]$w, [int]$h) {
     $up = Test-Port
     $statusText = if ($up) { "RUNNING" } elseif ($script:Starting) { "STARTING" } else { "STOPPED" }
     $statusCol  = if ($up) { $Good } elseif ($script:Starting) { $Busy } else { $Bad }
-    Draw-Text $g $statusText $FontHead $statusCol ($x + $w - [int]$g.MeasureString($statusText, $FontHead).Width) $y
+    Draw-Text $g $statusText $FontHead $statusCol ($x + $w - [int](Measure-Text $g $statusText $FontHead).Width) $y
 
     $rowY = $y + (Px 24)
     $bw = [int](($w - (Px 8)) / 2)
@@ -321,7 +372,7 @@ function Draw-PageFurni($g, [int]$x, [int]$y, [int]$w, [int]$h) {
     Draw-Hashline $g $x ($y + (Px 11)) $w
     $running = Test-ScanRunning
     if ($running) {
-        Draw-Text $g "SCANNING" $FontHead $Busy ($x + $w - [int]$g.MeasureString("SCANNING", $FontHead).Width) $y
+        Draw-Text $g "SCANNING" $FontHead $Busy ($x + $w - [int](Measure-Text $g "SCANNING" $FontHead).Width) $y
     }
     $rowY = $y + (Px 24)
     Draw-Button $g "furni-all"  "FULL  RESCAN"      $x $rowY $w (Px 18) (-not $running)
@@ -329,6 +380,13 @@ function Draw-PageFurni($g, [int]$x, [int]$y, [int]$w, [int]$h) {
     Draw-Button $g "furni-add"  "FIND  NEW  FURNI"  $x $rowY $w (Px 18) (-not $running)
     $rowY += Px 24
     Draw-Button $g "furni-new"  "UNSCANNED  ONLY"   $x $rowY $w (Px 18) (-not $running)
+    <# Only while there is something to stop. A dead control sitting in the
+       screen for the 99% of the time no scan is running is worse than one
+       that appears when it can do something. #>
+    if ($running) {
+        $rowY += Px 24
+        Draw-Button $g "furni-stop" "STOP  SCAN" $x $rowY $w (Px 18) $true
+    }
 
     $logY = $rowY + (Px 26)
     Draw-Lines $g $script:FurniLines $x $logY $w ($h - ($logY - $y))
@@ -364,19 +422,32 @@ $surface.Add_Paint({
     $bg = New-Object System.Drawing.SolidBrush($Yellow)
     $g.FillRectangle($bg, 0, 0, $W, $H); $bg.Dispose()
 
-    # .console-top-pattern — inset 3px, 23 tall, tile lowered 2px in place
+    <# Order matters, and it is the stylesheet's own stacking order.
+       .console-border sits at z-index 1 and .console-top-pattern at 3, so
+       the dotted strip is drawn OVER the border and its corners — the CSS
+       even says so out loud. Painting the pattern first (the obvious
+       reading order) let the border's opaque corner tiles cover both ends
+       of it, which is what made the strip look like a floating block of
+       dots rather than part of the chrome. #>
+    Draw-Border $g $W $H
     Draw-Tiled $g $SprPattern (Px 3) (Px 3) ($W - (Px 3)) (Px 23) 2
 
-    Draw-Border $g $W $H
-
-    # .console-title — its own opaque yellow band masks the pattern behind it
+    <# .console-title — an opaque yellow band that masks the pattern behind
+       its own letters. The stylesheet bottom-aligns the text inside a 20px
+       band starting at y=4, with 2px of padding under it (align-items:
+       flex-end), rather than centring it — so the title sits low, tight to
+       the screen below it, which is what makes it read as part of the
+       chrome instead of floating in the strip. #>
     $titleText = "Maze Rats"
-    $tsize = $g.MeasureString($titleText, $FontTitle)
+    $tsize = Measure-Text $g $titleText $FontTitle
     $tw = [int]$tsize.Width + (Px 8)
     $tx = [int](($W - $tw) / 2)
+    $bandY = Px 4
+    $bandH = Px 20
     $tb = New-Object System.Drawing.SolidBrush($Yellow)
-    $g.FillRectangle($tb, $tx, (Px 4), $tw, (Px 20)); $tb.Dispose()
-    Draw-TextCentred $g $titleText $FontTitle $Brown ([int]($W / 2)) (Px 6)
+    $g.FillRectangle($tb, $tx, $bandY, $tw, $bandH); $tb.Dispose()
+    $textY = $bandY + $bandH - (Px 2) - [int]$tsize.Height
+    Draw-TextCentred $g $titleText $FontTitle $Brown ([int]($W / 2)) $textY
 
     # Window buttons: close where the site has it, minimise beside it.
     $closeX = $W - (Px 14) - (Px 13)
@@ -439,7 +510,24 @@ $surface.Add_Paint({
 
 # ---------- server control ----------
 
-function Test-Port {
+<# WHY THESE ARE CACHED, AND WHY PAINT MUST NEVER CALL THEM.
+
+   The window was noticeably laggy, and a scan made it worse. Both causes
+   were the same mistake: the paint handler asked the world for the truth
+   instead of drawing what it already knew.
+
+     Test-Port      opens a TCP connection and waits up to 120ms
+     Test-ScanRunning  enumerates every process on the machine via CIM,
+                       which costs 200-500ms and gets slower under load
+
+   Paint runs on every invalidate — a mouse move over a button, a timer
+   tick, a window drag — so the frame rate was capped by a socket timeout
+   and a process enumeration. Dragging the window meant hundreds of them.
+
+   Now: the timer measures, the paint draws. The port is cheap enough to
+   check every tick; the process list is not, so it is checked every third
+   one, which is still four times faster than a scan's own progress moves. #>
+function Measure-Port {
     $c = New-Object System.Net.Sockets.TcpClient
     try {
         $w = $c.BeginConnect("127.0.0.1", $Port, $null, $null)
@@ -447,10 +535,10 @@ function Test-Port {
         $c.EndConnect($w); return $true
     } catch { return $false } finally { $c.Dispose() }
 }
+function Test-Port { return $script:PortUp }
 
 function Add-Line($list, [string]$text) {
-    $stamp = (Get-Date).ToString("HH:mm:ss")
-    [void]$list.Add("$stamp $text")
+    [void]$list.Add($text)
     while ($list.Count -gt 200) { $list.RemoveAt(0) }
 }
 
@@ -500,7 +588,7 @@ function Stop-Server {
    scans would each write a whole maze's furni object over the other's, so
    the second run would silently undo the first. Asked of the OS rather than
    remembered in a variable, because a variable cannot see across restarts. #>
-function Test-ScanRunning {
+function Measure-ScanRunning {
     if ($null -ne $script:ScanProcess -and -not $script:ScanProcess.HasExited) { return $true }
     try {
         $procs = Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction Stop
@@ -510,6 +598,7 @@ function Test-ScanRunning {
     } catch { }
     return $false
 }
+function Test-ScanRunning { return $script:ScanRunning }
 
 function Start-Scan([string]$mode) {
     if (Test-ScanRunning) {
@@ -537,6 +626,37 @@ function Start-Scan([string]$mode) {
     $script:ScanProcess = [System.Diagnostics.Process]::Start($psi)
 }
 
+<# Stops a scan, whether or not this window started it.
+
+   Safe to do at any point: the scanner writes each image's result as it
+   lands rather than batching them at the end, so a scan killed halfway has
+   simply done the first half — and `--only-unscanned` picks the rest up
+   later. Nothing is left half-written.
+
+   /T because node is a child of the cmd shim used to redirect its output;
+   killing the shim alone leaves the scan running with nothing watching it. #>
+function Stop-Scan {
+    $killed = $false
+    if ($null -ne $script:ScanProcess -and -not $script:ScanProcess.HasExited) {
+        & taskkill /PID $script:ScanProcess.Id /T /F 2>&1 | Out-Null
+        $script:ScanProcess = $null
+        $killed = $true
+    }
+    # A scan this window did not start has no handle here, so it is found the
+    # same way Measure-ScanRunning finds it.
+    try {
+        foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction Stop)) {
+            if ($p.CommandLine -and $p.CommandLine -match "furni-scan-local\.js") {
+                & taskkill /PID $p.ProcessId /T /F 2>&1 | Out-Null
+                $killed = $true
+            }
+        }
+    } catch { }
+    $script:ScanRunning = $false
+    $script:SawForeignScan = $false
+    Add-Line $script:FurniLines $(if ($killed) { "Scan stopped. Finished images are saved." } else { "No scan was running." })
+}
+
 function Load-Messages {
     $script:MessageLines.Clear()
     Add-Line $script:MessageLines "Loading..."
@@ -546,7 +666,7 @@ function Load-Messages {
         $script:MessageLines.Clear()
         foreach ($l in $out) {
             $t = To-Ascii ("$l".TrimEnd())
-            if ($t.Length -gt 52) { $t = $t.Substring(0, 49) + "..." }
+            if ($t.Length -gt 120) { $t = $t.Substring(0, 117) + "..." }
             [void]$script:MessageLines.Add($t)
         }
     } catch {
@@ -580,7 +700,7 @@ function Read-Tail([string]$path, [ref]$cursor) {
         $clean = ($clean -replace "^[◈⬥●\*]\s*", "")
         $clean = To-Ascii $clean
         if ($clean.Length -eq 0) { continue }
-        if ($clean.Length -gt 46) { $clean = $clean.Substring(0, 43) + "..." }
+        if ($clean.Length -gt 120) { $clean = $clean.Substring(0, 117) + "..." }
         $out += $clean
     }
     return $out
@@ -642,6 +762,7 @@ $surface.Add_MouseDown({
         "furni-all" { Start-Scan "all" }
         "furni-add" { Start-Scan "add" }
         "furni-new" { Start-Scan "new" }
+        "furni-stop" { Stop-Scan }
         "msg-refresh" { Load-Messages }
         default {
             if ($b.Id -like "tab-*") {
@@ -657,28 +778,52 @@ $surface.Add_MouseDown({
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 1000
 $timer.Add_Tick({
-    foreach ($l in (Read-Tail $LogPath ([ref]$script:LogRead))) { Add-Line $script:ServerLines $l }
-    foreach ($l in (Read-Tail $ScanLog ([ref]$script:ScanRead))) { Add-Line $script:FurniLines $l }
+    $changed = $false
 
-    if ($script:Starting -and (Test-Port)) {
+    # The measuring happens here, once, and the result is what paint reads.
+    $wasUp = $script:PortUp
+    $script:PortUp = Measure-Port
+    if ($wasUp -ne $script:PortUp) { $changed = $true }
+
+    # Every third tick: enumerating processes is the expensive one, and a
+    # scan does not start or stop between one second and the next.
+    $script:ScanTick++
+    if ($script:ScanTick % 3 -eq 0) {
+        $wasScan = $script:ScanRunning
+        $script:ScanRunning = Measure-ScanRunning
+        if ($wasScan -ne $script:ScanRunning) { $changed = $true }
+    }
+
+    foreach ($l in (Read-Tail $LogPath ([ref]$script:LogRead))) { Add-Line $script:ServerLines $l; $changed = $true }
+    foreach ($l in (Read-Tail $ScanLog ([ref]$script:ScanRead))) { Add-Line $script:FurniLines $l; $changed = $true }
+
+    if ($script:Starting -and $script:PortUp) {
         $script:Starting = $false
         Add-Line $script:ServerLines "Ready at localhost:$Port"
+        $changed = $true
     }
     if ($script:Starting -and $null -ne $script:ServerProcess -and $script:ServerProcess.HasExited) {
         $script:Starting = $false
         Add-Line $script:ServerLines "Netlify exited before the server came up."
+        $changed = $true
     }
     if ($null -ne $script:ScanProcess -and $script:ScanProcess.HasExited) {
         Add-Line $script:FurniLines "Scan finished."
         $script:ScanProcess = $null
+        $changed = $true
     }
     # A scan started before this window opened leaves its last lines in the
     # log; once it is gone, say so rather than sitting on SCANNING forever.
-    if ($script:SawForeignScan -and -not (Test-ScanRunning)) {
+    if ($script:SawForeignScan -and -not $script:ScanRunning) {
         $script:SawForeignScan = $false
         Add-Line $script:FurniLines "Scan finished."
+        $changed = $true
     }
-    $surface.Invalidate()
+
+    # Repaint only when there is something new to show. A window that
+    # redraws itself once a second for no reason is a window that feels
+    # slow to drag.
+    if ($changed) { $surface.Invalidate() }
 })
 
 $form.Add_Shown({
