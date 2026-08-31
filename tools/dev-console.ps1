@@ -429,6 +429,7 @@ $script:NamesStamp = $null
 $script:NamesProcess = $null
 $script:OmitQuery = ""
 $script:OmitMatches = @()
+$script:OmitScroll = 0
 
 function Refresh-FurniNames {
     $stamp = $null
@@ -844,6 +845,20 @@ function Draw-Button($g, [string]$id, [string]$text, [int]$x, [int]$y, [int]$w, 
    border. A list of a dozen bordered boxes would read as a form; the
    website's own lists (.console-contributor and friends) are plain lines
    too. #>
+<# Keeps a scroll position inside a list that may have changed under it.
+
+   Done at PAINT time, not where the wheel is read, because paint is the only
+   place that knows both how many rows fit and how long the list currently
+   is — and the list moves on its own: typing a letter narrows it, removing
+   an entry shortens it. A position left over from a longer list would
+   otherwise show an empty screen with nothing to explain why. #>
+function Limit-Scroll([int]$scroll, [int]$count, [int]$rows) {
+    $max = [Math]::Max(0, $count - $rows)
+    if ($scroll -gt $max) { return $max }
+    if ($scroll -lt 0) { return 0 }
+    return $scroll
+}
+
 function Draw-Row($g, [string]$id, [string]$text, $colour, [int]$x, [int]$y, [int]$w, [int]$rowH) {
     $rect = New-Object System.Drawing.Rectangle($x, $y, $w, $rowH)
     if ($script:Hot -eq $id) {
@@ -1015,12 +1030,7 @@ function Draw-PageMazes($g, [int]$x, [int]$y, [int]$w, [int]$h) {
         return
     }
 
-    # Clamped here rather than where the wheel is read: the list length
-    # changes as you type, and a scroll position left over from a longer list
-    # would show an empty screen with no way to tell why.
-    $maxScroll = [Math]::Max(0, $all.Count - $rows)
-    if ($script:MazeScroll -gt $maxScroll) { $script:MazeScroll = $maxScroll }
-    if ($script:MazeScroll -lt 0) { $script:MazeScroll = 0 }
+    $script:MazeScroll = Limit-Scroll $script:MazeScroll $all.Count $rows
 
     for ($i = 0; $i -lt [Math]::Min($rows, $all.Count - $script:MazeScroll); $i++) {
         $m = $all[$i + $script:MazeScroll]
@@ -1135,8 +1145,9 @@ function Draw-PageOmit($g, [int]$x, [int]$y, [int]$w, [int]$h) {
             Draw-Text $g "Nothing matches. Enter adds" $FontBody $ScreenDim $x $listY
             Draw-Text $g "it anyway (wildcards, too)." $FontBody $ScreenDim $x ($listY + $rowH)
         }
-        for ($i = 0; $i -lt [Math]::Min($rows, $all.Count); $i++) {
-            $name = $all[$i]
+        $script:OmitScroll = Limit-Scroll $script:OmitScroll $all.Count $rows
+        for ($i = 0; $i -lt [Math]::Min($rows, $all.Count - $script:OmitScroll); $i++) {
+            $name = $all[$i + $script:OmitScroll]
             $on = $false
             foreach ($e in $script:OmitNames) { if ($e -ieq $name) { $on = $true } }
             # Already-omitted matches are shown, not hidden: their absence
@@ -1144,10 +1155,20 @@ function Draw-PageOmit($g, [int]$x, [int]$y, [int]$w, [int]$h) {
             # off to type it again.
             $label = if ($on) { "* $name" } else { "  $name" }
             $colour = if ($on) { [System.Drawing.Color]::FromArgb(255, 130, 130, 130) } else { $Screen }
-            Draw-Row $g ("omit-add:" + $i) $label $colour $x ($listY + $i * $rowH) $w $rowH
+            # Row ids are positions into $all, so they must be positions in
+            # the WHOLE list, not in the visible window.
+            Draw-Row $g ("omit-add:" + ($i + $script:OmitScroll)) $label $colour $x ($listY + $i * $rowH) $w $rowH
         }
+        <# The bottom line is the range while there is more than one screenful
+           and the Enter hint otherwise. "Keep typing" used to be the whole
+           answer here, which was no answer at all: searching "poster" finds
+           sixty, and narrowing further is not the same thing as being able
+           to look at them. The wildcard hint is not lost by this — the case
+           that actually needs it is an empty result, which says so above. #>
         if ($all.Count -gt $rows) {
-            Draw-Text $g ("+" + ($all.Count - $rows) + " more - keep typing") $FontBody $ScreenDim $x $hintY
+            $from = $script:OmitScroll + 1
+            $to = [Math]::Min($all.Count, $script:OmitScroll + $rows)
+            Draw-Text $g "$from-$to of $($all.Count)  -  scroll" $FontBody $ScreenDim $x $hintY
         } else {
             Draw-Text $g "Enter adds what you typed" $FontBody $ScreenDim $x $hintY
         }
@@ -1159,11 +1180,14 @@ function Draw-PageOmit($g, [int]$x, [int]$y, [int]$w, [int]$h) {
             Draw-Text $g "Every scan records whatever" $FontBody $ScreenDim $x ($listY + $rowH)
             Draw-Text $g "it can find." $FontBody $ScreenDim $x ($listY + 2 * $rowH)
         }
-        for ($i = 0; $i -lt [Math]::Min($rows, $list.Count); $i++) {
-            Draw-Row $g ("omit-del:" + $i) ("- " + $list[$i]) $Screen $x ($listY + $i * $rowH) $w $rowH
+        $script:OmitScroll = Limit-Scroll $script:OmitScroll $list.Count $rows
+        for ($i = 0; $i -lt [Math]::Min($rows, $list.Count - $script:OmitScroll); $i++) {
+            Draw-Row $g ("omit-del:" + ($i + $script:OmitScroll)) ("- " + $list[$i + $script:OmitScroll]) $Screen $x ($listY + $i * $rowH) $w $rowH
         }
         if ($list.Count -gt $rows) {
-            Draw-Text $g ("+" + ($list.Count - $rows) + " more") $FontBody $ScreenDim $x $hintY
+            $from = $script:OmitScroll + 1
+            $to = [Math]::Min($list.Count, $script:OmitScroll + $rows)
+            Draw-Text $g "$from-$to of $($list.Count)  -  scroll" $FontBody $ScreenDim $x $hintY
         }
     }
 }
@@ -1711,12 +1735,13 @@ $surface.Add_MouseDown({
         "opt-omit" {
             $script:Page = "omit"
             $script:OmitQuery = ""
+            $script:OmitScroll = 0
             Update-OmitMatches
             # Only now, and only if it has never been fetched: nobody should
             # pay for a catalogue download to look at the SERVER tab.
             Start-NamesFetch
         }
-        "omit-back" { $script:Page = "options"; $script:OmitQuery = ""; Update-OmitMatches }
+        "omit-back" { $script:Page = "options"; $script:OmitQuery = ""; $script:OmitScroll = 0; Update-OmitMatches }
         "furni-mazes" {
             $script:Page = "mazes"
             $script:MazeQuery = ""
@@ -1755,19 +1780,25 @@ $surface.Add_MouseDown({
     $surface.Invalidate()
 })
 
-<# The wheel scrolls the maze list. Thirty-eight mazes do not fit in ten
-   rows, and filtering is the wrong tool for browsing — you can only filter
-   for a maze whose name you already know.
+<# The wheel scrolls both long lists — the mazes, and the omit page's search
+   results and omitted list alike.
+
+   Filtering is not a substitute for scrolling on either page. You can only
+   filter for something whose name you already know, and searching the
+   catalogue for "poster" finds sixty: "+50 more, keep typing" told you they
+   existed and gave you no way to look at them.
 
    Delta is in WHEEL_DELTA units of 120, not pixels; three rows per notch is
-   what the rest of Windows does. Clamping is left to the paint, which is the
-   only place that knows how many rows fit and how long the filtered list
-   currently is. #>
+   what the rest of Windows does. The upper bound is left to the paint — see
+   Limit-Scroll — since only it knows how many rows fit. #>
 $surface.Add_MouseWheel({
     param($sender, $e)
-    if ($script:Page -ne "mazes") { return }
-    $script:MazeScroll -= [int]($e.Delta / 120) * 3
-    if ($script:MazeScroll -lt 0) { $script:MazeScroll = 0 }
+    $step = [int]($e.Delta / 120) * 3
+    switch ($script:Page) {
+        "mazes" { $script:MazeScroll = [Math]::Max(0, $script:MazeScroll - $step) }
+        "omit"  { $script:OmitScroll = [Math]::Max(0, $script:OmitScroll - $step) }
+        default { return }
+    }
     $surface.Invalidate()
 })
 
@@ -1801,6 +1832,7 @@ $form.Add_KeyPress({
         }
     } elseif ($script:OmitQuery.Length -lt 40) {
         $script:OmitQuery += $ch
+        $script:OmitScroll = 0
         Update-OmitMatches
     }
     $e.Handled = $true
@@ -1842,9 +1874,14 @@ $form.Add_KeyDown({
         "Back" {
             if ($script:OmitQuery.Length -gt 0) {
                 $script:OmitQuery = $script:OmitQuery.Substring(0, $script:OmitQuery.Length - 1)
+                $script:OmitScroll = 0
                 Update-OmitMatches
             }
         }
+        # Same two keys as the maze selector, for people who would rather not
+        # reach for the wheel.
+        "Down" { $script:OmitScroll++ }
+        "Up"   { if ($script:OmitScroll -gt 0) { $script:OmitScroll-- } }
         <# Adds what was TYPED, not the first match. The two are usually the
            same thing, but the one case where they differ is the case this
            exists for: a wildcard is never in the catalogue, so "the top
@@ -1853,13 +1890,17 @@ $form.Add_KeyDown({
             if ($script:OmitQuery.Trim()) {
                 Add-Omit $script:OmitQuery
                 $script:OmitQuery = ""
+                # The box is now empty, so the page is about to show the
+                # omitted list instead of the matches — a scroll position
+                # from the search results means nothing to it.
+                $script:OmitScroll = 0
                 Update-OmitMatches
             }
         }
         "Escape" {
             # Clears the box first, and only leaves the page once it is
             # already empty — one key, and never a surprise exit mid-search.
-            if ($script:OmitQuery) { $script:OmitQuery = ""; Update-OmitMatches }
+            if ($script:OmitQuery) { $script:OmitQuery = ""; $script:OmitScroll = 0; Update-OmitMatches }
             else { $script:Page = "options" }
         }
         default { return }
