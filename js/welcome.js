@@ -38,6 +38,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const nameEl = document.getElementById("event-modal-name");
     const closeBtn = document.getElementById("event-modal-close");
     const thumbEl = document.getElementById("event-modal-thumb");
+    const frameEl = document.getElementById("event-modal-frame");
     const imgEl = document.getElementById("event-modal-img");
     const hostEl = document.getElementById("event-modal-host");
     const tagsEl = document.getElementById("event-modal-tags");
@@ -65,9 +66,11 @@ document.addEventListener("DOMContentLoaded", async () => {
        looks like the page failed to load it rather than like nobody has
        picked one — which is the actual state of affairs and worth saying. */
     function formatEventDuration(startIso, endIso) {
-        // Labelled, because this line stands alone here — see the same note
-        // on formatEventWhen in js/site.js.
-        if (!startIso) return "Date TBC";
+        // Bare "TBC", matching home.js's own formatEventDuration. It used to
+        // return "Date TBC" because this string was the whole meta line and
+        // had to say what it was about; it is now rendered behind a "Date:"
+        // label like the homepage's, where that read "Date: Date TBC".
+        if (!startIso) return "TBC";
         const start = formatUtcParts(startIso);
         if (!start) return startIso;
         const end = endIso ? formatUtcParts(endIso) : null;
@@ -127,7 +130,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         nameEl.textContent = event.title || "";
         hostEl.textContent = event.host ? `by ${event.host}` : "";
         tagsEl.innerHTML = (event.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("");
-        metaEl.textContent = formatEventDuration(event.date, event.endDate);
+        /* The same status / hotel / date line home.html's modal writes, in
+           the same order and markup. This was a bare date string before,
+           which was the visible half of this modal having drifted from the
+           one it is meant to mirror. EventStatus is the shared derivation
+           the header ticker and the admin form already use, so the badge
+           here cannot disagree with the one next to it on the page. */
+        const statusKey = (typeof EventStatus !== "undefined")
+            ? EventStatus.derive(event) : (event.status || "upcoming");
+        const statusLabel = (typeof EventStatus !== "undefined")
+            ? EventStatus.labelFor(event) : statusKey;
+        metaEl.innerHTML =
+            `<span class="status-badge status-${escapeHtml(statusKey)}">${escapeHtml(statusLabel)}</span>` +
+            `<span>Hotel: ${escapeHtml(event.hotel || "Unknown")}</span>` +
+            `<span>Date: ${escapeHtml(formatEventDuration(event.date, event.endDate))}</span>`;
         descEl.textContent = event.description || "";
 
         if (event.habboLink) {
@@ -138,9 +154,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const images = galleryImages(event);
+        // .has-gallery goes on the thumb either way — it is what picks the
+        // taller frame height for a multi-image event, and leaving it set
+        // from a previous open would size a single image against it.
+        thumbEl.classList.toggle("has-gallery", images.length > 1);
         if (images.length) {
-            thumbEl.style.display = "block";
-            thumbEl.classList.toggle("has-gallery", images.length > 1);
+            frameEl.style.display = "";
             showImage(images, 0);
             if (images.length > 1) {
                 stripEl.style.display = "flex";
@@ -153,7 +172,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 stripEl.innerHTML = "";
             }
         } else {
-            thumbEl.style.display = "none";
+            frameEl.style.display = "none";
+            imgEl.removeAttribute("src");
             stripEl.style.display = "none";
             stripEl.innerHTML = "";
         }

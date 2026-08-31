@@ -75,24 +75,45 @@
                 <h2 id="event-modal-name"></h2>
                 <button class="chrome-close" id="event-modal-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
             </div>
+            <!-- Structured exactly as home.html's own modal is, and for the
+                 same reason its CSS gives: .modal-thumb-full holds the image
+                 frame AND the body in one box, and .is-event is what sizes
+                 an event's image to fit rather than crop it. This markup had
+                 been left behind when home.html gained the frame — with no
+                 .modal-thumb-frame and no .is-event, the only rule left
+                 matching was ".modal-thumb .gallery-viewport img", which is
+                 object-fit: cover, so the banner was blown up to the full
+                 510px panel and had its top and bottom cut off. -->
             <div class="chrome-frame">
-                <div class="modal-thumb" id="event-modal-thumb" style="display:none;">
-                    <div class="gallery-viewport">
-                        <img class="modal-gallery-img" id="event-modal-img" alt="">
+                <div class="modal-thumb modal-thumb-full is-event" id="event-modal-thumb">
+                    <!-- Hidden on its own for an event with no image, rather
+                         than hiding the whole .modal-thumb — that now holds
+                         the body too, so hiding it would take the host, date
+                         and description down with the picture. -->
+                    <div class="modal-thumb-frame" id="event-modal-frame" style="display:none;">
+                        <div class="gallery-viewport">
+                            <img class="modal-gallery-img" id="event-modal-img" alt="">
+                        </div>
                     </div>
-                </div>
-                <div class="modal-body">
-                    <div class="modal-top-row">
-                        <p class="room-creator" id="event-modal-host"></p>
-                        <div class="room-tags" id="event-modal-tags"></div>
+                    <div class="modal-body">
+                        <div class="modal-top-row">
+                            <p class="room-creator" id="event-modal-host"></p>
+                            <div class="room-tags" id="event-modal-tags"></div>
+                        </div>
+                        <!-- js/welcome.js writes the status/hotel/date line into
+                             .modal-meta-items, not into the panel around it —
+                             the same split home.html uses, so rewriting the meta
+                             cannot wipe the description nested alongside it. -->
+                        <div class="modal-meta">
+                            <div class="modal-meta-items" id="event-modal-meta"></div>
+                        </div>
+                        <div class="room-desc-box">
+                            <p class="room-desc-full" id="event-modal-desc"></p>
+                        </div>
+                        <p class="modal-visit-link" id="event-modal-visit-wrap" style="display:none;">
+                            <a class="btn" id="event-modal-link" href="#" target="_blank" rel="noopener">Visit</a>
+                        </p>
                     </div>
-                    <div class="modal-meta" id="event-modal-meta"></div>
-                    <div class="room-desc-box">
-                        <p class="room-desc-full" id="event-modal-desc"></p>
-                    </div>
-                    <p class="modal-visit-link" id="event-modal-visit-wrap" style="display:none;">
-                        <a class="btn" id="event-modal-link" href="#" target="_blank" rel="noopener">Visit</a>
-                    </p>
                 </div>
                 <div class="gallery-strip" id="event-modal-strip" style="display:none;"></div>
             </div>
