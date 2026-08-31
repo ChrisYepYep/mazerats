@@ -18,20 +18,17 @@ const { isOwner, isAuthorized, UNAUTHORIZED, forbidden } = require("./_auth.js")
 const { scanRoom } = require("./_furni-match.js");
 const { imageUrl } = require("./_url.js");
 const { getCatalogue } = require("./furni-catalogue.js");
+const { spriteList } = require("./_furni-sprites.js");
 
 const SPRITE_CONCURRENCY = 12;
 
-/* Every state/rotation of every furni. All of them matter: a chair placed
-   facing away matches only its own rotation's sprite, and an early test that
-   used just the first sprite of each furni found nothing at all. */
+/* Every state/rotation of every furni, keyed for the cache by sprite URL
+   rather than catalogue position — see _furni-sprites.js for why that
+   distinction is the difference between a scan that names furni correctly
+   and one that does not. */
 async function loadSprites(catalogue) {
     const store = blobStore("furni-sprites");
-    const wanted = [];
-    catalogue.items.forEach((item, itemIndex) => {
-        (item.largeImages || []).forEach((state, si) => state.forEach((url, ri) => {
-            if (url) wanted.push({ key: itemIndex, url, blobKey: `${itemIndex}_${si}_${ri}.png` });
-        }));
-    });
+    const wanted = spriteList(catalogue);
 
     const sprites = [];
     for (let i = 0; i < wanted.length; i += SPRITE_CONCURRENCY) {

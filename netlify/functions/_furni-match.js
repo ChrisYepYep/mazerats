@@ -30,6 +30,35 @@ const { decodePng } = require("./_png.js");
 // Coverage is a poor test on its own: a maze room stacks furni so densely
 // that a real hit often shows only 10-35% of its sprite.
 const MIN_MATCHED = 150;
+/* …but it is a necessary one ALONGSIDE the absolute count, which on its own
+   scales with sprite SIZE rather than with confidence. A large sprite only
+   has to agree on 150 pixels somewhere to qualify, and a big dark object
+   finds that much agreement against a big dark wall by chance; a small
+   sprite showing the same 150 pixels is nearly its whole self and is almost
+   certainly really there. So: "enough pixels to be sure" AND "enough of
+   this particular furni to be sure it is this one".
+
+   Set by looking, not by taste. Two rooms from different mazes were
+   rescanned with no floor at all, and every candidate was rendered as its
+   sprite beside the room's actual pixels at the position claimed
+   (tools/furni-verify.js draws exactly that sheet). Judged by eye:
+
+     >= 25%   10 of 10 correct — solid
+     15-25%   mixed, roughly half correct
+     10-15%   nearly all wrong: a Tubmaster on a gold arch, a Dungeon Floor
+              on black, a Green Office Plant on a bed of flowers
+     <  10%   noise without exception — a Double Bed on a potted tree, a
+              Single Bed on a telephone box, a Fireplace on a vending
+              machine, in a maze room containing none of the three
+
+   The cliff sits at 15%, so that is where the floor sits. It is deliberately
+   a precision trade: it drops about half of what the old gate reported,
+   including some true hits at 10-14% (a Fox Poster that really was there),
+   because a wrong furni on a room costs more than a missing one — a missing
+   one can be added by hand in the admin, and a wrong one has to be noticed
+   first. Raise it toward 0.20 for a stricter archive; the false-positive
+   rate falls off a cliff below 0.15 in the other direction. */
+const MIN_COVERAGE = 0.15;
 // Distinct colours those matching pixels must span. Without this, any large
 // dark sprite "matches" thousands of pixels of the flat black surround
 // around a screenshot — that one check took a test scan from 424 bogus
@@ -88,8 +117,14 @@ function isScannable(room) {
 }
 
 /* sprites: [{ key, buffer }] where key identifies the furni it belongs to.
-   Returns the best hit per key, strongest first. */
-function scanRoom(roomBuffer, sprites) {
+   Returns the best hit per key, strongest first.
+
+   opts lets the thresholds be swept while tuning (tools/furni-tune.js)
+   without editing this file; nothing in the site passes them. */
+function scanRoom(roomBuffer, sprites, opts = {}) {
+    const minMatched = opts.minMatched != null ? opts.minMatched : MIN_MATCHED;
+    const minCoverage = opts.minCoverage != null ? opts.minCoverage : MIN_COVERAGE;
+    const minColours = opts.minColours != null ? opts.minColours : MIN_COLOURS;
     const room = decodePng(roomBuffer);
     const scannable = isScannable(room);
     if (!scannable.ok) {
@@ -113,7 +148,7 @@ function scanRoom(roomBuffer, sprites) {
                 if (SD[o + 3] > 250) solid.push([x, y, SD[o], SD[o + 1], SD[o + 2]]);
             }
         }
-        if (solid.length < MIN_MATCHED) continue;
+        if (solid.length < minMatched) continue;
 
         // One representative pixel per colour, ordered by how rare that
         // colour is in this room — the rarest gives the fewest positions to
@@ -154,7 +189,7 @@ function scanRoom(roomBuffer, sprites) {
                         cols.add((s[2] << 16) | (s[3] << 8) | s[4]);
                     }
                 }
-                if (cols.size < MIN_COLOURS) continue;
+                if (cols.size < minColours) continue;
                 if (ok > bestMatched) {
                     bestMatched = ok; bestAt = [ox, oy]; bestColours = cols.size;
                     bestSprite = sprite.url || null;
@@ -162,7 +197,8 @@ function scanRoom(roomBuffer, sprites) {
             }
         }
 
-        if (bestMatched < MIN_MATCHED) continue;
+        if (bestMatched < minMatched) continue;
+        if (bestMatched / solid.length < minCoverage) continue;
         const prev = best.get(sprite.key);
         if (!prev || bestMatched > prev.matched) {
             best.set(sprite.key, {
@@ -205,4 +241,4 @@ function dedupeByPosition(hits, radius = 6) {
     return kept;
 }
 
-module.exports = { scanRoom, isScannable, MIN_MATCHED, MIN_COLOURS };
+module.exports = { scanRoom, isScannable, MIN_MATCHED, MIN_COVERAGE, MIN_COLOURS };

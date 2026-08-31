@@ -39,9 +39,22 @@ for (const line of fs.readFileSync(path.join(__dirname, "..", ".env"), "utf8").s
 const { getCatalogue } = require("../netlify/functions/furni-catalogue.js");
 const { blobStore } = require("../netlify/functions/_blobs.js");
 const { getDb } = require("../netlify/functions/_db.js");
+const { spriteList, isLegacySpriteKey } = require("../netlify/functions/_furni-sprites.js");
 
 const CACHE = path.join(__dirname, ".cache", "sprites");
 const SITE = process.env.SCAN_SITE_URL || "https://mazerats.net";
+
+// How politely the sprite library is refilled. See ensureSpriteCache.
+const SPRITE_BATCH = 4;
+const SPRITE_PAUSE_MS = 250;
+/* A scan is only as good as the library it compares against: a missing
+   sprite is not a wrong answer, it is a furni that silently cannot be
+   found. Running the whole archive against a part-filled cache would
+   overwrite good results with worse ones and leave no trace of why, so
+   below this share of the catalogue the run stops and says so. */
+const MIN_SPRITE_COVERAGE = 0.95;
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const argv = process.argv.slice(2);
 const flag = name => argv.includes("--" + name);
@@ -70,33 +83,54 @@ const clock = ms => {
 
 /* Mirrors the sprite library to disk. The Netlify scans already filled the
    Blobs store, so the first run pulls from there and every run after reads
-   from the local copy and touches the network for nothing. */
+   from the local copy and touches the network for nothing.
+
+   Cache entries are named after the sprite's URL, not its position in the
+   catalogue — _furni-sprites.js explains at length why that matters, and
+   what the index-named scheme it replaced did to the archive's furni. */
 async function ensureSpriteCache(catalogue) {
     fs.mkdirSync(CACHE, { recursive: true });
-    const wanted = [];
-    catalogue.items.forEach((item, itemIndex) => {
-        (item.largeImages || []).forEach((state, si) => state.forEach((url, ri) => {
-            if (url) wanted.push({ key: itemIndex, url, blobKey: `${itemIndex}_${si}_${ri}.png` });
-        }));
-    });
+    const wanted = spriteList(catalogue);
+
+    // Index-named leftovers from before the fix hold the wrong artwork under
+    // names nothing can map back. Cleared once, so a stale 16MB of it cannot
+    // be picked up by anything later.
+    const stale = fs.readdirSync(CACHE).filter(isLegacySpriteKey);
+    if (stale.length) {
+        console.log(`  discarding ${stale.length} sprites cached under the old index-based names`);
+        for (const f of stale) fs.unlinkSync(path.join(CACHE, f));
+    }
 
     const missing = wanted.filter(s => !fs.existsSync(path.join(CACHE, s.blobKey)));
     if (missing.length) {
         console.log(`  fetching ${missing.length} sprites into ${path.relative(process.cwd(), CACHE)} …`);
         const store = blobStore("furni-sprites");
-        for (let i = 0; i < missing.length; i += 16) {
-            await Promise.all(missing.slice(i, i + 16).map(async s => {
+        let got = 0, lost = 0;
+        /* Deliberately unhurried. Refilling the whole library at sixteen
+           parallel requests got this machine connection-refused by
+           FurniIndex partway through the alphabet — every request after
+           "g" timed out, and the host stayed unreachable for a while
+           after. They are doing us a favour by hosting this at all, so:
+           a few at a time, a breath between batches, and a backoff when
+           one fails rather than an immediate retry. It is a couple of
+           minutes' work, once, and only when the catalogue changes. */
+        for (let i = 0; i < missing.length; i += SPRITE_BATCH) {
+            const batch = missing.slice(i, i + SPRITE_BATCH);
+            await Promise.all(batch.map(async s => {
                 let buf = await store.get(s.blobKey, { type: "arrayBuffer" }).catch(() => null);
-                if (!buf) {
-                    const res = await fetch(s.url).catch(() => null);
-                    if (!res || !res.ok) return;
-                    buf = await res.arrayBuffer();
+                for (let attempt = 0; !buf && attempt < 4; attempt++) {
+                    if (attempt) await sleep(1000 * Math.pow(3, attempt));
+                    const res = await fetch(s.url, { signal: AbortSignal.timeout(20000) }).catch(() => null);
+                    if (res && res.ok) buf = await res.arrayBuffer().catch(() => null);
                 }
+                if (!buf) { lost++; return; }
                 fs.writeFileSync(path.join(CACHE, s.blobKey), Buffer.from(buf));
+                got++;
             }));
-            process.stdout.write(`\r  ${Math.min(i + 16, missing.length)}/${missing.length}`);
+            process.stdout.write(`\r  ${Math.min(i + SPRITE_BATCH, missing.length)}/${missing.length}  (${lost} unavailable)   `);
+            await sleep(SPRITE_PAUSE_MS);
         }
-        process.stdout.write("\r");
+        console.log(`\r  fetched ${got}, ${lost} unavailable                        `);
     }
     return wanted.filter(s => fs.existsSync(path.join(CACHE, s.blobKey)));
 }
@@ -113,8 +147,19 @@ function imagesOf(doc) {
     console.log("Local furni scan\n");
 
     const catalogue = await getCatalogue();
+    const all = spriteList(catalogue);
     const wanted = await ensureSpriteCache(catalogue);
-    console.log(`catalogue ${catalogue.items.length} furni · ${wanted.length} sprites cached`);
+    const share = all.length ? wanted.length / all.length : 0;
+    console.log(`catalogue ${catalogue.items.length} furni · ${wanted.length}/${all.length} sprites cached (${(share * 100).toFixed(1)}%)`);
+    if (share < MIN_SPRITE_COVERAGE) {
+        console.error(
+            `\nStopping: only ${(share * 100).toFixed(1)}% of the sprite library is cached, and a scan ` +
+            `against a part-filled library records fewer furni without recording why.\n` +
+            `FurniIndex rate-limits bursts, so this usually means waiting a while and running again — ` +
+            `the cache is resumable and keeps what it already has.`
+        );
+        process.exit(1);
+    }
 
     const db = await getDb();
     const query = MAZE ? { name: new RegExp(MAZE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") } : {};
@@ -183,12 +228,22 @@ function imagesOf(doc) {
             w.on("message", msg => {
                 if (msg.ready) { feed(w); return; }
                 const job = w._job;
+                /* Anything an admin added by hand survives this run, exactly
+                   as it does in the Netlify scan (furni-scan-background.js).
+                   A scan replaces its own findings wholesale — that is the
+                   point of rescanning — but hand-added entries are the ones
+                   it could never find on its own, so wiping them would make
+                   a rescan destructive rather than merely repetitive. This
+                   tool used to drop them; a full run would have quietly
+                   destroyed every correction ever made. */
+                const kept = ((furniByMaze.get(job.id)[job.image] || {}).items || [])
+                    .filter(f => f && f.manual);
                 if (msg.error) {
-                    furniByMaze.get(job.id)[job.image] = { error: msg.error, items: [] };
+                    furniByMaze.get(job.id)[job.image] = { error: msg.error, items: kept };
                     failed++;
                 } else if (msg.result.skipped) {
                     furniByMaze.get(job.id)[job.image] = {
-                        skipped: msg.result.skipped, roomColours: msg.result.roomColours, items: []
+                        skipped: msg.result.skipped, roomColours: msg.result.roomColours, items: kept
                     };
                 } else {
                     const items = msg.result.hits.map(h => {
@@ -203,7 +258,7 @@ function imagesOf(doc) {
                     furniByMaze.get(job.id)[job.image] = {
                         scannedAt: new Date().toISOString(),
                         roomColours: msg.result.roomColours,
-                        items
+                        items: kept.concat(items)
                     };
                     found += items.length;
                 }
