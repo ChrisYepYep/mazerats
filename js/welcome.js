@@ -48,9 +48,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     const visitWrap = document.getElementById("event-modal-visit-wrap");
     const visitLink = document.getElementById("event-modal-link");
     const stripEl = document.getElementById("event-modal-strip");
+    const linksWrap = document.getElementById("event-modal-links-wrap");
+    const linksEl = document.getElementById("event-modal-links");
 
     function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    // Escapes first, then links what's left — same order and same trailing-
+    // punctuation handling as home.js's linkifyText, so an event's Links &
+    // References reads identically on both pages.
+    function linkifyText(str) {
+        return escapeHtml(str).replace(/((?:https?:\/\/|www\.)[^\s<]+)/gi, match => {
+            let core = match;
+            let trailing = "";
+            while (core.length) {
+                const last = core[core.length - 1];
+                if (".,!?;:".includes(last)) {
+                    trailing = last + trailing;
+                    core = core.slice(0, -1);
+                    continue;
+                }
+                if (last === ")" && (core.match(/\)/g) || []).length > (core.match(/\(/g) || []).length) {
+                    trailing = last + trailing;
+                    core = core.slice(0, -1);
+                    continue;
+                }
+                break;
+            }
+            if (!core) return match;
+            const href = /^https?:\/\//i.test(core) ? core : `https://${core}`;
+            return `<a href="${href}" target="_blank" rel="noopener" class="ref-link">${core}</a>${trailing}`;
+        });
     }
 
     /* ---- the host's Habbo card ----
@@ -249,6 +278,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             `<span>Hotel: ${escapeHtml(event.hotel || "Unknown")}</span>` +
             `<span>Date: ${escapeHtml(formatEventDuration(event.date, event.endDate))}</span>`;
         descEl.textContent = event.description || "";
+        // Same Links & References block home.html shows for an event.
+        if (event.linksReferences) {
+            linksEl.innerHTML = linkifyText(event.linksReferences);
+            linksWrap.style.display = "block";
+        } else {
+            linksEl.innerHTML = "";
+            linksWrap.style.display = "none";
+        }
 
         if (event.habboLink) {
             visitLink.href = event.habboLink;

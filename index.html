@@ -107,22 +107,38 @@
                             <div class="builder-list" id="event-modal-builder" hidden></div>
                             <div class="room-tags" id="event-modal-tags"></div>
                         </div>
-                        <!-- js/welcome.js writes the status/hotel/date line into
-                             .modal-meta-items, not into the panel around it —
-                             the same split home.html uses, so rewriting the meta
-                             cannot wipe the description nested alongside it. -->
-                        <div class="modal-meta">
-                            <div class="modal-meta-items" id="event-modal-meta"></div>
-                        </div>
-                        <div class="room-desc-box">
-                            <p class="room-desc-full" id="event-modal-desc"></p>
-                        </div>
                         <p class="modal-visit-link" id="event-modal-visit-wrap" style="display:none;">
                             <a class="btn" id="event-modal-link" href="#" target="_blank" rel="noopener">Visit</a>
                         </p>
+                        <!-- ONE panel running to the modal's own edges: meta items on
+                             top, description directly below, thumbnail strip inside
+                             it — exactly home.html's nesting, and it has to be this
+                             nesting. .modal-meta carries margin-bottom: -24px so it
+                             bleeds to the bottom edge of .modal-body, which only
+                             works while it is the last thing in there. With the
+                             description following it as a sibling instead, that
+                             negative margin hauled the description up over the meta
+                             band and the two overlapped.
+
+                             #event-modal-meta is the inner .modal-meta-items, not the
+                             panel around it, so rewriting the meta line each time an
+                             event opens cannot wipe the description nested alongside
+                             it. -->
+                        <div class="modal-meta">
+                            <div class="modal-meta-items" id="event-modal-meta"></div>
+                            <div class="room-desc-panel">
+                                <div class="room-desc-box">
+                                    <p class="room-desc-full" id="event-modal-desc"></p>
+                                    <div class="room-links-refs" id="event-modal-links-wrap" style="display:none;">
+                                        <span class="room-links-refs-label">Links &amp; References</span>
+                                        <p class="room-links-refs-text" id="event-modal-links"></p>
+                                    </div>
+                                </div>
+                                <div class="gallery-strip" id="event-modal-strip" style="display:none;"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div class="gallery-strip" id="event-modal-strip" style="display:none;"></div>
             </div>
         </div>
     </div>
