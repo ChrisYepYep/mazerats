@@ -315,10 +315,30 @@ document.addEventListener("DOMContentLoaded", () => {
     // fade in once actually loaded, instead of popping in abruptly the
     // instant each one's network request finishes — img.complete covers
     // the case where it's already cached and "load" will never fire.
+    /* A thumbnail that never arrives is taken out rather than left sitting
+       at opacity 0 — which is also precisely what it looks like while it is
+       still loading, so a failed one read as perpetually about to appear.
+       Removed, the row settles into the same plain dark square a maze with
+       no image set already shows. Same treatment, for the same reason, that
+       a builder avatar gets when habbo.com's imaging service fails. */
+    function dropThumb(img) {
+        const crop = img.closest(".row-thumb-crop");
+        (crop || img).remove();
+    }
+
     function wireThumbFadeIn(container) {
         container.querySelectorAll(".row-thumb-img").forEach(img => {
-            if (img.complete) img.classList.add("is-loaded");
-            else img.addEventListener("load", () => img.classList.add("is-loaded"), { once: true });
+            /* complete is true for a FAILED image as well as a cached one,
+               so it cannot stand alone: a 404 already in the browser cache
+               fires no "error" event here and would have been revealed as a
+               broken-image icon. naturalWidth is what tells the two apart. */
+            if (img.complete) {
+                if (img.naturalWidth > 0) img.classList.add("is-loaded");
+                else dropThumb(img);
+                return;
+            }
+            img.addEventListener("load", () => img.classList.add("is-loaded"), { once: true });
+            img.addEventListener("error", () => dropThumb(img), { once: true });
         });
     }
 
@@ -1662,8 +1682,20 @@ document.addEventListener("DOMContentLoaded", () => {
        strip, and a missed pointerleave would otherwise leave the carousel
        paused for good. Touch has no hover, but a tap opens a card, and an
        open card counts. */
+    /* Is the visitor reading the furni row right now? The carousel checks
+       this before every advance, so that it never swaps the room out from
+       under someone looking at its furni.
+
+       The is-empty test is load-bearing. The strip keeps its space when a
+       room has no furni — that is what stopped the modal jumping between
+       scanned and unscanned rooms — so a bare ":hover" now also matches a
+       50px band containing nothing but the "no furni recorded" note.
+       Resting the pointer there paused the gallery indefinitely, with
+       nothing on screen to suggest why or how to resume it. Only a row with
+       icons in it can be under a deliberate read. */
     function furniInUse() {
-        return openFurniCards.length > 0 || furniStrip.matches(":hover");
+        if (openFurniCards.length > 0) return true;
+        return !furniStrip.classList.contains("is-empty") && furniStrip.matches(":hover");
     }
 
     let transientFurniCard = null;

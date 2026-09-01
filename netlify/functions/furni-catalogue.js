@@ -112,6 +112,9 @@ exports.handler = async (event) => {
     try {
         const catalogue = await getCatalogue({ force: params.refresh === "1" });
         const q = (params.q || "").trim().toLowerCase();
+        // Number(undefined) is NaN, and every comparison against NaN is
+        // false — so an absent limit falls through to "no limit" on its own.
+        const limit = Number(params.limit);
         let items = catalogue.items;
         if (q) {
             /* Name OR className, because className is where the THEME lives.
@@ -150,7 +153,12 @@ exports.handler = async (event) => {
             total: catalogue.total,
             fetchedAt: catalogue.fetchedAt,
             count: items.length,
-            items: params.limit ? items.slice(0, Number(params.limit)) : items
+            /* A limit that is not a positive number is ignored, not obeyed.
+               Number("abc") is NaN and slice(0, NaN) returns NOTHING, so a
+               malformed limit used to answer "no such furni" for a query
+               that matched plenty — the one wrong answer this endpoint can
+               give that looks like a correct one. */
+            items: (limit > 0) ? items.slice(0, limit) : items
         });
     } catch (err) {
         return json(502, { error: err.message });
