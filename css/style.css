@@ -3278,21 +3278,29 @@ body[data-page="home"] .hero { padding-top: 18px; }
     min-height: 50px;
 }
 
-/* Centred rather than right-aligned like the icon row: with nothing on the
-   left to balance against, a line of text hard against the right edge reads
-   as a stray label rather than as the row's own content. */
+/* Right-aligned, so it lands where the icons themselves would have — the
+   row is right-aligned when it has content, and a placeholder that sat
+   somewhere else would move the eye to a different place depending on
+   whether a room had been scanned. */
 .furni-strip.is-empty {
-    justify-content: center;
+    justify-content: flex-end;
 }
 
 .furni-strip-empty {
     margin: 0;
-    font-size: 0.72rem;
-    letter-spacing: 0.2px;
+    /* The console's own type, at .console-blurb's size and weight. */
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    /* Both zeroed for the pixel font: letter-spacing pushes Volter off the
+       grid it was drawn on, and there is no italic face — the browser would
+       synthesise one by slanting the bitmap, which is what fringes and
+       smears a pixel typeface. */
+    letter-spacing: 0;
+    font-style: normal;
     /* Deliberately quiet — this is the absence of information, and it
        should not compete with the room image directly above it. */
     color: rgba(214, 198, 172, 0.45);
-    font-style: italic;
 }
 
 /* Positioning context for the pill, and the thing that gets right-aligned
