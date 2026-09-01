@@ -387,6 +387,20 @@
                                 <div class="gallery-viewport" id="gallery-viewport">
                                     <img class="modal-gallery-img" id="modal-gallery-img" alt="" style="display:none;">
                                     <span class="gallery-missing-pill" id="gallery-missing-pill" style="display:none;">Awaiting Room Image</span>
+                                    <!-- An older version of this same room, slid up over the
+                                         current image from the viewport's own bottom edge.
+                                         It lives INSIDE the viewport on purpose: what
+                                         changed between versions is the room, so the two
+                                         want to be compared in the same frame at the same
+                                         size. This used to be a whole separate view that
+                                         reel-swapped the modal's entire contents, which
+                                         swept the description, tags and furni row offscreen
+                                         to show a picture of the same room. -->
+                                    <img class="old-version-img" id="old-version-img" alt="" style="display:none;">
+                                    <!-- Bottom-left, and only when there is more than one
+                                         older version to choose between: with a single one
+                                         the pill above is already the whole control. -->
+                                    <div class="old-versions-rail" id="old-versions-rail" hidden></div>
                                 </div>
                                 <button class="gallery-nav gallery-prev" id="gallery-prev" aria-label="Previous room" style="display:none;">&#10094;</button>
                                 <button class="gallery-nav gallery-next" id="gallery-next" aria-label="Next room" style="display:none;">&#10095;</button>
@@ -438,20 +452,6 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="modal-oldversions-view" id="modal-oldversions-view">
-                        <button type="button" class="old-versions-back-tab" id="old-versions-back-pill">
-                            <span class="old-versions-back-arrow" aria-hidden="true">&#9650;</span> Back
-                        </button>
-                        <div class="modal-thumb old-versions-thumb" id="old-versions-thumb">
-                            <div class="gallery-viewport">
-                                <img class="modal-gallery-img" id="old-versions-img" alt="">
-                            </div>
-                            <button class="gallery-nav gallery-prev" id="old-versions-prev" aria-label="Previous version">&#10094;</button>
-                            <button class="gallery-nav gallery-next" id="old-versions-next" aria-label="Next version">&#10095;</button>
-                            <span class="gallery-counter" id="old-versions-counter"></span>
-                        </div>
-                        <div class="gallery-strip" id="old-versions-strip"></div>
                     </div>
                 </div>
             </div>

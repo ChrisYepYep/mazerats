@@ -3270,6 +3270,29 @@ body[data-page="home"] .hero { padding-top: 18px; }
        edge, but it is pointer-events:none and overlaps rather than
        displacing, so it needs no padding reserved for it. */
     padding: 8px 0;
+    /* 34px of icon plus the padding above and below. Reserved whether or
+       not there are icons, so a room with no furni does not pull the whole
+       body up by the height of this row (see renderFurniStrip) — paging
+       through a gallery where some images are scanned and some are not
+       otherwise made the modal twitch on every advance. */
+    min-height: 50px;
+}
+
+/* Centred rather than right-aligned like the icon row: with nothing on the
+   left to balance against, a line of text hard against the right edge reads
+   as a stray label rather than as the row's own content. */
+.furni-strip.is-empty {
+    justify-content: center;
+}
+
+.furni-strip-empty {
+    margin: 0;
+    font-size: 0.72rem;
+    letter-spacing: 0.2px;
+    /* Deliberately quiet — this is the absence of information, and it
+       should not compete with the room image directly above it. */
+    color: rgba(214, 198, 172, 0.45);
+    font-style: italic;
 }
 
 /* Positioning context for the pill, and the thing that gets right-aligned
@@ -3927,119 +3950,114 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: #fff8ec;
 }
 
-/* Clips the primary view (image/body/strip) and the older-versions view
-   as they slide past each other — see toggleOldVersions in home.js, which
-   freezes this to its current pixel height before animating so opening/
-   closing older versions never changes the modal card's own size, only
-   swaps what's showing inside this fixed window. */
-.modal-viewport {
-    position: relative;
-    overflow: hidden;
+/* Filled in while an older version is up, so the control that opened it
+   reads as the way back out rather than as a second way in. */
+.old-versions-pill.is-showing {
+    background: var(--amber);
+    color: #2a1e0f;
 }
 
-/* Absolutely positioned so it can sit exactly on top of .modal-primary-view
-   during the slide — everything else about its layout (image area given
-   the remaining space, thumbnail strip pinned to its natural height) comes
-   from the flex column below. Hidden by default; home.js toggles display
-   and drives the transform. */
-.modal-oldversions-view {
+/* ---- older versions, shown inside the room's own frame ----
+
+   The older image sits directly over the current one and slides up from
+   the viewport's bottom edge. That is the whole interaction: what changed
+   between two versions is the room, so the two want to be compared in the
+   same frame, at the same size, with nothing around them moving.
+
+   object-fit and inset match .modal-gallery-img exactly — a version that
+   sat even slightly differently from the image it replaces would read as a
+   different photograph rather than the same room on a different day. */
+.old-version-img {
     position: absolute;
     inset: 0;
-    display: none;
-    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    /* Opaque, unlike the image below it: this slides OVER the current
+       version, and the two would otherwise be visible through each other
+       for the length of the transition. */
+    background: #1b160e;
+    /* Above the room image, below .gallery-viewport::after's lit edge (5)
+       and below the rail (6), which has to stay clickable while this is up. */
+    z-index: 2;
+    transform: translateY(100%);
+    will-change: transform;
 }
 
-/* Flush against the top of the frame, spanning its full width (flex's
-   default align-items:stretch handles that against .modal-oldversions-view's
-   column) with curved corners only on the bottom two. No drop shadow —
-   .old-versions-thumb directly below rounds its own top corners to match
-   (see .modal-thumb.old-versions-thumb), so the two curves nest into each
-   other and the frame's own colour shows through the sliver between them,
-   rather than a shadow trying to sell the separation. */
-.old-versions-back-tab {
+/* Bottom-left of the viewport, opposite the counter's own corner. Only
+   built when there is more than one older version to choose between (see
+   renderOldVersionsRail) — with a single one the pill is already the whole
+   control, and a one-item picker is just a second button doing its job. */
+.old-versions-rail {
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    max-width: calc(100% - 12px);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.old-versions-rail::-webkit-scrollbar { display: none; }
+
+/* Deliberately .furni-icon-btn's own geometry and treatment — 34px, same
+   1px border, 5px radius, inset highlight and hover lift. The furni icons
+   sit directly under this frame, so two rows of small square controls in
+   one modal that were nearly-but-not-quite alike would read as an
+   inconsistency rather than as a family. */
+.old-version-thumb {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 5px;
-    flex-shrink: 0;
-    padding: 6px 0;
-    background: rgba(0, 0, 0, 0.72);
-    border: none;
-    border-radius: 0 0 8px 8px;
-    color: var(--amber-bright);
-    font-family: inherit;
-    font-size: 0.62rem;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    font-weight: 700;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--chrome-border);
+    border-radius: 5px;
+    background: var(--chrome-row);
+    box-shadow: inset 0 1px 0 rgba(255, 248, 236, 0.12), 0 1px 3px rgba(0, 0, 0, 0.5);
     cursor: var(--cursor-pointer);
-    /* Bounce animates from the top edge, not the element's centre — that
-       edge is flush with the frame and never moves, so the hover bounce
-       (see backTabBounce) only ever stretches/squashes the tab in place
-       rather than sliding the whole box and exposing whatever's behind its
-       normally-flush top edge for a frame or two. */
-    transform-origin: top center;
+    transition: transform 0.12s, border-color 0.12s;
 }
 
-.old-versions-back-tab:hover,
-.old-versions-back-tab:focus-visible {
-    color: #fff8ec;
-    animation: backTabBounce 0.45s ease;
+/* Cropped to fill, unlike a furni icon: these are room screenshots, and
+   letterboxing a 16:9 photo into a 34px square leaves a stripe of artwork
+   too thin to recognise. A centre crop of a room still reads as that room. */
+.old-version-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
-@keyframes backTabBounce {
-    0% { transform: scaleY(1); }
-    30% { transform: scaleY(1.18); }
-    55% { transform: scaleY(0.94); }
-    75% { transform: scaleY(1.05); }
-    100% { transform: scaleY(1); }
+.old-version-thumb:hover,
+.old-version-thumb:focus-visible {
+    transform: translateY(-2px);
+    border-color: var(--amber);
+    outline: none;
 }
 
-.old-versions-back-arrow {
-    font-size: 0.68rem;
-    line-height: 1;
+/* The one currently up. Brighter than hover and it stays put — a lifted
+   active thumb would be indistinguishable from the one under the cursor. */
+.old-version-thumb.active {
+    border-color: var(--amber-bright);
+    box-shadow: inset 0 1px 0 rgba(255, 248, 236, 0.12), 0 0 0 1px var(--amber);
 }
 
-/* Same visual treatment as .modal-thumb (background, padding, inset
-   shadow) but sized to fill whatever's left of the frozen .modal-viewport
-   height after the thumbnail strip below it, rather than a fixed 220/340px
-   — the two-class selector's specificity is what wins over .modal-thumb's
-   own height rule here, regardless of source order. Square top corners on
-   purpose — .old-versions-back-tab's drop shadow (not corner-matching) is
-   what makes the seam between the two read as natural. */
-.modal-thumb.old-versions-thumb {
-    height: auto;
-    /* Capped to the same landscape height .modal-thumb.has-gallery uses —
-       flex:1 alone stretches this to fill whatever's left of the frozen
-       .modal-viewport height (image + description + tags + button, often
-       tall), which left the image nearly square/portrait instead of a
-       proper rectangle like every other room image on the site. */
-    max-height: 340px;
-    flex: 1 1 auto;
-    min-height: 0;
-    /* Matches .old-versions-back-tab's own bottom radius directly above it
-       so the two curves nest into one continuous shape at the seam instead
-       of this thumb's square top corners sitting flush behind the tab's
-       rounded ones (which just looked like leftover background filling the
-       "cut" corner rather than real negative space). */
-    border-radius: 8px 8px 0 0;
-}
-
-/* .modal-thumb::after's shadow has a top *and* left component, faking
-   .chrome-frame's real top-left corner shadow — but this thumb doesn't sit
-   in that corner any more (the tab above it does), so the top component
-   drew a stray shadow at the seam with the tab instead. This thumb *does*
-   still sit flush against the frame's real left edge though, so only that
-   component carries over here — still via the ::after overlay (not a
-   plain box-shadow on the element) so old-versions-prev, sitting right in
-   the middle of this edge, doesn't interrupt it the same way it would
-   .modal-thumb's own shadow without that trick. */
-.modal-thumb.old-versions-thumb::after {
-    box-shadow: inset 6px 0 8px -4px rgba(0, 0, 0, 0.65);
-}
-
-.modal-oldversions-view .gallery-strip {
-    flex-shrink: 0;
+/* Wraps the modal's scrolling contents. It used to clip a second, sibling
+   "older versions" view sliding past this one — that view is gone (older
+   versions now slide inside .gallery-viewport itself, see .old-version-img
+   below), but the clip is still what keeps a long description from
+   escaping the frame's rounded corner. */
+.modal-viewport {
+    position: relative;
+    overflow: hidden;
 }
 
 /* Rounded at the top to echo the frames it sits under; the bottom corners

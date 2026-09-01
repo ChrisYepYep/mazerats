@@ -68,14 +68,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const modalViewport = document.getElementById("modal-viewport");
     const modalPrimaryView = document.getElementById("modal-primary-view");
-    const modalOldVersionsView = document.getElementById("modal-oldversions-view");
     const oldVersionsPill = document.getElementById("old-versions-pill");
-    const oldVersionsBackPill = document.getElementById("old-versions-back-pill");
-    const oldVersionsImg = document.getElementById("old-versions-img");
-    const oldVersionsPrev = document.getElementById("old-versions-prev");
-    const oldVersionsNext = document.getElementById("old-versions-next");
-    const oldVersionsCounter = document.getElementById("old-versions-counter");
-    const oldVersionsStrip = document.getElementById("old-versions-strip");
+    const oldVersionImg = document.getElementById("old-version-img");
+    const oldVersionsRail = document.getElementById("old-versions-rail");
 
     const lightboxOverlay = document.getElementById("image-lightbox");
     const lightboxImg = document.getElementById("lightbox-img");
@@ -111,8 +106,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // focus silently resetting to the top of the page.
     let modalTriggerEl = null;
     let oldVersionsGallery = null;
-    let oldVersionsIndex = 0;
-    let oldVersionsOpen = false;
+    // Which older version is showing, or -1 for "the current room image".
+    // One number rather than an index plus an open flag: the two could
+    // disagree, and this cannot. Declared up here with the rest of the
+    // modal's state because restartAutoAdvance reads it, and that runs long
+    // before the older-versions block further down.
+    let oldVersionShown = -1;
     let ROOMS = [];
     let EVENTS = [];
     let dataLoaded = false;
@@ -1008,13 +1007,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Old-version images belong to whichever room is on screen, not the
         // maze as a whole — re-derived every time the active image changes.
-        // If the panel was open for the room we're navigating away from, it
-        // closes rather than keep showing older versions of a room that's
-        // no longer visible above it.
+        // Older versions belong to the room currently showing in the
+        // gallery, not to the maze — so moving to the next room drops any
+        // older version that is up rather than leaving it over a picture it
+        // has nothing to do with.
         oldVersionsGallery = (g.oldVersions || []).filter(v => v && v.image);
-        if (oldVersionsOpen) resetOldVersionsInstant();
+        resetOldVersionInstant();
+        renderOldVersionsRail();
         oldVersionsPill.style.display = oldVersionsGallery.length ? "inline-flex" : "none";
-        oldVersionsPill.textContent = `See older version${oldVersionsGallery.length > 1 ? "s" : ""} of this room`;
+        markActiveOldVersion();
 
         galleryStrip.querySelectorAll("img, .gallery-strip-missing").forEach((thumb, i) => {
             thumb.classList.toggle("active", i === activeIndex);
@@ -1048,6 +1049,16 @@ document.addEventListener("DOMContentLoaded", () => {
         stopAutoAdvance();
         if (!activeGallery || activeGallery.length < 2) return;
         if (lightboxOverlay.classList.contains("open")) return;
+        /* An older version is up over the current room. Advancing would
+           swap the picture out from under a deliberate comparison — and
+           worse, silently, since the carousel moving on also clears the
+           older-version panel and its picker.
+
+           Guarded here rather than at each caller: opening an older version
+           stops the timer itself, but half a dozen other things restart it
+           (leaving the furni row, closing the furni card, the arrows, the
+           arrow keys) and every one of them would have to remember. */
+        if (oldVersionShown >= 0) return;
         autoAdvanceTimer = setInterval(() => {
             // Reading the furni row is a deliberate act, and advancing the
             // room out from under it swaps every icon and closes the card
@@ -1458,8 +1469,32 @@ document.addEventListener("DOMContentLoaded", () => {
         // a rescan would only find a false positive again — but never reach
         // the site.
         const furni = list.filter(f => f && !f.hidden && (f.sprite || f.icon)).sort(compareFurni);
-        furniStrip.hidden = !furni.length;
-        if (!furni.length) return;
+
+        /* The row keeps its space whether or not it has anything to put in
+           it. Hiding it outright made the modal jump: the furni row sits
+           between the room image and the body, so every room without furni
+           pulled the creator, tags, meta and description up by the row's
+           full height — and paging through a gallery where some images have
+           been scanned and some have not made the whole card twitch on each
+           advance.
+
+           An explicit line is also the more honest answer. A missing row
+           says nothing; it reads as a room that has no furni in it, when
+           what it usually means is a room the scan has not reached yet. */
+        furniStrip.hidden = false;
+        furniStrip.classList.toggle("is-empty", !furni.length);
+        if (!furni.length) {
+            const note = document.createElement("p");
+            note.className = "furni-strip-empty";
+            /* Worded for the common case and the true one at once. "No furni
+               data yet" is the state: this room has not been matched against
+               the catalogue, or was matched before the catalogue listed what
+               is in it. "Not scanned yet" would be wrong for a room that was
+               scanned and legitimately found nothing. */
+            note.textContent = "No furni recorded for this room yet";
+            furniStrip.appendChild(note);
+            return;
+        }
 
         // Icons live in their own scroller so a room holding thirty furni
         // scrolls instead of running the row across the whole modal. The
@@ -2293,134 +2328,149 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    function showOldVersionImage(index) {
-        if (!oldVersionsGallery || !oldVersionsGallery.length) return;
-        oldVersionsIndex = (index + oldVersionsGallery.length) % oldVersionsGallery.length;
-        const v = oldVersionsGallery[oldVersionsIndex];
-        oldVersionsImg.src = imgCdn(v.image, 900, null, 78);
-        oldVersionsImg.alt = v.label ? `${modalName.textContent} — ${v.label}` : modalName.textContent;
-        const position = oldVersionsGallery.length > 1 ? `${oldVersionsIndex + 1} of ${oldVersionsGallery.length}` : "";
-        oldVersionsCounter.textContent = v.label && position ? `${position} — ${v.label}` : (v.label || position);
-        oldVersionsStrip.querySelectorAll("img").forEach((thumb, i) => {
-            thumb.classList.toggle("active", i === oldVersionsIndex);
+    /* ---------- older versions of a room ----------
+
+       Shown INSIDE .gallery-viewport: the older image slides up over the
+       current one from the viewport's own bottom edge, and slides back down
+       to dismiss.
+
+       This replaces a whole second view that reel-swapped the modal's entire
+       contents — description, tags, furni row and all — to show a picture of
+       the same room from a different day. That treatment was doing far too
+       much: what changed between versions is the room, and the two want to
+       be compared in the same frame, at the same size, without everything
+       around them moving. It also had to freeze the modal to a fixed pixel
+       height to stop the card resizing mid-swap, which is the sort of thing
+       a design has to do when it is fighting itself.
+
+       Nothing outside the viewport moves now, so none of that is needed. */
+
+    const OLD_VERSION_TRANSITION = "transform 0.42s cubic-bezier(0.22, 1, 0.36, 1)";
+
+    function oldVersionsAvailable() {
+        return oldVersionsGallery && oldVersionsGallery.length;
+    }
+
+    /* The picker: one thumbnail per older version, bottom-left of the
+       viewport, sized and styled as the furni icons under it (.furni-icon-btn
+       — 34px, same border, radius and hover lift) so the two rows of small
+       square controls in this modal read as the same kind of thing.
+
+       Built only when there is more than one to choose between — with a
+       single older version the pill is already the whole control, and a
+       one-item picker is just a second button doing its job — and SHOWN
+       only once an older version is actually up. Sitting the rail on the
+       current room image would put four thumbnails of a room over the room,
+       claiming a corner of every screenshot in the archive that has ever
+       been rephotographed, to offer something nobody had asked for yet. */
+    function syncOldVersionsRail() {
+        oldVersionsRail.hidden = !(oldVersionShown >= 0 && oldVersionsRail.children.length > 1);
+    }
+
+    function renderOldVersionsRail() {
+        oldVersionsRail.hidden = true;
+        if (!oldVersionsAvailable() || oldVersionsGallery.length < 2) {
+            oldVersionsRail.innerHTML = "";
+            return;
+        }
+        oldVersionsRail.innerHTML = oldVersionsGallery.map((v, i) => {
+            const label = v.label || `Older version ${i + 1}`;
+            return `<button type="button" class="old-version-thumb" data-index="${i}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">` +
+                   `<img src="${imgCdn(v.image, 90, 90, 60)}" loading="lazy" alt="">` +
+                   `</button>`;
+        }).join("");
+        oldVersionsRail.querySelectorAll(".old-version-thumb").forEach(btn => {
+            btn.addEventListener("click", e => {
+                e.stopPropagation();          // never reaches the image's own zoom handler
+                const i = Number(btn.dataset.index);
+                // A second press on the one already showing puts the current
+                // room back — the same button both ways, so there is no
+                // separate "close" to go looking for.
+                if (i === oldVersionShown) hideOldVersion();
+                else showOldVersion(i);
+            });
         });
-        const activeThumb = oldVersionsStrip.children[oldVersionsIndex];
-        if (activeThumb) activeThumb.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
     }
 
-    // Same thumbnail-strip treatment as the room-by-room gallery (see
-    // openModal's galleryStrip.innerHTML build) — built fresh each time
-    // older versions are opened, since which room (and which images) is
-    // showing can change between opens.
-    function renderOldVersionsStrip() {
-        oldVersionsStrip.innerHTML = oldVersionsGallery.map((v, i) =>
-            `<img src="${imgCdn(v.image, 110, 110, 55)}" loading="lazy" alt="${escapeHtml(v.label || "Older version")}" data-index="${i}">`
-        ).join("");
-        oldVersionsStrip.querySelectorAll("img").forEach(thumb => {
-            thumb.addEventListener("click", () => showOldVersionImage(Number(thumb.dataset.index)));
+    function markActiveOldVersion() {
+        oldVersionsRail.querySelectorAll(".old-version-thumb").forEach((btn, i) => {
+            btn.classList.toggle("active", i === oldVersionShown);
         });
+        syncOldVersionsRail();
+        oldVersionsPill.classList.toggle("is-showing", oldVersionShown >= 0);
+        if (!oldVersionsAvailable()) return;
+        oldVersionsPill.textContent = oldVersionShown >= 0
+            ? "Back to current"
+            : `See older version${oldVersionsGallery.length > 1 ? "s" : ""}`;
     }
 
-    const OLD_VERSIONS_TRANSITION = "transform 0.45s cubic-bezier(0.22, 1, 0.36, 1)";
+    function showOldVersion(index) {
+        if (!oldVersionsAvailable()) return;
+        const i = (index + oldVersionsGallery.length) % oldVersionsGallery.length;
+        const v = oldVersionsGallery[i];
+        const wasHidden = oldVersionShown < 0;
+        oldVersionShown = i;
 
-    // Slides .modal-primary-view up and out of .modal-viewport while
-    // .modal-oldversions-view slides up into its place — a reel-style swap,
-    // not a reveal — after first freezing .modal-viewport to its current
-    // pixel height so the modal card itself never changes size (unlike the
-    // room-by-room gallery, older versions' own content is usually shorter
-    // than the description/tags/etc. it's covering, so left to flow
-    // naturally the card would visibly shrink for the duration).
-    function openOldVersions() {
-        if (!oldVersionsGallery || !oldVersionsGallery.length || oldVersionsOpen) return;
-        oldVersionsOpen = true;
-        stopAutoAdvance();
+        oldVersionImg.src = imgCdn(v.image, 900, null, 78);
+        oldVersionImg.alt = v.label ? `${modalName.textContent} — ${v.label}` : modalName.textContent;
+        oldVersionImg.style.display = "block";
 
-        renderOldVersionsStrip();
-        showOldVersionImage(0);
+        /* Only the first one slides. Switching between older versions while
+           one is already up is a swap, not an arrival — sliding the panel
+           out and back in for that would animate the frame rather than the
+           change the visitor asked to see. */
+        if (wasHidden) {
+            oldVersionImg.style.transition = "none";
+            oldVersionImg.style.transform = "translateY(100%)";
+            void oldVersionImg.offsetHeight;   // commit the start state (see slideGalleryImage)
+            oldVersionImg.style.transition = OLD_VERSION_TRANSITION;
+            oldVersionImg.style.transform = "translateY(0)";
+            // The room-by-room carousel must not advance out from under an
+            // older version the visitor is looking at.
+            stopAutoAdvance();
+        }
+        markActiveOldVersion();
+    }
 
-        modalViewport.style.height = `${modalViewport.getBoundingClientRect().height}px`;
+    function hideOldVersion(instant) {
+        if (oldVersionShown < 0) {
+            if (instant) resetOldVersionInstant();
+            return;
+        }
+        oldVersionShown = -1;
+        markActiveOldVersion();
 
-        modalPrimaryView.style.transition = "none";
-        modalPrimaryView.style.position = "absolute";
-        modalPrimaryView.style.top = "0";
-        modalPrimaryView.style.left = "0";
-        modalPrimaryView.style.width = "100%";
-        modalPrimaryView.style.transform = "translateY(0)";
+        if (instant) { resetOldVersionInstant(); return; }
 
-        modalOldVersionsView.style.transition = "none";
-        modalOldVersionsView.style.display = "flex";
-        modalOldVersionsView.style.transform = "translateY(100%)";
-
-        // Commits the "start" transforms above before the transition to
-        // their end state is requested below — same reflow trick as
-        // slideGalleryImage/header-events, otherwise both writes get
-        // coalesced into one paint and neither view appears to move.
-        void modalViewport.offsetHeight;
-
-        modalPrimaryView.style.transition = OLD_VERSIONS_TRANSITION;
-        modalOldVersionsView.style.transition = OLD_VERSIONS_TRANSITION;
-        modalPrimaryView.style.transform = "translateY(-100%)";
-        modalOldVersionsView.style.transform = "translateY(0)";
-
-        modalPrimaryView.addEventListener("transitionend", () => {
-            if (oldVersionsOpen) modalPrimaryView.style.display = "none";
+        oldVersionImg.style.transition = OLD_VERSION_TRANSITION;
+        oldVersionImg.style.transform = "translateY(100%)";
+        oldVersionImg.addEventListener("transitionend", () => {
+            // Re-shown again before this fired — leave it alone.
+            if (oldVersionShown >= 0) return;
+            oldVersionImg.style.display = "none";
+            oldVersionImg.removeAttribute("src");
         }, { once: true });
+
+        if (modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing")) {
+            restartAutoAdvance();
+        }
     }
 
-    function closeOldVersions() {
-        if (!oldVersionsOpen) return;
-        oldVersionsOpen = false;
-
-        modalPrimaryView.style.display = "block";
-        modalPrimaryView.style.transition = "none";
-        modalPrimaryView.style.transform = "translateY(-100%)";
-
-        void modalViewport.offsetHeight;
-
-        modalPrimaryView.style.transition = OLD_VERSIONS_TRANSITION;
-        modalOldVersionsView.style.transition = OLD_VERSIONS_TRANSITION;
-        modalPrimaryView.style.transform = "translateY(0)";
-        modalOldVersionsView.style.transform = "translateY(100%)";
-
-        modalOldVersionsView.addEventListener("transitionend", () => {
-            if (oldVersionsOpen) return; // reopened again before this fired
-            modalOldVersionsView.style.display = "none";
-            modalOldVersionsView.style.transform = "";
-            modalPrimaryView.style.position = "";
-            modalPrimaryView.style.top = "";
-            modalPrimaryView.style.left = "";
-            modalPrimaryView.style.width = "";
-            modalPrimaryView.style.transform = "";
-            modalPrimaryView.style.transition = "";
-            modalViewport.style.height = "";
-            if (modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing")) {
-                restartAutoAdvance();
-            }
-        }, { once: true });
-    }
-
-    // Snaps both views back to their closed-state styling instantly, no
-    // transition — used when the room shown behind older versions changes
-    // out from under it (navigating the main carousel, or opening a
-    // different maze entirely) rather than the user explicitly backing out.
-    function resetOldVersionsInstant() {
-        oldVersionsOpen = false;
-        modalOldVersionsView.style.transition = "none";
-        modalOldVersionsView.style.display = "none";
-        modalOldVersionsView.style.transform = "";
-        modalPrimaryView.style.transition = "none";
-        modalPrimaryView.style.display = "block";
-        modalPrimaryView.style.position = "";
-        modalPrimaryView.style.top = "";
-        modalPrimaryView.style.left = "";
-        modalPrimaryView.style.width = "";
-        modalPrimaryView.style.transform = "";
-        modalViewport.style.height = "";
+    // No animation: for switching rooms or opening a different maze, where
+    // an older version sliding away from a picture it does not belong to
+    // would be describing a relationship that no longer exists.
+    function resetOldVersionInstant() {
+        oldVersionShown = -1;
+        oldVersionImg.style.transition = "none";
+        oldVersionImg.style.transform = "translateY(100%)";
+        oldVersionImg.style.display = "none";
+        oldVersionImg.removeAttribute("src");
+        markActiveOldVersion();
     }
 
     function toggleOldVersions() {
-        if (oldVersionsOpen) closeOldVersions();
-        else openOldVersions();
+        if (oldVersionShown >= 0) hideOldVersion();
+        else showOldVersion(0);
     }
 
     // Builder cards — the Habbo Origins profiles behind a maze's creator
@@ -2730,7 +2780,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // in the gallery above (not the maze as a whole) — the pill/view
         // are (re)populated per image in showGalleryImage, reset here so
         // reopening the modal never starts mid-way through a previous view.
-        resetOldVersionsInstant();
+        resetOldVersionInstant();
 
         modalOverlay.classList.add("open");
         // Moves keyboard focus into the dialog itself (see modalCard's own
@@ -2865,9 +2915,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (e.target === modalOverlay) closeModal();
     });
     oldVersionsPill.addEventListener("click", toggleOldVersions);
-    oldVersionsBackPill.addEventListener("click", toggleOldVersions);
-    oldVersionsPrev.addEventListener("click", () => showOldVersionImage(oldVersionsIndex - 1));
-    oldVersionsNext.addEventListener("click", () => showOldVersionImage(oldVersionsIndex + 1));
     galleryPrev.addEventListener("click", () => { showGalleryImage(activeIndex - 1); restartAutoAdvance(); });
     galleryNext.addEventListener("click", () => { showGalleryImage(activeIndex + 1); restartAutoAdvance(); });
     modalGalleryImg.addEventListener("click", openLightbox);
