@@ -840,6 +840,21 @@ document.addEventListener("DOMContentLoaded", () => {
         // and the results list is tall.
         let pickerFor = null;
 
+        /* The picker's own search survives a re-render.
+
+           Adding a furni calls render(), which rebuilds this whole list —
+           and that used to throw the search box and its results away, so
+           adding one item out of a set closed the results and the query had
+           to be typed again for the next. A furni line is exactly the case
+           where several get added at once, so that was the wrong default.
+
+           Holding the query and the last result set here lets wirePicker
+           put both back after every render. Deliberately NOT the picker's
+           own DOM state read back out: the elements are destroyed by the
+           rebuild, so the only place this can live is outside them. */
+        let pickerQuery = "";
+        let pickerResults = [];
+
         // Room images in the order they appear on the site, so this reads in
         // the same order as the gallery above rather than by object key.
         function imagesInOrder() {
@@ -922,8 +937,8 @@ document.addEventListener("DOMContentLoaded", () => {
                                 '<button type="button" class="admin-pill-btn admin-furni-add-toggle" data-image="' + escapeHtml(image) + '">' + (picking ? "Done adding" : "+ Add furni by hand") + '</button>' +
                                 (picking ? '' +
                                     '<div class="admin-furni-picker">' +
-                                        '<input type="text" class="admin-furni-search" placeholder="Search furni by name…" autocomplete="off">' +
-                                        '<p class="admin-hint admin-furni-picker-status">Type at least two letters.</p>' +
+                                        '<input type="text" class="admin-furni-search" placeholder="Search by name or furni line…" autocomplete="off">' +
+                                        '<p class="admin-hint admin-furni-picker-status">Type at least two letters — a furni line works too, like "alhambra".</p>' +
                                         '<div class="admin-furni-results"></div>' +
                                     '</div>' : '') +
                             '</div>' +
@@ -968,6 +983,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     const image = btn.dataset.image;
                     openRooms.add(image);
                     pickerFor = image;
+                    pickerQuery = "";
+                    pickerResults = [];
                     render();
                 });
             });
@@ -975,6 +992,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 btn.addEventListener("click", () => {
                     const image = btn.dataset.image;
                     pickerFor = pickerFor === image ? null : image;
+                    pickerQuery = "";
+                    pickerResults = [];
                     // Opening the picker on a collapsed room would put it
                     // somewhere nobody can see.
                     if (pickerFor) openRooms.add(image);
@@ -995,7 +1014,15 @@ document.addEventListener("DOMContentLoaded", () => {
             const input = picker.querySelector(".admin-furni-search");
             const status = picker.querySelector(".admin-furni-picker-status");
             const results = picker.querySelector(".admin-furni-results");
+
+            /* Put the search back exactly as it was before the re-render,
+               so adding one furni from a set of results leaves the rest
+               sitting there to be added too. setSelectionRange keeps the
+               caret at the end rather than selecting the whole query, which
+               would make the next keystroke wipe it. */
+            input.value = pickerQuery;
             input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
 
             let timer = null;
             // Rises with every search started, and a response is only drawn
@@ -1021,13 +1048,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 results.querySelectorAll(".admin-furni-result").forEach(btn => {
                     btn.addEventListener("click", () => addFurni(image, items[Number(btn.dataset.index)]));
                 });
-                status.textContent = items.length + " match" + (items.length === 1 ? "" : "es") + " — click one to add it.";
+                const added = items.filter(f => already.has(f.name)).length;
+                status.textContent = items.length + " match" + (items.length === 1 ? "" : "es")
+                    + (added ? ` — ${added} added` : "")
+                    + " — click to add, and keep clicking for more.";
             }
+
+            // Redraw whatever the last search found, so the results are
+            // still there after adding one of them.
+            if (pickerResults.length) drawResults(pickerResults);
 
             input.addEventListener("input", () => {
                 const q = input.value.trim();
+                pickerQuery = input.value;
                 clearTimeout(timer);
                 if (q.length < 2) {
+                    pickerResults = [];
                     results.innerHTML = "";
                     status.textContent = "Type at least two letters.";
                     return;
@@ -1040,9 +1076,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     try {
                         const data = await Api.getFurniCatalogue(q);
                         if (mine !== seq) return;
-                        drawResults(data.items || []);
+                        pickerResults = data.items || [];
+                        drawResults(pickerResults);
                     } catch (err) {
                         if (mine !== seq) return;
+                        pickerResults = [];
                         results.innerHTML = "";
                         status.textContent = err.message || "Couldn't reach the furni catalogue.";
                     }

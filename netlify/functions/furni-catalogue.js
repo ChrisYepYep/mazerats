@@ -113,7 +113,35 @@ exports.handler = async (event) => {
         const catalogue = await getCatalogue({ force: params.refresh === "1" });
         const q = (params.q || "").trim().toLowerCase();
         let items = catalogue.items;
-        if (q) items = items.filter(i => i.name.toLowerCase().includes(q));
+        if (q) {
+            /* Name OR className, because className is where the THEME lives.
+
+               Habbo's internal name for a furni carries the line it belongs
+               to as a prefix — alhambra_stall, alhambra_shelf — while the
+               display names for those two are "Bazaar Stall" and "Scholar's
+               Bookshelf". Searching names alone therefore finds four of the
+               Alhambra line and silently misses the rest, which is exactly
+               the case that made this worth changing: someone adding furni
+               by hand knows the line they are looking at in-game, not the
+               display name of every piece in it.
+
+               Underscores are read as spaces so "alhambra stall" finds
+               alhambra_stall — typing the theme and the object is the
+               natural thing to try, and it would otherwise match nothing.
+
+               Name matches are listed first. A className-only hit is a
+               correct but less direct answer, and the picker shows a capped
+               24, so the ones the person most likely meant have to be at the
+               top rather than wherever the catalogue happened to order
+               them. */
+            const named = [];
+            const themed = [];
+            for (const i of items) {
+                if ((i.name || "").toLowerCase().includes(q)) named.push(i);
+                else if ((i.className || "").toLowerCase().replace(/_/g, " ").includes(q)) themed.push(i);
+            }
+            items = named.concat(themed);
+        }
         // The sprite grids are wanted by the scanner and by the admin's
         // add-by-hand picker, never by anything else — and they are by far
         // the biggest part of the payload.
