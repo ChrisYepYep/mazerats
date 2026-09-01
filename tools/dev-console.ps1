@@ -32,6 +32,36 @@ Add-Type -AssemblyName System.Drawing
 
 $ErrorActionPreference = "Stop"
 
+<# NOTHING HAPPENING AT ALL IS THE WORST FAILURE THIS TOOL CAN HAVE.
+
+   start-dev.vbs launches PowerShell with its window hidden, on purpose, so
+   that no black console flashes up behind the form. The cost is that
+   anything written to that hidden console is written to nobody: a missing
+   sprite, an unreadable icon, a syntax error after an edit — any of them
+   killed the script before the form appeared, and double-clicking the
+   Desktop shortcut simply did nothing. No window, no error, nothing to
+   search for. (Verified by renaming one sprite: zero new processes, and a
+   shortcut that appeared to be broken.)
+
+   A trap at script scope catches terminating errors anywhere below, and
+   with $ErrorActionPreference = "Stop" that is very nearly everything. The
+   message box is the only channel guaranteed to reach someone who launched
+   this from an icon. #>
+trap {
+    $detail = "$($_.Exception.Message)`r`n`r`nLine $($_.InvocationInfo.ScriptLineNumber) of $(Split-Path -Leaf $PSCommandPath)"
+    try {
+        [System.Windows.Forms.MessageBox]::Show(
+            "The Maze Rats dev console couldn't start.`r`n`r`n$detail",
+            "Maze Rats", "OK", "Error") | Out-Null
+    } catch {
+        # Even the message box failed — the assemblies themselves must be
+        # unavailable. Fall back to the hidden console so that running this
+        # from a terminal still shows something.
+        Write-Error $detail
+    }
+    exit 1
+}
+
 <# A process launched hidden hands SW_HIDE to the first top-level window it
    opens — which is this form, leaving it alive, real and invisible.
    start-dev.vbs launches hidden on purpose (no console flash), so the form
@@ -426,7 +456,7 @@ $NamesPath = Join-Path $PSScriptRoot ".cache\furni-names.txt"
 $script:FurniNames = @()
 $script:FurniLower = @()
 $script:NamesStamp = $null
-$script:NamesProcess = $null
+$script:NamesError = @()     # ditto, for the furni catalogue names
 $script:OmitQuery = ""
 $script:OmitMatches = @()
 $script:OmitScroll = 0
@@ -451,14 +481,14 @@ function Refresh-FurniNames {
 # window sits and waits on.
 function Start-NamesFetch {
     if (Test-Path $NamesPath) { return }
-    if ($null -ne $script:NamesProcess -and -not $script:NamesProcess.HasExited) { return }
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "cmd.exe"
-    $psi.Arguments = "/c node `"" + (Join-Path $RepoRoot "tools\list-furni.js") + "`""
-    $psi.WorkingDirectory = $RepoRoot
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    try { $script:NamesProcess = [System.Diagnostics.Process]::Start($psi) } catch { }
+    $script:NamesError = @()
+    Start-Job "furni-names" "tools\list-furni.js" "" {
+        param($ok, $output)
+        # Refresh-FurniNames picks the file up on the next tick either way;
+        # this only has to account for the case where it never appears.
+        if ($ok) { return }
+        $script:NamesError = Format-JobError $output
+    } | Out-Null
 }
 
 <# Recomputed when the query changes, never while painting. Paint runs on
@@ -468,6 +498,126 @@ function Start-NamesFetch {
    Names that BEGIN with what was typed come first. Searching "bonsai" for a
    Bonsai Tree and getting "Charcoal Leaf Bonsai" three rows above it is the
    difference between a search box and a filter. #>
+<# ---------- running the repo's node tools without freezing the window ----------
+
+   Three things in here shell out to node: the messages list, the furni
+   catalogue names, and the maze list. All three used to do it their own way,
+   and both ways were wrong.
+
+   MESSAGES ran node SYNCHRONOUSLY, on the UI thread. Measured at 0.4s
+   against a healthy database — but it is a network round trip with no
+   timeout, so an unreachable database froze the whole window for the
+   MongoDB driver's full 30-second server-selection wait: no repaint, no
+   drag, no close button. The "Loading..." it painted first never even
+   appeared, because Invalidate only QUEUES a repaint and the thread that
+   would service it was the thread that was blocked.
+
+   The other two ran in the background, correctly, but threw their output
+   away — no redirect, CreateNoWindow. So every failure was silent: on a
+   machine that had not run `npm install`, the maze selector sat on
+   "Fetching the maze list..." for ever and never said that node had exited
+   immediately with "Cannot find module 'mongodb'".
+
+   One runner now does all three. It starts the tool, captures stdout and
+   stderr to a file, and the timer notices when the process exits and hands
+   the output to a completion handler. Nothing blocks, and a failure has
+   somewhere to be reported. #>
+
+$JobTimeoutSeconds = 45
+$script:Jobs = @{}
+
+<# key      names the job, and its log file, so a second start while one is
+            already running is ignored rather than racing it
+   relPath  the tool, relative to the repo root
+   toolArgs extra arguments, already quoted if they need it
+   onDone   { param($ok, $output) } — $ok is "exit code 0", $output is
+            everything the tool wrote, stdout and stderr together #>
+function Start-Job([string]$key, [string]$relPath, [string]$toolArgs, [scriptblock]$onDone) {
+    $running = $script:Jobs[$key]
+    if ($null -ne $running -and $null -ne $running.Process -and -not $running.Process.HasExited) { return $false }
+
+    $log = Join-Path $env:TEMP ("mazerats-job-" + $key + ".log")
+    if (Test-Path $log) { Remove-Item $log -Force -ErrorAction SilentlyContinue }
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "cmd.exe"
+    # Redirected to a FILE rather than a pipe, for the reason Start-Server
+    # gives: a pipe nobody drains fills up and blocks the writer.
+    $psi.Arguments = "/c node `"" + (Join-Path $RepoRoot $relPath) + "`" " + $toolArgs + " > `"$log`" 2>&1"
+    $psi.WorkingDirectory = $RepoRoot
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    try {
+        $proc = [System.Diagnostics.Process]::Start($psi)
+    } catch {
+        # node missing from PATH entirely is the one failure that happens
+        # before there is any output to read.
+        & $onDone $false ("Could not run node. Is Node.js installed and on PATH?`n" + $_.Exception.Message)
+        return $true
+    }
+    $script:Jobs[$key] = @{ Process = $proc; Log = $log; Started = [datetime]::UtcNow; OnDone = $onDone }
+    return $true
+}
+
+<# Called once a tick. Collects anything that has finished, and gives up on
+   anything that has not finished in time — a tool that hangs (a database
+   that accepts the connection and then never answers) would otherwise leave
+   its page saying "Loading..." for the rest of the session. #>
+function Poll-Jobs {
+    $changed = $false
+    foreach ($key in @($script:Jobs.Keys)) {
+        $job = $script:Jobs[$key]
+        if ($null -eq $job -or $null -eq $job.Process) { $script:Jobs.Remove($key); continue }
+
+        if (-not $job.Process.HasExited) {
+            if (([datetime]::UtcNow - $job.Started).TotalSeconds -lt $JobTimeoutSeconds) { continue }
+            try { & taskkill /PID $job.Process.Id /T /F 2>&1 | Out-Null } catch { }
+            $script:Jobs.Remove($key)
+            & $job.OnDone $false "Gave up waiting after $JobTimeoutSeconds seconds."
+            $changed = $true
+            continue
+        }
+
+        $ok = ($job.Process.ExitCode -eq 0)
+        $out = ""
+        try { $out = [System.IO.File]::ReadAllText($job.Log) } catch { }
+        $script:Jobs.Remove($key)
+        & $job.OnDone $ok $out
+        $changed = $true
+    }
+    return $changed
+}
+
+<# Turns a tool's output into something that fits the screen. Node's stack
+   traces are the common failure here and their first line is the one worth
+   showing — the rest is this machine's directory layout. #>
+function Format-JobError([string]$output) {
+    $lines = @()
+    foreach ($raw in (($output -replace "`r", "") -split "`n")) {
+        $t = (To-Ascii $raw).Trim()
+        if (-not $t) { continue }
+        if ($t -match "^\s*at ") { continue }              # stack frames
+        if ($t -match "^Require stack:") { break }         # and the paths after it
+        if ($t -match "^node:internal") { continue }       # node's own preamble
+        if ($t -match "^throw err;?$" -or $t -eq "^") { continue }
+        $lines += $t
+    }
+    <# A thrown Error carries its own one-line summary, and everything
+       printed before it is the runtime describing where it was standing at
+       the time. Show from that line on: "Error: Cannot find module
+       'mongodb'" is the whole answer, and the two lines above it were
+       nothing but a file path inside node itself.
+
+       Our own tools do not throw for the expected failures — tools/_env.js
+       prints a written explanation and exits — so when there is no Error:
+       line, everything survives. #>
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match "^[A-Za-z]*Error:") { return @($lines[$i..($lines.Count - 1)]) }
+    }
+    if (-not $lines.Count) { $lines = @("It failed without saying why.") }
+    return $lines
+}
+
 <# ---------- which mazes a scan covers ----------
 
    Empty means the whole archive, which is what every scan did before this
@@ -486,7 +636,7 @@ function Start-NamesFetch {
 $MazePath = Join-Path $PSScriptRoot ".cache\maze-list.txt"
 $script:Mazes = @()              # @{ Id; Name; Images }
 $script:MazeStamp = $null
-$script:MazeProcess = $null
+$script:MazeError = @()      # why the last maze-list fetch failed, if it did
 $script:MazeQuery = ""
 $script:MazeMatches = @()
 $script:MazeScroll = 0
@@ -523,14 +673,12 @@ function Refresh-Mazes {
 }
 
 function Start-MazeFetch {
-    if ($null -ne $script:MazeProcess -and -not $script:MazeProcess.HasExited) { return }
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "cmd.exe"
-    $psi.Arguments = "/c node `"" + (Join-Path $RepoRoot "tools\list-mazes.js") + "`""
-    $psi.WorkingDirectory = $RepoRoot
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    try { $script:MazeProcess = [System.Diagnostics.Process]::Start($psi) } catch { }
+    $script:MazeError = @()
+    Start-Job "maze-list" "tools\list-mazes.js" "" {
+        param($ok, $output)
+        if ($ok) { return }
+        $script:MazeError = Format-JobError $output
+    } | Out-Null
 }
 
 # Unlike the furni catalogue, this is worth re-fetching on demand: mazes get
@@ -1015,9 +1163,23 @@ function Draw-PageMazes($g, [int]$x, [int]$y, [int]$w, [int]$h) {
     $rows = [Math]::Max(1, [Math]::Floor(($hintY - $listY - (Px 2)) / $rowH))
 
     if ($script:Mazes.Count -eq 0) {
-        Draw-Text $g "Fetching the maze list..." $FontBody $ScreenDim $x $listY
-        Draw-Text $g "It needs the database, so" $FontBody $ScreenDim $x ($listY + $rowH)
-        Draw-Text $g ".env has to be filled in." $FontBody $ScreenDim $x ($listY + 2 * $rowH)
+        <# Says what actually went wrong, rather than "Fetching..." for ever.
+           The old wording was a guess at the cause AND a lie about the
+           state: on a machine that had not run `npm install`, node exited
+           immediately with "Cannot find module 'mongodb'" and this sat
+           claiming to be fetching for the rest of the session. #>
+        if ($script:MazeError.Count) {
+            Draw-Text $g "Couldn't load the maze list:" $FontBody $Bad $x $listY
+            $i = 1
+            foreach ($line in $script:MazeError) {
+                if ($i -ge $rows) { break }
+                Draw-Text $g (Fit-Text $g $line $FontBody $w) $FontBody $ScreenDim $x ($listY + $i * $rowH)
+                $i++
+            }
+            Draw-Button $g "mazes-refresh" "RETRY" ($x + $w - (Px 44)) ($hintY - (Px 2)) (Px 44) (Px 12) $true
+        } else {
+            Draw-Text $g "Fetching the maze list..." $FontBody $ScreenDim $x $listY
+        }
         return
     }
 
@@ -1135,9 +1297,23 @@ function Draw-PageOmit($g, [int]$x, [int]$y, [int]$w, [int]$h) {
     if ($typed) {
         $all = @($script:OmitMatches)
         if ($script:FurniNames.Count -eq 0) {
-            Draw-Text $g "Fetching the furni list..." $FontBody $ScreenDim $x $headY
-            Draw-Text $g "Enter still adds what you" $FontBody $ScreenDim $x $listY
-            Draw-Text $g "typed, exactly as typed." $FontBody $ScreenDim $x ($listY + $rowH)
+            if ($script:NamesError.Count) {
+                Draw-Text $g "Couldn't load the furni list:" $FontBody $Bad $x $headY
+                $i = 0
+                foreach ($line in $script:NamesError) {
+                    if ($i -ge 2) { break }
+                    Draw-Text $g (Fit-Text $g $line $FontBody $w) $FontBody $ScreenDim $x ($listY + $i * $rowH)
+                    $i++
+                }
+                # The fallback is worth repeating precisely here: without the
+                # catalogue there is nothing to search, but a name typed in
+                # full still works, and so does a wildcard.
+                Draw-Text $g "Enter still adds what you type." $FontBody $ScreenDim $x ($listY + ($i + 1) * $rowH)
+            } else {
+                Draw-Text $g "Fetching the furni list..." $FontBody $ScreenDim $x $headY
+                Draw-Text $g "Enter still adds what you" $FontBody $ScreenDim $x $listY
+                Draw-Text $g "typed, exactly as typed." $FontBody $ScreenDim $x ($listY + $rowH)
+            }
             return
         }
         Draw-Text $g ("" + $all.Count + " found  -  press to add") $FontBody $ScreenDim $x $headY
@@ -1520,23 +1696,27 @@ function Start-Scan([string]$mode) {
         Add-Line $script:FurniLines "A scan is already running."
         return
     }
-    $args = @((Join-Path $RepoRoot "tools\furni-scan-local.js"))
+    # NOT $args. Inside a function that is one of PowerShell's automatic
+    # variables (the unbound arguments), and quietly shadowing it here is the
+    # same class of trap this file already carries a warning about over
+    # $Scale — it works until the day it does not, and gives no clue why.
+    $scanArgs = @((Join-Path $RepoRoot "tools\furni-scan-local.js"))
     switch ($mode) {
-        "add" { $args += "--additive" }
-        "new" { $args += "--only-unscanned" }
+        "add" { $scanArgs += "--additive" }
+        "new" { $scanArgs += "--only-unscanned" }
     }
     <# Always passed, even when it is the default, so the scan's own log says
        what it ran at. The omit list is NOT passed: the scanner reads
        tools/furni-omit.txt itself, which keeps a scan started from a
        terminal and a scan started from this window obeying exactly the same
        list rather than two copies of one that can drift apart. #>
-    $args += @("--strictness", $script:Strictness)
+    $scanArgs += @("--strictness", $script:Strictness)
     <# A selection narrows the run to those mazes, whichever button started
        it: --ids is orthogonal to --additive and --only-unscanned, so "find
        new furni in these three mazes" is just both flags at once. No ids at
        all means the whole archive, which is the scanner's own default. #>
     if ($script:SelectedMazes.Count -gt 0) {
-        $args += @("--ids", ($script:SelectedMazes -join ","))
+        $scanArgs += @("--ids", ($script:SelectedMazes -join ","))
     }
     $script:ScanRead = 0
     if (Test-Path $ScanLog) { Remove-Item $ScanLog -Force -ErrorAction SilentlyContinue }
@@ -1547,7 +1727,7 @@ function Start-Scan([string]$mode) {
     })
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = "cmd.exe"
-    $psi.Arguments = "/c node " + (($args | ForEach-Object { "`"$_`"" }) -join " ") + " > `"$ScanLog`" 2>&1"
+    $psi.Arguments = "/c node " + (($scanArgs | ForEach-Object { "`"$_`"" }) -join " ") + " > `"$ScanLog`" 2>&1"
     $psi.WorkingDirectory = $RepoRoot
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
@@ -1594,22 +1774,29 @@ function Stop-Scan {
     Add-Line $script:FurniLines $(if ($killed) { "Scan stopped. Finished images are saved." } else { "No scan was running." })
 }
 
+<# Reads the messages in the BACKGROUND. This used to call node inline, on
+   the UI thread, which is the one thing this window must never do — see the
+   note over Start-Job for what that cost. The "Loading..." line below now
+   actually appears, because the thread that paints it is free to do so. #>
 function Load-Messages {
     $script:MessageLines.Clear()
     Add-Line $script:MessageLines "Loading..."
     $surface.Invalidate()
-    try {
-        $out = & node (Join-Path $RepoRoot "tools\list-messages.js") --limit 12 2>&1
+    Start-Job "messages" "tools\list-messages.js" "--limit 12" {
+        param($ok, $output)
         $script:MessageLines.Clear()
-        foreach ($l in $out) {
-            $t = To-Ascii ("$l".TrimEnd())
-            if ($t.Length -gt 120) { $t = $t.Substring(0, 117) + "..." }
-            [void]$script:MessageLines.Add($t)
+        if (-not $ok) {
+            Add-Line $script:MessageLines "Couldn't read the messages:"
+            foreach ($l in (Format-JobError $output)) { Add-Line $script:MessageLines $l }
+            return
         }
-    } catch {
-        $script:MessageLines.Clear()
-        [void]$script:MessageLines.Add("Couldn't read messages.")
-    }
+        foreach ($raw in (($output -replace "`r", "") -split "`n")) {
+            $t = To-Ascii $raw.TrimEnd()
+            if ($t.Length -gt 120) { $t = $t.Substring(0, 117) + "..." }
+            Add-Line $script:MessageLines $t
+        }
+        if (-not $script:MessageLines.Count) { Add-Line $script:MessageLines "No messages yet." }
+    } | Out-Null
 }
 
 <# Tails a log a separate process is writing. Opened share-read each tick
@@ -1928,6 +2115,27 @@ $timer.Add_Tick({
     $script:ScanRunning = Measure-ScanRunning
     if ($wasScan -ne $script:ScanRunning) { $changed = $true }
 
+    <# A scan that started somewhere else — a terminal, or another copy of
+       this window — while this one was open.
+
+       It was detected (SCANNING lit up, STOP worked) but the log pane went
+       on showing the PREVIOUS scan's output, because only Start-Scan resets
+       the read cursor and clears the file. The result read as live progress
+       for a run that had nothing to do with the lines on screen, which is
+       worse than showing nothing: the counts were real, just from the wrong
+       scan. Say plainly whose scan it is and that its progress is not
+       available here. #>
+    if ($script:ScanRunning -and -not $wasScan -and $null -eq $script:ScanProcess) {
+        $script:SawForeignScan = $true
+        $script:FurniLines.Clear()
+        Add-Line $script:FurniLines "A scan started outside this window."
+        Add-Line $script:FurniLines "Its progress is not shown here,"
+        Add-Line $script:FurniLines "but STOP SCAN will still stop it."
+    }
+
+    # Anything spawned by Start-Job that has finished, timed out, or failed.
+    if (Poll-Jobs) { $changed = $true }
+
     # Both of these are files something else may have written — the omit
     # list can still be edited by hand, and the furni names arrive from a
     # background fetch that finishes whenever it finishes.
@@ -1986,8 +2194,14 @@ $form.Add_Shown({
     $timer.Start()
     Add-Line $script:ServerLines $(if (Test-Port) { "Server already running." } else { "Ready. Press START." })
     if (Test-ScanRunning) {
+        # Same situation as the timer's foreign-scan branch, just noticed at
+        # startup rather than as a transition — and the same warning applies
+        # about the log holding some earlier run's lines.
         $script:SawForeignScan = $true
-        Add-Line $script:FurniLines "A scan is already running."
+        $script:FurniLines.Clear()
+        Add-Line $script:FurniLines "A scan is already running, started"
+        Add-Line $script:FurniLines "outside this window. Its progress is"
+        Add-Line $script:FurniLines "not shown here, but STOP SCAN works."
     }
     $surface.Invalidate()
 })
