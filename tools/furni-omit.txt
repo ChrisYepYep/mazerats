@@ -16,3 +16,18 @@
 #
 # Takes effect on the next scan; nothing needs restarting.
 
+2nd Anniversary Trophy
+Crimson Leaf Bonsai
+Easter Pineapple Plant
+Executive Bubble Bath
+Executive Yukka
+Green Office Plant
+Jolly Cactus
+Mature Cactus
+Party Pineapple
+Party Yukka
+Small Cactus
+Snowy Bonsai Tree
+Snowy Mature Cactus
+Snowy Small Cactus
+Tubmaster
