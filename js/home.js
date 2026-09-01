@@ -69,6 +69,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalViewport = document.getElementById("modal-viewport");
     const modalPrimaryView = document.getElementById("modal-primary-view");
     const oldVersionsPill = document.getElementById("old-versions-pill");
+    const oldVersionLayer = document.getElementById("old-version-layer");
     const oldVersionImg = document.getElementById("old-version-img");
     const oldVersionsRail = document.getElementById("old-versions-rail");
 
@@ -2363,13 +2364,13 @@ document.addEventListener("DOMContentLoaded", () => {
        current room image would put four thumbnails of a room over the room,
        claiming a corner of every screenshot in the archive that has ever
        been rephotographed, to offer something nobody had asked for yet. */
-    function syncOldVersionsRail() {
-        oldVersionsRail.hidden = !(oldVersionShown >= 0 && oldVersionsRail.children.length > 1);
-    }
-
     function renderOldVersionsRail() {
-        oldVersionsRail.hidden = true;
-        if (!oldVersionsAvailable() || oldVersionsGallery.length < 2) {
+        // Hidden only when there is nothing to choose between. Keeping it out
+        // of sight until the pill is pressed is the layer's job -- it is off
+        // the bottom of the viewport until then, and the rail rides with it.
+        const many = oldVersionsAvailable() && oldVersionsGallery.length > 1;
+        oldVersionsRail.hidden = !many;
+        if (!many) {
             oldVersionsRail.innerHTML = "";
             return;
         }
@@ -2396,7 +2397,6 @@ document.addEventListener("DOMContentLoaded", () => {
         oldVersionsRail.querySelectorAll(".old-version-thumb").forEach((btn, i) => {
             btn.classList.toggle("active", i === oldVersionShown);
         });
-        syncOldVersionsRail();
         oldVersionsPill.classList.toggle("is-showing", oldVersionShown >= 0);
         if (!oldVersionsAvailable()) return;
         oldVersionsPill.textContent = oldVersionShown >= 0
@@ -2413,18 +2413,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
         oldVersionImg.src = imgCdn(v.image, 900, null, 78);
         oldVersionImg.alt = v.label ? `${modalName.textContent} — ${v.label}` : modalName.textContent;
-        oldVersionImg.style.display = "block";
+        oldVersionLayer.style.display = "block";
 
         /* Only the first one slides. Switching between older versions while
            one is already up is a swap, not an arrival — sliding the panel
            out and back in for that would animate the frame rather than the
            change the visitor asked to see. */
         if (wasHidden) {
-            oldVersionImg.style.transition = "none";
-            oldVersionImg.style.transform = "translateY(100%)";
-            void oldVersionImg.offsetHeight;   // commit the start state (see slideGalleryImage)
-            oldVersionImg.style.transition = OLD_VERSION_TRANSITION;
-            oldVersionImg.style.transform = "translateY(0)";
+            oldVersionLayer.style.transition = "none";
+            oldVersionLayer.style.transform = "translateY(100%)";
+            void oldVersionLayer.offsetHeight;   // commit the start state (see slideGalleryImage)
+            oldVersionLayer.style.transition = OLD_VERSION_TRANSITION;
+            oldVersionLayer.style.transform = "translateY(0)";
             // The room-by-room carousel must not advance out from under an
             // older version the visitor is looking at.
             stopAutoAdvance();
@@ -2442,12 +2442,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (instant) { resetOldVersionInstant(); return; }
 
-        oldVersionImg.style.transition = OLD_VERSION_TRANSITION;
-        oldVersionImg.style.transform = "translateY(100%)";
-        oldVersionImg.addEventListener("transitionend", () => {
+        oldVersionLayer.style.transition = OLD_VERSION_TRANSITION;
+        oldVersionLayer.style.transform = "translateY(100%)";
+        oldVersionLayer.addEventListener("transitionend", () => {
             // Re-shown again before this fired — leave it alone.
             if (oldVersionShown >= 0) return;
-            oldVersionImg.style.display = "none";
+            oldVersionLayer.style.display = "none";
             oldVersionImg.removeAttribute("src");
         }, { once: true });
 
@@ -2461,9 +2461,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // would be describing a relationship that no longer exists.
     function resetOldVersionInstant() {
         oldVersionShown = -1;
-        oldVersionImg.style.transition = "none";
-        oldVersionImg.style.transform = "translateY(100%)";
-        oldVersionImg.style.display = "none";
+        oldVersionLayer.style.transition = "none";
+        oldVersionLayer.style.transform = "translateY(100%)";
+        oldVersionLayer.style.display = "none";
         oldVersionImg.removeAttribute("src");
         markActiveOldVersion();
     }

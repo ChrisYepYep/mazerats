@@ -3959,12 +3959,26 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 /* ---- older versions, shown inside the room's own frame ----
 
-   The older image sits directly over the current one and slides up from
-   the viewport's bottom edge. That is the whole interaction: what changed
-   between two versions is the room, so the two want to be compared in the
-   same frame, at the same size, with nothing around them moving.
+   The older image and its picker sit directly over the current room image
+   and slide up together from the viewport's bottom edge. That is the whole
+   interaction: what changed between two versions is the room, so the two
+   want to be compared in the same frame, at the same size, with nothing
+   around them moving.
 
-   object-fit and inset match .modal-gallery-img exactly — a version that
+   ONE layer holds both, and it is the layer that moves. The picker is part
+   of the panel, not a thing that appears beside it — so it arrives and
+   leaves with the image, and it cannot be visible before the panel is
+   opened, because until then the whole layer is off the bottom edge. */
+.old-version-layer {
+    position: absolute;
+    inset: 0;
+    /* Above the room image, below .gallery-viewport::after's lit edge (5). */
+    z-index: 2;
+    transform: translateY(100%);
+    will-change: transform;
+}
+
+/* inset and object-fit match .modal-gallery-img exactly — a version that
    sat even slightly differently from the image it replaces would read as a
    different photograph rather than the same room on a different day. */
 .old-version-img {
@@ -3977,22 +3991,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
        version, and the two would otherwise be visible through each other
        for the length of the transition. */
     background: #1b160e;
-    /* Above the room image, below .gallery-viewport::after's lit edge (5)
-       and below the rail (6), which has to stay clickable while this is up. */
-    z-index: 2;
-    transform: translateY(100%);
-    will-change: transform;
 }
 
-/* Bottom-left of the viewport, opposite the counter's own corner. Only
-   built when there is more than one older version to choose between (see
+/* Bottom-left of the panel, opposite the counter's own corner. Only built
+   when there is more than one older version to choose between (see
    renderOldVersionsRail) — with a single one the pill is already the whole
    control, and a one-item picker is just a second button doing its job. */
 .old-versions-rail {
     position: absolute;
     left: 6px;
     bottom: 6px;
-    z-index: 6;
+    z-index: 2;
     display: flex;
     align-items: center;
     gap: 3px;

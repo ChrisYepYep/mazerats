@@ -396,11 +396,19 @@
                                          reel-swapped the modal's entire contents, which
                                          swept the description, tags and furni row offscreen
                                          to show a picture of the same room. -->
-                                    <img class="old-version-img" id="old-version-img" alt="" style="display:none;">
-                                    <!-- Bottom-left, and only when there is more than one
-                                         older version to choose between: with a single one
-                                         the pill above is already the whole control. -->
-                                    <div class="old-versions-rail" id="old-versions-rail" hidden></div>
+                                    <!-- Image and picker in ONE sliding layer, so they
+                                         arrive and leave together as a single panel. The
+                                         rail cannot be seen before the pill is pressed for
+                                         the simplest possible reason: the whole layer it
+                                         lives in is translated off the bottom of the
+                                         viewport until then. -->
+                                    <div class="old-version-layer" id="old-version-layer">
+                                        <img class="old-version-img" id="old-version-img" alt="">
+                                        <!-- Bottom-left, and only when there is more than
+                                             one older version to choose between: with a
+                                             single one the pill is already the control. -->
+                                        <div class="old-versions-rail" id="old-versions-rail" hidden></div>
+                                    </div>
                                 </div>
                                 <button class="gallery-nav gallery-prev" id="gallery-prev" aria-label="Previous room" style="display:none;">&#10094;</button>
                                 <button class="gallery-nav gallery-next" id="gallery-next" aria-label="Next room" style="display:none;">&#10095;</button>
