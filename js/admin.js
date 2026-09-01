@@ -2404,7 +2404,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl.dataset.editId = isEdit ? editId : "";
         cfg.formEl.classList.add("is-open");
         cfg.addBtn.style.display = "none";
-        cfg.formEl.querySelector(".admin-cancel-btn").addEventListener("click", () => closeForm(key));
+        cfg.formEl.querySelector(".admin-cancel-btn").addEventListener("click", () => requestCloseForm(key));
 
         // Every upload made while this form is open (thumbnail, room images)
         // is namespaced under this prefix — the real room id once saved, or
@@ -2435,12 +2435,75 @@ document.addEventListener("DOMContentLoaded", () => {
 
         cfg.formEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
+        // Taken last, once every draft and field above has been assigned,
+        // so it records the form exactly as the admin first sees it.
+        cfg.formEl._openSnapshot = formSnapshot(cfg.formEl);
+
         activeFormKey = key;
         floatingActionsEl.classList.add("open");
     }
 
+    /* ---------- losing work by accident ----------
+
+       Every destructive SUB-action in here already asks first ("Remove this
+       older version image?"), but abandoning the whole edit did not — Cancel
+       threw the form away silently, and closing the tab took it with no
+       word at all. Adding furni by hand is minutes of work that exists
+       nowhere else until Save is pressed.
+
+       Dirtiness is measured by comparing a snapshot taken when the form
+       opened against one taken now, rather than by watching for changes.
+       Most of what can change in here is not a form field at all — the
+       furni, gallery, related-image and old-version drafts are plain
+       objects mutated by their own editors, which fire no input event — so
+       a listener-based approach would have to be wired into every one of
+       those call sites and would silently miss any added later. */
+    function formSnapshot(formEl) {
+        const fields = {};
+        try {
+            new FormData(formEl).forEach((value, name) => {
+                // File objects do not serialise; their filename is enough to
+                // notice a change, and an upload writes its result into a
+                // text field here anyway.
+                const v = (value instanceof File) ? value.name : value;
+                fields[name] = (fields[name] === undefined) ? v : [].concat(fields[name], v);
+            });
+        } catch (e) { /* a form mid-teardown has nothing worth comparing */ }
+        return JSON.stringify({
+            fields,
+            gallery: formEl._galleryDraft || null,
+            related: formEl._relatedDraft || null,
+            furni: formEl._furniDraft || null,
+            tags: formEl._selectedTags ? [...formEl._selectedTags].sort() : null,
+            entranceOld: formEl._entranceOldVersions || null,
+            finishOld: formEl._finishOldVersions || null
+        });
+    }
+
+    function isFormDirty(key) {
+        const formEl = COLLECTIONS[key] && COLLECTIONS[key].formEl;
+        if (!formEl || !formEl.classList.contains("is-open")) return false;
+        if (formEl._openSnapshot === undefined || formEl._openSnapshot === null) return false;
+        return formSnapshot(formEl) !== formEl._openSnapshot;
+    }
+
+    // Cancel, from the form's own button or the floating one. The prompt is
+    // skipped entirely when nothing has been touched, so the ordinary
+    // "opened it to look, closing it again" path is unchanged.
+    async function requestCloseForm(key) {
+        if (isFormDirty(key)) {
+            const ok = await showConfirmDialog("Discard your unsaved changes to this entry? Anything you have added or edited since opening it will be lost.");
+            if (!ok) return;
+        }
+        closeForm(key);
+    }
+
     function closeForm(key) {
         const cfg = COLLECTIONS[key];
+        // Cleared before anything else: closeForm also runs on logout and on
+        // panel switches, and a stale snapshot would make the next
+        // beforeunload think there were changes in a form that is gone.
+        cfg.formEl._openSnapshot = null;
         cfg.formEl.classList.remove("is-open");
         cfg.formEl.innerHTML = "";
         cfg.formEl._galleryDraft = null;
@@ -3436,7 +3499,24 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     floatingCancelBtn.addEventListener("click", () => {
         if (!activeFormKey) return;
-        closeForm(activeFormKey);
+        requestCloseForm(activeFormKey);
+    });
+
+    /* The browser's own "leave site?" prompt, for the exits this page does
+       not control — closing the tab, hitting Back, following a link. Cancel
+       is covered by requestCloseForm above; this covers everything else.
+
+       Every open form is checked, not just the active one: two collections
+       each have their own form element, and only one of them is ever the
+       "active" one even when both hold changes.
+
+       preventDefault is what modern browsers act on; returnValue is kept for
+       the older ones that still require it. Neither lets us choose the
+       wording — the browser shows its own. */
+    window.addEventListener("beforeunload", e => {
+        if (!Object.keys(COLLECTIONS).some(isFormDirty)) return;
+        e.preventDefault();
+        e.returnValue = "";
     });
 
     // ---------- tab panels ----------
