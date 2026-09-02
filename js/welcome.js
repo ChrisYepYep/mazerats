@@ -44,6 +44,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const builderEl = document.getElementById("event-modal-builder");
     const tagsEl = document.getElementById("event-modal-tags");
     const ecBadgeEl = document.getElementById("event-modal-ec-badge");
+    const ecLabelEl = document.getElementById("event-modal-ec-label");
+    // Worded exactly as js/home.js words it — the same badge on the same row.
+    const EC_SEASON_NAMES = { s1: "Event Creators Season One", s2: "Event Creators Season Two" };
     const articleEl = document.getElementById("event-modal-article");
     const articleTitleEl = document.getElementById("event-modal-article-title");
     const articleMetaEl = document.getElementById("event-modal-article-meta");
@@ -279,9 +282,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         const ecSeason = ["s1", "s2"].includes(event.ecSeason) ? event.ecSeason : "";
         if (ecSeason) {
             ecBadgeEl.src = `assets/img/ec/ec-badge-${ecSeason}.png`;
-            ecBadgeEl.alt = `EC season ${ecSeason.slice(1)}`;
+            // Two lines, exactly as js/home.js sets them — see there.
+            ecBadgeEl.alt = EC_SEASON_NAMES[ecSeason];
+            ecLabelEl.textContent = EC_SEASON_NAMES[ecSeason].replace(" Season", "\nSeason");
         }
         ecBadgeEl.hidden = !ecSeason;
+        ecLabelEl.hidden = !ecSeason;
         modal.querySelector(".modal").classList.toggle("is-ec", !!ecSeason);
         /* The same status / hotel / date line home.html's modal writes, in
            the same order and markup. This was a bare date string before,

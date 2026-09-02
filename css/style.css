@@ -2033,10 +2033,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-image-slice: 0 29 0 83 fill;
     border-image-width: 0 29px 0 83px;
     border-image-repeat: stretch;
-    /* The plate runs y 6-24, so its middle is y 15 — five pixels above the
-       middle of the 40px box, because the medal's ribbons hang below it.
-       Ten pixels off the bottom of the content box moves the centre there. */
-    padding-bottom: 10px;
+    /* Where the name sits in the 40px box, and the only thing that decides
+       it. The content box is 40px less this, and the text is centred in
+       what remains — so the centre lands at (40 - padding) / 2, and every
+       2px taken off here moves the name 1px down.
+
+       The plate itself runs y 6-24, whose middle is y 15, which 10px gave
+       exactly. It sits at 17 now: geometrically centred read a touch high
+       against the plate's own drawn rim, which is heavier along the bottom
+       edge than the top. */
+    padding-bottom: 6px;
     margin: 0;
     image-rendering: pixelated;
 }
@@ -4692,13 +4698,40 @@ body[data-page="home"] .hero { padding-top: 18px; }
     width: 29px;
     height: 40px;
     margin-right: -12px;
-    margin-left: 10px;
+    /* None: .ec-modal-label sits immediately before this and the row's gap
+       is already the space between them. */
+    margin-left: 0;
     image-rendering: pixelated;
 }
 
 /* display is set above, so the attribute needs saying out loud — same
    reason .builder-list carries its own. */
 .ec-modal-badge[hidden] { display: none; }
+
+/* What the medal beside it means, since neither "EC" nor a numeral on a
+   hexagon says so by itself. Sits immediately left of the badge, wrapped
+   onto two lines rather than run across the row: at 40px the medal is
+   taller than one line of this, and a single long line would take the
+   builder card's whole width to do it. */
+.ec-modal-label {
+    flex: 0 0 auto;
+    align-self: center;
+    /* Only on the left. The 10px between this and the medal is the row's own
+       gap and nothing else — a margin either side of that as well put 28px
+       between a label and the thing it labels. */
+    margin: 0 0 0 10px;
+    /* The newline js/home.js puts in is the only break wanted; pre keeps it
+       and refuses every other one. */
+    white-space: pre;
+    text-align: right;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 700;
+    font-size: 0.5625rem;
+    line-height: 1.35;
+    color: var(--amber);
+}
+
+.ec-modal-label[hidden] { display: none; }
 
 /* No colour of its own beyond the medal.
 
@@ -6820,13 +6853,21 @@ body[data-page="admin"] .search-box input {
     .room-desc-box { max-height: min(160px, 18vh); }
 
 
-    /* .modal-top-row wraps at this width and .room-tags takes a whole line
-       of its own, which dropped the EC badge onto a third line below it,
-       left-aligned and orphaned. Sending the tags to the back of the order
-       keeps the badge on the first line beside the builder card, where it
-       is on a wide screen; the auto margin holds it against the right. */
-    .modal-top-row .room-tags { order: 1; }
-    .modal-top-row .ec-modal-badge { margin-left: auto; }
+    /* .modal-top-row wraps at this width, and what shares a line with the
+       builder card has to be chosen rather than left to chance.
+
+       The card gets the first line to itself. An EC event's label and medal
+       beside it squeezed it to about a third of the row, which broke the
+       builder's motto to one word a line; the tags on their own were doing
+       a milder version of the same thing. Everything else drops below it
+       and is held against the right, in the order it reads on a wide
+       screen: the label and its medal, then the tags. */
+    .modal-top-row .builder-list,
+    .modal-top-row .room-creator { flex-basis: 100%; }
+    .modal-top-row .ec-modal-label,
+    .modal-top-row .ec-modal-badge { order: 1; }
+    .modal-top-row .room-tags { order: 2; }
+    .modal-top-row .ec-modal-label { margin-left: auto; }
     /* Same idea as the desktop rule, against the height a phone has. */
     .room-desc-box:has(.modal-article:not([hidden])) { max-height: min(38vh, 300px); }
 

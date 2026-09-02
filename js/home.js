@@ -19,7 +19,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // Events have no difficulty field (see normalize()) — hidden while
     // viewing Events, see updateChrome().
     const difficultySortOptions = sortSelect.querySelectorAll('option[value^="difficulty"]');
-    const dateSortOption = sortSelect.querySelector('option[value="date"]');
     const emptyEl = document.getElementById("featured-empty");
     const topNavBtns = document.querySelectorAll("#top-nav .chrome-nav-btn");
     const subNavEl = document.getElementById("sub-nav");
@@ -65,6 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalLinks = document.getElementById("modal-links");
     const modalTags = document.getElementById("modal-tags");
     const modalEcBadge = document.getElementById("modal-ec-badge");
+    const modalEcLabel = document.getElementById("modal-ec-label");
     const modalArticle = document.getElementById("modal-article");
     const modalArticleTitle = document.getElementById("modal-article-title");
     const modalArticleMeta = document.getElementById("modal-article-meta");
@@ -419,7 +419,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 return (ai - bi) * dir;
             });
         } else {
-            sorted.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+            /* By date, either way round. sortKey is an ISO string on both
+               kinds — an event's start, a maze's opening — so comparing
+               them as text is comparing them as dates.
+
+               This is also the fallback for anything unrecognised, which is
+               deliberate: it is the default for the events lists, and a
+               stale value from somewhere should land on it rather than on
+               nothing. */
+            const dir = sortBy === "date-asc" ? -1 : 1;
+            sorted.sort((a, b) => dir * b.sortKey.localeCompare(a.sortKey));
         }
         // An event happening right now is the one thing someone opening the
         // Events tab needs to see first, so LIVE is lifted to the top of
@@ -568,28 +577,20 @@ document.addEventListener("DOMContentLoaded", () => {
             sortTouched = false;
         }
 
-        /* Past events open newest first. That list is a history, and the
-           thing being looked for in a history is nearly always the most
-           recent one — alphabetical order is the right default for an
-           archive of mazes and the wrong one for a run of dated events.
+        /* Every events list opens newest first — upcoming, past and archive
+           alike. All three are runs of dated things, and the one being
+           looked for is nearly always the most recent; alphabetical order is
+           the right default for an archive of mazes and the wrong one here.
 
-           A default, not a lock: it only applies until the visitor picks a
-           sort of their own, and their choice then follows them between
-           tabs rather than being reset by arriving at this one. */
+           A default, not a lock: it applies until the visitor picks a sort
+           of their own, and their choice then follows them between tabs
+           rather than being reset by arriving at one of these. */
         if (!sortTouched) {
-            const want = (isEvents && !showFeatured && resolvedEventsSub() === "past") ? "date" : "name";
+            const want = (isEvents && !showFeatured) ? "date-desc" : "name";
             if (sortBy !== want) {
                 sortBy = want;
                 sortSelect.value = want;
             }
-        }
-
-        // "Opening Date" is a maze's wording. On the events lists the same
-        // sort is the event's own date — and on Past it is now the default,
-        // so the label is the first thing read about a list already in that
-        // order.
-        if (dateSortOption) {
-            dateSortOption.textContent = isEvents ? "Sort by: Event Date" : "Sort by: Opening Date";
         }
     }
 
@@ -2033,6 +2034,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Scroll wheel and single click zoom the picture within its window;
     // double click doubles the whole frame instead (see .is-2x).
+    /* What the badge stands for, spelled out beside it. EC is not a thing a
+       visitor can be expected to know, and a medal with a numeral on it says
+       even less on its own. */
+    const EC_SEASON_NAMES = { s1: "Event Creators Season One", s2: "Event Creators Season Two" };
+
     const PHOTO_ZOOM_WHEEL_STEP = 1.15;
     // How far the pointer may travel between press and release and still
     // count as a click rather than a drag of the picture.
@@ -2960,9 +2966,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const ecSeason = isEventItem ? (n.ecSeason || "") : "";
         if (ecSeason) {
             modalEcBadge.src = `assets/img/ec/ec-badge-${ecSeason}.png`;
-            modalEcBadge.alt = `EC season ${ecSeason.slice(1)}`;
+            /* Two lines, broken before "Season" — set as text with a real
+               newline rather than markup, and held by white-space: pre so it
+               breaks exactly there and nowhere else. Left to wrap on its own
+               it came out as three ragged lines. The alt keeps the whole
+               phrase on one line, which is what a screen reader wants. */
+            modalEcBadge.alt = EC_SEASON_NAMES[ecSeason];
+            modalEcLabel.textContent = EC_SEASON_NAMES[ecSeason].replace(" Season", "\nSeason");
         }
         modalEcBadge.hidden = !ecSeason;
+        modalEcLabel.hidden = !ecSeason;
         modalEl.classList.toggle("is-ec", !!ecSeason);
         if (n.habboLink) {
             modalLink.href = n.habboLink;

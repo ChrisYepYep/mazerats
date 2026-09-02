@@ -204,7 +204,8 @@
                         <select id="room-sort">
                             <option value="name">Sort by: Maze Name</option>
                             <option value="owner">Sort by: Maze Owner</option>
-                            <option value="date">Sort by: Opening Date</option>
+                            <option value="date-desc">Sort by: Newest</option>
+                            <option value="date-asc">Sort by: Oldest</option>
                             <option value="difficulty-asc">Sort by: Difficulty (Easy-Hard)</option>
                             <option value="difficulty-desc">Sort by: Difficulty (Hard-Easy)</option>
                         </select>
@@ -455,6 +456,7 @@
                                          modal titles the event in the window's titlebar rather than
                                          on a plate. Empty and hidden for everything else, so a
                                          regular event is untouched. -->
+                                    <p class="ec-modal-label" id="modal-ec-label" hidden></p>
                                     <img class="ec-modal-badge" id="modal-ec-badge" alt="" hidden>
                                 </div>
                                 <p class="modal-visit-link">
