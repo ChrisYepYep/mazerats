@@ -557,7 +557,54 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    /* What follows the "by <name>" on a row, if anything.
+
+       Open Mazes trade their description for the date the maze opened.
+       An events list carries its date as well, but keeps its description:
+       when an event happens is the first thing anyone wants from it — all
+       three events tabs are sorted by it, and until now the date was only
+       ever visible once the row had been opened — while the description is
+       the only line that says what the event actually is.
+
+       An event gets the full start/end span, worded exactly as the modal
+       words it, and one that has not been scheduled yet says "Date TBC"
+       rather than going blank. Not the bare "TBC" formatEventDuration
+       hands back: that reads as an answer to a "Date:" label, and nothing
+       on this line supplies one (js/site.js's ticker spells out the same
+       reasoning for the same reason). */
+    function rowDateHtml(n) {
+        const when = n.isEvent
+            ? (n.dateValue ? formatEventDuration(n.dateValue, n.endDateValue) : "Date TBC")
+            : (n.dateValue ? `${n.dateFieldLabel} ${formatMazeDate(n.dateValue)}` : "");
+        if (!when) return "";
+        /* A multi-day event is the one date long enough to wrap, and left to
+           itself the line breaks wherever it runs out of room — mid-date, so
+           the row reads as two half-dates rather than a span. Each end is
+           wrapped and held together instead, leaving the range dash as the
+           only place a break can happen.
+
+           Held apart with markup, not a non-breaking space: U+00A0 in Volter
+           Goldfish is 60% wider than a normal one (glyphs.html), so a date
+           spaced with them comes out visibly gappier than the name beside it.
+
+           Splitting on the spaced dash is safe because it is the only place
+           formatEventDuration puts one — a same-day event's own start–end
+           dash is unspaced, and belongs inside a part rather than between
+           two of them. */
+        const parts = when.split(" – ")
+            .map(part => `<span class="row-date-part">${escapeHtml(part)}</span>`)
+            .join(" – ");
+        // The dot before it is drawn by .row-date::before, not typed here —
+        // see the stylesheet for why a middot in this font is invisible.
+        // It only earns its place between two things, so a row with no
+        // builder or host to separate the date from goes without.
+        const alone = n.subtitle ? "" : " row-date-alone";
+        return ` <span class="row-date${alone}">${parts}</span>`;
+    }
+
     function roomRowHtml(n, isOpenView) {
+        // Events always show their date; mazes only do on the Open list.
+        const showDate = isOpenView || n.isEvent;
         return `
             <div class="chrome-list-row featured" data-difficulty="${n.difficulty || ""}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
                 <div class="row-thumb">
@@ -565,7 +612,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <div class="row-info">
                     <h3>${escapeHtml(n.name || "")}</h3>
-                    <p class="row-creator">${escapeHtml(n.subtitle || "")}${isOpenView && n.dateValue ? ` <span class="row-date">· ${escapeHtml(n.dateFieldLabel)} ${escapeHtml(formatMazeDate(n.dateValue))}</span>` : ""}</p>
+                    <p class="row-creator">${escapeHtml(n.subtitle || "")}${showDate ? rowDateHtml(n) : ""}</p>
                     ${isOpenView ? "" : `<p class="row-desc">${escapeHtml(n.description || "")}</p>`}
                     <div class="row-tags">${tagsHtml(n)}</div>
                 </div>

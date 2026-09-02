@@ -1839,6 +1839,37 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 .row-date { color: var(--parchment-dim); }
 
+/* The dot between the builder/host name and the date.
+
+   Drawn here, in Roboto, rather than typed into the markup — for exactly
+   the reason .builder-status::before is (see there). Volter Goldfish maps
+   U+00B7 to an EMPTY glyph: the font claims the character, so the browser
+   never falls back to one that could actually draw it, and a middot in
+   this face comes out as a blank gap. This separator WAS a middot, and had
+   been an invisible one on every Open Mazes row for as long as the date
+   has been on it.
+
+   Worth checking any punctuation bound for a Volter string against
+   glyphs.html first: the bullet and the pipe are drawn as a blob and a
+   heart in this font, and neither is what it looks like in the source. */
+.row-date::before {
+    content: "\2022";
+    font-family: 'Roboto', sans-serif;
+    /* Set as punctuation rather than as a word, and left to inherit its
+       colour so it follows the row it sits on — featured rows turn every
+       tone in .row-info flat black (see #featured-frame-list below). */
+    font-size: 0.5rem;
+    vertical-align: 1px;
+    margin-right: 5px;
+}
+
+/* Nothing to its left to be separated from — a maze with no builder
+   recorded, or an event with no host (see rowDateHtml in js/home.js). */
+.row-date-alone::before { content: none; }
+
+/* One end of a date range, kept in one piece — see rowDateHtml. */
+.row-date-part { white-space: nowrap; }
+
 .chrome-list-row .row-desc {
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-weight: 400;
