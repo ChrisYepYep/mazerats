@@ -7462,8 +7462,19 @@ body[data-page="admin"] .site-footer p {
 .modal.is-ec::before {
     content: "";
     position: absolute;
-    left: -19px;
-    top: -16px;
+    /* The two numbers worth moving, and they apply at every width.
+
+       There was a second pair of them under a max-width: 860px query for a
+       while, to stop the overhang being trimmed where .modal-overlay drops
+       to 12px of padding. It cost more than it bought: 860px is the site's
+       whole tablet-and-below breakpoint, so every window narrower than that
+       — including plenty of desktop ones — quietly ignored this rule, and
+       moving the bow by eye moved something nobody was looking at.
+
+       One number that always applies is worth a few pixels off the tip of
+       the streamer on a phone. */
+    left: -17px;
+    top: -17px;
     width: 101px;
     height: 103px;
     background-image: url('../assets/img/ec/jade-bow.png');
@@ -7478,18 +7489,6 @@ body[data-page="admin"] .site-footer p {
     z-index: 4;
 }
 
-/* Its own media query, directly under the rule it overrides, rather than in
-   the shared one further up the file: that block sits ABOVE this rule, and
-   at equal specificity the later of the two wins — so the override was
-   being read and then discarded. */
-@media (max-width: 860px) {
-    /* The overlay leaves the modal about 12px either side at this width and
-       clips whatever runs past it, so the desktop overhang cut the
-       streamer's lower tail off against the edge of the screen. Pulled in
-       to the room there actually is. Same size: this is pixel art, and
-       101px does not divide into anything smaller without resampling it. */
-    .modal.is-ec::before { left: -8px; }
-}
 
 /* ---------- a Habbo article, shown in place of an event's full details ----------
 
