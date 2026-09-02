@@ -1406,28 +1406,54 @@ function Build-Chrome {
 
     <# Order matters, and it is the stylesheet's own stacking order.
        .console-border sits at z-index 1 and .console-top-pattern at 3, so
-       the dotted strip is drawn OVER the border and its corners — the CSS
-       even says so out loud. Painting the pattern first (the obvious
-       reading order) let the border's opaque corner tiles cover both ends
-       of it, which is what made the strip look like a floating block of
-       dots rather than part of the chrome. #>
+       the top strip is drawn OVER the border and its corners — the CSS
+       even says so out loud. Painting it first (the obvious reading order)
+       let the border's opaque corner tiles cover both ends of it, which is
+       what made the strip look like a floating block of dots rather than
+       part of the chrome. #>
     Draw-Border $g $W $H
-    Draw-Tiled $g $SprPattern (Px 3) (Px 3) ($W - (Px 3)) (Px 23) 2
 
-    <# .console-title — an opaque yellow band that masks the pattern behind
-       its own letters. The stylesheet bottom-aligns the text inside a 20px
-       band starting at y=4, with 2px of padding under it (align-items:
-       flex-end), rather than centring it — so the title sits low, tight to
-       the screen below it, which is what makes it read as part of the
-       chrome instead of floating in the strip. #>
+    <# The top strip: a grip either side of the title, matching
+       .console-top-pattern. It was a fill of the dotted tile across the
+       whole 23px strip, with the title's own opaque yellow band laid over
+       it to mask the dots behind the letters. It is three rows of that
+       same tile now — the drag strip the photo frames have always had —
+       stopping short of the title and of the window buttons rather than
+       running behind either, so nothing needs masking.
+
+       5px tall is exactly three rows: 2n-1 px for n rows, since the tile
+       is 1px on and 1px off. It is pulled up 1px because this tile keeps
+       its dots on its ODD rows, and the band wants one on its first line.
+
+       The title's own numbers are unchanged. The stylesheet bottom-aligns
+       the text inside the strip rather than centring it — the title sits
+       low, tight to the screen below it, which is what makes it read as
+       part of the chrome instead of floating in the strip — and the 4px
+       either side of it is the padding .console-title carries, which the
+       grips keep their distance from rather than from the letters. #>
     $titleText = "Maze Rats"
     $tsize = Measure-Text $g $titleText $FontTitle
     $tw = [int]$tsize.Width + (Px 8)
     $tx = [int](($W - $tw) / 2)
+
+    $stripY = Px 3
+    $stripH = Px 23
+    $gripH  = Px 5
+    $gripY  = $stripY + [int](($stripH - $gripH) / 2)
+    $gripGap = Px 6
+
+    # Left: the strip's own end, in to the title.
+    Draw-Tiled $g $SprPattern (Px 3) $gripY (($tx - $gripGap) - (Px 3)) $gripH -1
+    # Right: the title, out to the first window button. Stops there rather
+    # than being masked by it the way the web console's is — this window
+    # has a minimise button as well as a close, and between them they take
+    # everything past that point anyway.
+    $gripFrom = $tx + $tw + $gripGap
+    $gripTo   = $MinX - $gripGap
+    Draw-Tiled $g $SprPattern $gripFrom $gripY ($gripTo - $gripFrom) $gripH -1
+
     $bandY = Px 4
     $bandH = Px 20
-    $tb = New-Object System.Drawing.SolidBrush($Yellow)
-    $g.FillRectangle($tb, $tx, $bandY, $tw, $bandH); $tb.Dispose()
     $textY = $bandY + $bandH - (Px 2) - [int]$tsize.Height
     Draw-TextCentred $g $titleText $FontTitle $Brown ([int]($W / 2)) $textY
 

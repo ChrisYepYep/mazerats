@@ -965,8 +965,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 /* Same window-frame border-image as .chrome-window (minus "fill", so the
-   border-image only draws the rim), filled with the same dotted
-   title_pattern.png treatment .chrome-titlebar uses behind its title. */
+   border-image only draws the rim), filled with a tiling of
+   title_pattern.png.
+
+   The titlebars used to be filled the same way and are not any more —
+   they show three rows of that tile as a grip either side of the title
+   now (see .chrome-titlebar). This is a button, not a window: there is
+   nothing here to take hold of and drag, so a grip would be telling the
+   reader something untrue, and the fill stays. Same for its little
+   brother, .btn-enter-mini. */
 .btn-enter {
     position: relative;
     display: inline-block;
@@ -1497,20 +1504,68 @@ body[data-page="home"] .hero { padding-top: 18px; }
     content: url('../assets/img/events_icon_active.png');
 }
 
-/* The titlebar carries the dotted texture itself — the title sits nested in
-   the middle of the pattern, with its own opaque backing plate breaking the
-   dots around it, the way a label interrupts a dashed rule. */
+/* ---------- the titlebar grip ----------
+
+   The bar carries a grip either side of its title: the same three rows of
+   dots the photo frame's drag strip uses (see .photo-frame-drag::before),
+   which is what a Habbo — or a Win95 — titlebar has always looked like.
+
+   It replaces a tiling of title_pattern.png over the bar's whole face, and
+   is drawn from that same tile rather than from a fresh set of gradients,
+   so the colour cannot drift from the pattern it replaces: it IS the
+   pattern, shown three rows at a time.
+
+   The dots also stop where the title starts now. They used to run behind
+   it and be covered by an opaque plate cut to the text — which is a
+   different thing to look at. The plate had hard edges of its own, and at
+   the bar's full height it read as a lighter panel set INTO the texture
+   rather than as a title interrupting a rule. Nothing is painted behind
+   the letters any more, so there is nothing to give an edge away. */
 .chrome-titlebar {
+    /* The room the title is guaranteed at each end of the bar. The grips
+       reach out past it (see their negative margins) so the dots still run
+       the full width the pattern did, into the window frame's own curve,
+       rather than stopping short at the padding. */
+    --titlebar-pad: 40px;
+    /* Clear ground between a grip and the title. */
+    --titlebar-grip-gap: 10px;
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 9px 40px;
+    gap: var(--titlebar-grip-gap);
+    padding: 9px var(--titlebar-pad);
+    background-color: var(--chrome-fill);
+}
+
+/* Exactly three rows of dots, 1px on and 1px off both ways, taken straight
+   off the tile rather than redrawn: title_pattern.png IS that grid, so a
+   box 5px tall shows rows 0, 2 and 4 of it and nothing else. How many rows
+   there are is therefore only this height — 2n-1 px for n rows — and one
+   number changes it everywhere. */
+.chrome-titlebar::before,
+.chrome-titlebar::after {
+    content: "";
+    flex: 1 1 0;
+    /* Without this a flex item refuses to shrink below its own content and
+       a long title would be pushed out of the bar instead of the grips
+       giving way to it. */
+    min-width: 0;
+    align-self: center;
+    height: 5px;
     background-image: url('../assets/img/title_pattern.png');
     background-repeat: repeat;
-    background-color: var(--chrome-fill);
     image-rendering: pixelated;
 }
+
+/* Back out past the padding, to the bar's own two ends. Equal and
+   opposite, and that matters more than it looks: the two grips share the
+   leftover space evenly, so any difference between these would move the
+   title off centre by half of it. It is why the right-hand grip is not
+   simply cut short where the close button sits — the close button stops
+   it instead, out of its own paint (see .chrome-close). */
+.chrome-titlebar::before { margin-left: calc(-1 * var(--titlebar-pad)); }
+.chrome-titlebar::after { margin-right: calc(-1 * var(--titlebar-pad)); }
 
 .chrome-titlebar h1,
 .chrome-titlebar h2,
@@ -1522,14 +1577,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
     letter-spacing: 0.5px;
     text-align: center;
-    background: var(--chrome-fill);
-    padding: 9px 12px;
-    /* Cancels the titlebar's own vertical padding so this backing plate
-       spans its full height, fully covering the dotted pattern instead of
-       leaving a strip of it visible above/below the text. */
-    margin: -9px 0;
-    border-radius: 3px;
+    margin: 0;
+    /* Was a backing plate — its own --chrome-fill background, 9px/12px of
+       padding and a -9px vertical margin to span the bar and break the
+       dots around the text. The grips leave a real gap instead, so there
+       is nothing left for it to cover. */
     max-width: 100%;
+    /* Same reason as the grips': lets a long title ellipsis rather than
+       overflow the bar. */
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1552,29 +1608,57 @@ body[data-page="home"] .hero { padding-top: 18px; }
     align-items: center;
     justify-content: center;
     cursor: var(--cursor-pointer);
-    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+    /* Three shadows. The first is the button's own hard drop.
+
+       The other two are the titlebar's own colour, and they are what stops
+       the grip running underneath (see .chrome-titlebar::after): 3px all
+       round gives the button clear ground to sit on, and the same box
+       shifted 10px right carries that ground out to the bar's end — the
+       button stands 10px in from it, and five stray dots past a close
+       button read as a smudge rather than as chrome. Invisible against a
+       bar of the same colour; all they do is end the grip.
+
+       The drop is listed first so it still paints over both of them. */
+    box-shadow:
+        1px 1px 0 rgba(0, 0, 0, 0.3),
+        0 0 0 3px var(--chrome-fill),
+        10px 0 0 3px var(--chrome-fill);
     text-decoration: none;
     flex-shrink: 0;
 }
 
 .chrome-close:hover { background: #fff; }
 
-/* The room-viewing modal's close button is just the pixel-art X image
-   itself — no button chrome — so it overrides .chrome-close's frame back
-   out to nothing. Scoped to its id rather than .chrome-close so the admin
+/* The room-viewing modal's close button is just the pixel-art X itself —
+   no button chrome — so it overrides .chrome-close's frame back out to
+   nothing. Scoped to its id rather than .chrome-close so the admin
    confirm/info dialogs (which share that class) keep their plain "×"
-   glyph in the normal cream button frame. */
+   glyph in the normal cream button frame.
+
+   It keeps the bar's own colour behind the artwork, though, where it used
+   to be fully transparent. The titlebar's grip runs the full width of the
+   bar (see .chrome-titlebar::after) — it has to, or the two grips would
+   be different lengths and the title would no longer sit centred between
+   them — and this is what stops it at the button instead of letting three
+   rows of dots cross the X. Against a bar of the same colour the plate
+   itself is invisible; all it does is end the grip.
+
+   The cream .chrome-close buttons elsewhere need none of this: their own
+   gradient is opaque and already breaks the dots where they sit. */
 #modal-close {
-    background: none;
+    background: var(--chrome-fill);
     border: none;
     border-radius: 0;
-    box-shadow: none;
+    /* Its 6px of padding is already the clear ground .chrome-close needs a
+       spread for; this only has to reach the last 10px of bar past it, so
+       the grip does not resume for five dots and stop again. */
+    box-shadow: 10px 0 0 var(--chrome-fill);
     width: auto;
     height: auto;
     padding: 6px;
 }
 
-#modal-close:hover { background: none; }
+#modal-close:hover { background: var(--chrome-fill); }
 
 #modal-close img {
     width: 14px;
@@ -1841,31 +1925,31 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 /* The dot between the builder/host name and the date.
 
-   Drawn here, in Roboto, rather than typed into the markup — for exactly
-   the reason .builder-status::before is (see there). Volter Goldfish maps
-   U+00B7 to an EMPTY glyph: the font claims the character, so the browser
-   never falls back to one that could actually draw it, and a middot in
-   this face comes out as a blank gap. This separator WAS a middot, and had
-   been an invisible one on every Open Mazes row for as long as the date
-   has been on it.
+   In Roboto, and not the middot it reads as — for exactly the reason
+   .builder-status::before carries its own font (see there). Volter Goldfish
+   maps U+00B7 to an EMPTY glyph: the font claims the character, so the
+   browser never falls back to one that could actually draw it, and a middot
+   in this face comes out as a blank gap. This separator was that middot,
+   and had been an invisible one on every Open Mazes row for as long as the
+   date has been on it.
 
    Worth checking any punctuation bound for a Volter string against
    glyphs.html first: the bullet and the pipe are drawn as a blob and a
-   heart in this font, and neither is what it looks like in the source. */
-.row-date::before {
-    content: "\2022";
+   heart in this font, and neither is what it looks like in the source.
+
+   Its own element rather than .row-date::before, and emitted with no space
+   in front of it, so it is welded to the end of the name and a line can
+   only break AFTER it. On a phone the date regularly wraps, and a dot at
+   the head of the new line reads as a bullet point rather than as a
+   separator. No colour of its own: it inherits .row-creator's, which is
+   what featured rows repaint (see #featured-frame-list below). */
+.row-date-dot {
     font-family: 'Roboto', sans-serif;
-    /* Set as punctuation rather than as a word, and left to inherit its
-       colour so it follows the row it sits on — featured rows turn every
-       tone in .row-info flat black (see #featured-frame-list below). */
+    /* Set as punctuation rather than as a word. */
     font-size: 0.5rem;
     vertical-align: 1px;
-    margin-right: 5px;
+    margin-left: 5px;
 }
-
-/* Nothing to its left to be separated from — a maze with no builder
-   recorded, or an event with no host (see rowDateHtml in js/home.js). */
-.row-date-alone::before { content: none; }
 
 /* One end of a date range, kept in one piece — see rowDateHtml. */
 .row-date-part { white-space: nowrap; }
@@ -2611,10 +2695,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
         inset 1px 0 0 var(--chrome-highlight);
 }
 
-.modal .chrome-titlebar {
-    padding-left: 28px;
-    padding-right: 28px;
-}
+/* Set on the variable, not on padding, so the grips reach the bar ends
+   here too — they are pulled back out by exactly this much. */
+.modal .chrome-titlebar { --titlebar-pad: 28px; }
 
 /* The maze name in the modal titlebar. Scoped to .modal so the homepage and
    admin titlebars keep their Silkscreen. 700 is what selects
@@ -4745,8 +4828,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
     }
 }
 
-/* Same window-frame + dotted-pattern treatment as .btn-enter, shrunk down
-   further for a row of small toggle controls. */
+/* Same window-frame + dotted-pattern fill as .btn-enter, shrunk down
+   further for a row of small toggle controls — and kept as a fill for the
+   same reason it is: see there. */
 .btn-enter-mini {
     display: block;
     width: 100%;
@@ -5889,78 +5973,97 @@ body[data-page="admin"] .search-box input {
     z-index: 1;
 }
 
-/* ---- top strip: pattern + title + close ---- */
+/* ---- top strip: grip + title + close ---- */
 
-/* Spans the whole gap between the top border and .console-screen — the
-   title's own opaque background (see .console-title) sits on top of this
-   and masks the pattern directly behind its own letters, rather than this
-   element being clipped/cut around the text. Also the primary drag handle
-   (see js/console.js) — dragging is blocked from originating on real
-   controls (buttons/inputs/the screen itself), so in practice the whole
-   yellow chrome including this strip drags the console. */
+/* The same grip the window titlebars carry (see .chrome-titlebar), in the
+   console's own colours: three rows of dots either side of the title,
+   drawn from cnsl-top-pattern.png itself rather than redrawn, so this is
+   literally the tile the whole strip used to be filled with — shown three
+   rows at a time instead of twenty-three.
+
+   The title lives inside this element now, between the two grips, so the
+   dots stop where the letters start. They used to run the full width with
+   the title's own opaque plate laid over them; the result looked the same
+   at a glance, but there was never a real gap, and a plate cut to the text
+   is the sort of thing that shows itself the moment anything behind it
+   changes.
+
+   Also still the primary drag handle (see js/console.js) — dragging is
+   blocked from originating on real controls (buttons/inputs/the screen
+   itself), so in practice the whole yellow chrome including this strip
+   drags the console. */
 .console-top-pattern {
     position: absolute;
     /* Lowered 3px from the modal's own top edge, with the bottom edge kept
-       flush against .console-screen's own top (26px) — height shrinks to
-       match. 3px left/right inset ("padding") keeps it just short of the
-       border's own outer edge. z-index above .console-border (1) so it
+       flush against .console-screen's own top (26px). 3px in from each
+       side keeps it just short of the border's own outer edge — the right
+       matches the left now, where it used to sit at 0: the strip's centre
+       has to be the frame's centre, or the title centred in it would not
+       be centred on the console. z-index above .console-border (1) so it
        deliberately overlays the border/corners instead of sitting behind. */
     top: 3px;
     left: 3px;
-    right: 0px;
+    right: 3px;
     height: 23px;
-    /* Lowered 2px within its own unchanged box (background-position, not
-       a transform: translateY) — a transform shifts the whole rendered
-       box including its edges, which would uncover a sliver of whatever
-       sits behind it wherever the box was flush against a true boundary,
-       instead of just shifting the repeating tile in place. */
-    background-position: 0 2px;
-    background-image: url('../assets/img/console/cnsl-top-pattern.png');
-    background-repeat: repeat;
-    image-rendering: pixelated;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Clear ground between a grip and the title. */
+    gap: 6px;
     cursor: grab;
     z-index: 3;
+}
+
+/* 5px tall shows rows 0, 2 and 4 of the tile and nothing else — the row
+   count is only this height, 2n-1 px for n rows. The tile's dots sit on
+   its ODD rows (unlike title_pattern.png's, which sit on the even ones),
+   so it is pulled up 1px to put a dot row on the grip's own first line. */
+.console-top-pattern::before,
+.console-top-pattern::after {
+    content: "";
+    flex: 1 1 0;
+    min-width: 0;
+    height: 5px;
+    background-image: url('../assets/img/console/cnsl-top-pattern.png');
+    background-repeat: repeat;
+    background-position: 0 -1px;
+    image-rendering: pixelated;
 }
 
 .console-frame.is-dragging .console-top-pattern,
 .console-frame.is-dragging { cursor: grabbing; }
 
 .console-title {
-    position: absolute;
-    /* top/height tuned by hand (top raised 1px, bottom raised 2px from
-       their previous values) rather than kept flush against .console-
-       screen's own top edge like before — the solid background still
-       masks the pattern behind the text either way (see .console-top-
-       pattern), just over a slightly different band now. align-items:
-       flex-end keeps the text itself sitting near the bottom of the box
-       rather than re-centering within it. */
-    top: 4px;
-    left: 0;
-    right: 0;
-    height: 20px;
-    width: fit-content;
-    max-width: calc(100% - 34px);
-    margin: 0 auto;
+    /* Stretched to the strip's full height and the text sat on the bottom
+       of it, rather than centred: the title sits low, tight to the screen
+       below it, which is what makes it read as part of the chrome instead
+       of floating in the strip. The 4px underneath puts the letters on
+       exactly the pixels they occupied when this was absolutely positioned
+       at top:4/height:20 with 2px under it. */
+    flex: 0 1 auto;
+    align-self: stretch;
+    /* A title long enough to reach the close button would be trouble; the
+       grips give way first (flex: 1 1 0 against this one's 0 1 auto), and
+       this stops the text itself before it gets there. */
+    max-width: calc(100% - 62px);
+    min-width: 0;
     display: flex;
     align-items: flex-end;
     justify-content: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding: 0 4px 2px;
-    background: #ffcb00;
+    padding: 0 4px 4px;
+    margin: 0;
     color: #996600;
     font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
     font-weight: 700;
     font-size: 0.6rem;
     letter-spacing: 0;
     text-shadow: none;
-    /* Above .console-top-pattern (z-index: 3, now that it overlays the
-       corners too) so this box's own solid background still masks the
-       pattern behind the text — it'd otherwise have gone back to
-       painting over the title now that the pattern outranks the old
-       value (2) this used to only need to beat. */
-    z-index: 4;
+    /* Nothing to paint behind the letters any more: the grips leave a real
+       gap, so the opaque #ffcb00 plate this used to carry has nothing left
+       to cover. */
     pointer-events: none;
 }
 
@@ -5972,7 +6075,22 @@ body[data-page="admin"] .search-box input {
     height: 13px;
     padding: 0;
     border: none;
-    background-color: transparent;
+    /* The frame's own yellow, spread past the sprite by the shadows, so the
+       grip running underneath stops at the button instead of three rows of
+       dots crossing the X. Invisible against a frame of the same colour —
+       all it does is end the grip. The strip runs the full width on purpose
+       (the two grips have to match, or the title between them is no longer
+       centred), so this is what makes room here.
+
+       Two shadows, not one: 3px all round clears the X itself but leaves
+       the last 8px of strip past it still dotted, and four stray dots
+       beyond the close button read as a smudge rather than as chrome. The
+       second is the same box shifted 8px right, carrying the cleared
+       ground out to the strip's own end. Shadows rather than a pseudo-
+       element because they paint BEHIND the button's own background,
+       where a child would paint over the X. */
+    background-color: #ffcb00;
+    box-shadow: 0 0 0 3px #ffcb00, 8px 0 0 3px #ffcb00;
     background-image: url('../assets/img/console/cnsl-top-x-close.png');
     background-repeat: no-repeat;
     image-rendering: pixelated;
@@ -6477,7 +6595,9 @@ body[data-page="admin"] .search-box input {
     }
     /* Every px here comes straight off the row's usable width. */
     .chrome-body { padding: 12px; }
-    .chrome-titlebar { padding: 10px 34px; }
+    /* Same again: the side value goes through --titlebar-pad so the grips
+       still reach the ends, and only the vertical is set outright. */
+    .chrome-titlebar { --titlebar-pad: 34px; padding-top: 10px; padding-bottom: 10px; }
     .chrome-titlebar h1, .chrome-titlebar h2, .chrome-titlebar .chrome-title-text { font-size: 0.8rem; }
     .chrome-tab { font-size: 0.56rem; letter-spacing: 0; border-width: 8px; }
     .chrome-window { width: 100%; }

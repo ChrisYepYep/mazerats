@@ -594,12 +594,17 @@ document.addEventListener("DOMContentLoaded", () => {
         const parts = when.split(" – ")
             .map(part => `<span class="row-date-part">${escapeHtml(part)}</span>`)
             .join(" – ");
-        // The dot before it is drawn by .row-date::before, not typed here —
-        // see the stylesheet for why a middot in this font is invisible.
-        // It only earns its place between two things, so a row with no
-        // builder or host to separate the date from goes without.
-        const alone = n.subtitle ? "" : " row-date-alone";
-        return ` <span class="row-date${alone}">${parts}</span>`;
+        /* The separator only earns its place between two things, so a row
+           with no builder or host to separate the date from goes without.
+
+           Its own span, with no space before it, so it stays welded to the
+           end of the name and the line can only break after it — see
+           .row-date-dot, which also explains why it is not the middot it
+           reads as. */
+        const dot = n.subtitle
+            ? `<span class="row-date-dot" aria-hidden="true">•</span>`
+            : "";
+        return `${dot} <span class="row-date">${parts}</span>`;
     }
 
     function roomRowHtml(n, isOpenView) {

@@ -316,9 +316,16 @@
     <div class="console-modal" id="console-modal" style="display:none;">
         <div class="console-frame" id="console-frame">
             <div class="console-border" aria-hidden="true"></div>
-            <div class="console-top-pattern" id="console-drag-handle" aria-hidden="true"></div>
+            <!-- The top strip: a grip either side of the title, which sits
+                 inside it so the dots genuinely stop where the letters start
+                 rather than running behind them under a plate. Also the
+                 primary drag handle — the title itself takes no pointer
+                 events, so a drag begun on it lands here (see css) — and no
+                 longer aria-hidden, now that it carries the title. -->
+            <div class="console-top-pattern" id="console-drag-handle">
+                <h2 class="console-title" id="console-drag-handle-title">Habbo Console</h2>
+            </div>
             <button type="button" class="console-close-btn" id="console-close-btn" aria-label="Close console"></button>
-            <h2 class="console-title" id="console-drag-handle-title">Habbo Console</h2>
             <div class="console-screen" id="console-screen">
                 <div class="console-screen-scroll" id="console-screen-scroll">
                     <div class="console-page" id="console-page-contact">
