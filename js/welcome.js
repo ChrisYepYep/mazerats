@@ -43,6 +43,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const hostEl = document.getElementById("event-modal-host");
     const builderEl = document.getElementById("event-modal-builder");
     const tagsEl = document.getElementById("event-modal-tags");
+    const ecBadgeEl = document.getElementById("event-modal-ec-badge");
     const metaEl = document.getElementById("event-modal-meta");
     const descEl = document.getElementById("event-modal-desc");
     const visitWrap = document.getElementById("event-modal-visit-wrap");
@@ -263,6 +264,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         hostEl.textContent = event.host ? `by ${event.host}` : "";
         showHostCard(event);
         tagsEl.innerHTML = (event.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("");
+
+        /* An EC event's season medal, at the right of the builder row, and a
+           wash of the badge's own green over the modal with it (see
+           .modal.is-ec). Off the event's own season, so a regular event —
+           which is every event with no ecSeason at all — is left exactly as
+           it was. Only the two seasons the admin page offers are recognised;
+           the value reaches a filename, so it is not taken on trust. */
+        const ecSeason = ["s1", "s2"].includes(event.ecSeason) ? event.ecSeason : "";
+        if (ecSeason) {
+            ecBadgeEl.src = `assets/img/ec/ec-badge-${ecSeason}.png`;
+            ecBadgeEl.alt = `EC season ${ecSeason.slice(1)}`;
+        }
+        ecBadgeEl.hidden = !ecSeason;
+        modal.querySelector(".modal").classList.toggle("is-ec", !!ecSeason);
         /* The same status / hotel / date line home.html's modal writes, in
            the same order and markup. This was a bare date string before,
            which was the visible half of this modal having drifted from the

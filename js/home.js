@@ -63,6 +63,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalLinksWrap = document.getElementById("modal-links-wrap");
     const modalLinks = document.getElementById("modal-links");
     const modalTags = document.getElementById("modal-tags");
+    const modalEcBadge = document.getElementById("modal-ec-badge");
+    // The window itself, inside the overlay — what .is-ec is set on.
+    const modalEl = modalOverlay.querySelector(".modal");
     const modalLink = document.getElementById("modal-link");
     const modalClose = document.getElementById("modal-close");
 
@@ -190,6 +193,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 dateFieldLabel: "Date",
                 dateValue: item.date,
                 endDateValue: item.endDate,
+                /* Which EC season this event belongs to, or "" for a
+                   regular one — which is also what every event that
+                   predates the field reads as, since it simply has none.
+
+                   Whitelisted rather than passed through: this value ends
+                   up in a class name (ec-title-s1), and the only two that
+                   mean anything are the two the admin page offers. */
+                ecSeason: ["s1", "s2"].includes(item.ecSeason) ? item.ecSeason : "",
                 // Events use the exact same fallback chain (entrance shot,
                 // then the first room-by-room gallery image, when no thumb
                 // is set) and the same gallery/entrance/finish shape as
@@ -607,6 +618,20 @@ document.addEventListener("DOMContentLoaded", () => {
         return `${dot} <span class="row-date">${parts}</span>`;
     }
 
+    /* The row's own title. An EC event wears its season's name plate — the
+       medal, and the name in the plate beside it (see .ec-title). Anything
+       else is the plain heading it has always been.
+
+       The plate is a list-row thing only. The modal titles the event in the
+       window's own titlebar, which is chrome rather than content, and a
+       gold plate sitting in it would read as a second window. The modal
+       carries the badge on its own instead — see openModal. */
+    function ecTitleHtml(n) {
+        const name = escapeHtml(n.name || "");
+        if (!n.ecSeason) return `<h3>${name}</h3>`;
+        return `<h3 class="ec-title ec-title-${n.ecSeason}"><span class="ec-title-name">${name}</span></h3>`;
+    }
+
     function roomRowHtml(n, isOpenView) {
         // Events always show their date; mazes only do on the Open list.
         const showDate = isOpenView || n.isEvent;
@@ -616,7 +641,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(n.thumb, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
                 </div>
                 <div class="row-info">
-                    <h3>${escapeHtml(n.name || "")}</h3>
+                    ${ecTitleHtml(n)}
                     <p class="row-creator">${escapeHtml(n.subtitle || "")}${showDate ? rowDateHtml(n) : ""}</p>
                     ${isOpenView ? "" : `<p class="row-desc">${escapeHtml(n.description || "")}</p>`}
                     <div class="row-tags">${tagsHtml(n)}</div>
@@ -2840,6 +2865,20 @@ document.addEventListener("DOMContentLoaded", () => {
             modalLinksWrap.style.display = "none";
         }
         modalTags.innerHTML = tagsHtml(n);
+
+        /* An EC event's season medal, at the right of the builder row, and a
+           wash of the badge's own green over the modal with it (see
+           .modal.is-ec). Off the event's own season, so a regular event —
+           which is every event with no ecSeason at all — is left exactly as
+           it was. The value reaches a filename, and normalize has already
+           reduced it to one of the two seasons or nothing. */
+        const ecSeason = isEventItem ? (n.ecSeason || "") : "";
+        if (ecSeason) {
+            modalEcBadge.src = `assets/img/ec/ec-badge-${ecSeason}.png`;
+            modalEcBadge.alt = `EC season ${ecSeason.slice(1)}`;
+        }
+        modalEcBadge.hidden = !ecSeason;
+        modalEl.classList.toggle("is-ec", !!ecSeason);
         if (n.habboLink) {
             modalLink.href = n.habboLink;
             modalLink.style.display = "inline-block";

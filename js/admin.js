@@ -124,6 +124,16 @@ document.addEventListener("DOMContentLoaded", () => {
         ["BR", "BR"]
     ];
 
+    /* Which kind of event this is. Absence is Regular — every event that
+       existed before this was added has no field at all, and reads as one
+       without a migration.
+
+       Only the EC seasons change anything: they give the event its badge
+       and name plate in a list row, and its badge and a wash of the
+       badge's own green in the modal (see .ec-title / .modal.is-ec in
+       css/style.css). Regular events are untouched. */
+    const EC_SEASON_OPTIONS = [["", "Regular"], ["s1", "EC S1"], ["s2", "EC S2"]];
+
     const COLLECTIONS = {
         rooms: {
             singular: "Maze",
@@ -2017,6 +2027,16 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        /* An EC event wears its season's name plate here too — the same
+           plate the public list rows use, so an admin scanning this list
+           sees what a visitor sees. Only the two seasons the form offers
+           are recognised, because the value lands in a class name. */
+        function ecTitleHtml(item, title) {
+            const season = ["s1", "s2"].includes(item.ecSeason) ? item.ecSeason : "";
+            if (key !== "events" || !season) return `<h3>${escapeHtml(title)}</h3>`;
+            return `<h3 class="ec-title ec-title-${season}"><span class="ec-title-name">${escapeHtml(title)}</span></h3>`;
+        }
+
         entries.forEach(({ item, index }) => {
             const title = item[cfg.fieldMap.title] || "(untitled)";
             const subtitle = item[cfg.fieldMap.subtitle] || "";
@@ -2031,7 +2051,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${thumbSrc ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(thumbSrc, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
                 </div>
                 <div class="row-info">
-                    <h3>${escapeHtml(title)}</h3>
+                    ${ecTitleHtml(item, title)}
                     <p class="row-creator">${subtitle ? "by " + escapeHtml(subtitle) : ""}</p>
                     <p class="row-desc">${escapeHtml(item.description || "")}</p>
                 </div>
@@ -2195,6 +2215,15 @@ document.addEventListener("DOMContentLoaded", () => {
                     <p class="admin-hint">Set automatically from the dates above: LIVE once the start passes, Past once the end does, Archived after ${EventStatus.ARCHIVE_YEARS} year${EventStatus.ARCHIVE_YEARS === 1 ? "" : "s"}.</p>
                 </div>
               `
+            : "";
+
+        // Events only. Sits with Host rather than down by the dates,
+        // because it says what the event IS rather than when it runs.
+        const ecSeasonFieldHtml = isEvents
+            ? fieldRow("Event type", `<select name="ecSeason">${EC_SEASON_OPTIONS.map(([value, label]) =>
+                `<option value="${value}" ${(item.ecSeason || "") === value ? "selected" : ""}>${label}</option>`
+              ).join("")}</select>`) +
+              `<p class="admin-hint">An EC event carries its season badge and name plate wherever it is listed. Regular events look exactly as they always have.</p>`
             : "";
 
         const difficultyOptionsHtml = DIFFICULTY_OPTIONS.map(([value, label]) =>
@@ -2365,6 +2394,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <h3 class="admin-form-title">${isEdit ? "Edit " + cfg.singular : "Add a New " + cfg.singular}</h3>
             ${fieldRow(cfg.titleLabel, `<input type="text" name="title" required value="${item[cfg.fieldMap.title] || ""}">`)}
             ${fieldRow(cfg.subtitleLabel, `<input type="text" name="subtitle" value="${item[cfg.fieldMap.subtitle] || ""}">`)}
+            ${ecSeasonFieldHtml}
             ${statusFieldHtml}
             ${difficultyFieldHtml}
             ${fieldRow("Hotel", `<select name="hotel">${HOTEL_OPTIONS.map(([value, label]) =>
@@ -2612,6 +2642,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (key === "events") {
             payload.date = data.startDate && data.startTime ? `${data.startDate}T${data.startTime}:00Z` : "";
             payload.endDate = data.endDate && data.endTime ? `${data.endDate}T${data.endTime}:00Z` : "";
+            // "" for Regular, which is also what an event that predates the
+            // field reads as. Written either way so switching an event back
+            // to Regular actually clears it.
+            payload.ecSeason = data.ecSeason || "";
         } else {
             // Day is optional — a maze whose exact opening day isn't known
             // saves as "YYYY-MM" instead of guessing a day, and

@@ -1987,6 +1987,81 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* One end of a date range, kept in one piece — see rowDateHtml. */
 .row-date-part { white-space: nowrap; }
 
+/* ---------- EC events: the name plate on a list row ----------
+
+   ec-name-player-s*.png is one 168x40 piece: the season's medal at the left
+   (x 0-28, hanging from y 2 to y 39 on its ribbons) and a black name plate
+   beside it (x 28-167, y 6-24) with a gold rim and a painted highlight
+   along the top.
+
+   It has to stretch to whatever the event is called, and only one part of
+   it may: columns 83 to 138 are pixel-for-pixel identical to each other,
+   which makes them the one band that can be pulled without smearing the
+   highlight. Everything left of 83 (the medal, the plate's rounded left end
+   and the start of its shine) and everything right of 138 (the shine's tail
+   and the rounded right end) has to arrive untouched.
+
+   So: a border-image sliced at exactly those two columns. The middle is
+   stretched rather than repeated — every column in it is the same, so the
+   two are identical in result, and stretch cannot leave a seam on a
+   fractional width.
+
+   The trick is that border-image-width and border-width are NOT the same
+   here. The first says where to PAINT the slices, at their true 83px and
+   29px. The second says where the text may sit, and is much smaller — 36px
+   in, which is clear of the medal but well inside the painted left slice,
+   so the name starts at the head of the plate instead of 83px along it. */
+.ec-title {
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    /* The artwork's own height. It is not free to change: with no top or
+       bottom slice, the left and right ends are stretched to whatever this
+       is, and the medal is the first thing that would show it. */
+    height: 40px;
+    /* Below 112px the two painted slices overlap and the browser shrinks
+       both to fit, which squashes the medal. A little over that keeps a few
+       pixels of real middle even behind the shortest name.
+
+       Bounded by the row itself, though: a floor that a narrow row cannot
+       meet would push the plate out through the side of it, and a slightly
+       compressed medal is a far better failure than a broken row. */
+    min-width: min(124px, 100%);
+    max-width: 100%;
+    border-style: solid;
+    border-width: 0 14px 0 36px;
+    border-image-slice: 0 29 0 83 fill;
+    border-image-width: 0 29px 0 83px;
+    border-image-repeat: stretch;
+    /* The plate runs y 6-24, so its middle is y 15 — five pixels above the
+       middle of the 40px box, because the medal's ribbons hang below it.
+       Ten pixels off the bottom of the content box moves the centre there. */
+    padding-bottom: 10px;
+    margin: 0;
+    image-rendering: pixelated;
+}
+
+.ec-title-s1 { border-image-source: url('../assets/img/ec/ec-name-player-s1.png'); }
+.ec-title-s2 { border-image-source: url('../assets/img/ec/ec-name-player-s2.png'); }
+
+/* Reads on black now rather than on the row, so it takes the chrome's own
+   ink instead of .chrome-list-row h3's amber — which was chosen against a
+   dark brown row and goes muddy against the plate. */
+.chrome-list-row .ec-title .ec-title-name {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #fff8ec;
+    line-height: 1;
+}
+
+/* Featured rows repaint every tone in .row-info flat black for their light
+   fills (see #featured-frame-list). The plate is black, so the name has to
+   keep its own colour there — but featured rows are mazes only, so this is
+   belt and braces against the day one is not. */
+#featured-frame-list .chrome-list-row .ec-title .ec-title-name { color: #fff8ec; }
+
 .chrome-list-row .row-desc {
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-weight: 400;
@@ -4596,6 +4671,78 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .modal-meta .status-badge {
     position: static;
     display: inline-flex;
+}
+
+
+/* ---------- EC events: the modal ----------
+
+   The list row wears the whole name plate; the modal wears the medal alone.
+   It titles the event in the window's own titlebar, which is chrome rather
+   than content, and a gold plate sitting up there would read as a second
+   window inside the first. */
+
+/* Hard against the modal's right edge — out through .modal-body's own 22px
+   of padding, so it stands against the frame rather than lining up with the
+   text. .room-tags before it is content-sized and the builder card takes
+   everything left over, so this lands wherever the row ends. */
+.ec-modal-badge {
+    flex: 0 0 auto;
+    align-self: center;
+    width: 29px;
+    height: 40px;
+    margin-right: -22px;
+    margin-left: 10px;
+    image-rendering: pixelated;
+}
+
+/* display is set above, so the attribute needs saying out loud — same
+   reason .builder-list carries its own. */
+.ec-modal-badge[hidden] { display: none; }
+
+/* The green is the medal's own. Its ribbons are painted in exactly two —
+   #009f5f and #004a2d — and the #007c4a asked for sits between them, so the
+   three are a ramp that already exists in the artwork rather than one put
+   beside it.
+
+   Everything below is a hint of it and nothing more. The modal is a brown
+   room and stays one; this is a tint on the edges that already existed,
+   not a repaint. */
+.modal.is-ec {
+    --ec: #007c4a;
+    --ec-light: #009f5f;
+    --ec-dark: #004a2d;
+}
+
+/* The builder row's own #31281d, carried a little way towards the green,
+   and closed with a hairline of it. color-mix rather than a hex, so the
+   two colours it is actually made of stay readable. */
+.modal.is-ec .modal-top-row {
+    background: color-mix(in srgb, var(--ec) 10%, #31281d);
+    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--ec) 55%, transparent);
+}
+
+/* The meta panel below it, the same shift against its own #403528 — and
+   the hard black rule along its top picks up the darkest of the three,
+   which is the one stop dark enough to sit against black without becoming
+   a line of its own. */
+.modal.is-ec .modal-meta {
+    background: color-mix(in srgb, var(--ec) 9%, #403528);
+    border-top-color: var(--ec-dark);
+}
+
+/* The frame's 1px highlight, which traces the top and left of everything
+   inside the modal. It is the quietest place on the window to carry a
+   colour and the one that outlines the whole of it. */
+.modal.is-ec .chrome-frame {
+    box-shadow:
+        inset 0 1px 0 color-mix(in srgb, var(--ec-light) 45%, var(--chrome-highlight)),
+        inset 1px 0 0 color-mix(in srgb, var(--ec-light) 45%, var(--chrome-highlight));
+}
+
+/* The rule under Links & References, and the description panel's own top
+   edge, both of which are already hairlines — they only change tone. */
+.modal.is-ec .room-links-refs {
+    border-top-color: color-mix(in srgb, var(--ec) 40%, transparent);
 }
 
 /* Description (plus Links & References right beneath it, when set) is
