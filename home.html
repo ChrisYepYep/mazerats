@@ -459,7 +459,12 @@
                                     <p class="ec-modal-label" id="modal-ec-label" hidden></p>
                                     <img class="ec-modal-badge" id="modal-ec-badge" alt="" hidden>
                                 </div>
-                                <p class="modal-visit-link">
+                                <!-- Hidden as a whole when there is no room to visit, not just
+                                     the button inside it — index.html's copy has always done
+                                     that. Left in place it is an empty paragraph holding a slot
+                                     in .modal-body's column, which is a gap under the builder
+                                     card on every event. -->
+                                <p class="modal-visit-link" id="modal-visit-wrap">
                                 <a class="btn" id="modal-link" href="#" target="_blank" rel="noopener">Visit Room</a>
                                 </p>
                                 <!-- One panel running to the modal's own edges: the meta items on

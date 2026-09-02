@@ -2760,7 +2760,11 @@ body[data-page="home"] .hero { padding-top: 18px; }
     align-items: center;
     justify-content: center;
     z-index: 100;
-    padding: 24px;
+    /* Named, because .modal below subtracts it twice to work out how tall
+       the card is allowed to be. The mobile block restates the variable
+       rather than the padding, so the two can never drift apart. */
+    --overlay-pad: 24px;
+    padding: var(--overlay-pad);
     /* The modal itself no longer caps its own height / scrolls internally
        (that produced a scrollbar down the window's own right edge) — this
        lets the overlay scroll the whole card when it's taller than the
@@ -2796,6 +2800,164 @@ body[data-page="home"] .hero { padding-top: 18px; }
     margin: auto;
     box-shadow: 0 22px 55px rgba(0, 0, 0, 0.85);
     animation: modalIn 0.2s ease-out;
+}
+
+/* --- Fitting the card to the window --------------------------------------
+   An event carrying a Habbo article AND a gallery stacks a 300px image, the
+   builder row, the meta line, a couple of thousand pixels of prose and a
+   thumbnail strip. Capping the description at a fixed slice of the viewport
+   got close but could not get it right: 34vh knows nothing about how tall
+   everything ABOVE it happens to be, so on an 800px window the card still
+   ran about 100px past the bottom of the screen.
+
+   So the card is capped at the window instead, and the chain from it down
+   to the description is a column flexbox at every link. Only two things in
+   it may shrink - the image panel, then the description, in that order
+   (see --thumb-give below) - and everything else, titlebar, builder row,
+   meta line and thumbnail strip, is flex: 0 0 auto and keeps its natural
+   height. min-height: 0 down that spine is what permits the shrink at all:
+   a flex item's automatic minimum is its own content, which is precisely
+   what was pushing the card off-screen.
+
+   Neither ever grows: the image panel's fixed height and the max-heights on
+   .room-desc-box stay their upper bounds, so on a screen with room to spare
+   the modal is pixel-for-pixel what it always was.
+
+   Scoped by :has() rather than by id so both copies of this modal get it
+   (home.html's maze/event modal, and index.html's event modal, which has no
+   .modal-viewport layer) while the login and privacy modals, which have no
+   description panel to shrink and no business being capped, do not. */
+.modal:has(.room-desc-box) {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 2 * var(--overlay-pad));
+    /* Second pass for the dynamic viewport, so a mobile browser measures
+       against the space actually visible under its retracting toolbars.
+       Browsers without dvh keep the vh line above. */
+    max-height: calc(100dvh - 2 * var(--overlay-pad));
+}
+
+.modal:has(.room-desc-box),
+.modal:has(.room-desc-box) .chrome-frame,
+.modal:has(.room-desc-box) .modal-viewport,
+.modal:has(.room-desc-box) .modal-primary-view,
+.modal:has(.room-desc-box) .modal-thumb-full,
+.modal:has(.room-desc-box) .modal-thumb-full .modal-body,
+.modal:has(.room-desc-box) .modal-body .modal-meta,
+.modal:has(.room-desc-box) .modal-meta .room-desc-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Default for everything in those columns: keep your own height. Without
+   this the image frame and the meta bands would give up pixels too, since a
+   flex item's default is flex-shrink: 1. */
+.modal:has(.room-desc-box) > *,
+.modal:has(.room-desc-box) .chrome-frame > *,
+.modal:has(.room-desc-box) .modal-viewport > *,
+.modal:has(.room-desc-box) .modal-primary-view > *,
+.modal:has(.room-desc-box) .modal-thumb-full > *,
+.modal:has(.room-desc-box) .modal-body > *,
+.modal:has(.room-desc-box) .modal-meta > *,
+.modal:has(.room-desc-box) .room-desc-panel > * {
+    flex: 0 0 auto;
+}
+
+/* The one spine that absorbs the difference. Both routes down to the body
+   are listed: home.html goes through .modal-viewport/.modal-primary-view,
+   index.html's copy hangs .modal-thumb-full straight off the frame. The
+   last two are the description box itself, either bare or inside the
+   wrapper js/custom-scrollbar.js builds around it at runtime. */
+.modal:has(.room-desc-box) > .chrome-frame,
+.modal:has(.room-desc-box) .chrome-frame > .modal-viewport,
+.modal:has(.room-desc-box) .chrome-frame > .modal-thumb-full,
+.modal:has(.room-desc-box) .modal-viewport > .modal-primary-view,
+.modal:has(.room-desc-box) .modal-primary-view > .modal-thumb-full,
+.modal:has(.room-desc-box) .modal-thumb-full > .modal-body,
+.modal:has(.room-desc-box) .modal-body > .modal-meta,
+.modal:has(.room-desc-box) .modal-meta > .room-desc-panel,
+.modal:has(.room-desc-box) .room-desc-panel > .custom-scrollbar-wrap--desc,
+.modal:has(.room-desc-box) .room-desc-panel > .room-desc-box {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Inside the scrollbar wrapper's row the box is stretched to the wrapper's
+   height, so it must be allowed below its content there as well. */
+.modal:has(.room-desc-box) .room-desc-box { min-height: 0; }
+
+/* Spacing inside the body, stated once, because a flex column does not
+   collapse margins the way the block layout here used to. The three bands
+   were spaced by margins written to collapse into each other - the visit
+   button's 18px above and 16px below, the meta panel's own 10px - and in a
+   column they stopped collapsing and started stacking, so 16px under the
+   button became 26px. A single gap says the thing those margins were
+   trying to say, and cannot drift again.
+
+   .modal-meta keeps its side and bottom margins: those are the full-bleed
+   that carries the panel out to the modal's own edges, nothing to do with
+   the space above it. */
+.modal:has(.room-desc-box) .modal-body {
+    gap: 18px;
+}
+
+.modal:has(.room-desc-box) .modal-body > .modal-visit-link { margin: 0; }
+.modal:has(.room-desc-box) .modal-body > .modal-meta { margin-top: 0; }
+
+/* The image panel gives ground FIRST, and the description only takes what
+   is left over. Left purely to the description, an 800px window cost a maze
+   modal all but 50px of its text and an article all but four lines - a page
+   of reading through a letterbox - while a 300px picture sat above it
+   untouched. The picture is the compressible one: .modal-gallery-img is
+   object-fit: contain, so a shorter panel shows the same screenshot smaller
+   with nothing cropped off it, whereas every pixel taken from the text is a
+   line of it gone.
+
+   --thumb-min-h is where the picture stops giving; it is the height this
+   panel has when there is no gallery, so it never shrinks past a size the
+   site already shows a room at. Past that floor the description takes the
+   remainder as before. Raise the floor to protect the picture, lower it to
+   protect the prose.
+
+   The shrink factor is what orders the two. Flex shares a shortfall in
+   proportion to each item's own height, and .modal-body's is the whole
+   unclamped article - thousands of pixels - so by weight the picture would
+   have given up about 4px of a 90px shortfall and the text the other 86.
+   An outsized factor on the picture inverts that: it absorbs essentially
+   all of any shortfall until it freezes at the floor above, and only then
+   does the rest travel down to the description. The exact number does not
+   matter beyond being far larger than any plausible article; it is a
+   priority, not a ratio. */
+.modal:has(.room-desc-box) {
+    --thumb-min-h: 180px;
+    --thumb-give: 1000;
+}
+
+.modal:has(.room-desc-box) .modal-thumb-full > .modal-thumb-frame {
+    flex: 0 var(--thumb-give) auto;
+    min-height: var(--thumb-min-h);
+}
+
+/* Below this the cap comes off and .modal-overlay goes back to scrolling
+   the whole card, which is the one thing that always works at any size.
+   It has to come off, because the shrink has a hard bottom: once the image
+   is at its floor and the description is at zero, the titlebar, builder
+   row, meta line and thumbnail strip are simply as short as they get. Hold
+   the cap past that point and the surplus is not scrolled, it is clipped
+   away inside .chrome-frame - the bottom of the modal silently gone.
+
+   Where that bottom sits was measured rather than guessed, on the two
+   heaviest cards in the archive (an EC event with a Habbo article and a
+   two-image gallery, and a maze with a furni row and a gallery) at both
+   layouts. With the image floored and the description at zero they stand
+   573px tall on the wide layout and 622px on the narrow one; adding the
+   overlay's own padding and about 100px of description left - enough to
+   read through and scroll - puts the crossover just under 720px of window.
+   Anything taller fits; anything shorter scrolls, exactly as it always
+   did. If the modal ever gains another fixed band, this is the number that
+   has to move with it. */
+@media (max-height: 719px) {
+    .modal:has(.room-desc-box) { max-height: none; }
 }
 
 /* See the note above .chrome-frame: its upward shadow is meant to fall on
@@ -3041,7 +3203,32 @@ body[data-page="home"] .hero { padding-top: 18px; }
    indefinite height and get dropped, letting the image overflow the panel.
    Kept in step with the mobile frame heights at the bottom of this file. */
 .modal-thumb-full.is-event { --event-thumb-h: 180px; }
-.modal-thumb-full.is-event.has-gallery { --event-thumb-h: 300px; }
+/* Viewport-relative rather than a flat 300px, so the panel gives ground on
+   a short window instead of pushing the card off the bottom of it. It has
+   to be done HERE, in the variable, and not by letting flex squeeze the
+   frame the way it squeezes a maze's: a maze's .gallery-viewport is
+   height: 100% and follows its frame wherever flex puts it, but an event's
+   hugs the banner and the banner is capped by this variable - so a flexed
+   frame would shrink around an image that had not been told to move, and
+   the picture would hang out over the builder card below it.
+
+   30vh reaches 300px at a 1000px window, which is about where the card
+   stops fitting anyway, so on any screen taller than that this is exactly
+   the 300px it has always been. The floor is the height a gallery-less
+   event's panel already uses. The narrow layout at the bottom of this file
+   states its own pair of these, on the same principle. */
+.modal-thumb-full.is-event.has-gallery { --event-thumb-h: clamp(180px, 30vh, 300px); }
+
+/* ... and because of all that, an event's image panel sits out the shrink
+   the modal's flex column hands to a maze's. Its height is already a
+   length that answers to the viewport, and both the frame and the image
+   inside it read that one length; flex pulling on the frame alone is the
+   one thing that can get them out of step. See the fitting block near
+   .modal for what these two variables do. */
+.modal-thumb-full.is-event {
+    --thumb-give: 0;
+    --thumb-min-h: 0px;
+}
 
 .modal-thumb-full.is-event .modal-thumb-frame {
     height: var(--event-thumb-h);
@@ -6829,7 +7016,7 @@ body[data-page="admin"] .search-box input {
        it only ever kicks in for narrow/mobile viewports — a short-but-wide
        desktop window is a different situation and shouldn't shrink the
        image just because the window isn't very tall. */
-    .modal-overlay { padding: 12px; }
+    .modal-overlay { --overlay-pad: 12px; }
     .modal-body { padding: 14px 18px 16px; }
     .gallery-strip { margin: 8px 16px 8px; padding: 6px 8px; }
     /* These two cap the *image panel*, and have to name .modal-thumb-frame
@@ -7514,8 +7701,8 @@ body[data-page="admin"] .site-footer p {
 
        One number that always applies is worth a few pixels off the tip of
        the streamer on a phone. */
-    left: -17px;
-    top: -17px;
+    left: -16px;
+    top: -16px;
     width: 101px;
     height: 103px;
     background-image: url('../assets/img/ec/jade-bow.png');

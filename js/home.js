@@ -73,6 +73,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // The window itself, inside the overlay — what .is-ec is set on.
     const modalEl = modalOverlay.querySelector(".modal");
     const modalLink = document.getElementById("modal-link");
+    const modalVisitWrap = document.getElementById("modal-visit-wrap");
     const modalClose = document.getElementById("modal-close");
 
     const modalViewport = document.getElementById("modal-viewport");
@@ -2983,6 +2984,11 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
             modalLink.style.display = "none";
         }
+        // The paragraph around it as well, the way js/welcome.js has always
+        // done it. Hiding the button alone leaves an empty <p> in the body's
+        // column, which reads as a band of dead space under the builder card
+        // on every event — none of which have a room to visit.
+        modalVisitWrap.style.display = n.habboLink ? "" : "none";
 
         // The entrance/finish images (if set) always bookend the gallery,
         // ahead of and after the room-by-room shots — they're stored
