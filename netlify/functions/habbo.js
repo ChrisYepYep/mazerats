@@ -66,25 +66,41 @@ function avatarUrl(figureString, size) {
 // A maze's creator field can name several people ("Vincent, LanceS,
 // ChrisYepYep"), so an exact match on the whole field would miss everyone
 // on a collab. This matches the name as one comma-separated entry within
-// it, anchored at either a string boundary or a comma.
+// it, anchored at either a string boundary or a comma. An event's host
+// field is written the same way, and is matched with the same thing.
 function creatorMatcher(name) {
     // Usernames can legitimately contain regex metacharacters.
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`(^|,)\\s*${escaped}\\s*(,|$)`, "i");
 }
 
-// Only names actually credited on a maze in this archive are looked up.
-// Without this the function is an open proxy to Habbo's API that anyone
-// could point at any username at any rate, with this site's name on the
-// traffic. Returns the archive's hotel code for that builder, so the
-// lookup goes to the hotel the maze is actually on.
-async function archivedBuilderHotel(db, name) {
+/* Only names actually credited in this archive are looked up. Without this
+   the function is an open proxy to Habbo's API that anyone could point at
+   any username at any rate, with this site's name on the traffic. Returns
+   the archive's hotel code for that person, so the lookup goes to the hotel
+   they are actually on.
+
+   Both places a person can be credited, not just the first. It read only
+   rooms.creator to begin with, which quietly meant an event's host got a
+   card only if they had also built a maze — every host who had was fine, so
+   the gap looked like Habbo withholding that one person's profile rather
+   than this archive never asking for it. Origins answers for them perfectly
+   well; nobody was asking. */
+async function archivedCreditHotel(db, name) {
+    const matcher = creatorMatcher(name);
     const room = await db.collection("rooms").findOne(
-        { creator: creatorMatcher(name) },
+        { creator: matcher },
         { projection: { _id: 0, hotel: 1 } }
     );
-    if (!room) return null;
-    return (room.hotel || "").toUpperCase();
+    if (room) return (room.hotel || "").toUpperCase();
+
+    const event = await db.collection("events").findOne(
+        { host: matcher },
+        { projection: { _id: 0, hotel: 1 } }
+    );
+    if (event) return (event.hotel || "").toUpperCase();
+
+    return null;
 }
 
 async function fetchOriginsProfile(host, name) {
@@ -147,8 +163,8 @@ exports.handler = async (event) => {
         return json(500, { error: "Database connection failed", detail: e.message });
     }
 
-    const hotelCode = await archivedBuilderHotel(db, name);
-    if (hotelCode === null) return json(404, { error: "Not a builder in this archive" });
+    const hotelCode = await archivedCreditHotel(db, name);
+    if (hotelCode === null) return json(404, { error: "Not credited in this archive" });
 
     const host = ORIGINS_HOSTS[hotelCode] || DEFAULT_HOST;
 
