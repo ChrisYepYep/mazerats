@@ -2037,10 +2037,6 @@ document.addEventListener("DOMContentLoaded", () => {
             return `<h3 class="ec-title ec-title-${season}"><span class="ec-title-name">${escapeHtml(title)}</span></h3>`;
         }
 
-        // An event's thumbnail is a poster and is shown whole rather than
-        // cropped to the tile — see roomRowHtml in js/home.js for why.
-        const isEventRow = key === "events";
-
         entries.forEach(({ item, index }) => {
             const title = item[cfg.fieldMap.title] || "(untitled)";
             const subtitle = item[cfg.fieldMap.subtitle] || "";
@@ -2052,7 +2048,7 @@ document.addEventListener("DOMContentLoaded", () => {
             row.className = "chrome-list-row admin-row";
             row.innerHTML = `
                 <div class="row-thumb">
-                    ${thumbSrc ? `<div class="row-thumb-crop"><img class="row-thumb-img${isEventRow ? " is-whole" : ""}" src="${imgCdn(thumbSrc, 160, isEventRow ? null : 160, 65)}" alt="" loading="lazy"></div>` : ""}
+                    ${thumbSrc ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(thumbSrc, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
                 </div>
                 <div class="row-info">
                     ${ecTitleHtml(item, title)}

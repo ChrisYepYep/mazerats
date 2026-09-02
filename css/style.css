@@ -1926,17 +1926,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 .row-thumb-img.is-loaded { opacity: 1; }
 
-/* An event's thumbnail: shown whole rather than filled to the tile.
-
-   contain instead of cover, and no scale with it — the 1.15 above exists to
-   push object-fit: cover's own soft edge out past the tile, and against
-   contain it would simply crop the picture again by hand. See roomRowHtml in
-   js/home.js, which also stops the CDN cropping it before it is sent. */
-.row-thumb-img.is-whole {
-    object-fit: contain;
-    transform: none;
-}
-
 .chrome-list-row .row-info {
     flex: 1;
     min-width: 0;
@@ -6830,6 +6819,7 @@ body[data-page="admin"] .search-box input {
     .modal-thumb-full.is-event.has-gallery { --event-thumb-h: min(340px, 28vh); }
     .room-desc-box { max-height: min(160px, 18vh); }
 
+
     /* .modal-top-row wraps at this width and .room-tags takes a whole line
        of its own, which dropped the EC badge onto a third line below it,
        left-aligned and orphaned. Sending the tags to the back of the order
@@ -7451,6 +7441,55 @@ body[data-page="admin"] .site-footer p {
     .photo-frame-photo-box::before { transition: none; }
 }
 
+
+
+/* The jade bow, tied to the top-left corner of an EC event's modal.
+
+   Season 2's gifts are jade, and this is the ribbon off one of them — so it
+   sits ON the corner rather than inside the window, overhanging it the way
+   a bow tied round a box overhangs the box. The streamer runs up and to the
+   right from the knot, which is why the knot sits low and left of centre in
+   the space it is given: the tail wants the room, not the bow.
+
+   Drawn at its own 101x103 with no resampling. The two numbers worth moving
+   are the offsets; everything else is the file's own size.
+
+   Every ancestor it could be clipped by was checked first: .modal is
+   overflow: visible, and nothing inside it positions against .modal, so
+   making it the containing block here changes nothing else. */
+.modal.is-ec { position: relative; }
+
+.modal.is-ec::before {
+    content: "";
+    position: absolute;
+    left: -19px;
+    top: -16px;
+    width: 101px;
+    height: 103px;
+    background-image: url('../assets/img/ec/jade-bow.png');
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    /* Decoration, and decoration never eats a click — the titlebar under it
+       is the modal's own drag-nothing chrome, but the grip and the title
+       still want to be selectable and hoverable. */
+    pointer-events: none;
+    /* Over the frame and the titlebar it overlaps. The close button is at
+       the other end of the bar, so nothing it could cover is a control. */
+    z-index: 4;
+}
+
+/* Its own media query, directly under the rule it overrides, rather than in
+   the shared one further up the file: that block sits ABOVE this rule, and
+   at equal specificity the later of the two wins — so the override was
+   being read and then discarded. */
+@media (max-width: 860px) {
+    /* The overlay leaves the modal about 12px either side at this width and
+       clips whatever runs past it, so the desktop overhang cut the
+       streamer's lower tail off against the edge of the screen. Pulled in
+       to the room there actually is. Same size: this is pixel art, and
+       101px does not divide into anything smaller without resampling it. */
+    .modal.is-ec::before { left: -8px; }
+}
 
 /* ---------- a Habbo article, shown in place of an event's full details ----------
 

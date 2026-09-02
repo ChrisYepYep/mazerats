@@ -682,25 +682,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // Events always show their date; mazes only do on the Open list.
         const showDate = isOpenView || n.isEvent;
 
-        /* An event's thumbnail is shown whole, in its own proportions.
-        
-           A maze's thumbnail is a room, and any square of a room is still a
-           picture of that room, so cropping one to fill the tile costs
-           nothing. An event's is a poster somebody made — 660x260 banners,
-           1200x630 socials, 1080 squares — and the middle square of a poster
-           is a detail from it, usually not even the part with the words. The
-           Lost Relic's banner came out as a slice of sky.
-        
-           Two halves, and both are needed: no height asked of the CDN, since
-           passing one makes imgCdn request fit=cover and the crop happens
-           before the image is ever sent; and contain rather than cover in the
-           tile, which is what stops the browser doing it again. The tile stays
-           the same square either way, so the rows still line up — a wide
-           poster simply sits in a band across the middle of it. */
         return `
             <div class="chrome-list-row featured" data-difficulty="${n.difficulty || ""}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
                 <div class="row-thumb">
-                    ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img${n.isEvent ? " is-whole" : ""}" src="${imgCdn(n.thumb, 160, n.isEvent ? null : 160, 65)}" alt="" loading="lazy"></div>` : ""}
+                    ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(n.thumb, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
                 </div>
                 <div class="row-info">
                     ${ecTitleHtml(n)}
@@ -3072,7 +3057,20 @@ document.addEventListener("DOMContentLoaded", () => {
             // (.is-event's CSS). Mazes keep the background treatment, tint
             // overlay and all.
             if (n.isEvent && n.thumb) {
-                modalGalleryImg.src = imgCdn(n.thumb, 800, 500, 70);
+                /* Width only, and no height — which is the whole of it.
+
+                   imgCdn adds fit=cover the moment it is given a height, so
+                   asking for 800x500 had the CDN crop the picture to 8:5
+                   before it was ever sent. The .is-event rules below it were
+                   doing their job perfectly and faithfully preserving the
+                   aspect of an image that had already lost its own: a 660x260
+                   banner arrived as 416x260 and looked uncropped, because by
+                   then it was. Asking for width alone is what actually keeps
+                   an event's poster whole; the CSS caps how big it is drawn.
+
+                   900 rather than 800 to match showGalleryImage, which fills
+                   this same panel for an event that has a gallery. */
+                modalGalleryImg.src = imgCdn(n.thumb, 900, null, 78);
                 modalGalleryImg.alt = n.name || "";
                 modalGalleryImg.style.transform = "translateX(0)";
                 modalGalleryImg.style.display = "block";
