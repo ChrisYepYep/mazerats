@@ -883,7 +883,7 @@ function New-RoundRect([single]$x, [single]$y, [single]$w, [single]$h, [single]$
    in rather than sitting in a square block against it. Matches
    .console-top-pattern::before / ::after, radius and all — the frame's own
    outline is a quarter circle of radius 12 centred on (12, 12), and the
-   strip stands 3px inside it, so 9px here is concentric with it.
+   strip stands 4px inside it, so 8px here is concentric with it.
 
    GDI+ has no single-corner rounded rectangle, so this rounds all four of an
    OVERSIZED one and lets the three that are not wanted fall outside the area
@@ -894,7 +894,7 @@ function New-RoundRect([single]$x, [single]$y, [single]$w, [single]$h, [single]$
    this window (see Build-Chrome) — a staircase, like the rest of the art. #>
 function Draw-Grip($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$corner) {
     if ($w -le 0) { return }
-    $r = Px 9
+    $r = Px 8
     $grow = $r * 2
     $boxX = if ($corner -eq "left") { $x } else { $x - $grow }
     $path = New-RoundRect $boxX $y ($w + $grow) ($h + $grow) $r
@@ -1450,7 +1450,7 @@ function Build-Chrome {
        photo frames have always had now — the same tile, ended properly
        rather than covered over.
 
-       It fills the strip bar 2px along the bottom, and its outer top
+       It fills the strip bar 3px along the bottom, and its outer top
        corners are rounded so the dots follow the frame's own curve in
        rather than sitting in a square block against it. It is pulled up
        1px because this tile keeps its dots on its ODD rows, and the band
@@ -1473,10 +1473,11 @@ function Build-Chrome {
     $tw = [int]$tsize.Width + (Px 8)
     $tx = [int](($W - $tw) / 2)
 
-    $stripX = Px 3
-    $stripR = $W - (Px 3)
-    $stripY = Px 3
-    $gripH  = (Px 23) - (Px 2)
+    $stripX = Px 4
+    $stripR = $W - (Px 4)
+    $stripY = Px 4
+    # Down to 3px short of .console-screen's own top at 26.
+    $gripH  = (Px 23) - (Px 4)
     $gripGap = Px 6
 
     Draw-Grip $g $stripX $stripY (($tx - $gripGap) - $stripX) $gripH "left"

@@ -1524,34 +1524,49 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .chrome-titlebar {
     /* The room the title is guaranteed at each end of the bar. */
     --titlebar-pad: 40px;
-    --titlebar-pad-y: 9px;
+    /* Above and below it. Kept tighter than a line of 15px Silkscreen would
+       naturally sit in, which is what narrows the whole top section: the
+       bar was 41px for 23px of text, and Habbo's own windows hold their
+       titles far closer than that. */
+    --titlebar-pad-y: 6px;
     /* Clear ground between a grip and the title. */
     --titlebar-grip-gap: 10px;
     /* Clear ground under a grip, along the bar's bottom edge. */
-    --titlebar-grip-inset: 2px;
+    --titlebar-grip-inset: 3px;
 
-    /* How far a grip reaches OUT of the bar, on its three outer sides.
+    /* --- how the grip sits against the window's own frame --- */
 
-       The bar starts 14px in from the window's own edge, because that is
-       .chrome-window's border-width — but almost none of that 14px is
-       actually frame. window_frame.png draws 1px of black, 1px of fill and
-       1px of highlight, and the remaining 11px of its corner tile is plain
-       --chrome-fill, the same colour the bar paints. So a grip stopping at
-       the bar's own edge stops 11px short of the frame it looks like it
-       should be tucked against, across an expanse of nothing.
+    /* .chrome-window's border-width, and the radius of the corner drawn
+       inside it: window_frame.png's outline is a quarter circle of radius
+       12, meeting the top edge at x=12 and the left edge at y=12. Neither
+       is this rule's to change — they are stated here because the two
+       numbers below are worked out FROM them. */
+    --titlebar-frame: 14px;
+    --titlebar-frame-radius: 12px;
 
-       It reaches over that instead, to 3px inside the window's edge, which
-       puts it directly against the bevel. The grips are children of the
-       bar, so they paint over the window's border-image without any
-       stacking of their own. */
-    --titlebar-bleed: 11px;
+    /* How far the grip stands inside the window's own edge. The one number
+       to move for more or less breathing space at the corners; the bleed
+       and the radius both follow it. */
+    --titlebar-grip-edge: 4px;
 
-    /* The frame's own corner, brought in by that same 3px. The outline in
-       window_frame.png is a quarter circle of radius 12 centred on
-       (12, 12) — it meets the top edge at x=12 and the left edge at y=12 —
-       so a 9px radius on a box starting at (3, 3) is concentric with it,
-       3px inside it the whole way round. */
-    --titlebar-grip-radius: 9px;
+    /* How far the grip reaches OUT of the bar, on its three outer sides.
+
+       The bar starts a full --titlebar-frame in from the window's edge, but
+       almost none of that is actually frame: window_frame.png draws 1px of
+       black, 1px of fill and 1px of highlight, and the rest of its corner
+       tile is plain --chrome-fill, the same colour the bar paints. So a
+       grip stopping at the bar's own edge stops well short of the frame it
+       looks like it should be tucked against, across an expanse of
+       nothing. It reaches over that instead.
+
+       The grips are children of the bar, so they paint over the window's
+       border-image without any stacking of their own. */
+    --titlebar-bleed: calc(var(--titlebar-frame) - var(--titlebar-grip-edge));
+
+    /* The frame's own corner, brought in by that same amount, which makes
+       the two concentric — the grip follows its curve at a constant
+       distance rather than crossing it. */
+    --titlebar-grip-radius: calc(var(--titlebar-frame-radius) - var(--titlebar-grip-edge));
 
     position: relative;
     display: flex;
@@ -2713,9 +2728,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
         inset 1px 0 0 var(--chrome-highlight);
 }
 
-/* Set on the variable, not on padding, so the grips reach the bar ends
-   here too — they are pulled back out by exactly this much. */
-.modal .chrome-titlebar { --titlebar-pad: 28px; }
+/* Set on the variables, not on padding, so the grips still reach past both
+   to the frame.
+
+   The vertical one stays where the shared rule had it rather than
+   narrowing with it. A modal titles itself in 9px Volter where the
+   homepage and admin bars use 15px Silkscreen, so this bar is already the
+   short one — and #modal-close is the biggest close button on the site at
+   26px, which a 6px padding would leave taller than the bar it sits in. */
+.modal .chrome-titlebar { --titlebar-pad: 28px; --titlebar-pad-y: 9px; }
 
 /* The maze name in the modal titlebar. Scoped to .modal so the homepage and
    admin titlebars keep their Silkscreen. 700 is what selects
@@ -6013,16 +6034,18 @@ body[data-page="admin"] .search-box input {
 .console-top-pattern {
     position: absolute;
     /* Lowered 3px from the modal's own top edge, with the bottom edge kept
-       flush against .console-screen's own top (26px). 3px in from each
-       side keeps it just short of the border's own outer edge — the right
-       matches the left now, where it used to sit at 0: the strip's centre
-       has to be the frame's centre, or the title centred in it would not
-       be centred on the console. z-index above .console-border (1) so it
-       deliberately overlays the border/corners instead of sitting behind. */
-    top: 3px;
-    left: 3px;
-    right: 3px;
-    height: 23px;
+       flush against .console-screen's own top (26px), so the height is
+       whatever is left. 4px in from each side — the same --titlebar-grip-
+       edge the window titlebars stand at — keeps it clear of the border's
+       own outer edge; the right matches the left, where it used to sit at
+       0, because the strip's centre has to be the frame's centre or the
+       title centred in it would not be centred on the console. z-index
+       above .console-border (1) so it deliberately overlays the border and
+       its corners instead of sitting behind them. */
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    height: 22px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -6047,7 +6070,7 @@ body[data-page="admin"] .search-box input {
     flex: 1 1 0;
     min-width: 0;
     align-self: stretch;
-    margin-bottom: 2px;
+    margin-bottom: 3px;
     background-image: url('../assets/img/console/cnsl-top-pattern.png');
     background-repeat: repeat;
     background-position: 0 -1px;
@@ -6055,14 +6078,14 @@ body[data-page="admin"] .search-box input {
 }
 
 /* Rounded where they meet the frame's corner, so the dots follow its curve
-   in rather than sitting in a square block against it. Same 9px the window
-   titlebars use and for the same reason: cnsl-frame-border.png's outline is
-   the same quarter circle of radius 12 centred on (12, 12), and this strip
-   stands the same 3px inside it. .console-frame's own overflow clip takes a
-   bite out of this corner too, but a looser one — this is the curve that
-   actually shows. */
-.console-top-pattern::before { border-top-left-radius: 9px; }
-.console-top-pattern::after { border-top-right-radius: 9px; }
+   in rather than sitting in a square block against it. Worked out the way
+   --titlebar-grip-radius is, and to the same answer: cnsl-frame-border.png
+   draws the same quarter circle of radius 12, and this strip stands the
+   same 4px inside it, so 12 less 4 is concentric with it. .console-frame's
+   own overflow clip takes a bite out of this corner as well, but a looser
+   one — this is the curve that actually shows. */
+.console-top-pattern::before { border-top-left-radius: 8px; }
+.console-top-pattern::after { border-top-right-radius: 8px; }
 
 .console-frame.is-dragging .console-top-pattern,
 .console-frame.is-dragging { cursor: grabbing; }
@@ -6618,9 +6641,9 @@ body[data-page="admin"] .search-box input {
     }
     /* Every px here comes straight off the row's usable width. */
     .chrome-body { padding: 12px; }
-    /* Both values go through the variables, so the grips still reach all
-       four of the bar's edges here. */
-    .chrome-titlebar { --titlebar-pad: 34px; --titlebar-pad-y: 10px; }
+    /* Both values go through the variables, so the grips still reach past
+       them to the frame. */
+    .chrome-titlebar { --titlebar-pad: 34px; --titlebar-pad-y: 7px; }
     .chrome-titlebar h1, .chrome-titlebar h2, .chrome-titlebar .chrome-title-text { font-size: 0.8rem; }
     .chrome-tab { font-size: 0.56rem; letter-spacing: 0; border-width: 8px; }
     .chrome-window { width: 100%; }
