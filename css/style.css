@@ -7095,6 +7095,17 @@ body[data-page="admin"] .site-footer p {
     pointer-events: none;
 }
 
+/* Which wording the card shows (see the template in home.html). Mouse by
+   default and swapped on a device whose primary pointer is a finger —
+   (hover: none) and (pointer: coarse) together, so a laptop with a
+   touchscreen keeps the mouse wording it can still act on. */
+.photo-frame-hint-touch { display: none; }
+
+@media (hover: none) and (pointer: coarse) {
+    .photo-frame-hint-mouse { display: none; }
+    .photo-frame-hint-touch { display: inline; }
+}
+
 /* 6. Which state the zoom is in, in the same face as the hint. Rides the
       .is-photo-max class js/home.js already sets in applyPhotoZoom, so this
       needs no state of its own. */

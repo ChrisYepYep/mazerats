@@ -266,16 +266,26 @@
                 <span class="photo-frame-zoom-pip" aria-hidden="true">1:1</span>
             </div>
             <p class="photo-frame-name"></p>
-            <!-- The one gesture nothing else can signal is the scroll wheel,
-                 so it is spelled out under the caption. aria-hidden because
-                 it describes a pointer gesture a screen reader user has no
-                 use for.
+            <!-- The gestures nothing visual can imply, so they are spelled
+                 out under the caption. aria-hidden because they describe
+                 pointer gestures a screen reader user has no use for.
 
                  Worded without a separator character on purpose: Volter
-                 Goldfish has neither a middot nor a hyphen, and both came out
-                 as a blank gap. Naming the two gestures outright is clearer
-                 anyway, and at 144px it still fits the 155px caption. -->
-            <p class="photo-frame-hint" aria-hidden="true">Double click to enlarge<br>Drag to pan, scroll to zoom</p>
+                 Goldfish has neither a middot nor a hyphen, and both came
+                 out as a blank gap. Naming the two gestures outright is
+                 clearer anyway, and at 144px it still fits the 155px
+                 caption.
+
+                 Two versions, one shown at a time. A touchscreen has no
+                 scroll wheel and cannot double CLICK anything, so the card
+                 was telling a phone to do two things it has no way of
+                 doing — while the two gestures it does have, double tap and
+                 pinch, went unmentioned. Which one shows is decided in CSS
+                 off the pointer the device actually has. -->
+            <p class="photo-frame-hint" aria-hidden="true">
+                <span class="photo-frame-hint-mouse">Double click to enlarge<br>Drag to pan, scroll to zoom</span>
+                <span class="photo-frame-hint-touch">Double tap to enlarge<br>Drag to pan, pinch to zoom</span>
+            </p>
         </div>
     </template>
 

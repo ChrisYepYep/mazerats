@@ -1952,6 +1952,19 @@ document.addEventListener("DOMContentLoaded", () => {
     // Any lower and a genuine double click starts leaking through as a
     // single one first.
     const PHOTO_DOUBLE_CLICK_MS = 220;
+    /* The same two numbers for a finger, which needs both of them looser.
+
+       Two taps meant as a pair land further apart than two clicks do — the
+       hand has to lift clear of the glass and come back — and they land in
+       slightly different places, where a mouse does not move at all between
+       the halves of a double click. 220ms and the pan slop's 4px between
+       them reject most real double taps outright.
+
+       Measured against the taps themselves rather than against a browser's
+       own idea of one: see the tap handling below for why none of this can
+       be left to click/dblclick on a touchscreen. */
+    const PHOTO_DOUBLE_TAP_MS = 320;
+    const PHOTO_DOUBLE_TAP_SLOP = 24;
 
     // The frame itself may be transform-scaled (.is-2x), which doubles what
     // a screen pixel is worth inside it. Every measurement below is taken in
@@ -2105,6 +2118,9 @@ document.addEventListener("DOMContentLoaded", () => {
         let panFromX = 0;
         let panFromY = 0;
         let panStart = null;          // where the single panning pointer went down
+        // What is driving the gesture. click and dblclick carry no
+        // pointerType of their own, so they read it from here.
+        let lastPointerType = "mouse";
         let pinchDist = 0;            // finger separation at the last pinch frame
         let pinchMid = null;          // midpoint at the last pinch frame
 
@@ -2142,6 +2158,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Touch and pen report button 0 the same as a left click; this
             // only rejects a genuine middle/right mouse button.
             if (e.pointerType === "mouse" && e.button !== 0) return;
+            lastPointerType = e.pointerType;
             pointers.set(e.pointerId, pointIn(e));
             if (pointers.size === 1) panMoved = false;
             frame.classList.add("is-panning");
@@ -2200,6 +2217,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         function endPan(e) {
             if (!pointers.has(e.pointerId)) return;
+            // Read before the delete: this is where the finger actually came
+            // up, which is what the tap below is measured from.
+            const liftedAt = pointers.get(e.pointerId);
             pointers.delete(e.pointerId);
             if (box.hasPointerCapture(e.pointerId)) box.releasePointerCapture(e.pointerId);
             if (pointers.size) {
@@ -2213,18 +2233,90 @@ document.addEventListener("DOMContentLoaded", () => {
             pinchDist = 0;
             frame.classList.remove("is-panning");
             document.body.style.userSelect = "";
+            // The last finger of the gesture has lifted and it never moved
+            // far enough to be a drag or a pinch: that is a tap. A mouse
+            // gets the same treatment from its own click event below.
+            if (e.type === "pointerup" && e.pointerType !== "mouse" && !panMoved) {
+                handleTap(liftedAt);
+            }
         }
 
         box.addEventListener("pointerup", endPan);
         box.addEventListener("pointercancel", endPan);
 
-        // A single click switches between the fitted view and full size; a
-        // double click doubles the whole frame. Both start with a "click",
-        // so the single-click action is held briefly and dropped if a second
-        // click follows.
-        let clickTimer = null;
+        /* One tap switches between the fitted view and full size; two double
+           the whole frame. Both start with a first tap, so the single-tap
+           action is held briefly and dropped if a second one follows — the
+           same shape as the click handling below, which does it for a mouse.
 
+           Counted here, off the pointer stream, rather than left to the
+           browser's own click/dblclick pair. That pair is what made "double
+           click to enlarge" a gesture only a mouse could perform:
+
+           - Whether a double tap produces a dblclick at all is not something
+             touchscreens agree on. It is dependable from a mouse and it is
+             not dependable from glass, and this box cancels its own
+             pointerdown (it has to, for the text selection and the native
+             image drag), which is exactly the sort of thing browsers weigh
+             when deciding which compatibility events a tap still earns.
+           - Where dblclick does arrive, it arrives late: a tap's click waits
+             behind the browser's own gesture recognition first. The second
+             half of a double tap regularly landed after the 220ms the first
+             one waits, so the picture zoomed instead of the frame doubling.
+
+           Pointer events are the one thing every touchscreen sends, on time
+           and in full, so the pair is recognised from those and click and
+           dblclick are ignored outright for anything that is not a mouse. */
+        let clickTimer = null;      // a first click or tap, waiting for a second
+        let lastTapAt = 0;
+        let lastTapPoint = null;
+
+        // Straight to full size, and straight back to fitted — two states,
+        // not a ladder of steps.
+        function togglePhotoFullSize(x, y) {
+            if (isPhotoAtFullSize(frame)) resetPhotoZoom(frame);
+            else setPhotoScaleAt(frame, photoMaxScale(frame), x, y);
+        }
+
+        function toggleFrameSize() {
+            frame.classList.toggle("is-2x");
+            // Re-clamped because at 2x it's twice the size and may now hang
+            // off the bottom or right of the window.
+            const rect = frame.getBoundingClientRect();
+            clampFrame(frame, rect.left, rect.top);
+        }
+
+        function handleTap([x, y]) {
+            const now = Date.now();
+            const pairsWithLast = lastTapPoint &&
+                now - lastTapAt < PHOTO_DOUBLE_TAP_MS &&
+                Math.hypot(x - lastTapPoint[0], y - lastTapPoint[1]) < PHOTO_DOUBLE_TAP_SLOP;
+
+            if (pairsWithLast) {
+                clearTimeout(clickTimer);
+                clickTimer = null;
+                // Forgotten, so a third tap opens a fresh pair rather than
+                // pairing with the second and toggling straight back again.
+                lastTapAt = 0;
+                lastTapPoint = null;
+                toggleFrameSize();
+                return;
+            }
+
+            lastTapAt = now;
+            lastTapPoint = [x, y];
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => {
+                clickTimer = null;
+                togglePhotoFullSize(x, y);
+            }, PHOTO_DOUBLE_TAP_MS);
+        }
+
+        // click and dblclick are MouseEvents and carry no pointerType of
+        // their own, so what produced them is remembered from the pointerdown
+        // that came first (see the handler above).
         box.addEventListener("click", e => {
+            if (lastPointerType !== "mouse") return;   // handleTap has it
             // The tail end of a drag, not a click on the spot.
             if (panMoved) {
                 panMoved = false;
@@ -2234,22 +2326,16 @@ document.addEventListener("DOMContentLoaded", () => {
             const [x, y] = pointIn(e);
             clickTimer = setTimeout(() => {
                 clickTimer = null;
-                // Straight to full size, and straight back to fitted — two
-                // states, not a ladder of steps.
-                if (isPhotoAtFullSize(frame)) resetPhotoZoom(frame);
-                else setPhotoScaleAt(frame, photoMaxScale(frame), x, y);
+                togglePhotoFullSize(x, y);
             }, PHOTO_DOUBLE_CLICK_MS);
         });
 
         box.addEventListener("dblclick", e => {
+            if (lastPointerType !== "mouse") return;   // handleTap has it
             clearTimeout(clickTimer);
             clickTimer = null;
             e.preventDefault();
-            frame.classList.toggle("is-2x");
-            // Re-clamped because at 2x it's twice the size and may now hang
-            // off the bottom or right of the window.
-            const rect = frame.getBoundingClientRect();
-            clampFrame(frame, rect.left, rect.top);
+            toggleFrameSize();
         });
     }
 
