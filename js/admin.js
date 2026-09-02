@@ -2762,6 +2762,28 @@ document.addEventListener("DOMContentLoaded", () => {
         renderChips();
     }
 
+    /* What is wrong with an event's four date fields, or "" if nothing is.
+
+       They come in two all-or-nothing pairs. Both blank is a real answer —
+       an event can be announced before it is scheduled, and the site says
+       "Date TBC" for one — but half a pair is not: it is somebody partway
+       through typing, and the only honest thing to do with it is say so.
+
+       The time is not optional and cannot be defaulted. Every place the site
+       prints an event's date prints a time beside it, so a missing one would
+       have to be invented — and "00:00 UTC" shown as though it were the real
+       start is a worse answer than asking. */
+    function dateFault(startDate, startTime, endDate, endTime) {
+        if (startDate && !startTime) return "The event's start date needs a start time as well — the site always shows both.";
+        if (startTime && !startDate) return "The event's start time needs a start date as well.";
+        if (endDate && !endTime) return "The event's end date needs an end time as well — the site always shows both.";
+        if (endTime && !endDate) return "The event's end time needs an end date as well.";
+        // An end on its own has nothing to be the end of: the site reads the
+        // start to decide whether an event is upcoming, live or past.
+        if (endDate && !startDate) return "An event with an end needs a start as well.";
+        return "";
+    }
+
     async function submitForm(key, e) {
         e.preventDefault();
         const cfg = COLLECTIONS[key];
@@ -2787,8 +2809,23 @@ document.addEventListener("DOMContentLoaded", () => {
         payload[cfg.fieldMap.subtitle] = data.subtitle;
 
         if (key === "events") {
-            payload.date = data.startDate && data.startTime ? `${data.startDate}T${data.startTime}:00Z` : "";
-            payload.endDate = data.endDate && data.endTime ? `${data.endDate}T${data.endTime}:00Z` : "";
+            /* An event's start and end are each a date field and a time
+               field, and each pair is all-or-nothing: both blank means no
+               date yet, both filled makes a timestamp.
+
+               Half of a pair used to make nothing at all. Typing a date and
+               leaving the time on --:-- discarded the date silently — the
+               save went through, the form closed, everything looked right,
+               and the date was simply not there. It is caught below instead
+               (see dateFault), because losing what someone typed without
+               telling them is the worst of the three possible answers. */
+            const startDate = (data.startDate || "").trim();
+            const startTime = (data.startTime || "").trim();
+            const endDate = (data.endDate || "").trim();
+            const endTime = (data.endTime || "").trim();
+            payload.date = startDate && startTime ? `${startDate}T${startTime}:00Z` : "";
+            payload.endDate = endDate && endTime ? `${endDate}T${endTime}:00Z` : "";
+            payload._dateFault = dateFault(startDate, startTime, endDate, endTime);
             // "" for Regular, which is also what an event that predates the
             // field reads as. Written either way so switching an event back
             // to Regular actually clears it.
@@ -2833,9 +2870,24 @@ document.addEventListener("DOMContentLoaded", () => {
         const submitBtn = form.querySelector("button[type=submit]");
         const errorEl = form.querySelector(".admin-form-error");
 
-        if (key === "events" && payload.date && payload.endDate && payload.endDate <= payload.date) {
-            errorEl.textContent = "The event's end must be after its start.";
+        /* Says why, and makes sure it is seen. Save is a floating bar pinned
+           to the bottom of the window, so it is pressed from wherever the
+           form happens to be scrolled to — and this message lives near the
+           form's own foot. Measured at 870px below the fold on the event
+           that prompted all this, which from the reader's side is
+           indistinguishable from the button doing nothing at all. */
+        function refuse(message) {
+            errorEl.textContent = message;
             errorEl.style.display = "block";
+            errorEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+
+        const fault = payload._dateFault;
+        delete payload._dateFault;
+        if (fault) { refuse(fault); return; }
+
+        if (key === "events" && payload.date && payload.endDate && payload.endDate <= payload.date) {
+            refuse("The event's end must be after its start.");
             return;
         }
 
@@ -2861,8 +2913,7 @@ document.addEventListener("DOMContentLoaded", () => {
             renderList(key);
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
-            errorEl.textContent = err.message || "Something went wrong saving this.";
-            errorEl.style.display = "block";
+            refuse(err.message || "Something went wrong saving this.");
             submitBtn.disabled = false;
             submitBtn.textContent = "Save";
         }
