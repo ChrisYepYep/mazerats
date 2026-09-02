@@ -877,6 +877,36 @@ function New-RoundRect([single]$x, [single]$y, [single]$w, [single]$h, [single]$
     return $p
 }
 
+
+<# One end of the console's top grip: the dotted tile, clipped to a box with
+   only its OUTER top corner rounded, so the dots follow the frame's corner
+   in rather than sitting in a square block against it. Matches
+   .console-top-pattern::before / ::after, radius and all — the frame's own
+   outline is a quarter circle of radius 12 centred on (12, 12), and the
+   strip stands 3px inside it, so 9px here is concentric with it.
+
+   GDI+ has no single-corner rounded rectangle, so this rounds all four of an
+   OVERSIZED one and lets the three that are not wanted fall outside the area
+   being drawn: the box grows by 2r away from the corner that matters, which
+   puts the other arcs past the edges Draw-Tiled clips to.
+
+   The clip is hard-edged, since SmoothingMode is left at None throughout
+   this window (see Build-Chrome) — a staircase, like the rest of the art. #>
+function Draw-Grip($g, [int]$x, [int]$y, [int]$w, [int]$h, [string]$corner) {
+    if ($w -le 0) { return }
+    $r = Px 9
+    $grow = $r * 2
+    $boxX = if ($corner -eq "left") { $x } else { $x - $grow }
+    $path = New-RoundRect $boxX $y ($w + $grow) ($h + $grow) $r
+    $old = $g.Clip
+    $g.SetClip($path, [System.Drawing.Drawing2D.CombineMode]::Intersect)
+    # -1: this tile keeps its dots on its ODD rows, and the band wants one
+    # on its first line.
+    Draw-Tiled $g $SprPattern $x $y $w $h -1
+    $g.Clip = $old
+    $path.Dispose()
+}
+
 function Copy-PathShifted($path, [single]$dx, [single]$dy) {
     $c = $path.Clone()
     $m = New-Object System.Drawing.Drawing2D.Matrix
@@ -1416,17 +1446,21 @@ function Build-Chrome {
     <# The top strip: a grip either side of the title, matching
        .console-top-pattern. It was a fill of the dotted tile across the
        whole 23px strip, with the title's own opaque yellow band laid over
-       it to mask the dots behind the letters. It is three rows of that
-       same tile now — the drag strip the photo frames have always had —
-       stopping short of the title and of the window buttons rather than
-       running behind either, so nothing needs masking.
+       it to mask the dots behind the letters. It is the drag strip the
+       photo frames have always had now — the same tile, ended properly
+       rather than covered over.
 
-       The grip fills the strip less 2px of clear ground top and bottom,
-       matching .console-top-pattern::before — it stands in for a fill that
-       covered the strip edge to edge, so it carries that weight, and its
-       ends run into the frame's corner curve the way the fill's did. It is
-       pulled up 1px because this tile keeps its dots on its ODD rows, and
-       the band wants one on its first line.
+       It fills the strip bar 2px along the bottom, and its outer top
+       corners are rounded so the dots follow the frame's own curve in
+       rather than sitting in a square block against it. It is pulled up
+       1px because this tile keeps its dots on its ODD rows, and the band
+       wants one on its first line.
+
+       It stops for the title, and only for the title. The window buttons
+       are drawn over it further down, which is how Habbo's own console has
+       it: the strip runs the width of the bar and the close box sits on
+       top of it. Both sprites are fully opaque, so they cover the dots
+       where they sit.
 
        The title's own numbers are unchanged. The stylesheet bottom-aligns
        the text inside the strip rather than centring it — the title sits
@@ -1439,22 +1473,15 @@ function Build-Chrome {
     $tw = [int]$tsize.Width + (Px 8)
     $tx = [int](($W - $tw) / 2)
 
-    $stripY   = Px 3
-    $stripH   = Px 23
-    $gripInset = Px 2
-    $gripY    = $stripY + $gripInset
-    $gripH    = $stripH - ($gripInset * 2)
-    $gripGap  = Px 6
+    $stripX = Px 3
+    $stripR = $W - (Px 3)
+    $stripY = Px 3
+    $gripH  = (Px 23) - (Px 2)
+    $gripGap = Px 6
 
-    # Left: the strip's own end, in to the title.
-    Draw-Tiled $g $SprPattern (Px 3) $gripY (($tx - $gripGap) - (Px 3)) $gripH -1
-    # Right: the title, out to the first window button. Stops there rather
-    # than being masked by it the way the web console's is — this window
-    # has a minimise button as well as a close, and between them they take
-    # everything past that point anyway.
+    Draw-Grip $g $stripX $stripY (($tx - $gripGap) - $stripX) $gripH "left"
     $gripFrom = $tx + $tw + $gripGap
-    $gripTo   = $MinX - $gripGap
-    Draw-Tiled $g $SprPattern $gripFrom $gripY ($gripTo - $gripFrom) $gripH -1
+    Draw-Grip $g $gripFrom $stripY ($stripR - $gripFrom) $gripH "right"
 
     $bandY = Px 4
     $bandH = Px 20

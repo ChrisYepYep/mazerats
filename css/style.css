@@ -1522,22 +1522,37 @@ body[data-page="home"] .hero { padding-top: 18px; }
    rather than as a title interrupting a rule. Nothing is painted behind
    the letters any more, so there is nothing to give an edge away. */
 .chrome-titlebar {
-    /* The room the title is guaranteed at each end of the bar. The grips
-       reach out past it (see their negative margins) so the dots still run
-       the full width the pattern did, into the window frame's own curve,
-       rather than stopping short at the padding. */
+    /* The room the title is guaranteed at each end of the bar. */
     --titlebar-pad: 40px;
-    /* The bar's own vertical padding, held in a variable for the same
-       reason: the grips reach back out over it too. */
     --titlebar-pad-y: 9px;
     /* Clear ground between a grip and the title. */
     --titlebar-grip-gap: 10px;
-    /* Clear ground above and below a grip. It is the bar's whole face
-       otherwise: the grip stands in for a pattern that filled the bar edge
-       to edge, so it carries the same weight and tucks into the window
-       frame's corner curve the way that fill did, rather than reading as a
-       thin rule floating in the middle of an empty band. */
+    /* Clear ground under a grip, along the bar's bottom edge. */
     --titlebar-grip-inset: 2px;
+
+    /* How far a grip reaches OUT of the bar, on its three outer sides.
+
+       The bar starts 14px in from the window's own edge, because that is
+       .chrome-window's border-width — but almost none of that 14px is
+       actually frame. window_frame.png draws 1px of black, 1px of fill and
+       1px of highlight, and the remaining 11px of its corner tile is plain
+       --chrome-fill, the same colour the bar paints. So a grip stopping at
+       the bar's own edge stops 11px short of the frame it looks like it
+       should be tucked against, across an expanse of nothing.
+
+       It reaches over that instead, to 3px inside the window's edge, which
+       puts it directly against the bevel. The grips are children of the
+       bar, so they paint over the window's border-image without any
+       stacking of their own. */
+    --titlebar-bleed: 11px;
+
+    /* The frame's own corner, brought in by that same 3px. The outline in
+       window_frame.png is a quarter circle of radius 12 centred on
+       (12, 12) — it meets the top edge at x=12 and the left edge at y=12 —
+       so a 9px radius on a box starting at (3, 3) is concentric with it,
+       3px inside it the whole way round. */
+    --titlebar-grip-radius: 9px;
+
     position: relative;
     display: flex;
     align-items: center;
@@ -1545,25 +1560,18 @@ body[data-page="home"] .hero { padding-top: 18px; }
     gap: var(--titlebar-grip-gap);
     padding: var(--titlebar-pad-y) var(--titlebar-pad);
     background-color: var(--chrome-fill);
-    /* Nothing the bar paints may leave it. The close buttons end the grip
-       out of their own box-shadows (see .chrome-close), and a spread wide
-       enough to clear a grip that now fills the bar's full height is also
-       wide enough to overhang it by a pixel — onto .chrome-frame's own top
-       highlight directly below, which would break that 1px line under the
-       button and nowhere else. */
-    overflow: hidden;
 }
 
 /* Rows of dots, 1px on and 1px off in both directions, taken straight off
    the tile rather than redrawn: title_pattern.png IS that grid, so a box
-   of any height shows however many of its rows fit and nothing else. How
-   tall the grip is, and so how many rows it has, is only
-   --titlebar-grip-inset.
+   of any size shows however many of its rows fit and nothing else.
 
-   Stretched to the bar rather than given a height, so one inset covers
-   every bar this class dresses — they run from 31px to 41px tall — and the
-   negative margin takes it back out over the bar's own vertical padding to
-   the true top and bottom edges. */
+   Stretched rather than given a height, so the bleed and the inset cover
+   every bar this class dresses — they run from 31px to 41px tall — without
+   a number each. The top margin carries it out over the bar's padding AND
+   over the window's border to the frame; the bottom one only cancels the
+   padding, less the inset, since below the bar is the window's own body
+   rather than its rim. */
 .chrome-titlebar::before,
 .chrome-titlebar::after {
     content: "";
@@ -1573,21 +1581,29 @@ body[data-page="home"] .hero { padding-top: 18px; }
        giving way to it. */
     min-width: 0;
     align-self: stretch;
-    margin-top: calc(var(--titlebar-grip-inset) - var(--titlebar-pad-y));
+    margin-top: calc(-1 * (var(--titlebar-pad-y) + var(--titlebar-bleed)));
     margin-bottom: calc(var(--titlebar-grip-inset) - var(--titlebar-pad-y));
     background-image: url('../assets/img/title_pattern.png');
     background-repeat: repeat;
     image-rendering: pixelated;
 }
 
-/* Back out past the padding, to the bar's own two ends. Equal and
-   opposite, and that matters more than it looks: the two grips share the
-   leftover space evenly, so any difference between these would move the
-   title off centre by half of it. It is why the right-hand grip is not
-   simply cut short where the close button sits — the close button stops
-   it instead, out of its own paint (see .chrome-close). */
-.chrome-titlebar::before { margin-left: calc(-1 * var(--titlebar-pad)); }
-.chrome-titlebar::after { margin-right: calc(-1 * var(--titlebar-pad)); }
+/* Out past the padding and the border to the window's own corner, and
+   rounded there so the dots follow its curve in rather than sitting in a
+   square block against it.
+
+   The two are equal and opposite, which matters more than it looks: the
+   grips share the bar's leftover space evenly, so any difference between
+   these would move the title off centre by half of it. */
+.chrome-titlebar::before {
+    margin-left: calc(-1 * (var(--titlebar-pad) + var(--titlebar-bleed)));
+    border-top-left-radius: var(--titlebar-grip-radius);
+}
+
+.chrome-titlebar::after {
+    margin-right: calc(-1 * (var(--titlebar-pad) + var(--titlebar-bleed)));
+    border-top-right-radius: var(--titlebar-grip-radius);
+}
 
 .chrome-titlebar h1,
 .chrome-titlebar h2,
@@ -1630,27 +1646,11 @@ body[data-page="home"] .hero { padding-top: 18px; }
     align-items: center;
     justify-content: center;
     cursor: var(--cursor-pointer);
-    /* Three shadows. The first is the button's own hard drop.
-
-       The other two are the titlebar's own colour, and they are what stops
-       the grip running underneath (see .chrome-titlebar::after): one gives
-       the button clear ground to sit on, and the same box shifted 10px
-       right carries that ground out to the bar's end — the button stands
-       10px in from it, and a few stray dots past a close button read as a
-       smudge rather than as chrome. Invisible against a bar of the same
-       colour; all they do is end the grip.
-
-       9px of spread, not 3: the grip fills the bar's full height now, and
-       this button is 24px in bars up to 41px tall, so anything less left
-       a row of dots showing over the button and another under it. Spread
-       is uniform, so the same 9px also widens the clear ground either
-       side, which is no bad thing at this weight of texture.
-
-       The drop is listed first so it still paints over both of them. */
-    box-shadow:
-        1px 1px 0 rgba(0, 0, 0, 0.3),
-        0 0 0 9px var(--chrome-fill),
-        10px 0 0 9px var(--chrome-fill);
+    /* The button's own hard drop, and nothing else. The grip runs under it
+       rather than stopping for it — which is what Habbo's own windows do,
+       and the sprite is opaque, so it covers the dots where it sits and
+       they carry on either side of it. */
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
     text-decoration: none;
     flex-shrink: 0;
 }
@@ -1663,39 +1663,20 @@ body[data-page="home"] .hero { padding-top: 18px; }
    confirm/info dialogs (which share that class) keep their plain "×"
    glyph in the normal cream button frame.
 
-   It keeps the bar's own colour behind the artwork, though, where it used
-   to be fully transparent. The titlebar's grip runs the full width of the
-   bar (see .chrome-titlebar::after) — it has to, or the two grips would
-   be different lengths and the title would no longer sit centred between
-   them — and this is what stops it at the button instead of letting three
-   rows of dots cross the X. Against a bar of the same colour the plate
-   itself is invisible; all it does is end the grip.
-
-   The cream .chrome-close buttons elsewhere need none of this: their own
-   gradient is opaque and already breaks the dots where they sit. */
+   Transparent, and the grip runs on underneath it: the X artwork is opaque
+   and covers the dots where it sits, and the 6px of padding around it lets
+   them through, which is how Habbo's own close buttons sit on their bars. */
 #modal-close {
-    background: var(--chrome-fill);
+    background: none;
     border: none;
     border-radius: 0;
-    /* Two shadows, the same shape .chrome-close uses: one over the button
-       itself, and the same box shifted 10px right to carry the cleared
-       ground out to the bar's end.
-
-       Both are needed. With only the shifted one, its 6px of padding was
-       covering the button's own column but nothing above or below it — the
-       grip fills the bar's height now, and the top and bottom rows of dots
-       came out past the X by three dots while every row between them
-       stopped short of it. 4px of spread is what carries the pair over the
-       full 32px of this bar. */
-    box-shadow:
-        0 0 0 4px var(--chrome-fill),
-        10px 0 0 4px var(--chrome-fill);
+    box-shadow: none;
     width: auto;
     height: auto;
     padding: 6px;
 }
 
-#modal-close:hover { background: var(--chrome-fill); }
+#modal-close:hover { background: none; }
 
 #modal-close img {
     width: 14px;
@@ -6066,12 +6047,22 @@ body[data-page="admin"] .search-box input {
     flex: 1 1 0;
     min-width: 0;
     align-self: stretch;
-    margin: 2px 0;
+    margin-bottom: 2px;
     background-image: url('../assets/img/console/cnsl-top-pattern.png');
     background-repeat: repeat;
     background-position: 0 -1px;
     image-rendering: pixelated;
 }
+
+/* Rounded where they meet the frame's corner, so the dots follow its curve
+   in rather than sitting in a square block against it. Same 9px the window
+   titlebars use and for the same reason: cnsl-frame-border.png's outline is
+   the same quarter circle of radius 12 centred on (12, 12), and this strip
+   stands the same 3px inside it. .console-frame's own overflow clip takes a
+   bite out of this corner too, but a looser one — this is the curve that
+   actually shows. */
+.console-top-pattern::before { border-top-left-radius: 9px; }
+.console-top-pattern::after { border-top-right-radius: 9px; }
 
 .console-frame.is-dragging .console-top-pattern,
 .console-frame.is-dragging { cursor: grabbing; }
@@ -6118,27 +6109,11 @@ body[data-page="admin"] .search-box input {
     height: 13px;
     padding: 0;
     border: none;
-    /* The frame's own yellow, spread past the sprite by the shadows, so the
-       grip running underneath stops at the button instead of three rows of
-       dots crossing the X. Invisible against a frame of the same colour —
-       all it does is end the grip. The strip runs the full width on purpose
-       (the two grips have to match, or the title between them is no longer
-       centred), so this is what makes room here.
-
-       Two shadows, not one: the first alone clears the X itself but leaves
-       the last 8px of strip past it still dotted, and four stray dots
-       beyond the close button read as a smudge rather than as chrome. The
-       second is the same box shifted 8px right, carrying the cleared
-       ground out to the strip's own end. Shadows rather than a pseudo-
-       element because they paint BEHIND the button's own background,
-       where a child would paint over the X.
-
-       5px of spread, not 3: the grip fills the strip's height now — y 5 to
-       24, against this 13px button's y 6 to 19 — so 3px left a row of dots
-       showing under the X. 5px covers y 1 to 24, and still stops short of
-       .console-screen's own top at 26. */
-    background-color: #ffcb00;
-    box-shadow: 0 0 0 5px #ffcb00, 8px 0 0 5px #ffcb00;
+    /* Transparent, with the grip running on underneath it — the sprite is
+       opaque and covers the dots where it sits. Habbo's own console does
+       exactly this: the strip runs the width of the bar and the close box
+       sits on top of it. */
+    background-color: transparent;
     background-image: url('../assets/img/console/cnsl-top-x-close.png');
     background-repeat: no-repeat;
     image-rendering: pixelated;
