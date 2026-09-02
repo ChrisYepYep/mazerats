@@ -474,6 +474,21 @@
                                     <div class="room-desc-panel">
                                         <div class="room-desc-box" id="room-desc-box">
                                             <p class="room-desc-full" id="modal-desc"></p>
+                                            <!-- A Habbo Origins article, read once by an admin and stored on the
+                                                 event (see netlify/functions/article.js). It stands where the
+                                                 event's full details would be — the two are mutually exclusive in
+                                                 the admin form — and it is built from stored markup that was
+                                                 rebuilt against a tag whitelist on the way in, never from
+                                                 anything fetched here. -->
+                                            <div class="modal-article" id="modal-article" hidden>
+                                                <p class="modal-article-kicker">From Habbo Origins</p>
+                                                <h4 class="modal-article-title" id="modal-article-title"></h4>
+                                                <p class="modal-article-meta" id="modal-article-meta"></p>
+                                                <div class="modal-article-body" id="modal-article-body"></div>
+                                                <p class="modal-article-source">
+                                                    <a id="modal-article-link" href="#" target="_blank" rel="noopener noreferrer">Read it on Habbo Origins &rsaquo;</a>
+                                                </p>
+                                            </div>
                                             <div class="room-links-refs" id="modal-links-wrap" style="display:none;">
                                                 <span class="room-links-refs-label">Links &amp; References</span>
                                                 <p class="room-links-refs-text" id="modal-links"></p>

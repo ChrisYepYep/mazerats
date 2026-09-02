@@ -44,6 +44,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     const builderEl = document.getElementById("event-modal-builder");
     const tagsEl = document.getElementById("event-modal-tags");
     const ecBadgeEl = document.getElementById("event-modal-ec-badge");
+    const articleEl = document.getElementById("event-modal-article");
+    const articleTitleEl = document.getElementById("event-modal-article-title");
+    const articleMetaEl = document.getElementById("event-modal-article-meta");
+    const articleBodyEl = document.getElementById("event-modal-article-body");
+    const articleLinkEl = document.getElementById("event-modal-article-link");
     const metaEl = document.getElementById("event-modal-meta");
     const descEl = document.getElementById("event-modal-desc");
     const visitWrap = document.getElementById("event-modal-visit-wrap");
@@ -293,6 +298,32 @@ document.addEventListener("DOMContentLoaded", async () => {
             `<span>Hotel: ${escapeHtml(event.hotel || "Unknown")}</span>` +
             `<span>Date: ${escapeHtml(formatEventDuration(event.date, event.endDate))}</span>`;
         descEl.textContent = event.description || "";
+
+        /* The stored Habbo article, if this event has one.
+        
+           body goes in as markup, which is the one place on this site that
+           happens. It is safe because of where it comes from: it was rebuilt
+           tag by tag against a whitelist by netlify/functions/article.js
+           before it was ever stored, so what is held is already only the
+           handful of elements an article is allowed to be. Nothing is fetched
+           or parsed here.
+        
+           An article stands in for the event's full details — the admin form
+           will not let both be set — so the description above it is the short
+           one, and this reads as the piece itself below it. */
+        const article = event.article;
+        if (article && article.body) {
+            articleTitleEl.textContent = article.title || "";
+            articleMetaEl.textContent = [article.date, article.category].filter(Boolean).join("  —  ");
+            articleBodyEl.innerHTML = article.body;
+            articleLinkEl.href = article.url || "#";
+            articleEl.hidden = false;
+        } else {
+            // Emptied, not just hidden: an article left in the DOM is a
+            // screenful of the last event's text one class away from showing.
+            articleBodyEl.innerHTML = "";
+            articleEl.hidden = true;
+        }
         // Same Links & References block home.html shows for an event.
         if (event.linksReferences) {
             linksEl.innerHTML = linkifyText(event.linksReferences);

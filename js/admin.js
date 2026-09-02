@@ -2118,6 +2118,116 @@ document.addEventListener("DOMContentLoaded", () => {
     // while the event is still being written rather than only once it has
     // been saved and re-listed. Same derivation the public site uses, off
     // the same module, so what's shown here is what visitors will get.
+    /* ---------- the article field ----------
+
+       An event can carry a Habbo Origins article instead of its own full
+       details: the link goes in, Add Article reads it once, and the copy is
+       stored on the event and shown in the modal. See
+       netlify/functions/article.js for the reading, and .modal-article in
+       css/style.css for the showing.
+
+       The two long-form fields are mutually exclusive. Whichever is in use
+       disables the other outright, rather than letting both be filled and
+       one of them silently win — which is how an admin loses an evening's
+       writing to a field they had forgotten was set. */
+    function wireArticle(formEl) {
+        const urlInput = formEl.querySelector(".admin-article-url");
+        const button = formEl.querySelector(".admin-article-btn");
+        const statusEl = formEl.querySelector(".admin-article-status");
+        const detailsEl = formEl.querySelector("textarea[name=details]");
+        if (!urlInput || !button || !statusEl) return;
+
+        const detailsField = detailsEl && detailsEl.closest(".admin-field");
+
+        function say(kind, html) {
+            statusEl.className = "admin-article-status admin-article-status--" + kind;
+            statusEl.innerHTML = html;
+            statusEl.hidden = false;
+        }
+
+        /* What the form shows about the article it is holding. Three states,
+           and the difference between the last two matters: a link with no
+           copy behind it saves nothing, so it has to look unfinished rather
+           than done. */
+        function refresh() {
+            const url = urlInput.value.trim();
+            const draft = formEl._articleDraft;
+            const hasDetails = !!(detailsEl && detailsEl.value.trim());
+
+            /* Full details wins only while the link is empty; the moment
+               there is a link, the article is the event's write-up. And the
+               other way about: filled-in Full details locks the link field,
+               so the two can never both be set.
+
+               readOnly rather than disabled, which matters more than it
+               looks: a DISABLED field is left out of FormData entirely, so
+               submitForm would read undefined for it and write that over
+               whatever the event already had. Read-only fields are still
+               submitted, so what is saved is always what is on screen. The
+               greying is .is-disabled's job either way. */
+            const lockDetails = !!url;
+            const lockUrl = !url && hasDetails;
+            if (detailsEl) {
+                detailsEl.readOnly = lockDetails;
+                if (detailsField) detailsField.classList.toggle("is-disabled", lockDetails);
+            }
+            urlInput.readOnly = lockUrl;
+            button.disabled = lockUrl;
+            if (urlInput.closest(".admin-field")) {
+                urlInput.closest(".admin-field").classList.toggle("is-disabled", lockUrl);
+            }
+
+            if (!url) {
+                statusEl.hidden = true;
+                return;
+            }
+            if (draft && draft.url === url && draft.body) {
+                say("ok",
+                    '<p class="admin-article-title">' + escapeHtml(draft.title) + "</p>" +
+                    '<p class="admin-article-meta">' +
+                    escapeHtml([draft.date, draft.category].filter(Boolean).join("  —  ")) +
+                    "</p>" +
+                    '<p class="admin-article-meta">Stored, and shown on the event in place of its full details. Press Add Article again to re-read it.</p>');
+                return;
+            }
+            say("todo", "<p>Press <strong>Add Article</strong> to read this one in. Nothing is stored until you do.</p>");
+        }
+
+        button.addEventListener("click", async () => {
+            const url = urlInput.value.trim();
+            if (!url) { say("bad", "<p>Paste the article's link first.</p>"); return; }
+            // Read-only means Full details is in use; the button is disabled
+            // then, but a stray click should still do nothing.
+            if (urlInput.readOnly) return;
+            button.disabled = true;
+            const label = button.textContent;
+            button.textContent = "Reading…";
+            say("todo", "<p>Reading the article from Habbo…</p>");
+            try {
+                const article = await Api.readArticle(adminToken, url);
+                formEl._articleDraft = article;
+                // Whatever was typed is replaced by the URL actually read,
+                // so the field and the stored copy cannot disagree.
+                urlInput.value = article.url;
+                refresh();
+            } catch (err) {
+                if (err.status === 401) { lockOut(); return; }
+                formEl._articleDraft = null;
+                say("bad", "<p>" + escapeHtml(err.message || "That article could not be read.") + "</p>");
+            } finally {
+                button.textContent = label;
+                button.disabled = false;
+                refresh();
+            }
+        });
+
+        // Editing the link away from what was stored puts the field back to
+        // "not read yet", so it cannot look saved when it is not.
+        urlInput.addEventListener("input", refresh);
+        if (detailsEl) detailsEl.addEventListener("input", refresh);
+        refresh();
+    }
+
     function wireDerivedStatus(formEl) {
         const wrap = formEl.querySelector(".admin-derived-status");
         if (!wrap) return;
@@ -2224,6 +2334,29 @@ document.addEventListener("DOMContentLoaded", () => {
                 `<option value="${value}" ${(item.ecSeason || "") === value ? "selected" : ""}>${label}</option>`
               ).join("")}</select>`) +
               `<p class="admin-hint">An EC event carries its season badge and name plate wherever it is listed. Regular events look exactly as they always have.</p>`
+            : "";
+
+        /* Events only. An event's write-up usually already exists on Habbo's
+           own site; pasting the link here and pressing Add Article reads it
+           once and stores it on the event, so the site shows the piece
+           itself rather than sending the reader away to it.
+
+           It stands in for Full details rather than sitting beside it: two
+           long-form fields, one of them silently winning, is a way to lose
+           work. Whichever is filled disables the other (see wireArticle). */
+        const article = item.article && item.article.body ? item.article : null;
+        const articleFieldHtml = isEvents
+            ? `
+                <div class="admin-field admin-article-field">
+                    <span>Article link</span>
+                    <div class="admin-article-row">
+                        <input type="text" name="articleUrl" class="admin-article-url" placeholder="https://origins.habbo.com/community/article/..." value="${escapeHtml((article && article.url) || "")}">
+                        <button type="button" class="admin-action-pill admin-article-btn">Add Article</button>
+                    </div>
+                    <p class="admin-hint">A Habbo Origins article link. Add Article reads it and keeps a copy, which is what the event then shows in place of its full details.</p>
+                    <div class="admin-article-status" hidden></div>
+                </div>
+              `
             : "";
 
         const difficultyOptionsHtml = DIFFICULTY_OPTIONS.map(([value, label]) =>
@@ -2416,6 +2549,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
             `)}
             ${fieldRow("Short description (shown on the card)", `<textarea name="description" rows="2">${item.description || ""}</textarea>`)}
+            ${articleFieldHtml}
             ${fieldRow("Full details (shown in the popup, optional)", `<textarea name="details" rows="4">${item.details || ""}</textarea>`)}
             ${fieldRow("Links &amp; References (optional, shown directly beneath the description)", `<textarea name="linksReferences" rows="3">${item.linksReferences || ""}</textarea>`)}
             ${fieldRow("Habbo link (optional)", `<input type="text" name="habboLink" value="${item.habboLink || ""}" placeholder="https://...">`)}
@@ -2445,6 +2579,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         wireThumbUpload(cfg.formEl, uploadPrefix);
         if (isEvents) wireDerivedStatus(cfg.formEl);
+        // The stored copy travels on the form, not in the field — the field
+        // only holds the link it came from.
+        cfg.formEl._articleDraft = article;
+        if (isEvents) wireArticle(cfg.formEl);
         cfg.formEl._relatedDraft = (item.relatedImages || []).map(normalizeRelatedEntry);
         wireRelatedEditor(cfg.formEl, uploadPrefix);
         wireFurniEditor(cfg.formEl, item);
@@ -2646,6 +2784,13 @@ document.addEventListener("DOMContentLoaded", () => {
             // field reads as. Written either way so switching an event back
             // to Regular actually clears it.
             payload.ecSeason = data.ecSeason || "";
+            /* The stored article, or nothing. Clearing the link field is how
+               an article is removed, so an empty field has to write null
+               rather than leave the old copy sitting on the record. */
+            payload.article = (data.articleUrl || "").trim() ? (form._articleDraft || null) : null;
+            // A saved article is what the event shows; details would be
+            // dead text underneath it.
+            if (payload.article) payload.details = "";
         } else {
             // Day is optional — a maze whose exact opening day isn't known
             // saves as "YYYY-MM" instead of guessing a day, and

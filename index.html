@@ -132,6 +132,21 @@
                             <div class="room-desc-panel">
                                 <div class="room-desc-box">
                                     <p class="room-desc-full" id="event-modal-desc"></p>
+                                    <!-- A Habbo Origins article, read once by an admin and stored on the
+                                         event (see netlify/functions/article.js). It stands where the
+                                         event's full details would be — the two are mutually exclusive in
+                                         the admin form — and it is built from stored markup that was
+                                         rebuilt against a tag whitelist on the way in, never from
+                                         anything fetched here. -->
+                                    <div class="modal-article" id="event-modal-article" hidden>
+                                        <p class="modal-article-kicker">From Habbo Origins</p>
+                                        <h4 class="modal-article-title" id="event-modal-article-title"></h4>
+                                        <p class="modal-article-meta" id="event-modal-article-meta"></p>
+                                        <div class="modal-article-body" id="event-modal-article-body"></div>
+                                        <p class="modal-article-source">
+                                            <a id="event-modal-article-link" href="#" target="_blank" rel="noopener noreferrer">Read it on Habbo Origins &rsaquo;</a>
+                                        </p>
+                                    </div>
                                     <div class="room-links-refs" id="event-modal-links-wrap" style="display:none;">
                                         <span class="room-links-refs-label">Links &amp; References</span>
                                         <p class="room-links-refs-text" id="event-modal-links"></p>

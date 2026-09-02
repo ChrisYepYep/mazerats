@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Events have no difficulty field (see normalize()) — hidden while
     // viewing Events, see updateChrome().
     const difficultySortOptions = sortSelect.querySelectorAll('option[value^="difficulty"]');
+    const dateSortOption = sortSelect.querySelector('option[value="date"]');
     const emptyEl = document.getElementById("featured-empty");
     const topNavBtns = document.querySelectorAll("#top-nav .chrome-nav-btn");
     const subNavEl = document.getElementById("sub-nav");
@@ -64,6 +65,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const modalLinks = document.getElementById("modal-links");
     const modalTags = document.getElementById("modal-tags");
     const modalEcBadge = document.getElementById("modal-ec-badge");
+    const modalArticle = document.getElementById("modal-article");
+    const modalArticleTitle = document.getElementById("modal-article-title");
+    const modalArticleMeta = document.getElementById("modal-article-meta");
+    const modalArticleBody = document.getElementById("modal-article-body");
+    const modalArticleLink = document.getElementById("modal-article-link");
     // The window itself, inside the overlay — what .is-ec is set on.
     const modalEl = modalOverlay.querySelector(".modal");
     const modalLink = document.getElementById("modal-link");
@@ -90,6 +96,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // have, the landing tab is chosen for them — see resolvedEventsSub().
     let eventsSubTouched = false;
     let sortBy = "name"; // "date" | "name" | "owner" | "difficulty"
+    // Set the moment the visitor picks a sort themselves, after which their
+    // choice stands wherever they go and the per-view default below stops
+    // having an opinion. Same shape as eventsSubTouched just above.
+    let sortTouched = false;
     let query = "";
     // Independent of topView/mazesSub/eventsSub — layers a featured pick
     // over whichever category is active rather than replacing it, so
@@ -201,6 +211,10 @@ document.addEventListener("DOMContentLoaded", () => {
                    up in a class name (ec-title-s1), and the only two that
                    mean anything are the two the admin page offers. */
                 ecSeason: ["s1", "s2"].includes(item.ecSeason) ? item.ecSeason : "",
+                /* A Habbo Origins article read in by an admin, standing in
+                   for this event's full details. Carried whole: it was
+                   sanitised where it was fetched, not here. */
+                article: item.article && item.article.body ? item.article : null,
                 // Events use the exact same fallback chain (entrance shot,
                 // then the first room-by-room gallery image, when no thumb
                 // is set) and the same gallery/entrance/finish shape as
@@ -544,6 +558,31 @@ document.addEventListener("DOMContentLoaded", () => {
         if (isEvents && sortBy.startsWith("difficulty")) {
             sortBy = "name";
             sortSelect.value = "name";
+            sortTouched = false;
+        }
+
+        /* Past events open newest first. That list is a history, and the
+           thing being looked for in a history is nearly always the most
+           recent one — alphabetical order is the right default for an
+           archive of mazes and the wrong one for a run of dated events.
+
+           A default, not a lock: it only applies until the visitor picks a
+           sort of their own, and their choice then follows them between
+           tabs rather than being reset by arriving at this one. */
+        if (!sortTouched) {
+            const want = (isEvents && !showFeatured && resolvedEventsSub() === "past") ? "date" : "name";
+            if (sortBy !== want) {
+                sortBy = want;
+                sortSelect.value = want;
+            }
+        }
+
+        // "Opening Date" is a maze's wording. On the events lists the same
+        // sort is the event's own date — and on Past it is now the default,
+        // so the label is the first thing read about a list already in that
+        // order.
+        if (dateSortOption) {
+            dateSortOption.textContent = isEvents ? "Sort by: Event Date" : "Sort by: Opening Date";
         }
     }
 
@@ -2857,6 +2896,32 @@ document.addEventListener("DOMContentLoaded", () => {
             <span>${escapeHtml(n.dateFieldLabel)}: ${escapeHtml(dateDisplay || "Unknown")}</span>
         `;
         modalDesc.textContent = n.details || n.description || "";
+
+        /* The stored Habbo article, if this event has one.
+        
+           body goes in as markup, which is the one place on this site that
+           happens. It is safe because of where it comes from: it was rebuilt
+           tag by tag against a whitelist by netlify/functions/article.js
+           before it was ever stored, so what is held is already only the
+           handful of elements an article is allowed to be. Nothing is fetched
+           or parsed here.
+        
+           An article stands in for the event's full details — the admin form
+           will not let both be set — so the description above it is the short
+           one, and this reads as the piece itself below it. */
+        const article = n.article;
+        if (article && article.body) {
+            modalArticleTitle.textContent = article.title || "";
+            modalArticleMeta.textContent = [article.date, article.category].filter(Boolean).join("  —  ");
+            modalArticleBody.innerHTML = article.body;
+            modalArticleLink.href = article.url || "#";
+            modalArticle.hidden = false;
+        } else {
+            // Emptied, not just hidden: an article left in the DOM is a
+            // screenful of the last event's text one class away from showing.
+            modalArticleBody.innerHTML = "";
+            modalArticle.hidden = true;
+        }
         if (n.linksReferences) {
             modalLinks.innerHTML = linkifyText(n.linksReferences);
             modalLinksWrap.style.display = "block";
@@ -3050,6 +3115,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     sortSelect.addEventListener("change", e => {
         sortBy = e.target.value;
+        sortTouched = true;
         render();
     });
 

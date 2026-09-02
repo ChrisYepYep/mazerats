@@ -124,6 +124,11 @@ const Api = {
     deleteRoom(token, id) { return this._write(`/.netlify/functions/rooms?id=${encodeURIComponent(id)}`, "DELETE", token); },
 
     createEvent(token, ev) { return this._write("/.netlify/functions/events", "POST", token, ev); },
+
+    /* Reads a Habbo Origins article and hands back the parts of it an event
+       shows. Nothing is stored by this call: the admin form holds the
+       result and it is saved with the event, like every other field. */
+    readArticle(token, url) { return this._write("/.netlify/functions/article", "POST", token, { url }); },
     updateEvent(token, ev) { return this._write("/.netlify/functions/events", "PUT", token, ev); },
     deleteEvent(token, id) { return this._write(`/.netlify/functions/events?id=${encodeURIComponent(id)}`, "DELETE", token); },
 

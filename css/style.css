@@ -4681,16 +4681,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
    than content, and a gold plate sitting up there would read as a second
    window inside the first. */
 
-/* Hard against the modal's right edge — out through .modal-body's own 22px
-   of padding, so it stands against the frame rather than lining up with the
-   text. .room-tags before it is content-sized and the builder card takes
-   everything left over, so this lands wherever the row ends. */
+/* Out through .modal-body's own 22px of padding, but not all of it: hard
+   against the frame read as though it had been pushed there rather than
+   placed, so it keeps 10px of ground to its right. .room-tags before it is
+   content-sized and the builder card takes everything left over, so this
+   lands wherever the row ends. */
 .ec-modal-badge {
     flex: 0 0 auto;
     align-self: center;
     width: 29px;
     height: 40px;
-    margin-right: -22px;
+    margin-right: -12px;
     margin-left: 10px;
     image-rendering: pixelated;
 }
@@ -4699,51 +4700,25 @@ body[data-page="home"] .hero { padding-top: 18px; }
    reason .builder-list carries its own. */
 .ec-modal-badge[hidden] { display: none; }
 
-/* The green is the medal's own. Its ribbons are painted in exactly two —
-   #009f5f and #004a2d — and the #007c4a asked for sits between them, so the
-   three are a ramp that already exists in the artwork rather than one put
-   beside it.
+/* No colour of its own beyond the medal.
 
-   Everything below is a hint of it and nothing more. The modal is a brown
-   room and stays one; this is a tint on the edges that already existed,
-   not a repaint. */
-.modal.is-ec {
-    --ec: #007c4a;
-    --ec-light: #009f5f;
-    --ec-dark: #004a2d;
-}
+   007c4a was tried across the modal's surfaces — the builder row, the meta
+   panel, the frame's highlight — and it does not belong there. Every ground
+   on this site is a warm brown, and a cool green laid over one at any
+   strength turns olive rather than reading as a tint of it.
 
-/* The builder row's own #31281d, carried a little way towards the green,
-   and closed with a hairline of it. color-mix rather than a hex, so the
-   two colours it is actually made of stay readable. */
-.modal.is-ec .modal-top-row {
-    background: color-mix(in srgb, var(--ec) 10%, #31281d);
-    box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--ec) 55%, transparent);
-}
+   It also broke the builder card outright. .builder-card paints no
+   background of its own; the card IS .modal-top-row's #31281d showing
+   through, so tinting that row was tinting the card, and the one piece of
+   the modal that needs to read as a separate object stopped doing so.
 
-/* The meta panel below it, the same shift against its own #403528 — and
-   the hard black rule along its top picks up the darkest of the three,
-   which is the one stop dark enough to sit against black without becoming
-   a line of its own. */
-.modal.is-ec .modal-meta {
-    background: color-mix(in srgb, var(--ec) 9%, #403528);
-    border-top-color: var(--ec-dark);
-}
+   The green the badge already carries is the version that works: saturated,
+   small, and inside artwork rather than under it.
 
-/* The frame's 1px highlight, which traces the top and left of everything
-   inside the modal. It is the quietest place on the window to carry a
-   colour and the one that outlines the whole of it. */
-.modal.is-ec .chrome-frame {
-    box-shadow:
-        inset 0 1px 0 color-mix(in srgb, var(--ec-light) 45%, var(--chrome-highlight)),
-        inset 1px 0 0 color-mix(in srgb, var(--ec-light) 45%, var(--chrome-highlight));
-}
-
-/* The rule under Links & References, and the description panel's own top
-   edge, both of which are already hairlines — they only change tone. */
-.modal.is-ec .room-links-refs {
-    border-top-color: color-mix(in srgb, var(--ec) 40%, transparent);
-}
+   js/home.js and js/welcome.js still mark an EC modal with .is-ec. It
+   styles nothing today and is left deliberately: the hook is the cheap
+   half, and finding a treatment that survives a brown ground is the hard
+   half. */
 
 /* Description (plus Links & References right beneath it, when set) is
    capped and scrolls internally instead of growing the modal indefinitely.
@@ -4756,6 +4731,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
     max-height: 160px;
     overflow-y: auto;
     padding-right: 8px;
+}
+
+/* 160px is the right window for two sentences of description and an absurd
+   one for a whole Habbo article, which runs to a couple of thousand pixels
+   — that is a page of reading through a letterbox. The panel takes about a
+   third of the viewport instead when it is holding one, still capped so the
+   modal keeps its shape on a tall screen. */
+.room-desc-box:has(.modal-article:not([hidden])) {
+    max-height: min(34vh, 380px);
 }
 
 /* The description panel: the scrolling text, then the thumbnail strip
@@ -6835,6 +6819,16 @@ body[data-page="admin"] .search-box input {
     .modal-thumb-full.is-event.has-gallery { --event-thumb-h: min(340px, 28vh); }
     .room-desc-box { max-height: min(160px, 18vh); }
 
+    /* .modal-top-row wraps at this width and .room-tags takes a whole line
+       of its own, which dropped the EC badge onto a third line below it,
+       left-aligned and orphaned. Sending the tags to the back of the order
+       keeps the badge on the first line beside the builder card, where it
+       is on a wide screen; the auto margin holds it against the right. */
+    .modal-top-row .room-tags { order: 1; }
+    .modal-top-row .ec-modal-badge { margin-left: auto; }
+    /* Same idea as the desktop rule, against the height a phone has. */
+    .room-desc-box:has(.modal-article:not([hidden])) { max-height: min(38vh, 300px); }
+
     /* Builder card and tag pills share one row on desktop, which at this
        width left the card around 130px — most of it spent on the avatar,
        so the builder's name and motto spilled sideways underneath the
@@ -7445,6 +7439,161 @@ body[data-page="admin"] .site-footer p {
 @media (prefers-reduced-motion: reduce) {
     .photo-frame-photo-box::before { transition: none; }
 }
+
+
+/* ---------- a Habbo article, shown in place of an event's full details ----------
+
+   Read once by an admin and stored on the event (see
+   netlify/functions/article.js); everything below is our own type over
+   Habbo's words. It sits inside .room-desc-box, so it scrolls in the panel
+   the description already scrolls in rather than growing the modal. */
+.modal-article {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--chrome-highlight);
+}
+
+.modal-article[hidden] { display: none; }
+
+/* Says whose words these are before the first of them is read, which is the
+   only honest place to put it. */
+.modal-article-kicker {
+    margin: 0 0 4px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.55rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--amber);
+}
+
+.modal-article-title {
+    margin: 0 0 2px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 700;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: var(--amber-bright);
+}
+
+.modal-article-meta {
+    margin: 0 0 10px;
+    font-size: 0.72rem;
+    color: var(--parchment-dim);
+}
+
+/* The article's own markup. Everything here is a reset rather than a
+   design: the source is written for a wide white page and lands in a 500px
+   brown one, so its headings, spacing and floats are all taken back to
+   this site's own. */
+.modal-article-body {
+    color: var(--parchment-dim);
+    font-size: 0.92rem;
+    line-height: 1.6;
+    /* A pasted URL in someone else's prose has no reason to fit our column,
+       and one long enough will push the whole panel sideways. */
+    overflow-wrap: anywhere;
+}
+
+.modal-article-body p { margin: 0 0 10px; }
+.modal-article-body p:last-child { margin-bottom: 0; }
+
+.modal-article-body h3,
+.modal-article-body h4,
+.modal-article-body h5,
+.modal-article-body h6 {
+    margin: 16px 0 6px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 700;
+    /* One size for all of them. The source's heading levels are decorative
+       rather than structural — an article opens on an h3 — so honouring the
+       ladder would only make the first thing in the panel the biggest. */
+    font-size: 0.78rem;
+    line-height: 1.4;
+    color: var(--amber-bright);
+}
+
+.modal-article-body h3:first-child,
+.modal-article-body h4:first-child { margin-top: 0; }
+
+.modal-article-body ul,
+.modal-article-body ol { margin: 0 0 10px; padding-left: 20px; }
+.modal-article-body li { margin-bottom: 4px; }
+
+.modal-article-body strong,
+.modal-article-body b { color: var(--parchment); font-weight: 700; }
+
+.modal-article-body a { color: var(--amber-bright); }
+.modal-article-body a:hover { color: var(--parchment); }
+
+.modal-article-body blockquote {
+    margin: 0 0 10px;
+    padding-left: 10px;
+    border-left: 2px solid var(--chrome-highlight);
+}
+
+.modal-article-body hr {
+    height: 1px;
+    margin: 14px 0;
+    border: 0;
+    background: var(--chrome-highlight);
+}
+
+/* The source sizes its images for its own page — 660px banners in a panel
+   about 460px wide — so the stored width/height are overridden rather than
+   honoured, and the aspect ratio is left to the file. Blocks, not floats:
+   the article floats some of them right against a much wider column, which
+   at this width leaves a single word beside a picture. */
+.modal-article-body img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    margin: 10px 0;
+    border-radius: 3px;
+}
+
+.modal-article-source {
+    margin: 12px 0 0;
+    font-size: 0.78rem;
+}
+
+.modal-article-source a { color: var(--amber); }
+.modal-article-source a:hover { color: var(--amber-bright); }
+
+/* ---------- the admin's own article field ---------- */
+
+.admin-article-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.admin-article-row .admin-article-url { flex: 1; min-width: 0; }
+.admin-article-row .admin-article-btn { flex: 0 0 auto; white-space: nowrap; }
+
+/* Whichever of Article link / Full details is not in use. wireArticle in
+   js/admin.js makes it read-only — not disabled, for the reason spelled
+   out there — so this is what says so. */
+.admin-field.is-disabled { opacity: 0.45; }
+.admin-field.is-disabled textarea,
+.admin-field.is-disabled input { cursor: not-allowed; }
+
+.admin-article-status {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 4px;
+    background: var(--bg-panel);
+    font-size: 0.78rem;
+    color: var(--parchment-dim);
+}
+
+.admin-article-status[hidden] { display: none; }
+.admin-article-status p { margin: 0; }
+.admin-article-status .admin-article-title { color: var(--amber-bright); font-weight: 700; }
+.admin-article-status .admin-article-meta { color: var(--parchment-dim); }
+.admin-article-status--ok { border-color: var(--ok); }
+.admin-article-status--bad { border-color: var(--danger); color: var(--danger); }
 
 /* ---------- the activity log (owner only) ---------- */
 
