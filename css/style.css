@@ -1527,22 +1527,43 @@ body[data-page="home"] .hero { padding-top: 18px; }
        the full width the pattern did, into the window frame's own curve,
        rather than stopping short at the padding. */
     --titlebar-pad: 40px;
+    /* The bar's own vertical padding, held in a variable for the same
+       reason: the grips reach back out over it too. */
+    --titlebar-pad-y: 9px;
     /* Clear ground between a grip and the title. */
     --titlebar-grip-gap: 10px;
+    /* Clear ground above and below a grip. It is the bar's whole face
+       otherwise: the grip stands in for a pattern that filled the bar edge
+       to edge, so it carries the same weight and tucks into the window
+       frame's corner curve the way that fill did, rather than reading as a
+       thin rule floating in the middle of an empty band. */
+    --titlebar-grip-inset: 2px;
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: var(--titlebar-grip-gap);
-    padding: 9px var(--titlebar-pad);
+    padding: var(--titlebar-pad-y) var(--titlebar-pad);
     background-color: var(--chrome-fill);
+    /* Nothing the bar paints may leave it. The close buttons end the grip
+       out of their own box-shadows (see .chrome-close), and a spread wide
+       enough to clear a grip that now fills the bar's full height is also
+       wide enough to overhang it by a pixel — onto .chrome-frame's own top
+       highlight directly below, which would break that 1px line under the
+       button and nowhere else. */
+    overflow: hidden;
 }
 
-/* Exactly three rows of dots, 1px on and 1px off both ways, taken straight
-   off the tile rather than redrawn: title_pattern.png IS that grid, so a
-   box 5px tall shows rows 0, 2 and 4 of it and nothing else. How many rows
-   there are is therefore only this height — 2n-1 px for n rows — and one
-   number changes it everywhere. */
+/* Rows of dots, 1px on and 1px off in both directions, taken straight off
+   the tile rather than redrawn: title_pattern.png IS that grid, so a box
+   of any height shows however many of its rows fit and nothing else. How
+   tall the grip is, and so how many rows it has, is only
+   --titlebar-grip-inset.
+
+   Stretched to the bar rather than given a height, so one inset covers
+   every bar this class dresses — they run from 31px to 41px tall — and the
+   negative margin takes it back out over the bar's own vertical padding to
+   the true top and bottom edges. */
 .chrome-titlebar::before,
 .chrome-titlebar::after {
     content: "";
@@ -1551,8 +1572,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
        a long title would be pushed out of the bar instead of the grips
        giving way to it. */
     min-width: 0;
-    align-self: center;
-    height: 5px;
+    align-self: stretch;
+    margin-top: calc(var(--titlebar-grip-inset) - var(--titlebar-pad-y));
+    margin-bottom: calc(var(--titlebar-grip-inset) - var(--titlebar-pad-y));
     background-image: url('../assets/img/title_pattern.png');
     background-repeat: repeat;
     image-rendering: pixelated;
@@ -1611,18 +1633,24 @@ body[data-page="home"] .hero { padding-top: 18px; }
     /* Three shadows. The first is the button's own hard drop.
 
        The other two are the titlebar's own colour, and they are what stops
-       the grip running underneath (see .chrome-titlebar::after): 3px all
-       round gives the button clear ground to sit on, and the same box
-       shifted 10px right carries that ground out to the bar's end — the
-       button stands 10px in from it, and five stray dots past a close
-       button read as a smudge rather than as chrome. Invisible against a
-       bar of the same colour; all they do is end the grip.
+       the grip running underneath (see .chrome-titlebar::after): one gives
+       the button clear ground to sit on, and the same box shifted 10px
+       right carries that ground out to the bar's end — the button stands
+       10px in from it, and a few stray dots past a close button read as a
+       smudge rather than as chrome. Invisible against a bar of the same
+       colour; all they do is end the grip.
+
+       9px of spread, not 3: the grip fills the bar's full height now, and
+       this button is 24px in bars up to 41px tall, so anything less left
+       a row of dots showing over the button and another under it. Spread
+       is uniform, so the same 9px also widens the clear ground either
+       side, which is no bad thing at this weight of texture.
 
        The drop is listed first so it still paints over both of them. */
     box-shadow:
         1px 1px 0 rgba(0, 0, 0, 0.3),
-        0 0 0 3px var(--chrome-fill),
-        10px 0 0 3px var(--chrome-fill);
+        0 0 0 9px var(--chrome-fill),
+        10px 0 0 9px var(--chrome-fill);
     text-decoration: none;
     flex-shrink: 0;
 }
@@ -1649,10 +1677,19 @@ body[data-page="home"] .hero { padding-top: 18px; }
     background: var(--chrome-fill);
     border: none;
     border-radius: 0;
-    /* Its 6px of padding is already the clear ground .chrome-close needs a
-       spread for; this only has to reach the last 10px of bar past it, so
-       the grip does not resume for five dots and stop again. */
-    box-shadow: 10px 0 0 var(--chrome-fill);
+    /* Two shadows, the same shape .chrome-close uses: one over the button
+       itself, and the same box shifted 10px right to carry the cleared
+       ground out to the bar's end.
+
+       Both are needed. With only the shifted one, its 6px of padding was
+       covering the button's own column but nothing above or below it — the
+       grip fills the bar's height now, and the top and bottom rows of dots
+       came out past the X by three dots while every row between them
+       stopped short of it. 4px of spread is what carries the pair over the
+       full 32px of this bar. */
+    box-shadow:
+        0 0 0 4px var(--chrome-fill),
+        10px 0 0 4px var(--chrome-fill);
     width: auto;
     height: auto;
     padding: 6px;
@@ -6014,16 +6051,22 @@ body[data-page="admin"] .search-box input {
     z-index: 3;
 }
 
-/* 5px tall shows rows 0, 2 and 4 of the tile and nothing else — the row
-   count is only this height, 2n-1 px for n rows. The tile's dots sit on
-   its ODD rows (unlike title_pattern.png's, which sit on the even ones),
-   so it is pulled up 1px to put a dot row on the grip's own first line. */
+/* Stretched to the strip, less 2px of clear ground top and bottom — the
+   same inset .chrome-titlebar uses, and for the same reason: this stands
+   in for a fill that covered the strip edge to edge, so it carries that
+   weight, and its ends run into the frame's corner curve (the frame clips
+   itself to a 16px radius) the way the fill's did.
+
+   The tile's dots sit on its ODD rows, unlike title_pattern.png's, which
+   sit on the even ones — so it is pulled up 1px to put a row of them on
+   the grip's own first line. */
 .console-top-pattern::before,
 .console-top-pattern::after {
     content: "";
     flex: 1 1 0;
     min-width: 0;
-    height: 5px;
+    align-self: stretch;
+    margin: 2px 0;
     background-image: url('../assets/img/console/cnsl-top-pattern.png');
     background-repeat: repeat;
     background-position: 0 -1px;
@@ -6082,15 +6125,20 @@ body[data-page="admin"] .search-box input {
        (the two grips have to match, or the title between them is no longer
        centred), so this is what makes room here.
 
-       Two shadows, not one: 3px all round clears the X itself but leaves
+       Two shadows, not one: the first alone clears the X itself but leaves
        the last 8px of strip past it still dotted, and four stray dots
        beyond the close button read as a smudge rather than as chrome. The
        second is the same box shifted 8px right, carrying the cleared
        ground out to the strip's own end. Shadows rather than a pseudo-
        element because they paint BEHIND the button's own background,
-       where a child would paint over the X. */
+       where a child would paint over the X.
+
+       5px of spread, not 3: the grip fills the strip's height now — y 5 to
+       24, against this 13px button's y 6 to 19 — so 3px left a row of dots
+       showing under the X. 5px covers y 1 to 24, and still stops short of
+       .console-screen's own top at 26. */
     background-color: #ffcb00;
-    box-shadow: 0 0 0 3px #ffcb00, 8px 0 0 3px #ffcb00;
+    box-shadow: 0 0 0 5px #ffcb00, 8px 0 0 5px #ffcb00;
     background-image: url('../assets/img/console/cnsl-top-x-close.png');
     background-repeat: no-repeat;
     image-rendering: pixelated;
@@ -6595,9 +6643,9 @@ body[data-page="admin"] .search-box input {
     }
     /* Every px here comes straight off the row's usable width. */
     .chrome-body { padding: 12px; }
-    /* Same again: the side value goes through --titlebar-pad so the grips
-       still reach the ends, and only the vertical is set outright. */
-    .chrome-titlebar { --titlebar-pad: 34px; padding-top: 10px; padding-bottom: 10px; }
+    /* Both values go through the variables, so the grips still reach all
+       four of the bar's edges here. */
+    .chrome-titlebar { --titlebar-pad: 34px; --titlebar-pad-y: 10px; }
     .chrome-titlebar h1, .chrome-titlebar h2, .chrome-titlebar .chrome-title-text { font-size: 0.8rem; }
     .chrome-tab { font-size: 0.56rem; letter-spacing: 0; border-width: 8px; }
     .chrome-window { width: 100%; }

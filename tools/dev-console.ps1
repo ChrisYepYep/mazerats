@@ -1421,9 +1421,12 @@ function Build-Chrome {
        stopping short of the title and of the window buttons rather than
        running behind either, so nothing needs masking.
 
-       5px tall is exactly three rows: 2n-1 px for n rows, since the tile
-       is 1px on and 1px off. It is pulled up 1px because this tile keeps
-       its dots on its ODD rows, and the band wants one on its first line.
+       The grip fills the strip less 2px of clear ground top and bottom,
+       matching .console-top-pattern::before — it stands in for a fill that
+       covered the strip edge to edge, so it carries that weight, and its
+       ends run into the frame's corner curve the way the fill's did. It is
+       pulled up 1px because this tile keeps its dots on its ODD rows, and
+       the band wants one on its first line.
 
        The title's own numbers are unchanged. The stylesheet bottom-aligns
        the text inside the strip rather than centring it — the title sits
@@ -1436,11 +1439,12 @@ function Build-Chrome {
     $tw = [int]$tsize.Width + (Px 8)
     $tx = [int](($W - $tw) / 2)
 
-    $stripY = Px 3
-    $stripH = Px 23
-    $gripH  = Px 5
-    $gripY  = $stripY + [int](($stripH - $gripH) / 2)
-    $gripGap = Px 6
+    $stripY   = Px 3
+    $stripH   = Px 23
+    $gripInset = Px 2
+    $gripY    = $stripY + $gripInset
+    $gripH    = $stripH - ($gripInset * 2)
+    $gripGap  = Px 6
 
     # Left: the strip's own end, in to the title.
     Draw-Tiled $g $SprPattern (Px 3) $gripY (($tx - $gripGap) - (Px 3)) $gripH -1
