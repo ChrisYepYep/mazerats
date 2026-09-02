@@ -111,10 +111,16 @@ const MAZE = opt("maze", null);
 // it already knows exactly which records it means, so it says so rather than
 // sending a name to be pattern-matched.
 const IDS = (opt("ids", "") || "").split(",").map(s => s.trim()).filter(Boolean);
-/* Events hold room images in the same shape mazes do, and the admin's
-   per-item scan button offers them, so the same scan has to be able to
-   reach them. Nothing but "events" is accepted — this string names a
-   database collection, and it arrives from an HTTP request. */
+/* Events hold room images in the same shape mazes do, so the same scan can
+   reach them — though nothing asks it to any more. The admin page used to
+   offer a scan button on an event and no longer does: furni is what an
+   archive of MAZES records, and an event's images are posters rather than
+   rooms. This is left as a capability of the tool rather than removed,
+   since it costs one defaulted option and the collection is named in full
+   either way.
+
+   Nothing but "events" is accepted — this string names a database
+   collection, and it arrives from an HTTP request. */
 const COLLECTION = opt("collection", "rooms") === "events" ? "events" : "rooms";
 /* Names this run in the furni_scans progress record the admin polls. Absent
    on a hand-run scan from the terminal, which has the terminal to report to

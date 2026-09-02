@@ -108,7 +108,10 @@ document.addEventListener("DOMContentLoaded", () => {
     let showFeatured = false;
     let activeGallery = null;
     // Furni per room image for whatever is open, keyed by image path.
+    // Events never have any (see normalize), and this says so out loud so
+    // the gallery does not have to infer it from an empty object.
     let activeFurni = null;
+    let activeIsEvent = false;
     let activeIndex = 0;
     let autoAdvanceTimer = null;
     let slideOutgoingEl = null;
@@ -235,7 +238,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 relatedImages: (item.relatedImages || []).filter(r => r && r.image),
                 // Furni detected in this maze/event's room images by the admin
                 // scan, keyed by gallery image — see renderFurniStrip.
-                furni: item.furni || {},
+                /* Events carry no furni: an event's images are posters
+                   and promos rather than rooms, so there is nothing in
+                   them worth recording. Left off the normalized shape
+                   entirely rather than passed through empty, so nothing
+                   downstream has to ask whether this one counts. */
                 sortKey: item.date || ""
             };
         }
@@ -674,10 +681,26 @@ document.addEventListener("DOMContentLoaded", () => {
     function roomRowHtml(n, isOpenView) {
         // Events always show their date; mazes only do on the Open list.
         const showDate = isOpenView || n.isEvent;
+
+        /* An event's thumbnail is shown whole, in its own proportions.
+        
+           A maze's thumbnail is a room, and any square of a room is still a
+           picture of that room, so cropping one to fill the tile costs
+           nothing. An event's is a poster somebody made — 660x260 banners,
+           1200x630 socials, 1080 squares — and the middle square of a poster
+           is a detail from it, usually not even the part with the words. The
+           Lost Relic's banner came out as a slice of sky.
+        
+           Two halves, and both are needed: no height asked of the CDN, since
+           passing one makes imgCdn request fit=cover and the crop happens
+           before the image is ever sent; and contain rather than cover in the
+           tile, which is what stops the browser doing it again. The tile stays
+           the same square either way, so the rows still line up — a wide
+           poster simply sits in a band across the middle of it. */
         return `
             <div class="chrome-list-row featured" data-difficulty="${n.difficulty || ""}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
                 <div class="row-thumb">
-                    ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(n.thumb, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
+                    ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img${n.isEvent ? " is-whole" : ""}" src="${imgCdn(n.thumb, 160, n.isEvent ? null : 160, 65)}" alt="" loading="lazy"></div>` : ""}
                 </div>
                 <div class="row-info">
                     ${ecTitleHtml(n)}
@@ -1596,6 +1619,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderFurniStrip(record) {
         furniStrip.innerHTML = "";
+        /* An event has no furni on any of its images — its pictures are
+           posters rather than rooms — so the row goes entirely rather than
+           standing empty with a note about a scan that is never coming.
+
+           The case below for keeping the row's space even when it is empty
+           is about a MAZE gallery, where some images have been scanned and
+           some have not and the row would otherwise appear and disappear
+           between them. An event has no such middle state. */
+        if (activeIsEvent) {
+            furniStrip.hidden = true;
+            return;
+        }
         // The scan stores a record per room image — { scannedAt,
         // roomColours, items } — not a bare list, so a room that found
         // nothing can still say whether it was scanned and skipped or
@@ -2988,6 +3023,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // .is-event's rules in css/style.css, which do the sizing in CSS off
         // this one class.
         modalThumb.classList.toggle("is-event", !!n.isEvent);
+        activeIsEvent = !!n.isEvent;
         activeFurni = n.furni || null;
         warmFurniIcons(activeFurni);
         renderRelatedImages(n);

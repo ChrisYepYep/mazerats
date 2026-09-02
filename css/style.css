@@ -1926,6 +1926,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 .row-thumb-img.is-loaded { opacity: 1; }
 
+/* An event's thumbnail: shown whole rather than filled to the tile.
+
+   contain instead of cover, and no scale with it — the 1.15 above exists to
+   push object-fit: cover's own soft edge out past the tile, and against
+   contain it would simply crop the picture again by hand. See roomRowHtml in
+   js/home.js, which also stops the CDN cropping it before it is sent. */
+.row-thumb-img.is-whole {
+    object-fit: contain;
+    transform: none;
+}
+
 .chrome-list-row .row-info {
     flex: 1;
     min-width: 0;

@@ -2037,6 +2037,10 @@ document.addEventListener("DOMContentLoaded", () => {
             return `<h3 class="ec-title ec-title-${season}"><span class="ec-title-name">${escapeHtml(title)}</span></h3>`;
         }
 
+        // An event's thumbnail is a poster and is shown whole rather than
+        // cropped to the tile — see roomRowHtml in js/home.js for why.
+        const isEventRow = key === "events";
+
         entries.forEach(({ item, index }) => {
             const title = item[cfg.fieldMap.title] || "(untitled)";
             const subtitle = item[cfg.fieldMap.subtitle] || "";
@@ -2048,7 +2052,7 @@ document.addEventListener("DOMContentLoaded", () => {
             row.className = "chrome-list-row admin-row";
             row.innerHTML = `
                 <div class="row-thumb">
-                    ${thumbSrc ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(thumbSrc, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
+                    ${thumbSrc ? `<div class="row-thumb-crop"><img class="row-thumb-img${isEventRow ? " is-whole" : ""}" src="${imgCdn(thumbSrc, 160, isEventRow ? null : 160, 65)}" alt="" loading="lazy"></div>` : ""}
                 </div>
                 <div class="row-info">
                     ${ecTitleHtml(item, title)}
@@ -2059,7 +2063,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span class="status-badge status-${item.status}">${item.status}</span>
                     <div class="admin-row-actions">
                         <button type="button" class="btn admin-edit-btn">Edit</button>
-                        ${canScanFurni() && isLocalSite() ? '<button type="button" class="btn admin-scan-btn">Scan</button>' : ""}
+                        ${key === "rooms" && canScanFurni() && isLocalSite() ? '<button type="button" class="btn admin-scan-btn">Scan</button>' : ""}
                         <button type="button" class="btn admin-delete-btn">Delete</button>
                     </div>
                 </div>
@@ -2495,7 +2499,16 @@ document.addEventListener("DOMContentLoaded", () => {
             (item.gallery || []).some(g => g && g.image) ||
             (item.finish && item.finish.image)
         );
-        const furniSectionHtml = hasRoomImages ? `
+        /* Mazes only. Furni is what an archive of MAZES is for — what was in
+           the room, so it can be found again — and an event is a happening
+           rather than a room: its images are posters and promos, and a scan
+           of one records the furni in somebody's advert.
+
+           No event has ever carried any, so nothing is being thrown away by
+           this. Nor could it be: submitForm only writes payload.furni when
+           _furniDraft exists, and that is set by the editor below — so an
+           event saved from here leaves whatever is stored exactly as it is. */
+        const furniSectionHtml = isRooms && hasRoomImages ? `
             <div class="admin-field admin-furni-field">
                 <span>Furni in these rooms</span>
                 <p class="admin-hint">What the scan detected in each room image, plus anything added by hand. Hide keeps a detection in the record but stops the site showing it &mdash; better than Remove for a false positive, since a rescan would find it again either way. Hand-added furni is kept through a rescan; detections are not.</p>
