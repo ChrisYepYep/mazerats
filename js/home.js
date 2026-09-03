@@ -25,6 +25,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const subNavBtns = document.querySelectorAll("#sub-nav .chrome-nav-btn");
     const eventsArchiveNote = document.getElementById("events-archive-note");
     const featuredMazesBtn = document.getElementById("featured-mazes-btn");
+    const whatsNewBtn = document.getElementById("whats-new-btn");
+    const timelineBtn = document.getElementById("timeline-btn");
     const featuredRefreshBtn = document.getElementById("featured-refresh-btn");
     const featuredFrame = document.getElementById("featured-frame");
     const featuredFrameBody = document.getElementById("featured-frame-body");
@@ -56,6 +58,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const furniStrip = document.getElementById("furni-strip");
     const furniCardTemplate = document.getElementById("furni-card-template");
     const modalName = document.getElementById("modal-name");
+    // The window's own titlebar, which now carries the Share and Completed
+    // pair as well as the title and the close button.
+    const modalTitlebar = modalOverlay.querySelector(".chrome-titlebar");
     const modalCreator = document.getElementById("modal-creator");
     const modalBuilder = document.getElementById("modal-builder");
     const modalMeta = document.getElementById("modal-meta-items");
@@ -107,12 +112,26 @@ document.addEventListener("DOMContentLoaded", () => {
     // dropping back out (via a sub-nav filter or a top-nav click) returns
     // to exactly where browsing left off.
     let showFeatured = false;
+    /* Layers over whichever category is active, exactly as showFeatured
+       does, rather than being a fourth tab: what is new is not a kind of
+       maze, it is a slice across both kinds. Any top-nav or sub-nav click
+       drops back out of it. */
+    let showWhatsNew = false;
+    /* The archive in order, in the same place and on the same terms. It
+       lived on a page of its own at first, which was the wrong home for it:
+       the one route to it was a footer link, so the piece that tells the
+       archive's story was the piece nobody would find. It belongs in the
+       window everything else is read in. */
+    let showTimeline = false;
     let activeGallery = null;
     // Furni per room image for whatever is open, keyed by image path.
     // Events never have any (see normalize), and this says so out loud so
     // the gallery does not have to infer it from an empty object.
     let activeFurni = null;
     let activeIsEvent = false;
+    // Which maze the modal is currently showing, so the furni cards can
+    // leave it out of "also in" — see renderFurniAlsoIn.
+    let activeRoomId = "";
     let activeIndex = 0;
     let autoAdvanceTimer = null;
     let slideOutgoingEl = null;
@@ -133,6 +152,14 @@ document.addEventListener("DOMContentLoaded", () => {
     let ROOMS = [];
     let EVENTS = [];
     let dataLoaded = false;
+    /* Whether the loading screen has gone, and whether the archive request
+       failed outright. Both only matter to the empty state: what an empty
+       grid MEANS depends on which of the three is true, and render() has no
+       other way to tell "not here yet" from "not there at all". Declared
+       here rather than beside the loader further down, which is built after
+       the first render() call and would still be in its temporal dead zone. */
+    let loaderGone = false;
+    let loadFailed = false;
     let currentItems = [];
 
     // An event's status comes from its own start/end dates — see
@@ -198,6 +225,15 @@ document.addEventListener("DOMContentLoaded", () => {
         if (isEvents) {
             return {
                 isEvent: true,
+                /* The record's own id, carried through the normalized shape.
+
+                   Everything that has to name one particular maze or event
+                   from the outside needs it: the share link (/maze/<id>),
+                   the "walked it" tick that remembers which ones you have
+                   done, the what's-new list and the timeline. Before this,
+                   a normalized record could only be identified by its
+                   display name, which is neither stable nor unique. */
+                id: item.id || "",
                 name: item.title || "",
                 subtitle: item.host ? `by ${item.host}` : "",
                 statusKey: eventStatus(item),
@@ -249,6 +285,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         return {
             isEvent: false,
+            // See the events branch above for what this is for.
+            id: item.id || "",
             name: item.name || "",
             subtitle: item.creator ? `by ${item.creator}` : "",
             statusKey: item.status,
@@ -545,6 +583,19 @@ document.addEventListener("DOMContentLoaded", () => {
         // a future view wants an intro line above the list again.
         introEl.style.display = "none";
         updateSearchWrap();
+        if (whatsNewBtn) {
+            whatsNewBtn.classList.toggle("active", showWhatsNew);
+            whatsNewBtn.setAttribute("aria-pressed", showWhatsNew ? "true" : "false");
+        }
+        if (timelineBtn) {
+            timelineBtn.classList.toggle("active", showTimeline);
+            timelineBtn.setAttribute("aria-pressed", showTimeline ? "true" : "false");
+        }
+        /* Neither of the cross-archive views takes an ordering from this:
+           one is "newest first" by definition and the other is the archive
+           in its own order. The search box is left alone — narrowing either
+           of them by name is a reasonable thing to want. */
+        sortSelect.disabled = showWhatsNew || showTimeline;
         featuredMazesBtn.classList.toggle("active", showFeatured);
         // Only ever repopulates on the render() call that actually flips
         // showFeatured to true (the button's own click handler) — every
@@ -680,6 +731,170 @@ document.addEventListener("DOMContentLoaded", () => {
         return `<h3 class="ec-title ec-title-${n.ecSeason}"><span class="ec-title-name">${name}</span></h3>`;
     }
 
+    /* ---------- walked it ----------
+
+       Which mazes this visitor has actually been through, kept in their own
+       browser and nowhere else. No account, no server, nothing that leaves
+       the machine — the same line js/track.js draws, and for the same
+       reason: this is a personal note about a maze, not a fact about a
+       person that the site has any business holding.
+
+       It is here because an archive of things you can go and do is a
+       different object once it knows which ones you have done: the list
+       stops being a catalogue you read and becomes one you finish.
+
+       localStorage rather than sessionStorage, which is the one place this
+       deliberately differs from tracking — a tick is worthless if it dies
+       with the tab. Every read and write is wrapped: private mode refuses
+       storage outright, and a visitor in it should lose the ticks, not the
+       archive. */
+    const WALKED_KEY = "mazerats_walked";
+    let walkedIds = new Set();
+
+    function loadWalked() {
+        try {
+            const raw = localStorage.getItem(WALKED_KEY);
+            const list = raw ? JSON.parse(raw) : [];
+            walkedIds = new Set(Array.isArray(list) ? list.filter(id => typeof id === "string") : []);
+        } catch (e) {
+            walkedIds = new Set();
+        }
+    }
+
+    function saveWalked() {
+        try {
+            localStorage.setItem(WALKED_KEY, JSON.stringify([...walkedIds]));
+        } catch (e) { /* private mode, or the quota — the ticks are the loss */ }
+    }
+
+    function isWalked(id) {
+        return !!id && walkedIds.has(id);
+    }
+
+    function setWalked(id, walked) {
+        if (!id) return;
+        if (walked) walkedIds.add(id);
+        else walkedIds.delete(id);
+        saveWalked();
+        // Every place that maze appears follows the tick at once: it can be
+        // on the main list and in the featured panel at the same time, and
+        // its modal may be open over both.
+        document.querySelectorAll(`.walked-toggle[data-walked-id="${CSS.escape(id)}"]`)
+            .forEach(btn => paintWalkedToggle(btn, walked));
+        updateWalkedCount();
+    }
+
+    function paintWalkedToggle(btn, walked) {
+        btn.classList.toggle("is-walked", walked);
+        btn.setAttribute("aria-pressed", walked ? "true" : "false");
+        btn.title = walked ? "Completed. Click to unmark." : "Mark this as completed";
+        const label = btn.querySelector(".walked-toggle-label");
+        if (label) label.textContent = walked ? "Completed" : "Completed?";
+    }
+
+    /* The count above the list — "12 of 37 walked".
+
+       Only over mazes, never events: an event is something that happened on
+       a date, not something a visitor can go and complete. And only over
+       the mazes that are actually open, since a closed one cannot be walked
+       any more and counting it would make the total unreachable by design.
+       Hidden entirely at zero: a fresh visitor should meet the archive, not
+       a scoreboard reading 0. */
+    function walkableRooms() {
+        return ROOMS.filter(r => r.status === "open" || r.status === "unknown");
+    }
+
+    function updateWalkedCount() {
+        const el = document.getElementById("walked-count");
+        if (!el) return;
+        /* Only over the maze listings. It counts mazes, so it has no
+           business above a list of events, above What's New (which is both
+           kinds at once) or above the timeline (which is the whole archive
+           in order) — in any of those it would be a tally of something the
+           list on screen is not about. */
+        const appliesHere = topView === "mazes" && !showWhatsNew && !showTimeline;
+        const rooms = walkableRooms();
+        const done = rooms.filter(r => isWalked(r.id)).length;
+        if (!appliesHere || !done || !rooms.length) {
+            el.hidden = true;
+            return;
+        }
+        el.hidden = false;
+        // Worded as the ticks are: they say Completed, so this counts
+        // completed. The two are the same act and should read as it.
+        el.textContent = `${done} of ${rooms.length} completed`;
+        el.classList.toggle("is-complete", done === rooms.length);
+    }
+
+    /* The tick itself. A button rather than a checkbox: it carries its own
+       label and its own art, and a native checkbox in this chrome would be
+       the one unstyled control on the page.
+
+       Only the modal shows one. A tick on every list row put a control on a
+       row that is already a control — the whole row opens the maze — and
+       gave the archive the look of a checklist before anyone had asked for
+       one. Marking a maze off belongs where you land after actually walking
+       it, which is its own page. */
+    function walkedToggleHtml(n) {
+        if (n.isEvent || !n.id) return "";
+        const walked = isWalked(n.id);
+        return `<button type="button" class="walked-toggle${walked ? " is-walked" : ""}" ` +
+            `data-walked-id="${escapeHtml(n.id)}" aria-pressed="${walked ? "true" : "false"}" ` +
+            `title="${walked ? "Completed. Click to unmark." : "Mark this as completed"}" ` +
+            `data-track="walked-toggle" data-track-label="${escapeHtml(n.id)}">` +
+            `<span class="walked-toggle-tick" aria-hidden="true"></span>` +
+            `<span class="walked-toggle-label">${walked ? "Completed" : "Completed?"}</span>` +
+            `</button>`;
+    }
+
+    /* One delegated listener for every tick on the page, however it got
+       there — rows are rebuilt on every render and the modal builds its own,
+       so binding them individually would mean rebinding forever.
+
+       In the CAPTURE phase, which is load-bearing. A row is itself a button
+       that opens the maze (see wireRowActivation), and its handler sits on
+       the row — so during bubbling the row is reached long before the
+       document is, and a stopPropagation() here would arrive after the
+       modal had already opened. Capture runs document-first, so this can
+       take the click off the row entirely: ticking a maze is not asking to
+       open it. */
+    document.addEventListener("click", e => {
+        const btn = e.target.closest(".walked-toggle");
+        if (!btn) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const id = btn.dataset.walkedId;
+        setWalked(id, !isWalked(id));
+    }, true);
+
+    // Keyboard rows activate on Enter/Space too (see wireRowActivation), and
+    // the same press would otherwise both tick the maze and open it.
+    document.addEventListener("keydown", e => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        if (!e.target.closest || !e.target.closest(".walked-toggle")) return;
+        e.stopPropagation();
+    }, true);
+
+    loadWalked();
+
+    /* The exact request a row's thumbnail makes, in one place.
+
+       It has to be one place. The loading screen preloads every row's
+       thumbnail so the archive arrives all at once, and it was preloading
+       the RAW path — the untouched screenshot straight off the image
+       function — while the rows themselves asked the CDN for a 160px
+       version of it. Every picture was therefore fetched twice, once at
+       full size for nobody: 57 requests and 31MB of originals against
+       236KB of thumbnails actually drawn, with the biggest single file
+       just under 4MB. The progress bar spent the whole load waiting on
+       the copy that was thrown away.
+
+       Both callers go through here now, so the preload and the render
+       cannot want different files again. */
+    function rowThumbUrl(thumb) {
+        return imgCdn(thumb, 160, 160, 65);
+    }
+
     function roomRowHtml(n, isOpenView) {
         // Events always show their date; mazes only do on the Open list.
         const showDate = isOpenView || n.isEvent;
@@ -687,9 +902,10 @@ document.addEventListener("DOMContentLoaded", () => {
         return `
             <div class="chrome-list-row featured" data-difficulty="${n.difficulty || ""}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
                 <div class="row-thumb">
-                    ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${imgCdn(n.thumb, 160, 160, 65)}" alt="" loading="lazy"></div>` : ""}
+                    ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${rowThumbUrl(n.thumb)}" alt="" loading="lazy"></div>` : ""}
                 </div>
                 <div class="row-info">
+                    ${whatsNewDatesHtml(n)}
                     ${ecTitleHtml(n)}
                     <p class="row-creator">${escapeHtml(n.subtitle || "")}${showDate ? rowDateHtml(n) : ""}</p>
                     ${isOpenView ? "" : `<p class="row-desc">${escapeHtml(n.description || "")}</p>`}
@@ -703,6 +919,290 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
     }
 
+    /* ---------- what's new ----------
+
+       The one question an archive is bad at answering: has anything changed
+       since I was last here? Thirty-eight mazes sorted by name look
+       identical on every visit, so a returning visitor has no way to tell
+       without re-reading the list they already read.
+
+       This is both kinds at once, newest first. "Newest" means the date the
+       record entered the archive (createdAt, stamped by the server on
+       insert — see netlify/functions/rooms.js), falling back to the maze's
+       own opening date or the event's date for everything catalogued before
+       that field existed. The fallback is honest rather than exact: those
+       older records genuinely have nothing better to sort by, and they are
+       the ones that have been here longest anyway. */
+    const WHATS_NEW_COUNT = 12;
+
+    /* The day everything already in the archive is counted as having been
+       added.
+
+       createdAt is stamped by the server from now on (see
+       netlify/functions/rooms.js), but nothing catalogued before that field
+       existed has one, and their own opening dates are not the same fact —
+       a maze built in 2024 was not added to the archive in 2024. So the
+       whole existing archive shares one honest backfill date rather than
+       each record claiming a date it cannot support. */
+    const ARCHIVE_BACKFILL_DATE = "2026-08-21";
+
+    function archivedAt(item, isEvent) {
+        return item.createdAt || ARCHIVE_BACKFILL_DATE;
+    }
+
+    /* What a record's own date is, used only to break the tie between the
+       many records that share the backfill date above. Without it those
+       would fall back on collection order, which is no order at all; with
+       it, the backfilled block reads newest-maze-first underneath anything
+       genuinely added since. */
+    function ownDate(item, isEvent) {
+        return (isEvent ? item.date : item.added) || "";
+    }
+
+    /* The last thing that happened to a record, which is what this list is
+       actually ranked on.
+
+       Ranking on the archived date alone was wrong, and quietly so: every
+       record catalogued before createdAt existed shares one backfill date,
+       so editing one could not move it. A maze whose furni had just been
+       re-scanned sat exactly where it had always sat, hundreds of places
+       down, and What's New reported nothing new about it.
+
+       Comparing the two as strings is safe even though they are different
+       shapes — "2026-08-21" against "2026-09-03T18:21:24.741Z". They share
+       their first ten characters, so the day decides it, and on the same
+       day the timestamp sorts after the bare date, which is the right way
+       round: the edit happened during or after the day it was archived. */
+    function activityAt(item, isEvent) {
+        const archived = archivedAt(item, isEvent);
+        const updated = item.updatedAt || "";
+        return updated > archived ? updated : archived;
+    }
+
+    function whatsNewItems() {
+        const wrap = (item, isEvent) => {
+            const n = normalize(item, isEvent);
+            // What the list is ranked on, and what it prints, are different
+            // things: it ranks on the latest activity and prints both dates.
+            const at = activityAt(item, isEvent);
+            const own = ownDate(item, isEvent);
+            /* The two dates this list exists to show, carried on the
+               normalized record so the row can print them.
+
+               "Archived" is when it entered the archive; on records written
+               before createdAt existed it falls back to the maze's own
+               opening date, which is marked as approximate rather than
+               presented as something it isn't. "Updated" is only ever a
+               real server stamp — a record nobody has edited since it was
+               added simply doesn't have one, and says nothing rather than
+               repeating the first date. */
+            n.archivedAt = archivedAt(item, isEvent);
+            n.updatedAt = item.updatedAt || "";
+            return { n, at, own };
+        };
+        const rooms = ROOMS.map(r => wrap(r, false));
+        const events = EVENTS.map(e => wrap(e, true));
+        return rooms.concat(events)
+            .filter(x => x.at)
+            /* Most recent activity first — added or edited, whichever came
+               last — and among everything sharing the backfill date with
+               nothing since, newest in its own right first. */
+            .sort((a, b) => b.at.localeCompare(a.at) || String(b.own).localeCompare(String(a.own)))
+            .slice(0, WHATS_NEW_COUNT)
+            .map(x => x.n);
+    }
+
+    /* The dated line What's New adds to a row, and nowhere else adds.
+
+       It answers the question that view is for — when did this turn up, and
+       has it changed since — which is not worth a line of every row in the
+       ordinary listings, where it would just be a third date competing with
+       the maze's own opening. */
+    function whatsNewDatesHtml(n) {
+        if (!showWhatsNew || !n.archivedAt) return "";
+        const parts = [
+            `<span class="row-when-item">Archived: ${escapeHtml(formatMazeDate(n.archivedAt))}</span>`
+        ];
+        // Only when it is genuinely later than the day it arrived: an edit
+        // made an hour after cataloguing is part of cataloguing it.
+        if (n.updatedAt && n.updatedAt.slice(0, 10) > n.archivedAt.slice(0, 10)) {
+            parts.push(`<span class="row-when-item">Edited: ${escapeHtml(formatMazeDate(n.updatedAt))}</span>`);
+        }
+        // No separator glyph between them: a bullet or a dash would have to
+        // borrow another face to render at all (Volter Goldfish draws both
+        // as pictures), and this line is meant to be one font throughout.
+        // The gap between the two items does the separating.
+        return `<p class="row-when">${parts.join("")}</p>`;
+    }
+
+    /* ---------- the timeline ----------
+
+       The archive read as a history rather than a list: every maze and every
+       event in the order it happened, grouped by year, with the mazes of a
+       year and the events of that year beside each other so a run of collab
+       mazes and the collab that produced them read as one moment instead of
+       as entries in two different tabs.
+
+       Rendered into the same results panel the listings use, so it scrolls
+       where they scroll and closes the way they close. Every entry opens the
+       real modal — this is an index of the archive, not a second copy of it. */
+
+    const TIMELINE_STATUS_LABELS = {
+        open: "Open",
+        closed: "Closed",
+        collab: "Collab",
+        unknown: "Unknown"
+    };
+
+    /* The year an entry belongs to, taken off the front of its own date
+       string rather than parsed. A maze whose opening is recorded as
+       "2024-06" with no day is a real and common case (the admin form allows
+       it), and new Date() would either invent the first of the month or fail
+       outright. The year is all this needs and it is always the first four
+       characters. */
+    function timelineYearOf(iso) {
+        const m = /^(\d{4})/.exec(String(iso || ""));
+        return m ? m[1] : "";
+    }
+
+    function timelineEntries() {
+        const entries = [];
+        ROOMS.forEach(room => {
+            if (!room.name || !timelineYearOf(room.added)) return;
+            entries.push({
+                kind: "maze",
+                id: room.id || "",
+                when: room.added || "",
+                name: room.name,
+                by: room.creator || "",
+                statusKey: room.status || "unknown",
+                statusLabel: TIMELINE_STATUS_LABELS[room.status] || "Unknown",
+                note: room.description || "",
+                ecSeason: ""
+            });
+        });
+        EVENTS.forEach(ev => {
+            if (!ev.title || !timelineYearOf(ev.date)) return;
+            entries.push({
+                kind: "event",
+                id: ev.id || "",
+                when: ev.date || "",
+                name: ev.title,
+                by: ev.host || "",
+                statusKey: eventStatus(ev),
+                statusLabel: EventStatus.labelFor(ev),
+                note: ev.description || "",
+                ecSeason: ["s1", "s2"].includes(ev.ecSeason) ? ev.ecSeason : ""
+            });
+        });
+        return entries;
+    }
+
+    /* One line under each year saying what that year held, in counts rather
+       than prose: the archive cannot know that 2024 was the year of the
+       collab boom, but it can say six of that year's mazes were collabs,
+       which is the same fact without the editorialising.
+
+       The separator is handed to another face on purpose. Volter Goldfish
+       draws several punctuation codepoints as PICTURES — an em dash comes
+       out as a musical note, a bullet as a symbol — so anything set in it
+       that needs a divider has to borrow one character from Roboto. The
+       archive's list rows already do this; see .row-date-dot. */
+    function timelineYearNote(entries) {
+        const mazes = entries.filter(e => e.kind === "maze");
+        const events = entries.filter(e => e.kind === "event");
+        const collabs = mazes.filter(e => e.statusKey === "collab").length;
+        const parts = [];
+        if (mazes.length) parts.push(`${mazes.length} ${mazes.length === 1 ? "maze" : "mazes"}`);
+        if (collabs) parts.push(`${collabs} ${collabs === 1 ? "collab" : "collabs"}`);
+        if (events.length) parts.push(`${events.length} ${events.length === 1 ? "event" : "events"}`);
+        return parts.join('<span class="timeline-sep" aria-hidden="true">•</span>');
+    }
+
+    function timelineEntryHtml(entry, index) {
+        const date = formatMazeDate(entry.when);
+        const medal = entry.ecSeason
+            ? `<img class="timeline-medal" src="assets/img/ec/ec-badge-${entry.ecSeason}.png" alt="Event Creators season ${entry.ecSeason === "s1" ? "one" : "two"}">`
+            : "";
+        return `
+            <li class="timeline-entry timeline-entry-${entry.kind}">
+                <span class="timeline-date">${escapeHtml(date || "Undated")}</span>
+                <span class="timeline-dot" aria-hidden="true"></span>
+                <div class="timeline-entry-body">
+                    <p class="timeline-entry-name">
+                        ${medal}<button type="button" class="timeline-open" data-timeline-index="${index}">${escapeHtml(entry.name)}</button>
+                        <span class="timeline-badge status-badge status-${escapeHtml(entry.statusKey)}">${escapeHtml(entry.statusLabel)}</span>
+                    </p>
+                    ${entry.by ? `<p class="timeline-entry-by">${entry.kind === "event" ? "Event hosted" : "Maze built"} by ${escapeHtml(entry.by)}</p>` : ""}
+                    ${entry.note ? `<p class="timeline-entry-note">${escapeHtml(entry.note)}</p>` : ""}
+                </div>
+            </li>`;
+    }
+
+    function renderTimeline() {
+        const entries = timelineEntries();
+        if (!entries.length) {
+            grid.innerHTML = "";
+            emptyEl.textContent = "Nothing dated in the archive yet.";
+            emptyEl.style.display = "block";
+            return;
+        }
+        emptyEl.style.display = "none";
+
+        // Held in order so a row can name its own entry by index rather than
+        // by an id that would have to be looked up in two collections.
+        const flat = [];
+        const byYear = new Map();
+        entries.forEach(entry => {
+            const year = timelineYearOf(entry.when);
+            if (!byYear.has(year)) byYear.set(year, []);
+            byYear.get(year).push(entry);
+        });
+        // Newest first, all the way down: the years, and the entries within
+        // each of them. Running the years backwards and their contents
+        // forwards meant the list changed direction at every heading — you
+        // read December at the top of the page and January at the foot of
+        // the first year, then jumped back to December again.
+        const years = [...byYear.keys()].sort((a, b) => b.localeCompare(a));
+
+        const mazeCount = entries.filter(e => e.kind === "maze").length;
+        const eventCount = entries.length - mazeCount;
+        // No dash in this sentence on purpose — see timelineYearNote.
+        const summary = `${mazeCount} ${mazeCount === 1 ? "maze" : "mazes"} and ` +
+            `${eventCount} ${eventCount === 1 ? "event" : "events"}, ` +
+            `from ${years[years.length - 1]} to ${years[0]}.`;
+
+        const html = years.map(year => {
+            const ofYear = byYear.get(year).slice()
+                .sort((a, b) => String(b.when).localeCompare(String(a.when)));
+            const rows = ofYear.map(entry => {
+                flat.push(entry);
+                return timelineEntryHtml(entry, flat.length - 1);
+            }).join("");
+            return `
+                <section class="timeline-year">
+                    <h3 class="timeline-year-head">
+                        <span class="timeline-year-number">${escapeHtml(year)}</span>
+                        <span class="timeline-year-note">${timelineYearNote(ofYear)}</span>
+                    </h3>
+                    <ul class="timeline-list">${rows}</ul>
+                </section>`;
+        }).join("");
+
+        grid.innerHTML = `<p class="timeline-summary">${escapeHtml(summary)}</p><div class="timeline">${html}</div>`;
+
+        grid.querySelectorAll(".timeline-open").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const entry = flat[Number(btn.dataset.timelineIndex)];
+                if (!entry) return;
+                const record = entry.kind === "event"
+                    ? EVENTS.find(e => e.id === entry.id)
+                    : ROOMS.find(r => r.id === entry.id);
+                if (record) openModal(normalize(record, entry.kind === "event"));
+            });
+        });
+    }
+
     // .chrome-frame is dedicated to plain Mazes/Events browsing now — the
     // Featured pick lives entirely in .featured-frame instead (see
     // renderFeaturedList) — so this always shows effectiveView() regardless
@@ -713,29 +1213,92 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!dataLoaded) {
             grid.innerHTML = "";
-            emptyEl.style.display = "none";
+            /* An empty grid with the empty state hidden is the right picture
+               only while the loading screen is still over it saying so. Once
+               that has gone the same picture is a lie: a complete, healthy
+               looking archive holding no mazes at all.
+
+               It can be up for a while. The loader gives up at
+               LOADER_MAX_WAIT (8s) and the archive request is allowed 6s and
+               then 12s before it falls back to the bundled copy, so a slow
+               connection has ten seconds of looking at an archive that
+               appears to be empty. Say which it is instead. */
+            // Three dots rather than an ellipsis character, matching the
+            // search box's own placeholder — this text can land in Volter
+            // Goldfish, which is particular about punctuation.
+            emptyEl.textContent = loadFailed
+                ? "Couldn’t load the archive. Try refreshing the page."
+                : "Still loading the archive...";
+            emptyEl.style.display = loaderGone ? "block" : "none";
+            return;
+        }
+
+        /* The timeline takes the whole results panel: it is not a filtered
+           list of the same rows but a different shape entirely, so it draws
+           itself and returns rather than falling through the row machinery
+           below. */
+        if (showTimeline) {
+            renderTimeline();
+            updateWalkedCount();
             return;
         }
 
         const view = effectiveView();
-        const rawItems = sourceItems(view)
-            .map(item => normalize(item, topView === "events"))
-            .filter(matchesQuery);
-        const items = sortItems(rawItems);
+        /* Three pools, one row renderer. What's New and the furni filter
+           each bring their own set and their own order, so they stand
+           outside the view/sort machinery — the sort dropdown has no opinion
+           worth having about "newest first", and a furni's mazes read
+           alphabetically like any other list of mazes. The search box still
+           applies to all three: narrowing any of them by name is a
+           reasonable thing to want. */
+        const rawItems = furniFilter
+            ? furniFilteredItems().filter(matchesQuery)
+            : showWhatsNew
+                ? whatsNewItems().filter(matchesQuery)
+                : sourceItems(view)
+                    .map(item => normalize(item, topView === "events"))
+                    .filter(matchesQuery);
+        const items = (showWhatsNew || furniFilter) ? rawItems : sortItems(rawItems);
         currentItems = items;
 
         // The Open Mazes list trades the short description for the date the
-        // maze opened, shown right next to the owner's name instead.
-        const isOpenView = view === "open";
+        // maze opened, shown right next to the owner's name instead. What's
+        // New keeps the description: a mixed list of mazes and events needs
+        // the line that says what each one is.
+        const isOpenView = !showWhatsNew && view === "open";
 
-        grid.innerHTML = currentItems.map(n => roomRowHtml(n, isOpenView)).join("");
+        grid.innerHTML = furniFilterChipHtml() + currentItems.map(n => roomRowHtml(n, isOpenView)).join("");
+
+        const clearFilter = document.getElementById("furni-filter-clear");
+        if (clearFilter) {
+            clearFilter.addEventListener("click", () => {
+                furniFilter = null;
+                render();
+            });
+        }
+
+        // Back: the archive as it was, and the maze that asked the question
+        // open again on top of it.
+        const backToMaze = document.getElementById("furni-filter-back");
+        if (backToMaze) {
+            backToMaze.addEventListener("click", () => {
+                const id = furniFilter && furniFilter.fromMazeId;
+                furniFilter = null;
+                render();
+                const record = ROOMS.find(r => r.id === id);
+                if (record) openModal(normalize(record, false));
+            });
+        }
 
         wireRowActivation(grid, currentItems);
         wireThumbFadeIn(grid);
 
         const messages = query.trim() ? emptyMessagesSearch : emptyMessagesNoSearch;
-        emptyEl.textContent = messages[view];
+        emptyEl.textContent = showWhatsNew
+            ? (query.trim() ? "Nothing new matches your search." : "Nothing has been added yet.")
+            : messages[view];
         emptyEl.style.display = currentItems.length === 0 ? "block" : "none";
+        updateWalkedCount();
     }
 
     // Populates .featured-frame's own list — one maze per difficulty, two
@@ -747,7 +1310,24 @@ document.addEventListener("DOMContentLoaded", () => {
     // on every render while it stays open, since nothing that would change
     // this list's contents can happen while it's open (any sub-nav/top-nav
     // click closes it first).
-    const FEATURED_FRAME_COUNT = 2;
+    /* How many picks the frame shows.
+
+       Two on a desktop, where that is all the panel has room for. Four on a
+       phone, because the panel is the same fixed height there but the rows
+       are much shorter: two picks left around 130px of empty ground beneath
+       them and pushed the minimised browse frame's own restore sliver below
+       the fold, so the panel read as a hole in the page rather than as a
+       list that had finished. The space is filled with mazes instead — and
+       since each pick is a different difficulty, four of them still read as
+       the colour ramp the panel is for.
+
+       Read fresh on each open rather than captured once: a phone that turns
+       landscape crosses this line, and the next open should answer to where
+       it is now. */
+    const FEATURED_PHONE_MAX = 640;
+    function featuredFrameCount() {
+        return window.innerWidth <= FEATURED_PHONE_MAX ? 4 : 2;
+    }
     let featuredListItems = [];
 
     // Fisher-Yates — every entry gets an equal shot rather than always
@@ -787,7 +1367,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const unrated = byDifficulty.has("") ? [""] : [];
 
         return rated.concat(unrated)
-            .slice(0, FEATURED_FRAME_COUNT)
+            .slice(0, featuredFrameCount())
             .map(key => {
                 const group = byDifficulty.get(key);
                 return group[Math.floor(Math.random() * group.length)];
@@ -1934,6 +2514,145 @@ document.addEventListener("DOMContentLoaded", () => {
         if (transientFurniCard === card) transientFurniCard = null;
     }
 
+    /* ---------- which other mazes hold this furni ----------
+
+       The scan records, for every room image, which furni were found in it.
+       Read the other way round it answers a question nobody could ask
+       before: where else is this thing? That is the archive's own data
+       being useful about itself, and it is the one thing here no other
+       fansite can do — the index already exists, it was simply only ever
+       consulted in one direction.
+
+       Built once, lazily, from ROOMS. Keyed by the furni's Furni Index URL
+       where it has one and its name otherwise, which is exactly the key
+       openFurniCard already uses to tell two cards apart, so a card and its
+       index entry can never disagree about which furni they mean. */
+    let furniIndexByKey = null;
+
+    function furniKeyOf(entry) {
+        return entry.url || entry.name || "";
+    }
+
+    function buildFurniIndex() {
+        const index = new Map();
+        ROOMS.forEach(room => {
+            if (!room.furni || !room.id) return;
+            // A furni found in six of a maze's rooms is still one maze.
+            const seenHere = new Set();
+            Object.values(room.furni).forEach(record => {
+                (record && record.items ? record.items : []).forEach(item => {
+                    const key = furniKeyOf(item);
+                    if (!key || seenHere.has(key)) return;
+                    seenHere.add(key);
+                    if (!index.has(key)) index.set(key, []);
+                    index.get(key).push({ id: room.id, name: room.name || room.id });
+                });
+            });
+        });
+        // Alphabetical within each furni, by the same comparison the archive
+        // sorts by, so the list reads the way the list of mazes does.
+        index.forEach(list => list.sort((a, b) => compareNames(a.name, b.name)));
+        return index;
+    }
+
+    function mazesWithFurni(entry) {
+        if (!furniIndexByKey) furniIndexByKey = buildFurniIndex();
+        return furniIndexByKey.get(furniKeyOf(entry)) || [];
+    }
+
+    /* Which furni the archive listing is currently filtered to, or null.
+
+       This is the cleaner half of the reverse index. The card used to name
+       the other mazes itself, which meant a list of up to six links inside a
+       240px tooltip — cramped, and a second, worse listing of mazes sitting
+       a few pixels from the real one. Now the card states the count and
+       hands the question over: pressing it closes the modal and puts those
+       mazes in the archive window, in the rows the archive already uses,
+       with a chip at the top saying what is being shown and offering the way
+       out. One line in the card, a real list where lists belong. */
+    let furniFilter = null;
+
+    function renderFurniAlsoIn(card, entry) {
+        const block = card.querySelector(".furni-card-also");
+        if (!block) return;
+
+        // Everything but the maze whose room is currently open — "also in"
+        // means elsewhere, and the visitor is already looking at this one.
+        const others = mazesWithFurni(entry).filter(m => m.id !== activeRoomId);
+        if (!others.length) {
+            block.remove();
+            return;
+        }
+
+        block.hidden = false;
+        block.textContent = others.length === 1
+            ? "Also in 1 other maze"
+            : `Also in ${others.length} other mazes`;
+        block.title = `Show every maze with ${entry.name || "this furni"} in it`;
+        block.dataset.track = "furni-also-list";
+        block.dataset.trackLabel = furniKeyOf(entry);
+
+        block.addEventListener("click", () => {
+            furniFilter = {
+                key: furniKeyOf(entry),
+                name: entry.name || "this furni",
+                icon: entry.icon || entry.sprite || "",
+                // The maze this question was asked from, so the chip can
+                // offer the way back to it — see furniFilterChipHtml. Read
+                // before closeModal(), which clears it.
+                fromMazeId: activeRoomId
+            };
+            // The cards and the modal belong to the maze being left behind.
+            closeAllFurniCards();
+            closeModal();
+            // Every layered view writes into the same panel, so the filter
+            // takes it over from whichever one was showing. (Deliberately
+            // not clearing furniFilter here, unlike the view toggles: it is
+            // what was just set.)
+            showFeatured = false;
+            showWhatsNew = false;
+            showTimeline = false;
+            render();
+            const results = document.querySelector(".home-results");
+            if (results) results.scrollTop = 0;
+        });
+    }
+
+    // The mazes a furni filter is asking for, as normalized records ready to
+    // render as ordinary rows.
+    function furniFilteredItems() {
+        if (!furniFilter) return [];
+        const ids = new Set(mazesWithFurni({ url: furniFilter.key, name: furniFilter.key }).map(m => m.id));
+        return ROOMS.filter(r => ids.has(r.id))
+            .map(r => normalize(r, false))
+            .sort((a, b) => compareNames(a.name, b.name));
+    }
+
+    /* The chip above the filtered list: what is being shown, and two ways
+       out of it. Rendered into the grid ahead of the rows — it is not a
+       .chrome-list-row, so it doesn't disturb wireRowActivation's indexing.
+
+       Two exits because there are two things a visitor might be doing here.
+       Back returns to the maze they came from, which is what "I was just
+       looking at that" wants; Clear drops the filter and leaves them in the
+       archive, which is what "show me everything again" wants. Back is only
+       offered when there is a maze to go back to. */
+    function furniFilterChipHtml() {
+        if (!furniFilter) return "";
+        const icon = furniFilter.icon
+            ? `<img class="furni-filter-icon" src="${furniFilter.icon}" alt="">`
+            : "";
+        const back = furniFilter.fromMazeId
+            ? `<button type="button" class="furni-filter-btn" id="furni-filter-back">Back</button>`
+            : "";
+        return `<div class="furni-filter">
+                ${icon}
+                <span class="furni-filter-text">Mazes with <strong>${escapeHtml(furniFilter.name)}</strong></span>
+                ${back}
+                <button type="button" class="furni-filter-btn" id="furni-filter-clear" aria-label="Show the whole archive again">Clear</button>
+            </div>`;
+    }
+
     function openFurniCard(entry, anchor, pinNow) {
         // Already showing this one? Just keep it — and bring it up, since
         // coming back to its icon while it sits under another card is
@@ -1971,6 +2690,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const link = card.querySelector(".furni-card-link");
         if (entry.url) link.href = entry.url;
         else link.remove();
+        // Where else this same furni turns up in the archive.
+        renderFurniAlsoIn(card, entry);
 
         bringFurniCardToFront(card);
         card.querySelector(".furni-card-close").addEventListener("click", () => closeFurniCard(card));
@@ -2948,6 +3669,75 @@ document.addEventListener("DOMContentLoaded", () => {
         modalBuilder.hidden = false;
     }
 
+    /* ---------- sharing one maze or event ----------
+
+       The link a visitor can actually pass on. /maze/<id> and /event/<id>
+       are served by netlify/functions/share.js, which answers a chat
+       client's preview crawler with that maze's own name and screenshot and
+       sends a real browser through to the archive with it open. Before this
+       every link into the site unfurled identically, whichever maze it
+       pointed at — and there was no per-maze link to send in the first
+       place.
+
+       The clipboard API needs a secure context (https, or localhost), which
+       the live site is; the fallback path covers an older browser and a
+       clipboard permission that was refused. */
+    function shareUrlFor(n) {
+        if (!n.id) return "";
+        return `${location.origin}/${n.isEvent ? "event" : "maze"}/${encodeURIComponent(n.id)}`;
+    }
+
+    function renderShareButton(n, host) {
+        const url = shareUrlFor(n);
+        if (!url) return;
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "modal-share-btn";
+        btn.dataset.track = "share-copy";
+        btn.dataset.trackLabel = n.id;
+        const label = document.createElement("span");
+        label.className = "modal-share-label";
+        label.textContent = "Share";
+        btn.appendChild(label);
+        btn.setAttribute("aria-label", `Copy a link to ${n.name || "this"}`);
+
+        let resetTimer = null;
+        const say = text => {
+            label.textContent = text;
+            btn.classList.toggle("is-done", text !== "Share");
+            clearTimeout(resetTimer);
+            // Long enough to read, short enough that the button is back to
+            // being a button before anyone reaches for it again.
+            resetTimer = setTimeout(() => {
+                label.textContent = "Share";
+                btn.classList.remove("is-done");
+            }, 2200);
+        };
+
+        btn.addEventListener("click", async () => {
+            try {
+                await navigator.clipboard.writeText(url);
+                say("Link copied");
+            } catch (e) {
+                /* No clipboard (an old browser, or permission refused).
+                   Select the URL in a field the visitor can copy by hand
+                   rather than telling them it failed and leaving them with
+                   nothing — the address is the whole point of the button. */
+                const field = document.createElement("input");
+                field.className = "modal-share-fallback";
+                field.value = url;
+                field.readOnly = true;
+                btn.after(field);
+                field.select();
+                say("Copy this");
+                setTimeout(() => field.remove(), 8000);
+            }
+        });
+
+        (host || modalMeta).appendChild(btn);
+    }
+
     function openModal(n) {
         // Invalidates any in-flight closeModal() from a rapid re-open (its
         // animationend/fallback would otherwise fire later and rip the
@@ -2976,6 +3766,35 @@ document.addEventListener("DOMContentLoaded", () => {
             <span>Hotel: ${escapeHtml(n.hotel || "Unknown")}</span>
             <span>${escapeHtml(n.dateFieldLabel)}: ${escapeHtml(dateDisplay || "Unknown")}</span>
         `;
+        /* Share and Completed live in the window's titlebar, at its left end
+           and on the title's own line.
+
+           They were in the meta row, which was already spoken for: the
+           photo-wall strip anchors to that row's right-hand end (see
+           renderRelatedImages), so on any maze with related images the two
+           groups were laid on top of each other. The titlebar is the right
+           home for them anyway — they act on the whole window rather than
+           on anything in the body, which is what a titlebar is for.
+
+           The bar is not rebuilt between opens the way the meta row is, so
+           the previous maze's pair has to be taken off by hand. */
+        const oldActions = modalTitlebar.querySelector(".modal-meta-actions");
+        if (oldActions) oldActions.remove();
+        const actions = document.createElement("div");
+        actions.className = "modal-meta-actions";
+        modalTitlebar.appendChild(actions);
+        /* Completed first, then Share. Marking a maze off is the thing a
+           visitor does here most often and the one that belongs to this
+           maze alone; sharing is about sending it elsewhere, so it sits
+           further out. An event has no Completed, and its Share simply
+           takes the near position. */
+        if (!n.isEvent && n.id) {
+            const wrap = document.createElement("span");
+            wrap.className = "modal-walked";
+            wrap.innerHTML = walkedToggleHtml(n);
+            actions.appendChild(wrap);
+        }
+        renderShareButton(n, actions);
         modalDesc.textContent = n.details || n.description || "";
 
         /* The stored Habbo article, if this event has one.
@@ -3080,6 +3899,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // this one class.
         modalThumb.classList.toggle("is-event", !!n.isEvent);
         activeIsEvent = !!n.isEvent;
+        activeRoomId = n.isEvent ? "" : (n.id || "");
         activeFurni = n.furni || null;
         warmFurniIcons(activeFurni);
         renderRelatedImages(n);
@@ -3185,11 +4005,11 @@ document.addEventListener("DOMContentLoaded", () => {
         closeAllPhotoFrames();
         closeAllFurniCards();
 
-        // Drop a #event-... hash left over from opening this modal (via the
-        // header widget or a shared link) so a refresh after closing doesn't
-        // reopen it — replaceState instead of clearing location.hash so it
-        // doesn't add a back-button entry or re-fire hashchange.
-        if (/^#event-/.test(location.hash)) {
+        // Drop a #event-… or #maze-… hash left over from opening this modal
+        // (via the header widget or a shared link) so a refresh after closing
+        // doesn't reopen it — replaceState instead of clearing location.hash
+        // so it doesn't add a back-button entry or re-fire hashchange.
+        if (/^#(event|maze)-/.test(location.hash)) {
             history.replaceState(null, "", location.pathname + location.search);
         }
 
@@ -3235,6 +4055,9 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.addEventListener("click", () => {
             topView = btn.dataset.top;
             showFeatured = false;
+            showWhatsNew = false;
+            showTimeline = false;
+            furniFilter = null;
             searchInput.value = "";
             query = "";
             render();
@@ -3254,6 +4077,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 eventsSubTouched = true;
             }
             showFeatured = false;
+            showWhatsNew = false;
+            showTimeline = false;
+            furniFilter = null;
             searchInput.value = "";
             query = "";
             render();
@@ -3269,10 +4095,45 @@ document.addEventListener("DOMContentLoaded", () => {
     // showFeatured is on) and restores the search row via updateSearchWrap.
     featuredMazesBtn.addEventListener("click", () => {
         showFeatured = !showFeatured;
+        // The two layered views are alternatives, not a stack: the featured
+        // panel covers the list What's New would be writing into.
+        if (showFeatured) { showWhatsNew = false; furniFilter = null; }
         searchInput.value = "";
         query = "";
         render();
     });
+
+    /* What's New is a toggle over whatever is underneath, so leaving it puts
+       the visitor back exactly where they were — the same shape as the
+       featured button above, and for the same reason. The search box is
+       cleared on the way in and out: a term typed against the archive is
+       rarely the one you want against a list of twelve. */
+    if (whatsNewBtn) {
+        whatsNewBtn.dataset.track = "whats-new";
+        whatsNewBtn.addEventListener("click", () => {
+            showWhatsNew = !showWhatsNew;
+            // One view at a time: all three write into the same panel.
+            if (showWhatsNew) { showFeatured = false; showTimeline = false; furniFilter = null; }
+            searchInput.value = "";
+            query = "";
+            render();
+        });
+    }
+
+    if (timelineBtn) {
+        timelineBtn.dataset.track = "timeline";
+        timelineBtn.addEventListener("click", () => {
+            showTimeline = !showTimeline;
+            if (showTimeline) { showFeatured = false; showWhatsNew = false; furniFilter = null; }
+            searchInput.value = "";
+            query = "";
+            render();
+            // The timeline opens on the newest year, and the panel may be
+            // holding the scroll position of whatever list was in it.
+            const results = document.querySelector(".home-results");
+            if (results) results.scrollTop = 0;
+        });
+    }
 
     // Sits on top of #featured-mazes-btn's own header strip (see its CSS)
     // rather than inside it, so this click is its own event, not a bubble
@@ -3322,9 +4183,16 @@ document.addEventListener("DOMContentLoaded", () => {
         // out to whatever's sitting behind the overlay instead of wrapping
         // back around within the dialog, same as any native modal.
         if (e.key === "Tab") {
-            const focusable = modalCard.querySelectorAll(
+            /* Only what is actually on screen. Half this modal's controls are
+               shown per maze — the gallery arrows, the Visit Room link, the
+               older-versions pill — and a display:none button still matches
+               the selector, so the trap was stopping Tab on controls the
+               visitor cannot see. offsetParent is null for anything display:
+               none'd (itself or through an ancestor), which is exactly the
+               set to skip. */
+            const focusable = [...modalCard.querySelectorAll(
                 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-            );
+            )].filter(el => el.offsetParent !== null);
             if (!focusable.length) return;
             const first = focusable[0];
             const last = focusable[focusable.length - 1];
@@ -3343,15 +4211,37 @@ document.addEventListener("DOMContentLoaded", () => {
     // navigation, but a click while already on home.html only changes the
     // hash (no reload), so this also has to run on "hashchange", not just
     // once at load.
-    function openEventFromHash() {
-        const m = /^#event-(.+)$/.exec(location.hash);
-        if (!m || !dataLoaded) return;
-        const id = decodeURIComponent(m[1]);
-        const match = EVENTS.find(e => e.id === id);
-        if (match) openModal(normalize(match, true));
+    /* Opens whatever the hash names — an event or, now, a maze.
+
+       #maze-<id> exists because a maze had no address of its own: the only
+       way to send someone one was "open the archive and search for it". It
+       is what /maze/<id> lands on once the share function has handed a real
+       browser through (see netlify/functions/share.js), and what the Copy
+       link button in the modal writes to the clipboard. */
+    function openFromHash() {
+        if (!dataLoaded) return;
+        const m = /^#(event|maze)-(.+)$/.exec(location.hash);
+        if (!m) return;
+        const id = decodeURIComponent(m[2]);
+        if (m[1] === "event") {
+            const match = EVENTS.find(e => e.id === id);
+            if (match) openModal(normalize(match, true));
+            return;
+        }
+        const match = ROOMS.find(r => r.id === id);
+        if (!match) return;
+        // A maze can sit in any of the three maze tabs, and a link to one
+        // should not depend on which tab happens to be showing. Switch to
+        // the list it actually lives in before opening it, so closing the
+        // modal leaves the visitor somewhere that contains it.
+        topView = "mazes";
+        showFeatured = false;
+        mazesSub = match.status === "closed" ? "archived" : match.status === "collab" ? "collab" : "open";
+        render();
+        openModal(normalize(match, false));
     }
 
-    window.addEventListener("hashchange", openEventFromHash);
+    window.addEventListener("hashchange", openFromHash);
 
     render();
 
@@ -3424,6 +4314,10 @@ document.addEventListener("DOMContentLoaded", () => {
         drawLoader();
         loaderEl.classList.add("is-done");
         setTimeout(() => loaderEl.remove(), 300);
+        // The empty state means something different the moment this goes —
+        // see render()'s !dataLoaded branch.
+        loaderGone = true;
+        if (!dataLoaded) render();
     }
 
     /* Waits for every thumbnail, counting each as it lands. Resolves on error
@@ -3493,20 +4387,28 @@ document.addEventListener("DOMContentLoaded", () => {
         showDegradedNotice();
 
         // Exactly the images the cards will ask for, deduplicated — normalize
-        // is what decides a card's thumbnail, so asking it is the only way to
-        // be sure the preload and the render want the same files.
+        // is what decides a card's thumbnail, and rowThumbUrl is the request
+        // the row will actually make, so going through both is the only way
+        // to be sure the preload and the render want the same files.
         const thumbs = [...new Set([
             ...rooms.map(r => normalize(r, false).thumb),
             ...events.map(e => normalize(e, true).thumb)
-        ].filter(Boolean))];
+        ].filter(Boolean).map(rowThumbUrl))];
         drawLoader();
 
         dataLoaded = true;
         lastStatusSignature = eventStatusSignature();
         render();
-        openEventFromHash();
+        openFromHash();
 
         await preloadThumbs(thumbs);
         hideLoader();
-    }).catch(() => hideLoader());
+    }).catch(() => {
+        // Api's own reads fall back rather than reject, so reaching this is
+        // something unexpected — but the empty grid it leaves behind must
+        // still say so rather than sitting on "still loading" forever.
+        loadFailed = true;
+        hideLoader();
+        render();
+    });
 });

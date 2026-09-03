@@ -359,6 +359,54 @@ html::-webkit-scrollbar-button { display: none; width: 0; height: 0; background:
     background-image: url('../assets/img/scrollbar_h_arrow_right_disabled.png');
 }
 
+/* ---------- accessibility helpers ---------- */
+
+/* Off screen but still in the accessibility tree — for a label whose words
+   are already carried visually by what it labels (see the sort box's own
+   label in home.html). Not display:none, which would take it out of the
+   tree entirely and defeat the point. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* First in the tab order, and out of sight until it is focused. Styled as
+   the site's own chrome rather than a browser default so that the one
+   moment it appears does not look like a rendering fault. */
+.skip-link {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 999;
+    transform: translateY(-120%);
+    padding: 10px 16px;
+    background: var(--bg-panel-light);
+    color: var(--amber-bright);
+    border: 2px solid var(--amber);
+    border-top: none;
+    font-family: 'Silkscreen', 'Pixelify Sans', monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: transform 0.15s ease-out;
+}
+
+.skip-link:focus {
+    transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .skip-link { transition: none; }
+}
+
 body {
     margin: 0;
     padding: 0;
@@ -1172,6 +1220,121 @@ body[data-page="home"] .hero { padding-top: 18px; }
     margin: 0;
 }
 .events-archive-note[hidden] { display: none; }
+
+/* This visitor's own tally of mazes walked, in the same corner and the same
+   voice as the archive note above — both are a quiet line about the listing
+   underneath rather than a control. Amber rather than dim: unlike the note,
+   this one is about something the visitor did. */
+.walked-count {
+    display: block;
+    text-align: left;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    color: var(--amber-bright);
+    pointer-events: none;
+    padding-top: 16px;
+    margin: 0;
+}
+
+/* Every open maze in the archive. Worth marking.  */
+.walked-count.is-complete {
+    color: var(--ok);
+}
+
+.walked-count[hidden] { display: none; }
+
+/* The tick itself — on a list row's right-hand side, and again in the
+   modal's meta line. Deliberately quiet until it is on: an untouched
+   archive should not read as a page full of checkboxes. */
+.walked-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 7px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--parchment-dim);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5rem;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+    cursor: var(--cursor-pointer);
+    transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
+}
+
+/* The box that gets ticked. Drawn here rather than shipped as a sprite:
+   it is a 9px square and an ✓, and the archive already pays for enough
+   image requests. */
+.walked-toggle-tick {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border: 1px solid currentColor;
+    border-radius: 1px;
+    position: relative;
+}
+
+.walked-toggle.is-walked {
+    color: var(--ok);
+    border-color: var(--ok);
+    background: rgba(111, 143, 79, 0.14);
+}
+
+.walked-toggle.is-walked .walked-toggle-tick::after {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 0;
+    width: 3px;
+    height: 6px;
+    border: solid currentColor;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+}
+
+.walked-toggle:hover,
+.walked-toggle:focus-visible {
+    color: var(--amber-bright);
+    border-color: var(--amber);
+    background: rgba(199, 166, 121, 0.12);
+}
+
+.walked-toggle.is-walked:hover,
+.walked-toggle.is-walked:focus-visible {
+    color: var(--ok);
+    border-color: var(--ok);
+}
+
+/* In the modal it sits on the meta row with the status and the date, so it
+   takes that row's slightly larger type rather than the row's small one. */
+.modal-walked .walked-toggle {
+    font-family: inherit;
+    font-size: 0.72rem;
+    padding: 3px 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .walked-toggle { transition: none; }
+}
+
+/* On a phone the row's right-hand column is narrow and already holds the
+   status pill and the Go arrow, so the tick keeps its box and drops its
+   words — the ✓ and the maze it sits beside say the rest. */
+@media (max-width: 640px) {
+    .chrome-list-row .walked-toggle {
+        padding: 3px 5px;
+    }
+    .chrome-list-row .walked-toggle .walked-toggle-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+}
 
 /* Per-button rather than one flat shadow on the row above — a row-level
    box-shadow would trace the row's own bounding rectangle, ignoring the
@@ -2473,6 +2636,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: block;
 }
 
+/* The long wording by default; the short one only where the media query
+   below asks for it. */
+.featured-refresh-short { display: none; }
+
 /* Same glow used by the header's own upcoming-events title on hover (see
    a.header-events-title:hover) — reused here so both "hover this bit of
    text to make it light up" affordances read as the same interaction
@@ -2677,10 +2844,19 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* Fills whatever space the sort dropdown (pinned to the row's right edge,
    see .sort-box below) doesn't need, rather than spanning the full row on
    its own. */
+/* Sized to what it holds rather than to the row.
+
+   It used to take every pixel the sort box left over, which was the right
+   answer while those two were the only things on this row. With the view
+   switch at the right-hand end it is not: the search field grew until it
+   pressed against the switch, and the row read as one long field with two
+   controls jammed onto the end of it. Capped instead, so search and sort
+   form a group on the left and the switch sits clear on the right with real
+   space between them. */
 .search-box {
     position: relative;
-    flex: 1 1 auto;
-    min-width: 120px;
+    flex: 0 1 118px;
+    min-width: 96px;
 }
 
 .search-box input {
@@ -2702,13 +2878,78 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-color: var(--amber);
 }
 
+/* What's New and Timeline — the two views that cut across the whole
+   archive rather than filtering part of it.
+
+   The same raised chrome button the maze modal's Share and Completed wear
+   (see .modal-share-btn), which is this site's small-button treatment: the
+   two are doing the same job in two places and should look like it. Held at
+   the right end of the controls row so the search and sort sit clear to
+   their left, with a small gap between the pair so they read as two
+   buttons rather than one split one. */
+.view-switch {
+    display: flex;
+    gap: 5px;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.view-switch-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    background: linear-gradient(#3b3022, #2f2618);
+    border: 1px solid var(--chrome-border);
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
+    color: var(--parchment);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    cursor: var(--cursor-pointer);
+    transition: background-color 0.12s ease-out, color 0.12s ease-out, border-color 0.12s ease-out;
+}
+
+.view-switch-btn:hover,
+.view-switch-btn:focus-visible {
+    background: linear-gradient(#4a3c29, #3a2f1f);
+    border-color: var(--amber);
+    color: #fff8ec;
+}
+
+/* On: the amber the archive uses for anything currently selected, so
+   "this view is showing" reads the same as an active tab does. */
+.view-switch-btn.active {
+    background: linear-gradient(#6b5327, #52401d);
+    border-color: var(--amber-bright);
+    color: #fff8ec;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .view-switch-btn { transition: none; }
+}
+
 .sort-box { flex-shrink: 0; }
+
+/* Nothing to sort by while What's New is showing — see updateChrome. */
+.sort-box select:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
 
 .sort-box select {
     background: var(--parchment);
     border: 1.5px solid var(--chrome-border);
     color: #3a2812;
     font-family: 'Roboto', sans-serif;
+    /* Sized to its own longest option, now that the two difficulty ones
+       have been shortened (see home.html), so this and the search box sit
+       together on the left of the row with the view switch clear on the
+       right. */
+    max-width: 168px;
     padding: 6px 10px;
     border-radius: 5px;
     font-size: 0.74rem;
@@ -4062,6 +4303,48 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 /* Right-hand end of the footer row, level with the bottom of the sprite
    beside it — clear of the folded corner, which lives out in the border. */
+/* "Also in N other mazes" — the reverse of the furni scan, as one line
+   at the foot of the card. It used to name them here, which put a list of
+   up to six links inside a 240px tooltip and read as a second, worse
+   listing of mazes a few pixels from the real one. Pressing this hands the
+   question to the archive window instead (see renderFurniAlsoIn), so the
+   card states a fact and the listing does the listing.
+
+   Separated by a rule rather than boxed: the card is small, and another
+   bordered block inside it would read as a second card. */
+.furni-card-also {
+    display: block;
+    /* Held against the right edge, directly above the Furni Index link, and
+       drawn exactly as that link is — same colour, same hover, same
+       nowrap. The two are the card's only two ways out, and stacking them
+       in the same corner in the same voice says so. */
+    margin: 6px 0 0 auto;
+    padding: 5px 0 0;
+    background: none;
+    border: none;
+    border-top: 1px solid rgba(47, 42, 36, 0.28);
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 1.4;
+    text-align: right;
+    color: #8c3600;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: var(--cursor-pointer);
+    transition: color 0.15s;
+}
+
+/* Deepens rather than lightens on hover, for the reason spelled out on
+   .furni-card-link below: this card is pale paper, and going lighter reads
+   as the text vanishing. */
+.furni-card-also:hover,
+.furni-card-also:focus-visible {
+    color: #3d1800;
+    outline: none;
+}
+
+.furni-card-also[hidden] { display: none; }
+
 .furni-card-link {
     flex: 0 1 auto;
     color: #8c3600;
@@ -4860,6 +5143,124 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 .modal-meta span { display: flex; align-items: center; gap: 5px; }
+
+/* The two controls on the meta row, held together at its right-hand end.
+
+   The rest of the row is statement — status, hotel, date — and these are
+   the only things on it you can DO, so they are grouped and pushed clear of
+   the text rather than reading as two more facts in the run. margin-left:
+   auto does the pushing; the photo strip that also anchors to this row is
+   absolutely positioned and unaffected by it. */
+/* In the window's titlebar, at its left end and centred on the title's own
+   line — the same way .chrome-close sits at the right end. Absolutely
+   positioned so the bar keeps the height it already had and the title stays
+   centred on the window rather than on whatever is left over. */
+.modal .chrome-titlebar .modal-meta-actions {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    /* Centred on the bar, then lifted 5px: dead centre sat them low against
+       the title beside them, whose glyphs carry no descenders to fill the
+       space underneath. */
+    transform: translateY(calc(-50% - 5px));
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* The room the title is guaranteed at each end of this bar, widened to
+   clear the pair on the left. Applied at both ends rather than only the
+   left so the title stays centred on the window: --titlebar-pad is exactly
+   this reservation (see .chrome-titlebar), and a long name ellipsises
+   against it as it always has. */
+.modal .chrome-titlebar { --titlebar-pad: 152px; }
+
+/* An event has no Completed, so its pair is one button wide. */
+.modal:not(:has(.modal-meta-actions .walked-toggle)) .chrome-titlebar { --titlebar-pad: 84px; }
+
+/* Both drawn as the site's own small chrome buttons — the raised bevel and
+   chrome border its nav and fields wear, at this row's size. They read as a
+   pair because they are one: the two things a visitor can do with the maze
+   they are looking at. */
+.modal-share-btn,
+.modal-meta-actions .walked-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    background: linear-gradient(#3b3022, #2f2618);
+    border: 1px solid var(--chrome-border);
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
+    color: var(--parchment);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    cursor: var(--cursor-pointer);
+    transition: background-color 0.12s ease-out, color 0.12s ease-out, border-color 0.12s ease-out;
+}
+
+.modal-share-btn:hover,
+.modal-share-btn:focus-visible,
+.modal-meta-actions .walked-toggle:hover,
+.modal-meta-actions .walked-toggle:focus-visible {
+    background: linear-gradient(#4a3c29, #3a2f1f);
+    border-color: var(--amber);
+    color: #fff8ec;
+}
+
+/* The link glyph, drawn rather than shipped: one more sprite for a chain
+   two characters wide is not worth the request. */
+.modal-share-btn::before {
+    content: "🔗";
+    font-size: 0.68em;
+    filter: grayscale(1) brightness(1.7);
+}
+
+/* Confirmation is the button itself changing, not a message somewhere else
+   on the page — the eye is already here. */
+.modal-share-btn.is-done {
+    color: var(--ok);
+    border-color: var(--ok);
+}
+.modal-share-btn.is-done::before { content: "✓"; filter: none; }
+
+/* Completed reads as done rather than as pressed, in the green this site
+   already uses for Easy and for an online builder — its one positive
+   colour, so "yes, that one" looks the same everywhere. */
+.modal-meta-actions .walked-toggle.is-walked {
+    background: linear-gradient(#3d4b32, #2f3a26);
+    border-color: var(--ok);
+    color: #d8e8c6;
+}
+
+.modal-meta-actions .walked-toggle.is-walked:hover,
+.modal-meta-actions .walked-toggle.is-walked:focus-visible {
+    background: linear-gradient(#48583b, #38452c);
+    border-color: var(--ok);
+    color: #ffffff;
+}
+
+/* Only ever added when the clipboard refuses (see renderShareButton) — the
+   address, selected, for copying by hand. */
+.modal-share-fallback {
+    flex: 1 1 180px;
+    min-width: 0;
+    padding: 3px 6px;
+    background: #2a2318;
+    border: 1px solid var(--chrome-border);
+    border-radius: 3px;
+    color: var(--parchment);
+    font-family: inherit;
+    font-size: 0.7rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .modal-share-btn,
+    .modal-meta-actions .walked-toggle { transition: none; }
+}
+
 
 .modal-meta .status-badge {
     position: static;
@@ -5897,6 +6298,43 @@ body[data-page="admin"] .search-box input {
     color: var(--parchment-dim);
 }
 
+/* The maze and event pickers on the contributor form. Every maze in the
+   archive is a row in here, so it scrolls rather than running the form off
+   the page — capped at about eight rows, which is enough to show that it
+   is a list and to scan without the box becoming the page. */
+.admin-picker {
+    max-height: 208px;
+    overflow-y: auto;
+}
+
+.admin-picker-empty {
+    margin: 0;
+    padding: 10px 12px;
+    background: #fff;
+    border: 2px solid var(--chrome-border);
+    border-radius: 6px;
+    color: #6b5638;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.85rem;
+}
+
+/* A line of explanation under a field, in the form's own voice rather than
+   as placeholder text inside the input. */
+.admin-field-note {
+    margin: -6px 0 14px;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--parchment-dim);
+}
+
+/* The running total, which is the number the console will print. Amber
+   because it is an answer rather than an aside. */
+.admin-contributor-total {
+    margin-top: 0;
+    color: var(--amber-bright);
+}
+
 /* Thumbnail upload: URL field + file picker + inline status, stacked. */
 .admin-thumb-upload {
     display: flex;
@@ -6328,6 +6766,11 @@ body[data-page="admin"] .search-box input {
     height: 294px;
     background: #ffcb00;
     user-select: none;
+    /* Without this the browser claims a touch drag on the chrome as a page
+       scroll and cancels the pointer stream mid-gesture, so the console
+       could not be moved on a phone at all — same rule, for the same
+       reason, that .photo-frame-drag and .furni-card-drag carry. */
+    touch-action: none;
     /* Matches the corner sprites' own curve (measured ~14px, a quarter-
        circle inscribed in their full 14x14 tile) — without this, the
        corner images' own transparent pixels just revealed this element's
@@ -6594,6 +7037,28 @@ body[data-page="admin"] .search-box input {
     color: #eeeeee;
 }
 
+
+/* The Contact tab's own landing page: the two reasons anyone opens it,
+   as two buttons and nothing else. Centred in what is left of the screen
+   under the heading and its hashed rule, so the choice is the whole page
+   rather than a pair of controls stranded at the top of an empty one. */
+.console-choice {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    /* The console screen is a fixed height and this page has no content of
+       its own to give it one — this is what is left after the title and
+       the hashline above. */
+    min-height: 128px;
+}
+
+.console-choice-btn {
+    min-width: 132px;
+    padding: 7px 14px;
+}
+
 /* Top-left, same as every other page's own title — no more special
    centering/fixed-height treatment, just plain flow within .console-
    page's own padding like "Contact Us"/"Contributors"/"About" get. */
@@ -6613,7 +7078,7 @@ body[data-page="admin"] .search-box input {
     border: 1px solid #eeeeee;
     color: #eeeeee;
     font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
-    font-size: 0.55rem;
+    font-size: 0.5625rem;
     box-sizing: border-box;
 }
 
@@ -6639,11 +7104,21 @@ body[data-page="admin"] .search-box input {
 .console-field-label {
     display: block;
     margin: 8px 0 4px;
-    font-size: 0.55rem;
+    font-size: 0.5625rem;
     color: #eeeeee;
 }
 
 .console-input-username {
+    height: 20px;
+    padding: 0 6px;
+    margin-bottom: 8px;
+}
+
+/* The submission form's single-line fields. Same box the Contact
+   form's own username/discord inputs wear — a bare .console-input is only
+   as tall as its text, which next to those read as a different, shabbier
+   kind of field. */
+.console-input-line {
     height: 20px;
     padding: 0 6px;
     margin-bottom: 8px;
@@ -6680,7 +7155,7 @@ body[data-page="admin"] .search-box input {
     border-radius: 2px;
     color: #eeeeee;
     font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
-    font-size: 0.55rem;
+    font-size: 0.5625rem;
     padding: 4px 12px;
     cursor: var(--cursor-pointer);
 }
@@ -6688,7 +7163,7 @@ body[data-page="admin"] .search-box input {
 
 .console-form-status {
     margin: 6px 0 0;
-    font-size: 0.55rem;
+    font-size: 0.5625rem;
     color: #eeeeee;
 }
 .console-form-status.is-error { color: #ff8080; }
@@ -6728,31 +7203,66 @@ body[data-page="admin"] .search-box input {
 }
 
 .console-contributor {
-    padding: 8px 0;
+    padding: 7px 0;
 }
 
-.console-contributor-name {
+/* Name left, total right, on one line — the two things you scan a credits
+   list for. The name used to carry the total hyphenated onto the end of it,
+   which read as part of the name. */
+.console-contributor-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
     margin: 0;
-    font-weight: 700;
-    font-size: 0.55rem;
-    color: #eeeeee;
 }
 
-/* Only the very first entry in the list — .console-contributor is the
-   first child only for that one, since every later entry is preceded by
-   its own .console-dotline sibling instead. */
-.console-contributor:first-child .console-contributor-name {
-    position: relative;
-    top: -5px;
-}
-
-.console-contributor-count { font-weight: 400; }
-
-.console-contributor-types {
-    margin: 2px 0 0;
+/* One size, one weight and one colour across the whole entry — Volter
+   Goldfish at 0.5625rem/400 in the console screen's own #eeeeee, with only
+   the page title above it set apart. The console screen is a single-colour
+   display; a second colour in it reads as a different kind of object
+   rather than as emphasis. Structure does the work instead: the name on
+   the left, the total on the right, the chips on their own line. */
+.console-contributor-name {
     font-weight: 400;
-    font-size: 0.55rem;
+    font-size: 0.5625rem;
     color: #eeeeee;
+    overflow-wrap: anywhere;
+}
+
+/* The total and what it is a total of. The unit comes from the kinds of
+   work someone is credited with (see contributionUnit in js/console.js) —
+   this line used to say "Mazes" for everyone, including people credited
+   only for event images. */
+.console-contributor-count {
+    flex-shrink: 0;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    color: #eeeeee;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* The kinds of work, as chips. Five of these set as one comma sentence ran
+   to three lines in a 183px column and buried the name above them. */
+.console-contributor-types {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin: 4px 0 0;
+}
+
+.console-contributor-tag {
+    padding: 1px 5px;
+    /* The chip is drawn by its outline alone — the text inside it is the
+       same colour as every other word on this screen. */
+    border: 1px solid rgba(238, 238, 238, 0.35);
+    border-radius: 2px;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: 1.5;
+    color: #eeeeee;
+    white-space: nowrap;
 }
 
 /* Tiled horizontally the same way the border edges above are — a proper
@@ -7066,6 +7576,52 @@ body[data-page="admin"] .search-box input {
 
        The tags were already dropping below on their own — .room-tags takes
        a full basis at this width — and still do. */
+    /* "Refresh" rather than "Refresh recommendations", and a real tap target
+       around it.
+
+       The full label was 142px of a 265px row, ending 4px from the FEATURED
+       MAZES text beside it, and the button carried no padding at all — a
+       10px-tall, 9px-font hit area against the 44px both Apple and Google
+       ask for. The padding is deliberately asymmetric: it grows the box
+       DOWNWARD into the header's own empty half, because growing it upward
+       would put it back over the Featured Mazes button underneath and start
+       swallowing clicks meant for that (which is why the padding was taken
+       off in the first place — see .featured-refresh-btn). */
+    /* The cap that keeps the search box, the sort control and the view
+       switch on one row is a desktop problem — here the row wraps anyway,
+       so the field takes the line it is already on rather than sitting at
+       118px with half a row of empty space beside it. */
+    .search-box { flex: 1 1 100%; }
+
+    /* The titlebar pair drops its words and keeps its glyphs: the chain and
+       the tick box. Two labelled buttons would take 152px of each end of a
+       330px bar and leave the maze's name nowhere to go. The labels are
+       hidden from sight, not from a screen reader — each button carries its
+       own aria-label and title. */
+    .modal .chrome-titlebar { --titlebar-pad: 78px; }
+    .modal:not(:has(.modal-meta-actions .walked-toggle)) .chrome-titlebar { --titlebar-pad: 52px; }
+    .modal .chrome-titlebar .modal-meta-actions { gap: 4px; }
+    .modal .chrome-titlebar .modal-share-btn,
+    .modal .chrome-titlebar .walked-toggle { padding: 4px 7px; }
+    .modal .chrome-titlebar .modal-share-label,
+    .modal .chrome-titlebar .walked-toggle-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    .featured-refresh-full { display: none; }
+    .featured-refresh-short { display: inline; }
+    .featured-refresh-btn {
+        top: 17px;
+        right: 10px;
+        padding: 8px 10px 10px;
+    }
+
     .modal-top-row .builder-list { flex-basis: 0; }
     .modal-top-row .room-creator { flex-basis: 100%; }
     .modal-top-row .ec-modal-label,
@@ -8015,4 +8571,314 @@ body[data-page="admin"] #activity-sessions {
     text-align: right;
     font-variant-numeric: tabular-nums;
     color: var(--parchment);
+}
+
+/* ---------- the timeline ---------- */
+
+/* timeline.html — the archive as a history. Deliberately quieter than the
+   browsing page: no thumbnails, no chrome per row, just a rule with the
+   years hung off it. The pictures live one click away in the archive
+   itself, and a timeline that showed them would be the archive again with
+   the dates rearranged. */
+
+.timeline-summary {
+    margin: 0 0 18px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: 1.5;
+    color: var(--parchment-dim);
+}
+
+.timeline-year {
+    margin-bottom: 26px;
+}
+
+.timeline-year:last-child {
+    margin-bottom: 6px;
+}
+
+/* The year, and what that year held. Set on one line with the note trailing
+   it in the dim colour, so the numbers form the column the eye runs down. */
+.timeline-year-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin: 0 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+}
+
+.timeline-year-number {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 1.4rem;
+    letter-spacing: 0.02em;
+    color: var(--amber-bright);
+}
+
+.timeline-year-note {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    color: var(--parchment-dim);
+}
+
+.timeline-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* Date, dot, entry — a three-column grid rather than a bulleted list, so
+   every date ends on the same edge and the dots line up into the rule that
+   makes this read as a timeline at all. */
+.timeline-entry {
+    display: grid;
+    grid-template-columns: 84px 13px 1fr;
+    align-items: start;
+    gap: 0 10px;
+    padding: 7px 0;
+}
+
+.timeline-date {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.9;
+    text-align: right;
+    color: var(--parchment-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+/* The dot, and the line between the dots. The line is drawn by the dot's
+   own ::after reaching down to the next one rather than as a border on a
+   container, so it stops of its own accord at the last entry of a year
+   instead of running on into the year heading below. */
+.timeline-dot {
+    position: relative;
+    width: 7px;
+    height: 7px;
+    margin-top: 6px;
+    border-radius: 50%;
+    background: var(--amber);
+    justify-self: center;
+}
+
+.timeline-entry:not(:last-child) .timeline-dot::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 7px;
+    width: 1px;
+    height: calc(100% + 100px);
+    max-height: 60px;
+    transform: translateX(-50%);
+    background: var(--border);
+}
+
+/* An event's dot is hollow, so the two kinds of entry are told apart on the
+   rule itself rather than only by their badges. */
+.timeline-entry-event .timeline-dot {
+    background: var(--bg-panel);
+    box-shadow: inset 0 0 0 2px var(--amber);
+}
+
+.timeline-entry-body {
+    min-width: 0;
+}
+
+/* The bold face asked for by name rather than by weight — it is already a
+   bold drawing, so a 400 against its own family gets it without the browser
+   synthetically emboldening an emboldened font (see the @font-face block at
+   the top of this sheet). */
+.timeline-entry-name {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: 1.35;
+}
+
+/* A button, not a link: an entry opens the archive's own modal in place
+   rather than navigating anywhere. Styled as the name it is rather than as
+   a control — the whole column is names, and forty buttons drawn as buttons
+   would bury the years. */
+.timeline-open {
+    padding: 0;
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    text-align: left;
+    color: var(--parchment);
+    cursor: var(--cursor-pointer);
+}
+
+.timeline-open:hover,
+.timeline-open:focus-visible {
+    color: var(--amber-bright);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.timeline-medal {
+    width: 15px;
+    height: 21px;
+    image-rendering: pixelated;
+    flex-shrink: 0;
+}
+
+.timeline-badge {
+    font-size: 0.5rem;
+}
+
+.timeline-entry-by,
+.timeline-entry-note {
+    margin: 2px 0 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.45;
+    color: var(--parchment-dim);
+}
+
+.timeline-entry-note {
+    color: #8a7d68;
+    /* Two lines is a summary; four is the archive entry, which is one click
+       away and better placed to hold it. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+@media (max-width: 640px) {
+    /* The date moves above its entry rather than shrinking the column it
+       shares — a 84px date column against a 375px screen leaves the names
+       nowhere to go. */
+    .timeline-entry {
+        grid-template-columns: 13px 1fr;
+        gap: 0 8px;
+    }
+    .timeline-date {
+        grid-column: 2;
+        text-align: left;
+        line-height: 1.4;
+    }
+    .timeline-dot {
+        grid-row: 1 / span 2;
+        margin-top: 4px;
+    }
+    .timeline-entry:not(:last-child) .timeline-dot::after {
+        max-height: 90px;
+    }
+    .timeline-year-number { font-size: 1.15rem; }
+}
+
+/* The divider between a year's counts. Roboto, because Volter Goldfish
+   draws a bullet as a picture rather than as punctuation — the same reason
+   .row-date-dot switches face for exactly one character. */
+.timeline-sep {
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.5rem;
+    margin: 0 6px;
+    vertical-align: 1px;
+}
+
+/* One badge, two wordings — see timeline.html's own back link. */
+.badge-short { display: none; }
+
+@media (max-width: 640px) {
+    .badge-long { display: none; }
+    .badge-short { display: inline; }
+}
+
+/* The dated line What's New puts on each row: when it was added to the
+   archive, and when it last changed. Only that view renders it (see
+   whatsNewDatesHtml) — in the ordinary listings it would be a third date
+   arguing with the maze's own opening. Set as the row's quietest line,
+   below the description and above the tags. */
+.row-when {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    /* The gap is the separator — see whatsNewDatesHtml for why there is no
+       glyph between the two dates. */
+    gap: 2px 14px;
+    /* Above the title, not below the description: in a list whose whole
+       subject is when things arrived, the date is the first thing to read
+       and the eye should meet it before the name rather than after
+       everything else about the entry. */
+    margin: 0 0 3px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: 1.5;
+    color: var(--amber);
+}
+
+.row-when-item { white-space: nowrap; }
+
+/* The chip above a furni-filtered listing: what is being shown, and the way
+   out of it. Sits inside the results list ahead of the rows, drawn as a
+   band rather than a row so it reads as a statement about the list rather
+   than as the first entry in it. */
+.furni-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+    padding: 7px 10px;
+    background: var(--chrome-row, #2a2015);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    color: var(--parchment-dim);
+}
+
+.furni-filter-icon {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    image-rendering: pixelated;
+    flex-shrink: 0;
+}
+
+.furni-filter-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.furni-filter-text strong {
+    color: var(--amber-bright);
+    font-weight: 400;
+}
+
+/* Back and Clear. Back is only present when there is a maze to return to,
+   so Clear carries the auto margin that pushes the pair right — whichever
+   of them comes first in the row does the pushing. */
+.furni-filter-btn {
+    flex-shrink: 0;
+    padding: 3px 9px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--parchment-dim);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    cursor: var(--cursor-pointer);
+}
+
+.furni-filter-btn:first-of-type { margin-left: auto; }
+
+.furni-filter-btn:hover,
+.furni-filter-btn:focus-visible {
+    border-color: var(--amber);
+    color: var(--amber-bright);
 }

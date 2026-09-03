@@ -75,10 +75,14 @@ exports.handler = async (event) => {
         // see the identical comment in rooms.js for why (a findOne() check
         // beforehand can't stop two near-simultaneous requests both seeing
         // "id free" before either insert lands).
+        // When this entered the archive, as against when the event itself
+        // is scheduled for — see the same field in rooms.js for why the two
+        // have to be told apart.
+        const createdAt = new Date().toISOString();
         let id = slugify(body.title);
         let suffix = 2;
         for (let attempt = 0; ; attempt++) {
-            const item = { ...body, id };
+            const item = { createdAt, ...body, id };
             delete item._id;
             try {
                 await events.insertOne(item);
@@ -97,6 +101,10 @@ exports.handler = async (event) => {
     if (event.httpMethod === "PUT") {
         if (!body.id) return json(400, { error: "Missing event id" });
         const { _id, ...update } = body;
+        // When this last changed — server-stamped, and after the spread so a
+        // stale value in the body cannot wind the clock back. See the same
+        // field in rooms.js.
+        update.updatedAt = new Date().toISOString();
         const result = await events.findOneAndUpdate(
             { id: body.id },
             { $set: update },

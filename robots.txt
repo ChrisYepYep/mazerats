@@ -1,0 +1,24 @@
+# Maze Rats — https://mazerats.net
+#
+# The archive itself is meant to be found: someone half-remembering a maze
+# they walked two years ago should be able to search for it and land here.
+# What follows is everything that isn't the archive.
+
+User-agent: *
+Allow: /
+
+# The admin panel (already noindex in its own markup, said again here so a
+# crawler never has to fetch it to find that out).
+Disallow: /admin
+Disallow: /admin.html
+
+# An internal reference sheet for the Volter Goldfish font's picture
+# glyphs. Useful when building the site, meaningless in a search result.
+Disallow: /glyphs.html
+
+# Project tooling and the function endpoints. Both already 404 at the edge
+# (see netlify.toml); this saves the crawl.
+Disallow: /tools/
+Disallow: /.netlify/
+
+Sitemap: https://mazerats.net/sitemap.xml

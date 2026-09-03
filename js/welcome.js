@@ -8,18 +8,28 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const { landingState } = await Api.getSiteSettings();
 
+    // aria-disabled moves with the label: the button is focusable in every
+    // state (see its markup in index.html), so the state has to be spoken
+    // rather than left to the visual treatment alone.
     if (landingState === "coming-soon") {
         label.textContent = "Coming Soon";
         btn.removeAttribute("href");
         btn.classList.add("is-disabled");
+        btn.setAttribute("aria-disabled", "true");
     } else if (landingState === "maintenance") {
         label.textContent = "Maintenance, Back Soon!";
         btn.removeAttribute("href");
         btn.classList.add("is-disabled");
+        btn.setAttribute("aria-disabled", "true");
     } else {
         label.textContent = "Enter";
         btn.setAttribute("href", "home.html");
         btn.classList.remove("is-disabled");
+        btn.removeAttribute("aria-disabled");
+        // A real link again, so it takes its place in the tab order on its
+        // own terms rather than through the stand-in role.
+        btn.removeAttribute("role");
+        btn.removeAttribute("tabindex");
     }
 });
 

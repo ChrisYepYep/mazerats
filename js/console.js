@@ -14,6 +14,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const tabButtons = document.querySelectorAll(".console-tab-btn");
     const screenScroll = document.getElementById("console-screen-scroll");
     const pages = {
+        // What the CONTACT tab lands on: the choice between the two reasons
+        // anyone opens it.
         contact: document.getElementById("console-page-contact"),
         people: document.getElementById("console-page-people"),
         privacy: document.getElementById("console-page-privacy"),
@@ -21,8 +23,17 @@ document.addEventListener("DOMContentLoaded", () => {
         // Not tab-reachable — only ever shown by the Send button on
         // success, and left out of the tabButtons active-state match
         // below since no tab's data-page is "thanks".
-        thanks: document.getElementById("console-page-thanks")
+        thanks: document.getElementById("console-page-thanks"),
+        // The two forms behind that choice. Neither is a tab of its own;
+        // CONTACT stays lit while either shows, because both of them are
+        // still that tab (see CONTACT_PAGES below).
+        message: document.getElementById("console-page-message"),
+        submit: document.getElementById("console-page-submit")
     };
+
+    // Which pages belong to the CONTACT tab, so the row of tab lights keeps
+    // saying where you are rather than going blank on a sub-page.
+    const CONTACT_PAGES = ["contact", "message", "submit"];
 
     function clearPrivacyHash() {
         if (location.hash === "#privacy") {
@@ -45,7 +56,8 @@ document.addEventListener("DOMContentLoaded", () => {
             // of specificity, forcing it back to a plain block.
             el.style.display = key !== name ? "none" : (key === "thanks" ? "flex" : "block");
         });
-        tabButtons.forEach(btn => btn.classList.toggle("active", btn.dataset.page === name));
+        const litTab = CONTACT_PAGES.includes(name) ? "contact" : name;
+        tabButtons.forEach(btn => btn.classList.toggle("active", btn.dataset.page === litTab));
         // All four pages share one scrollable container (#console-screen-
         // scroll) — its scrollTop otherwise carries over from whichever
         // page was showing before, and the browser clamps that straight to
@@ -73,7 +85,29 @@ document.addEventListener("DOMContentLoaded", () => {
     // in its temporal dead zone at that point.
     let hasBeenDragged = false;
 
+    // Below this the browse window is nearly the full width of the screen,
+    // so there is no "beside it" to sit in. Matches the phone breakpoint
+    // css/style.css uses throughout.
+    const CONSOLE_PHONE_MAX = 640;
+
     function positionConsoleDefault() {
+        const maxLeft = Math.max(0, window.innerWidth - modal.offsetWidth);
+        const maxTop = Math.max(0, window.innerHeight - modal.offsetHeight);
+
+        /* On a phone the console is centred on the screen instead of
+           anchored beside the browse window. Anchoring put its right edge
+           exactly on the viewport boundary with 118px of page beside it on
+           a 375px screen — and until it could be dragged by touch at all
+           (see the drag below) there was no way to move it off there. */
+        if (window.innerWidth <= CONSOLE_PHONE_MAX) {
+            modal.style.left = Math.round(Math.min(maxLeft, Math.max(0, (window.innerWidth - modal.offsetWidth) / 2))) + "px";
+            // Held nearer the top than the middle: a phone keyboard opening
+            // for the Contact form takes the bottom half of the screen.
+            modal.style.top = Math.round(Math.min(maxTop, Math.max(0, window.innerHeight * 0.16))) + "px";
+            modal.style.transform = "none";
+            return;
+        }
+
         const chromeWindow = document.getElementById("browse-window");
         if (!chromeWindow) return;
         const winRect = chromeWindow.getBoundingClientRect();
@@ -81,8 +115,6 @@ document.addEventListener("DOMContentLoaded", () => {
         // window's right edge, purely by eye/preference.
         const left = winRect.right - 128;
         const top = winRect.top + winRect.height / 2 - modal.offsetHeight / 2 - 40;
-        const maxLeft = Math.max(0, window.innerWidth - modal.offsetWidth);
-        const maxTop = Math.max(0, window.innerHeight - modal.offsetHeight);
         modal.style.left = Math.min(maxLeft, Math.max(0, left)) + "px";
         modal.style.top = Math.min(maxTop, Math.max(0, top)) + "px";
         modal.style.transform = "none";
@@ -139,6 +171,20 @@ document.addEventListener("DOMContentLoaded", () => {
     openBtn.addEventListener("click", () => openConsole());
     closeBtn.addEventListener("click", closeConsole);
 
+    /* Escape closes it, like every other modal on the site — the room modal,
+       the lightbox and both of the landing page's own modals all do, and
+       this was the one that only answered its X. Bound on the document
+       rather than the console, since the console does not hold focus. */
+    document.addEventListener("keydown", e => {
+        if (e.key !== "Escape") return;
+        if (modal.style.display !== "block") return;
+        // The room modal is in front when both are open, and Escape belongs
+        // to whatever is on top.
+        const roomModal = document.getElementById("room-modal");
+        if (roomModal && roomModal.classList.contains("open")) return;
+        closeConsole();
+    });
+
     // The footer's Privacy Policy link (js/site.js) points at
     // "#privacy" on this page — a same-page hash change if already here,
     // a normal navigation otherwise — so this needs to run both at load
@@ -152,17 +198,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------- drag ----------
 
-    // Anywhere on the yellow chrome drags the console — everything that
-    // shouldn't (buttons, form fields, the screen itself, its own
-    // scrollbar) is excluded by the closest() check below, rather than
-    // requiring the drag to start on one specific narrow handle.
+    /* Anywhere on the yellow chrome drags the console — everything that
+       shouldn't (buttons, form fields, the screen itself, its own
+       scrollbar) is excluded by the closest() check below, rather than
+       requiring the drag to start on one specific narrow handle.
+
+       Pointer events, not mouse events. A touch drag emits touchmove and no
+       mousemove at all, so on a phone the chrome could be pressed and the
+       console would simply never move — it was undraggable on every
+       touchscreen, which is the same bug the photo frames and furni cards
+       already had and were fixed for (see startFrameDrag in js/home.js).
+       The pointer is captured on the frame so the moves and the release
+       still arrive after the finger leaves it, and .console-frame carries
+       touch-action: none in the CSS, without which the browser claims the
+       gesture as a page scroll and cancels the stream mid-drag. */
     let dragging = false;
+    let dragPointerId = null;
     let dragOffsetX = 0;
     let dragOffsetY = 0;
 
-    frame.addEventListener("mousedown", (e) => {
+    frame.addEventListener("pointerdown", (e) => {
+        // Touch and pen report button 0 like a left click; this only rejects
+        // a genuine middle or right mouse button.
+        if (e.pointerType === "mouse" && e.button !== 0) return;
         if (e.target.closest("button, input, textarea, .console-screen")) return;
         dragging = true;
+        dragPointerId = e.pointerId;
         hasBeenDragged = true;
         frame.classList.add("is-dragging");
         const rect = modal.getBoundingClientRect();
@@ -175,11 +236,14 @@ document.addEventListener("DOMContentLoaded", () => {
         modal.style.top = rect.top + "px";
         modal.style.transform = "none";
         document.body.style.userSelect = "none";
+        if (frame.setPointerCapture) {
+            try { frame.setPointerCapture(e.pointerId); } catch (err) { /* already gone */ }
+        }
         e.preventDefault();
     });
 
-    window.addEventListener("mousemove", (e) => {
-        if (!dragging) return;
+    window.addEventListener("pointermove", (e) => {
+        if (!dragging || e.pointerId !== dragPointerId) return;
         const maxLeft = Math.max(0, window.innerWidth - modal.offsetWidth);
         const maxTop = Math.max(0, window.innerHeight - modal.offsetHeight);
         const left = Math.min(maxLeft, Math.max(0, e.clientX - dragOffsetX));
@@ -188,12 +252,18 @@ document.addEventListener("DOMContentLoaded", () => {
         modal.style.top = top + "px";
     });
 
-    window.addEventListener("mouseup", () => {
-        if (!dragging) return;
+    function endDrag(e) {
+        if (!dragging || (e && e.pointerId !== dragPointerId)) return;
         dragging = false;
+        dragPointerId = null;
         frame.classList.remove("is-dragging");
         document.body.style.userSelect = "";
-    });
+    }
+
+    window.addEventListener("pointerup", endDrag);
+    // A cancelled pointer (the browser taking the gesture, a call arriving)
+    // must not leave the console stuck to the finger.
+    window.addEventListener("pointercancel", endDrag);
 
     // ---------- contact page ----------
 
@@ -212,12 +282,24 @@ document.addEventListener("DOMContentLoaded", () => {
         statusEl.style.display = "block";
     }
 
+    // Back to the choice screen, and empties the form on the way — coming
+    // back to a half-written message you had already abandoned is worse
+    // than starting again.
     cancelBtn.addEventListener("click", () => {
         messageInput.value = "";
         usernameInput.value = "";
         discordInput.value = "";
         statusEl.style.display = "none";
+        showPage("contact");
     });
+
+    // The two ways out of the choice screen.
+    const choiceContactBtn = document.getElementById("console-choice-contact");
+    const choiceSubmitBtn = document.getElementById("console-choice-submit");
+    if (choiceContactBtn) {
+        choiceContactBtn.addEventListener("click", () => showPage("message"));
+        choiceSubmitBtn.addEventListener("click", () => showPage("submit"));
+    }
 
     // Saved server-side (netlify/functions/contact.js -> MongoDB, visible
     // on the admin page) and, if the function has RESEND_API_KEY/
@@ -239,13 +321,74 @@ document.addEventListener("DOMContentLoaded", () => {
             statusEl.style.display = "none";
             showPage("thanks");
         } catch (e) {
-            showStatus(e.message || "Something went wrong — try again in a moment.", true);
+            showStatus(e.message || "Something went wrong. Try again in a moment.", true);
         } finally {
             sendBtn.disabled = false;
         }
     });
 
     thanksOkBtn.addEventListener("click", () => showPage("contact"));
+
+    /* ---------- submit a maze ----------
+
+       The same endpoint as the contact form, asked properly. A free-text
+       box invites "you should add my maze" and nothing else, and an archive
+       cannot act on a submission whose builder and room it has to go and
+       chase. The fields are written into the message body rather than sent
+       as new ones, so nothing changes server-side: contact.js keeps its
+       honeypot, its per-IP rate limit and its admin inbox, and a submission
+       lands in the same place a message does. */
+    const submitBackBtn = document.getElementById("console-submit-back");
+    const submitSendBtn = document.getElementById("console-submit-send");
+    const submitNameInput = document.getElementById("console-submit-name");
+    const submitBuilderInput = document.getElementById("console-submit-builder");
+    const submitNotesInput = document.getElementById("console-submit-notes");
+    const submitUsernameInput = document.getElementById("console-submit-username");
+    const submitHpInput = document.getElementById("console-submit-hp");
+    const submitStatusEl = document.getElementById("console-submit-status");
+
+    if (submitBackBtn) {
+        submitBackBtn.addEventListener("click", () => showPage("contact"));
+
+        submitSendBtn.addEventListener("click", async () => {
+            const name = submitNameInput.value.trim();
+            // The one field that has to be there: everything else can be
+            // found from a name, and nothing can be found without one.
+            if (!name) {
+                submitStatusEl.textContent = "A maze name is the one thing we need.";
+                submitStatusEl.classList.add("is-error");
+                submitStatusEl.style.display = "block";
+                submitNameInput.focus();
+                return;
+            }
+            const builder = submitBuilderInput.value.trim();
+            const notes = submitNotesInput.value.trim();
+
+            // Labelled so it is obvious in the admin inbox which of these
+            // is a submission and which is somebody saying hello.
+            const message = [
+                "MAZE SUBMISSION",
+                `Maze: ${name}`,
+                builder ? `Builder: ${builder}` : "",
+                notes ? `\n${notes}` : ""
+            ].filter(Boolean).join("\n");
+
+            submitSendBtn.disabled = true;
+            try {
+                await Api.submitContactMessage(message, submitUsernameInput.value.trim(), "", submitHpInput.value);
+                [submitNameInput, submitBuilderInput, submitNotesInput, submitUsernameInput]
+                    .forEach(el => { el.value = ""; });
+                submitStatusEl.style.display = "none";
+                showPage("thanks");
+            } catch (e) {
+                submitStatusEl.textContent = e.message || "Something went wrong. Try again in a moment.";
+                submitStatusEl.classList.add("is-error");
+                submitStatusEl.style.display = "block";
+            } finally {
+                submitSendBtn.disabled = false;
+            }
+        });
+    }
 
     // ---------- contributors page ----------
 
@@ -260,11 +403,52 @@ document.addEventListener("DOMContentLoaded", () => {
         return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
+    /* What a contributor's total is a total OF, from the kinds of work they
+       are credited with.
+
+       The page used to call every total "Mazes" regardless — someone
+       credited only for event images still read as "9 Mazes". A collab is a
+       maze, so Collab Images counts on that side too; Historical Data and
+       Web Development belong to neither, and get the neutral word rather
+       than being forced onto one. */
+    const MAZE_TYPES = ["Room Images", "Collab Images"];
+    const EVENT_TYPES = ["Event Images"];
+
+    function contributionUnit(types, total) {
+        const list = types || [];
+        const mazes = list.some(t => MAZE_TYPES.includes(t));
+        const events = list.some(t => EVENT_TYPES.includes(t));
+        if (mazes && events) return "Mazes / Events";
+        if (mazes) return total === 1 ? "Maze" : "Mazes";
+        if (events) return total === 1 ? "Event" : "Events";
+        return total === 1 ? "Contribution" : "Contributions";
+    }
+
+    /* One contributor: who and how much on the first line, what kind of
+       work underneath.
+
+       It used to be a name with "- 22 Mazes" hyphenated onto the end of it,
+       reading as part of the name, and then the types as a comma sentence
+       that wrapped to three lines in a 183px column and swamped the entry.
+       The number behind it was hand-typed with nothing to back it; the admin
+       page now records which mazes and which events a person actually
+       worked on (see js/admin.js) and the total follows from those. */
     function contributorHtml(contributor) {
+        const total = contributor.count || 0;
+        const unit = contributionUnit(contributor.types, total);
+
+        // Types as chips rather than a comma run: they are labels, not prose.
+        const types = (contributor.types || [])
+            .map(t => `<span class="console-contributor-tag">${escapeHtml(t)}</span>`)
+            .join("");
+
         return `
             <div class="console-contributor">
-                <p class="console-contributor-name">${escapeHtml(contributor.username)} <span class="console-contributor-count">- ${escapeHtml(contributor.count || 0)} ${(contributor.count || 0) === 1 ? "Maze" : "Mazes"}</span></p>
-                <p class="console-contributor-types">${escapeHtml((contributor.types || []).join(", "))}</p>
+                <p class="console-contributor-head">
+                    <span class="console-contributor-name">${escapeHtml(contributor.username)}</span>
+                    <span class="console-contributor-count">${escapeHtml(total)} <span class="console-contributor-unit">${escapeHtml(unit)}</span></span>
+                </p>
+                ${types ? `<p class="console-contributor-types">${types}</p>` : ""}
             </div>
         `;
     }

@@ -79,10 +79,24 @@ exports.handler = async (event) => {
         // requests from both seeing "id free" before either insert lands,
         // producing two rooms with the same id. The unique index above
         // makes Mongo itself reject the second insert atomically instead.
+        /* When this maze entered the archive, as opposed to when the maze
+           itself opened in the hotel (which is what "added" holds, and is
+           often years earlier). The two are different facts and the site
+           now needs both: What's New on the homepage is a list of what has
+           just been catalogued, and sorting that by the opening date would
+           put a maze built in 2024 and added yesterday below one built last
+           week. Stamped by the server rather than sent by the admin form —
+           it is a record of when the write happened, and only the server
+           knows that. Records written before this field existed simply
+           don't have it, and the homepage falls back to their opening date.
+
+           Kept out of the collision retry below so every attempt carries
+           the same timestamp. */
+        const createdAt = new Date().toISOString();
         let id = slugify(body.name);
         let suffix = 2;
         for (let attempt = 0; ; attempt++) {
-            const room = { ...body, id };
+            const room = { createdAt, ...body, id };
             delete room._id;
             try {
                 await rooms.insertOne(room);
@@ -101,6 +115,17 @@ exports.handler = async (event) => {
     if (event.httpMethod === "PUT") {
         if (!body.id) return json(400, { error: "Missing room id" });
         const { _id, ...update } = body;
+        /* When this record last changed, stamped here rather than sent by
+           the admin form: it is a fact about the write, and only the server
+           can be trusted to know it. What's New on the homepage shows it
+           beside the archived date, so a maze that gained ten new room
+           shots last week says so rather than looking untouched since the
+           day it was catalogued.
+
+           After the spread, so a body that happens to carry an older
+           updatedAt of its own (a form that read the record, sat open, and
+           saved) cannot write the clock backwards. */
+        update.updatedAt = new Date().toISOString();
         const result = await rooms.findOneAndUpdate(
             { id: body.id },
             { $set: update },

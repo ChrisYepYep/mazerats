@@ -34,9 +34,121 @@
   status = 404
   force = true
 
+# The same reasoning as the block above, applied to everything else that
+# came along with publish = ".". The command-line tools, the README, the
+# package manifest, the dev launcher and the env template were all being
+# served as ordinary static files — no secrets in any of them (.env is
+# gitignored and has never been committed), but no reason a visitor should
+# be reading the project's own tooling either.
+[[redirects]]
+  from = "/tools/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/README.md"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/package.json"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/package-lock.json"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.env.example"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/start-dev.*"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/deno.lock"
+  to = "/index.html"
+  status = 404
+  force = true
+
+# Generated from the archive itself rather than kept as a file — see
+# netlify/functions/sitemap.js.
+[[redirects]]
+  from = "/sitemap.xml"
+  to = "/.netlify/functions/sitemap"
+  status = 200
+
+# A shared maze or event link. The tags a chat client reads are written by
+# the function (see netlify/functions/share.js), which then sends a real
+# browser on to the archive with the right modal open. A rewrite (200), not
+# a redirect: a crawler has to see the tags at the URL that was pasted.
+[[redirects]]
+  from = "/maze/:id"
+  to = "/.netlify/functions/share?maze=:id"
+  status = 200
+
+[[redirects]]
+  from = "/event/:id"
+  to = "/.netlify/functions/share?event=:id"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    # Nothing here uses a camera, a microphone or a location, so nothing
+    # embedded in a page can quietly ask for one either.
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    # Written from what the site actually loads, which is a short list:
+    # Google's font CSS and the font files it points at, the umami analytics
+    # script, Habbo's own avatar imaging service, and FurniIndex's icons.
+    # Everything else is first-party.
+    #
+    # 'unsafe-inline' is in script-src because the Coming Soon/Maintenance
+    # gate has to run inline in <head>, ahead of every other resource, to
+    # keep a gated page from painting (see home.html) — and in style-src
+    # because the site sets inline styles all over the place while it
+    # animates. Both are honest about what this policy is worth: it cannot
+    # stop injected inline script, but it does stop script being pulled in
+    # from anywhere that isn't on this list.
+    #
+    # connect-src names gateway.umami.is specifically: the analytics script
+    # is SERVED from cloud.umami.is but POSTs its events to gateway.umami.is,
+    # and a policy written from the script tag alone blocks every one of
+    # them. (Verified against the real page — the console said so.)
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://furniindex.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+
+# The pixel art, the fonts and the sprite sheets never change without their
+# filename changing, so there is no reason for a returning visitor to ask
+# about them again. The HTML and the data endpoints are deliberately left
+# alone — those are what carry new mazes.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# The stylesheet and scripts DO change, so they get a day rather than a
+# year: long enough that a visitor coming back the same week pays nothing,
+# short enough that a fix reaches everyone without a filename dance.
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

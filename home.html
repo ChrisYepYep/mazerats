@@ -13,12 +13,72 @@
          fetch() rather than js/api.js's helpers, since that script hasn't
          loaded yet this early — duplicating the same two calls it wraps. */
     -->
+    <!-- The one thing that must survive this script not running at all.
+         <html> ships hidden and only script reveals it, so a visitor with
+         JavaScript off, an extension that blocks the inline script above,
+         or any error before reveal() gets a permanently blank page. This
+         costs nothing on the ordinary path — a browser running the script
+         never applies it — and turns the worst case into a page that says
+         what is wrong. -->
+    <noscript>
+        <style>html { visibility: visible !important; }</style>
+    </noscript>
     <script>
     (function () {
         var TOKEN_KEY = "mazerats_admin_token";
 
         function reveal() {
             document.documentElement.style.visibility = "";
+        }
+
+        /* Every request in here is on a leash.
+
+           This gate held the whole document at visibility:hidden until its
+           settings fetch settled, and that fetch had no timeout of any kind.
+           A request that merely HANGS — a cold function on flaky mobile data,
+           which is the ordinary case, not the exotic one — resolves neither
+           then nor catch, so the page stayed invisible for as long as the
+           visitor was willing to look at it. No content, no error, no
+           recovery.
+
+           js/api.js already solved this for every other read on the site
+           (see _getWithFallback); the gate simply never got the same
+           treatment, which is what made it the one place a hang could not be
+           survived. Same two attempts and the same reasoning: the first is
+           on a short leash so a genuinely dead endpoint cannot hold the
+           page, the second is generous because a cold start on a slow
+           connection is by far the likeliest cause. */
+        function fetchWithTimeout(url, options, ms) {
+            // Ancient browsers without AbortController lose the timeout, not
+            // the gate — a plain fetch is still what they had before.
+            if (typeof AbortController === "undefined") return fetch(url, options);
+            var controller = new AbortController();
+            var timer = setTimeout(function () { controller.abort(); }, ms);
+            var opts = options || {};
+            opts.signal = controller.signal;
+            return fetch(url, opts).then(function (res) {
+                clearTimeout(timer);
+                return res;
+            }, function (err) {
+                clearTimeout(timer);
+                throw err;
+            });
+        }
+
+        function getSettings() {
+            var attempts = [6000, 12000];
+            function attempt(i) {
+                return fetchWithTimeout("/.netlify/functions/settings", null, attempts[i])
+                    .then(function (res) {
+                        if (!res.ok) throw new Error("settings fetch failed");
+                        return res.json();
+                    })
+                    .catch(function (e) {
+                        if (i + 1 < attempts.length) return attempt(i + 1);
+                        throw e;
+                    });
+            }
+            return attempt(0);
         }
 
         // Same "Dev Mode" pill js/site.js used to add — the DOM isn't
@@ -57,11 +117,7 @@
             try { return localStorage.getItem(LANDING_STATE_KEY); } catch (e) { return null; }
         }
 
-        fetch("/.netlify/functions/settings")
-            .then(function (res) {
-                if (!res.ok) throw new Error("settings fetch failed");
-                return res.json();
-            })
+        getSettings()
             .then(function (settings) {
                 rememberState(settings.landingState);
                 return settings.landingState;
@@ -89,11 +145,15 @@
                     return;
                 }
 
-                return fetch("/.netlify/functions/auth", {
+                // On the same leash, for the same reason: a hung verify
+                // leaves the page exactly as invisible as a hung settings
+                // call did. An admin's own session check can afford less
+                // patience than the public read above.
+                return fetchWithTimeout("/.netlify/functions/auth", {
                     method: "POST",
                     headers: { "Content-Type": "application/json", "x-admin-token": token },
                     body: JSON.stringify({ action: "verify" })
-                })
+                }, 8000)
                     .then(function (res) { return res.ok ? res.json() : null; })
                     .then(function (result) {
                         if (!result || !result.username) {
@@ -138,6 +198,13 @@
     <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
 </head>
 <body data-page="home">
+
+    <!-- First thing in the tab order, and invisible until it has focus (see
+         .skip-link). Between the top of this page and the archive itself sit
+         the console button, the Discord badge and the rotating events
+         ticker, all of which a keyboard visitor otherwise crosses on every
+         single visit. -->
+    <a class="skip-link" href="#browse-window">Skip to the archive</a>
 
     <!-- Held over the page until the archive is actually ready to look at.
          The shell paints in well under a tenth of a second, but the maze list
@@ -201,19 +268,51 @@
                         <input type="text" id="room-search" placeholder="Search by name, builder, or tag...">
                     </div>
                     <div class="sort-box">
+                        <!-- The option text reads "Sort by: …" and carries the
+                             meaning visually, but a screen reader announces the
+                             current value with nothing to say what it controls.
+                             Hidden visually, not from the accessibility tree. -->
+                        <label class="visually-hidden" for="room-sort">Sort the archive</label>
                         <select id="room-sort">
                             <option value="name">Sort by: Maze Name</option>
                             <option value="owner">Sort by: Maze Owner</option>
                             <option value="date-desc">Sort by: Newest</option>
                             <option value="date-asc">Sort by: Oldest</option>
-                            <option value="difficulty-asc">Sort by: Difficulty (Easy-Hard)</option>
-                            <option value="difficulty-desc">Sort by: Difficulty (Hard-Easy)</option>
+                            <!-- "Easiest first" rather than "Difficulty
+                                 (Easy-Hard)": these two were 30 characters
+                                 wide and set the whole control's width, which
+                                 is what stopped the search box and this
+                                 sitting side by side with the view switch on
+                                 one row. Shorter and plainer at once. -->
+                            <option value="difficulty-asc">Sort by: Easiest first</option>
+                            <option value="difficulty-desc">Sort by: Hardest first</option>
                         </select>
+                    </div>
+                    <!-- Two ways of looking ACROSS the archive rather than at
+                         one part of it: what has changed lately, and the whole
+                         thing in order. Neither is a kind of maze, so neither
+                         is a tab up in the nav — they layer over whichever
+                         category is active and any nav click drops back out
+                         (see showWhatsNew / showTimeline in js/home.js).
+
+                         Grouped as one control and drawn as small sub-nav
+                         tabs, because that is what they behave like. Last in
+                         the row so the search and sort sit together on the
+                         left, with these held against the right by their own
+                         auto margin. -->
+                    <div class="view-switch" role="group" aria-label="Views across the whole archive">
+                        <button type="button" class="view-switch-btn" id="whats-new-btn" aria-pressed="false">What's New</button>
+                        <button type="button" class="view-switch-btn" id="timeline-btn" aria-pressed="false">Timeline</button>
                     </div>
                 </div>
                 <div class="featured-frame" id="featured-frame">
                     <button type="button" class="chrome-nav-btn chrome-nav-btn-recommended" id="featured-mazes-btn"><span class="chrome-nav-btn-arrow" aria-hidden="true">&#9654;</span><span class="chrome-nav-btn-label">Featured Mazes</span></button>
-                    <button type="button" class="featured-refresh-btn" id="featured-refresh-btn">Refresh recommendations</button>
+                    <!-- Two wordings, one shown at a time (see the CSS): the
+                         full phrase where there is room for it, and "Refresh"
+                         on a phone, where the long one ran to within 4px of
+                         the FEATURED MAZES label beside it and left no room
+                         to give this a tap target worth the name. -->
+                    <button type="button" class="featured-refresh-btn" id="featured-refresh-btn" aria-label="Refresh recommendations"><span class="featured-refresh-full">Refresh recommendations</span><span class="featured-refresh-short">Refresh</span></button>
                     <div class="featured-frame-body" id="featured-frame-body">
                         <div class="chrome-list" id="featured-frame-list"></div>
                         <p class="admin-empty" id="featured-frame-empty" style="display:none;"></p>
@@ -223,6 +322,12 @@
                         <div class="chrome-body">
                             <!-- Only shown on Events > Archive (see updateChrome in js/home.js) -->
                             <span class="events-archive-note" id="events-archive-note" hidden>Events are archived after 2 years.</span>
+                            <!-- "12 of 37 walked" — this visitor's own tally, kept
+                                 in their browser and nowhere else (see the walked
+                                 ticks in js/home.js). Hidden until the first maze
+                                 is ticked: a first-time visitor should meet the
+                                 archive, not a scoreboard reading zero. -->
+                            <span class="walked-count" id="walked-count" hidden></span>
                             <p class="chrome-intro" id="featured-intro"></p>
                             <div class="home-results">
                                 <div class="chrome-list" id="featured-grid"></div>
@@ -307,6 +412,14 @@
                     <p class="furni-card-date"></p>
                 </div>
             </div>
+            <!-- One line, not a list. Which other mazes the scanner found
+                 this same furni in is worth knowing, but naming them inside a
+                 240px card turned a tooltip into a cramped directory — so the
+                 card says how many and hands the question to the archive
+                 listing, which is the thing built for showing mazes. Filled
+                 in by renderFurniAlsoIn in js/home.js, removed outright when
+                 this furni is unique to the maze already open. -->
+            <button type="button" class="furni-card-also" hidden></button>
             <div class="furni-card-foot">
                 <a class="furni-card-link" target="_blank" rel="noopener">View on Furni Index &rsaquo;</a>
             </div>
@@ -329,11 +442,29 @@
             <button type="button" class="console-close-btn" id="console-close-btn" aria-label="Close console"></button>
             <div class="console-screen" id="console-screen">
                 <div class="console-screen-scroll" id="console-screen-scroll">
+                    <!-- The Contact tab lands here: not on a form, but on the
+                         choice between the two reasons anyone opens it. A
+                         single free-text box had to serve both, so a maze
+                         submission arrived as a paragraph with the builder
+                         and the room missing half the time — and someone who
+                         just wanted to say hello was reading a prompt about
+                         mazes. Asking which first lets each form ask properly. -->
                     <div class="console-page" id="console-page-contact">
                         <h3 class="console-page-title">Contact Us</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
-                        <p class="console-blurb">Got a maze you think we should know about? Drop us a message below!</p>
-                        <textarea class="console-input console-input-message" id="console-contact-message" placeholder="Can you add my maze to the archive?"></textarea>
+                        <div class="console-choice">
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-contact">Contact</button>
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-submit">Maze Submission</button>
+                        </div>
+                    </div>
+                    <!-- The message form itself, reached from the choice above.
+                         Not tab-reachable on its own; the CONTACT tab stays lit
+                         while it shows, because this is still that tab. -->
+                    <div class="console-page" id="console-page-message" style="display:none;">
+                        <h3 class="console-page-title">Contact Us</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <p class="console-blurb">Need to contact us? Do it right here!</p>
+                        <textarea class="console-input console-input-message" id="console-contact-message" placeholder="Just leaving some feedback..."></textarea>
                         <label class="console-field-label" for="console-contact-username">Your Origins username:</label>
                         <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="L1C">
                         <label class="console-field-label" for="console-contact-discord">Your Discord username:</label>
@@ -343,10 +474,37 @@
                              dropped server-side (netlify/functions/contact.js). -->
                         <input type="text" class="console-hp-field" id="console-contact-hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
                         <div class="console-contact-actions">
-                            <button type="button" class="console-btn console-btn-cancel" id="console-contact-cancel">Cancel</button>
+                            <button type="button" class="console-btn console-btn-cancel" id="console-contact-cancel">Back</button>
                             <button type="button" class="console-btn console-btn-send" id="console-contact-send">Send</button>
                         </div>
                         <p class="console-form-status" id="console-contact-status" style="display:none;"></p>
+                    </div>
+                    <!-- Also reached from the choice screen. It posts through the
+                         same endpoint the message form does
+                         (netlify/functions/contact.js — honeypot, per-IP rate
+                         limit and admin inbox included), with its fields written
+                         into the message so nothing new is needed server-side. -->
+                    <div class="console-page" id="console-page-submit" style="display:none;">
+                        <h3 class="console-page-title">Submit a Maze</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <!-- No em dash in here: the console is set in Volter
+                             Goldfish, which draws one as a musical note (see
+                             PICTURE_GLYPHS in js/site.js). -->
+                        <p class="console-blurb">Found one we've missed? Tell us what you know. The name is enough to start with.</p>
+                        <label class="console-field-label" for="console-submit-name">Maze name:</label>
+                        <input type="text" class="console-input console-input-line" id="console-submit-name" placeholder="The Little Maze">
+                        <label class="console-field-label" for="console-submit-builder">Who built it:</label>
+                        <input type="text" class="console-input console-input-line" id="console-submit-builder" placeholder="Origins username">
+                        <label class="console-field-label" for="console-submit-notes">Anything else:</label>
+                        <textarea class="console-input console-input-message" id="console-submit-notes" placeholder="Opening date, mechanics, what you love about this maze..."></textarea>
+                        <label class="console-field-label" for="console-submit-username">Your Origins username:</label>
+                        <input type="text" class="console-input console-input-line" id="console-submit-username" placeholder="So we can credit you">
+                        <input type="text" class="console-hp-field" id="console-submit-hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+                        <div class="console-contact-actions">
+                            <button type="button" class="console-btn console-btn-cancel" id="console-submit-back">Back</button>
+                            <button type="button" class="console-btn console-btn-send" id="console-submit-send">Send</button>
+                        </div>
+                        <p class="console-form-status" id="console-submit-status" style="display:none;"></p>
                     </div>
                     <div class="console-page console-page-thanks" id="console-page-thanks" style="display:none;">
                         <p class="console-thanks-message">We'll be in touch for more details, thanks!</p>

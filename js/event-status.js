@@ -20,15 +20,17 @@
    still save the derived value back, so the stored field stays meaningful
    for anything reading the database directly.
 
-   TESTING VALUE: ARCHIVE_YEARS is 1. The intended setting is 2 — changing
-   this one number moves the cutoff everywhere it is used, including the
-   note shown above the Archive listing (see noticeText).
+   ARCHIVE_YEARS is the cutoff, and changing this one number moves it
+   everywhere it is used — including the note shown above the Archive
+   listing (see noticeText), which quotes it back in words. It sat at 1
+   through development as a testing value, which would have buried a year
+   of events people still expect to find under Past.
    =========================================================== */
 
 (function (global) {
     "use strict";
 
-    const ARCHIVE_YEARS = 1;
+    const ARCHIVE_YEARS = 2;
 
     const LABELS = {
         upcoming: "Upcoming",

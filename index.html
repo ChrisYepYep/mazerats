@@ -7,11 +7,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
-    <title>Maze Rats — A Habbo Hotel Maze Room Archive</title>
-    <meta name="description" content="Maze Rats is a fan-run archive preserving the history of maze rooms across Habbo Hotel.">
+    <!-- Its own title and description, not the archive's.
+
+         Both pages carried the same two lines word for word, which left a
+         search result, a browser tab and a pasted link unable to say which
+         of the two destinations they meant — and they are genuinely
+         different destinations, since this one is all a visitor sees while
+         the site is gated. This page is the front door; home.html is the
+         archive behind it. -->
+    <title>Maze Rats — Every Maze. One Place.</title>
+    <meta name="description" content="The front door to Maze Rats, a fan-run archive of the maze rooms built across Habbo Hotel: Origins — their rooms, their builders, and the ones that are gone but not forgotten.">
+    <link rel="canonical" href="https://mazerats.net/">
     <meta property="og:title" content="Maze Rats">
     <meta property="og:description" content="An archive preserving the history of maze rooms across Habbo Hotel: Origins.">
     <meta property="og:type" content="website">
+    <meta property="og:url" content="https://mazerats.net/">
     <meta property="og:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -52,7 +62,13 @@
                  live and clickable for however long the settings check took,
                  so a fast click during Coming Soon/Maintenance could slip
                  through before the button ever updated. -->
-            <a class="btn-enter is-disabled" id="welcome-btn"><img class="btn-sit-rat" src="assets/img/rat_sit3.png" alt="" aria-hidden="true"><span id="welcome-btn-label">Loading…</span></a>
+            <!-- role/tabindex/aria-disabled because this is an <a> with no
+                 href while the site is gated, and a bare hrefless anchor is
+                 invisible to the keyboard and silent to a screen reader —
+                 a visitor arriving during Coming Soon got no signal that
+                 the control existed at all, let alone why it did nothing.
+                 js/welcome.js flips aria-disabled with the label. -->
+            <a class="btn-enter is-disabled" id="welcome-btn" role="link" tabindex="0" aria-disabled="true"><img class="btn-sit-rat" src="assets/img/rat_sit3.png" alt="" aria-hidden="true"><span id="welcome-btn-label">Loading…</span></a>
         </div>
     </main>
 

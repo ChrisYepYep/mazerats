@@ -3115,10 +3115,23 @@ document.addEventListener("DOMContentLoaded", () => {
         workingContributors.forEach((contributor, index) => {
             const row = document.createElement("div");
             row.className = "chrome-list-row admin-row";
+            // What they are credited with, in the same terms the console
+            // states it: the ticks first, anything untied to a record after.
+            const mazeCount = (contributor.mazes || []).length;
+            const eventCount = (contributor.events || []).length;
+            const extra = contributor.extra != null
+                ? contributor.extra
+                : Math.max(0, (contributor.count || 0) - mazeCount - eventCount);
+            const breakdown = [
+                mazeCount ? `${mazeCount} maze${mazeCount === 1 ? "" : "s"}` : "",
+                eventCount ? `${eventCount} event${eventCount === 1 ? "" : "s"}` : "",
+                extra ? `${extra} other` : ""
+            ].filter(Boolean).join(", ") || "nothing credited yet";
             row.innerHTML = `
                 <div class="row-info">
-                    <h3>${escapeHtml(contributor.username)} <span class="admin-contributor-count">- ${escapeHtml(contributor.count || 0)}</span></h3>
-                    <p class="row-creator">${escapeHtml((contributor.types || []).join(", "))}</p>
+                    <h3>${escapeHtml(contributor.username)} <span class="admin-contributor-count">${escapeHtml(contributor.count || 0)}</span></h3>
+                    <p class="row-creator">${escapeHtml(breakdown)}</p>
+                    <p class="row-desc">${escapeHtml((contributor.types || []).join(", "))}</p>
                 </div>
                 <div class="admin-row-actions">
                     <button type="button" class="btn admin-edit-btn">Edit</button>
@@ -3131,10 +3144,34 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    /* Which mazes and events a contributor worked on.
+
+       The count used to be a number typed in by hand, which meant it was
+       bookkeeping rather than a fact: nothing tied it to the archive, and it
+       drifted the moment anything was added. These two lists are the actual
+       attribution — tick the mazes and the events someone contributed to and
+       the count follows from them.
+
+       Sorted the way the archive sorts, so finding a maze in the list works
+       the same way finding it anywhere else does. */
+    function recordPickerHtml(name, records, chosen, labelOf) {
+        if (!records.length) {
+            return `<p class="admin-picker-empty">Nothing to pick from yet.</p>`;
+        }
+        return `<div class="admin-checkbox-group admin-picker">` + records.map(rec => `
+            <label class="admin-checkbox-option">
+                <input type="checkbox" name="${name}" value="${escapeHtml(rec.id)}" ${chosen.includes(rec.id) ? "checked" : ""}>
+                <span>${escapeHtml(labelOf(rec))}</span>
+            </label>
+        `).join("") + `</div>`;
+    }
+
     function openContributorForm(editIndex) {
         const isEdit = editIndex !== undefined && editIndex !== null;
         const contributor = isEdit ? workingContributors[editIndex] : {};
         const existingTypes = contributor.types || [];
+        const chosenMazes = contributor.mazes || [];
+        const chosenEvents = contributor.events || [];
 
         const typesHtml = CONTRIBUTION_TYPES.map(type => `
             <label class="admin-checkbox-option">
@@ -3143,14 +3180,32 @@ document.addEventListener("DOMContentLoaded", () => {
             </label>
         `).join("");
 
+        const mazes = workingRooms.slice().sort((a, b) => compareNames(a.name, b.name));
+        const events = workingEvents.slice()
+            .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+
         contributorsFormEl.innerHTML = `
             <h3 class="admin-form-title">${isEdit ? "Edit Contributor" : "Add a New Contributor"}</h3>
             ${fieldRow("Username (Habbo)", `<input type="text" name="username" value="${contributor.username || ""}" required autocomplete="off">`)}
-            ${fieldRow("Number of contributions", `<input type="number" name="count" min="0" step="1" value="${contributor.count || 0}" required>`)}
-            <label class="admin-field">
+            <!-- Divs, not labels. A <label> wrapping a group of checkboxes
+                 belongs to the FIRST one, so clicking the heading "Mazes
+                 contributed to" would tick whichever maze happened to sort
+                 first. Each checkbox already carries its own label. -->
+            <div class="admin-field">
+                <span>Mazes contributed to</span>
+                ${recordPickerHtml("mazes", mazes, chosenMazes, r => r.name || r.id)}
+            </div>
+            <div class="admin-field">
+                <span>Events contributed to</span>
+                ${recordPickerHtml("events", events, chosenEvents, e => e.title || e.id)}
+            </div>
+            ${fieldRow("Other contributions", `<input type="number" name="extra" min="0" step="1" value="${contributor.extra != null ? contributor.extra : legacyExtra(contributor)}">`)}
+            <p class="admin-field-note">Anything not tied to a maze or an event — site work, research, and so on. Added to the ticks above.</p>
+            <p class="admin-field-note admin-contributor-total" id="contributor-total"></p>
+            <div class="admin-field">
                 <span>Contribution type(s)</span>
                 <div class="admin-checkbox-group">${typesHtml}</div>
-            </label>
+            </div>
             <p class="admin-form-error" style="display:none;"></p>
             <div class="admin-form-actions">
                 <button type="submit" class="admin-action-pill admin-pill-solid">Save</button>
@@ -3158,7 +3213,43 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
         `;
         contributorsFormEl.dataset.id = isEdit ? contributor.id : "";
+
+        // The total, kept live as the boxes are ticked, so the number the
+        // console will show is visible while the picking is being done
+        // rather than only after saving.
+        const paintTotal = () => {
+            const totalEl = contributorsFormEl.querySelector("#contributor-total");
+            if (!totalEl) return;
+            const counts = contributorCounts(new FormData(contributorsFormEl));
+            totalEl.textContent =
+                `Counts as ${counts.count} contribution${counts.count === 1 ? "" : "s"}` +
+                ` (${counts.mazes.length} maze${counts.mazes.length === 1 ? "" : "s"},` +
+                ` ${counts.events.length} event${counts.events.length === 1 ? "" : "s"},` +
+                ` ${counts.extra} other).`;
+        };
+        contributorsFormEl.addEventListener("change", paintTotal);
+        contributorsFormEl.addEventListener("input", paintTotal);
+        paintTotal();
+
         openContributorsForm();
+    }
+
+    /* A contributor saved before the pickers existed has a hand-typed count
+       and nothing to attribute it to. That number is real work someone did,
+       so it becomes their "other" total rather than being thrown away — and
+       once mazes are ticked for them, the admin can bring it down by hand. */
+    function legacyExtra(contributor) {
+        if (!contributor || contributor.count == null) return 0;
+        return contributor.count;
+    }
+
+    // The three numbers the form produces, in one place so the live total
+    // and the save can never disagree about the arithmetic.
+    function contributorCounts(formData) {
+        const mazes = formData.getAll("mazes");
+        const events = formData.getAll("events");
+        const extra = Math.max(0, parseInt(formData.get("extra"), 10) || 0);
+        return { mazes, events, extra, count: mazes.length + events.length + extra };
     }
 
     function openContributorsForm() {
@@ -3178,7 +3269,8 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         const formData = new FormData(contributorsFormEl);
         const username = (formData.get("username") || "").trim();
-        const count = parseInt(formData.get("count"), 10) || 0;
+        // count is derived, never typed — see contributorCounts.
+        const { mazes, events, extra, count } = contributorCounts(formData);
         const types = formData.getAll("types");
         const errorEl = contributorsFormEl.querySelector(".admin-form-error");
         const submitBtn = contributorsFormEl.querySelector("button[type=submit]");
@@ -3193,10 +3285,11 @@ document.addEventListener("DOMContentLoaded", () => {
         submitBtn.textContent = "Saving…";
         try {
             const id = contributorsFormEl.dataset.id;
+            const record = { username, count, types, mazes, events, extra };
             if (id) {
-                await Api.updateContributor(adminToken, { id, username, count, types });
+                await Api.updateContributor(adminToken, { id, ...record });
             } else {
-                await Api.createContributor(adminToken, { username, count, types });
+                await Api.createContributor(adminToken, record);
             }
             closeContributorsForm();
             await loadContributors();
