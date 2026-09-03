@@ -1839,6 +1839,16 @@ document.addEventListener("DOMContentLoaded", () => {
     let transientFurniCard = null;
     let furniCardSeq = 0;
 
+    /* Cards stack the same way frames do: whatever was touched last is in
+       front. Its own counter rather than the photo frames' one, starting at
+       the z-index the CSS gives a card, so that raising a card keeps it
+       above the frames instead of dropping it into their range. */
+    let furniCardTopZ = 320;   // must match .furni-card z-index in the CSS
+
+    function bringFurniCardToFront(card) {
+        card.style.zIndex = ++furniCardTopZ;
+    }
+
     /* The card's height follows its content, and part of that content is a
        sprite that has not arrived yet. Until it loads the card is short, and
        since placement sets the TOP edge, every pixel gained afterwards
@@ -1925,9 +1935,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function openFurniCard(entry, anchor, pinNow) {
-        // Already showing this one? Just keep it.
+        // Already showing this one? Just keep it — and bring it up, since
+        // coming back to its icon while it sits under another card is
+        // exactly how a buried one gets asked for.
         const existing = openFurniCards.find(c => c.dataset.furni === (entry.url || entry.name));
         if (existing) {
+            bringFurniCardToFront(existing);
             if (pinNow) pinFurniCard(existing);
             return;
         }
@@ -1959,7 +1972,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (entry.url) link.href = entry.url;
         else link.remove();
 
+        bringFurniCardToFront(card);
         card.querySelector(".furni-card-close").addEventListener("click", () => closeFurniCard(card));
+        // Anywhere on the card raises it, not just the handle — reading a
+        // card half-buried under another shouldn't mean finding its 19px
+        // header first. Same rule the photo frames follow.
+        card.addEventListener("pointerdown", () => bringFurniCardToFront(card));
         card.querySelector(".furni-card-drag").addEventListener("pointerdown", e => startCardDrag(card, e));
 
         document.body.appendChild(card);
@@ -2018,12 +2036,21 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
-    // Anywhere that is not a card and not one of the icons dismisses them.
-    // Registered once, in the capture phase, so it still sees the click when
-    // something inside the modal stops propagation on its own handler.
+    /* Anywhere that is not a card and not part of the icon row dismisses
+       them. Registered once, in the capture phase, so it still sees the
+       click when something inside the modal stops propagation on its own
+       handler.
+
+       The row's end arrows are spared alongside the icons. Scrolling the row
+       to reach an icon further along is part of using it, not a click
+       elsewhere on the page, and closing every open card each time an arrow
+       was pressed made a moved card impossible to keep while looking for the
+       next furni to stand beside it. */
     document.addEventListener("pointerdown", e => {
         if (!openFurniCards.length) return;
-        if (e.target.closest(".furni-card") || e.target.closest(".furni-icon-btn")) return;
+        if (e.target.closest(".furni-card") ||
+            e.target.closest(".furni-icon-btn") ||
+            e.target.closest(".furni-strip-arrow")) return;
         closeAllFurniCards();
     }, true);
 
