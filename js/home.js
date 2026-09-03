@@ -2067,6 +2067,33 @@ document.addEventListener("DOMContentLoaded", () => {
        even less on its own. */
     const EC_SEASON_NAMES = { s1: "Event Creators Season One", s2: "Event Creators Season Two" };
 
+    /* Both forms of that label, as two spans the CSS shows one of: the
+       phrase itself on a wide screen, and "EC / S2" on a phone, where the
+       full one is a third of the builder row and squeezes the motto beside
+       it to one word a line (see .ec-label-short in the CSS).
+
+       Both are written every time rather than the width being read here and
+       one chosen: a label picked in JS is right until the phone is turned,
+       and would need a matchMedia watch per open modal to stay right. The
+       media query already does that for nothing.
+
+       Each is broken over two lines with a real newline rather than markup,
+       held by white-space: pre so it breaks exactly there and nowhere else —
+       left to wrap on its own the long one came out as three ragged lines.
+       js/welcome.js carries its own copy of this for index.html's event
+       modal, which is the same row built from the same CSS. */
+    function ecLabelForms(season) {
+        const full = document.createElement("span");
+        full.className = "ec-label-full";
+        full.textContent = EC_SEASON_NAMES[season].replace(" Season", "\nSeason");
+        const short = document.createElement("span");
+        short.className = "ec-label-short";
+        // s2 -> "EC\nS2". The medal beside it already carries the numeral,
+        // so this is a reminder of which season, not the only sighting of it.
+        short.textContent = `EC\n${season.toUpperCase()}`;
+        return [full, short];
+    }
+
     const PHOTO_ZOOM_WHEEL_STEP = 1.15;
     // How far the pointer may travel between press and release and still
     // count as a click rather than a drag of the picture.
@@ -2994,13 +3021,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const ecSeason = isEventItem ? (n.ecSeason || "") : "";
         if (ecSeason) {
             modalEcBadge.src = `assets/img/ec/ec-badge-${ecSeason}.png`;
-            /* Two lines, broken before "Season" — set as text with a real
-               newline rather than markup, and held by white-space: pre so it
-               breaks exactly there and nowhere else. Left to wrap on its own
-               it came out as three ragged lines. The alt keeps the whole
-               phrase on one line, which is what a screen reader wants. */
+            /* The alt keeps the whole phrase on one line, which is what a
+               screen reader wants — and it carries the season on a phone,
+               where the label beside the medal is abbreviated. */
             modalEcBadge.alt = EC_SEASON_NAMES[ecSeason];
-            modalEcLabel.textContent = EC_SEASON_NAMES[ecSeason].replace(" Season", "\nSeason");
+            modalEcLabel.replaceChildren(...ecLabelForms(ecSeason));
         }
         modalEcBadge.hidden = !ecSeason;
         modalEcLabel.hidden = !ecSeason;

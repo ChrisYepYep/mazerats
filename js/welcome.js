@@ -47,6 +47,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     const ecLabelEl = document.getElementById("event-modal-ec-label");
     // Worded exactly as js/home.js words it — the same badge on the same row.
     const EC_SEASON_NAMES = { s1: "Event Creators Season One", s2: "Event Creators Season Two" };
+
+    // Built exactly as js/home.js builds it, for the same row under the same
+    // CSS: the phrase and its "EC / S2" short form, one shown at each width.
+    // See js/home.js for why both are written rather than one chosen here.
+    function ecLabelForms(season) {
+        const full = document.createElement("span");
+        full.className = "ec-label-full";
+        full.textContent = EC_SEASON_NAMES[season].replace(" Season", "\nSeason");
+        const short = document.createElement("span");
+        short.className = "ec-label-short";
+        short.textContent = `EC\n${season.toUpperCase()}`;
+        return [full, short];
+    }
     const articleEl = document.getElementById("event-modal-article");
     const articleTitleEl = document.getElementById("event-modal-article-title");
     const articleMetaEl = document.getElementById("event-modal-article-meta");
@@ -282,9 +295,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         const ecSeason = ["s1", "s2"].includes(event.ecSeason) ? event.ecSeason : "";
         if (ecSeason) {
             ecBadgeEl.src = `assets/img/ec/ec-badge-${ecSeason}.png`;
-            // Two lines, exactly as js/home.js sets them — see there.
+            // Spelled out and abbreviated, exactly as js/home.js sets them —
+            // see there for why both are written and the CSS chooses.
             ecBadgeEl.alt = EC_SEASON_NAMES[ecSeason];
-            ecLabelEl.textContent = EC_SEASON_NAMES[ecSeason].replace(" Season", "\nSeason");
+            ecLabelEl.replaceChildren(...ecLabelForms(ecSeason));
         }
         ecBadgeEl.hidden = !ecSeason;
         ecLabelEl.hidden = !ecSeason;

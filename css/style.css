@@ -4920,6 +4920,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 .ec-modal-label[hidden] { display: none; }
 
+/* The same words twice, one of them shown at a time: spelled out here, and
+   abbreviated to "EC / S2" on a phone, where the full label takes a third
+   of the row away from the builder card beside it (see the 640px block).
+   js/home.js and js/welcome.js write both forms into the label on every
+   open, so which one shows is decided by the media query and nothing else —
+   a width read in JS would have to be read again on every rotation and
+   resize to stay true. */
+.ec-label-short { display: none; }
+
 /* No colour of its own beyond the medal.
 
    007c4a was tried across the modal's surfaces — the builder row, the meta
@@ -7043,18 +7052,27 @@ body[data-page="admin"] .search-box input {
     /* .modal-top-row wraps at this width, and what shares a line with the
        builder card has to be chosen rather than left to chance.
 
-       The card gets the first line to itself. An EC event's label and medal
-       beside it squeezed it to about a third of the row, which broke the
-       builder's motto to one word a line; the tags on their own were doing
-       a milder version of the same thing. Everything else drops below it
-       and is held against the right, in the order it reads on a wide
-       screen: the label and its medal, then the tags. */
-    .modal-top-row .builder-list,
+       The label and its medal ride the builder card's line, and the tags
+       drop below it. What makes the three fit is the label shortening to
+       "EC / S2" at this width: on a 375px phone the row is 265px, of which
+       the medal is 29 and the label spelled out is 93 — that left the card
+       around 120px and broke the builder's motto to one word a line, which
+       is why the card used to be given the whole first line to itself. At
+       two characters a line the label costs under 20px, the card keeps
+       around 200px, and the motto holds the two lines it takes on a
+       desktop. Both forms are written into the label every time and the
+       CSS picks one (see .ec-label-short, up with the label's own rules),
+       so a rotation or a resize is answered by the media query alone.
+
+       The tags were already dropping below on their own — .room-tags takes
+       a full basis at this width — and still do. */
+    .modal-top-row .builder-list { flex-basis: 0; }
     .modal-top-row .room-creator { flex-basis: 100%; }
     .modal-top-row .ec-modal-label,
     .modal-top-row .ec-modal-badge { order: 1; }
     .modal-top-row .room-tags { order: 2; }
-    .modal-top-row .ec-modal-label { margin-left: auto; }
+    .ec-label-full { display: none; }
+    .ec-label-short { display: inline; }
     /* Same idea as the desktop rule, against the height a phone has. */
     .room-desc-box:has(.modal-article:not([hidden])) { max-height: min(38vh, 300px); }
 
