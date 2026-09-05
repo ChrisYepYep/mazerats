@@ -19,6 +19,23 @@
   to = "/admin.html"
   status = 200
 
+# The Habbo Hogwarts map, at the clean /wizard URL. Same rewrite treatment
+# as /admin above, so the address bar keeps the URL that was typed.
+[[redirects]]
+  from = "/wizard"
+  to = "/wizard.html"
+  status = 200
+
+# A link straight to one room on that map. Also a rewrite to the same page:
+# js/wizard.js reads the room id off location.pathname and opens that
+# room's sheet with the map already flown to it, so /wizard/library is a
+# real address a person can paste rather than a fragment the server never
+# sees. Listed after the bare /wizard above because the first match wins.
+[[redirects]]
+  from = "/wizard/:id"
+  to = "/wizard.html"
+  status = 200
+
 # publish = "." above means the whole repo root — including this directory
 # of function SOURCE files — is otherwise served as plain static assets
 # alongside the real site (e.g. mazerats.net/netlify/functions/contact.js

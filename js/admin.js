@@ -438,9 +438,23 @@ document.addEventListener("DOMContentLoaded", () => {
        Done with a class on <body> rather than by editing each of the dozen
        renderers that emit an Edit or Delete button: a blanket rule cannot be
        forgotten when the next list is added, whereas a per-renderer check
-       silently isn't there. */
+       silently isn't there.
+
+       An Albus account reads as view-only HERE, which is exactly right —
+       the archive, the events, the accounts and the settings are all
+       read-only to it. The one place it is not is the Hogwarts panel, and
+       that exception is made in the stylesheet (body.is-albus, see
+       css/wizard.css) rather than by weakening this: the blanket rule stays
+       blanket, and the exception is one selector naming one panel. */
     function canWrite() {
-        return currentUserRole !== "viewer";
+        return currentUserRole === "owner" || currentUserRole === "admin";
+    }
+
+    // And the other half of that line: who may change the Hogwarts map.
+    // Mirrors WRITE_SCOPES in netlify/functions/_auth.js, which is where the
+    // rule is actually enforced.
+    function canWriteWizard() {
+        return canWrite() || currentUserRole === "wizard";
     }
 
     /* The greying-out in the CSS uses pointer-events: none, which stops a
@@ -464,6 +478,10 @@ document.addEventListener("DOMContentLoaded", () => {
     function applyRoleVisibility() {
         const owner = canScanFurni();
         document.body.classList.toggle("is-viewer", !canWrite());
+        // Lifts the blanket greying back off the Hogwarts panel alone. See
+        // canWrite above for why the exception lives in a class rather than
+        // in the rule.
+        document.body.classList.toggle("is-albus", currentUserRole === "wizard");
         if (activityNavBtn) activityNavBtn.hidden = !canReadActivity();
         // readOnly as well as the CSS: a field nobody can save is still a
         // field somebody can type a paragraph into and then lose.
@@ -476,6 +494,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // 2.5s for everyone else.
         if (owner) startFurniPolling();
         else stopFurniPolling();
+        /* An Albus account opens on the one panel it came here to use.
+           Landing on Mazes — a list it can read and not touch — would say
+           the account was mostly broken rather than mostly elsewhere.
+           Otherwise, whatever was open last time. */
+        const opening = currentUserRole === "wizard" ? "wizard" : rememberedPanel();
+        if (opening) showPanel(opening);
     }
 
     async function enterAdmin() {
@@ -503,6 +527,7 @@ document.addEventListener("DOMContentLoaded", () => {
         renderList("rooms");
         renderList("events");
         applyRoleVisibility();
+        startWizardPanel();
         loadActivity();
         loadAdmins();
         loadLandingState();
@@ -510,6 +535,36 @@ document.addEventListener("DOMContentLoaded", () => {
         loadAboutText();
         loadContactMessages();
         loadBans();
+    }
+
+    /* ---------- the Hogwarts panel ----------
+
+       js/admin-wizard.js is a separate file with its own state, and this is
+       the whole of the join between them: it gets the session, the role and
+       the shared furniture, and nothing else in this file knows it exists.
+       Written as one handover rather than as a pile of globals so there is
+       exactly one place to look when the two have to agree about something.
+
+       The token is passed as a function, not a value. A session can be
+       renewed or dropped while the panel is open, and a copy taken at
+       start-up would be the old one for the rest of the sitting. */
+    function startWizardPanel() {
+        if (typeof AdminWizard === "undefined") return;
+        AdminWizard.init({
+            api: Api,
+            token: () => adminToken,
+            canWrite: canWriteWizard,
+            escapeHtml,
+            lockOut,
+            wireDropzone,
+            confirm: showConfirmDialog,
+            // Bound to the wizard folder here rather than at each of the
+            // half-dozen call sites inside the panel: everything that panel
+            // uploads belongs there, and a forgotten argument would be an
+            // upload an Albus account is refused for reasons that would take
+            // an afternoon to work out.
+            uploadImage: (prefix, file) => uploadImageFile(prefix, file, "wizard")
+        });
     }
 
     // ---------- image uploads ----------
@@ -523,9 +578,15 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    async function uploadImageFile(prefix, file) {
+    /* folder decides where the image is filed and, with it, who is allowed
+       to put it there: "rooms" (the default — the archive) needs a full
+       admin, "wizard" needs only the Hogwarts scope, which is what lets an
+       Albus account upload a room picture without gaining the run of the
+       maze archive's storage. See FOLDER_SCOPES in
+       netlify/functions/upload.js. */
+    async function uploadImageFile(prefix, file, folder) {
         const dataUrl = await readFileAsDataUrl(file);
-        return Api.uploadImage(adminToken, prefix, file.name, dataUrl);
+        return Api.uploadImage(adminToken, prefix, file.name, dataUrl, folder);
     }
 
     function blobKeyFromUrl(url) {
@@ -2952,7 +3013,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    const ROLE_LABELS = { owner: "Owner", admin: "Admin", viewer: "View only" };
+    /* What each stored role is called on screen. The two differ on purpose
+       and already did — "viewer" has always shown as "View only" — so the
+       stored value can stay the flat, scope-shaped word every server-side
+       check is written against while the list says something a person would
+       say. "wizard" is the scope that names the /wizard page, its endpoint
+       and its corner of blob storage; "Albus" is who holds it. */
+    const ROLE_LABELS = { owner: "Owner", admin: "Admin", viewer: "View only", wizard: "Albus" };
 
     function renderAdminsList() {
         adminsListEl.innerHTML = "";
@@ -2991,15 +3058,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function openCreateAdminForm() {
-        // Owner is owner-only to grant (also enforced server-side); admin and
-        // view-only are open to anyone who can create an account at all, so
-        // the selector is now shown to every admin rather than to owners
-        // alone — a standard admin having no way to make a read-only account
-        // would defeat the point of having the role.
+        // Owner is owner-only to grant (also enforced server-side); the rest
+        // are open to anyone who can create an account at all, so the
+        // selector is shown to every admin rather than to owners alone — a
+        // standard admin having no way to make a read-only account would
+        // defeat the point of having the role.
         const roleFieldHtml = fieldRow("Privileges", `
                 <select name="role">
                     <option value="admin">Standard Admin</option>
                     <option value="viewer">View Only (read-only)</option>
+                    <option value="wizard">Albus (the Hogwarts map only)</option>
                     ${currentUserRole === "owner" ? '<option value="owner">Owner (can delete other admins)</option>' : ""}
                 </select>
               `);
@@ -3876,6 +3944,32 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.classList.toggle("active", on);
             btn.setAttribute("aria-selected", on ? "true" : "false");
         });
+        /* The map has to be measured to be drawn, and a hidden element
+           measures zero — so the Hogwarts panel's first view is only
+           correct once it is actually on screen. Every other panel here is
+           a list and does not care. */
+        if (name === "wizard" && typeof AdminWizard !== "undefined") AdminWizard.onShown();
+        /* Remembered, so a reload comes back to what you were doing.
+           Editing the map is a long job done over many sittings, and being
+           put back on the maze list every time the page reloads — which it
+           does on every save to a function, and every time the dev server
+           restarts — means finding your way back to the Hogwarts tab a
+           hundred times an afternoon. */
+        try { localStorage.setItem(PANEL_KEY, name); } catch (e) { /* private mode */ }
+    }
+
+    const PANEL_KEY = "mazerats_admin_panel";
+
+    /* The panel to open on. What was last open, if that panel still exists
+       and this account is allowed to see it — a stored "activity" would
+       otherwise put a standard admin on a tab that is hidden for them, and
+       they would arrive at a page with nothing on it. */
+    function rememberedPanel() {
+        let saved = null;
+        try { saved = localStorage.getItem(PANEL_KEY); } catch (e) { /* private mode */ }
+        if (!saved) return null;
+        const btn = adminNavEl && adminNavEl.querySelector(`.chrome-nav-btn[data-panel="${saved}"]`);
+        return btn && !btn.hidden ? saved : null;
     }
 
     if (adminNavEl) {

@@ -4,11 +4,14 @@
    admins. Issues a JWT session token (see _auth.js) that expires after 12
    hours, so a stolen token stops working on its own.
 
-   Roles: every account is "owner", "admin" or "viewer" (see _auth.js).
-   Only owners can delete accounts or create new owner accounts — a standard
-   admin can still create accounts, but only as "admin" or "viewer", and
-   can't remove anyone. A viewer can do none of it, and cannot change
-   anything anywhere else on the site either.
+   Roles: every account is "owner", "admin", "viewer" or "wizard" (see
+   _auth.js). Only owners can delete accounts or create new owner accounts —
+   a standard admin can still create accounts, but only as "admin",
+   "viewer" or "wizard", and can't remove anyone. A viewer can do none of
+   it, and cannot change anything anywhere else on the site either. A wizard
+   is the same as a viewer everywhere except the Hogwarts map at /wizard,
+   which it owns outright; the one thing it may change in HERE is its own
+   password.
    The username ChrisYepYep is always treated as owner regardless of what's
    stored (see resolveRole in _auth.js, shared with every other owner-only
    endpoint) — that account predates the role field, and this
@@ -24,7 +27,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { getDb } = require("./_db");
-const { isAuthorized, canWrite, usernameFromToken, sessionOf, UNAUTHORIZED, READ_ONLY, ROLES, resolveRole } = require("./_auth");
+const { isAuthorized, canWrite, refuseWrite, usernameFromToken, sessionOf, UNAUTHORIZED, READ_ONLY, ROLES, resolveRole } = require("./_auth");
 const { record } = require("./_audit");
 
 const json = (statusCode, data) => ({
@@ -150,11 +153,18 @@ exports.handler = async (event) => {
         if (!username || !validPassword(password)) {
             return json(400, { error: "Username and an 8+ character password are required" });
         }
-        // Only an owner can reset someone else's password — a standard admin
-        // can still reset their own (self-service), same distinction the
-        // DELETE handler below already draws for removing accounts.
-        if (!(await canWrite(event))) return READ_ONLY;
+        /* Only an owner can reset someone else's password — a standard admin
+           can still reset their own (self-service), same distinction the
+           DELETE handler below already draws for removing accounts.
+
+           Changing your own password is the "self" scope rather than "site",
+           so a Hogwarts account — which has no business anywhere else in
+           here — can still do this one thing to its own row. Resetting
+           SOMEBODY ELSE'S is a site action and stays owner-only, checked
+           below. See WRITE_SCOPES in _auth.js. */
         const requesterUsername = usernameFromToken(event);
+        const scope = username === requesterUsername ? "self" : "site";
+        if (!(await canWrite(event, scope))) return await refuseWrite(event);
         if (username !== requesterUsername) {
             const requester = await admins.findOne({ username: requesterUsername });
             if (resolveRole(requester) !== "owner") {

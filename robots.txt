@@ -16,6 +16,14 @@ Disallow: /admin.html
 # glyphs. Useful when building the site, meaningless in a search result.
 Disallow: /glyphs.html
 
+# The Habbo Hogwarts map. Reachable by anyone with the link, but still
+# being drawn — half its rooms have no picture and no description yet, and
+# a search result pointing at that is worse than no search result at all.
+# Lift this (and the noindex in wizard.html's own markup) when it is ready
+# to be found.
+Disallow: /wizard
+Disallow: /wizard.html
+
 # Project tooling and the function endpoints. Both already 404 at the edge
 # (see netlify.toml); this saves the crawl.
 Disallow: /tools/

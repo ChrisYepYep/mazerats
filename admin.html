@@ -3,7 +3,12 @@
 <head>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Caveat is here for the Hogwarts panel, which letters room names in
+         it exactly as /wizard does. Without it the editor drew the map in a
+         fallback serif — legible, but not the map, and the whole point of
+         the editor sharing the page's engine is that what you arrange is
+         what you get. -->
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
@@ -11,6 +16,10 @@
     <title>Admin — Maze Rats</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css">
+    <!-- The Hogwarts panel's map, and the editor around it. Shared with
+         wizard.html rather than duplicated, so the editor's parchment and
+         the page's parchment are the same parchment. -->
+    <link rel="stylesheet" href="css/wizard.css">
     <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
 </head>
 <body data-page="admin">
@@ -67,6 +76,7 @@
                     <button type="button" class="chrome-nav-btn" data-panel="events" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Events</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="console" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Console</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="messages" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Messages</span></button>
+                    <button type="button" class="chrome-nav-btn" data-panel="wizard" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Hogwarts</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="activity" id="activity-nav-btn" role="tab" aria-selected="false" hidden><span class="chrome-nav-btn-label">Activity</span></button>
@@ -243,6 +253,115 @@
                                 <div class="chrome-list" id="contact-messages-list"></div>
                             </section>
 
+                            <!-- ---------- Hogwarts ----------
+                                 The map at /wizard. Everything here is
+                                 js/admin-wizard.js, which draws with the
+                                 same engine the public page does
+                                 (js/wizard-map.js) so the two cannot drift
+                                 apart — an editor that positioned a name
+                                 differently from the page would be an
+                                 editor you could not trust.
+
+                                 This is also the one panel an "Albus"
+                                 account can change; everything else on this
+                                 page is read-only to them. See WRITE_SCOPES
+                                 in netlify/functions/_auth.js for where
+                                 that line is actually drawn. -->
+                            <section class="admin-panel" data-panel="wizard" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Habbo Hogwarts</h3>
+                                        <p class="admin-hint">The interactive map at <strong>mazerats.net/wizard</strong>. Drag names into place, lay footprint trails between rooms, and decide what appears at which zoom.</p>
+                                    </div>
+                                    <button class="admin-action-pill admin-pill-solid admin-add-btn" id="wiz-add-room-btn" type="button">+ Add a Room</button>
+                                </header>
+
+                                <!-- The editor: toolbar, map, and the inspector for whatever is
+                                     selected. Wrapped as one element so it can be thrown
+                                     full-page in a single class — see toggleExpanded in
+                                     js/admin-wizard.js. -->
+                                <div class="admin-wiz-editor" id="wiz-admin-editor">
+                                    <div class="admin-wiz-toolbar">
+                                        <div class="admin-wiz-modes" id="wiz-admin-modes" role="group" aria-label="Editor mode">
+                                            <button type="button" data-mode="move" class="active" aria-pressed="true">Move</button>
+                                            <button type="button" data-mode="trail" aria-pressed="false">Trails</button>
+                                            <button type="button" data-mode="zoom" aria-pressed="false">Zoom bands</button>
+                                        </div>
+
+                                        <button type="button" class="admin-action-pill admin-add-btn" id="wiz-add-room-btn">+ Room</button>
+                                        <!-- A picture is added by choosing a file, so the
+                                             control IS the file input, dressed as a button
+                                             by its label. -->
+                                        <label class="admin-action-pill admin-add-btn admin-wiz-file-btn">
+                                            + Picture
+                                            <input type="file" id="wiz-add-layer-file" accept="image/*">
+                                        </label>
+
+                                        <span class="admin-wiz-spacer"></span>
+
+                                        <span class="admin-wiz-dirty" id="wiz-admin-dirty" hidden></span>
+                                        <button type="button" class="admin-action-pill admin-pill-solid" id="wiz-admin-save-positions" disabled>Save Positions</button>
+                                        <span class="wiz-zoom-label" id="wiz-admin-zoom">100%</span>
+                                        <button type="button" class="admin-wiz-zoom-btn" id="wiz-admin-zoom-out" aria-label="Zoom out">&minus;</button>
+                                        <button type="button" class="admin-wiz-zoom-btn" id="wiz-admin-zoom-reset" aria-label="Fit the whole map">&#9635;</button>
+                                        <button type="button" class="admin-wiz-zoom-btn" id="wiz-admin-zoom-in" aria-label="Zoom in">+</button>
+                                        <button type="button" class="admin-action-pill" id="wiz-admin-expand" aria-pressed="false">Expand</button>
+                                    </div>
+
+                                    <!-- Same class as the public map's frame, so the
+                                         parchment, the cursor and the whole shape of it come
+                                         from one place. -->
+                                    <div class="wiz-stage admin-wiz-stage" id="wiz-admin-stage" tabindex="0" data-mode="move">
+                                        <div class="wiz-canvas" id="wiz-admin-canvas">
+                                            <div class="wiz-layers"></div>
+                                            <div class="wiz-trails"></div>
+                                            <!-- Above the trails, below the names: the dots
+                                                 that shape a trail have to be grabbable over
+                                                 their own footprints, and must not sit on top
+                                                 of a room label you are trying to click. -->
+                                            <div class="wiz-handles" id="wiz-admin-handles"></div>
+                                            <div class="wiz-rooms"></div>
+                                        </div>
+                                    </div>
+
+                                    <p class="admin-hint admin-wiz-help" id="wiz-admin-help"></p>
+                                    <p class="admin-wiz-status" id="wiz-admin-status" hidden></p>
+
+                                    <div class="admin-wiz-inspector" id="wiz-admin-inspector" hidden></div>
+                                </div>
+
+                                <div class="admin-section">
+                                    <header class="admin-panel-head admin-panel-head-sub">
+                                        <div>
+                                            <h3 class="admin-subheading">Rooms</h3>
+                                            <p class="admin-hint">Find a room on the map, or write up what was in it.</p>
+                                        </div>
+                                    </header>
+                                    <div class="archive-controls">
+                                        <div class="search-box">
+                                            <input type="text" id="wiz-rooms-search" placeholder="Search by name, note, or floor...">
+                                        </div>
+                                    </div>
+                                    <!-- Each row opens its own form inside itself — see
+                                         renderRoomList in js/admin-wizard.js. There is no
+                                         single form below the list any more: pressing Edit on
+                                         the ninetieth room used to scroll you away from the
+                                         list to a form with no visible connection to what you
+                                         had pressed. -->
+                                    <div class="chrome-list" id="wiz-rooms-list"></div>
+                                </div>
+
+                                <div class="admin-section">
+                                    <header class="admin-panel-head admin-panel-head-sub">
+                                        <div>
+                                            <h3 class="admin-subheading">The map itself</h3>
+                                            <p class="admin-hint">The parchment everything is drawn on, the footprint sprite the trails are made of, and how far in the map can be zoomed.</p>
+                                        </div>
+                                    </header>
+                                    <form class="admin-form is-open" id="wiz-map-form"></form>
+                                </div>
+                            </section>
+
                             <!-- ---------- Bans ---------- -->
                             <section class="admin-panel" data-panel="bans" hidden>
                                 <header class="admin-panel-head">
@@ -373,6 +492,10 @@
     <script src="js/api.js"></script>
     <script src="js/event-status.js"></script>
     <script src="js/site.js"></script>
+    <!-- Both before admin.js, which calls into them once a session is
+         unlocked: the map engine, then the Hogwarts panel built on it. -->
+    <script src="js/wizard-map.js"></script>
+    <script src="js/admin-wizard.js"></script>
     <script src="js/admin.js"></script>
     <script src="js/password-field.js"></script>
     <script src="js/glyph-palette.js"></script>

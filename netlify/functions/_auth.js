@@ -34,7 +34,7 @@ function sessionOf(event) {
     return (payload && payload.iat) || null;
 }
 
-/* The three roles. Lives here rather than in auth.js because it is no
+/* The four roles. Lives here rather than in auth.js because it is no
    longer only auth.js that cares: any function that restricts something
    needs the same answer, and two copies of "who counts as what" is exactly
    the sort of thing that drifts apart. auth.js imports these.
@@ -45,11 +45,14 @@ function sessionOf(event) {
                and nothing else: every write endpoint refuses them (see
                canWrite below, which is what actually enforces it — the admin
                page hiding its buttons is only a courtesy).
+     wizard  — the Hogwarts map, and nothing else. Reads everything a viewer
+               reads; writes only through netlify/functions/wizard.js. See
+               WRITE_SCOPES below for how that line is actually drawn.
 
    An unrecognised stored role reads as "admin" rather than as itself, so a
    typo in the database can never invent a role with undefined powers. */
 const PERMANENT_OWNER = "ChrisYepYep";
-const ROLES = ["owner", "admin", "viewer"];
+const ROLES = ["owner", "admin", "viewer", "wizard"];
 
 function resolveRole(admin) {
     if (admin && admin.username === PERMANENT_OWNER) return "owner";
@@ -57,12 +60,51 @@ function resolveRole(admin) {
     return ROLES.includes(role) ? role : "admin";
 }
 
+/* What each role may CHANGE, by area of the site. Read access is not in
+   here at all — every role that can log in can read everything, which is
+   what a viewer is for.
+
+   Three scopes today: "site" is the archive and everything around it
+   (mazes, events, contributors, settings, bans, other people's accounts),
+   "wizard" is the Hogwarts map at /wizard and nothing else, and "self" is
+   the caller's own password. A guard with no scope means "site", so every
+   endpoint written before this existed keeps exactly the rule it had — an
+   owner or admin, nobody else.
+
+   Owners and admins carry every scope by being listed with every scope
+   rather than a "*": a wildcard makes adding a fourth area a silent grant
+   to every existing account, and the whole point of the list is that
+   widening someone's powers has to be typed out on purpose. */
+const WRITE_SCOPES = {
+    owner: ["site", "wizard", "self"],
+    admin: ["site", "wizard", "self"],
+    wizard: ["wizard", "self"],
+    viewer: []
+};
+
 /* Unlike isAuthorized, these can't be answered from the token alone: the
    JWT carries only the username, and roles can change after it was issued
    (an account demoted mid-session would otherwise keep its old powers for
    up to 12 hours). One indexed lookup per call, on actions that are rare
-   and slow anyway. */
+   and slow anyway.
+
+   Memoized on the request object, because a single request can now ask more
+   than once: canWrite asks to decide, and refuseWrite asks again to word the
+   refusal. The cache lives on `event`, which Netlify builds fresh per
+   invocation, so it cannot outlive the request it belongs to the way a
+   module-level cache on a warm container would. */
+const ROLE_CACHE = Symbol("role");
+
 async function roleOf(event) {
+    if (event && Object.prototype.hasOwnProperty.call(event, ROLE_CACHE)) {
+        return event[ROLE_CACHE];
+    }
+    const role = await lookUpRole(event);
+    if (event) event[ROLE_CACHE] = role;
+    return role;
+}
+
+async function lookUpRole(event) {
     const username = usernameFromToken(event);
     if (!username) return null;
     try {
@@ -81,10 +123,13 @@ async function isOwner(event) {
 
 /* The guard every mutating endpoint uses in place of isAuthorized. Reads
    still go through isAuthorized, because a viewer is allowed to read — that
-   is the entire point of the role. */
-async function canWrite(event) {
+   is the entire point of the role.
+
+   The scope defaults to "site", so a call written as canWrite(event) means
+   what it has always meant. netlify/functions/wizard.js passes "wizard". */
+async function canWrite(event, scope = "site") {
     const role = await roleOf(event);
-    const allowed = role === "owner" || role === "admin";
+    const allowed = (WRITE_SCOPES[role] || []).includes(scope);
     /* Every mutating endpoint on the site passes through here, which makes it
        the one place an action log can be kept without threading a call
        through ten handlers — and the one place that cannot be forgotten when
@@ -114,8 +159,27 @@ const forbidden = (message) => ({
 // dozen call sites would otherwise each word it slightly differently.
 const READ_ONLY = forbidden("This account is view-only and cannot make changes.");
 
+// And what one returns to an account that CAN write, just not here — a
+// Hogwarts account reaching an archive endpoint. Told apart from the above
+// because "view-only" would be a plain untruth to somebody who has just
+// finished saving a room on the map.
+const OUT_OF_SCOPE = forbidden("This account can only make changes to the Hogwarts map.");
+
+/* The refusal that fits the caller, for endpoints that care to be accurate
+   about it. Free of charge after canWrite: roleOf is memoized per request,
+   so this is a property read rather than a second trip to the database.
+
+   Endpoints written before scopes existed keep returning READ_ONLY, which
+   stays correct for them in the case that actually happens — a viewer. A
+   Hogwarts account is refused by those too, just with a slightly blunt
+   message, and only ever by hand-crafting the request: the admin page never
+   shows it a control that would send one. */
+async function refuseWrite(event) {
+    return (await roleOf(event)) === "viewer" ? READ_ONLY : OUT_OF_SCOPE;
+}
+
 module.exports = {
     isAuthorized, usernameFromToken, sessionOf, UNAUTHORIZED,
     PERMANENT_OWNER, ROLES, resolveRole, roleOf, isOwner, canWrite,
-    forbidden, READ_ONLY
+    forbidden, READ_ONLY, OUT_OF_SCOPE, refuseWrite, WRITE_SCOPES
 };

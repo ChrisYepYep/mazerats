@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- First thing in the head, and load-bearing.
+
+         This page is served at BOTH /wizard and /wizard/<room> (see the
+         rewrites in netlify.toml), and a relative path means something
+         different at the two. At /wizard/library, "css/style.css" asks the
+         server for /wizard/css/style.css — which the rewrite happily answers
+         with this same HTML file — so a shared link to a room arrived as an
+         unstyled wall of text with no working script.
+
+         A <base> is the one fix that covers everything rather than the parts
+         written in this file: the stylesheets and scripts below, but also the
+         label cut-outs and room pictures whose paths come out of the
+         database and are relative for exactly the same reasons.
+
+         Every other page on this site sits at the root, where a relative
+         path already resolves correctly, so none of them needs this. -->
+    <base href="/">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Caveat on top of the site's usual three. It is the closest thing on
+         Google Fonts to the brush hand the map is lettered in, and it is
+         only ever asked to stand in: every room that was on the original
+         drawing shows its own cut-out handwriting, and the typeface is for
+         the rooms added afterwards, for the heading, and for the moment
+         before the images load. -->
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#120c07">
+    <!-- Unlisted while the map is still being filled in — half its rooms
+         have no picture and no description yet, and a search result
+         pointing at that is worse than none. Said again in robots.txt so a
+         crawler does not have to fetch the page to find out. Lift both
+         together. -->
+    <meta name="robots" content="noindex, nofollow">
+    <title>Habbo Hogwarts — Maze Rats</title>
+    <meta name="description" content="An interactive map of Habbo Hogwarts on Habbo Hotel: Origins — every room, the passages between them, and what each one held.">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/wizard.css">
+    <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
+</head>
+<body data-page="wizard" class="wiz-page">
+
+    <header class="site-header">
+        <div class="brand-group">
+            <a class="brand" href="home.html">
+                <span class="brand-text">MAZE RATS</span>
+                <span class="brand-tagline">Every maze. One place.</span>
+            </a>
+            <span class="header-badge">Hogwarts</span>
+        </div>
+    </header>
+
+    <main>
+        <div class="wiz-head">
+            <h1 id="wiz-title">Habbo Hogwarts</h1>
+            <p class="wiz-intro" id="wiz-intro" hidden></p>
+            <p class="wiz-credit" id="wiz-credit" hidden></p>
+            <!-- Beside the title rather than floating over the map. Sat
+                 inside the frame it covered the top-left corner of the
+                 drawing, which on this map is where Spiral Staircase II
+                 is — a search box that hides part of what you are searching
+                 is a poor trade for the few pixels it saves. -->
+            <div class="wiz-search">
+                <input type="text" id="wiz-search" placeholder="Find a room…" autocomplete="off" aria-label="Find a room on the map">
+                <div class="wiz-results" id="wiz-results" hidden></div>
+            </div>
+        </div>
+
+        <!-- The stage is the window; #wiz-canvas inside it is the map at its
+             own full size, moved and scaled as one piece. tabindex so the
+             arrow keys can pan it without a mouse — see the keydown handler
+             in js/wizard.js. -->
+        <div class="wiz-stage" id="wiz-stage" tabindex="0" role="application" aria-label="Map of Habbo Hogwarts. Drag to pan, scroll to zoom, click a room for more.">
+
+            <div class="wiz-canvas" id="wiz-canvas">
+                <div class="wiz-layers" id="wiz-layers"></div>
+                <div class="wiz-trails" id="wiz-trails"></div>
+                <div class="wiz-rooms" id="wiz-rooms"></div>
+            </div>
+
+            <div class="wiz-controls">
+                <span class="wiz-zoom-label" id="wiz-zoom-label" aria-live="polite">100%</span>
+                <button type="button" id="wiz-zoom-out" aria-label="Zoom out">&minus;</button>
+                <button type="button" id="wiz-zoom-reset" aria-label="Fit the whole map">&#9635;</button>
+                <button type="button" id="wiz-zoom-in" aria-label="Zoom in">+</button>
+            </div>
+
+            <div class="wiz-tooltip" id="wiz-tooltip" role="tooltip" hidden></div>
+            <p class="wiz-status" id="wiz-status" hidden></p>
+        </div>
+    </main>
+
+    <!-- The room sheet. Same .modal-overlay/.modal frame the maze and event
+         modals use, so the window chrome and the backdrop come from
+         css/style.css rather than being drawn twice. -->
+    <div class="modal-overlay" id="wiz-modal">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="wiz-modal-title" tabindex="-1">
+            <div class="chrome-titlebar">
+                <h2 id="wiz-modal-title"></h2>
+                <button class="chrome-close" id="wiz-modal-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+            </div>
+            <div class="chrome-frame">
+                <div class="wiz-modal-body">
+                    <img class="wiz-modal-img" id="wiz-modal-img" alt="" hidden>
+                    <p class="wiz-modal-noimg" id="wiz-modal-noimg" hidden>No picture of this room yet.</p>
+                    <div class="wiz-modal-meta" id="wiz-modal-meta" hidden></div>
+                    <p class="wiz-modal-desc" id="wiz-modal-desc"></p>
+                    <div class="wiz-modal-exits" id="wiz-modal-exits" hidden></div>
+                    <div class="wiz-modal-share">
+                        <label for="wiz-modal-link">Link</label>
+                        <input type="text" id="wiz-modal-link" readonly>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="site-footer">
+        <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
+        <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
+    </footer>
+
+    <script src="js/api.js"></script>
+    <!-- The map engine, shared with the Hogwarts panel in the admin page so
+         the editor and the page can never disagree about where a name sits.
+         Must load before wizard.js, which calls it. -->
+    <script src="js/wizard-map.js"></script>
+    <script src="js/wizard.js"></script>
+</body>
+</html>

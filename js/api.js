@@ -132,8 +132,12 @@ const Api = {
     updateEvent(token, ev) { return this._write("/.netlify/functions/events", "PUT", token, ev); },
     deleteEvent(token, id) { return this._write(`/.netlify/functions/events?id=${encodeURIComponent(id)}`, "DELETE", token); },
 
-    uploadImage(token, prefix, filename, dataUrl) {
-        return this._write("/.netlify/functions/upload", "POST", token, { prefix, filename, dataUrl });
+    /* folder decides both where the image is filed in blob storage and who
+       is allowed to put it there — "rooms" (the default, the archive) needs
+       a full admin, "wizard" needs only the Hogwarts scope. See
+       FOLDER_SCOPES in netlify/functions/upload.js. */
+    uploadImage(token, prefix, filename, dataUrl, folder) {
+        return this._write("/.netlify/functions/upload", "POST", token, { prefix, filename, dataUrl, folder });
     },
     // Starts the furni scan. A background function, so this returns as soon
     // as Netlify has accepted the job (202) rather than when scanning ends —
@@ -302,6 +306,43 @@ const Api = {
     getAdminActivity(token, range) {
         const q = range ? "?range=" + encodeURIComponent(range) : "";
         return this._write("/.netlify/functions/admin-activity" + q, "GET", token);
+    },
+
+    /* ---------- the Hogwarts map at /wizard ----------
+
+       One request for the whole map — background, artwork, room names and
+       footprint trails — because the page cannot draw any of it correctly
+       without all of it. See netlify/functions/wizard.js.
+
+       No bundled fallback, unlike the archive's own GETs: there is nothing
+       to fall back TO. A map with no rooms is not a degraded map, it is a
+       blank sheet, and js/wizard.js says so on the page rather than
+       pretending it drew something. */
+    async getWizardMap() {
+        const res = await fetch("/.netlify/functions/wizard");
+        if (!res.ok) throw new Error(`Map unavailable (${res.status})`);
+        return res.json();
+    },
+
+    // The editor's own read: uncached, so a save is read back as written.
+    getWizardMapFresh(token) { return this._write("/.netlify/functions/wizard?fresh=1", "GET", token); },
+
+    createWizardItem(token, kind, item) {
+        return this._write("/.netlify/functions/wizard", "POST", token, { ...item, kind });
+    },
+    updateWizardItem(token, kind, item) {
+        return this._write("/.netlify/functions/wizard", "PUT", token, { ...item, kind });
+    },
+    deleteWizardItem(token, kind, id) {
+        return this._write(`/.netlify/functions/wizard?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(id)}`, "DELETE", token);
+    },
+    /* Everything the last drag session moved, in one request. A pass over
+       the map nudges a dozen names and reshapes the trails between them —
+       that is one action to the person doing it, and there is no reason for
+       it to be twenty-five round trips. Positions only; the endpoint
+       refuses anything else in a bulk write. */
+    saveWizardPositions(token, items) {
+        return this._write("/.netlify/functions/wizard", "PUT", token, { action: "bulk", items });
     },
 
     getBans(token) { return this._write("/.netlify/functions/bans", "GET", token); },
