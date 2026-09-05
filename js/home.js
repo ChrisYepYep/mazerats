@@ -1476,12 +1476,34 @@ document.addEventListener("DOMContentLoaded", () => {
     // so it reads this cache instead of trying to measure a moving target.
     let searchWrapNaturalHeight = searchWrap.scrollHeight;
 
+    /* Re-measured on resize, and so is the featured panel that reads it.
+
+       .featured-frame-body's max-height and .chrome-frame's matching offset
+       were worked out once, at the moment the panel opened, and nothing ever
+       looked at them again — so a window resized while the panel was open
+       left both holding numbers measured against a layout that no longer
+       existed. Crossing a breakpoint rewraps the rows into a taller list
+       than the max-height baked in for the old one, and the body scrolls
+       even though the panel itself has room to spare.
+
+       Coalesced onto one animation frame: resize fires continuously while a
+       window is being dragged, and setFeaturedPanelState both reads and
+       writes layout. */
+    let featuredResizeFrame = 0;
     window.addEventListener("resize", () => {
         // Only safe to trust while genuinely expanded — mid-collapse (or
         // fully collapsed) this would just measure the squashed size.
         if (searchWrap.style.maxHeight !== "0px") {
             searchWrapNaturalHeight = searchWrap.scrollHeight;
         }
+        if (!showFeatured) return;
+        cancelAnimationFrame(featuredResizeFrame);
+        featuredResizeFrame = requestAnimationFrame(() => {
+            // force: neither `active` nor chromeFrameMinimized has moved, so
+            // the "nothing changed" guard would otherwise skip the re-measure
+            // that is the entire point of this call.
+            setFeaturedPanelState(true, true);
+        });
     });
 
     // Bumped every call and captured by each pending requestAnimationFrame
@@ -1570,6 +1592,33 @@ document.addEventListener("DOMContentLoaded", () => {
     // full size isn't a constant — see setFeaturedPanelState's own comment
     // for why that's worked out by arithmetic rather than just measured.
     const CHROME_FRAME_VISIBLE_SLIVER = 12;
+
+    /* How tall .featured-frame-body's contents actually are.
+
+       scrollHeight rounds to a whole pixel, and it rounds DOWN as readily as
+       up: the picks' heights are fractional as a matter of course, since the
+       featured rows are the ones set to line-height: normal and their line
+       boxes come out at whatever the font's metrics make them (two picks at
+       420px wide measure 265.09px against a scrollHeight of 265). Rounding
+       the cap down puts max-height a sliver under the content it is meant to
+       clear, which is not something to leave sitting under an
+       overflow-y: auto.
+
+       Chromium rounds its own scroll box the same way and shows no scrollbar
+       for that sliver, so this is a guard rather than a fix for anything
+       observed here — the scrollbar this panel actually grew came from the
+       resize path (see the listener above). Engines are not obliged to agree
+       about a fraction of a pixel, and a cap that is honestly >= its contents
+       costs nothing.
+
+       Summing the children's own rects keeps the fraction, and ceil rounds
+       it the safe way. scrollHeight stays as a floor: it accounts for
+       margins between the children, which a sum of rects does not. */
+    function featuredBodyContentHeight() {
+        const rects = Array.from(featuredFrameBody.children)
+            .reduce((total, el) => total + el.getBoundingClientRect().height, 0);
+        return Math.max(featuredFrameBody.scrollHeight, Math.ceil(rects));
+    }
     // Must match .featured-frame's own negative margin-top in style.css —
     // see the comment on featuredFrameTarget below for why this needs
     // adding back into that calculation.
@@ -1655,7 +1704,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // .featured-frame has to give, leaving .chrome-frame nothing (or
         // even a negative budget) to work with.
         const bodyTarget = active
-            ? Math.min(featuredFrameBody.scrollHeight, Math.max(0, spaceForBodyAndChrome - CHROME_FRAME_VISIBLE_SLIVER))
+            ? Math.min(featuredBodyContentHeight(), Math.max(0, spaceForBodyAndChrome - CHROME_FRAME_VISIBLE_SLIVER))
             : 0;
         featuredFrameBody.style.maxHeight = bodyTarget + "px";
 

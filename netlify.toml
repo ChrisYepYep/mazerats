@@ -93,14 +93,24 @@
 # the function (see netlify/functions/share.js), which then sends a real
 # browser on to the archive with the right modal open. A rewrite (200), not
 # a redirect: a crawler has to see the tags at the URL that was pasted.
+#
+# The id is NOT handed over as a query parameter. These read
+# "…/share?maze=:id" until the placeholder was found to arrive only under
+# `netlify dev`: on a 200 rewrite the deployed service forwards the INCOMING
+# request's query string, which for a pasted /maze/<id> link is empty, so
+# the query written here was dropped and every shared link reached the
+# function with no id at all. The function reads the id off event.path
+# instead — the request path is what survives a rewrite, and is what
+# Netlify's own docs use for path parameters — so these are left as plain
+# rewrites and local dev exercises the same branch production does.
 [[redirects]]
   from = "/maze/:id"
-  to = "/.netlify/functions/share?maze=:id"
+  to = "/.netlify/functions/share"
   status = 200
 
 [[redirects]]
   from = "/event/:id"
-  to = "/.netlify/functions/share?event=:id"
+  to = "/.netlify/functions/share"
   status = 200
 
 [[headers]]
@@ -114,8 +124,21 @@
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     # Written from what the site actually loads, which is a short list:
     # Google's font CSS and the font files it points at, the umami analytics
-    # script, Habbo's own avatar imaging service, and FurniIndex's icons.
-    # Everything else is first-party.
+    # script, Habbo's own avatar imaging service, the pictures inside a
+    # stored Habbo article, and FurniIndex's icons. Everything else is
+    # first-party.
+    #
+    # images.habbo.com is a SEPARATE entry from www.habbo.com because a CSP
+    # host is matched exactly — a subdomain is a different origin, and no
+    # amount of www.habbo.com covers it. Habbo serves every picture in an
+    # article from that host, so without it each one rendered as a broken
+    # image in the middle of the piece. It buys nothing beyond the fetch: an
+    # <img> cannot execute what it loads (an SVG included, and the article
+    # sanitiser drops <svg> outright), and an article body is rebuilt tag by
+    # tag against an allowlist before it is ever stored, with every src put
+    # through safeUrl — see netlify/functions/article.js. Named singly
+    # rather than as *.habbo.com, which would hand over every subdomain
+    # Habbo has now or adds later for the sake of the one being used.
     #
     # 'unsafe-inline' is in script-src because the Coming Soon/Maintenance
     # gate has to run inline in <head>, ahead of every other resource, to
@@ -129,7 +152,7 @@
     # is SERVED from cloud.umami.is but POSTs its events to gateway.umami.is,
     # and a policy written from the script tag alone blocks every one of
     # them. (Verified against the real page — the console said so.)
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://furniindex.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://furniindex.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
 # The pixel art, the fonts and the sprite sheets never change without their
 # filename changing, so there is no reason for a returning visitor to ask

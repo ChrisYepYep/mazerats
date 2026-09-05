@@ -26,6 +26,41 @@ const { getDb } = require("./_db");
 // from hitting the database twenty times.
 const CACHE = "public, s-maxage=600, stale-while-revalidate=86400";
 
+/* Which maze or event was asked for, read off the request path.
+
+   netlify.toml rewrites /maze/:id to "…/share?maze=:id", and under
+   `netlify dev` that placeholder arrives exactly as written. In production
+   it does not: the deployed rewrite hands the function the ORIGINAL
+   request's query string — which for a pasted /maze/<id> link is empty —
+   so every shared link reached this file with no id at all and was answered
+   with the "Not in the archive" page. A link into the archive therefore
+   unfurled with the site-wide thumbnail and dropped the visitor on the
+   homepage, which is the whole thing the share function exists to stop.
+   (Verified against the live site: /.netlify/functions/share?maze=alt-maze
+   answered 200 with the maze's own tags, while /maze/alt-maze answered the
+   not-found page from the same deploy.)
+
+   The path is the one thing that survives a rewrite intact, so it is what
+   the id is taken from now. The query string is still read first, so a
+   direct call to the function keeps working — that is the form the local
+   dev proxy produces, and it is a useful way to test the function. */
+function requestedId(event) {
+    const params = event.queryStringParameters || {};
+    if (params.maze) return { id: params.maze, isEvent: false };
+    if (params.event) return { id: params.event, isEvent: true };
+
+    // event.rawUrl is the address as it was requested; event.path is the
+    // same path on its own. Either can be absent depending on how the
+    // function is invoked, so both are tried before giving up.
+    let pathname = event.path || "";
+    if (event.rawUrl) {
+        try { pathname = new URL(event.rawUrl).pathname; } catch (e) { /* keep event.path */ }
+    }
+    const m = /^\/(maze|event)\/([^/]+)\/?$/.exec(pathname);
+    if (!m) return null;
+    return { id: decodeURIComponent(m[2]), isEvent: m[1] === "event" };
+}
+
 function escapeHtml(str) {
     return String(str == null ? "" : str).replace(/[&<>"']/g, c => ({
         "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -144,10 +179,9 @@ function notFound(origin) {
 
 exports.handler = async (event) => {
     const origin = originOf(event);
-    const params = event.queryStringParameters || {};
-    const mazeId = params.maze;
-    const eventId = params.event;
-    if (!mazeId && !eventId) return notFound(origin);
+    const asked = requestedId(event);
+    if (!asked) return notFound(origin);
+    const { id, isEvent } = asked;
 
     let db;
     try {
@@ -163,8 +197,6 @@ exports.handler = async (event) => {
         };
     }
 
-    const isEvent = !!eventId;
-    const id = isEvent ? eventId : mazeId;
     const record = await db.collection(isEvent ? "events" : "rooms")
         .findOne({ id }, { projection: { _id: 0 } });
     if (!record) return notFound(origin);

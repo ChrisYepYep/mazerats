@@ -3471,11 +3471,42 @@ body[data-page="home"] .hero { padding-top: 18px; }
     --thumb-min-h: 0px;
 }
 
-.modal-thumb-full.is-event .modal-thumb-frame {
-    height: var(--event-thumb-h);
+/* Three classes deep, on the same reasoning .modal-thumb.modal-thumb-full
+   states further up: the narrow layout at the bottom of this file restates
+   .modal-thumb-full.has-gallery .modal-thumb-frame's own height, which ties
+   this rule on specificity and beats it on source order. An event's frame
+   would take that height on a phone and go back to letterboxing the banner
+   inside it. */
+.modal-thumb.modal-thumb-full.is-event .modal-thumb-frame {
+    /* fit-content in BOTH directions, capped by the budget. A banner is as
+       often limited by the frame's width as by its height — a wide one in a
+       narrow window lands well short of --event-thumb-h — and a frame held
+       at the full height then letterboxed the picture vertically, which put
+       the counter pill in the dark band above it and the room-name pill in
+       the band below. The cap is what --event-thumb-h is for; the height is
+       the picture's. */
+    height: fit-content;
+    max-height: var(--event-thumb-h);
     display: flex;
     align-items: center;
     justify-content: center;
+    /* The frame hugs the banner too, not just the viewport inside it.
+       Every arrow and pill offset in the .modal-thumb-frame block further
+       up this file is written against the FRAME, on the stated
+       understanding that the frame and .gallery-viewport share one box —
+       which is true of a maze, whose viewport is 100% x 100% of it. An
+       event's viewport shrink-wraps its banner instead, so a full-width
+       frame left those offsets measuring from the wrong edges: the prev/
+       next arrows sat out over the panel background with a gap between
+       them and the picture, "1 OF 14" hung off the top-right corner of
+       nothing, and the room-name pill sat below the image rather than on
+       it. Shrink-wrapping the frame restores the invariant the whole block
+       rests on, and every one of those offsets lands on the image exactly
+       as it does on a maze's — no second set of event-specific positions
+       to keep in step with the first. */
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
 }
 
 .modal-thumb-full.is-event .gallery-viewport {
@@ -4282,6 +4313,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .furni-card-text {
     flex: 1;
     min-width: 0;
+    /* A column the full height of the sprite beside it, so "Also in N other
+       mazes" can be held at its foot — level with the bottom of the picture
+       and directly above the Furni Index link, which is where the card's two
+       ways out belong together. align-self overrides .furni-card-body's
+       align-items: flex-start for this child only; the sprite keeps it, so
+       nothing stretches the artwork. */
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Clamped: a long motto would otherwise push the release date and the link
@@ -4301,24 +4341,52 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: #8a7d6c;
 }
 
+/* The stand-off above "Also in N other mazes", stated here because that
+   line's own margin-top is spent holding it at the foot of the column (see
+   .furni-card-also) and cannot also be a minimum. Only when the line is
+   actually there: with it removed — this furni is unique to the maze
+   already open — a bottom margin here would be 6px of dead paper. */
+.furni-card-date:has(+ .furni-card-also:not([hidden])) {
+    margin-bottom: 6px;
+}
+
 /* Right-hand end of the footer row, level with the bottom of the sprite
    beside it — clear of the folded corner, which lives out in the border. */
 /* "Also in N other mazes" — the reverse of the furni scan, as one line
-   at the foot of the card. It used to name them here, which put a list of
-   up to six links inside a 240px tooltip and read as a second, worse
-   listing of mazes a few pixels from the real one. Pressing this hands the
-   question to the archive window instead (see renderFurniAlsoIn), so the
-   card states a fact and the listing does the listing.
+   in the text column, under the release date. It used to name them here,
+   which put a list of up to six links inside a 240px tooltip and read as a
+   second, worse listing of mazes a few pixels from the real one. Pressing
+   this hands the question to the archive window instead (see
+   renderFurniAlsoIn), so the card states a fact and the listing does the
+   listing.
 
    Separated by a rule rather than boxed: the card is small, and another
    bordered block inside it would read as a second card. */
 .furni-card-also {
     display: block;
-    /* Held against the right edge, directly above the Furni Index link, and
-       drawn exactly as that link is — same colour, same hover, same
-       nowrap. The two are the card's only two ways out, and stacking them
-       in the same corner in the same voice says so. */
-    margin: 6px 0 0 auto;
+    /* Held against the right edge of the text column and drawn exactly as
+       the Furni Index link is — same colour, same hover, same nowrap.
+
+       It sits BESIDE the sprite rather than under the whole body (see the
+       template in home.html): as a sibling of .furni-card-body it cleared
+       the sprite's full height, so a tall one — they reach 75px against the
+       motto and date's 26 — pushed this line down the card and left that
+       space beside the picture empty.
+
+       margin-top: auto holds it at the foot of the text column (which is
+       stretched to the sprite's own height, see .furni-card-text), so it
+       still ends up exactly where it reads best: last thing before the
+       Furni Index link, and level with the bottom of the picture rather
+       than 30-odd pixels below it.
+
+       An auto margin has no floor, and when the text column is the taller
+       of the two (which is most of them — a one-line motto plus the date
+       and this line comes to ~51px against a median sprite of 45) there is
+       no slack for it to eat and the rule would land hard against the
+       release date. The gap above it is stated on the date instead, where
+       it can be a real length: see .furni-card-date. */
+    margin: 0 0 0 auto;
+    margin-block-start: auto;
     padding: 5px 0 0;
     background: none;
     border: none;
@@ -7600,6 +7668,11 @@ body[data-page="admin"] .search-box input {
        own aria-label and title. */
     .modal .chrome-titlebar { --titlebar-pad: 78px; }
     .modal:not(:has(.modal-meta-actions .walked-toggle)) .chrome-titlebar { --titlebar-pad: 52px; }
+    /* An EC event's Share sits at the same end as the close button (see
+       .modal.is-ec's own rule), so that end has to hold both — 42px of
+       stand-off plus the glyph-only button the labels above collapse it
+       to. */
+    .modal.is-ec .chrome-titlebar { --titlebar-pad: 76px; }
     .modal .chrome-titlebar .modal-meta-actions { gap: 4px; }
     .modal .chrome-titlebar .modal-share-btn,
     .modal .chrome-titlebar .walked-toggle { padding: 4px 7px; }
@@ -8286,10 +8359,41 @@ body[data-page="admin"] .site-footer p {
        is the modal's own drag-nothing chrome, but the grip and the title
        still want to be selectable and hoverable. */
     pointer-events: none;
-    /* Over the frame and the titlebar it overlaps. The close button is at
-       the other end of the bar, so nothing it could cover is a control. */
+    /* Over the frame and the titlebar it overlaps. Nothing it covers is a
+       control: the close button is at the other end of the bar, and the
+       Share button — which used to sit right underneath this, invisible and
+       unpressable — is sent to join it (see below). */
     z-index: 4;
 }
+
+/* On an EC event the Share button moves to the other end of the titlebar.
+
+   .modal-meta-actions is normally pinned at left: 10px, which is precisely
+   where the ribbon above is drawn: it covered the button whole, and a
+   control nobody can see or reach is worse than no ribbon. It goes between
+   the title and the close button instead, which is the only other place on
+   this bar with room for it. An EC modal is always an event, so what moves
+   is the Share button alone — there is no Completed toggle beside it.
+
+   --titlebar-pad is reserved at BOTH ends of the bar (see .chrome-titlebar)
+   so the title stays centred on the window regardless of which end the
+   button is at. What does change is how much has to be reserved, since
+   Share now shares its end with the close button. */
+.modal.is-ec .chrome-titlebar .modal-meta-actions {
+    left: auto;
+    /* Clear of .chrome-close: its own 10px inset, its 24px of button, and
+       an 8px gap between the two. */
+    right: 42px;
+    /* Dead centre, dropping the 5px lift the base rule carries. That lift
+       exists to sit the button against the TITLE, whose glyphs have no
+       descenders to fill the space beneath them; here the button's
+       neighbour is .chrome-close, which is centred on the bar, and the lift
+       left the two a visible 5px out of line with each other. */
+    transform: translateY(-50%);
+}
+
+/* 42px of stand-off above, plus the button itself. */
+.modal.is-ec .chrome-titlebar { --titlebar-pad: 116px; }
 
 
 /* ---------- a Habbo article, shown in place of an event's full details ----------

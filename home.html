@@ -410,16 +410,25 @@
                 <div class="furni-card-text">
                     <p class="furni-card-motto"></p>
                     <p class="furni-card-date"></p>
+                    <!-- One line, not a list. Which other mazes the scanner
+                         found this same furni in is worth knowing, but naming
+                         them inside a 240px card turned a tooltip into a
+                         cramped directory — so the card says how many and
+                         hands the question to the archive listing, which is
+                         the thing built for showing mazes. Filled in by
+                         renderFurniAlsoIn in js/home.js, removed outright
+                         when this furni is unique to the maze already open.
+
+                         Inside the text column, beneath the release date,
+                         rather than a sibling of .furni-card-body: as a
+                         sibling it sat under the WHOLE body, so a tall sprite
+                         (they run to 65px against the motto and date's 26)
+                         pushed it that far down the card and left the space
+                         beside the sprite empty. It belongs next to the
+                         picture it is talking about. -->
+                    <button type="button" class="furni-card-also" hidden></button>
                 </div>
             </div>
-            <!-- One line, not a list. Which other mazes the scanner found
-                 this same furni in is worth knowing, but naming them inside a
-                 240px card turned a tooltip into a cramped directory — so the
-                 card says how many and hands the question to the archive
-                 listing, which is the thing built for showing mazes. Filled
-                 in by renderFurniAlsoIn in js/home.js, removed outright when
-                 this furni is unique to the maze already open. -->
-            <button type="button" class="furni-card-also" hidden></button>
             <div class="furni-card-foot">
                 <a class="furni-card-link" target="_blank" rel="noopener">View on Furni Index &rsaquo;</a>
             </div>
