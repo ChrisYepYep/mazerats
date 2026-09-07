@@ -831,16 +831,26 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!window.Account || !Account.current) return;
         Account.fetchState().then(state => {
             if (!state) return;
-            const before = walkedIds.size;
-            const server = Array.isArray(state.walked) ? state.walked : [];
-            server.forEach(id => walkedIds.add(id));
+            const wasWalked = walkedIds.size;
+            const wasSaved = savedIds.size;
 
-            // Anything this device knew that the server did not goes back up.
-            // The endpoint unions on its side too, so this is idempotent.
-            if (walkedIds.size > server.length) Account.saveState({ walked: [...walkedIds] });
+            const serverWalked = Array.isArray(state.walked) ? state.walked : [];
+            const serverSaved = Array.isArray(state.saved) ? state.saved : [];
+            serverWalked.forEach(id => walkedIds.add(id));
+            serverSaved.forEach(id => savedIds.add(id));
 
-            if (walkedIds.size !== before) {
-                saveWalked();
+            /* Anything this device knew that the server did not goes back
+               up. The endpoint unions on its side too, so this is
+               idempotent — and only sent when there IS something it has not
+               seen, so a device that is merely up to date stays quiet. */
+            const patch = {};
+            if (walkedIds.size > serverWalked.length) patch.walked = [...walkedIds];
+            if (savedIds.size > serverSaved.length) patch.saved = [...savedIds];
+            if (Object.keys(patch).length) Account.saveState(patch);
+
+            if (walkedIds.size !== wasWalked) saveWalked();
+            if (savedIds.size !== wasSaved) persistSaved();
+            if (walkedIds.size !== wasWalked || savedIds.size !== wasSaved) {
                 render();
                 updateWalkedCount();
             }
@@ -934,6 +944,72 @@ document.addEventListener("DOMContentLoaded", () => {
             `</button>`;
     }
 
+    /* ---------- the other list: ones to go and walk ----------
+
+       Walked answers "have I done this"; saved answers "I mean to". They
+       are separate lists rather than two states of one, because a maze you
+       have walked and would happily walk again is both, and a control that
+       made you choose would be answering a question nobody asked.
+
+       Same shape as walked throughout — a set in localStorage, unioned onto
+       the account when there is one — so there is one pattern here rather
+       than two. */
+    const SAVED_KEY = "mazerats_saved";
+    let savedIds = new Set();
+
+    function loadSaved() {
+        try {
+            const raw = localStorage.getItem(SAVED_KEY);
+            const list = raw ? JSON.parse(raw) : [];
+            savedIds = new Set(Array.isArray(list) ? list.filter(id => typeof id === "string") : []);
+        } catch (e) {
+            savedIds = new Set();
+        }
+    }
+
+    function persistSaved() {
+        try {
+            localStorage.setItem(SAVED_KEY, JSON.stringify([...savedIds]));
+        } catch (e) { /* private mode — the list is the loss, not the archive */ }
+    }
+
+    function isSaved(id) {
+        return !!id && savedIds.has(id);
+    }
+
+    function setSaved(id, saved) {
+        if (!id) return;
+        if (saved) savedIds.add(id);
+        else savedIds.delete(id);
+        persistSaved();
+        if (window.Account && Account.current) {
+            if (saved) Account.saveState({ saved: [...savedIds] });
+            else Account.forgetSaved(id);
+        }
+        document.querySelectorAll(`.saved-toggle[data-saved-id="${CSS.escape(id)}"]`)
+            .forEach(btn => paintSavedToggle(btn, saved));
+    }
+
+    function paintSavedToggle(btn, saved) {
+        btn.classList.toggle("is-saved", saved);
+        btn.setAttribute("aria-pressed", saved ? "true" : "false");
+        btn.title = saved ? "On your list. Click to remove." : "Save this to walk later";
+        const label = btn.querySelector(".saved-toggle-label");
+        if (label) label.textContent = saved ? "Saved" : "Save";
+    }
+
+    function savedToggleHtml(n) {
+        if (n.isEvent || !n.id) return "";
+        const saved = isSaved(n.id);
+        return `<button type="button" class="saved-toggle${saved ? " is-saved" : ""}" ` +
+            `data-saved-id="${escapeHtml(n.id)}" aria-pressed="${saved ? "true" : "false"}" ` +
+            `title="${saved ? "On your list. Click to remove." : "Save this to walk later"}" ` +
+            `data-track="saved-toggle" data-track-label="${escapeHtml(n.id)}">` +
+            `<span class="saved-toggle-mark" aria-hidden="true"></span>` +
+            `<span class="saved-toggle-label">${saved ? "Saved" : "Save"}</span>` +
+            `</button>`;
+    }
+
     /* One delegated listener for every tick on the page, however it got
        there — rows are rebuilt on every render and the modal builds its own,
        so binding them individually would mean rebinding forever.
@@ -946,23 +1022,36 @@ document.addEventListener("DOMContentLoaded", () => {
        take the click off the row entirely: ticking a maze is not asking to
        open it. */
     document.addEventListener("click", e => {
-        const btn = e.target.closest(".walked-toggle");
-        if (!btn) return;
-        e.stopPropagation();
-        e.preventDefault();
-        const id = btn.dataset.walkedId;
-        setWalked(id, !isWalked(id));
+        const walkBtn = e.target.closest(".walked-toggle");
+        if (walkBtn) {
+            e.stopPropagation();
+            e.preventDefault();
+            const id = walkBtn.dataset.walkedId;
+            setWalked(id, !isWalked(id));
+            return;
+        }
+        // The save toggle sits inside the same row and needs the same
+        // rescue from it.
+        const saveBtn = e.target.closest(".saved-toggle");
+        if (saveBtn) {
+            e.stopPropagation();
+            e.preventDefault();
+            const id = saveBtn.dataset.savedId;
+            setSaved(id, !isSaved(id));
+        }
     }, true);
 
     // Keyboard rows activate on Enter/Space too (see wireRowActivation), and
     // the same press would otherwise both tick the maze and open it.
     document.addEventListener("keydown", e => {
         if (e.key !== "Enter" && e.key !== " ") return;
-        if (!e.target.closest || !e.target.closest(".walked-toggle")) return;
+        if (!e.target.closest) return;
+        if (!e.target.closest(".walked-toggle") && !e.target.closest(".saved-toggle")) return;
         e.stopPropagation();
     }, true);
 
     loadWalked();
+    loadSaved();
 
     /* The exact request a row's thumbnail makes, in one place.
 
@@ -4310,7 +4399,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!n.isEvent && n.id) {
             const wrap = document.createElement("span");
             wrap.className = "modal-walked";
-            wrap.innerHTML = walkedToggleHtml(n);
+            /* Save, then Completed. They read as the two halves of one
+               question in the order you meet them — you save a maze before
+               you walk it — and Completed stays nearest Share, where it has
+               always been. */
+            wrap.innerHTML = savedToggleHtml(n) + walkedToggleHtml(n);
             actions.appendChild(wrap);
         }
         renderShareButton(n, actions);

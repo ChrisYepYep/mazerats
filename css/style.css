@@ -5271,6 +5271,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
    pair because they are one: the two things a visitor can do with the maze
    they are looking at. */
 .modal-share-btn,
+.modal-meta-actions .saved-toggle,
 .modal-meta-actions .walked-toggle {
     display: inline-flex;
     align-items: center;
@@ -5291,6 +5292,8 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 .modal-share-btn:hover,
 .modal-share-btn:focus-visible,
+.modal-meta-actions .saved-toggle:hover,
+.modal-meta-actions .saved-toggle:focus-visible,
 .modal-meta-actions .walked-toggle:hover,
 .modal-meta-actions .walked-toggle:focus-visible {
     background: linear-gradient(#4a3c29, #3a2f1f);
@@ -5346,6 +5349,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 @media (prefers-reduced-motion: reduce) {
     .modal-share-btn,
+    .modal-meta-actions .saved-toggle,
     .modal-meta-actions .walked-toggle { transition: none; }
 }
 
@@ -7780,8 +7784,10 @@ body[data-page="admin"] .search-box input {
     .modal.is-ec .chrome-titlebar { --titlebar-pad: 76px; }
     .modal .chrome-titlebar .modal-meta-actions { gap: 4px; }
     .modal .chrome-titlebar .modal-share-btn,
+    .modal .chrome-titlebar .saved-toggle,
     .modal .chrome-titlebar .walked-toggle { padding: 4px 7px; }
     .modal .chrome-titlebar .modal-share-label,
+    .modal .chrome-titlebar .saved-toggle-label,
     .modal .chrome-titlebar .walked-toggle-label {
         position: absolute;
         width: 1px;
@@ -11145,3 +11151,104 @@ body[data-page="admin"] #activity-sessions {
     .guess-board-grid { display: none; }
     .guess-board-row { grid-template-columns: 16px 20px 1fr auto; }
 }
+
+/* ---------- saved to walk later ----------
+
+   Beside Completed in the maze's own titlebar, and shaped like it: the two
+   are the same kind of answer about the same maze, so a control that looked
+   different would imply they were not. Deliberately not a state of the
+   same button — a maze you have walked and would walk again is both. */
+.saved-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 7px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--parchment-dim);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5rem;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+    cursor: var(--cursor-pointer);
+    transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
+}
+
+.saved-toggle:hover,
+.saved-toggle:focus-visible {
+    border-color: var(--amber);
+    color: var(--parchment);
+    outline: none;
+}
+
+.saved-toggle:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 1px;
+}
+
+/* A bookmark rather than a tick, drawn rather than set as a glyph so it
+   stays crisp at 9px and matches the pixel chrome. The notch is a triangle
+   cut out of the bottom edge by a border trick — same approach as the
+   caret in the admin furni list. */
+.saved-toggle-mark {
+    display: inline-block;
+    width: 8px;
+    height: 10px;
+    border: 1px solid currentColor;
+    border-bottom-width: 0;
+    position: relative;
+}
+
+.saved-toggle-mark::after {
+    content: "";
+    position: absolute;
+    left: -1px;
+    bottom: -4px;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 4px solid var(--bg-panel);
+}
+
+/* On: filled in the archive's amber, the same "this is selected" the walked
+   tick and the active tabs use. */
+.saved-toggle.is-saved {
+    border-color: var(--amber-bright);
+    background: rgba(120, 90, 45, 0.32);
+    color: var(--amber-bright);
+}
+
+.saved-toggle.is-saved .saved-toggle-mark {
+    background: var(--amber-bright);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .saved-toggle { transition: none; }
+}
+
+/* Saved reads as marked rather than as done: the archive's amber, which is
+   what "currently selected" looks like everywhere else here, rather than
+   the green Completed uses for "yes, finished". The two sit side by side,
+   so they must not say the same thing in the same colour. */
+.modal-meta-actions .saved-toggle.is-saved {
+    background: linear-gradient(#6b5327, #52401d);
+    border-color: var(--amber-bright);
+    color: #fff8ec;
+}
+
+.modal-meta-actions .saved-toggle.is-saved:hover,
+.modal-meta-actions .saved-toggle.is-saved:focus-visible {
+    background: linear-gradient(#7d6130, #614c23);
+    border-color: var(--amber-bright);
+    color: #ffffff;
+}
+
+/* The notch is cut by a wedge in the button's own colour, so it has to
+   follow the button rather than stay the panel's background. */
+.modal-meta-actions .saved-toggle .saved-toggle-mark::after { border-bottom-color: #34291c; }
+.modal-meta-actions .saved-toggle.is-saved .saved-toggle-mark::after { border-bottom-color: #5b4622; }
+.modal-meta-actions .saved-toggle:hover .saved-toggle-mark::after { border-bottom-color: #413425; }
+.modal-meta-actions .saved-toggle.is-saved:hover .saved-toggle-mark::after { border-bottom-color: #6d5529; }

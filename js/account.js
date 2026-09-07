@@ -149,19 +149,21 @@
         } catch (e) { /* the local copy is already right; nothing to undo */ }
     }
 
-    /* Un-ticking has to be said out loud. The save above unions walked
-       lists so two devices cannot delete each other's ticks, which means a
-       shorter list is not a removal — this is. */
-    async function forgetWalked(id) {
+    /* Un-ticking has to be said out loud. The save above unions the list
+       so two devices cannot delete each other's entries, which means a
+       shorter list is not a removal — this is. The parameter name is which
+       list to take it out of. */
+    async function forget(list, id) {
         if (!Account.current || !id) return;
         try {
-            await fetch(`${STATE_ENDPOINT}?walked=${encodeURIComponent(id)}`, {
+            await fetch(`${STATE_ENDPOINT}?${list}=${encodeURIComponent(id)}`, {
                 method: "DELETE",
                 credentials: "same-origin"
             });
         } catch (e) { /* as above */ }
     }
-    Account.forgetWalked = forgetWalked;
+    Account.forgetWalked = id => forget("walked", id);
+    Account.forgetSaved = id => forget("saved", id);
 
     // A tick made in the last moments before the tab closes still counts.
     window.addEventListener("pagehide", () => {
