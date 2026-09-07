@@ -2788,17 +2788,41 @@ document.addEventListener("DOMContentLoaded", () => {
 
     /* ---------- browsing the archive by furni ----------
 
-       Every piece the scan has identified, most widespread first, with the
-       number of mazes it turns up in. Pressing one hands over to furniFilter
-       — the listing that has always existed behind the "Also in N other
-       mazes" line at the foot of a furni card, and was reachable ONLY from
-       there: you had to already be inside a maze, looking at a piece, to
-       discover that the archive could answer this question at all.
+       Every piece the scan has identified, as a wall of sprites. Pressing
+       one hands over to furniFilter — the listing that has always existed
+       behind the "Also in N other mazes" line at the foot of a furni card,
+       and was reachable ONLY from there: you had to already be inside a
+       maze, looking at a piece, to discover that the archive could answer
+       this question at all.
 
-       Sorted by reach rather than alphabetically. A list of 345 furni in
-       name order is a catalogue; in reach order the first screen is "the
-       things Origins maze builders actually use", which is the finding. The
-       search box narrows it, so a name is still one keystroke away. */
+       WHY IT IS BANDED, RAREST FIRST
+
+       This was a list of 434 names sorted most-widespread first, and both
+       halves of that were wrong.
+
+       The sort was backwards. The top of the list was "Fireplace, 28
+       mazes" — and filtering the archive down to 28 of its 39 mazes is not
+       a filter, it is almost the whole archive. The pieces worth finding
+       are at the other end: nearly half of everything the scan knows about
+       turns up in exactly ONE maze, and a piece only one maze ever used is
+       that maze's fingerprint. Those were two hundred rows down.
+
+       And a list of names is the wrong shape for objects whose entire
+       appeal is that they are pictures. You could search it if you already
+       knew what you wanted, which is the one case that did not need help.
+       Sprites in a grid can be browsed; names in a list can only be read.
+
+       So: rarest band first, each one captioned with the single maze that
+       used it, then the pieces a handful of mazes share, then the common
+       kit last. The bands are worked out from the data at render time
+       rather than written down, so they stay honest as the scan grows. */
+
+    // Where the bands fall. Absolute counts rather than proportions of the
+    // archive: "only one maze uses this" means the same thing whether the
+    // archive holds thirty mazes or three hundred.
+    const FURNI_SOLO = 1;
+    const FURNI_FEW_MAX = 4;
+
     function furniBrowserEntries() {
         if (!furniIndexByKey) furniIndexByKey = buildFurniIndex();
         const seen = new Map();
@@ -2807,6 +2831,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 (record && record.items ? record.items : []).forEach(item => {
                     const key = furniKeyOf(item);
                     if (!key || seen.has(key)) return;
+                    const mazes = furniIndexByKey.get(key) || [];
                     // The small in-room sprite where the scan recorded one,
                     // the catalogue icon otherwise — the same fallback the
                     // furni card itself uses.
@@ -2814,14 +2839,55 @@ document.addEventListener("DOMContentLoaded", () => {
                         key,
                         name: item.name || key,
                         icon: item.sprite || item.icon || "",
-                        mazes: (furniIndexByKey.get(key) || []).length
+                        mazes: mazes.length,
+                        // Carried only when there IS one, because naming it
+                        // is the whole point of the first band.
+                        only: mazes.length === 1 ? mazes[0] : null
                     });
                 });
             });
         });
         return [...seen.values()]
             .filter(f => f.name && f.name !== f.key)
-            .sort((a, b) => b.mazes - a.mazes || compareNames(a.name, b.name));
+            // Rarest first, and alphabetically within a count so the grid
+            // has an order you can follow rather than an arbitrary one.
+            .sort((a, b) => a.mazes - b.mazes || compareNames(a.name, b.name));
+    }
+
+    function furniTileHtml(f) {
+        /* The caption under each sprite carries the finding, not the
+           number: for a piece only one maze used, that maze's name is far
+           more interesting than the digit 1. */
+        const caption = f.only
+            ? `only in ${escapeHtml(f.only.name)}`
+            : `${f.mazes} mazes`;
+        const label = f.only
+            ? `${f.name} — used only by ${f.only.name}`
+            : `${f.name} — in ${f.mazes} mazes`;
+        return `
+            <button type="button" class="furni-tile" data-furni-key="${escapeHtml(f.key)}"
+                    aria-label="${escapeHtml(label)}">
+                <span class="furni-tile-art">
+                    ${f.icon
+                        ? `<img src="${escapeHtml(f.icon)}" alt="" loading="lazy" decoding="async">`
+                        : `<span class="furni-tile-art-missing" aria-hidden="true"></span>`}
+                </span>
+                <span class="furni-tile-name">${escapeHtml(f.name)}</span>
+                <span class="furni-tile-meta">${caption}</span>
+            </button>`;
+    }
+
+    function furniBandHtml(band) {
+        if (!band.items.length) return "";
+        return `
+            <section class="furni-band">
+                <h4 class="furni-band-head">
+                    <span class="furni-band-title">${escapeHtml(band.title)}</span>
+                    <span class="furni-band-count">${band.items.length}</span>
+                </h4>
+                <p class="furni-band-note">${escapeHtml(band.note)}</p>
+                <div class="furni-grid">${band.items.map(furniTileHtml).join("")}</div>
+            </section>`;
     }
 
     function renderFurniBrowser() {
@@ -2840,18 +2906,41 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         emptyEl.style.display = "none";
 
-        const rows = entries.map(f => `
-            <button type="button" class="furni-browse-row" data-furni-key="${escapeHtml(f.key)}">
-                <span class="furni-browse-icon">${f.icon ? `<img src="${escapeHtml(f.icon)}" alt="" loading="lazy">` : ""}</span>
-                <span class="furni-browse-name">${escapeHtml(f.name)}</span>
-                <span class="furni-browse-count">${f.mazes}<span class="furni-browse-count-unit">${f.mazes === 1 ? "maze" : "mazes"}</span></span>
-            </button>`).join("");
+        const solo = entries.filter(f => f.mazes === FURNI_SOLO);
+        const few = entries.filter(f => f.mazes > FURNI_SOLO && f.mazes <= FURNI_FEW_MAX);
+        // Most-used first in this one, because within "everything common"
+        // the ranking IS the interesting part.
+        const common = entries.filter(f => f.mazes > FURNI_FEW_MAX)
+            .slice()
+            .sort((a, b) => b.mazes - a.mazes || compareNames(a.name, b.name));
+
+        const bands = [
+            {
+                title: "Used by one maze alone",
+                note: "Nobody else built with these. Each one is the signature of the maze beside it.",
+                items: solo
+            },
+            {
+                title: "Shared by a handful",
+                note: `In ${FURNI_SOLO + 1} to ${FURNI_FEW_MAX} mazes — the pieces a few builders found and the rest did not.`,
+                items: few
+            },
+            {
+                title: "The common kit",
+                note: "What most Origins mazes are built from, most widespread first.",
+                items: common
+            }
+        ];
+
+        const heading = query
+            ? `${entries.length} of ${all.length} furni match “${escapeHtml(query)}”.`
+            : `${all.length} furni the scan has found across the archive. Pick one to see every maze it appears in.`;
 
         grid.innerHTML =
-            `<p class="furni-browse-intro">${entries.length} of ${all.length} furni the scan has found across the archive. Pick one to see every maze it appears in.</p>
-             <div class="furni-browse">${rows}</div>`;
+            `<p class="furni-browse-intro">${heading}</p>` +
+            bands.map(furniBandHtml).join("");
 
-        grid.querySelectorAll(".furni-browse-row").forEach(btn => {
+        grid.querySelectorAll(".furni-tile").forEach(btn => {
             btn.addEventListener("click", () => {
                 const entry = all.find(f => f.key === btn.dataset.furniKey);
                 if (!entry) return;
