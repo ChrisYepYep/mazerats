@@ -553,8 +553,22 @@ document.addEventListener("DOMContentLoaded", () => {
         return `${start.date} ${start.time} UTC – ${end.date} ${end.time} UTC`;
     }
 
-    // Icons for the maze sub-nav's OPEN/ARCHIVED tabs specifically — no
-    // equivalent for Collab, or for any of the events sub-nav's own tabs.
+    /* Icons for the sub-nav tabs.
+
+       Two of the six have one — OPEN and ARCHIVED, which are doors and so
+       get drawn as doors. Collab is not a door, and none of the three events
+       tabs has art at all, so the row read as two finished tabs beside four
+       unfinished ones rather than as a deliberate pair.
+
+       Off until the other four exist. Everything needed to bring them back
+       is still here and still works: the art, the map below, the markup, and
+       .chrome-nav-sub-icon's own CSS. Flip this to true and the doors return
+       exactly as they were.
+
+       A flag rather than a CSS rule hiding them, so the browser is not asked
+       for two PNGs on every page load that nobody will see. */
+    const SHOW_SUB_NAV_ICONS = false;
+
     const SUB_NAV_ICONS = {
         open: "door_open_icon_active.png",
         archived: "door_closed_icon_active.png"
@@ -573,7 +587,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const activeSub = showFeatured ? null : (topView === "mazes" ? mazesSub : resolvedEventsSub());
         subNavBtns.forEach((btn, i) => {
             const [value, label] = options[i];
-            const icon = SUB_NAV_ICONS[value];
+            const icon = SHOW_SUB_NAV_ICONS ? SUB_NAV_ICONS[value] : null;
             // Icon is absolutely positioned (see its own CSS) rather than
             // laid out inline before the label, specifically so it doesn't
             // shift the label off the button's own centre — it just floats
