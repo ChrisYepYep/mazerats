@@ -6196,11 +6196,21 @@ body[data-page="admin"] .search-box input {
     z-index: 1;
 }
 
-.admin-furni-toggle:hover .admin-furni-thumb,
+/* The picture itself, not the row. Hovering anywhere along a room's head
+   threw a 200px preview up every time the pointer crossed a row on its way
+   to a button, which is most of the time — the preview has to be something
+   you ask for by pointing at the thumbnail.
+
+   Keyboard focus is still taken on the whole toggle, and deliberately:
+   focus lands on a row because someone tabbed to it, which IS asking, and
+   an <img> cannot be focused to ask any other way. */
+.admin-furni-thumb:hover,
 .admin-furni-toggle:focus-visible .admin-furni-thumb {
     /* 46px to ~200px, which is the width the image is actually fetched at
        (see imgCdn in js/admin.js), so this is the picture at its own size
-       rather than a thumbnail enlarged. */
+       rather than a thumbnail enlarged. Growing from the left edge with the
+       pointer already inside the small box means the enlarged box always
+       still contains the pointer — so it cannot flicker between states. */
     transform: scale(4.3);
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.75);
     z-index: 6;
