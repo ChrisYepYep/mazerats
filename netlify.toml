@@ -228,15 +228,32 @@
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-# The stylesheet and scripts DO change, so they get a day rather than a
-# year: long enough that a visitor coming back the same week pays nothing,
-# short enough that a fix reaches everyone without a filename dance.
+# The stylesheet and scripts are REVALIDATED rather than cached for a day,
+# which is a correctness rule and not a performance one.
+#
+# They used to get max-age=86400 while the HTML got must-revalidate. That
+# is fine only while markup, styles and script can each stand alone — and
+# they cannot. A change that spans all three (the side tabs becoming one
+# menu, say) reached a returning visitor as NEW markup with a DAY-OLD
+# stylesheet and a day-old script: rules that matched nothing, wiring that
+# looked for elements no longer in the page, and a menu that rendered
+# unstyled and did nothing at all. There is no ordering that avoids it,
+# because the HTML is always fresh and the other two are not.
+#
+# must-revalidate costs a conditional request per file per visit and
+# almost always gets a 304 back — headers, no body — which is a small
+# price for never again shipping a page assembled out of two different
+# versions of itself. /assets/* keeps its year: pictures and fonts change
+# by getting a new filename, so they genuinely are immutable.
+#
+# The proper fix is hashed filenames, which needs a build step this site
+# deliberately does not have.
 [[headers]]
   for = "/css/*"
   [headers.values]
-    Cache-Control = "public, max-age=86400"
+    Cache-Control = "public, max-age=0, must-revalidate"
 
 [[headers]]
   for = "/js/*"
   [headers.values]
-    Cache-Control = "public, max-age=86400"
+    Cache-Control = "public, max-age=0, must-revalidate"
