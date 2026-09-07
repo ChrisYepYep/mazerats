@@ -310,6 +310,10 @@ const Api = {
         const res = await fetch("/.netlify/functions/contact", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            // Stated rather than left to the default, because it matters
+            // here: the session cookie is what lets the function record a
+            // signed-in sender as verified rather than as a typed claim.
+            credentials: "same-origin",
             body: JSON.stringify({ message, username, discord, website })
         });
         const data = await res.json().catch(() => ({}));

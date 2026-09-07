@@ -585,8 +585,15 @@
                         <textarea class="console-input console-input-message" id="console-contact-message" placeholder="Just leaving some feedback..."></textarea>
                         <label class="console-field-label" for="console-contact-username">Your Origins username:</label>
                         <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="L1C">
-                        <label class="console-field-label" for="console-contact-discord">Your Discord username:</label>
-                        <input type="text" class="console-input console-input-discord" id="console-contact-discord" placeholder="Optional">
+                        <!-- Two states, one of which js/console.js hides.
+                             Signed in, there is nothing to type: the name is
+                             already known and, unlike a typed one, it is
+                             Discord's own answer rather than a claim. -->
+                        <div id="console-contact-discord-field">
+                            <label class="console-field-label" for="console-contact-discord">Your Discord username:</label>
+                            <input type="text" class="console-input console-input-discord" id="console-contact-discord" placeholder="Optional">
+                        </div>
+                        <p class="console-blurb console-signed-as" id="console-contact-signed-as" hidden></p>
                         <!-- Honeypot — invisible to real visitors (see .console-hp-field),
                              left blank by them; anything filling it out gets silently
                              dropped server-side (netlify/functions/contact.js). -->
@@ -961,14 +968,18 @@
     <script src="js/event-status.js"></script>
     <script src="js/privacy-content.js"></script>
     <script src="js/site.js"></script>
+    <!-- Before home.js, console.js and guess.js, all three of which ask it
+         who is signed in while they are setting themselves up. It sat after
+         them at first, on the reasoning that they only read window.Account
+         at run time — but they read it during their OWN setup, which is not
+         run time enough: the object simply did not exist yet and every one
+         of those checks silently did nothing. A shared service belongs with
+         site.js, not among the things that consume it. -->
+    <script src="js/account.js"></script>
     <script src="js/home.js"></script>
     <script src="js/custom-scrollbar.js"></script>
     <script src="js/letter-jump.js"></script>
     <script src="js/console.js"></script>
-    <!-- Before guess.js, which asks it who is signed in. Both only read
-         window.Account at run time, so the order is a courtesy rather than a
-         requirement — but the header button should be drawn early. -->
-    <script src="js/account.js"></script>
     <!-- After site.js, which is where imgCdn and compareNames live. -->
     <script src="js/guess.js"></script>
     <script src="js/track.js"></script>

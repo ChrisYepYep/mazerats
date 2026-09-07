@@ -5,6 +5,7 @@
 const crypto = require("crypto");
 const { getDb } = require("./_db");
 const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { playerFrom } = require("./_player");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -41,7 +42,7 @@ function clientIp(event) {
 // CONTACT_NOTIFY_EMAIL are env vars set in Netlify's own dashboard, never
 // committed to the repo — so the destination address stays server-side
 // only and is never shipped to the client.
-async function sendNotificationEmail({ username, discord, message }) {
+async function sendNotificationEmail({ username, discord, message, verified }) {
     const apiKey = process.env.RESEND_API_KEY;
     const to = process.env.CONTACT_NOTIFY_EMAIL;
     if (!apiKey || !to) {
@@ -61,7 +62,10 @@ async function sendNotificationEmail({ username, discord, message }) {
                 from,
                 to,
                 subject: `New Maze Rats contact message${username ? ` from ${username}` : ""}`,
-                text: `${username ? `Origins username: ${username}\n` : ""}${discord ? `Discord: ${discord}\n` : ""}${username || discord ? "\n" : ""}${message}`
+                // "(signed in)" is the useful half: it says the Discord name
+                // came from Discord rather than from a text field anyone
+                // could have typed anything into.
+                text: `${username ? `Origins username: ${username}\n` : ""}${discord ? `Discord: ${discord}${verified ? " (signed in)" : ""}\n` : ""}${username || discord ? "\n" : ""}${message}`
             })
         });
         if (!res.ok) console.warn("contact.js: email notification failed", res.status, await res.text());
@@ -124,9 +128,31 @@ exports.handler = async (event) => {
             }
         }
 
-        const entry = { id: crypto.randomUUID(), username, discord, message, createdAt: new Date().toISOString() };
-        await messages.insertOne({ ...entry, ip });
-        await sendNotificationEmail({ username, discord, message });
+        /* Who sent it, if they were signed in — taken from the session
+           cookie rather than from the request body, which is the whole
+           point of recording it. A typed Discord handle is a claim; this
+           is Discord's own answer, so an admin reading the message can
+           tell the difference between "says they are markeh" and "is".
+
+           Never required. Signing in is optional everywhere on this site
+           and the contact form is no exception; an anonymous message lands
+           exactly as it always has. */
+        const player = playerFrom(event);
+        const from = player
+            ? { id: player.id, name: player.name, verified: true }
+            : null;
+
+        const entry = {
+            id: crypto.randomUUID(),
+            username,
+            // A signed-in sender's own Discord name beats a typed one, and
+            // the typed field is not even shown to them (see js/console.js).
+            discord: player ? player.name : discord,
+            message,
+            createdAt: new Date().toISOString()
+        };
+        await messages.insertOne({ ...entry, from, ip });
+        await sendNotificationEmail({ username, discord: entry.discord, message, verified: Boolean(player) });
         return json(201, entry);
     }
 

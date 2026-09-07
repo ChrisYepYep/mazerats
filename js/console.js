@@ -282,6 +282,36 @@ document.addEventListener("DOMContentLoaded", () => {
         statusEl.style.display = "block";
     }
 
+    /* Signed in, the Discord field has nothing left to ask. The name is
+       already known, and the copy the server records is taken from the
+       session rather than from this box — so leaving an editable field
+       here would be inviting someone to type a name that would then be
+       ignored.
+
+       Swapped rather than prefilled, for that reason: a filled-in field
+       looks editable, and this one is not. */
+    const discordField = document.getElementById("console-contact-discord-field");
+    const signedAsEl = document.getElementById("console-contact-signed-as");
+
+    function paintContactIdentity(player) {
+        if (!discordField || !signedAsEl) return;
+        if (player) {
+            discordField.hidden = true;
+            signedAsEl.hidden = false;
+            signedAsEl.textContent = `Sending as ${player.name} — signed in with Discord.`;
+        } else {
+            discordField.hidden = false;
+            signedAsEl.hidden = true;
+            signedAsEl.textContent = "";
+        }
+    }
+
+    if (window.Account) {
+        paintContactIdentity(Account.current);
+        Account.onChange(paintContactIdentity);
+        Account.ready();
+    }
+
     // Back to the choice screen, and empties the form on the way — coming
     // back to a half-written message you had already abandoned is worse
     // than starting again.
