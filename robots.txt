@@ -24,11 +24,15 @@ Disallow: /glyphs.html
 Disallow: /wizard
 Disallow: /wizard.html
 
-# The daily game's own address. It serves the homepage with the game open,
-# so there is nothing here a crawler cannot already reach at /home.html —
-# and its answers change daily, which makes an indexed copy wrong within
-# hours. The homepage itself stays listed.
-Disallow: /guess
+# /guess was disallowed while the daily game was an unfinished experiment.
+# It is a real feature now — scored, with leaderboards and accounts behind
+# it — and a real address people paste at each other, so it is worth being
+# findable. It still serves the homepage with the game open, so a crawler
+# reaches nothing here it could not already reach at /home.html; and the
+# page a searcher lands on is the game itself, which is exactly what the
+# link promised. The day's answers are not in the HTML at all — they are
+# derived in the browser from the date — so there is nothing datable for an
+# index to go stale on.
 
 # Project tooling and the function endpoints. Both already 404 at the edge
 # (see netlify.toml); this saves the crawl.

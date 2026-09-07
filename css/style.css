@@ -9628,7 +9628,9 @@ body[data-page="admin"] #activity-sessions {
    sampling, not eyeballed). Flat rather than the sprite, because a 9-slice
    cut for a wide short button has nothing useful to say at 18px across.
 
-   assets/img/side-tab-active.png is no longer referenced by anything. */
+   The old ribbon sprite that used to draw this is gone with it — its
+   Aseprite source is still in assets/img/ if the shape is ever wanted
+   again, but nothing on the site loads a picture for the tab any more. */
 
 .archive-stack {
     position: relative;

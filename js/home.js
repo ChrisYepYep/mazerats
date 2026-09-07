@@ -1023,7 +1023,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function savedToggleHtml(n) {
-        if (n.isEvent || !n.id) return "";
+        // Same exclusions as Completed, and for the same reason: if there is
+        // nothing in a hallway to finish, there is nothing to save it for.
+        if (n.isEvent || !n.id || isHallway(n)) return "";
         const saved = isSaved(n.id);
         return `<button type="button" class="saved-toggle${saved ? " is-saved" : ""}" ` +
             `data-saved-id="${escapeHtml(n.id)}" aria-pressed="${saved ? "true" : "false"}" ` +
