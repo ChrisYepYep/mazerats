@@ -66,14 +66,40 @@
 
     const ROUNDS = 5;
     const TRIES = 4;
-    const STATE_KEY = "mazerats_guess_v2";
-    const STATS_KEY = "mazerats_guess_stats";
+    /* Bumped from _v2/_stats when scoring arrived. Both stored shapes gained
+       a field, and the version in the key is what makes that a clean break
+       rather than a migration: a day already in progress under the old
+       shape is simply not read, so nobody ends up half-scored. */
+    const STATE_KEY = "mazerats_guess_v3";
+    const STATS_KEY = "mazerats_guess_stats_v2";
 
     /* Each wrong guess widens the view around the same centre, so the reveal
        reads as stepping back from one spot rather than as being shown a
        different picture each time. The last step is about half the image,
        which is usually enough to place a room without simply giving it. */
     const REVEAL = [0.16, 0.24, 0.34, 0.46];
+
+    /* What a room is worth, by the view you named it on. Steeply weighted
+       toward the first: the whole game is whether you can place a room from
+       a scrap of it, so recognising it from the tightest crop should be
+       worth appreciably more than getting there by elimination. Falling
+       away rather than halving, so a fourth-view save is still clearly
+       worth more than a miss.
+
+       500 is therefore a perfect day, which is a number a player can hold
+       in their head — and the same array is used by the server to score a
+       submitted day (see netlify/functions/guess-scores.js), so the two can
+       never disagree about what a round was worth. */
+    const POINTS = [100, 70, 45, 25];
+
+    function pointsFor(result) {
+        if (!result || !result.done || !result.won) return 0;
+        return POINTS[Math.min(result.guesses.length, POINTS.length) - 1] || 0;
+    }
+
+    function dayPoints() {
+        return state.results.reduce((n, r) => n + pointsFor(r), 0);
+    }
 
     let el = {};          // the window's shared elements, filled by mount()
     let sheets = [];      // the deck, in order: intro, 5 rooms, results
@@ -139,7 +165,28 @@
                 if (g && g.image) out.push({ maze: room, image: g.image });
             });
         });
-        return out;
+        return out.sort(poolOrder);
+    }
+
+    /* The pool is put in a fixed order before the day's shuffle runs, and
+       this is not tidiness — it is what makes the day's five REPRODUCIBLE.
+
+       The shuffle draws one random number per pool entry in sequence, so
+       which five come out depends on what order the pool was in. Left as it
+       arrived, that order is MongoDB's natural order, which is not promised
+       to be stable: rewriting a document can move it. An admin saving an
+       edit at noon would then quietly deal a different five for the rest of
+       the day — and the server, which derives the same day independently to
+       check submitted scores (netlify/functions/guess-scores.js), would
+       start rejecting correct answers.
+
+       Sorted on id then image, both plain string comparisons rather than
+       localeCompare, so the browser and Node cannot disagree about the
+       order the way two locales could. */
+    function poolOrder(a, b) {
+        if (a.maze.id !== b.maze.id) return a.maze.id < b.maze.id ? -1 : 1;
+        if (a.image !== b.image) return a.image < b.image ? -1 : 1;
+        return 0;
     }
 
     /* The day's five, drawn so that no maze appears twice.
@@ -358,9 +405,8 @@
     function loadStats() {
         let s = null;
         try { s = JSON.parse(localStorage.getItem(STATS_KEY) || "null"); } catch (e) { s = null; }
-        return s && typeof s === "object"
-            ? { days: 0, solved: 0, rounds: 0, streak: 0, best: 0, lastDay: "", ...s }
-            : { days: 0, solved: 0, rounds: 0, streak: 0, best: 0, lastDay: "" };
+        const blank = { days: 0, solved: 0, rounds: 0, streak: 0, best: 0, points: 0, bestDay: 0, lastDay: "" };
+        return s && typeof s === "object" ? { ...blank, ...s } : blank;
     }
 
     function saveStats() {
@@ -382,13 +428,24 @@
     function bankDay() {
         if (stats.lastDay === state.day) return;
         const solved = state.results.filter(r => r.won).length;
+        const scored = dayPoints();
         stats.streak = stats.lastDay === yesterdayOf(state.day) ? stats.streak + 1 : 1;
         stats.best = Math.max(stats.best, stats.streak);
         stats.days += 1;
         stats.rounds += ROUNDS;
         stats.solved += solved;
+        stats.points += scored;
+        stats.bestDay = Math.max(stats.bestDay, scored);
         stats.lastDay = state.day;
         saveStats();
+
+        /* Sent once, here, for the same reason the streak is banked here:
+           this is the moment the day is finished and can no longer change.
+           Only lands on the board if someone is signed in — see submitDay,
+           which is a no-op otherwise. The local record above is kept either
+           way, so playing signed out still counts for the player's own
+           streak and totals. */
+        submitDay();
     }
 
     // ---------- preparing a round ----------
@@ -578,6 +635,10 @@
     function goTo(next) {
         view = next;
         renderAll();
+        // Fetched on arrival rather than on open: most sittings never reach
+        // this sheet, and a board nobody is looking at is a request nobody
+        // asked for.
+        if (next === "results") loadBoards();
         if (!el.overlay.classList.contains("open")) return;
 
         const live = sheets[liveIndex()];
@@ -669,10 +730,22 @@
             const maze = data ? data.maze : null;
             const last = i === ROUNDS - 1;
             refs.between.hidden = false;
+            const scored = pointsFor(result);
             refs.between.innerHTML = `
                 <p class="guess-reveal">
                     <span class="guess-reveal-verdict ${result.won ? "is-won" : "is-lost"}">${result.won ? "Got it." : "Not this time."}</span>
                     It was <strong>${escapeHtml(maze ? maze.name : "")}</strong>${maze && maze.creator ? ` by ${escapeHtml(maze.creator)}` : ""}.
+                </p>
+                <!-- Says what the round was worth AND what it could have
+                     been, because the second half is the part that teaches
+                     the scoring: "+45, 100 on the first view" explains the
+                     whole system in one line, once. -->
+                <p class="guess-reveal-points ${result.won ? "is-won" : "is-lost"}">
+                    ${result.won
+                        ? `<strong>+${scored}</strong> ${result.guesses.length === 1
+                            ? "— named on the first view"
+                            : `for view ${result.guesses.length}${" · "}${POINTS[0]} on the first`}`
+                        : `<strong>+0</strong> — no points for a room you don't place`}
                 </p>
                 ${maze ? `<a class="guess-reveal-link" href="home.html#maze-${encodeURIComponent(maze.id)}">See it in the archive &rsaquo;</a>` : ""}
                 <button type="button" class="guess-btn guess-btn--lead guess-advance">${last ? "See how you did &rsaquo;" : `Room ${i + 2} &rsaquo;`}</button>`;
@@ -727,20 +800,28 @@
             return;
         }
         const solved = state.results.filter(r => r.won).length;
+        const scored = dayPoints();
         const day = picks();
         el.summary.innerHTML = `
-            <p class="guess-score"><strong>${solved} of ${ROUNDS}</strong> rooms found</p>
+            <p class="guess-points"><strong>${scored}</strong><span>points</span></p>
+            <p class="guess-score">${solved} of ${ROUNDS} rooms found</p>
             <p class="guess-grid" aria-label="Result grid">${state.results.map(squareFor).join("")}</p>
             <dl class="guess-stats">
                 <div><dt>Streak</dt><dd>${stats.streak}</dd></div>
-                <div><dt>Best</dt><dd>${stats.best}</dd></div>
+                <div><dt>Best day</dt><dd>${stats.bestDay}</dd></div>
                 <div><dt>Days played</dt><dd>${stats.days}</dd></div>
-                <div><dt>Rooms found</dt><dd>${stats.rounds ? Math.round((stats.solved / stats.rounds) * 100) : 0}%</dd></div>
+                <div><dt>All-time</dt><dd>${stats.points}</dd></div>
             </dl>
             <div class="guess-summary-actions">
                 <button type="button" class="guess-btn" id="guess-share">Copy result</button>
             </div>
             <p class="guess-next-up" id="guess-next-up"></p>
+
+            <!-- Filled in by renderBoards once the scores come back, so the
+                 results are readable the instant the day ends rather than
+                 waiting on the network. -->
+            <div class="guess-boards" id="guess-boards"></div>
+
             <h4 class="guess-answers-head">Today's five</h4>
             <ul class="guess-answers">
                 ${state.results.map((r, i) => {
@@ -750,6 +831,7 @@
                         <span class="guess-answers-n" aria-hidden="true">${i + 1}</span>
                         <a href="home.html#maze-${encodeURIComponent(p.maze.id)}">${escapeHtml(p.maze.name)}</a>
                         <span class="guess-answers-mark">${r.won ? `found in ${r.guesses.length}` : "missed"}</span>
+                        <span class="guess-answers-points">${pointsFor(r) ? "+" + pointsFor(r) : "—"}</span>
                     </li>`;
                 }).join("")}
             </ul>`;
@@ -757,6 +839,7 @@
         const share = document.getElementById("guess-share");
         if (share) share.addEventListener("click", () => copyResult(share));
         tickCountdown();
+        renderBoards();
     }
 
     function renderAll() {
@@ -781,6 +864,124 @@
         });
     }
 
+    // ---------- the leaderboards ----------
+
+    /* Two boards: who scored best today, and who has scored most across
+       every day. Both come from one endpoint and one request, because they
+       are always read together and a results panel that fills in twice
+       reads as broken.
+
+       Held at module scope rather than re-fetched per render — renderAll
+       runs on every guess, and the board does not change between them. */
+    const BOARDS_URL = "/.netlify/functions/guess-scores";
+    let boards = null;
+    let boardsState = "idle";   // idle | loading | ready | failed
+
+    async function loadBoards(force) {
+        if (boardsState === "loading") return;
+        if (boards && !force) return;
+        boardsState = "loading";
+        renderBoards();
+        try {
+            const res = await fetch(`${BOARDS_URL}?day=${encodeURIComponent(today())}`, {
+                headers: { "Accept": "application/json" },
+                credentials: "same-origin"
+            });
+            if (!res.ok) throw new Error(String(res.status));
+            boards = await res.json();
+            boardsState = "ready";
+        } catch (e) {
+            // A board that will not load is a disappointment, not a
+            // failure of the game — the day's own result is already on
+            // screen and stays there.
+            boardsState = "failed";
+        }
+        renderBoards();
+    }
+
+    /* Posts the finished day. Silent by design: whether a score reached the
+       board is not something to interrupt someone's result with, and the
+       board itself is the confirmation. Signed out, this does nothing at
+       all — there is no name to put on a row. */
+    async function submitDay() {
+        if (!window.Account || !Account.current) return;
+        const rounds = state.results.map((r, i) => {
+            const winning = r.won ? r.guesses[r.guesses.length - 1] : null;
+            return {
+                tries: r.guesses.length,
+                won: Boolean(r.won),
+                // Sent so the server can check the answer against the day's
+                // real one and score the round itself, rather than taking a
+                // number from the page on trust.
+                answer: winning ? winning.name : null
+            };
+        });
+        try {
+            await fetch(BOARDS_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ day: state.day, rounds })
+            });
+        } catch (e) { /* the local record is already kept; nothing to say */ }
+        loadBoards(true);
+    }
+
+    function boardRows(list, mine, empty) {
+        if (!list || !list.length) {
+            return `<li class="guess-board-empty">${escapeHtml(empty)}</li>`;
+        }
+        return list.map((row, i) => `
+            <li class="guess-board-row${mine && row.id === mine ? " is-me" : ""}">
+                <span class="guess-board-rank" aria-hidden="true">${i + 1}</span>
+                ${row.avatar
+                    ? `<img class="guess-board-face" src="${escapeHtml(row.avatar)}" alt="" aria-hidden="true" loading="lazy">`
+                    : `<span class="guess-board-face is-blank" aria-hidden="true"></span>`}
+                <span class="guess-board-name">${escapeHtml(row.name || "Someone")}</span>
+                <span class="guess-board-score">${row.points}</span>
+            </li>`).join("");
+    }
+
+    function renderBoards() {
+        const host = document.getElementById("guess-boards");
+        if (!host) return;
+
+        const me = window.Account && Account.current ? Account.current.id : null;
+
+        if (boardsState === "loading" || boardsState === "idle") {
+            host.innerHTML = `<p class="guess-board-note">Fetching the scores…</p>`;
+            return;
+        }
+        if (boardsState === "failed") {
+            host.innerHTML = `<p class="guess-board-note">The scoreboard could not be reached just now.</p>`;
+            return;
+        }
+
+        /* The prompt to sign in belongs here and only here — at the moment
+           there is a score worth putting somewhere. Asking on the way IN to
+           a game nobody has played yet is asking for a login to do nothing
+           with. */
+        const invite = me ? "" : `
+            <p class="guess-board-note guess-board-invite">
+                Your ${dayPoints()} points are saved on this device.
+                <button type="button" class="guess-btn" id="guess-board-signin">Sign in with Discord to be listed</button>
+            </p>`;
+
+        host.innerHTML = `
+            ${invite}
+            <div class="guess-board">
+                <h4 class="guess-board-head">Today's top scorers</h4>
+                <ol class="guess-board-list">${boardRows(boards.day, me, "Nobody has finished today yet.")}</ol>
+            </div>
+            <div class="guess-board">
+                <h4 class="guess-board-head">All time</h4>
+                <ol class="guess-board-list">${boardRows(boards.allTime, me, "No scores recorded yet.")}</ol>
+            </div>`;
+
+        const signin = document.getElementById("guess-board-signin");
+        if (signin) signin.addEventListener("click", () => window.Account && Account.signIn());
+    }
+
     let countdownTimer = null;
     function tickCountdown() {
         const target = document.getElementById("guess-next-up");
@@ -803,7 +1004,7 @@
         const solved = state.results.filter(r => r.won).length;
         const when = new Date(state.day + "T00:00:00Z")
             .toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-        const text = `Maze Rats · Guess the Maze\n${when} — ${solved}/${ROUNDS}\n${state.results.map(squareFor).join("")}\n${location.origin}/guess`;
+        const text = `Maze Rats · Guess the Maze\n${when} — ${solved}/${ROUNDS} · ${dayPoints()} pts\n${state.results.map(squareFor).join("")}\n${location.origin}/guess`;
         try {
             await navigator.clipboard.writeText(text);
             btn.textContent = "Copied";

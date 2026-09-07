@@ -228,6 +228,12 @@
             </div>
             <button type="button" class="header-console-btn" id="header-console-btn" aria-label="Console"><img src="assets/img/console-icon.png" alt="" aria-hidden="true"></button>
             <a class="header-badge" href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Discord</a>
+            <!-- Filled by js/account.js: a "Sign in" button, or the signed-in
+                 person's avatar and name. Rendered there rather than written
+                 here because it has two states and neither is correct until
+                 the server has said which. Kept as an empty slot in the
+                 markup so the header does not reflow when it arrives. -->
+            <div class="account-slot" id="account-slot"></div>
         </div>
         <div class="header-events-group">
             <div class="header-events" id="header-events">
@@ -279,8 +285,11 @@
                      A real button, not a decoration: it is the only route to
                      the game, so it has to be reachable by keyboard and to
                      say what it is. -->
-                <button type="button" class="daily-tab" id="daily-tab" aria-label="Open the daily game, Guess the Maze">
-                    <span class="daily-tab-label" aria-hidden="true">Daily</span>
+                <!-- The accessible name leads with the words actually printed
+                     on the tab, so someone driving by voice can say what they
+                     can see. -->
+                <button type="button" class="daily-tab" id="daily-tab" aria-label="Guess the Maze — open the daily game">
+                    <span class="daily-tab-label" aria-hidden="true">Guess the Maze</span>
                     <span class="daily-tab-arrow" aria-hidden="true">&#9654;</span>
                 </button>
 
@@ -892,6 +901,10 @@
     <script src="js/custom-scrollbar.js"></script>
     <script src="js/letter-jump.js"></script>
     <script src="js/console.js"></script>
+    <!-- Before guess.js, which asks it who is signed in. Both only read
+         window.Account at run time, so the order is a courtesy rather than a
+         requirement — but the header button should be drawn early. -->
+    <script src="js/account.js"></script>
     <!-- After site.js, which is where imgCdn and compareNames live. -->
     <script src="js/guess.js"></script>
     <script src="js/track.js"></script>

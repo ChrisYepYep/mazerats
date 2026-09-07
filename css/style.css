@@ -7569,7 +7569,13 @@ body[data-page="admin"] .search-box input {
        outgrow the row alongside "MAZE RATS" itself. Wrapping this row too
        lets the pills spill onto their own line below the brand instead of
        squeezing brand-text down until it wraps. */
-    .brand-group { flex-wrap: wrap; row-gap: 4px; }
+    /* height, not just wrapping. .brand-group carries a fixed 32px height
+       to line the pills up with the brand, and a wrapped second row had
+       nowhere to go inside it — the pills spilled out of the box and landed
+       on top of the tagline and the events widget below. Adding the sign-in
+       button is what finally pushed a dev-mode header over that line, but
+       the overlap was waiting for whatever did. */
+    .brand-group { flex-wrap: wrap; row-gap: 4px; height: auto; min-height: 32px; }
 
     /* Unlike the public list row's "GO" button (just hidden at this width —
        see .chrome-go above), Edit/Delete can't be dropped, and stacked
@@ -9493,9 +9499,17 @@ body[data-page="admin"] #activity-sessions {
     margin: 0 auto;
     isolation: isolate;
 
-    --daily-tab-w: 102px;
-    --daily-tab-h: 15px;
-    --daily-tab-out: 23px;
+    /* Sized to the label rather than guessed at: "GUESS THE MAZE" measures
+       91px in Volter Goldfish at 0.5625rem with this letter-spacing, where
+       "DAILY" was 31px. 140 leaves the 6px that stays tucked, ~10px of air
+       either side of the word, and the arrow's own 20px at the right end.
+
+       Taller too, at 22px rather than 15px. What you grab at rest is
+       --daily-tab-out by --daily-tab-h, so that was a 23x15 target; it is
+       30x22 now, which is nearly twice the area. */
+    --daily-tab-w: 140px;
+    --daily-tab-h: 22px;
+    --daily-tab-out: 30px;
     /* How far the tab's left end stays tucked under the window once it is
        fully out, so it still reads as coming FROM somewhere rather than
        floating beside the frame. */
@@ -9561,8 +9575,13 @@ body[data-page="admin"] #activity-sessions {
    is out rather than in the middle of the whole sprite. */
 .daily-tab-label {
     position: absolute;
-    left: 0;
-    right: 18px;
+    /* Not left: 0. The tab keeps --daily-tab-tuck of its left end under the
+       window frame even when fully out, so a word centred across the whole
+       sprite sits slightly left of centre in the part you can actually
+       read. Starting the box past the tuck centres it in the visible
+       part instead. */
+    left: 8px;
+    right: 20px;
     text-align: center;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
@@ -10400,4 +10419,288 @@ body[data-page="admin"] #activity-sessions {
     .guess-try.is-empty { display: none; }
     .guess-tries:not(:has(.guess-try:not(.is-empty))) { display: none; }
     .guess-rules p { font-size: 0.72rem; }
+}
+
+/* ---------- signing in ---------- */
+
+/* Sits in the header row beside the Discord pill and matches its shape, so
+   the two read as a pair of controls rather than one control and one
+   ornament. The empty slot holds no space of its own — js/account.js fills
+   it once the server has said who is signed in. */
+.account-slot {
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+/* The one light-on-dark control in the header. Everything else up here is
+   an amber outline on the wood; this is filled cream, which is what makes
+   it read as the thing to press rather than another label. The cream is the
+   site's own parchment lifted a couple of steps rather than plain white —
+   white would sit outside the palette and look like a browser default. */
+.header-signin {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 11px;
+    border: 1px solid #efe4cc;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #f6efdd, #e2d5b8);
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+    font-family: 'Roboto', sans-serif;
+    font-weight: 700;
+    font-size: 0.62rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    /* Dark enough on that cream to clear AA comfortably — the same brown the
+       window chrome uses for text on its light surfaces. */
+    color: #3a2812;
+    cursor: var(--cursor-pointer);
+    white-space: nowrap;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.header-signin:hover {
+    background: linear-gradient(180deg, #fffaef, #ece0c6);
+    border-color: #fff8ec;
+}
+
+.header-signin:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
+}
+
+.header-signin:disabled { opacity: 0.6; cursor: default; }
+
+/* Signed in, the button carries a face and a name instead of a word, so it
+   is doing double duty as "you are signed in, as this person". Slightly
+   tighter left padding to let the avatar sit close to the edge. */
+.header-signin.is-signed-in {
+    padding: 2px 10px 2px 3px;
+    text-transform: none;
+    letter-spacing: 0.2px;
+}
+
+.header-signin-face {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: block;
+    /* Discord avatars are photographs and drawings, not pixel art. */
+    image-rendering: auto;
+}
+
+.header-signin-name {
+    max-width: 12ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Why a sign-in attempt did not finish. Floated under the header rather
+   than pushing the row taller, since it is there for a few seconds. */
+.header-signin-note {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    margin: 0;
+    padding: 5px 9px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-size: 0.62rem;
+    color: var(--parchment);
+    white-space: nowrap;
+    z-index: 5;
+}
+
+@media (max-width: 700px) {
+    /* The name is the first thing to go when the header runs out of room —
+       the avatar alone still says "signed in, and as whom". */
+    .header-signin-name { display: none; }
+    .header-signin.is-signed-in { padding: 2px 3px; }
+}
+
+/* ---------- the score ---------- */
+
+/* The day's headline figure, and the largest thing on the results sheet.
+   Montserrat, like every other piece of display type here — Volter Goldfish
+   only ever sets 0.5625rem. */
+.guess-points {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin: 0;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    color: var(--amber-bright);
+}
+
+.guess-points strong {
+    font-size: 2rem;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.guess-points span {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--unknown);
+}
+
+/* Demoted from the headline it used to be, now that the score is above it. */
+.guess-score {
+    font-family: 'Roboto', sans-serif;
+    font-weight: 400;
+    font-size: 0.78rem;
+    letter-spacing: 0;
+    color: var(--parchment-dim);
+}
+
+/* What the round was worth, under the reveal. */
+.guess-reveal-points {
+    margin: 0;
+    font-size: 0.7rem;
+    color: var(--parchment-dim);
+}
+
+.guess-reveal-points strong {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.guess-reveal-points.is-won strong { color: var(--ok); }
+.guess-reveal-points.is-lost strong { color: var(--danger); }
+
+/* The answer rows gained a fourth column for what each room scored. */
+.guess-answers li { grid-template-columns: 16px 1fr auto auto; }
+
+.guess-answers-points {
+    min-width: 34px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--amber);
+}
+
+.guess-answers li.is-lost .guess-answers-points { color: var(--unknown); }
+
+/* ---------- the leaderboards ---------- */
+
+.guess-boards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 400px;
+    margin-top: 4px;
+}
+
+.guess-board {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    text-align: left;
+}
+
+.guess-board-head {
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--unknown);
+}
+
+.guess-board-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.guess-board-row {
+    display: grid;
+    grid-template-columns: 16px 20px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.22);
+    font-size: 0.7rem;
+    color: var(--parchment);
+}
+
+/* The visitor's own row, picked out so a long board still answers "where am
+   I" at a glance. */
+.guess-board-row.is-me {
+    border-color: var(--amber);
+    background: rgba(120, 90, 45, 0.28);
+}
+
+.guess-board-rank {
+    color: var(--unknown);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.guess-board-face {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: block;
+    image-rendering: auto;
+}
+
+/* Someone with no Discord avatar. A hole in the row reads as a broken
+   image; a quiet disc reads as a person without a picture. */
+.guess-board-face.is-blank {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--wood-mid);
+    border: 1px solid var(--border);
+}
+
+.guess-board-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.guess-board-score {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 0.75rem;
+    color: var(--amber-bright);
+    font-variant-numeric: tabular-nums;
+}
+
+.guess-board-empty,
+.guess-board-note {
+    margin: 0;
+    padding: 6px 2px;
+    font-size: 0.68rem;
+    color: var(--parchment-dim);
+    list-style: none;
+}
+
+/* The one place the site asks anyone to sign in: at the moment there is a
+   score worth putting somewhere. */
+.guess-board-invite {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-panel);
+    text-align: center;
 }

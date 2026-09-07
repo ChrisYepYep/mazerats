@@ -164,6 +164,13 @@
     # stored Habbo article, and FurniIndex's icons. Everything else is
     # first-party.
     #
+    # cdn.discordapp.com is where a signed-in visitor's own Discord avatar
+    # comes from — the small round picture on the header button and on a
+    # leaderboard row. Nothing else is fetched from Discord by the browser:
+    # the OAuth exchange all happens server-side in
+    # netlify/functions/discord-auth.js, so discord.com itself never needs
+    # to be in connect-src.
+    #
     # images.habbo.com is a SEPARATE entry from www.habbo.com because a CSP
     # host is matched exactly — a subdomain is a different origin, and no
     # amount of www.habbo.com covers it. Habbo serves every picture in an
@@ -188,7 +195,7 @@
     # is SERVED from cloud.umami.is but POSTs its events to gateway.umami.is,
     # and a policy written from the script tag alone blocks every one of
     # them. (Verified against the real page — the console said so.)
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://furniindex.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
 # The pixel art, the fonts and the sprite sheets never change without their
 # filename changing, so there is no reason for a returning visitor to ask
