@@ -6186,11 +6186,23 @@ body[data-page="admin"] .search-box input {
     padding: 3px 0;
 }
 
+/* A fixed box rather than a shrink-to-fit one.
+
+   Sized by its content, an icon that has not arrived yet is 0x0, so the row
+   is short until the picture lands and then grows — which is late enough to
+   land after addFurni has already measured and corrected the scroll, and is
+   what was left of the jump once that correction was in (a couple of
+   stragglers of 2 and 7px against 25 to 32 before it).
+
+   Reserving the space means the row is the same height before the icon loads
+   as after, so the correction is exact, and every chip in the list lines up
+   with the ones above and below it. object-fit keeps a sprite that is not
+   square from being stretched to fill the box. */
 .admin-furni-item img {
-    width: auto;
-    height: auto;
-    max-width: 26px;
-    max-height: 26px;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    object-fit: contain;
     image-rendering: pixelated;
 }
 
@@ -7990,7 +8002,10 @@ body[data-page="admin"] .container {
     min-width: 0;
     min-height: 0;
     overflow-y: auto;
-    padding: 20px 22px 24px;
+    /* Named because the Save bar has to cancel it exactly — twice, in two
+       different properties. See .admin-floating-actions. */
+    --admin-stage-pad-b: 24px;
+    padding: 20px 22px var(--admin-stage-pad-b);
     position: relative;
 }
 
@@ -8098,15 +8113,31 @@ body[data-page="admin"] #contributors-list {
 /* Pinned to the bottom of the working area while a form is open. sticky
    rather than fixed: it spans the working area's width and nothing else, so
    it neither covers the rail nor has to be told where the rail ends. */
+/* Pinned to the bottom of .admin-stage, which is this element's own parent
+   AND the scroll container.
+
+   That combination is why the offset is negative. A sticky box is clamped by
+   its containing block, and its containing block here is the stage's CONTENT
+   box — whose bottom edge sits one padding-bottom above the edge you can
+   see. So "bottom: 0" pinned the bar 24px up the page and left a strip of
+   empty stage under it, which is the gap. The negative margin alone could
+   not close it: that frees the border box to extend into the padding, but
+   the sticky clamp still holds the bar at the content edge. Both are needed,
+   and both have to be the same number as the padding, which is why it is a
+   variable rather than a 24 written down in three places.
+
+   Only ever visible on a wide window: below 900px the bar becomes
+   position: fixed against the viewport (see the media query further down),
+   where none of this applies. */
 .admin-floating-actions {
     position: sticky;
-    bottom: 0;
+    bottom: calc(-1 * var(--admin-stage-pad-b));
     z-index: 30;
     display: none;
     align-items: center;
     justify-content: flex-end;
     gap: 10px;
-    margin: 18px -22px -24px;
+    margin: 18px -22px calc(-1 * var(--admin-stage-pad-b));
     padding: 12px 22px;
     background: var(--chrome-fill);
     border-top: 1px solid var(--chrome-border);
@@ -8204,7 +8235,8 @@ body[data-page="admin"] .site-footer p {
     .admin-rail-scroll { overflow: visible; }
     .admin-stage {
         overflow: visible;
-        padding: 16px 14px 20px;
+        --admin-stage-pad-b: 20px;
+        padding: 16px 14px var(--admin-stage-pad-b);
     }
     .admin-floating-actions {
         position: fixed;

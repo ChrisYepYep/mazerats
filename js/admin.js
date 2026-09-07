@@ -1108,7 +1108,11 @@ document.addEventListener("DOMContentLoaded", () => {
                caret at the end rather than selecting the whole query, which
                would make the next keystroke wipe it. */
             input.value = pickerQuery;
-            input.focus();
+            /* preventScroll, because this input is brand new every render and
+               focusing a new element makes the browser scroll it into view —
+               which is a second, competing opinion about where the page
+               should sit, fighting the one addFurni below is enforcing. */
+            input.focus({ preventScroll: true });
             input.setSelectionRange(input.value.length, input.value.length);
 
             let timer = null;
@@ -1214,7 +1218,41 @@ document.addEventListener("DOMContentLoaded", () => {
                 manual: true,
                 addedAt: new Date().toISOString()
             });
+
+            /* Keep the picker where it is on screen.
+
+               Adding a furni puts a chip in the list ABOVE the search box, so
+               the box and the results underneath it move down by exactly that
+               chip's height — 25 to 32px, measured. The page never scrolls;
+               the content grows and shoves the thing you are aiming at out
+               from under the pointer, so the next furni you meant to click has
+               moved by the time you click it. On a maze with a hundred rooms
+               that happens on every single add.
+
+               Nothing here can know the chip's height in advance — it depends
+               on how long the furni's name is and whether it wraps — so it is
+               measured rather than assumed: where the box was before the
+               rebuild, where it is after, and the difference handed to the
+               scroller. Which is what the browser's own scroll anchoring
+               would do, if the whole list were not being replaced out from
+               under it on every add. */
+            const anchor = () => {
+                const el = listEl.querySelector(".admin-furni-search");
+                return el ? el.getBoundingClientRect().top : null;
+            };
+            // The admin's scroll container is .admin-stage, not the document —
+            // body is overflow: hidden here. Falls back to the page for any
+            // future layout that does not have one.
+            const scroller = wrap.closest(".admin-stage") || document.scrollingElement;
+            const was = anchor();
+
             render();
+
+            const now = anchor();
+            if (scroller && was != null && now != null) {
+                const drift = now - was;
+                if (drift) scroller.scrollTop += drift;
+            }
         }
 
         render();
