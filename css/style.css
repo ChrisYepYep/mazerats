@@ -9746,7 +9746,9 @@ body[data-page="admin"] #activity-sessions {
     width: var(--menu-w);
     display: flex;
     flex-direction: column;
-    padding: 4px 9px 8px;
+    /* Even all round, so every row's highlight has the same inset from the
+       card's edge as every other. */
+    padding: 6px;
 
     background: #c9ad84;
     border: 1px solid var(--chrome-border);
@@ -9758,10 +9760,14 @@ body[data-page="admin"] #activity-sessions {
    rule — the same hashed rule the console draws between sections of the
    privacy policy, so the site has one idea of what a divider looks like. */
 .side-menu-item {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 1px;
-    padding: 7px 2px;
+    padding: 7px 7px;
+    /* The room the rule above sits in. It is MARGIN rather than padding on
+       purpose — see the rule below. */
+    margin-top: 11px;
     background: none;
     border: 0;
     border-radius: 3px;
@@ -9772,16 +9778,28 @@ body[data-page="admin"] #activity-sessions {
     transition: background-color 0.12s ease-out;
 }
 
+.side-menu-item:first-child { margin-top: 0; }
+
 /* Between each pair, never before the first or after the last — a rule at
    either end would be closing off nothing. Drawn as characters rather than
    a border so it is genuinely hashed rather than dashed, matching
-   .console-hashline. */
+   .console-hashline.
+
+   Positioned into the margin ABOVE the item rather than laid out inside
+   it, which is what keeps the hover highlight where it belongs. As an
+   in-flow child the rule was part of the item's own box, so the highlight
+   swept up over the separator — and over a different amount of it on the
+   first row, which has no separator, so no two rows highlighted the same
+   shape. Out here in the margin it is outside the background box entirely:
+   every row lights up identically, and strictly between its rules. */
 .side-menu-item + .side-menu-item::before {
     content: "------------------------------------------------";
-    display: block;
-    /* Pulled out to the panel's padding, so the rule spans the card while
+    position: absolute;
+    top: -10px;
+    /* Out to the panel's padding, so the rule spans the whole card while
        the text it separates stays inset. */
-    margin: -3px -7px 5px;
+    left: -6px;
+    right: -6px;
     height: 8px;
     overflow: hidden;
     white-space: nowrap;
