@@ -6284,6 +6284,20 @@ body[data-page="admin"] .search-box input {
 
 .admin-furni-result-name { flex: 1; overflow-wrap: anywhere; }
 
+/* Habbo's own name for the furni line, shown only on results whose display
+   name is shared by another result in the same search — four Armchairs read
+   as four identical rows otherwise, and picking the right colour is
+   guesswork. Same treatment the public furni card gives it (see
+   .furni-card-class): after the name, quieter, italic, and wrapping under
+   rather than squeezing the name it belongs to. */
+.admin-furni-result-class {
+    margin-left: 6px;
+    font-size: 0.72em;
+    font-style: italic;
+    color: var(--parchment-dim);
+    overflow-wrap: anywhere;
+}
+
 .admin-furni-result .admin-hint { margin: 0; }
 
 /* Already on this room. Left in the list rather than filtered out, so the

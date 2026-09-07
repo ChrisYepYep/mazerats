@@ -895,6 +895,22 @@ document.addEventListener("DOMContentLoaded", () => {
        entries carry manual: true, which is what keeps them alive through a
        rescan — see tools/furni-scan-local.js, which merges
        them back over its own results rather than replacing them. */
+    /* What makes one furni one furni.
+
+       NOT the name. Habbo gives every colourway in a family the same one —
+       four Armchairs, seven Heart Sofas, two Telephone Boxes, seventeen such
+       names in the archive as it stands — and keying on it meant adding any
+       one of them marked the whole family as already added, greyed the rest
+       out, and had addFurni refuse them for good measure. The other colours
+       simply could not be recorded.
+
+       The catalogue tells them apart perfectly well: every variant has its
+       own FurniIndex page and its own furni line. This is the same key
+       furniKeyOf uses in js/home.js, which is what the reverse index and the
+       archive's furni browser are built on, so the admin and the public site
+       agree about what counts as one piece. */
+    const furniKey = f => (f && (f.url || f.name)) || "";
+
     function wireFurniEditor(formEl, item) {
         const wrap = formEl.querySelector(".admin-furni-field");
         if (!wrap) return;
@@ -1109,17 +1125,36 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 // Read, not recordFor: opening the picker on a room must
                 // not leave an empty record behind on a room nobody added to.
-                const already = new Set(((formEl._furniDraft[image] || {}).items || []).map(f => f.name));
-                results.innerHTML = items.map((f, i) => '' +
-                    '<button type="button" class="admin-furni-result' + (already.has(f.name) ? " is-added" : "") + '" data-index="' + i + '"' + (already.has(f.name) ? " disabled" : "") + '>' +
+                const already = new Set(((formEl._furniDraft[image] || {}).items || []).map(furniKey));
+
+                /* Which of these results share a display name, so only those
+                   have to carry their furni line as well.
+
+                   Habbo gives a whole colourway family one name: four
+                   Armchairs, seven Heart Sofas, two Gates (lockable). Left
+                   as bare names they are four identical rows, and picking
+                   the right one is guesswork — so the ones that clash say
+                   which they are, and the rest stay as they were. */
+                const nameCount = {};
+                items.forEach(f => { nameCount[f.name] = (nameCount[f.name] || 0) + 1; });
+
+                results.innerHTML = items.map((f, i) => {
+                    const key = furniKey(f);
+                    const isAdded = already.has(key);
+                    const line = nameCount[f.name] > 1 && f.className
+                        ? '<span class="admin-furni-result-class">' + escapeHtml(f.className) + '</span>'
+                        : '';
+                    return '' +
+                    '<button type="button" class="admin-furni-result' + (isAdded ? " is-added" : "") + '" data-index="' + i + '"' + (isAdded ? " disabled" : "") + '>' +
                         '<img src="' + escapeHtml(f.icon || "") + '" alt="">' +
-                        '<span class="admin-furni-result-name">' + escapeHtml(f.name || "") + '</span>' +
-                        '<span class="admin-hint">' + (already.has(f.name) ? "added" : escapeHtml((f.releaseDate || "").slice(0, 4))) + '</span>' +
-                    '</button>').join("");
+                        '<span class="admin-furni-result-name">' + escapeHtml(f.name || "") + line + '</span>' +
+                        '<span class="admin-hint">' + (isAdded ? "added" : escapeHtml((f.releaseDate || "").slice(0, 4))) + '</span>' +
+                    '</button>';
+                }).join("");
                 results.querySelectorAll(".admin-furni-result").forEach(btn => {
                     btn.addEventListener("click", () => addFurni(image, items[Number(btn.dataset.index)]));
                 });
-                const added = items.filter(f => already.has(f.name)).length;
+                const added = items.filter(f => already.has(furniKey(f))).length;
                 status.textContent = items.length + " match" + (items.length === 1 ? "" : "es")
                     + (added ? ` — ${added} added` : "")
                     + " — click to add, and keep clicking for more.";
@@ -1167,7 +1202,7 @@ document.addEventListener("DOMContentLoaded", () => {
            make for a furni that was never detected. */
         function addFurni(image, f) {
             const rec = recordFor(image);
-            if ((rec.items || []).some(x => x.name === f.name)) return;
+            if ((rec.items || []).some(x => furniKey(x) === furniKey(f))) return;
             rec.items.push({
                 name: f.name,
                 motto: f.motto || "",
