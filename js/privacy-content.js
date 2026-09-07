@@ -21,11 +21,11 @@ const PRIVACY_SECTIONS = [
     },
     {
         heading: "Signing in with Discord.",
-        body: "Signing in is entirely optional. Everything on this site - the archive, the daily game, marking a maze as walked - works without an account, and nothing is hidden behind one. If you do sign in, we ask Discord for one permission only: \"identify\", which returns your Discord user ID, your display name and your avatar picture. We do not ask for your email address, your servers, your friends, or anything else, and we cannot see them. We keep your ID, display name and avatar URL, and the dates you first signed in and were last seen. The access token Discord issues during sign-in is used once to read that profile and is then discarded, never stored - so nothing here can act on your behalf on Discord, and there is no credential of yours for anyone to steal from us."
+        body: "Signing in is entirely optional. Everything on this site - the archive, the daily game, marking a maze as completed - works without an account, and nothing is hidden behind one. If you do sign in, we ask Discord for one permission only: \"identify\", which returns your Discord user ID, your display name and your avatar picture. We do not ask for your email address, your servers, your friends, or anything else, and we cannot see them. We keep your ID, display name and avatar URL, and the dates you first signed in and were last seen. The access token Discord issues during sign-in is used once to read that profile and is then discarded, never stored - so nothing here can act on your behalf on Discord, and there is no credential of yours for anyone to steal from us."
     },
     {
         heading: "What your account holds.",
-        body: "Signed in, the things this site would otherwise remember only in your browser are kept against your account instead, so they follow you between your phone and your computer: which mazes you have marked as walked, which you have saved to walk later, your progress in the current day of the daily game, and your finished daily scores. Your display name, avatar, score and result grid - the five coloured squares saying how each room went, which name no maze and give nothing away - are shown publicly on the daily game's leaderboards. That is the entire purpose of signing in, and it is the only place your account is visible to anyone else. Which mazes you have walked, and which you have saved to walk later, are never shown to anybody but you."
+        body: "Signed in, the things this site would otherwise remember only in your browser are kept against your account instead, so they follow you between your phone and your computer: which mazes you have marked as completed, which you have saved to complete later, your progress in the current day of the daily game, and your finished daily scores. Your display name, avatar, score and result grid - the five coloured squares saying how each room went, which name no maze and give nothing away - are shown publicly on the daily game's leaderboards. That is the entire purpose of signing in, and it is the only place your account is visible to anyone else. Which mazes you have completed, and which you have saved to complete later, are never shown to anybody but you."
     },
     {
         heading: "Use of Data.",
@@ -37,7 +37,7 @@ const PRIVACY_SECTIONS = [
     },
     {
         heading: "Browser Storage.",
-        body: "Your browser holds a small amount of information for this site on your own device. For visitors that is a short-lived session identifier used only for the interaction records described above, a note of whether the site was last seen as open so the page still behaves correctly if our server is briefly unreachable, and - if you have played the daily game or marked a maze as walked - that progress, which stays on your device alone unless you sign in. Signing in adds a session cookie so the site knows it is still you: it is marked HttpOnly, which means the page's own scripts cannot read it, it holds nothing but your Discord ID, display name and avatar, and it expires after thirty days. For signed-in administrators there is also an admin session token. None of it is used to follow you across other websites, none of it is sold or shared, and clearing your browser data removes all of it."
+        body: "Your browser holds a small amount of information for this site on your own device. For visitors that is a short-lived session identifier used only for the interaction records described above, a note of whether the site was last seen as open so the page still behaves correctly if our server is briefly unreachable, and - if you have played the daily game or marked a maze as completed - that progress, which stays on your device alone unless you sign in. Signing in adds a session cookie so the site knows it is still you: it is marked HttpOnly, which means the page's own scripts cannot read it, it holds nothing but your Discord ID, display name and avatar, and it expires after thirty days. For signed-in administrators there is also an admin session token. None of it is used to follow you across other websites, none of it is sold or shared, and clearing your browser data removes all of it."
     },
     {
         heading: "Third-Party Sharing.",
@@ -45,7 +45,7 @@ const PRIVACY_SECTIONS = [
     },
     {
         heading: "Data Rights & Contact.",
-        body: "Signing out clears your session immediately, and you can withdraw this site's access at any time from Discord's own Authorised Apps settings without asking us. To have the account itself deleted - your profile, your scores, your leaderboard entries and your walked mazes, permanently and in full - or to review or remove any stored contact data, send a message through the Contact Us form and your request will be processed promptly."
+        body: "Signing out clears your session immediately, and you can withdraw this site's access at any time from Discord's own Authorised Apps settings without asking us. To have the account itself deleted - your profile, your scores, your leaderboard entries and your completed mazes, permanently and in full - or to review or remove any stored contact data, send a message through the Contact Us form and your request will be processed promptly."
     }
 ];
 

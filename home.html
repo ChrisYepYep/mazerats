@@ -307,7 +307,11 @@
                             aria-expanded="false" aria-controls="side-menu"
                             aria-label="More ways into the archive">
                         <span class="side-spine-label" aria-hidden="true">Menu</span>
-                        <span class="side-spine-arrow" aria-hidden="true">&#9664;</span>
+                        <!-- Points right when closed — out, the way the tab
+                             is about to travel — and the 180 turn in the CSS
+                             lands it pointing left when open, back at the
+                             window it will slide home into. -->
+                        <span class="side-spine-arrow" aria-hidden="true">&#9654;</span>
                     </button>
                 </div>
 

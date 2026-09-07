@@ -897,8 +897,24 @@ document.addEventListener("DOMContentLoaded", () => {
        any more and counting it would make the total unreachable by design.
        Hidden entirely at zero: a fresh visitor should meet the archive, not
        a scoreboard reading 0. */
+    /* A hallway is not a maze. It is the corridor that joins them — there is
+       nothing in it to solve, so it cannot be completed, and counting it
+       among the mazes makes every total slightly wrong and the walked tally
+       permanently unreachable by one.
+
+       Read off the tag rather than a separate field, because the tag is
+       already how the archive says what a room is, and matched
+       case-insensitively so "Hallway", "hallway" and "HALLWAY" all count. */
+    const HALLWAY_TAG = "hallway";
+
+    function isHallway(record) {
+        return (record && Array.isArray(record.tags) ? record.tags : [])
+            .some(t => String(t).trim().toLowerCase() === HALLWAY_TAG);
+    }
+
     function walkableRooms() {
-        return ROOMS.filter(r => r.status === "open" || r.status === "unknown");
+        return ROOMS.filter(r =>
+            (r.status === "open" || r.status === "unknown") && !isHallway(r));
     }
 
     function updateWalkedCount() {
@@ -933,7 +949,9 @@ document.addEventListener("DOMContentLoaded", () => {
        one. Marking a maze off belongs where you land after actually walking
        it, which is its own page. */
     function walkedToggleHtml(n) {
-        if (n.isEvent || !n.id) return "";
+        // No Completed on an event, and none on a hallway either: there is
+        // nothing in a corridor to have finished.
+        if (n.isEvent || !n.id || isHallway(n)) return "";
         const walked = isWalked(n.id);
         return `<button type="button" class="walked-toggle${walked ? " is-walked" : ""}" ` +
             `data-walked-id="${escapeHtml(n.id)}" aria-pressed="${walked ? "true" : "false"}" ` +
@@ -993,7 +1011,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function paintSavedToggle(btn, saved) {
         btn.classList.toggle("is-saved", saved);
         btn.setAttribute("aria-pressed", saved ? "true" : "false");
-        btn.title = saved ? "On your list. Click to remove." : "Save this to walk later";
+        btn.title = saved ? "On your list. Click to remove." : "Save this to complete later";
         const label = btn.querySelector(".saved-toggle-label");
         if (label) label.textContent = saved ? "Saved" : "Save";
     }
@@ -1003,7 +1021,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const saved = isSaved(n.id);
         return `<button type="button" class="saved-toggle${saved ? " is-saved" : ""}" ` +
             `data-saved-id="${escapeHtml(n.id)}" aria-pressed="${saved ? "true" : "false"}" ` +
-            `title="${saved ? "On your list. Click to remove." : "Save this to walk later"}" ` +
+            `title="${saved ? "On your list. Click to remove." : "Save this to complete later"}" ` +
             `data-track="saved-toggle" data-track-label="${escapeHtml(n.id)}">` +
             `<span class="saved-toggle-mark" aria-hidden="true"></span>` +
             `<span class="saved-toggle-label">${saved ? "Saved" : "Save"}</span>` +
@@ -1174,6 +1192,14 @@ document.addEventListener("DOMContentLoaded", () => {
                repeating the first date. */
             n.archivedAt = archivedAt(item, isEvent);
             n.updatedAt = item.updatedAt || "";
+            /* What the log groups and captions by: the day something
+               happened, and which of the two things happened. An edit made
+               the same day a record was catalogued is part of cataloguing
+               it, so only a later day counts as an update. */
+            n.activityAt = at;
+            n.activity = (n.updatedAt && n.archivedAt
+                && n.updatedAt.slice(0, 10) > n.archivedAt.slice(0, 10))
+                ? "updated" : "added";
             return { n, at, own };
         };
         const rooms = ROOMS.map(r => wrap(r, false));
@@ -1209,6 +1235,101 @@ document.addEventListener("DOMContentLoaded", () => {
         // as pictures), and this line is meant to be one font throughout.
         // The gap between the two items does the separating.
         return `<p class="row-when">${parts.join("")}</p>`;
+    }
+
+    /* ---------- What's New, as an update log ----------
+
+       This used to draw the same .chrome-list-row the archive draws, with
+       two extra dates on it — which is exactly why it was confusing: the
+       view that answers "what has changed lately" looked identical to the
+       view that answers "what is there". Nothing on screen said you had
+       gone anywhere.
+
+       So it renders its own shape, the way the Timeline and the furni
+       browser do. Grouped under the day it happened, each line captioned
+       with what happened rather than with what the thing is, and strung on
+       a rule down the left so it reads down the page as a sequence of
+       events rather than across as a catalogue of objects. */
+
+    function logDayLabel(iso) {
+        const day = String(iso).slice(0, 10);
+        const today = new Date().toISOString().slice(0, 10);
+        const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        if (day === today) return "Today";
+        if (day === yesterday) return "Yesterday";
+        const d = new Date(day + "T00:00:00Z");
+        if (isNaN(d)) return day;
+        // The year only where it is not this one — on a log that mostly
+        // covers recent weeks, repeating it on every heading is noise.
+        const sameYear = day.slice(0, 4) === today.slice(0, 4);
+        return d.toLocaleDateString("en-GB", {
+            weekday: "short", day: "numeric", month: "long",
+            ...(sameYear ? {} : { year: "numeric" }),
+            timeZone: "UTC"
+        });
+    }
+
+    function renderWhatsNew() {
+        const items = whatsNewItems().filter(matchesQuery);
+        currentItems = items;
+
+        if (!items.length) {
+            grid.innerHTML = "";
+            emptyEl.textContent = query.trim()
+                ? "Nothing new matches your search."
+                : "Nothing has been added yet.";
+            emptyEl.style.display = "block";
+            return;
+        }
+        emptyEl.style.display = "none";
+
+        // Already ordered newest first by whatsNewItems, so walking it in
+        // order and starting a new group each time the day changes keeps
+        // that order without sorting anything twice.
+        const days = [];
+        items.forEach((n, i) => {
+            const day = String(n.activityAt || "").slice(0, 10);
+            const last = days[days.length - 1];
+            if (!last || last.day !== day) days.push({ day, entries: [{ n, i }] });
+            else last.entries.push({ n, i });
+        });
+
+        grid.innerHTML = `
+            <p class="updatelog-intro">The archive's own record of itself — what has been catalogued and what has been corrected, most recent first.</p>
+            <div class="updatelog">
+                ${days.map(group => `
+                    <section class="updatelog-day">
+                        <h3 class="updatelog-date">
+                            <span>${escapeHtml(logDayLabel(group.day))}</span>
+                            <span class="updatelog-count">${group.entries.length}</span>
+                        </h3>
+                        <ul class="updatelog-entries">
+                            ${group.entries.map(({ n, i }) => `
+                                <li>
+                                    <button type="button" class="updatelog-entry" data-log-index="${i}">
+                                        <span class="updatelog-verb is-${n.activity}">${n.activity === "updated" ? "Updated" : "Added"}</span>
+                                        ${n.thumb
+                                            ? `<img class="updatelog-thumb" src="${escapeHtml(rowThumbUrl(n.thumb))}" alt="" loading="lazy" decoding="async">`
+                                            : `<span class="updatelog-thumb is-blank" aria-hidden="true"></span>`}
+                                        <span class="updatelog-what">
+                                            <span class="updatelog-name">${escapeHtml(n.name || "")}</span>
+                                            <span class="updatelog-meta">${escapeHtml(
+                                                (n.isEvent ? "Event" : isHallway(n) ? "Hallway" : "Maze")
+                                                + (n.owner ? ` · ${n.owner}` : "")
+                                            )}</span>
+                                        </span>
+                                    </button>
+                                </li>`).join("")}
+                        </ul>
+                    </section>`).join("")}
+            </div>`;
+
+        grid.querySelectorAll(".updatelog-entry").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const n = currentItems[Number(btn.dataset.logIndex)];
+                if (n) openModal(n);
+            });
+        });
     }
 
     /* ---------- the timeline ----------
@@ -1448,6 +1569,15 @@ document.addEventListener("DOMContentLoaded", () => {
            below. */
         if (showTimeline) {
             renderTimeline();
+            updateWalkedCount();
+            return;
+        }
+
+        /* What's New, on the same footing: it is a log of changes, not a
+           list of things, and drawing it as maze rows was what made it hard
+           to tell you had gone anywhere. */
+        if (showWhatsNew) {
+            renderWhatsNew();
             updateWalkedCount();
             return;
         }
@@ -2901,7 +3031,10 @@ document.addEventListener("DOMContentLoaded", () => {
             .sort((a, b) => b.n - a.n || compareNames(a.name, b.name))[0] || null;
 
         archiveStatsCache = {
-            mazes: ROOMS.length,
+            // Hallways are not mazes — see isHallway. Counting them here
+            // would put the stats block one out from the walked tally,
+            // which counts the same set.
+            mazes: ROOMS.filter(r => !isHallway(r)).length,
             events: EVENTS.length,
             roomImages,
             people: new Set([...builders, ...hosts]).size,
@@ -4672,11 +4805,11 @@ document.addEventListener("DOMContentLoaded", () => {
        design — the closed ones are excluded from the denominator for the
        same reason they are excluded from the count. */
     const MILESTONES = [
-        { at: 1, name: "First steps", note: "Walked your first maze" },
-        { at: 5, name: "Getting your bearings", note: "Five walked" },
-        { at: 10, name: "Regular", note: "Ten walked" },
-        { at: 25, name: "Seasoned", note: "Twenty-five walked" },
-        { at: 50, name: "Veteran", note: "Fifty walked" }
+        { at: 1, name: "First steps", note: "Completed your first maze" },
+        { at: 5, name: "Getting your bearings", note: "Five completed" },
+        { at: 10, name: "Regular", note: "Ten completed" },
+        { at: 25, name: "Seasoned", note: "Twenty-five completed" },
+        { at: 50, name: "Veteran", note: "Fifty completed" }
     ];
 
     function progressFigures() {
@@ -4761,10 +4894,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
             <section class="progress-block">
                 <div class="progress-bignum">
-                    <strong>${done}</strong><span>of ${total} walked</span>
+                    <strong>${done}</strong><span>of ${total} completed</span>
                 </div>
                 <div class="progress-bar"><span style="width:${pct}%"></span></div>
-                <p class="progress-note">${pct}% of the mazes you can still walk today.</p>
+                <p class="progress-note">${pct}% of the mazes you can still complete today.</p>
             </section>
 
             ${diffRows ? `<section class="progress-block">
@@ -4781,11 +4914,11 @@ document.addEventListener("DOMContentLoaded", () => {
                             <span>${escapeHtml(m.name)}</span>
                         </li>`).join("")}</ul>`
                     : `<p class="progress-note">None yet — the first arrives the moment you mark a maze as completed.</p>`}
-                ${next ? `<p class="progress-note">Next: <strong>${escapeHtml(next.name)}</strong> at ${next.at} walked — ${next.at - done} to go.</p>` : ""}
+                ${next ? `<p class="progress-note">Next: <strong>${escapeHtml(next.name)}</strong> at ${next.at} completed — ${next.at - done} to go.</p>` : ""}
             </section>
 
             <section class="progress-block">
-                <h4 class="progress-head-sm">Saved to walk${f.toWalk.length ? ` <span class="progress-count">${f.toWalk.length}</span>` : ""}</h4>
+                <h4 class="progress-head-sm">Saved to complete${f.toWalk.length ? ` <span class="progress-count">${f.toWalk.length}</span>` : ""}</h4>
                 ${savedList}
             </section>`;
     }
@@ -4886,7 +5019,7 @@ document.addEventListener("DOMContentLoaded", () => {
             },
             {
                 name: "Your Progress",
-                state: `${f.walkedHere.length} of ${f.walkable.length} walked`
+                state: `${f.walkedHere.length} of ${f.walkable.length} completed`
                     + (f.toWalk.length ? ` · ${f.toWalk.length} saved` : ""),
                 badge: "",
                 on: false,

@@ -11250,12 +11250,18 @@ body[data-page="admin"] #activity-sessions {
     image-rendering: auto;
 }
 
+/* The bold cut asked for by its own family name at weight 400, rather than
+   'Volter Goldfish' at 700 — same file either way, but this route gets the
+   drawn bold face with no synthetic emboldening laid over an already-bold
+   one. See the @font-face pair at the top of this file. */
 .progress-head-text h3 {
     margin: 0;
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 800;
-    font-size: 0.95rem;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    letter-spacing: 0.05em;
     color: var(--amber-bright);
+    text-shadow: 2px 2px 0 var(--bg-black);
 }
 
 .progress-head-text p {
@@ -11286,14 +11292,18 @@ body[data-page="admin"] #activity-sessions {
     border-top: 1px solid var(--border);
 }
 
+/* The section headings, in the same bold cut as the card's own title above
+   — they are the same kind of thing at a smaller rank, and setting one in
+   the drawn bold and the other in the regular would say they were not. */
 .progress-head-sm {
     margin: 0;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
     font-size: 0.5625rem;
     font-weight: 400;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--unknown);
+    color: var(--amber);
+    text-shadow: 2px 2px 0 var(--bg-black);
 }
 
 .progress-count { color: var(--amber); }
@@ -11451,3 +11461,176 @@ body[data-page="admin"] #activity-sessions {
 .progress-saved-row:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
 .progress-saved-by { color: var(--unknown); font-size: 0.62rem; white-space: nowrap; }
+
+/* ---------- What's New, as an update log ----------
+
+   Its own shape, because it answers a different question from the archive
+   list it used to be drawn as. Read down the page as a sequence of things
+   that happened rather than across as a catalogue of things that exist: a
+   date heading, then entries strung on a rule with a marker each. */
+.updatelog-intro {
+    margin: 0 0 14px;
+    font-size: 0.72rem;
+    line-height: 1.5;
+    color: var(--parchment-dim);
+}
+
+.updatelog {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.updatelog-date {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 7px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--amber-bright);
+}
+
+.updatelog-count {
+    color: var(--unknown);
+    font-variant-numeric: tabular-nums;
+}
+
+/* The rule the entries hang from. It is what makes this read as a log at a
+   glance rather than as a list with dates on it. */
+.updatelog-entries {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 14px;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.updatelog-entry {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto 34px 1fr;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 6px 9px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--parchment);
+    font: inherit;
+    text-align: left;
+    cursor: var(--cursor-pointer);
+    transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
+}
+
+/* The marker on the rule. Sits in the gutter the padding above reserves,
+   so it lands ON the line rather than beside it. */
+.updatelog-entry::before {
+    content: "";
+    position: absolute;
+    left: -18px;
+    top: 50%;
+    width: 7px;
+    height: 7px;
+    margin-top: -4px;
+    border-radius: 50%;
+    background: var(--wood-mid);
+    border: 1px solid var(--amber);
+}
+
+.updatelog-entry:hover,
+.updatelog-entry:focus-visible {
+    background: var(--wood-mid);
+    border-color: var(--amber);
+    outline: none;
+}
+.updatelog-entry:hover::before,
+.updatelog-entry:focus-visible::before { background: var(--amber-bright); }
+.updatelog-entry:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
+
+/* What happened, not what the thing is — which is the whole difference
+   between a log and a listing. Added is the archive's positive green;
+   updated is the amber it uses for "changed, look again". */
+.updatelog-verb {
+    padding: 2px 6px;
+    border: 1px solid;
+    border-radius: 3px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.4;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.updatelog-verb.is-added {
+    color: #d8e8c6;
+    border-color: var(--ok);
+    background: rgba(111, 143, 79, 0.22);
+}
+
+.updatelog-verb.is-updated {
+    color: var(--amber-bright);
+    border-color: var(--amber);
+    background: rgba(171, 139, 100, 0.18);
+}
+
+.updatelog-thumb {
+    width: 34px;
+    height: 24px;
+    object-fit: cover;
+    border: 1px solid var(--chrome-border);
+    border-radius: 2px;
+    background: var(--bg-black);
+    image-rendering: pixelated;
+}
+
+.updatelog-thumb.is-blank {
+    display: block;
+    border-style: dashed;
+    border-color: var(--border);
+}
+
+.updatelog-what {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.updatelog-name {
+    font-size: 0.74rem;
+    line-height: 1.25;
+    color: var(--parchment);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.updatelog-meta {
+    font-size: 0.62rem;
+    color: var(--unknown);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .updatelog-entry { transition: none; }
+}
+
+@media (max-width: 700px) {
+    /* The verb drops to its own line above the name rather than shrinking
+       the name to nothing — which of the two happened is the point of the
+       row, so it is the last thing to give up room. */
+    .updatelog-entry { grid-template-columns: 34px 1fr; }
+    .updatelog-verb { grid-column: 1 / -1; justify-self: start; }
+}
