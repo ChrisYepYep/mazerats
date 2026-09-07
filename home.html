@@ -255,6 +255,35 @@
             <!-- tabindex="-1" so the skip link above actually lands here.
                  A plain div is not focusable, and browsers differ on whether
                  they move focus to a fragment target that cannot take it. -->
+            <!-- The archive window and the tab tucked behind it, stacked in
+                 one box so the tab can be positioned against the window's own
+                 right edge and painted underneath it.
+
+                 The wrapper exists for both of those. It shrink-wraps the
+                 window, so "right: -23px" on the tab means 23px past the edge
+                 you can see rather than 23px past some container the window
+                 is centred in; and it carries the stacking order, so the
+                 window paints OVER the tab rather than the tab having to
+                 paint under everything with a negative z-index — which it did
+                 at first, and which put it behind .container, where nothing
+                 could be hovered or clicked. -->
+            <div class="archive-stack">
+                <!-- The way into the daily game: a tab behind the window's
+                     right-hand edge with 23px of itself showing, which slides
+                     the rest of the way out on hover. The art is one sprite
+                     (assets/img/side-tab-active.png, 102x15) and the rest
+                     state is simply the part of it that clears the window —
+                     the separately drawn "inactive" cut of the same tab was
+                     pixel-for-pixel its right-hand 23 columns.
+
+                     A real button, not a decoration: it is the only route to
+                     the game, so it has to be reachable by keyboard and to
+                     say what it is. -->
+                <button type="button" class="daily-tab" id="daily-tab" aria-label="Open the daily game, Guess the Maze">
+                    <span class="daily-tab-label" aria-hidden="true">Daily</span>
+                    <span class="daily-tab-arrow" aria-hidden="true">&#9654;</span>
+                </button>
+
             <div class="chrome-window" id="browse-window" tabindex="-1">
                 <img class="window-peek-rat" src="assets/img/rat_peek.png" alt="" aria-hidden="true">
                 <div class="chrome-titlebar">
@@ -356,6 +385,7 @@
                 </div>
                 <img class="window-sleep-rat" src="assets/img/rat_sleep.png" alt="" aria-hidden="true">
             </div>
+            </div><!-- /.archive-stack -->
         </div>
     </main>
 
@@ -584,6 +614,57 @@
     </footer>
 
     <!-- Room detail modal -->
+    <!-- Guess the Maze. Same .modal-overlay/.modal window every other panel
+         on this site opens in, so the game wears the archive's own chrome
+         rather than looking like a page borrowed from somewhere else.
+         Driven entirely by js/guess.js. -->
+    <div class="modal-overlay guess-overlay" id="guess-overlay">
+        <div class="modal guess-window" id="guess-window" role="dialog" aria-modal="true" aria-labelledby="guess-title" tabindex="-1">
+            <div class="chrome-titlebar">
+                <h2 id="guess-title">Guess the Maze</h2>
+                <button class="chrome-close" id="guess-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+            </div>
+            <div class="chrome-frame">
+                <div class="guess-body">
+
+                    <div class="guess-picture">
+                        <!-- Fixed square, drawn into rather than sized by the
+                             source: the crop is square by construction and the
+                             frame should not jump between reveal steps. -->
+                        <canvas id="guess-canvas" width="560" height="560" role="img"
+                                aria-label="A cropped piece of a maze room from the archive"></canvas>
+                    </div>
+
+                    <div class="guess-panel">
+                        <div class="guess-headline">
+                            <p class="guess-round" id="guess-round">Room 1 of 5</p>
+                            <p class="guess-tries-left" id="guess-tries-left"></p>
+                        </div>
+
+                        <!-- Five squares, one per room, filled in as the day
+                             goes: which is done, how it went, where you are. -->
+                        <ol class="guess-pips" id="guess-pips" aria-label="Progress through today's five rooms"></ol>
+
+                        <ol class="guess-tries" id="guess-tries" aria-label="Guesses this room"></ol>
+
+                        <p class="guess-status" id="guess-status" role="status" hidden></p>
+
+                        <form class="guess-entry" id="guess-form" autocomplete="off">
+                            <label class="visually-hidden" for="guess-input">Which maze is this?</label>
+                            <input type="text" id="guess-input" placeholder="Which maze is this?" autocomplete="off">
+                            <div class="guess-suggest" id="guess-suggest" hidden></div>
+                            <button type="submit" class="guess-btn">Guess</button>
+                        </form>
+
+                        <div class="guess-between" id="guess-between" hidden></div>
+                        <div class="guess-summary" id="guess-summary" hidden></div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="room-modal">
         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-name" tabindex="-1">
             <div class="chrome-titlebar">
@@ -721,6 +802,8 @@
     <script src="js/custom-scrollbar.js"></script>
     <script src="js/letter-jump.js"></script>
     <script src="js/console.js"></script>
+    <!-- After site.js, which is where imgCdn and compareNames live. -->
+    <script src="js/guess.js"></script>
     <script src="js/track.js"></script>
 </body>
 </html>

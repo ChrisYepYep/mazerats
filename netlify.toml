@@ -29,11 +29,13 @@
   to = "/privacy.html"
   status = 200
 
-# The daily puzzle. Unlisted for now (see robots.txt and the noindex in
-# guess.html's own markup) while it is being built out.
+# The daily game. It is a window on the homepage rather than a page of its
+# own, so this serves home.html and js/guess.js opens the game when it sees
+# the path — the same trick /wizard/<room> uses. A rewrite, not a redirect,
+# so a link pasted as /guess keeps the address it was pasted as.
 [[redirects]]
   from = "/guess"
-  to = "/guess.html"
+  to = "/home.html"
   status = 200
 
 # The Habbo Hogwarts map, at the clean /wizard URL. Same rewrite treatment

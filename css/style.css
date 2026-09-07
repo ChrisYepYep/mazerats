@@ -9408,96 +9408,258 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment-dim);
 }
 
-/* ---------- Guess the Maze (guess.html) ----------
 
-   Two columns on a desktop: the picture, and the board beside it. The
-   picture is the point, so it takes the space and the board is a narrow
-   column of state next to it rather than a panel under it. */
-.guess-page {
-    max-width: 1000px;
+
+/* ---------- the Daily tab, and the game behind it ----------
+
+   A tab tucked behind the archive window's right-hand edge with a little of
+   itself showing, which slides the rest of the way out when you reach for
+   it — a ribbon marking a page in a book.
+
+   One sprite does both states. assets/img/side-tab-active.png is the whole
+   tab at 102x15; the rest state is that same tab with all but its last 23px
+   hidden behind the window, which is exactly what the separately-drawn
+   "inactive" cut turned out to be — identical pixels, checked column by
+   column. So there is nothing to swap: only how far it has been pulled.
+
+   --daily-tab-out is the one number worth moving. It is how much of the tab
+   clears the window at rest; everything else is derived from it, so the
+   whole thing can be nudged from here. */
+/* Shrink-wraps the archive window so the tab beside it can be positioned
+   against the edge you can actually see, and holds the two in a stacking
+   order of their own so the window paints over the tab.
+
+   isolation: isolate rather than a z-index, so this box's own children are
+   ordered among themselves without the wrapper having to take a position in
+   the page's stack. */
+.archive-stack {
+    position: relative;
+    width: fit-content;
+    max-width: 100%;
     margin: 0 auto;
-    padding: 38px 22px 72px;
+    isolation: isolate;
+
+    --daily-tab-w: 102px;
+    --daily-tab-h: 15px;
+    --daily-tab-out: 23px;
+    /* How far the tab's left end stays tucked under the window once it is
+       fully out, so it still reads as coming FROM somewhere rather than
+       floating beside the frame. */
+    --daily-tab-tuck: 6px;
+    /* Where down the window's right edge it sits. Below the titlebar,
+       roughly level with the category tabs. */
+    --daily-tab-top: 92px;
 }
-.guess-page:focus { outline: none; }
 
-.guess-head { margin-bottom: 26px; }
+/* Over the tab. The window already had position: relative for its own
+   absolutely placed pieces; this only settles which of the two is in front. */
+.archive-stack > #browse-window {
+    z-index: 1;
+}
 
-.guess-eyebrow {
-    margin: 0 0 8px;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.6rem;
-    letter-spacing: 0.18em;
+.daily-tab {
+    position: absolute;
+    top: var(--daily-tab-top);
+    /* Positioned by its RIGHT edge, so the width is fixed and only the
+       offset animates — the tab slides as one piece instead of growing,
+       which is what makes it read as being pulled rather than stretched. */
+    /* Its right edge stands --daily-tab-out proud of the window's visible
+       edge, which puts the rest of it behind the frame. The wrapper hugs the
+       window and has no border of its own, so this offset means what it
+       says — measured against .chrome-window it would have been thrown out
+       by the 14px border-image frame that `right` resolves against. */
+    right: calc(-1 * var(--daily-tab-out));
+    width: var(--daily-tab-w);
+    height: var(--daily-tab-h);
+
+    /* Under the window, which sits at 1. Deliberately NOT a negative
+       z-index: that put the tab behind .container as well, so the part
+       sticking out could be seen but never hovered or pressed. */
+    z-index: 0;
+
+    padding: 0;
+    border: 0;
+    background: url('../assets/img/side-tab-active.png') no-repeat center / 100% 100%;
+    image-rendering: pixelated;
+    cursor: var(--cursor-pointer);
+    display: flex;
+    align-items: center;
+    transition: right 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.daily-tab:hover,
+.daily-tab:focus-visible {
+    /* All the way out, less the tuck that keeps its left end under the
+       frame. */
+    right: calc(-1 * (var(--daily-tab-w) - var(--daily-tab-tuck)));
+}
+
+.daily-tab:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
+    /* Above the window while focused — a ring drawn underneath it is no use
+       to the keyboard visitor it exists for. */
+    z-index: 2;
+}
+
+/* Centred across the tab's own width, less the room the arrow takes at the
+   right end, so the word sits in the middle of the part you can see once it
+   is out rather than in the middle of the whole sprite. */
+.daily-tab-label {
+    position: absolute;
+    left: 0;
+    right: 18px;
+    text-align: center;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--amber);
-}
-
-.guess-head h1 {
-    margin: 0 0 12px;
-    font-family: 'Silkscreen', monospace;
-    font-size: clamp(1.3rem, 4vw, 1.9rem);
-    line-height: 1.2;
-    color: var(--parchment);
-    text-wrap: balance;
-}
-
-.guess-standfirst {
-    margin: 0;
-    max-width: 56ch;
-    font-family: 'Roboto', sans-serif;
-    font-size: 0.95rem;
-    line-height: 1.65;
-    color: var(--parchment-dim);
-}
-
-.guess-stage {
-    display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
-    gap: 26px;
-    align-items: start;
-    /* Held back until the day's picture has been chosen and drawn — an
-       empty canvas in a frame reads as broken rather than as loading. */
+    color: #3a2812;
+    /* Nothing to read while it is tucked away, and fading it in on the way
+       out keeps the word from appearing to slide out from under the frame. */
     opacity: 0;
-    transition: opacity 0.35s ease;
+    transition: opacity 0.2s ease 0.06s;
 }
-.guess-stage.is-ready { opacity: 1; }
+
+.daily-tab:hover .daily-tab-label,
+.daily-tab:focus-visible .daily-tab-label { opacity: 1; }
+
+/* The same glyph and the same easing the Featured Mazes button uses, so the
+   two read as one family of control. It points right at rest — there is more
+   of this over here — and turns to point back at the window on hover, at
+   what pressing it will open. */
+.daily-tab-arrow {
+    position: absolute;
+    right: 5px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.5rem;
+    line-height: 1;
+    color: #3a2812;
+    transform: rotate(0deg);
+    transition: transform 0.3s ease;
+}
+
+.daily-tab:hover .daily-tab-arrow,
+.daily-tab:focus-visible .daily-tab-arrow { transform: rotate(180deg); }
 
 @media (prefers-reduced-motion: reduce) {
-    .guess-stage { transition: none; }
+    .daily-tab,
+    .daily-tab-label,
+    .daily-tab-arrow { transition: none; }
 }
 
-.guess-frame {
+/* On a narrow screen the archive window runs to the edges, so there is no
+   margin for a tab to sit in. It moves to the top-right corner of the window
+   and stops pretending to be behind anything. */
+@media (max-width: 860px) {
+    .archive-stack { --daily-tab-top: 8px; }
+    .daily-tab {
+        right: 8px;
+        z-index: 3;
+    }
+    .daily-tab:hover,
+    .daily-tab:focus-visible { right: 8px; }
+    .daily-tab-label { opacity: 1; }
+}
+
+/* ---------- the game window ---------- */
+
+.guess-window { width: min(880px, 94vw); }
+
+.guess-body {
+    display: grid;
+    /* Picture first and largest — it is the thing being read. The board is a
+       column of state beside it rather than a panel underneath. */
+    grid-template-columns: minmax(0, 1.15fr) minmax(230px, 0.85fr);
+    gap: 18px;
+    padding: 18px;
+}
+
+.guess-picture {
     border: 1px solid var(--chrome-border);
     border-radius: 8px;
     background: var(--bg-black);
     box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
     overflow: hidden;
-    /* The canvas is a fixed 560 square internally and scales to fit here, so
-       the drawing code never has to think about layout. */
     aspect-ratio: 1;
+    transition: opacity 0.2s ease;
 }
 
 #guess-canvas {
     display: block;
     width: 100%;
     height: 100%;
-    /* Pixel art, at every size. */
     image-rendering: pixelated;
 }
+
+/* While a room's picture is being fetched and scored. */
+.guess-window.is-busy .guess-picture { opacity: 0.45; }
 
 .guess-panel {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
+    min-width: 0;
 }
 
-.guess-count {
+.guess-headline {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.guess-round {
+    margin: 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.72rem;
+    color: var(--amber-bright);
+}
+
+.guess-tries-left {
     margin: 0;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     color: var(--parchment-dim);
 }
 
-.guess-rows {
+/* Five squares, one per room. Colour carries how it went and the number
+   carries which room it was, so neither has to be read alone. */
+.guess-pips {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 5px;
+}
+
+.guess-pip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 24px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 4px;
+    background: var(--chrome-row);
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.6rem;
+    color: var(--unknown);
+}
+
+.guess-pip.is-current { border-color: var(--amber); color: var(--amber-bright); }
+.guess-pip.is-lost { background: #4a2018; border-color: var(--danger); color: #e8c0b4; }
+/* Solved, shaded by how many guesses it took — the same reading the share
+   grid gives, in the same order. */
+.guess-pip.is-won { border-color: var(--ok); color: #eaf5df; }
+.guess-pip.is-won.g1 { background: #3f5c2a; }
+.guess-pip.is-won.g2 { background: #4d5526; }
+.guess-pip.is-won.g3,
+.guess-pip.is-won.g4 { background: #5a4a22; }
+
+.guess-tries {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -9506,33 +9668,28 @@ body[data-page="admin"] #activity-sessions {
     gap: 4px;
 }
 
-.guess-row {
-    display: grid;
-    grid-template-columns: 18px 1fr auto;
+.guess-try {
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
-    padding: 6px 9px;
+    min-height: 26px;
+    padding: 4px 9px;
     border: 1px solid var(--chrome-border);
     border-radius: 5px;
     background: var(--chrome-row);
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
-    line-height: 1.5;
+    line-height: 1.4;
     color: var(--parchment);
-    min-height: 30px;
 }
 
-.guess-row-n { color: var(--unknown); font-variant-numeric: tabular-nums; }
-.guess-row-text { overflow-wrap: anywhere; }
-
-/* Right, wrong and skipped read by colour AND by mark, so the board still
-   works for anyone who cannot tell the first two apart. */
-.guess-row.is-right { border-color: var(--ok); color: #d8e8c6; }
-.guess-row.is-right .guess-row-mark { color: var(--ok); }
-.guess-row.is-wrong { border-color: var(--danger); }
-.guess-row.is-wrong .guess-row-mark { color: var(--danger); }
-.guess-row.is-skip { color: var(--parchment-dim); font-style: italic; }
-.guess-row.is-empty { opacity: 0.45; }
+.guess-try-text { overflow-wrap: anywhere; }
+.guess-try.is-empty { opacity: 0.4; }
+.guess-try.is-right { border-color: var(--ok); color: #d8e8c6; }
+.guess-try.is-right .guess-try-mark { color: var(--ok); }
+.guess-try.is-wrong { border-color: var(--danger); }
+.guess-try.is-wrong .guess-try-mark { color: var(--danger); }
 
 .guess-status {
     margin: 0;
@@ -9542,7 +9699,7 @@ body[data-page="admin"] #activity-sessions {
     color: var(--danger);
 }
 
-/* Positioned so the suggestion list can hang under the field. */
+/* Positioned so the name picker can hang under the field. */
 .guess-entry {
     position: relative;
     display: flex;
@@ -9561,10 +9718,7 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.8rem;
 }
 
-#guess-input:focus-visible {
-    outline: 2px solid var(--amber-bright);
-    outline-offset: 1px;
-}
+#guess-input:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
 .guess-suggest {
     position: absolute;
@@ -9619,41 +9773,111 @@ body[data-page="admin"] #activity-sessions {
 }
 .guess-btn:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 
-.guess-btn-quiet {
-    align-self: flex-start;
-    background: none;
-    box-shadow: none;
-    color: var(--parchment-dim);
-}
-
-.guess-outcome {
+/* Between rooms: what it was, and the way on. */
+.guess-between {
     display: flex;
     flex-direction: column;
-    gap: 7px;
-    padding: 12px;
+    gap: 8px;
+    padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--bg-panel);
 }
 
-.guess-verdict {
-    margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.72rem;
-    line-height: 1.4;
-    color: var(--amber-bright);
-}
-
-.guess-answer,
-.guess-links {
+.guess-reveal {
     margin: 0;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     line-height: 1.6;
     color: var(--parchment);
 }
-.guess-answer strong { color: var(--amber-bright); font-weight: 400; }
-.guess-links a { color: var(--amber-bright); }
+.guess-reveal strong { color: var(--amber-bright); font-weight: 400; }
+
+/* The end of the day. */
+.guess-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-panel);
+}
+
+.guess-score {
+    margin: 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.78rem;
+    color: var(--parchment);
+}
+.guess-score strong { color: var(--amber-bright); }
+
+.guess-grid {
+    margin: 0;
+    font-size: 1.1rem;
+    letter-spacing: 0.12em;
+    line-height: 1;
+}
+
+.guess-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px 10px;
+    margin: 0;
+    padding: 10px 0 0;
+    border-top: 1px dashed var(--border);
+}
+
+.guess-stats div { display: flex; flex-direction: column; gap: 2px; }
+
+.guess-stats dt {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--parchment-dim);
+}
+
+.guess-stats dd {
+    margin: 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--amber-bright);
+}
+
+.guess-summary-actions { display: flex; gap: 6px; }
+
+/* The reason to come back, stated as a length of time rather than as
+   "tomorrow" — the same fact, and much more of a nudge. */
+.guess-next-up {
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    color: var(--parchment-dim);
+}
+
+.guess-answers {
+    list-style: none;
+    margin: 0;
+    padding: 10px 0 0;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.guess-answers li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+}
+
+.guess-answers-n { color: var(--unknown); font-variant-numeric: tabular-nums; }
+.guess-answers li.is-won a { color: var(--ok); }
+.guess-answers li.is-lost a { color: var(--danger); }
 
 .guess-share-fallback {
     width: 100%;
@@ -9669,21 +9893,18 @@ body[data-page="admin"] #activity-sessions {
     min-height: 62px;
 }
 
-@media (max-width: 760px) {
-    .guess-page { padding: 26px 16px 56px; }
-    /* The picture goes above the board rather than beside it, and keeps the
-       full width — it is still the thing being read. */
-    .guess-stage { grid-template-columns: 1fr; gap: 18px; }
-}
-
-/* Every block above that sets display has to say so again for the hidden
-   case — the same trap the Hogwarts room sheet fell into, and worth stating
-   in one place per file rather than being remembered per rule. The hidden
-   attribute is only display:none from the browser's own stylesheet, so any
-   display declared on a class outranks it, and the form stayed on screen
-   under the answer at the end of a game. */
+/* Every block above that declares display has to restate it for the hidden
+   case — the attribute is only display:none from the browser's own
+   stylesheet, so any class-level display outranks it. This is the same trap
+   the Hogwarts room sheet fell into. */
 .guess-entry[hidden],
 .guess-suggest[hidden],
-.guess-outcome[hidden],
-.guess-status[hidden],
-.guess-btn[hidden] { display: none; }
+.guess-between[hidden],
+.guess-summary[hidden],
+.guess-status[hidden] { display: none; }
+
+@media (max-width: 760px) {
+    /* The picture goes above the board rather than beside it, and keeps the
+       full width — it is still the thing being read. */
+    .guess-body { grid-template-columns: 1fr; gap: 14px; padding: 14px; }
+}
