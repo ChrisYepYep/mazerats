@@ -1007,6 +1007,23 @@ document.addEventListener("DOMContentLoaded", () => {
                             // never doubles as a collapse.
                             '<button type="button" class="admin-furni-toggle" data-image="' + escapeHtml(image) + '" aria-expanded="' + open + '">' +
                                 '<span class="admin-furni-caret" aria-hidden="true"></span>' +
+                                /* The room this furni list belongs to, as a
+                                   picture. The label is a filename, which
+                                   says which room only if you happen to
+                                   remember what that file looks like —
+                                   whereas the whole job here is deciding
+                                   whether a piece really is in THIS room.
+
+                                   Fetched at the size it grows to on hover
+                                   rather than at thumbnail size, so the
+                                   enlarged look is the real picture and not
+                                   a 40px one blown up. aria-hidden because
+                                   the label beside it already names the
+                                   room; a screen reader gains nothing from
+                                   a second copy. */
+                                (image
+                                    ? '<img class="admin-furni-thumb" src="' + escapeHtml(imgCdn(image, 200, null, 60)) + '" alt="" aria-hidden="true" loading="lazy" decoding="async">'
+                                    : '') +
                                 '<strong>' + escapeHtml(label) + '</strong>' +
                                 '<span class="admin-hint">' + summary + '</span>' +
                             '</button>' +
