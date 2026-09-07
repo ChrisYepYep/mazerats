@@ -286,6 +286,29 @@
                      say what it is. Each accessible name leads with the words
                      actually printed on the tab, so someone driving by voice
                      can say what they can see. -->
+                <!-- On a phone the window runs to within 15px of both screen
+                     edges, so there is no margin for a tab to be tucked into
+                     and no free space above it either. The tabs become a menu
+                     down there instead, opened by this button at the right of
+                     the titlebar — which also means a third and fourth tab
+                     cost nothing but another row.
+
+                     Hidden from everyone above that width, including screen
+                     readers, because the tabs themselves are right there. -->
+                <button type="button" class="side-tab-burger" id="side-tab-burger"
+                        aria-expanded="false" aria-controls="side-tabs"
+                        aria-label="More ways into the archive">
+                    <span class="side-tab-burger-bars" aria-hidden="true"></span>
+                </button>
+
+                <!-- A plain static wrapper, and that is the point: unpositioned,
+                     it does not become the containing block for the absolutely
+                     positioned tabs inside it, so on a desktop they still lay
+                     themselves out against .archive-stack exactly as before and
+                     this box has no size at all. Below 860px it becomes
+                     positioned and the tabs go static inside it, which turns
+                     the same markup into the drawer with no DOM to move. -->
+                <div class="side-tabs" id="side-tabs">
                 <button type="button" class="side-tab" id="daily-tab" aria-label="Guess the Maze — open the daily game">
                     <span class="side-tab-label" aria-hidden="true">Guess the Maze</span>
                     <span class="side-tab-arrow" aria-hidden="true">&#9654;</span>
@@ -305,6 +328,7 @@
                     <span class="side-tab-label" aria-hidden="true">What's New</span>
                     <span class="side-tab-arrow" aria-hidden="true">&#9654;</span>
                 </button>
+                </div><!-- /.side-tabs -->
 
             <div class="chrome-window" id="browse-window" tabindex="-1">
                 <img class="window-peek-rat" src="assets/img/rat_peek.png" alt="" aria-hidden="true">

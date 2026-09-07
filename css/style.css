@@ -9799,23 +9799,154 @@ body[data-page="admin"] #activity-sessions {
     .side-tab-arrow { transition: none; }
 }
 
-/* On a narrow screen the archive window runs to the edges, so there is no
-   margin for a tab to sit in. They move onto the window's own right-hand
-   side and stop pretending to be behind anything — labels always up, since
-   there is no hover on a touch screen to reveal them with. */
+/* The button that opens the drawer. Only exists below 860px — above it the
+   tabs are right there on the edge and a menu would be a door in front of
+   an open door. */
+.side-tab-burger { display: none; }
+
+/* --- below 860px: the tabs become a menu -------------------------------
+
+   Measured rather than assumed: at 375px the archive window spans 15px to
+   360px, so there is 15px of margin either side — nowhere to tuck a 140px
+   tab — and the hero sits flush on the window's top edge, so there is no
+   free space above it either. Laying the tabs over the window put them
+   across the titlebar and clipped the top of the category nav.
+
+   A menu also does the thing tabs on an edge cannot: a third and a fourth
+   way in cost one more row each, where two ribbons already had nowhere
+   left to go. */
 @media (max-width: 860px) {
-    .archive-stack {
-        --side-tab-top: 8px;
-        --side-tab-gap: 5px;
+    .side-tab-burger {
+        position: absolute;
+        /* Centred on the titlebar's right end. The window's border-image
+           frame is 14px, and the titlebar 33px inside that. */
+        top: 18px;
+        right: 18px;
+        width: 26px;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        background: linear-gradient(#3b3022, #2f2618);
+        border: 1px solid var(--chrome-border);
+        border-radius: 4px;
+        box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
+        cursor: var(--cursor-pointer);
+        /* Above the window (1) and above the drawer (4), so it stays
+           pressable while the drawer is open. */
+        z-index: 5;
     }
+
+    .side-tab-burger:focus-visible {
+        outline: 2px solid var(--amber-bright);
+        outline-offset: 2px;
+    }
+
+    /* Three bars drawn rather than set as a glyph, so they stay crisp at
+       this size and match the pixel-art chrome around them — the same
+       reasoning as .admin-furni-caret. The middle bar is the element; the
+       outer two are its box-shadows, which is what keeps the spacing exact
+       without three nested spans. */
+    .side-tab-burger-bars,
+    .side-tab-burger-bars::before,
+    .side-tab-burger-bars::after {
+        display: block;
+        width: 14px;
+        height: 2px;
+        background: var(--parchment);
+        border-radius: 1px;
+    }
+
+    .side-tab-burger-bars {
+        position: relative;
+    }
+
+    .side-tab-burger-bars::before,
+    .side-tab-burger-bars::after {
+        content: "";
+        position: absolute;
+        left: 0;
+    }
+
+    .side-tab-burger-bars::before { top: -5px; }
+    .side-tab-burger-bars::after { top: 5px; }
+
+    .side-tab-burger[aria-expanded="true"] {
+        background: linear-gradient(#6b5327, #52401d);
+        border-color: var(--amber-bright);
+    }
+
+    .side-tab-burger[aria-expanded="true"] .side-tab-burger-bars {
+        background: #fff8ec;
+    }
+    .side-tab-burger[aria-expanded="true"] .side-tab-burger-bars::before,
+    .side-tab-burger[aria-expanded="true"] .side-tab-burger-bars::after {
+        background: #fff8ec;
+    }
+
+    /* The wrapper stops being a no-op and becomes the drawer. Hangs from
+       under the burger at the window's right, sized to its contents so
+       another tab simply makes it taller. */
+    .side-tabs {
+        position: absolute;
+        top: 50px;
+        right: 14px;
+        z-index: 4;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 6px;
+        min-width: 168px;
+        background: var(--bg-panel);
+        border: 1px solid var(--chrome-border);
+        border-radius: 6px;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.7);
+        /* Closed is the default, so a phone that never runs the script
+           still gets a tidy window rather than a menu stuck open. */
+        display: none;
+    }
+
+    .side-tabs.is-open { display: flex; }
+
+    /* Inside the drawer the tabs are rows, not ribbons: static, full width,
+       and always showing their label — there is no hover on a touch screen
+       to reveal one with, and nothing to slide out from. They keep the
+       9-slice, so each row still reads as a little tab. */
     .side-tab {
-        right: 8px;
-        z-index: 3;
+        position: static;
+        width: 100%;
+        height: 26px;
+        transition: none;
     }
+
+    .side-tab--second { top: auto; }
+
     .side-tab:hover,
     .side-tab:focus-visible,
-    .side-tab.active { right: 8px; }
-    .side-tab-label { opacity: 1; }
+    .side-tab.active { right: auto; }
+
+    /* Left-aligned in the row rather than centred across a ribbon whose
+       left end is hidden — none of it is hidden here. */
+    .side-tab-label {
+        left: 10px;
+        right: 24px;
+        text-align: left;
+        opacity: 1;
+        transition: none;
+    }
+
+    /* Points at the row it opens, and stays pointing: there is no rest
+       state to turn back from. */
+    .side-tab-arrow { transform: rotate(0deg); transition: none; }
+    .side-tab:hover .side-tab-arrow,
+    .side-tab:focus-visible .side-tab-arrow,
+    .side-tab.active .side-tab-arrow { transform: rotate(0deg); }
+
+    /* The one showing, marked — the drawer has no "pulled out" to say it
+       with. */
+    .side-tab.active .side-tab-label { color: #2a1c08; }
+    .side-tab.active { box-shadow: inset 0 0 0 2px var(--amber-bright); }
 }
 
 /* ---------- the game window ---------- */

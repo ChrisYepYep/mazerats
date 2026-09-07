@@ -4524,6 +4524,70 @@ document.addEventListener("DOMContentLoaded", () => {
         render();
     });
 
+    /* ---------- the side tabs, as a menu on a phone ----------
+
+       Below 860px the tabs are a drawer behind a burger (see .side-tabs in
+       css/style.css for why: there is no margin left to tuck a tab into).
+       The buttons themselves are the same elements in the same place in the
+       DOM — only the CSS differs — so nothing here has to know what any of
+       them do. Adding a third tab is a line of markup and nothing else.
+
+       Everything below is only about opening and closing. */
+    (function wireSideTabMenu() {
+        const burger = document.getElementById("side-tab-burger");
+        const drawer = document.getElementById("side-tabs");
+        if (!burger || !drawer) return;
+
+        function setOpen(open) {
+            drawer.classList.toggle("is-open", open);
+            burger.setAttribute("aria-expanded", open ? "true" : "false");
+        }
+
+        const isOpen = () => drawer.classList.contains("is-open");
+
+        burger.addEventListener("click", e => {
+            e.stopPropagation();
+            const open = !isOpen();
+            setOpen(open);
+            // Straight onto the first way in, so the menu can be driven from
+            // the keyboard without tabbing back through the page.
+            if (open) {
+                const first = drawer.querySelector(".side-tab");
+                if (first) first.focus({ preventScroll: true });
+            }
+        });
+
+        /* Picking anything closes it. Capture, so this runs before the
+           button's own handler swaps the view underneath — otherwise the
+           menu is still sitting over the thing it just went to. */
+        drawer.addEventListener("click", e => {
+            if (e.target.closest(".side-tab")) setOpen(false);
+        }, true);
+
+        // Anywhere else on the page closes it, which is what a menu that
+        // covers content has to do.
+        document.addEventListener("click", e => {
+            if (!isOpen()) return;
+            if (drawer.contains(e.target) || burger.contains(e.target)) return;
+            setOpen(false);
+        });
+
+        document.addEventListener("keydown", e => {
+            if (e.key !== "Escape" || !isOpen()) return;
+            setOpen(false);
+            burger.focus({ preventScroll: true });
+        });
+
+        /* Dragged past 860px with the menu open, the drawer's rules stop
+           applying and the tabs go back to being tabs — but the class would
+           still be sitting there for the next time the window narrowed.
+           Cleared on the way past so it can never reopen to a stale state. */
+        const wide = window.matchMedia("(min-width: 861px)");
+        const onWide = e => { if (e.matches) setOpen(false); };
+        if (wide.addEventListener) wide.addEventListener("change", onWide);
+        else if (wide.addListener) wide.addListener(onWide);
+    })();
+
     // Switches straight to that category, keeping whichever sub-filter was
     // last picked for it (defaulting to the first one) — clicking the
     // already-active button is a no-op rather than toggling back to a
