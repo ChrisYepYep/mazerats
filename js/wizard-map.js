@@ -1025,6 +1025,52 @@ window.WizardMap = function WizardMap(options) {
         getZoom: () => zoom,
         setZoom(next) { zoom = next; applyTransform(); },
         refit() { fit = computeFit(); applyTransform(); },
+
+        /* The bounding box the rooms actually occupy, in map percentages.
+
+           Not the same thing as the map's own 5400x4600, and that gap is the
+           whole point: a handful of rooms sit a long way from everything
+           else (Privet Drive and its hallway are off on their own), so the
+           declared extent is far larger than the part anyone wants to look
+           at. Fitting the declared extent shrank the castle to a smudge and
+           spent about two fifths of the frame on blank parchment.
+
+           Hidden rooms are left out — they are not on the map, so they have
+           no business deciding how it is framed. */
+        contentBounds() {
+            const visible = rooms.filter(r => !r.hidden && r.x != null && r.y != null);
+            if (!visible.length) return { x0: 0, y0: 0, x1: 100, y1: 100 };
+            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+            for (const r of visible) {
+                if (r.x < x0) x0 = r.x;
+                if (r.x > x1) x1 = r.x;
+                if (r.y < y0) y0 = r.y;
+                if (r.y > y1) y1 = r.y;
+            }
+            // Room names are drawn centred on the point and run wider than
+            // it, so the box is grown a little to keep the outermost labels
+            // off the edge of the frame.
+            const padX = 3, padY = 3;
+            return {
+                x0: Math.max(0, x0 - padX), y0: Math.max(0, y0 - padY),
+                x1: Math.min(100, x1 + padX), y1: Math.min(100, y1 + padY)
+            };
+        },
+
+        /* Frames those bounds: the zoom at which they just fill the stage,
+           centred on their middle. This is what the "fit" control does now —
+           the map as drawn, rather than the map as declared. */
+        fitContent() {
+            const b = this.contentBounds();
+            const { w, h } = stageSize();
+            if (!w || !h) return;
+            const bw = (b.x1 - b.x0) / 100 * map.width * fit;
+            const bh = (b.y1 - b.y0) / 100 * map.height * fit;
+            if (bw <= 0 || bh <= 0) return;
+            const want = Math.min(w / bw, h / bh);
+            const lo = map.minZoom || 1, hi = map.maxZoom || 6;
+            flyTo((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, Math.max(lo, Math.min(hi, want)));
+        },
         getMap: () => map,
         getRooms: () => rooms,
         getPaths: () => paths,

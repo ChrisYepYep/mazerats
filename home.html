@@ -244,12 +244,18 @@
 
     <main>
         <section class="hero">
-            <h1 class="hero-title"><span>MAZE</span><span>RATS</span></h1>
+            <!-- The two words are separate spans so they stack; the space
+                 between them is what a screen reader reads. Without it the
+                 site announced itself as "Mazerats". -->
+            <h1 class="hero-title"><span>MAZE</span> <span>RATS</span></h1>
             <p class="tagline">An ongoing archive of maze rooms built across Habbo Hotel: Origins; their rooms, their builders, and the ones that are gone but not forgotten.</p>
         </section>
 
         <div class="container">
-            <div class="chrome-window" id="browse-window">
+            <!-- tabindex="-1" so the skip link above actually lands here.
+                 A plain div is not focusable, and browsers differ on whether
+                 they move focus to a fragment target that cannot take it. -->
+            <div class="chrome-window" id="browse-window" tabindex="-1">
                 <img class="window-peek-rat" src="assets/img/rat_peek.png" alt="" aria-hidden="true">
                 <div class="chrome-titlebar">
                     <h2>Origins Maze Archive</h2>
@@ -265,7 +271,13 @@
                 </div>
                 <div class="archive-controls" id="search-wrap">
                     <div class="search-box">
-                        <input type="text" id="room-search" placeholder="Search by name, builder, or tag...">
+                        <!-- Labelled, not just placeheld. A placeholder is
+                             gone the moment anyone types into the field and
+                             is not a dependable accessible name; the sort
+                             control beside it already carries a real label
+                             for the same reason. -->
+                        <label class="visually-hidden" for="room-search">Search the archive by name, builder or tag</label>
+                        <input type="text" id="room-search" placeholder="Name, builder or tag…">
                     </div>
                     <div class="sort-box">
                         <!-- The option text reads "Sort by: …" and carries the
@@ -303,6 +315,12 @@
                     <div class="view-switch" role="group" aria-label="Views across the whole archive">
                         <button type="button" class="view-switch-btn" id="whats-new-btn" aria-pressed="false">What's New</button>
                         <button type="button" class="view-switch-btn" id="timeline-btn" aria-pressed="false">Timeline</button>
+                        <!-- The furni scan, read as a way in rather than as a
+                             footnote. Everything behind this button already
+                             existed — the reverse index, the filtered listing
+                             and its chip — reachable only from the foot of a
+                             furni card inside an open maze. -->
+                        <button type="button" class="view-switch-btn" id="furni-btn" aria-pressed="false">Furni</button>
                     </div>
                 </div>
                 <div class="featured-frame" id="featured-frame">
@@ -315,7 +333,7 @@
                     <button type="button" class="featured-refresh-btn" id="featured-refresh-btn" aria-label="Refresh recommendations"><span class="featured-refresh-full">Refresh recommendations</span><span class="featured-refresh-short">Refresh</span></button>
                     <div class="featured-frame-body" id="featured-frame-body">
                         <div class="chrome-list" id="featured-frame-list"></div>
-                        <p class="admin-empty" id="featured-frame-empty" style="display:none;"></p>
+                        <p class="archive-empty" id="featured-frame-empty" style="display:none;"></p>
                     </div>
                     <div class="chrome-frame">
                         <button type="button" class="chrome-frame-minimize-toggle" id="chrome-frame-minimize-toggle" aria-label="Restore the results"><span class="chrome-frame-minimize-arrow" aria-hidden="true"></span></button>
@@ -331,7 +349,7 @@
                             <p class="chrome-intro" id="featured-intro"></p>
                             <div class="home-results">
                                 <div class="chrome-list" id="featured-grid"></div>
-                                <p class="admin-empty" id="featured-empty" style="display:none;"></p>
+                                <p class="archive-empty" id="featured-empty" style="display:none;"></p>
                             </div>
                         </div>
                     </div>
@@ -473,6 +491,10 @@
                         <h3 class="console-page-title">Contact Us</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
                         <p class="console-blurb">Need to contact us? Do it right here!</p>
+                        <!-- The two fields below it are labelled; this one was
+                             carrying a placeholder alone, which disappears as
+                             soon as anyone types into it. -->
+                        <label class="visually-hidden" for="console-contact-message">Your message</label>
                         <textarea class="console-input console-input-message" id="console-contact-message" placeholder="Just leaving some feedback..."></textarea>
                         <label class="console-field-label" for="console-contact-username">Your Origins username:</label>
                         <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="L1C">
@@ -528,6 +550,16 @@
                         <h3 class="console-page-title">Privacy Policy</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
                         <div class="console-privacy-body" id="console-privacy-body"></div>
+                        <!-- The same policy has a page of its own at
+                             /privacy: an address that can be linked to and
+                             indexed, and somewhere to read it that is not a
+                             204px window inside a console. The console copy
+                             stays exactly as it was; this is the way out to
+                             the formal one. -->
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <p class="console-blurb console-privacy-out">
+                            <a href="privacy.html" target="_blank" rel="noopener">Open the full policy as a page &rsaquo;</a>
+                        </p>
                     </div>
                     <div class="console-page" id="console-page-about" style="display:none;">
                         <h3 class="console-page-title">About</h3>

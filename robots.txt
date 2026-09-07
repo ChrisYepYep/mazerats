@@ -24,6 +24,13 @@ Disallow: /glyphs.html
 Disallow: /wizard
 Disallow: /wizard.html
 
+# The daily puzzle, while it is still being built out. Its answer changes
+# every day, so an indexed copy would be wrong within hours even once it is
+# finished — but the page itself is worth listing eventually. Lift this and
+# the noindex in guess.html together when it is ready.
+Disallow: /guess
+Disallow: /guess.html
+
 # Project tooling and the function endpoints. Both already 404 at the edge
 # (see netlify.toml); this saves the crawl.
 Disallow: /tools/

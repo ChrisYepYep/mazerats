@@ -85,14 +85,39 @@ const Api = {
         });
     },
 
+    /* One request per endpoint per page, however many callers ask for it.
+
+       home.html wants events twice — the archive itself (js/home.js) and the
+       header's upcoming-events ticker (js/site.js) — and each was fetching
+       the whole 57KB payload independently, because nothing here remembered
+       that a request was already in flight. index.html will do the same the
+       moment welcome.js and site.js are both on a page.
+
+       The promise is cached, not the data: callers still get their own
+       resolved array, a caller arriving mid-flight joins the request already
+       running rather than starting a second, and the fallback path is shared
+       too, so a dead endpoint produces one pair of attempts rather than one
+       pair per caller.
+
+       Deliberately not invalidated. These live for the lifetime of a page
+       load, which is exactly how long the archive is read for; anything that
+       needs to see a write straight back uses the admin reads below, which
+       are uncached on purpose. */
+    _inflight: {},
+
+    _once(key, fn) {
+        if (!this._inflight[key]) this._inflight[key] = fn();
+        return this._inflight[key];
+    },
+
     async getRooms() {
-        return this._unpack(await this._getWithFallback("/.netlify/functions/rooms", "room data",
-            () => typeof DEFAULT_ROOMS !== "undefined" ? DEFAULT_ROOMS : []));
+        return this._once("rooms", () => this._getWithFallback("/.netlify/functions/rooms", "room data",
+            () => typeof DEFAULT_ROOMS !== "undefined" ? DEFAULT_ROOMS : []).then(d => this._unpack(d)));
     },
 
     async getEvents() {
-        return this._unpack(await this._getWithFallback("/.netlify/functions/events", "event data",
-            () => typeof DEFAULT_EVENTS !== "undefined" ? DEFAULT_EVENTS : []));
+        return this._once("events", () => this._getWithFallback("/.netlify/functions/events", "event data",
+            () => typeof DEFAULT_EVENTS !== "undefined" ? DEFAULT_EVENTS : []).then(d => this._unpack(d)));
     },
 
     /* The admin page's own read: the records exactly as stored, with the

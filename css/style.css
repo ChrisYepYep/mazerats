@@ -2853,10 +2853,22 @@ body[data-page="home"] .hero { padding-top: 18px; }
    controls jammed onto the end of it. Capped instead, so search and sort
    form a group on the left and the switch sits clear on the right with real
    space between them. */
+/* Takes the row's spare width rather than sitting at a fixed 118px while
+   the row has room going begging.
+
+   The placeholder is "Search by name, builder, or tag..." — about 180px of
+   text — and at 118px the field showed "Search by name," and stopped, on
+   every screen size including a 1440px one where 73px of the row was unused.
+   Search is the way into thirty-odd mazes; it should not read as the
+   smallest control on the bar.
+
+   Still 118px of basis, so nothing moves when the row is tight, and capped
+   so it takes the slack without running the whole width on a wide window. */
 .search-box {
     position: relative;
-    flex: 0 1 118px;
+    flex: 1 1 118px;
     min-width: 96px;
+    max-width: 210px;
 }
 
 .search-box input {
@@ -8986,3 +8998,692 @@ body[data-page="admin"] #activity-sessions {
     border-color: var(--amber);
     color: var(--amber-bright);
 }
+
+/* ---------- the policy as a page (privacy.html) ----------
+
+   The same wording the console's Privacy tab shows, laid out as a document
+   instead of as a run of console blurbs. The console version is unchanged
+   and still the one most people meet; this exists so the policy has an
+   address that can be linked to, indexed and printed, and somewhere to read
+   it that is not a 204px window with a 15px scrollbar thumb.
+
+   Roboto rather than the pixel face throughout the body: this is the one
+   place on the site where someone may genuinely have to read several hundred
+   words carefully, and Volter Goldfish is not a reading typeface. The pixel
+   face is kept for the eyebrow and the headings, which is where it belongs. */
+.legal-page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 46px 22px 72px;
+}
+
+/* No outline ring on a container that is only focused programmatically, by
+   the skip link — the ring would be drawn around the whole page. */
+.legal-page:focus { outline: none; }
+
+.legal-eyebrow {
+    margin: 0 0 10px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+}
+
+.legal-doc h1 {
+    margin: 0 0 18px;
+    font-family: 'Silkscreen', monospace;
+    font-size: clamp(1.4rem, 4vw, 2rem);
+    line-height: 1.2;
+    color: var(--parchment);
+    text-wrap: balance;
+}
+
+.legal-standfirst {
+    margin: 0 0 34px;
+    padding-bottom: 26px;
+    border-bottom: 1px solid var(--border);
+    font-family: 'Roboto', sans-serif;
+    font-size: 1rem;
+    line-height: 1.7;
+    color: var(--parchment-dim);
+}
+
+/* Gap rather than margins on the sections, so the rhythm between them is
+   stated once and cannot be doubled by a stray margin on a heading. */
+.legal-body,
+.legal-doc {
+    display: flex;
+    flex-direction: column;
+}
+.legal-body { gap: 30px; }
+.legal-doc { gap: 0; }
+
+.legal-section h2 {
+    margin: 0 0 9px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    line-height: 1.5;
+    color: var(--amber-bright);
+    text-wrap: balance;
+}
+
+.legal-section p {
+    margin: 0;
+    font-family: 'Roboto', sans-serif;
+    /* ~65 characters at this size — the measure a long policy needs to stay
+       readable, rather than the full width of the page. */
+    max-width: 62ch;
+    font-size: 0.95rem;
+    line-height: 1.75;
+    color: var(--parchment);
+}
+
+.legal-section a { color: var(--amber-bright); }
+.legal-section a:hover,
+.legal-section a:focus-visible { color: var(--parchment); }
+
+/* The closing section sits after .legal-body's flex gap, so it states its
+   own separation from the run above it. */
+.legal-doc > .legal-section { margin-top: 30px; }
+
+.legal-updated {
+    margin: 34px 0 0;
+    padding-top: 22px;
+    border-top: 1px solid var(--border);
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.85rem;
+    color: var(--parchment-dim);
+}
+.legal-updated strong { color: var(--parchment); font-weight: 500; }
+
+/* The way out of the console's own copy, at the foot of that page. */
+.console-privacy-out { margin-top: 2px; }
+.console-privacy-out a { color: var(--amber-bright); text-decoration: none; }
+.console-privacy-out a:hover,
+.console-privacy-out a:focus-visible { color: var(--parchment); text-decoration: underline; }
+
+/* The policy sits on its own ground rather than on the site's maze texture.
+
+   Every other page puts its reading matter inside a window; this one was
+   setting several hundred words of small type straight onto the isometric
+   pattern, which shows through between the lines and is the last thing a
+   long document needs. Quiet panel, no bevel — it is a sheet of paper, not
+   another Habbo window. */
+.legal-doc {
+    padding: 30px 32px 26px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+}
+
+@media (max-width: 700px) {
+    .legal-page { padding: 30px 16px 56px; }
+    .legal-doc { padding: 22px 18px 20px; }
+    .legal-body { gap: 24px; }
+}
+
+/* ---------- fixes from the September sweep ---------- */
+
+/* The public archive's own empty state.
+
+   It was borrowing .admin-empty — Roboto, 13.6px, left-aligned in the corner
+   of a large panel — which made "No collab mazes match your search." the one
+   place on the visitor-facing site where the admin stylesheet showed
+   through. Same information, in the archive's own voice, centred in the
+   space it actually has. */
+.archive-empty {
+    display: block;
+    padding: 34px 22px;
+    text-align: center;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.6875rem;
+    line-height: 1.7;
+    color: var(--parchment-dim);
+}
+
+/* Lets the archive grow on a tall window instead of holding 615px whatever
+   the screen is.
+
+   The old fixed height meant a browser at a larger default font size showed
+   FEWER mazes rather than a taller window — three rows at 16px, two at 20px
+   — because the search row above grew and the list absorbed all of it. The
+   floor is a little under the old value so nothing gets shorter than it used
+   to be on an ordinary laptop; the ceiling stops it running away on a very
+   tall monitor.
+
+   Safe to make viewport-relative now that the featured panel re-measures on
+   resize (see the resize listener in js/home.js) — before that, a window
+   whose height could change would have left its max-height stale. */
+#browse-window {
+    height: clamp(560px, calc(100vh - 250px), 780px);
+}
+
+/* A gutter between the meta row's text and the related-images strip that
+   overlaps it. They met on exactly the same pixel: "Opened: Jun 2024" ended
+   at 284 and the strip began at 284. */
+.gallery-photos { padding-left: 8px; }
+
+/* ...and the fade that softens a date passing behind the strip now applies
+   whether the strip is expanded or not. It was scoped to .is-open only, on
+   the reasoning that a collapsed strip never reaches the text — true of the
+   dates in the archive today, and not true of a longer one, which slid under
+   a hard opaque edge instead of fading out. */
+.gallery-photos::before {
+    content: "";
+    position: absolute;
+    right: 100%;
+    top: 0;
+    bottom: 0;
+    width: 22px;
+    background: linear-gradient(to right, rgba(64, 53, 40, 0), #403528);
+    pointer-events: none;
+}
+
+/* ---------- keyboard focus ----------
+
+   The site already had 25 :focus-visible rules; they covered the view
+   switches, the console button and plain links, and missed almost everything
+   a visitor actually operates — all 28 archive rows, the six nav tabs, the
+   search field and the sort menu. Tabbing through the homepage showed
+   nothing at all.
+
+   :focus-visible rather than :focus throughout, so a mouse click never draws
+   a ring — the same distinction the existing rules make. */
+.chrome-list-row:focus-visible,
+.chrome-nav-btn:focus-visible,
+.chrome-frame-minimize-toggle:focus-visible,
+.header-badge:focus-visible,
+#room-search:focus-visible,
+#room-sort:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
+}
+
+/* The rows are the one case where an offset ring reads badly: they sit
+   shoulder to shoulder in a scrolling list, and a ring outside the box
+   overlaps its neighbours. Drawn just inside instead. */
+.chrome-list-row:focus-visible { outline-offset: -2px; }
+
+/* The skip link is itself a keyboard-only control, so it needs the clearest
+   ring on the page — it is the first thing a keyboard visitor meets. */
+.skip-link:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 3px;
+}
+
+/* ---------- what the archive holds, at the head of the Timeline ----------
+
+   Counts first, then the two or three things the furni scan can say that
+   nothing else on the site can. Deliberately not cards: the tiles are
+   separated by rules alone, because a row of bordered boxes reads as four
+   controls rather than one statement. */
+.archive-stats {
+    margin: 0 0 20px;
+    padding: 0 0 18px;
+    border-bottom: 1px solid var(--border);
+}
+
+/* Two by two, not four across. The archive panel is a fixed column a little
+   over 450px wide whatever the screen is, and four tiles in it wrapped
+   three-and-one — which reads as a mistake rather than as a grid. */
+.archive-stat-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px 10px;
+}
+
+.archive-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-left: 12px;
+    border-left: 2px solid var(--wood-mid);
+}
+
+.archive-stat-n {
+    font-family: 'Silkscreen', monospace;
+    font-size: 1.15rem;
+    line-height: 1.1;
+    color: var(--amber-bright);
+    /* The four figures line up under one another at a glance. */
+    font-variant-numeric: tabular-nums;
+}
+
+.archive-stat-l {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.4;
+    color: var(--parchment-dim);
+}
+
+.archive-facts {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
+}
+
+/* Three columns that hold their own edges down the list: what it is, the
+   answer, and the qualifier. The answer is the only part in the bright ink,
+   because it is the only part anyone reads twice. */
+.archive-fact {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+}
+
+.archive-fact > span {
+    flex: 0 0 auto;
+    min-width: 124px;
+    color: var(--parchment-dim);
+}
+
+.archive-fact > strong {
+    font-weight: 400;
+    color: var(--amber-bright);
+}
+
+.archive-fact > em {
+    font-style: normal;
+    color: var(--unknown);
+}
+
+/* What the timeline cannot show, said under the summary rather than left
+   for someone to work out from two counts that disagree. */
+.timeline-omission {
+    margin: 6px 0 14px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    color: var(--unknown);
+}
+
+@media (max-width: 700px) {
+    /* The tiles are already 2x2 everywhere; only the facts need to give up
+       their two-column shape and stack their label above the answer. */
+    .archive-fact > span { min-width: 100%; }
+}
+
+/* ---------- browsing the archive by furni ----------
+
+   A list of pieces rather than of mazes, so the row is a different shape:
+   sprite, name, and how far it reaches. Reach is the column that carries the
+   finding, so it is the one set in the bright ink and lined up in a fixed
+   track down the right-hand edge. */
+.furni-browse-intro {
+    margin: 0 0 12px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    color: var(--parchment-dim);
+}
+
+.furni-browse {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.furni-browse-row {
+    display: grid;
+    /* Fixed sprite well, elastic name, fixed count — so the numbers form a
+       column instead of drifting with the length of each name. */
+    grid-template-columns: 34px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--chrome-row);
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    text-align: left;
+    cursor: var(--cursor-pointer);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    transition: transform 0.15s, border-color 0.15s;
+}
+
+.furni-browse-row:hover,
+.furni-browse-row:focus-visible {
+    transform: translateY(-2px);
+    border-color: var(--amber);
+    outline: none;
+}
+
+/* Keyboard focus still needs to be visible — the hover lift alone is not a
+   focus indicator. */
+.furni-browse-row:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: -2px;
+}
+
+/* A fixed well the sprite sits inside, so rows keep one height whatever
+   shape the artwork is — these run from 27x35 to 76px. */
+.furni-browse-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+}
+
+.furni-browse-icon img {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    image-rendering: pixelated;
+}
+
+.furni-browse-name {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.625rem;
+    line-height: 1.4;
+    color: var(--parchment);
+    overflow-wrap: anywhere;
+}
+
+.furni-browse-count {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--amber-bright);
+}
+
+.furni-browse-count-unit {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5rem;
+    color: var(--parchment-dim);
+}
+
+/* ---------- Guess the Maze (guess.html) ----------
+
+   Two columns on a desktop: the picture, and the board beside it. The
+   picture is the point, so it takes the space and the board is a narrow
+   column of state next to it rather than a panel under it. */
+.guess-page {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 38px 22px 72px;
+}
+.guess-page:focus { outline: none; }
+
+.guess-head { margin-bottom: 26px; }
+
+.guess-eyebrow {
+    margin: 0 0 8px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+}
+
+.guess-head h1 {
+    margin: 0 0 12px;
+    font-family: 'Silkscreen', monospace;
+    font-size: clamp(1.3rem, 4vw, 1.9rem);
+    line-height: 1.2;
+    color: var(--parchment);
+    text-wrap: balance;
+}
+
+.guess-standfirst {
+    margin: 0;
+    max-width: 56ch;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: var(--parchment-dim);
+}
+
+.guess-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+    gap: 26px;
+    align-items: start;
+    /* Held back until the day's picture has been chosen and drawn — an
+       empty canvas in a frame reads as broken rather than as loading. */
+    opacity: 0;
+    transition: opacity 0.35s ease;
+}
+.guess-stage.is-ready { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+    .guess-stage { transition: none; }
+}
+
+.guess-frame {
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    background: var(--bg-black);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+    /* The canvas is a fixed 560 square internally and scales to fit here, so
+       the drawing code never has to think about layout. */
+    aspect-ratio: 1;
+}
+
+#guess-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* Pixel art, at every size. */
+    image-rendering: pixelated;
+}
+
+.guess-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.guess-count {
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    color: var(--parchment-dim);
+}
+
+.guess-rows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.guess-row {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 9px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 5px;
+    background: var(--chrome-row);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.5;
+    color: var(--parchment);
+    min-height: 30px;
+}
+
+.guess-row-n { color: var(--unknown); font-variant-numeric: tabular-nums; }
+.guess-row-text { overflow-wrap: anywhere; }
+
+/* Right, wrong and skipped read by colour AND by mark, so the board still
+   works for anyone who cannot tell the first two apart. */
+.guess-row.is-right { border-color: var(--ok); color: #d8e8c6; }
+.guess-row.is-right .guess-row-mark { color: var(--ok); }
+.guess-row.is-wrong { border-color: var(--danger); }
+.guess-row.is-wrong .guess-row-mark { color: var(--danger); }
+.guess-row.is-skip { color: var(--parchment-dim); font-style: italic; }
+.guess-row.is-empty { opacity: 0.45; }
+
+.guess-status {
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    color: var(--danger);
+}
+
+/* Positioned so the suggestion list can hang under the field. */
+.guess-entry {
+    position: relative;
+    display: flex;
+    gap: 6px;
+}
+
+#guess-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 7px 10px;
+    background: var(--parchment);
+    border: 1.5px solid var(--chrome-border);
+    border-radius: 4px;
+    color: #3a2812;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.8rem;
+}
+
+#guess-input:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 1px;
+}
+
+.guess-suggest {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+}
+
+.guess-suggest-item {
+    padding: 7px 10px;
+    background: none;
+    border: 0;
+    text-align: left;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    color: var(--parchment);
+    cursor: var(--cursor-pointer);
+}
+
+.guess-suggest-item:hover,
+.guess-suggest-item:focus-visible {
+    background: var(--wood-mid);
+    color: #fff8ec;
+    outline: none;
+}
+
+.guess-btn {
+    padding: 7px 14px;
+    background: linear-gradient(#3b3022, #2f2618);
+    border: 1px solid var(--chrome-border);
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
+    color: var(--parchment);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    cursor: var(--cursor-pointer);
+}
+
+.guess-btn:hover,
+.guess-btn:focus-visible {
+    background: linear-gradient(#4a3c29, #3a2f1f);
+    border-color: var(--amber);
+    color: #fff8ec;
+}
+.guess-btn:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+
+.guess-btn-quiet {
+    align-self: flex-start;
+    background: none;
+    box-shadow: none;
+    color: var(--parchment-dim);
+}
+
+.guess-outcome {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-panel);
+}
+
+.guess-verdict {
+    margin: 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    color: var(--amber-bright);
+}
+
+.guess-answer,
+.guess-links {
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    color: var(--parchment);
+}
+.guess-answer strong { color: var(--amber-bright); font-weight: 400; }
+.guess-links a { color: var(--amber-bright); }
+
+.guess-share-fallback {
+    width: 100%;
+    margin-top: 6px;
+    padding: 6px;
+    background: var(--bg-black);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--parchment);
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.72rem;
+    resize: none;
+    min-height: 62px;
+}
+
+@media (max-width: 760px) {
+    .guess-page { padding: 26px 16px 56px; }
+    /* The picture goes above the board rather than beside it, and keeps the
+       full width — it is still the thing being read. */
+    .guess-stage { grid-template-columns: 1fr; gap: 18px; }
+}
+
+/* Every block above that sets display has to say so again for the hidden
+   case — the same trap the Hogwarts room sheet fell into, and worth stating
+   in one place per file rather than being remembered per rule. The hidden
+   attribute is only display:none from the browser's own stylesheet, so any
+   display declared on a class outranks it, and the form stayed on screen
+   under the answer at the end of a game. */
+.guess-entry[hidden],
+.guess-suggest[hidden],
+.guess-outcome[hidden],
+.guess-status[hidden],
+.guess-btn[hidden] { display: none; }

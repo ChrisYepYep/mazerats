@@ -39,7 +39,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const view = WizardMap({
         stage,
         canvas: document.getElementById("wiz-canvas"),
-        onView: z => { if (zoomLabel) zoomLabel.textContent = `${Math.round(z * 100)}%`; },
+        /* The zoom readout, and the two buttons that drive it. Both are
+           disabled at the ends of the range rather than left accepting
+           clicks that do nothing — the console's own scrollbar ships
+           -disabled sprites for exactly this, so a dead control that still
+           looks live is out of step with the rest of the site. */
+        onView: z => {
+            if (zoomLabel) zoomLabel.textContent = `${Math.round(z * 100)}%`;
+            const map = view.getMap ? view.getMap() : {};
+            const lo = map.minZoom || 1, hi = map.maxZoom || 6;
+            // A hair of tolerance: zoom is a float and lands on the limit by
+            // multiplication, not by assignment.
+            if (zoomInBtn) zoomInBtn.disabled = z >= hi - 0.001;
+            if (zoomOutBtn) zoomOutBtn.disabled = z <= lo + 0.001;
+        },
         onRoomClick: id => openRoom(id),
         onRoomHover: (id, el) => {
             if (!id) return hideTooltip();
@@ -49,6 +62,50 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const roomById = id => view.getRooms().find(r => r.id === id);
+
+    /* ---------- readable addresses ----------
+
+       A room's own id is its number on the connection spreadsheet — r001,
+       r039 — which is exactly right for tracing a record back to its row and
+       exactly wrong for a link someone pastes into Discord. The sheet offers
+       its address in a copy box, so it is meant to travel, and "/wizard/r039"
+       tells the person receiving it nothing at all.
+
+       Names are not unique on this map (seven 1st Floor Corridors, three
+       Grand Staircases), so a slug that collides takes the room's id on the
+       end rather than silently pointing at whichever one was built first.
+       Both forms resolve, and the id form always will: links made before
+       this existed keep working, and so does anything an admin copied out of
+       the editor. */
+    let slugToId = new Map();
+    let idToSlug = new Map();
+
+    function slugify(name) {
+        return String(name || "")
+            .toLowerCase()
+            .replace(/['’]/g, "")
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "");
+    }
+
+    function buildSlugs() {
+        slugToId = new Map();
+        idToSlug = new Map();
+        const counts = new Map();
+        const rooms = view.getRooms();
+        for (const r of rooms) {
+            const base = slugify(r.name) || r.id;
+            counts.set(base, (counts.get(base) || 0) + 1);
+        }
+        for (const r of rooms) {
+            const base = slugify(r.name) || r.id;
+            const slug = counts.get(base) > 1 ? `${base}-${r.id}` : base;
+            idToSlug.set(r.id, slug);
+            slugToId.set(slug, r.id);
+        }
+    }
+
+    const addressFor = id => idToSlug.get(id) || id;
 
     // ---------- hovering ----------
 
@@ -108,13 +165,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
         modalTitle.textContent = view.fullName(room);
         const picture = room.image || room.thumb;
+
+        /* A room with neither a picture nor a description gets one honest
+           line instead of two empty panels stacked on each other — most of
+           the castle is in that state while the map is being drawn, and a
+           dashed 160px box above "nothing has been written" said the same
+           nothing twice. The placeholder still earns its place on a room
+           that HAS something written and is only waiting on a photograph. */
+        const bare = !picture && !room.description;
+
         modalImg.hidden = !picture;
-        modalNoImg.hidden = !!picture;
+        modalNoImg.hidden = !!picture || bare;
         if (picture) {
             modalImg.src = picture;
             modalImg.alt = `${room.name} — the room as it was`;
         } else {
+            // Both, not just the src: an <img> with no src but a leftover
+            // alt is drawn as a broken-image box carrying the PREVIOUS
+            // room's caption, which is what the ninety-two picture-less
+            // rooms were showing.
             modalImg.removeAttribute("src");
+            modalImg.alt = "";
         }
 
         const meta = [];
@@ -125,7 +196,9 @@ document.addEventListener("DOMContentLoaded", () => {
             .join("");
         modalMeta.hidden = !meta.length;
 
-        modalDesc.textContent = room.description || "Nothing has been written about this room yet.";
+        modalDesc.textContent = room.description
+            || (bare ? "Nothing recorded for this room yet — no picture, no notes."
+                     : "Nothing has been written about this room yet.");
         modalDesc.classList.toggle("is-empty", !room.description);
 
         /* Where you can get to from here, as buttons rather than as prose.
@@ -162,13 +235,13 @@ document.addEventListener("DOMContentLoaded", () => {
             : "";
         modalExits.hidden = !exits.length && !unnamed;
 
-        modalLink.value = `${location.origin}/wizard/${room.id}`;
+        modalLink.value = `${location.origin}/wizard/${addressFor(room.id)}`;
 
         modal.classList.add("open");
         modal.querySelector(".modal").focus();
         // A room is a place you can link to, so opening one is a place in the
         // history: Back closes the sheet rather than leaving the site.
-        if (push) history.pushState({ room: room.id }, "", `/wizard/${room.id}`);
+        if (push) history.pushState({ room: room.id }, "", `/wizard/${addressFor(room.id)}`);
     }
 
     function closeRoom({ pop = true } = {}) {
@@ -207,7 +280,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function roomIdFromPath() {
         const m = /^\/wizard\/(.+?)\/?$/.exec(location.pathname);
-        return m ? decodeURIComponent(m[1]) : null;
+        if (!m) return null;
+        const raw = decodeURIComponent(m[1]);
+        // Slug first, then the raw id — so /wizard/library and /wizard/r039
+        // both open the Library, and neither form can be broken by renaming
+        // the other.
+        return slugToId.get(raw.toLowerCase()) || (roomById(raw) ? raw : null);
     }
 
     // ---------- searching ----------
@@ -255,9 +333,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------- controls ----------
 
-    document.getElementById("wiz-zoom-in").addEventListener("click", () => view.zoomTo(view.getZoom() * 1.5));
-    document.getElementById("wiz-zoom-out").addEventListener("click", () => view.zoomTo(view.getZoom() / 1.5));
-    document.getElementById("wiz-zoom-reset").addEventListener("click", () => view.setZoom(1));
+    const zoomInBtn = document.getElementById("wiz-zoom-in");
+    const zoomOutBtn = document.getElementById("wiz-zoom-out");
+    zoomInBtn.addEventListener("click", () => view.zoomTo(view.getZoom() * 1.5));
+    zoomOutBtn.addEventListener("click", () => view.zoomTo(view.getZoom() / 1.5));
+
+    /* Back to where the map opens, not out to its full extent.
+
+       This button used to drop straight to 100%, which fits all ninety-three
+       rooms in the frame and renders every one of their names too small to
+       read — a diagram of a castle rather than a map of one. The rooms are
+       spread across 93% of the map's width, so there is no clever framing
+       that makes the whole thing legible at once; the whole thing simply
+       does not fit at a readable size.
+
+       So it returns to the considered view instead: the point and zoom an
+       admin set as where the map should open, which is a real decision
+       somebody made rather than an arithmetic result. fitContent is the
+       fallback for a map with no start view configured. */
+    document.getElementById("wiz-zoom-reset").addEventListener("click", () => {
+        const map = view.getMap();
+        if (map && map.startZoom) {
+            view.flyTo(map.startX == null ? 50 : map.startX,
+                map.startY == null ? 50 : map.startY, map.startZoom);
+        } else {
+            view.fitContent();
+        }
+    });
 
     // ---------- loading ----------
 
@@ -272,6 +374,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         view.setData(data);
+        // Before render, and before anything reads the path: the addresses
+        // are derived from the room names, so they cannot exist until the
+        // rooms do.
+        buildSlugs();
         view.render();
 
         const map = data.map || {};

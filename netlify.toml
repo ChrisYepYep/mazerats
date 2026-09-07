@@ -19,6 +19,23 @@
   to = "/admin.html"
   status = 200
 
+# The privacy policy as a page of its own, at a clean /privacy. It has
+# always existed inside the homepage console and still does, unchanged —
+# but a policy that lives only behind a modal hash cannot be linked to, cannot
+# be indexed, and had to be read through a 204px window. Both render from the
+# same wording in js/privacy-content.js, so they cannot drift.
+[[redirects]]
+  from = "/privacy"
+  to = "/privacy.html"
+  status = 200
+
+# The daily puzzle. Unlisted for now (see robots.txt and the noindex in
+# guess.html's own markup) while it is being built out.
+[[redirects]]
+  from = "/guess"
+  to = "/guess.html"
+  status = 200
+
 # The Habbo Hogwarts map, at the clean /wizard URL. Same rewrite treatment
 # as /admin above, so the address bar keeps the URL that was typed.
 [[redirects]]

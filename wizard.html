@@ -86,7 +86,7 @@
             <div class="wiz-controls">
                 <span class="wiz-zoom-label" id="wiz-zoom-label" aria-live="polite">100%</span>
                 <button type="button" id="wiz-zoom-out" aria-label="Zoom out">&minus;</button>
-                <button type="button" id="wiz-zoom-reset" aria-label="Fit the whole map">&#9635;</button>
+                <button type="button" id="wiz-zoom-reset" aria-label="Back to the opening view">&#9635;</button>
                 <button type="button" id="wiz-zoom-in" aria-label="Zoom in">+</button>
             </div>
 
@@ -126,10 +126,20 @@
     </footer>
 
     <script src="js/api.js"></script>
+    <!-- js/site.js is what puts the Fellow Fansites row and the Privacy
+         Policy link into .site-footer, and js/track.js is what records the
+         data-track events. Without them this page had a footer with no links
+         in it at all and no event tracking — the only page on the site in
+         that state. site.js reads EventStatus if a header events widget is
+         present; this page has none, so it returns early, but the dependency
+         travels with it rather than being left to luck. -->
+    <script src="js/event-status.js"></script>
+    <script src="js/site.js"></script>
     <!-- The map engine, shared with the Hogwarts panel in the admin page so
          the editor and the page can never disagree about where a name sits.
          Must load before wizard.js, which calls it. -->
     <script src="js/wizard-map.js"></script>
     <script src="js/wizard.js"></script>
+    <script src="js/track.js"></script>
 </body>
 </html>

@@ -249,6 +249,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // policy unreachable for precisely the visitors who can only see
     // the landing page. js/welcome.js opens its own modal off this hash.
     const page = document.body.dataset.page;
+    // The policy page does not need a link to itself in its own footer.
+    if (page === "legal") return;
     const href = (page === "home" || page === "welcome") ? "#privacy" : "home.html#privacy";
     copyrightLine.insertAdjacentHTML(
         "beforeend",

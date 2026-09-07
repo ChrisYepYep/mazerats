@@ -483,7 +483,15 @@
     cursor: var(--cursor-pointer);
 }
 
-.wiz-controls button:hover { background: var(--chrome-highlight); }
+.wiz-controls button:hover:not(:disabled) { background: var(--chrome-highlight); }
+
+/* At 100% and at 800% the matching button has nothing left to do, and says
+   so rather than swallowing the click. Dimmed and given the default cursor,
+   the same two signals the console's own -disabled scrollbar sprites use. */
+.wiz-controls button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
 
 .wiz-zoom-label {
     min-width: 52px;
@@ -576,6 +584,22 @@
     gap: 14px;
     padding: 16px;
 }
+
+/* The room sheet shows and hides its parts with the hidden attribute (see
+   openRoom in js/wizard.js), and hidden is only display: none from the
+   browser's own stylesheet — any display declared on a class here outranks
+   it. Every block below that sets display therefore has to say so again for
+   the hidden case, which is the convention style.css already follows
+   (.furni-strip[hidden], .ec-modal-badge[hidden], and five more).
+
+   Without these the sheet showed a room's picture AND "no picture of this
+   room yet" underneath it, and — worse — kept a src-less <img> on screen
+   for the ninety-two rooms that have no picture at all, drawing it as a
+   broken-image box captioned with whichever room was open last. */
+.wiz-modal-img[hidden],
+.wiz-modal-noimg[hidden],
+.wiz-modal-meta[hidden],
+.wiz-modal-exits[hidden] { display: none; }
 
 .wiz-modal-img {
     display: block;

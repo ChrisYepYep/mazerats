@@ -19,6 +19,15 @@ document.addEventListener("DOMContentLoaded", () => {
     // Events have no difficulty field (see normalize()) — hidden while
     // viewing Events, see updateChrome().
     const difficultySortOptions = sortSelect.querySelectorAll('option[value^="difficulty"]');
+    /* The two sort options whose wording depends on what is being browsed.
+       The markup carries the maze wording, which is the right default — the
+       archive opens on Mazes — and updateChrome swaps them for the events
+       one. Held as a table rather than as two lookups so the pairs sit
+       beside each other and cannot drift apart. */
+    const sortLabelOptions = [
+        { opt: sortSelect.querySelector('option[value="name"]'), maze: "Sort by: Maze Name", event: "Sort by: Event Name" },
+        { opt: sortSelect.querySelector('option[value="owner"]'), maze: "Sort by: Maze Owner", event: "Sort by: Event Host" }
+    ].filter(o => o.opt);
     const emptyEl = document.getElementById("featured-empty");
     const topNavBtns = document.querySelectorAll("#top-nav .chrome-nav-btn");
     const subNavEl = document.getElementById("sub-nav");
@@ -27,6 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const featuredMazesBtn = document.getElementById("featured-mazes-btn");
     const whatsNewBtn = document.getElementById("whats-new-btn");
     const timelineBtn = document.getElementById("timeline-btn");
+    const furniBtn = document.getElementById("furni-btn");
     const featuredRefreshBtn = document.getElementById("featured-refresh-btn");
     const featuredFrame = document.getElementById("featured-frame");
     const featuredFrameBody = document.getElementById("featured-frame-body");
@@ -123,6 +133,10 @@ document.addEventListener("DOMContentLoaded", () => {
        archive's story was the piece nobody would find. It belongs in the
        window everything else is read in. */
     let showTimeline = false;
+    /* Browsing the archive by furni rather than by maze. What this leads to
+       is furniFilter's listing, which predates it — this is only the way in.
+       Cleared by the same top-nav and sub-nav clicks the other two are. */
+    let showFurni = false;
     let activeGallery = null;
     // Furni per room image for whatever is open, keyed by image path.
     // Events never have any (see normalize), and this says so out loud so
@@ -591,11 +605,19 @@ document.addEventListener("DOMContentLoaded", () => {
             timelineBtn.classList.toggle("active", showTimeline);
             timelineBtn.setAttribute("aria-pressed", showTimeline ? "true" : "false");
         }
+        if (furniBtn) {
+            // Lit while browsing the furni list AND while looking at the
+            // mazes one of them picked out — the filtered listing is still
+            // this view, just one step further in.
+            const inFurni = showFurni || !!furniFilter;
+            furniBtn.classList.toggle("active", inFurni);
+            furniBtn.setAttribute("aria-pressed", inFurni ? "true" : "false");
+        }
         /* Neither of the cross-archive views takes an ordering from this:
            one is "newest first" by definition and the other is the archive
            in its own order. The search box is left alone — narrowing either
            of them by name is a reasonable thing to want. */
-        sortSelect.disabled = showWhatsNew || showTimeline;
+        sortSelect.disabled = showWhatsNew || showTimeline || showFurni || !!furniFilter;
         featuredMazesBtn.classList.toggle("active", showFeatured);
         // Only ever repopulates on the render() call that actually flips
         // showFeatured to true (the button's own click handler) — every
@@ -623,6 +645,18 @@ document.addEventListener("DOMContentLoaded", () => {
             eventsArchiveNote.hidden = !(isEvents && !showFeatured && resolvedEventsSub() === "archive");
         }
         difficultySortOptions.forEach(opt => { opt.hidden = isEvents; });
+
+        /* The two options that name what is being sorted say "Maze" in the
+           markup, which is wrong while the Events tab is showing: an event
+           has a title and a host, not a maze name and a maze owner. The
+           difficulty pair above is already hidden here for the same kind of
+           reason — this is the rest of that thought.
+
+           Retitled rather than duplicated, so there is still one <select>
+           with one set of values and nothing downstream has to know. */
+        sortLabelOptions.forEach(({ opt, maze, event }) => {
+            opt.textContent = isEvents ? event : maze;
+        });
         if (isEvents && sortBy.startsWith("difficulty")) {
             sortBy = "name";
             sortSelect.value = "name";
@@ -1172,6 +1206,29 @@ document.addEventListener("DOMContentLoaded", () => {
             `${eventCount} ${eventCount === 1 ? "event" : "events"}, ` +
             `from ${years[years.length - 1]} to ${years[0]}.`;
 
+        /* What a timeline cannot show, said out loud.
+
+           Anything without a date has nowhere to sit on a timeline, so it is
+           left out — which is right, and was silent. The header counted 36
+           mazes while the tabs counted 38, and nothing anywhere accounted for
+           the other two. A timeline that quietly drops records is a timeline
+           you cannot trust as a census. */
+        const undatedMazes = ROOMS.filter(r => r.name && !timelineYearOf(r.added)).length;
+        const undatedEvents = EVENTS.filter(e => e.title && !timelineYearOf(e.date)).length;
+        const undatedTotal = undatedMazes + undatedEvents;
+        const missing = [];
+        if (undatedMazes) missing.push(`${undatedMazes} ${undatedMazes === 1 ? "maze" : "mazes"}`);
+        if (undatedEvents) missing.push(`${undatedEvents} ${undatedEvents === 1 ? "event" : "events"}`);
+        // One subject, one verb: the counts are joined into a single phrase
+        // and the agreement follows the total, not the phrasing.
+        const omission = undatedTotal
+            ? `<p class="timeline-omission">${escapeHtml(missing.join(" and "))} ` +
+              (undatedTotal === 1
+                  ? "is not shown here — there is no record of when it opened."
+                  : "are not shown here — there is no record of when they opened.") +
+              `</p>`
+            : "";
+
         const html = years.map(year => {
             const ofYear = byYear.get(year).slice()
                 .sort((a, b) => String(b.when).localeCompare(String(a.when)));
@@ -1189,7 +1246,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 </section>`;
         }).join("");
 
-        grid.innerHTML = `<p class="timeline-summary">${escapeHtml(summary)}</p><div class="timeline">${html}</div>`;
+        grid.innerHTML = archiveStatsHtml() +
+            `<p class="timeline-summary">${escapeHtml(summary)}</p>` +
+            omission +
+            `<div class="timeline">${html}</div>`;
 
         grid.querySelectorAll(".timeline-open").forEach(btn => {
             btn.addEventListener("click", () => {
@@ -1239,6 +1299,17 @@ document.addEventListener("DOMContentLoaded", () => {
            below. */
         if (showTimeline) {
             renderTimeline();
+            updateWalkedCount();
+            return;
+        }
+
+        /* The furni browser, on the same footing as the timeline: it renders
+           its own thing and returns rather than going through the row
+           machinery, because a furni is not a maze and a list of them is not
+           a list of maze rows. Picking one hands over to furniFilter, which
+           is the listing that already existed. */
+        if (showFurni && !furniFilter) {
+            renderFurniBrowser();
             updateWalkedCount();
             return;
         }
@@ -2609,6 +2680,229 @@ document.addEventListener("DOMContentLoaded", () => {
         return furniIndexByKey.get(furniKeyOf(entry)) || [];
     }
 
+    /* ---------- what the archive adds up to ----------
+
+       Counted from the records already in memory rather than asked for: the
+       furni index is the same one the "Also in N other mazes" line runs on,
+       and the rest is arithmetic over ROOMS and EVENTS.
+
+       These are findings nobody else can produce. Five hundred-odd Origins
+       maze screenshots have been scanned for furni, and until now the only
+       thing that came out of it was a line at the foot of a tooltip. The
+       most-used piece across the whole archive, and the ones that turn up in
+       exactly one maze, are the interesting halves of the same index.
+
+       Cached: it walks every room's furni and the answer cannot change while
+       the page is open. */
+    let archiveStatsCache = null;
+
+    function archiveStats() {
+        if (archiveStatsCache) return archiveStatsCache;
+        if (!furniIndexByKey) furniIndexByKey = buildFurniIndex();
+
+        // Every image the archive holds of a room, entrance and finish shots
+        // included — the count people are actually impressed by.
+        let roomImages = 0;
+        ROOMS.forEach(room => {
+            if (room.entrance && room.entrance.image) roomImages++;
+            if (room.finish && room.finish.image) roomImages++;
+            roomImages += (room.gallery || []).length;
+        });
+
+        const builders = new Set();
+        ROOMS.forEach(r => { if (r.creator) builders.add(r.creator.trim().toLowerCase()); });
+        const hosts = new Set();
+        EVENTS.forEach(e => { if (e.host) hosts.add(e.host.trim().toLowerCase()); });
+
+        /* The furni league table. One entry per piece, counting the number
+           of DIFFERENT mazes it appears in — a chair placed forty times in
+           one room is not a widespread chair.
+
+           A display name is carried alongside the key because the key is
+           whatever identified it (a FurniIndex URL, usually), which is not
+           something to put in front of a reader. */
+        const names = new Map();
+        ROOMS.forEach(room => {
+            Object.values(room.furni || {}).forEach(record => {
+                (record && record.items ? record.items : []).forEach(item => {
+                    const key = furniKeyOf(item);
+                    if (key && item.name && !names.has(key)) names.set(key, item.name);
+                });
+            });
+        });
+
+        const ranked = [...furniIndexByKey.entries()]
+            .map(([key, mazes]) => ({ key, name: names.get(key) || key, mazes: mazes.length }))
+            .filter(f => f.name && f.name !== f.key)
+            .sort((a, b) => b.mazes - a.mazes || compareNames(a.name, b.name));
+
+        const onlyOnce = ranked.filter(f => f.mazes === 1);
+
+        // Which maze holds the most pieces nobody else used. A builder's
+        // taste, measured rather than asserted.
+        const uniqueByMaze = new Map();
+        onlyOnce.forEach(f => {
+            const home = (furniIndexByKey.get(f.key) || [])[0];
+            if (!home) return;
+            if (!uniqueByMaze.has(home.id)) uniqueByMaze.set(home.id, { name: home.name, n: 0 });
+            uniqueByMaze.get(home.id).n++;
+        });
+        const rarest = [...uniqueByMaze.entries()]
+            .map(([id, v]) => ({ id, ...v }))
+            .sort((a, b) => b.n - a.n || compareNames(a.name, b.name))[0] || null;
+
+        archiveStatsCache = {
+            mazes: ROOMS.length,
+            events: EVENTS.length,
+            roomImages,
+            people: new Set([...builders, ...hosts]).size,
+            furniKinds: ranked.length,
+            mostUsed: ranked[0] || null,
+            runnersUp: ranked.slice(1, 4),
+            onlyOnce: onlyOnce.length,
+            rarest
+        };
+        return archiveStatsCache;
+    }
+
+    /* ---------- browsing the archive by furni ----------
+
+       Every piece the scan has identified, most widespread first, with the
+       number of mazes it turns up in. Pressing one hands over to furniFilter
+       — the listing that has always existed behind the "Also in N other
+       mazes" line at the foot of a furni card, and was reachable ONLY from
+       there: you had to already be inside a maze, looking at a piece, to
+       discover that the archive could answer this question at all.
+
+       Sorted by reach rather than alphabetically. A list of 345 furni in
+       name order is a catalogue; in reach order the first screen is "the
+       things Origins maze builders actually use", which is the finding. The
+       search box narrows it, so a name is still one keystroke away. */
+    function furniBrowserEntries() {
+        if (!furniIndexByKey) furniIndexByKey = buildFurniIndex();
+        const seen = new Map();
+        ROOMS.forEach(room => {
+            Object.values(room.furni || {}).forEach(record => {
+                (record && record.items ? record.items : []).forEach(item => {
+                    const key = furniKeyOf(item);
+                    if (!key || seen.has(key)) return;
+                    // The small in-room sprite where the scan recorded one,
+                    // the catalogue icon otherwise — the same fallback the
+                    // furni card itself uses.
+                    seen.set(key, {
+                        key,
+                        name: item.name || key,
+                        icon: item.sprite || item.icon || "",
+                        mazes: (furniIndexByKey.get(key) || []).length
+                    });
+                });
+            });
+        });
+        return [...seen.values()]
+            .filter(f => f.name && f.name !== f.key)
+            .sort((a, b) => b.mazes - a.mazes || compareNames(a.name, b.name));
+    }
+
+    function renderFurniBrowser() {
+        const all = furniBrowserEntries();
+        const entries = query
+            ? all.filter(f => f.name.toLowerCase().includes(query.toLowerCase()))
+            : all;
+
+        if (!entries.length) {
+            grid.innerHTML = "";
+            emptyEl.textContent = all.length
+                ? "No furni by that name has been found in the archive."
+                : "The archive has not been scanned for furni yet.";
+            emptyEl.style.display = "block";
+            return;
+        }
+        emptyEl.style.display = "none";
+
+        const rows = entries.map(f => `
+            <button type="button" class="furni-browse-row" data-furni-key="${escapeHtml(f.key)}">
+                <span class="furni-browse-icon">${f.icon ? `<img src="${escapeHtml(f.icon)}" alt="" loading="lazy">` : ""}</span>
+                <span class="furni-browse-name">${escapeHtml(f.name)}</span>
+                <span class="furni-browse-count">${f.mazes}<span class="furni-browse-count-unit">${f.mazes === 1 ? "maze" : "mazes"}</span></span>
+            </button>`).join("");
+
+        grid.innerHTML =
+            `<p class="furni-browse-intro">${entries.length} of ${all.length} furni the scan has found across the archive. Pick one to see every maze it appears in.</p>
+             <div class="furni-browse">${rows}</div>`;
+
+        grid.querySelectorAll(".furni-browse-row").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const entry = all.find(f => f.key === btn.dataset.furniKey);
+                if (!entry) return;
+                furniFilter = {
+                    key: entry.key,
+                    name: entry.name,
+                    icon: entry.icon,
+                    // Nothing to go "Back" to: this was reached from the
+                    // browser, not from inside a maze. The chip drops that
+                    // button on its own when this is unset.
+                    fromMazeId: null
+                };
+                // The search term narrowed the FURNI list; it would narrow
+                // the maze list too, and mean something different there.
+                searchInput.value = "";
+                query = "";
+                render();
+                const results = document.querySelector(".home-results");
+                if (results) results.scrollTop = 0;
+            });
+        });
+    }
+
+    /* The stats block that opens the Timeline.
+
+       At the top of the Timeline rather than on a page of its own because
+       this is the one view that already takes the whole archive as its
+       subject — the numbers are the same thing the years below them say, in
+       one line instead of three hundred.
+
+       Every figure is a real count, and the two furni lines are the reason
+       the block exists: they are the only place the scan's findings are
+       stated as findings. */
+    function archiveStatsHtml() {
+        const s = archiveStats();
+        const tile = (n, label) =>
+            `<div class="archive-stat">
+                <span class="archive-stat-n">${escapeHtml(String(n))}</span>
+                <span class="archive-stat-l">${escapeHtml(label)}</span>
+            </div>`;
+
+        const facts = [];
+        if (s.mostUsed) {
+            facts.push(`<p class="archive-fact"><span>Most widespread furni</span>
+                <strong>${escapeHtml(s.mostUsed.name)}</strong>
+                <em>in ${s.mostUsed.mazes} of ${s.mazes} mazes</em></p>`);
+        }
+        if (s.rarest && s.rarest.n > 1) {
+            // The value here is a MAZE, not a furni — the label has to say
+            // so, or the line reads as naming a piece called "The Little
+            // Maze".
+            facts.push(`<p class="archive-fact"><span>Most singular maze</span>
+                <strong>${escapeHtml(s.rarest.name)}</strong>
+                <em>${s.rarest.n} furni no other maze used</em></p>`);
+        }
+        if (s.onlyOnce) {
+            facts.push(`<p class="archive-fact"><span>Found in a single maze</span>
+                <strong>${s.onlyOnce} furni</strong>
+                <em>of ${s.furniKinds} the scan has identified</em></p>`);
+        }
+
+        return `<section class="archive-stats" aria-label="What the archive holds">
+            <div class="archive-stat-row">
+                ${tile(s.mazes, s.mazes === 1 ? "maze" : "mazes")}
+                ${tile(s.roomImages, "rooms photographed")}
+                ${tile(s.events, s.events === 1 ? "event" : "events")}
+                ${tile(s.people, "builders and hosts")}
+            </div>
+            ${facts.length ? `<div class="archive-facts">${facts.join("")}</div>` : ""}
+        </section>`;
+    }
+
     /* Which furni the archive listing is currently filtered to, or null.
 
        This is the cleaner half of the reverse index. The card used to name
@@ -2765,7 +3059,34 @@ document.addEventListener("DOMContentLoaded", () => {
             // came from and already overhangs the modal's right edge, so a
             // wide sprite has to grow it leftwards, not further off screen.
             const grew = Math.max(0, card.offsetWidth - FURNI_CARD_W);
-            clampToViewport(card, r.left - OVERLAP - grew, r.top - card.offsetHeight + OVERLAP);
+            let x = r.left - OVERLAP - grew;
+            let y = r.top - card.offsetHeight + OVERLAP;
+
+            /* Nudged clear of any card already sitting there.
+
+               Cards are placed against the icon that opened them, and the
+               icons nearest the right-hand end of the strip all clamp to the
+               same x — so pinning several furni stacked the last few exactly
+               on top of one another and left 37px slivers of everything
+               underneath. The step is upward and slightly left, away from the
+               strip, which is the same direction the photo frames cascade.
+
+               Only pinned cards count: the transient one is about to close on
+               its own, and dodging something that is leaving would move a
+               card for no reason the reader can see. */
+            const STEP_X = 14, STEP_Y = 16, NEAR = 12;
+            for (let guard = 0; guard < 8; guard++) {
+                const clash = openFurniCards.some(other => {
+                    if (other === card) return false;
+                    const o = other.getBoundingClientRect();
+                    return Math.abs(o.left - x) < NEAR && Math.abs(o.top - y) < NEAR;
+                });
+                if (!clash) break;
+                x -= STEP_X;
+                y -= STEP_Y;
+            }
+
+            clampToViewport(card, x, y);
             card.dataset.placedLeft = card.style.left;
         };
         place();
@@ -4106,6 +4427,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showFeatured = false;
             showWhatsNew = false;
             showTimeline = false;
+            showFurni = false;
             furniFilter = null;
             searchInput.value = "";
             query = "";
@@ -4128,6 +4450,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showFeatured = false;
             showWhatsNew = false;
             showTimeline = false;
+            showFurni = false;
             furniFilter = null;
             searchInput.value = "";
             query = "";
@@ -4146,7 +4469,7 @@ document.addEventListener("DOMContentLoaded", () => {
         showFeatured = !showFeatured;
         // The two layered views are alternatives, not a stack: the featured
         // panel covers the list What's New would be writing into.
-        if (showFeatured) { showWhatsNew = false; furniFilter = null; }
+        if (showFeatured) { showWhatsNew = false; showFurni = false; furniFilter = null; }
         searchInput.value = "";
         query = "";
         render();
@@ -4162,7 +4485,7 @@ document.addEventListener("DOMContentLoaded", () => {
         whatsNewBtn.addEventListener("click", () => {
             showWhatsNew = !showWhatsNew;
             // One view at a time: all three write into the same panel.
-            if (showWhatsNew) { showFeatured = false; showTimeline = false; furniFilter = null; }
+            if (showWhatsNew) { showFeatured = false; showTimeline = false; showFurni = false; furniFilter = null; }
             searchInput.value = "";
             query = "";
             render();
@@ -4173,12 +4496,34 @@ document.addEventListener("DOMContentLoaded", () => {
         timelineBtn.dataset.track = "timeline";
         timelineBtn.addEventListener("click", () => {
             showTimeline = !showTimeline;
-            if (showTimeline) { showFeatured = false; showWhatsNew = false; furniFilter = null; }
+            if (showTimeline) { showFeatured = false; showWhatsNew = false; showFurni = false; furniFilter = null; }
             searchInput.value = "";
             query = "";
             render();
             // The timeline opens on the newest year, and the panel may be
             // holding the scroll position of whatever list was in it.
+            const results = document.querySelector(".home-results");
+            if (results) results.scrollTop = 0;
+        });
+    }
+
+    /* Browse by furni. Same toggle shape as the two above it, with one extra
+       job: pressing it while a furni's mazes are being shown steps BACK to
+       the list of furni rather than out of the view altogether, because that
+       listing is one level inside this one, not beside it. */
+    if (furniBtn) {
+        furniBtn.dataset.track = "furni-browse";
+        furniBtn.addEventListener("click", () => {
+            if (furniFilter) {
+                furniFilter = null;
+                showFurni = true;
+            } else {
+                showFurni = !showFurni;
+            }
+            if (showFurni) { showFeatured = false; showWhatsNew = false; showTimeline = false; }
+            searchInput.value = "";
+            query = "";
+            render();
             const results = document.querySelector(".home-results");
             if (results) results.scrollTop = 0;
         });

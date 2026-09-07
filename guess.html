@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#120c07">
+    <!-- Unlisted while it is being built out, on the same terms as the
+         Hogwarts map. Lift this and the robots.txt line together. -->
+    <meta name="robots" content="noindex, nofollow">
+    <title>Guess the Maze — Maze Rats</title>
+    <meta name="description" content="One room, six guesses. A daily puzzle cut from the Maze Rats archive of Habbo Hotel: Origins maze rooms.">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="css/style.css">
+    <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
+</head>
+<body data-page="guess">
+
+    <a class="skip-link" href="#guess-main">Skip to the puzzle</a>
+
+    <header class="site-header">
+        <div class="brand-group">
+            <a class="brand" href="home.html">
+                <span class="brand-text">MAZE RATS</span>
+                <span class="brand-tagline">Every maze. One place.</span>
+            </a>
+            <span class="header-badge">Daily</span>
+        </div>
+    </header>
+
+    <main class="guess-page" id="guess-main" tabindex="-1">
+        <div class="guess-head">
+            <p class="guess-eyebrow">Guess the Maze</p>
+            <h1>One room. Six guesses.</h1>
+            <p class="guess-standfirst">
+                A piece of a real room from a real maze in the archive. Each wrong guess pulls the
+                view back a little further. A new one every day.
+            </p>
+        </div>
+
+        <!-- .is-ready is added once the picture has been chosen and drawn, so
+             the frame is never shown holding a blank canvas. -->
+        <div class="guess-stage" id="guess-stage">
+            <div class="guess-frame">
+                <!-- Fixed square, drawn into rather than sized by the source:
+                     the crop is square by construction and the frame should
+                     not jump about between reveal steps. -->
+                <canvas id="guess-canvas" width="560" height="560" role="img"
+                        aria-label="A cropped piece of a maze room from the archive"></canvas>
+            </div>
+
+            <div class="guess-panel">
+                <p class="guess-count" id="guess-count"></p>
+                <ol class="guess-rows" id="guess-rows"></ol>
+
+                <p class="guess-status" id="guess-status" role="status" hidden></p>
+
+                <form class="guess-entry" id="guess-form" autocomplete="off">
+                    <label class="visually-hidden" for="guess-input">Which maze is this?</label>
+                    <input type="text" id="guess-input" placeholder="Which maze is this?" autocomplete="off">
+                    <div class="guess-suggest" id="guess-suggest" hidden></div>
+                    <button type="submit" class="guess-btn" id="guess-submit">Guess</button>
+                </form>
+                <button type="button" class="guess-btn guess-btn-quiet" id="guess-skip">Skip this one</button>
+
+                <div class="guess-outcome" id="guess-outcome" hidden></div>
+                <button type="button" class="guess-btn" id="guess-share" hidden>Share</button>
+            </div>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
+        <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
+    </footer>
+
+    <script src="js/rooms-data.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/event-status.js"></script>
+    <!-- imgCdn and compareNames both live here, and js/guess.js uses both. -->
+    <script src="js/site.js"></script>
+    <script src="js/guess.js"></script>
+    <script src="js/track.js"></script>
+</body>
+</html>

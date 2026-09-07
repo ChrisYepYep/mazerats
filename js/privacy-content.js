@@ -1,8 +1,11 @@
 /* The privacy policy text, in one place.
 
-   It renders in two separate spots: the homepage console modal's Privacy
-   page (js/console.js) and the landing page's own privacy modal
-   (js/welcome.js). The landing page needs its own copy of the view because
+   It renders in three separate spots: the homepage console modal's Privacy
+   page (js/console.js), the landing page's own privacy modal
+   (js/welcome.js), and the formal page at /privacy (privacy.html), which is
+   the one with an address of its own — linkable, printable, and readable
+   without a 204px porthole. The landing page needs its own copy of the view
+   because
    home.html is off-limits to regular visitors during Coming Soon/
    Maintenance — the gate in home.html's <head> bounces them straight back
    to index.html — so a footer link pointing at home.html#privacy simply
@@ -62,5 +65,37 @@ function renderPrivacySections(container) {
         p.appendChild(strong);
         p.appendChild(document.createTextNode(" " + section.body));
         container.appendChild(p);
+    });
+}
+
+/* The same policy as an ordinary document, for privacy.html.
+
+   A separate renderer rather than a flag on the one above, because the two
+   want genuinely different markup: the console version is a run of styled
+   paragraphs inside chrome that already supplies the heading, while this is
+   a standalone legal page and its sections need to be real headings a
+   screen reader, a search engine and a print stylesheet can all navigate by.
+
+   The wording is shared, which is the whole point — the console page and
+   this page cannot drift apart, because there is only one copy of the
+   words. */
+function renderPrivacyDocument(container) {
+    if (!container) return;
+    container.innerHTML = "";
+    PRIVACY_SECTIONS.forEach(section => {
+        const sec = document.createElement("section");
+        sec.className = "legal-section";
+
+        const h = document.createElement("h2");
+        // The stored headings end in a full stop, which reads correctly as a
+        // lead-in to a paragraph and wrongly as a heading of its own.
+        h.textContent = section.heading.replace(/\.\s*$/, "");
+        sec.appendChild(h);
+
+        const p = document.createElement("p");
+        p.textContent = section.body;
+        sec.appendChild(p);
+
+        container.appendChild(sec);
     });
 }

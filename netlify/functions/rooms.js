@@ -69,6 +69,21 @@ exports.handler = async (event) => {
         return json(400, { error: "Invalid request body" });
     }
 
+    /* Names arrive with whatever whitespace the form was given.
+
+       "andrejs hard maze " sat in the archive with a trailing space for as
+       long as it had been catalogued: invisible in the admin field it was
+       typed into, and carried into the row heading, the sort order, the
+       share link's title and the <title> of its own preview page.
+
+       Trimmed on the way in rather than cleaned up afterwards, so it cannot
+       come back the next time somebody pastes a name with a stray space on
+       the end. Only the fields where leading or trailing space is always an
+       accident — the description and details are prose and are left alone. */
+    ["name", "creator", "hotel", "habboLink"].forEach(field => {
+        if (typeof body[field] === "string") body[field] = body[field].trim();
+    });
+
     if (event.httpMethod === "POST") {
         if (!body.name) return json(400, { error: "A room needs at least a name" });
 
