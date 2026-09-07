@@ -25,7 +25,7 @@ const PRIVACY_SECTIONS = [
     },
     {
         heading: "What your account holds.",
-        body: "Signed in, the things this site would otherwise remember only in your browser are kept against your account instead, so they follow you between your phone and your computer: which mazes you have marked as walked, your progress in the current day of the daily game, and your finished daily scores. Your display name, avatar and score are shown publicly on the daily game's leaderboards - that is the entire purpose of signing in, and it is the only place your account is visible to anyone else. Which mazes you have walked is never shown to anybody but you."
+        body: "Signed in, the things this site would otherwise remember only in your browser are kept against your account instead, so they follow you between your phone and your computer: which mazes you have marked as walked, which you have saved to walk later, your progress in the current day of the daily game, and your finished daily scores. Your display name, avatar, score and result grid - the five coloured squares saying how each room went, which name no maze and give nothing away - are shown publicly on the daily game's leaderboards. That is the entire purpose of signing in, and it is the only place your account is visible to anyone else. Which mazes you have walked, and which you have saved to walk later, are never shown to anybody but you."
     },
     {
         heading: "Use of Data.",

@@ -11064,3 +11064,84 @@ body[data-page="admin"] #activity-sessions {
     background: var(--bg-panel);
     text-align: center;
 }
+
+/* ---------- the boards' range switch, and other people's grids ---------- */
+
+.guess-board-ranges {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.guess-board-range {
+    padding: 3px 8px;
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--parchment-dim);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.03em;
+    cursor: var(--cursor-pointer);
+}
+
+.guess-board-range:hover,
+.guess-board-range:focus-visible {
+    border-color: var(--amber);
+    color: var(--parchment);
+    outline: none;
+}
+
+.guess-board-range.is-on {
+    background: linear-gradient(#6b5327, #52401d);
+    border-color: var(--amber-bright);
+    color: #fff8ec;
+}
+
+.guess-board-range:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 1px;
+}
+
+/* What the chosen span actually covers. "This week" is a Monday rather
+   than a rolling seven days, and a board that does not say so invites the
+   wrong conclusion about why somebody dropped off it. */
+.guess-board-span {
+    margin: 0 0 6px;
+    font-size: 0.62rem;
+    color: var(--unknown);
+}
+
+/* Someone else's five, beside their name. The row gained a column for it;
+   it is empty on the ranges that total more than one day, where there is no
+   single grid to draw. */
+.guess-board-row { grid-template-columns: 16px 20px 1fr auto auto; }
+
+.guess-board-grid {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.guess-board-cell {
+    width: 7px;
+    height: 12px;
+    border-radius: 1px;
+    border: 1px solid rgba(0, 0, 0, 0.45);
+    background: #4a2018;
+}
+
+/* The same shading the pips and the shared grid use, so one player's row
+   and their own results panel cannot disagree about how a round went. */
+.guess-board-cell.is-won.g1 { background: #3f5c2a; }
+.guess-board-cell.is-won.g2 { background: #4d5526; }
+.guess-board-cell.is-won.g3,
+.guess-board-cell.is-won.g4 { background: #5a4a22; }
+
+@media (max-width: 760px) {
+    /* The grid is the first thing to go when the row runs out of room —
+       the score is the point of a leaderboard, the grid is the garnish. */
+    .guess-board-grid { display: none; }
+    .guess-board-row { grid-template-columns: 16px 20px 1fr auto; }
+}

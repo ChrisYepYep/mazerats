@@ -155,6 +155,14 @@ async function answersFor(day) {
    fifth keeps the four. */
 function scoreRounds(rounds, answers) {
     let points = 0, solved = 0;
+    /* The per-round outcome as the SERVER decided it, not as the page
+       claimed it. Stored alongside the score so a day's board can show
+       everyone's grid beside their name — which is the whole of the
+       head-to-head, and it works because a grid names no mazes: it says
+       how a round went and nothing about what was in it.
+
+       0 is "not solved". 1-4 is the view it was named on. */
+    const grid = new Array(ROUNDS).fill(0);
     for (let i = 0; i < ROUNDS; i++) {
         const r = rounds[i];
         if (!r || !r.won) continue;
@@ -163,8 +171,55 @@ function scoreRounds(rounds, answers) {
         if (!answers[i] || normalise(r.answer) !== normalise(answers[i])) continue;
         points += POINTS[tries - 1];
         solved += 1;
+        grid[i] = tries;
     }
-    return { points, solved };
+    return { points, solved, grid };
+}
+
+// ---------- the ranges a board can cover ----------
+
+const iso = (d) => d.toISOString().slice(0, 10);
+
+/* Calendar weeks and months in UTC, matching the day the game itself turns
+   over on. Calendar rather than rolling: the point of a shorter board is
+   that everyone starts level again on Monday, and a rolling seven days
+   never starts anyone level. */
+function rangeBounds(kind, todayStr) {
+    const today = new Date(todayStr + "T00:00:00Z");
+    if (kind === "day") return { from: todayStr, to: todayStr };
+    if (kind === "week") {
+        // getUTCDay is 0 for Sunday; shift so weeks run Monday to Sunday.
+        const back = (today.getUTCDay() + 6) % 7;
+        const start = new Date(today);
+        start.setUTCDate(start.getUTCDate() - back);
+        return { from: iso(start), to: todayStr };
+    }
+    if (kind === "month") {
+        return { from: todayStr.slice(0, 8) + "01", to: todayStr };
+    }
+    return { from: "0000-01-01", to: "9999-12-31" };   // all time
+}
+
+/* One board over a span of days. Grouped per player so a month's board is
+   a total rather than a list of days, and ordered by points with fewer days
+   winning ties — someone who scored the same in less play was better at it. */
+async function board(col, from, to, limit) {
+    const rows = await col.aggregate([
+        { $match: { day: { $gte: from, $lte: to } } },
+        { $group: {
+            _id: "$playerId",
+            points: { $sum: "$points" },
+            solved: { $sum: "$solved" },
+            days: { $sum: 1 },
+            // Newest row wins the name, so a Discord rename shows through
+            // rather than the board keeping whatever they were first called.
+            name: { $last: "$name" },
+            avatar: { $last: "$avatar" }
+        } },
+        { $sort: { points: -1, days: 1 } },
+        { $limit: limit }
+    ]).toArray();
+    return rows.map(r => ({ id: r._id, name: r.name, avatar: r.avatar, points: r.points, solved: r.solved, days: r.days }));
 }
 
 exports.handler = async (event) => {
@@ -183,33 +238,43 @@ exports.handler = async (event) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json(400, { error: "Bad day" });
 
         try {
-            const [todayRows, allTimeRows] = await Promise.all([
-                col.find({ day }, { projection: { _id: 0, playerId: 1, name: 1, avatar: 1, points: 1, solved: 1 } })
+            const week = rangeBounds("week", day);
+            const month = rangeBounds("month", day);
+            const all = rangeBounds("all", day);
+
+            /* All four boards in one request rather than one per tab. They
+               are small, they are read together, and a results panel whose
+               tabs each cost a round trip feels broken in a way that four
+               cheap aggregations do not. */
+            const [todayRows, weekRows, monthRows, allRows] = await Promise.all([
+                // The day's own board keeps its per-player rows rather than
+                // being grouped, because it carries the grid for the
+                // head-to-head and there is nothing to sum over one day.
+                col.find({ day }, { projection: { _id: 0, playerId: 1, name: 1, avatar: 1, points: 1, solved: 1, grid: 1 } })
                     .sort({ points: -1, at: 1 })
                     .limit(BOARD_SIZE)
                     .toArray(),
-                col.aggregate([
-                    { $group: {
-                        _id: "$playerId",
-                        points: { $sum: "$points" },
-                        days: { $sum: 1 },
-                        // Newest row wins for the name, so a Discord rename
-                        // shows through rather than the board keeping
-                        // whatever they were called the first day they played.
-                        name: { $last: "$name" },
-                        avatar: { $last: "$avatar" }
-                    } },
-                    { $sort: { points: -1, days: 1 } },
-                    { $limit: BOARD_SIZE }
-                ]).toArray()
+                board(col, week.from, week.to, BOARD_SIZE),
+                board(col, month.from, month.to, BOARD_SIZE),
+                board(col, all.from, all.to, BOARD_SIZE)
             ]);
 
             // "date" is the day these are FOR; "day" is the board itself.
             // Named for how the page reads them, not for how they are stored.
             return json(200, {
                 date: day,
-                day: todayRows.map(r => ({ id: r.playerId, name: r.name, avatar: r.avatar, points: r.points, solved: r.solved })),
-                allTime: allTimeRows.map(r => ({ id: r._id, name: r.name, avatar: r.avatar, points: r.points, days: r.days }))
+                weekFrom: week.from,
+                monthFrom: month.from,
+                day: todayRows.map(r => ({
+                    id: r.playerId, name: r.name, avatar: r.avatar,
+                    points: r.points, solved: r.solved,
+                    // Older rows predate the grid being stored; an empty one
+                    // simply renders as no grid rather than as a wrong one.
+                    grid: Array.isArray(r.grid) ? r.grid : null
+                })),
+                week: weekRows,
+                month: monthRows,
+                allTime: allRows
             });
         } catch (e) {
             return json(500, { error: "Could not read the scoreboard" });
@@ -246,7 +311,7 @@ exports.handler = async (event) => {
             return json(500, { error: "Could not check the day" });
         }
 
-        const { points, solved } = scoreRounds(body.rounds, answers);
+        const { points, solved, grid } = scoreRounds(body.rounds, answers);
 
         try {
             await col.insertOne({
@@ -256,6 +321,7 @@ exports.handler = async (event) => {
                 avatar: player.avatar,
                 points,
                 solved,
+                grid,
                 at: new Date().toISOString()
             });
         } catch (e) {

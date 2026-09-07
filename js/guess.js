@@ -964,6 +964,38 @@
         loadBoards(true);
     }
 
+    /* The four spans a board can cover. Today first, because that is the
+       one everybody has just played; all time last, because on a board
+       that has been running a while it is the least reachable and the
+       least encouraging. A week and a month exist precisely so that
+       somebody arriving in November is not forty days behind. */
+    const BOARD_RANGES = [
+        { key: "day", label: "Today", empty: "Nobody has finished today yet." },
+        { key: "week", label: "This week", empty: "No scores this week yet." },
+        { key: "month", label: "This month", empty: "No scores this month yet." },
+        { key: "allTime", label: "All time", empty: "No scores recorded yet." }
+    ];
+    let boardRange = "day";
+
+    /* Someone else's day, as five squares. Safe to show beside a name
+       because it says how each round went and nothing whatever about what
+       was in it — the same reason the shareable grid is safe to paste into
+       a channel where people have not played yet.
+
+       Only today's board carries one; a month's total has no single day to
+       draw. Rows recorded before the grid was stored come back null and
+       simply render nothing rather than five wrong squares. */
+    function miniGrid(grid) {
+        if (!Array.isArray(grid) || grid.length !== ROUNDS) return "";
+        const cells = grid.map(n => {
+            const cls = n >= 1 && n <= 4 ? `is-won g${n}` : "is-lost";
+            return `<span class="guess-board-cell ${cls}"></span>`;
+        }).join("");
+        const solved = grid.filter(n => n > 0).length;
+        return `<span class="guess-board-grid" role="img"
+                      aria-label="${solved} of ${ROUNDS} found">${cells}</span>`;
+    }
+
     function boardRows(list, mine, empty) {
         if (!list || !list.length) {
             return `<li class="guess-board-empty">${escapeHtml(empty)}</li>`;
@@ -975,6 +1007,7 @@
                     ? `<img class="guess-board-face" src="${escapeHtml(row.avatar)}" alt="" aria-hidden="true" loading="lazy">`
                     : `<span class="guess-board-face is-blank" aria-hidden="true"></span>`}
                 <span class="guess-board-name">${escapeHtml(row.name || "Someone")}</span>
+                ${miniGrid(row.grid)}
                 <span class="guess-board-score">${row.points}</span>
             </li>`).join("");
     }
@@ -1004,19 +1037,51 @@
                 <button type="button" class="guess-btn" id="guess-board-signin">Sign in with Discord to be listed</button>
             </p>`;
 
+        const range = BOARD_RANGES.find(r => r.key === boardRange) || BOARD_RANGES[0];
+        const list = boards[range.key];
+
+        /* One board with a range switch rather than four stacked boards.
+           Four would be most of a screen of names, and three of them are
+           the same names in a different order — the switch says "the same
+           board over a different span", which is what it is. */
+        const tabs = BOARD_RANGES.map(r => `
+            <button type="button" class="guess-board-range${r.key === boardRange ? " is-on" : ""}"
+                    data-range="${r.key}" aria-pressed="${r.key === boardRange}">${escapeHtml(r.label)}</button>`).join("");
+
+        // What the span actually covers, since "this week" is a Monday, not
+        // a rolling seven days, and that is worth being plain about.
+        const span = boardRange === "week" && boards.weekFrom
+            ? `Since ${niceDate(boards.weekFrom)}`
+            : boardRange === "month" && boards.monthFrom
+                ? `Since ${niceDate(boards.monthFrom)}`
+                : boardRange === "day"
+                    ? "Your five against everyone else's"
+                    : "Every day the game has run";
+
         host.innerHTML = `
             ${invite}
             <div class="guess-board">
-                <h4 class="guess-board-head">Today's top scorers</h4>
-                <ol class="guess-board-list">${boardRows(boards.day, me, "Nobody has finished today yet.")}</ol>
-            </div>
-            <div class="guess-board">
-                <h4 class="guess-board-head">All time</h4>
-                <ol class="guess-board-list">${boardRows(boards.allTime, me, "No scores recorded yet.")}</ol>
+                <div class="guess-board-ranges" role="group" aria-label="Which span the board covers">${tabs}</div>
+                <p class="guess-board-span">${escapeHtml(span)}</p>
+                <ol class="guess-board-list">${boardRows(list, me, range.empty)}</ol>
             </div>`;
+
+        host.querySelectorAll(".guess-board-range").forEach(btn => {
+            btn.addEventListener("click", () => {
+                boardRange = btn.dataset.range;
+                // Everything is already in hand — one request fetched all
+                // four — so switching is a redraw, not a round trip.
+                renderBoards();
+            });
+        });
 
         const signin = document.getElementById("guess-board-signin");
         if (signin) signin.addEventListener("click", () => window.Account && Account.signIn());
+    }
+
+    function niceDate(iso) {
+        return new Date(iso + "T00:00:00Z")
+            .toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
     }
 
     let countdownTimer = null;

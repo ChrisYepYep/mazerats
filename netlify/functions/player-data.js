@@ -6,10 +6,12 @@
 
    Two kinds of thing live here, and they are kept differently on purpose.
 
-   WALKED MAZES are a set, and a set is the one shape that merges without a
-   rule to argue about: signing in on a second device unions the two lists
-   and nobody loses a tick. So the client sends the whole set and the server
-   stores the whole set, and "merge" is just a union done on the way in.
+   WALKED MAZES, and the SAVED list of ones to go and walk, are both sets —
+   and a set is the one shape that merges without a rule to argue about:
+   signing in on a second device unions the two lists and nobody loses a
+   tick. So the client sends the whole set and the server unions it in.
+   Which is also why removing from either has to be said out loud: a
+   shorter list is not a deletion, so DELETE takes the one id to drop.
 
    THE DAY'S GAME is a single in-progress blob for today only. Yesterday's
    is meaningless — the rooms have changed — so it is replaced outright when
@@ -154,11 +156,12 @@ exports.handler = async (event) => {
     if (event.httpMethod === "GET") {
         try {
             const [doc, stats] = await Promise.all([
-                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, guess: 1 } }),
+                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1 } }),
                 statsFor(db, player.id)
             ]);
             return json(200, {
                 walked: (doc && doc.walked) || [],
+                saved: (doc && doc.saved) || [],
                 guess: (doc && doc.guess) || null,
                 stats
             });
@@ -177,10 +180,19 @@ exports.handler = async (event) => {
 
         const set = { playerId: player.id, updatedAt: new Date().toISOString() };
         let addWalked = null;
+        let addSaved = null;
 
         if (body.walked !== undefined) {
             addWalked = cleanWalked(body.walked);
             if (addWalked === null) return json(400, { error: "Bad walked list" });
+        }
+        /* The to-walk list. Same set semantics as walked and for the same
+           reason — two devices adding different mazes must both keep
+           theirs — so it takes the same union treatment and the same
+           explicit removal. */
+        if (body.saved !== undefined) {
+            addSaved = cleanWalked(body.saved);
+            if (addSaved === null) return json(400, { error: "Bad saved list" });
         }
         if (body.guess !== undefined) {
             // null is a legitimate value: it is how the client says "the day
@@ -195,15 +207,19 @@ exports.handler = async (event) => {
                devices ticking different mazes at the same time both keep
                their ticks, and re-sending the same list changes nothing. */
             const update = { $set: set };
-            if (addWalked) update.$addToSet = { walked: { $each: addWalked } };
+            const add = {};
+            if (addWalked) add.walked = { $each: addWalked };
+            if (addSaved) add.saved = { $each: addSaved };
+            if (Object.keys(add).length) update.$addToSet = add;
             await col.updateOne({ playerId: player.id }, update, { upsert: true });
 
             const [doc, stats] = await Promise.all([
-                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, guess: 1 } }),
+                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1 } }),
                 statsFor(db, player.id)
             ]);
             return json(200, {
                 walked: (doc && doc.walked) || [],
+                saved: (doc && doc.saved) || [],
                 guess: (doc && doc.guess) || null,
                 stats
             });
@@ -216,11 +232,14 @@ exports.handler = async (event) => {
        $addToSet above is that sending a shorter list never deletes, so
        un-ticking a maze needs to say so explicitly. */
     if (event.httpMethod === "DELETE") {
-        const id = String((event.queryStringParameters || {}).walked || "").slice(0, MAX_ID);
+        const q = event.queryStringParameters || {};
+        // Which list, said in the parameter name itself.
+        const field = q.saved !== undefined ? "saved" : "walked";
+        const id = String(q[field] || "").slice(0, MAX_ID);
         if (!id) return json(400, { error: "Nothing named to remove" });
         try {
-            await col.updateOne({ playerId: player.id }, { $pull: { walked: id } });
-            return json(200, { removed: id });
+            await col.updateOne({ playerId: player.id }, { $pull: { [field]: id } });
+            return json(200, { removed: id, from: field });
         } catch (e) {
             return json(500, { error: "Could not remove it" });
         }
