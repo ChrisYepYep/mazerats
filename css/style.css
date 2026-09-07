@@ -10438,13 +10438,32 @@ body[data-page="admin"] #activity-sessions {
    it read as the thing to press rather than another label. The cream is the
    site's own parchment lifted a couple of steps rather than plain white —
    white would sit outside the palette and look like a browser default. */
+/* Metrically identical to .header-badge beside it — same padding, same
+   font, same border and radius — so the two read as one row of pills and
+   not as a button that turned up late. It was 19px tall against the
+   badge's 16px, which is small enough to look like a mistake rather than
+   emphasis. The cream fill is doing the work of marking it as the
+   pressable one; it does not need size as well. */
 .header-signin {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 3px 11px;
+    gap: 5px;
+    padding: 2px 8px;
     border: 1px solid #efe4cc;
     border-radius: 10px;
+    /* Pinned rather than left to `normal`: the badge is an inline anchor and
+       this is an inline-flex button, and the two resolve their line boxes
+       differently — an inline box takes its height from the font's own
+       ascent and descent, a flex item from its line-height. 1.2 came out
+       2px proud; 1 lands both on 16px. Measured, not reasoned. */
+    line-height: 1;
+    /* The height the two rules above arrive at, stated as a floor so the
+       pill cannot collapse when it has no text in it — which is exactly
+       what happens below 700px, where the name is hidden and the face is
+       out of flow, leaving nothing to hold the box open. It measured 6px
+       tall there before this. box-sizing is border-box site-wide, so this
+       is the whole pill, not its content. */
+    min-height: 16px;
     background: linear-gradient(180deg, #f6efdd, #e2d5b8);
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
     font-family: 'Roboto', sans-serif;
@@ -10473,27 +10492,54 @@ body[data-page="admin"] #activity-sessions {
 .header-signin:disabled { opacity: 0.6; cursor: default; }
 
 /* Signed in, the button carries a face and a name instead of a word, so it
-   is doing double duty as "you are signed in, as this person". Slightly
-   tighter left padding to let the avatar sit close to the edge. */
+   is doing double duty as "you are signed in, as this person".
+
+   The face is deliberately bigger than the pill and rides up out of the top
+   of it. Two reasons, one of them structural: a 22px avatar in a 16px pill
+   would otherwise decide the pill's height and make it taller than the
+   badges beside it, and taking it out of flow means it cannot. The pill
+   stays exactly 16px however large the face is drawn.
+
+   padding-left reserves the room the face sits in, so the name never runs
+   underneath it. */
 .header-signin.is-signed-in {
-    padding: 2px 10px 2px 3px;
+    position: relative;
+    padding: 2px 9px 2px 25px;
+    /* The whole point — hidden would clip the part that overhangs. */
+    overflow: visible;
     text-transform: none;
     letter-spacing: 0.2px;
 }
 
 .header-signin-face {
-    width: 18px;
-    height: 18px;
+    position: absolute;
+    left: -2px;
+    /* Anchored to the bottom edge and grown upward, so the overhang is all
+       at the top rather than split top and bottom. */
+    bottom: -1px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     display: block;
+    /* The same cream as the pill's own edge, so the face reads as part of
+       the control rather than a picture parked on top of it — and it needs
+       an edge of its own, since a dark avatar against the dark header would
+       otherwise have none. */
+    border: 1px solid #efe4cc;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    background: var(--wood-mid);
     /* Discord avatars are photographs and drawings, not pixel art. */
     image-rendering: auto;
 }
 
+/* Not truncated. A name is how someone checks they are signed in as
+   themselves, and half of it with an ellipsis answers that badly — so the
+   pill grows to whatever anybody is called instead. Discord allows 32
+   characters and displayName caps at 40, which is the real bound on how
+   wide this can get; the header wraps rather than overflows above that
+   (see .brand-group in the responsive block), and the name is dropped
+   altogether below 700px where there is no room for it. */
 .header-signin-name {
-    max-width: 12ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
@@ -10516,9 +10562,11 @@ body[data-page="admin"] #activity-sessions {
 
 @media (max-width: 700px) {
     /* The name is the first thing to go when the header runs out of room —
-       the avatar alone still says "signed in, and as whom". */
+       the avatar alone still says "signed in, and as whom". The left
+       padding stays, because that is the room the face occupies; only the
+       text side is given back. */
     .header-signin-name { display: none; }
-    .header-signin.is-signed-in { padding: 2px 3px; }
+    .header-signin.is-signed-in { padding: 2px 4px 2px 22px; }
 }
 
 /* ---------- the score ---------- */
