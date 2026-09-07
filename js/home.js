@@ -4959,11 +4959,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     (function wireProgress() {
-        const tab = document.getElementById("progress-tab");
         const overlay = document.getElementById("progress-overlay");
         const close = document.getElementById("progress-close");
-        if (!tab || !overlay) return;
-        tab.addEventListener("click", openProgress);
+        /* Guards on its OWN markup and nothing else.
+
+           This used to require #progress-tab to exist before it would wire
+           anything, and that tab went when the three side tabs became one
+           menu — so every way of closing the window (the X, the backdrop,
+           Escape) silently stopped being bound, while the window itself
+           still opened because the menu calls openProgress directly. The
+           same mistake had already cost the daily game its deck; a setup
+           function has no business depending on whoever happens to open
+           it. */
+        if (!overlay) return;
         if (close) close.addEventListener("click", closeProgress);
         overlay.addEventListener("click", e => { if (e.target === overlay) closeProgress(); });
         document.addEventListener("keydown", e => {
