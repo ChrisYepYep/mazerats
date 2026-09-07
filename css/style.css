@@ -9628,9 +9628,9 @@ body[data-page="admin"] #activity-sessions {
    sampling, not eyeballed). Flat rather than the sprite, because a 9-slice
    cut for a wide short button has nothing useful to say at 18px across.
 
-   The old ribbon sprite that used to draw this is gone with it — its
-   Aseprite source is still in assets/img/ if the shape is ever wanted
-   again, but nothing on the site loads a picture for the tab any more. */
+   The ribbon sprite that used to draw this is gone, source and all —
+   nothing on the site loads a picture for the tab any more. Both files are
+   still in git history (7b70bae) if the shape is ever wanted back. */
 
 .archive-stack {
     position: relative;
