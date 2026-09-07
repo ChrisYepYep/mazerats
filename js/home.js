@@ -925,7 +925,13 @@ document.addEventListener("DOMContentLoaded", () => {
            kinds at once) or above the timeline (which is the whole archive
            in order) — in any of those it would be a tally of something the
            list on screen is not about. */
-        const appliesHere = topView === "mazes" && !showWhatsNew && !showTimeline;
+        /* Neither furni view either. The browser is a list of PIECES, so a
+           tally of mazes over it is a count of something that is not on
+           screen; and the filtered listing that a piece hands over to is a
+           handful of mazes, over which "3 of 28 completed" is a figure
+           about the whole archive floating above a list that is not it. */
+        const appliesHere = topView === "mazes"
+            && !showWhatsNew && !showTimeline && !showFurni && !furniFilter;
         const rooms = walkableRooms();
         const done = rooms.filter(r => isWalked(r.id)).length;
         if (!appliesHere || !done || !rooms.length) {
@@ -1589,6 +1595,15 @@ document.addEventListener("DOMContentLoaded", () => {
            is the listing that already existed. */
         if (showFurni && !furniFilter) {
             renderFurniBrowser();
+            updateWalkedCount();
+            return;
+        }
+
+        /* And a chosen piece lists the ROOMS it is in rather than the mazes
+           — which is what the archive actually knows, room.furni being
+           keyed by the picture each match came from. */
+        if (furniFilter) {
+            renderFurniRooms();
             updateWalkedCount();
             return;
         }
@@ -2936,6 +2951,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const index = new Map();
         ROOMS.forEach(room => {
             if (!room.furni || !room.id) return;
+            /* A hallway is not a maze (see isHallway), so it cannot be one
+               of the "N mazes" a piece is found in. Left in, the index said
+               a widespread piece was in 29 mazes while the archive counted
+               28 — the same one-out the completion tally had, in the one
+               place a reader would most naturally check the number. */
+            if (isHallway(room)) return;
             // A furni found in six of a maze's rooms is still one maze.
             const seenHere = new Set();
             Object.values(room.furni).forEach(record => {
@@ -3087,7 +3108,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function furniBrowserEntries() {
         if (!furniIndexByKey) furniIndexByKey = buildFurniIndex();
         const seen = new Map();
-        ROOMS.forEach(room => {
+        /* Filtered here as well as in the index, and that matters: a piece
+           found ONLY in the hallway would otherwise be listed with a count
+           of zero and fall through all three bands, which sort on 1, 2-4
+           and 5+. It would vanish from the page without saying so. */
+        ROOMS.filter(room => !isHallway(room)).forEach(room => {
             Object.values(room.furni || {}).forEach(record => {
                 (record && record.items ? record.items : []).forEach(item => {
                     const key = furniKeyOf(item);
@@ -3193,13 +3218,43 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         ];
 
-        const heading = query
-            ? `${entries.length} of ${all.length} furni match “${escapeHtml(query)}”.`
-            : `${all.length} furni the scan has found across the archive. Pick one to see every maze it appears in.`;
+        /* A proper head, because without one this view arrived with no
+           explanation of itself: a wall of four hundred sprites and a
+           single line of small print. It is the least self-evident thing on
+           the site — nothing else here is a list of OBJECTS — so it needs
+           to say what was done, what came of it, and what pressing one of
+           them will do.
 
-        grid.innerHTML =
-            `<p class="furni-browse-intro">${heading}</p>` +
-            bands.map(furniBandHtml).join("");
+           Every figure is counted from `all`, the same array the bands
+           below are built from, so the summary and the thing it summarises
+           cannot disagree. Counting them independently is exactly what put
+           the progress card's difficulty breakdown six mazes out. */
+        const soloCount = all.filter(f => f.mazes === FURNI_SOLO).length;
+        const widest = all.reduce((best, f) => (!best || f.mazes > best.mazes ? f : best), null);
+
+        const stat = (n, label) =>
+            `<div class="furni-stat">
+                <span class="furni-stat-n">${escapeHtml(String(n))}</span>
+                <span class="furni-stat-l">${escapeHtml(label)}</span>
+            </div>`;
+
+        const head = `
+            <section class="furni-head">
+                <h3 class="furni-head-title">Browse by furni</h3>
+                <p class="furni-head-blurb">Every room picture in the archive has been scanned and matched
+                    against Habbo's furni catalogue. This is what it found. Pick any piece to see every
+                    maze it turns up in.</p>
+                <div class="furni-head-stats">
+                    ${stat(all.length, "pieces identified")}
+                    ${stat(soloCount, soloCount === 1 ? "used by one maze" : "used by one maze only")}
+                    ${widest ? stat(widest.mazes, "mazes at its widest") : ""}
+                </div>
+                ${query
+                    ? `<p class="furni-head-filter">${entries.length} ${entries.length === 1 ? "piece matches" : "pieces match"} “${escapeHtml(query)}”.</p>`
+                    : ""}
+            </section>`;
+
+        grid.innerHTML = head + bands.map(furniBandHtml).join("");
 
         grid.querySelectorAll(".furni-tile").forEach(btn => {
             btn.addEventListener("click", () => {
@@ -3340,6 +3395,136 @@ document.addEventListener("DOMContentLoaded", () => {
         return ROOMS.filter(r => ids.has(r.id))
             .map(r => normalize(r, false))
             .sort((a, b) => compareNames(a.name, b.name));
+    }
+
+    /* Every ROOM a piece was found in, not every maze.
+
+       room.furni is keyed by the picture it was scanned from, so the
+       archive already knows exactly which rooms held a thing — the listing
+       just never said. "In 12 mazes" is a fact about the archive; "in the
+       Ballroom, and Room 7, and the Entrance" is a fact you can go and
+       look at, which is what somebody who clicked a sofa actually wanted.
+
+       Hallways are skipped for the same reason they are skipped everywhere
+       else (see isHallway). */
+    function furniRoomEntries() {
+        if (!furniFilter) return [];
+        const out = [];
+        ROOMS.filter(room => !isHallway(room)).forEach(room => {
+            Object.entries(room.furni || {}).forEach(([image, record]) => {
+                const items = (record && record.items) || [];
+                if (!items.some(f => !f.hidden && furniKeyOf(f) === furniFilter.key)) return;
+                out.push({ room, image, label: roomLabelFor(room, image) });
+            });
+        });
+        /* Grouped by maze, and within a maze in the order the gallery is
+           actually laid out — so the rooms read the way they are walked
+           rather than alphabetically by whatever the picture was called. */
+        return out.sort((a, b) =>
+            compareNames(a.room.name, b.room.name)
+            || galleryOrderOf(a.room, a.image) - galleryOrderOf(b.room, b.image));
+    }
+
+    /* What that picture is called inside its maze — the gallery's own label
+       where there is one, the entrance or finish where it is a bookend, and
+       the filename's own derived name as a last resort. */
+    function roomLabelFor(room, image) {
+        if (room.entrance && room.entrance.image === image) return room.entrance.label || "Entrance";
+        if (room.finish && room.finish.image === image) return room.finish.label || "Finish";
+        const g = (room.gallery || []).find(x => (x && x.image) === image
+            || (typeof x === "string" && x === image));
+        if (g) return normalizeGalleryItem(g).label;
+        return deriveGalleryLabel(image);
+    }
+
+    /* Entrance first, then the gallery in its stored order, then finish —
+       the order showGalleryImage itself walks them in.
+
+       NOT galleryPosition: that name is already taken by the #gallery-position
+       element four other places read, and shadowing it here would have broken
+       the modal's own room counter. */
+    function galleryOrderOf(room, image) {
+        if (room.entrance && room.entrance.image === image) return -1;
+        const i = (room.gallery || []).findIndex(x => (x && x.image) === image
+            || (typeof x === "string" && x === image));
+        if (i >= 0) return i;
+        return Number.MAX_SAFE_INTEGER;
+    }
+
+    function renderFurniRooms() {
+        const entries = furniRoomEntries();
+        currentItems = [];
+
+        if (!entries.length) {
+            grid.innerHTML = furniFilterChipHtml();
+            emptyEl.textContent = "That piece is not recorded in any room.";
+            emptyEl.style.display = "block";
+            wireFurniChip();
+            return;
+        }
+        emptyEl.style.display = "none";
+
+        // Grouped under the maze they belong to, so a piece in four rooms of
+        // one maze reads as one maze rather than as four results.
+        const byMaze = [];
+        entries.forEach(e => {
+            const last = byMaze[byMaze.length - 1];
+            if (last && last.room.id === e.room.id) last.rooms.push(e);
+            else byMaze.push({ room: e.room, rooms: [e] });
+        });
+
+        grid.innerHTML = furniFilterChipHtml() + `
+            <p class="furni-rooms-count">Found in ${entries.length} ${entries.length === 1 ? "room" : "rooms"}
+                across ${byMaze.length} ${byMaze.length === 1 ? "maze" : "mazes"}.</p>
+            <div class="furni-rooms">
+                ${byMaze.map(group => `
+                    <section class="furni-rooms-maze">
+                        <h4 class="furni-rooms-name">
+                            <span>${escapeHtml(group.room.name || group.room.id)}</span>
+                            <span class="furni-rooms-n">${group.rooms.length}</span>
+                        </h4>
+                        <ul class="furni-rooms-list">
+                            ${group.rooms.map(e => `
+                                <li>
+                                    <button type="button" class="furni-room-row"
+                                            data-room-id="${escapeHtml(e.room.id)}"
+                                            data-room-image="${escapeHtml(e.image)}">
+                                        <img class="furni-room-shot" src="${escapeHtml(rowThumbUrl(e.image))}"
+                                             alt="" loading="lazy" decoding="async">
+                                        <span class="furni-room-label">${escapeHtml(e.label)}</span>
+                                    </button>
+                                </li>`).join("")}
+                        </ul>
+                    </section>`).join("")}
+            </div>`;
+
+        wireFurniChip();
+
+        grid.querySelectorAll(".furni-room-row").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const room = ROOMS.find(r => r.id === btn.dataset.roomId);
+                if (!room) return;
+                // Straight to that room's own picture, which is the whole
+                // point of listing rooms rather than mazes.
+                openModal(normalize(room, false), { atImage: btn.dataset.roomImage });
+            });
+        });
+    }
+
+    /* The chip's two exits, bound wherever the chip is drawn. Pulled out of
+       render() when the furni listing stopped going through it. */
+    function wireFurniChip() {
+        const clear = document.getElementById("furni-filter-clear");
+        if (clear) clear.addEventListener("click", () => { furniFilter = null; render(); });
+
+        const back = document.getElementById("furni-filter-back");
+        if (back) back.addEventListener("click", () => {
+            const id = furniFilter && furniFilter.fromMazeId;
+            furniFilter = null;
+            render();
+            const record = ROOMS.find(r => r.id === id);
+            if (record) openModal(normalize(record, false));
+        });
     }
 
     /* The chip above the filtered list: what is being shown, and two ways
@@ -4479,7 +4664,11 @@ document.addEventListener("DOMContentLoaded", () => {
         (host || modalMeta).appendChild(btn);
     }
 
-    function openModal(n) {
+    /* opts.atImage opens the gallery on that picture rather than on the
+       first one. Used by the furni listing, which names actual ROOMS — a
+       row that says "the fountain is in Room 7" and then opens on Room 1
+       has not answered the thing it was asked. */
+    function openModal(n, opts = {}) {
         // Invalidates any in-flight closeModal() from a rapid re-open (its
         // animationend/fallback would otherwise fire later and rip the
         // "open"/"closing" classes off this new instance mid-view).
@@ -4671,7 +4860,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     restartAutoAdvance();
                 });
             });
-            showGalleryImage(0, { instant: true });
+            /* Straight to the picture the caller asked for, when it asked
+               for one and this maze actually has it. Falls back to the
+               first image rather than to nothing if it does not. */
+            const wanted = opts.atImage
+                ? activeGallery.findIndex(g => g.image === opts.atImage)
+                : -1;
+            showGalleryImage(wanted >= 0 ? wanted : 0, { instant: true });
             restartAutoAdvance();
         } else {
             activeGallery = null;
