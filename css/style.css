@@ -1835,22 +1835,24 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 .chrome-close:hover { background: #fff; }
 
-/* The room-viewing modal's close button is just the pixel-art X itself —
-   no button chrome — so it overrides .chrome-close's frame back out to
-   nothing. Scoped by id rather than by .chrome-close so the admin
-   confirm/info dialogs (which share that class) keep their plain "×"
-   glyph in the normal cream button frame.
+/* A close button that carries the pixel-art X is just the X itself — no
+   button chrome — so it overrides .chrome-close's frame back out to
+   nothing. Transparent, and the grip runs on underneath it: the artwork is
+   opaque and covers the dots where it sits, while the 6px of padding
+   around it lets them through, which is how Habbo's own close buttons sit
+   on their bars.
 
-   Transparent, and the grip runs on underneath it: the X artwork is opaque
-   and covers the dots where it sits, and the 6px of padding around it lets
-   them through, which is how Habbo's own close buttons sit on their bars.
+   Selected on carrying the sprite rather than by a list of ids, which is
+   what this was and which meant every window had to remember to add
+   itself. Four of the five never did — the game, the event and privacy
+   modals, and the Hogwarts room sheet all fell through to .chrome-close's
+   own white gradient, which is what a white box behind the X is.
 
-   The game window is listed here too. Being a list of ids, this does not
-   pick up new windows on its own — the game shipped carrying the same X
-   sprite and got the cream button frame from .chrome-close instead, which
-   is what a white box behind the X means. */
-#modal-close,
-#guess-close {
+   The admin confirm/info dialogs share the .chrome-close class but write a
+   plain "×" as text, with no img, so they keep the cream button frame the
+   base rule gives them — the distinction this selector draws is exactly
+   the one that was intended. */
+.chrome-close:has(img) {
     background: none;
     border: none;
     border-radius: 0;
@@ -1860,11 +1862,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding: 6px;
 }
 
-#modal-close:hover,
-#guess-close:hover { background: none; }
+.chrome-close:has(img):hover { background: none; }
 
-#modal-close img,
-#guess-close img {
+.chrome-close img {
     width: 14px;
     height: auto;
     image-rendering: pixelated;
