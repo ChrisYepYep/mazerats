@@ -77,8 +77,96 @@
                 const i = listeners.indexOf(fn);
                 if (i >= 0) listeners.splice(i, 1);
             };
-        }
+        },
+
+        /* ---------- what the account remembers ----------
+
+           Walked mazes and the day's game, kept against the account so they
+           follow someone between their phone and their desk. Signed out
+           every one of these is a no-op returning null, and the callers'
+           own localStorage stays exactly as it was — which is what keeps
+           the site fully usable without an account.
+
+           Deliberately thin. This knows how to fetch, merge and push a
+           blob; it does not know what walked mazes or a guess state ARE.
+           The two files that do own their own shapes. */
+
+        // The last state the server gave us, so a render can read it
+        // without awaiting. Null until the first fetch lands.
+        stored: null,
+
+        async fetchState() {
+            if (!Account.current) return null;
+            try {
+                const res = await fetch(STATE_ENDPOINT, {
+                    credentials: "same-origin",
+                    headers: { Accept: "application/json" }
+                });
+                if (!res.ok) throw new Error(String(res.status));
+                Account.stored = await res.json();
+            } catch (e) {
+                Account.stored = null;
+            }
+            return Account.stored;
+        },
+
+        /* Pushes a patch and keeps whatever comes back, which is the merged
+           truth rather than what we just sent — the server unions walked
+           lists, so the reply can hold ticks this device had never seen.
+
+           Coalesced: ticking four mazes quickly is one request, not four.
+           Fire and forget by design; nothing on screen should wait on it,
+           and the local copy is already correct. */
+        saveState(patch) {
+            if (!Account.current || !patch) return;
+            Object.assign(pendingPatch, patch);
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(flushState, 600);
+        },
+
+        // For the one case that cannot wait 600ms: the page is going away.
+        flushState
     };
+
+    const STATE_ENDPOINT = "/.netlify/functions/player-data";
+    let pendingPatch = {};
+    let saveTimer = null;
+
+    async function flushState() {
+        clearTimeout(saveTimer);
+        if (!Account.current) { pendingPatch = {}; return; }
+        const patch = pendingPatch;
+        pendingPatch = {};
+        if (!Object.keys(patch).length) return;
+        try {
+            const res = await fetch(STATE_ENDPOINT, {
+                method: "PUT",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(patch)
+            });
+            if (res.ok) Account.stored = await res.json();
+        } catch (e) { /* the local copy is already right; nothing to undo */ }
+    }
+
+    /* Un-ticking has to be said out loud. The save above unions walked
+       lists so two devices cannot delete each other's ticks, which means a
+       shorter list is not a removal — this is. */
+    async function forgetWalked(id) {
+        if (!Account.current || !id) return;
+        try {
+            await fetch(`${STATE_ENDPOINT}?walked=${encodeURIComponent(id)}`, {
+                method: "DELETE",
+                credentials: "same-origin"
+            });
+        } catch (e) { /* as above */ }
+    }
+    Account.forgetWalked = forgetWalked;
+
+    // A tick made in the last moments before the tab closes still counts.
+    window.addEventListener("pagehide", () => {
+        if (Object.keys(pendingPatch).length) flushState();
+    });
 
     function announce() {
         listeners.forEach(fn => {

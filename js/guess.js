@@ -400,6 +400,33 @@
 
     function saveState() {
         try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
+        // And against the account, so a day begun on a phone can be
+        // finished at a desk. Coalesced and fire-and-forget in Account.
+        if (window.Account && Account.current) Account.saveState({ guess: state });
+    }
+
+    /* Takes the account's copy of today if it is further on than this
+       device's. "Further on" is counted in guesses actually made, which is
+       the only measure that cannot go backwards — round number alone would
+       let a device that had merely opened room 3 overwrite one that had
+       played four rooms properly.
+
+       Only ever adopts, never overwrites the server with less: a device
+       that is behind pulls forward, and one that is ahead pushes on its
+       next save. */
+    function adoptAccountDay(saved) {
+        if (!saved || saved.day !== today()) return false;
+        if (!Array.isArray(saved.results) || saved.results.length !== ROUNDS) return false;
+        const count = s => s.results.reduce((n, r) => n + ((r.guesses || []).length), 0);
+        if (count(saved) <= count(state)) return false;
+        state = {
+            day: saved.day,
+            round: saved.round || 0,
+            results: saved.results,
+            done: Boolean(saved.done)
+        };
+        try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
+        return true;
     }
 
     function loadStats() {
@@ -924,6 +951,16 @@
                 body: JSON.stringify({ day: state.day, rounds })
             });
         } catch (e) { /* the local record is already kept; nothing to say */ }
+
+        /* Re-read the account's totals now the day has been recorded, so
+           the results panel shows the counted truth rather than this
+           device's guess at it — they differ for anyone who has played
+           elsewhere today, or signed in part-way through. */
+        const remote = await Account.fetchState();
+        if (remote && remote.stats) {
+            stats = { ...stats, ...remote.stats };
+            renderSummary();
+        }
         loadBoards(true);
     }
 
@@ -1044,6 +1081,24 @@
         }
         stats = loadStats();
         state = loadState();
+
+        /* Signed in, the account is the better record of both: the day in
+           progress may have been played further on another device, and the
+           running totals are counted from the scores actually recorded
+           rather than from whatever this browser happens to remember.
+
+           Awaited, because both change what the deck is about to show. It
+           is one request, and only for someone who is signed in. */
+        if (window.Account) {
+            await Account.ready();
+            if (Account.current) {
+                const remote = await Account.fetchState();
+                if (remote) {
+                    adoptAccountDay(remote.guess);
+                    if (remote.stats) stats = { ...stats, ...remote.stats };
+                }
+            }
+        }
 
         /* Placed with the animation switched off, so opening the window
            shows the deck already stacked rather than seven sheets flying

@@ -815,6 +815,38 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) { /* private mode, or the quota — the ticks are the loss */ }
     }
 
+    /* ---------- the ticks, when there is an account to hang them on ----
+
+       Signed out this whole section does nothing and the ticks live in
+       localStorage exactly as they always have. Signed in they are kept
+       against the account too, so the list you are finishing is the same
+       list on your phone.
+
+       The device is never the loser in a disagreement. On sign-in the two
+       sets are UNIONED rather than one replacing the other: a tick made
+       here before signing in survives, and so does one made on a machine
+       this browser has never seen. That is only safe because a walked list
+       is a set — there is no "which is newer" to get wrong. */
+    function syncWalked() {
+        if (!window.Account || !Account.current) return;
+        Account.fetchState().then(state => {
+            if (!state) return;
+            const before = walkedIds.size;
+            const server = Array.isArray(state.walked) ? state.walked : [];
+            server.forEach(id => walkedIds.add(id));
+
+            // Anything this device knew that the server did not goes back up.
+            // The endpoint unions on its side too, so this is idempotent.
+            if (walkedIds.size > server.length) Account.saveState({ walked: [...walkedIds] });
+
+            if (walkedIds.size !== before) {
+                saveWalked();
+                render();
+                updateWalkedCount();
+            }
+        });
+    }
+
     function isWalked(id) {
         return !!id && walkedIds.has(id);
     }
@@ -824,6 +856,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (walked) walkedIds.add(id);
         else walkedIds.delete(id);
         saveWalked();
+        /* And onto the account, if there is one. Removal is its own call
+           because the save unions rather than replaces — see forgetWalked
+           in js/account.js for why that has to be true. */
+        if (window.Account && Account.current) {
+            if (walked) Account.saveState({ walked: [...walkedIds] });
+            else Account.forgetWalked(id);
+        }
         // Every place that maze appears follows the tick at once: it can be
         // on the main list and in the featured panel at the same time, and
         // its modal may be open over both.
@@ -4523,6 +4562,14 @@ document.addEventListener("DOMContentLoaded", () => {
         sortTouched = true;
         render();
     });
+
+    /* Pulls the account's ticks down as soon as we know who is signed in,
+       and again if they sign in or out during the visit. onChange fires on
+       every answer including "nobody", which syncWalked ignores. */
+    if (window.Account) {
+        Account.onChange(syncWalked);
+        Account.ready();
+    }
 
     /* ---------- the side tabs, as a menu on a phone ----------
 
