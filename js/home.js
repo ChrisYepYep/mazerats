@@ -4846,68 +4846,118 @@ document.addEventListener("DOMContentLoaded", () => {
         Account.ready();
     }
 
-    /* ---------- the side tabs, as a menu on a phone ----------
+    /* ---------- the side menu ----------
 
-       Below 860px the tabs are a drawer behind a burger (see .side-tabs in
-       css/style.css for why: there is no margin left to tuck a tab into).
-       The buttons themselves are the same elements in the same place in the
-       DOM — only the CSS differs — so nothing here has to know what any of
-       them do. Adding a third tab is a line of markup and nothing else.
+       One spine on the window's right edge, one panel behind it, the same
+       at every width (see .side-spine in css/style.css for what replaced
+       what, and why).
 
-       Everything below is only about opening and closing. */
-    (function wireSideTabMenu() {
-        const burger = document.getElementById("side-tab-burger");
-        const drawer = document.getElementById("side-tabs");
-        if (!burger || !drawer) return;
+       The rows are written here rather than in the markup because each one
+       carries a live count — which is the point of the panel. A menu of
+       three links is barely worth opening; a menu that tells you the day is
+       half played and six mazes have arrived since you last looked is worth
+       opening on its own account.
 
-        function setOpen(open) {
-            drawer.classList.toggle("is-open", open);
-            burger.setAttribute("aria-expanded", open ? "true" : "false");
-        }
+       Adding a fourth way in means one more entry in this array. */
+    function sideMenuEntries() {
+        const g = typeof window.GuessStatus === "function" ? window.GuessStatus() : null;
+        const fresh = whatsNewItems().length;
+        const f = progressFigures();
 
+        return [
+            {
+                name: "Guess the Maze",
+                state: !g ? "Today's five rooms"
+                    : g.finished ? `Done — ${g.points} points`
+                        : g.started ? `${g.done} of ${g.total} rooms done`
+                            : "Not played today",
+                badge: g && g.finished ? String(g.points) : "",
+                on: false,
+                // Opened through the hook js/guess.js publishes: the game
+                // owns its own window, and the menu only asks for it.
+                run: () => { if (typeof window.openGuessGame === "function") window.openGuessGame(); }
+            },
+            {
+                name: "What's New",
+                state: fresh ? "Lately added and changed" : "Nothing new just now",
+                badge: fresh ? String(fresh) : "",
+                on: showWhatsNew,
+                run: toggleWhatsNew
+            },
+            {
+                name: "Your Progress",
+                state: `${f.walkedHere.length} of ${f.walkable.length} walked`
+                    + (f.toWalk.length ? ` · ${f.toWalk.length} saved` : ""),
+                badge: "",
+                on: false,
+                run: openProgress
+            }
+        ];
+    }
+
+    (function wireSideMenu() {
+        const spine = document.getElementById("side-spine");
+        const menu = document.getElementById("side-menu");
+        const drawer = document.getElementById("side-drawer");
+        if (!spine || !menu || !drawer) return;
+
+        /* The open class goes on the DRAWER, not the panel: on a desktop it
+           is the whole unit that slides, and the panel is only revealed by
+           having been pulled clear of the window. */
         const isOpen = () => drawer.classList.contains("is-open");
 
-        burger.addEventListener("click", e => {
+        function render() {
+            menu.innerHTML = sideMenuEntries().map((e, i) => `
+                <button type="button" class="side-menu-item${e.on ? " is-on" : ""}" data-i="${i}">
+                    <span class="side-menu-name">
+                        <span>${escapeHtml(e.name)}</span>
+                        ${e.badge ? `<span class="side-menu-badge">${escapeHtml(e.badge)}</span>` : ""}
+                    </span>
+                    <span class="side-menu-state">${escapeHtml(e.state)}</span>
+                </button>`).join("");
+
+            menu.querySelectorAll(".side-menu-item").forEach(btn => {
+                btn.addEventListener("click", () => {
+                    const entry = sideMenuEntries()[Number(btn.dataset.i)];
+                    // Closed BEFORE the view changes underneath it, or the
+                    // menu is left sitting over the thing it just went to.
+                    setOpen(false);
+                    if (entry) entry.run();
+                });
+            });
+        }
+
+        function setOpen(open) {
+            // Re-read on every open: the counts are only true at the moment
+            // they are asked for.
+            if (open) render();
+            drawer.classList.toggle("is-open", open);
+            spine.setAttribute("aria-expanded", open ? "true" : "false");
+        }
+
+        spine.addEventListener("click", e => {
             e.stopPropagation();
             const open = !isOpen();
             setOpen(open);
-            // Straight onto the first way in, so the menu can be driven from
-            // the keyboard without tabbing back through the page.
             if (open) {
-                const first = drawer.querySelector(".side-tab");
+                const first = menu.querySelector(".side-menu-item");
                 if (first) first.focus({ preventScroll: true });
             }
         });
-
-        /* Picking anything closes it. Capture, so this runs before the
-           button's own handler swaps the view underneath — otherwise the
-           menu is still sitting over the thing it just went to. */
-        drawer.addEventListener("click", e => {
-            if (e.target.closest(".side-tab")) setOpen(false);
-        }, true);
 
         // Anywhere else on the page closes it, which is what a menu that
         // covers content has to do.
         document.addEventListener("click", e => {
             if (!isOpen()) return;
-            if (drawer.contains(e.target) || burger.contains(e.target)) return;
+            if (drawer.contains(e.target)) return;
             setOpen(false);
         });
 
         document.addEventListener("keydown", e => {
             if (e.key !== "Escape" || !isOpen()) return;
             setOpen(false);
-            burger.focus({ preventScroll: true });
+            spine.focus({ preventScroll: true });
         });
-
-        /* Dragged past 860px with the menu open, the drawer's rules stop
-           applying and the tabs go back to being tabs — but the class would
-           still be sitting there for the next time the window narrowed.
-           Cleared on the way past so it can never reopen to a stale state. */
-        const wide = window.matchMedia("(min-width: 861px)");
-        const onWide = e => { if (e.matches) setOpen(false); };
-        if (wide.addEventListener) wide.addEventListener("change", onWide);
-        else if (wide.addListener) wide.addListener(onWide);
     })();
 
     // Switches straight to that category, keeping whichever sub-filter was
@@ -4976,16 +5026,23 @@ document.addEventListener("DOMContentLoaded", () => {
        featured button above, and for the same reason. The search box is
        cleared on the way in and out: a term typed against the archive is
        rarely the one you want against a list of twelve. */
+    /* Its own function rather than a click handler's body, because the side
+       menu now needs to do exactly this and there must not be two versions
+       of "what What's New does". The button itself is gone from the markup
+       — the menu replaced it — but the wiring below is kept and guarded, so
+       putting it back anywhere is a line of HTML. */
+    function toggleWhatsNew() {
+        showWhatsNew = !showWhatsNew;
+        // One view at a time: all three write into the same panel.
+        if (showWhatsNew) { showFeatured = false; showTimeline = false; showFurni = false; furniFilter = null; }
+        searchInput.value = "";
+        query = "";
+        render();
+    }
+
     if (whatsNewBtn) {
         whatsNewBtn.dataset.track = "whats-new";
-        whatsNewBtn.addEventListener("click", () => {
-            showWhatsNew = !showWhatsNew;
-            // One view at a time: all three write into the same panel.
-            if (showWhatsNew) { showFeatured = false; showTimeline = false; showFurni = false; furniFilter = null; }
-            searchInput.value = "";
-            query = "";
-            render();
-        });
+        whatsNewBtn.addEventListener("click", toggleWhatsNew);
     }
 
     if (timelineBtn) {

@@ -1188,7 +1188,12 @@
         el.overlay.classList.remove("open");
         document.body.classList.remove("modal-open");
         clearInterval(countdownTimer);
-        el.tab.focus({ preventScroll: true });
+        // Back to whatever opened the window, when there is something to
+        // go back to. The side menu closes itself before opening this, so
+        // the spine is the sensible landing place — but a pasted /guess
+        // link has no opener at all, hence the guard.
+        const opener = document.getElementById("side-spine");
+        if (opener) opener.focus({ preventScroll: true });
         // A pasted /guess link should not leave the address bar claiming the
         // game is open once it has been closed.
         if (location.pathname === "/guess") history.replaceState({}, "", "/home.html");
@@ -1286,12 +1291,17 @@
             splashDate: document.getElementById("guess-splash-date"),
             splashFoot: document.getElementById("guess-splash-foot"),
             summary: document.getElementById("guess-summary"),
-            tab: document.getElementById("daily-tab")
+            spine: document.getElementById("side-spine")
         };
-        if (!el.overlay || !el.deck || !el.tab) return;
+        /* Not the opener. The game used to require its own tab to exist
+           before it would set itself up, which meant replacing the tabs
+           with a menu silently stopped the deck from ever being built —
+           the window opened onto two sheets instead of seven. What this
+           file actually needs is its own markup; who offers it is not its
+           business (see window.openGuessGame). */
+        if (!el.overlay || !el.deck) return;
         if (!buildDeck()) return;
 
-        el.tab.addEventListener("click", open);
         el.close.addEventListener("click", close);
         el.overlay.addEventListener("click", e => { if (e.target === el.overlay) close(); });
 
@@ -1315,6 +1325,41 @@
         // wondering what they were sent.
         if (location.pathname === "/guess") open();
     }
+
+    /* How today is going, for the menu that offers the game.
+
+       Read from storage rather than from `state`, deliberately: the game
+       does not load its state until the window is first opened, and the
+       menu has to be able to say "3 of 5" before anyone has opened
+       anything. Storage is the same source of truth either way.
+
+       Exposed as a function rather than a value because it is asked the
+       moment the menu opens, which can be at any point in a visit. */
+    window.GuessStatus = function () {
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem(STATE_KEY) || "null"); } catch (e) { saved = null; }
+        if (!saved || saved.day !== today() || !Array.isArray(saved.results)) {
+            return { started: false, done: 0, total: ROUNDS, finished: false, points: 0 };
+        }
+        const done = saved.results.filter(r => r && r.done).length;
+        const points = saved.results.reduce((n, r) => {
+            if (!r || !r.done || !r.won) return n;
+            return n + (POINTS[Math.min(r.guesses.length, POINTS.length) - 1] || 0);
+        }, 0);
+        return {
+            started: saved.results.some(r => r && r.guesses && r.guesses.length),
+            done,
+            total: ROUNDS,
+            finished: Boolean(saved.done),
+            points
+        };
+    };
+
+    /* The one way in, published for whatever offers it. The side menu asks
+       for the game by name rather than reaching for a button that may or may
+       not be in the markup — which is what it used to do, and what broke the
+       moment the tabs were replaced. */
+    window.openGuessGame = function () { open(); };
 
     document.addEventListener("DOMContentLoaded", mount);
 })();

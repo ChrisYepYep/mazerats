@@ -9603,55 +9603,33 @@ body[data-page="admin"] #activity-sessions {
 
 
 
-/* ---------- the side tabs ----------
+/* ---------- the side menu ----------
 
-   Tabs tucked behind the archive window's right-hand edge with a little of
-   each showing, sliding the rest of the way out when you reach for one — a
-   ribbon marking a page in a book. Two of them: the daily game, and What's
-   New.
+   A tab down the archive window's right edge that pulls a panel out from
+   behind it.
 
-   THE SPRITE, AND WHY IT IS A 9-SLICE
+   The panel and the spine are ONE unit, with the panel to the left. At rest
+   the unit sits so only the spine clears the window's edge and the panel is
+   behind the frame; opening slides the whole thing right and the panel
+   comes out from behind — a card drawn from a slot. The unit stays BELOW
+   the window in the stacking order the entire time, which is what makes
+   that true rather than merely animated: the panel really is hidden behind
+   the frame and really is revealed by clearing it.
 
-   assets/img/side-tab-active.png is the whole tab at 102x15. Read pixel by
-   pixel it turns out to be almost entirely flat:
+   That constraint is what sets --menu-w. The window is a fixed 538px and
+   the drawer has to fit in the margin beside it, so the panel can be no
+   wider than (viewport - 538) / 2 - --spine-out. At 164px + 16px it needs
+   898px of viewport, which is why the pop-out below takes over at 900
+   rather than at the 860 the rest of the layout uses.
 
-     row 0, row 14      transparent
-     row 1              #bda382, the top highlight
-     rows 2-12          #9c805d — one flat colour, every pixel
-     row 13             #6e5b43, the bottom shadow
-     columns 0-96       all identical to each other
-     columns 97-101     the rounded right-hand cap
+   The spine wears the chrome the active sub-nav tabs and the search frame
+   wear: #d6bb96, which is what btn_active.png resolves to under the filter
+   those two apply (see .chrome-nav-btn.active::before — solved for by
+   sampling, not eyeballed). Flat rather than the sprite, because a 9-slice
+   cut for a wide short button has nothing useful to say at 18px across.
 
-   So the only real art in it is a 5px cap and two 1px rules. Drawn as a
-   stretched background — background-size: 100% 100%, which is how this was
-   first built — those three get scaled by whatever ratio the tab happens to
-   be sized to, and 1px rules resampled to 1.47px are exactly the smeared
-   edges that stopped an enlarged tab looking like pixel art at all.
+   assets/img/side-tab-active.png is no longer referenced by anything. */
 
-   As a 9-slice they are not scaled. border-image-slice lifts the cap and
-   the two rules out at their source size, border-image-width redraws them
-   at that same size in CSS pixels, and only the flat middle is stretched —
-   where stretching a single colour cannot possibly show. The tab is then
-   pixel-exact at any width and height, which is precisely why
-   .chrome-window and .modal draw their frames this way too.
-
-   One sprite still does both states. The rest state is the same tab with
-   all but its last --side-tab-out hidden behind the window, which is what
-   the separately-drawn "inactive" cut turned out to be — identical pixels,
-   checked column by column. So there is nothing to swap: only how far it
-   has been pulled.
-
-   --side-tab-out is the one number worth moving. It is how much of a tab
-   clears the window at rest, and so it is also the size of the target you
-   are reaching for. */
-
-/* Shrink-wraps the archive window so the tabs beside it can be positioned
-   against the edge you can actually see, and holds them in a stacking order
-   of their own so the window paints over them.
-
-   isolation: isolate rather than a z-index, so this box's own children are
-   ordered among themselves without the wrapper having to take a position in
-   the page's stack. */
 .archive-stack {
     position: relative;
     width: fit-content;
@@ -9659,322 +9637,269 @@ body[data-page="admin"] #activity-sessions {
     margin: 0 auto;
     isolation: isolate;
 
-    /* Sized to the longest label rather than guessed at: "GUESS THE MAZE"
-       measures 91px in Volter Goldfish at 0.5625rem with the tracking
-       below. 140 leaves the 6px that stays tucked, ~10px of air either
-       side, and the arrow's own 20px at the right end.
-
-       What you grab at rest is --side-tab-out by --side-tab-h: a 30x22
-       target, where the first cut of this was 23x15. */
-    --side-tab-w: 140px;
-    --side-tab-h: 22px;
-    --side-tab-out: 30px;
-    /* How far a tab's left end stays tucked under the window once fully
-       out, so it still reads as coming FROM somewhere rather than floating
-       beside the frame. */
-    --side-tab-tuck: 6px;
-    /* Where down the window's right edge the first one sits. Below the
-       titlebar, roughly level with the category tabs. */
-    --side-tab-top: 92px;
-    /* Between one tab and the next. Enough to read as two ribbons rather
-       than one thick one. */
-    --side-tab-gap: 7px;
+    --spine-w: 18px;
+    /* How much of the spine clears the window's edge at rest. Two pixels
+       less than its width, so it reads as coming from under the frame
+       rather than sitting beside it. */
+    --spine-out: 16px;
+    --spine-top: 92px;
+    --menu-w: 164px;
 }
 
-/* Over the tabs. The window already had position: relative for its own
-   absolutely placed pieces; this only settles which of them is in front. */
+/* Over the drawer, which is the whole trick: the panel is genuinely behind
+   the window until it slides clear of it. */
 .archive-stack > #browse-window {
     z-index: 1;
 }
 
-.side-tab {
+.side-drawer {
     position: absolute;
-    top: var(--side-tab-top);
-    /* Positioned by its RIGHT edge, so the width is fixed and only the
-       offset animates — the tab slides as one piece instead of growing,
-       which is what makes it read as being pulled rather than stretched.
-
-       Its right edge stands --side-tab-out proud of the window's visible
-       edge, which puts the rest of it behind the frame. The wrapper hugs
-       the window and has no border of its own, so this offset means what it
-       says — measured against .chrome-window it would have been thrown out
-       by the 14px border-image frame that `right` resolves against. */
-    right: calc(-1 * var(--side-tab-out));
-    width: var(--side-tab-w);
-    height: var(--side-tab-h);
-
-    /* Under the window, which sits at 1. Deliberately NOT a negative
-       z-index: that put the tabs behind .container as well, so the part
-       sticking out could be seen but never hovered or pressed. */
-    z-index: 0;
-
-    padding: 0;
-    /* The 9-slice described at the top of this block. The four numbers are
-       the same on both properties, which is the whole trick: slice takes
-       them out of the source at that size, width puts them back at that
-       size, so nothing that carries detail is ever resampled. `fill` is
-       what draws the flat middle; without it the tab would be a frame
-       around a hole. Left is 0 because the left end has no cap — every
-       column from 0 to 96 is identical, and it lives under the window
-       anyway. */
-    border-style: solid;
-    border-width: 2px 5px 2px 0;
-    border-image-source: url('../assets/img/side-tab-active.png');
-    border-image-slice: 2 5 2 0 fill;
-    border-image-width: 2px 5px 2px 0;
-    border-image-repeat: stretch;
-    background: none;
-
-    image-rendering: pixelated;
-    cursor: var(--cursor-pointer);
+    top: var(--spine-top);
+    right: calc(-1 * var(--spine-out));
     display: flex;
+    align-items: flex-start;
+    /* Under the window. Deliberately not a negative z-index, which would
+       put it behind .container as well and make the spine unclickable. */
+    z-index: 0;
+    transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Out by exactly the panel's width, so the panel ends up where the spine
+   was and the spine sits just past it. */
+.side-drawer.is-open {
+    transform: translateX(var(--menu-w));
+}
+
+.side-spine {
+    flex: 0 0 auto;
+    width: var(--spine-w);
+    /* Sized by its contents rather than to a fixed height: the tab should
+       be the word, not a bar with a word in it. */
+    height: auto;
+
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    transition: right 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    gap: 4px;
+    padding: 6px 0 5px;
+
+    background: #d6bb96;
+    border: 1px solid var(--chrome-border);
+    /* Rounded on the outer edge only — the inner edge is meant to look like
+       it continues under the window. */
+    border-radius: 0 4px 4px 0;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.45),
+        2px 2px 0 rgba(0, 0, 0, 0.35);
+    color: #1a0f04;
+    cursor: var(--cursor-pointer);
+    transition: background-color 0.14s ease-out;
 }
 
-/* The second ribbon down. Its own top is derived rather than written, so
-   moving --side-tab-top moves the pair together and changing --side-tab-h
-   keeps the gap between them honest. */
-.side-tab--second {
-    top: calc(var(--side-tab-top) + var(--side-tab-h) + var(--side-tab-gap));
+.side-spine:hover,
+.side-drawer.is-open .side-spine {
+    background: #e6cfae;
 }
 
-/* And the third, one more step down. Both are derived from --side-tab-top
-   and --side-tab-h rather than written out, so moving the run or changing
-   its height keeps the spacing between them honest  and a fourth is one
-   more line of the same. */
-.side-tab--third {
-    top: calc(var(--side-tab-top) + 2 * (var(--side-tab-h) + var(--side-tab-gap)));
-}
-
-.side-tab:hover,
-.side-tab:focus-visible {
-    /* All the way out, less the tuck that keeps its left end under the
-       frame. */
-    right: calc(-1 * (var(--side-tab-w) - var(--side-tab-tuck)));
-}
-
-/* A tab whose view is currently showing stays out, with its label up and
-   its arrow turned — the same three things hover does, held rather than
-   played. What's New is a toggle, so it needs somewhere to say it is on;
-   the daily tab opens a window and never carries this. */
-.side-tab.active {
-    right: calc(-1 * (var(--side-tab-w) - var(--side-tab-tuck)));
-}
-
-.side-tab:focus-visible {
+.side-spine:focus-visible {
     outline: 2px solid var(--amber-bright);
     outline-offset: 2px;
-    /* Above the window while focused — a ring drawn underneath it is no use
-       to the keyboard visitor it exists for. */
-    z-index: 2;
 }
 
-/* Centred across the tab's own width, less the room the arrow takes at the
-   right end, so the words sit in the middle of the part you can see once it
-   is out rather than in the middle of the whole sprite. */
-.side-tab-label {
-    position: absolute;
-    /* Not left: 0. The tab keeps --side-tab-tuck of its left end under the
-       window frame even when fully out, so a word centred across the whole
-       sprite sits slightly left of centre in the part you can actually
-       read. Starting the box past the tuck centres it in the visible part
-       instead. */
-    left: 8px;
-    right: 20px;
-    text-align: center;
+/* Reads down the spine. writing-mode rather than a rotate, so the glyphs
+   stay upright to their own baseline and the box lays itself out at the
+   right size instead of being a rotated wide box needing correction. */
+.side-spine-label {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     font-weight: 400;
-    line-height: 1;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: #3a2812;
-    /* Nothing to read while it is tucked away, and fading it in on the way
-       out keeps the words from appearing to slide out from under the
-       frame. */
-    opacity: 0;
-    transition: opacity 0.2s ease 0.06s;
+    line-height: 1;
 }
 
-.side-tab:hover .side-tab-label,
-.side-tab:focus-visible .side-tab-label,
-.side-tab.active .side-tab-label { opacity: 1; }
-
-/* The same glyph and the same easing the Featured Mazes button uses, so the
-   two read as one family of control. It points right at rest — there is
-   more of this over here — and turns to point back at the window on hover,
-   at what pressing it will open. */
-.side-tab-arrow {
-    position: absolute;
-    right: 5px;
+/* Points at the window — at what it will pull out over — and turns as it
+   opens. Same easing as the Featured Mazes arrow, so the two read as one
+   family of control. */
+.side-spine-arrow {
     font-family: 'Silkscreen', monospace;
-    font-size: 0.5rem;
+    font-size: 0.42rem;
     line-height: 1;
-    color: #3a2812;
     transform: rotate(0deg);
     transition: transform 0.3s ease;
 }
 
-.side-tab:hover .side-tab-arrow,
-.side-tab:focus-visible .side-tab-arrow,
-.side-tab.active .side-tab-arrow { transform: rotate(180deg); }
-
-@media (prefers-reduced-motion: reduce) {
-    .side-tab,
-    .side-tab-label,
-    .side-tab-arrow { transition: none; }
+.side-drawer.is-open .side-spine-arrow {
+    transform: rotate(180deg);
 }
 
-/* The button that opens the drawer. Only exists below 860px — above it the
-   tabs are right there on the edge and a menu would be a door in front of
-   an open door. */
-.side-tab-burger { display: none; }
+/* --- the panel --------------------------------------------------------- */
 
-/* --- below 860px: the tabs become a menu -------------------------------
+/* The panel is the spine's own cream, a shade down — one piece of card
+   with a tab on it, rather than a dark panel a light tab happens to be
+   attached to. Only slightly darker, so the tab still reads as the front
+   edge of it catching the light. */
+.side-menu {
+    flex: 0 0 auto;
+    width: var(--menu-w);
+    display: flex;
+    flex-direction: column;
+    padding: 4px 9px 8px;
 
-   Measured rather than assumed: at 375px the archive window spans 15px to
-   360px, so there is 15px of margin either side — nowhere to tuck a 140px
-   tab — and the hero sits flush on the window's top edge, so there is no
-   free space above it either. Laying the tabs over the window put them
-   across the titlebar and clipped the top of the category nav.
+    background: #c9ad84;
+    border: 1px solid var(--chrome-border);
+    border-radius: 5px 0 0 5px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
 
-   A menu also does the thing tabs on an edge cannot: a third and a fourth
-   way in cost one more row each, where two ribbons already had nowhere
-   left to go. */
-@media (max-width: 860px) {
-    .side-tab-burger {
-        position: absolute;
-        /* Centred on the titlebar's right end. The window's border-image
-           frame is 14px, and the titlebar 33px inside that. */
-        top: 18px;
-        right: 18px;
-        width: 26px;
-        height: 26px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
-        background: linear-gradient(#3b3022, #2f2618);
-        border: 1px solid var(--chrome-border);
-        border-radius: 4px;
-        box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
-        cursor: var(--cursor-pointer);
-        /* Above the window (1) and above the drawer (4), so it stays
-           pressable while the drawer is open. */
-        z-index: 5;
+/* No boxes. Each option is just its own text, and what separates them is a
+   rule — the same hashed rule the console draws between sections of the
+   privacy policy, so the site has one idea of what a divider looks like. */
+.side-menu-item {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 7px 2px;
+    background: none;
+    border: 0;
+    border-radius: 3px;
+    color: #1a0f04;
+    font: inherit;
+    text-align: left;
+    cursor: var(--cursor-pointer);
+    transition: background-color 0.12s ease-out;
+}
+
+/* Between each pair, never before the first or after the last — a rule at
+   either end would be closing off nothing. Drawn as characters rather than
+   a border so it is genuinely hashed rather than dashed, matching
+   .console-hashline. */
+.side-menu-item + .side-menu-item::before {
+    content: "------------------------------------------------";
+    display: block;
+    /* Pulled out to the panel's padding, so the rule spans the card while
+       the text it separates stays inset. */
+    margin: -3px -7px 5px;
+    height: 8px;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.55rem;
+    line-height: 1;
+    letter-spacing: 1px;
+    color: rgba(26, 15, 4, 0.32);
+}
+
+.side-menu-item:hover,
+.side-menu-item:focus-visible {
+    background: rgba(26, 15, 4, 0.1);
+    outline: none;
+}
+.side-menu-item:focus-visible { outline: 2px solid #6b4b18; outline-offset: -1px; }
+
+/* The one currently showing. What's New is a toggle, so the menu needs
+   somewhere to say it is on — the spine cannot, being one handle for
+   everything. A wash rather than a border, since nothing else in here has
+   one. */
+.side-menu-item.is-on {
+    background: rgba(26, 15, 4, 0.17);
+}
+
+.side-menu-name {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 6px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #1a0f04;
+}
+
+/* The state each row carries, which is the reason the panel is worth
+   opening rather than merely a way through to somewhere. Set in a brown
+   rather than a grey: this card is warm, and a neutral grey on it reads as
+   a mistake. */
+.side-menu-state {
+    font-size: 0.62rem;
+    line-height: 1.3;
+    color: #6b5231;
+}
+
+.side-menu-badge {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 0.62rem;
+    color: #8a5f1c;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .side-drawer,
+    .side-spine,
+    .side-spine-arrow { transition: none; }
+}
+
+/* --- below 900px: a pop-out instead ------------------------------------
+
+   The slide needs the panel's width of clear margin beside the window, and
+   below this there is not that much margin to slide into — at 375px the
+   window runs to within 15px of both screen edges, so there is none at all.
+   The handle moves onto the window's own titlebar and the panel drops from
+   it, which is the same two pieces relocated rather than a second design.
+
+   900 rather than the 860 the rest of the layout uses, because that is
+   where the arithmetic at the top of this block actually runs out. */
+@media (max-width: 900px) {
+    .archive-stack {
+        --spine-w: 30px;
+        --spine-top: 16px;
+        --menu-w: 210px;
     }
 
-    .side-tab-burger:focus-visible {
-        outline: 2px solid var(--amber-bright);
-        outline-offset: 2px;
-    }
-
-    /* Three bars drawn rather than set as a glyph, so they stay crisp at
-       this size and match the pixel-art chrome around them — the same
-       reasoning as .admin-furni-caret. The middle bar is the element; the
-       outer two are its box-shadows, which is what keeps the spacing exact
-       without three nested spans. */
-    .side-tab-burger-bars,
-    .side-tab-burger-bars::before,
-    .side-tab-burger-bars::after {
-        display: block;
-        width: 14px;
-        height: 2px;
-        background: var(--parchment);
-        border-radius: 1px;
-    }
-
-    .side-tab-burger-bars {
-        position: relative;
-    }
-
-    .side-tab-burger-bars::before,
-    .side-tab-burger-bars::after {
-        content: "";
-        position: absolute;
-        left: 0;
-    }
-
-    .side-tab-burger-bars::before { top: -5px; }
-    .side-tab-burger-bars::after { top: 5px; }
-
-    .side-tab-burger[aria-expanded="true"] {
-        background: linear-gradient(#6b5327, #52401d);
-        border-color: var(--amber-bright);
-    }
-
-    .side-tab-burger[aria-expanded="true"] .side-tab-burger-bars {
-        background: #fff8ec;
-    }
-    .side-tab-burger[aria-expanded="true"] .side-tab-burger-bars::before,
-    .side-tab-burger[aria-expanded="true"] .side-tab-burger-bars::after {
-        background: #fff8ec;
-    }
-
-    /* The wrapper stops being a no-op and becomes the drawer. Hangs from
-       under the burger at the window's right, sized to its contents so
-       another tab simply makes it taller. */
-    .side-tabs {
-        position: absolute;
-        top: 50px;
+    /* Not a slider any more: the handle stays put and the panel appears
+       under it. */
+    .side-drawer {
         right: 14px;
-        z-index: 4;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        padding: 6px;
-        min-width: 168px;
-        background: var(--bg-panel);
-        border: 1px solid var(--chrome-border);
-        border-radius: 6px;
+        display: block;
+        z-index: 5;
+        transform: none;
+    }
+    .side-drawer.is-open { transform: none; }
+
+    .side-spine {
+        width: var(--spine-w);
+        height: 26px;
+        margin-left: auto;
+        flex-direction: row;
+        justify-content: center;
+        gap: 5px;
+        padding: 0;
+        border-radius: 4px;
+    }
+
+    /* Sideways text in a 26px handle would be unreadable; the arrow alone
+       says what it does, and the button keeps its accessible name. */
+    .side-spine-label { display: none; }
+    .side-spine-arrow { font-size: 0.5rem; transform: rotate(90deg); }
+    .side-drawer.is-open .side-spine-arrow { transform: rotate(270deg); }
+
+    .side-menu {
+        position: absolute;
+        top: 32px;
+        right: 0;
+        width: var(--menu-w);
+        border-radius: 5px;
         box-shadow: 0 8px 22px rgba(0, 0, 0, 0.7);
-        /* Closed is the default, so a phone that never runs the script
-           still gets a tidy window rather than a menu stuck open. */
+        /* Closed by default, so a browser that never runs the script gets a
+           tidy window rather than a panel stuck over it. */
         display: none;
     }
 
-    .side-tabs.is-open { display: flex; }
-
-    /* Inside the drawer the tabs are rows, not ribbons: static, full width,
-       and always showing their label — there is no hover on a touch screen
-       to reveal one with, and nothing to slide out from. They keep the
-       9-slice, so each row still reads as a little tab. */
-    .side-tab {
-        position: static;
-        width: 100%;
-        height: 26px;
-        transition: none;
-    }
-
-    .side-tab--second,
-    .side-tab--third { top: auto; }
-
-    .side-tab:hover,
-    .side-tab:focus-visible,
-    .side-tab.active { right: auto; }
-
-    /* Left-aligned in the row rather than centred across a ribbon whose
-       left end is hidden — none of it is hidden here. */
-    .side-tab-label {
-        left: 10px;
-        right: 24px;
-        text-align: left;
-        opacity: 1;
-        transition: none;
-    }
-
-    /* Points at the row it opens, and stays pointing: there is no rest
-       state to turn back from. */
-    .side-tab-arrow { transform: rotate(0deg); transition: none; }
-    .side-tab:hover .side-tab-arrow,
-    .side-tab:focus-visible .side-tab-arrow,
-    .side-tab.active .side-tab-arrow { transform: rotate(0deg); }
-
-    /* The one showing, marked — the drawer has no "pulled out" to say it
-       with. */
-    .side-tab.active .side-tab-label { color: #2a1c08; }
-    .side-tab.active { box-shadow: inset 0 0 0 2px var(--amber-bright); }
+    .side-drawer.is-open .side-menu { display: flex; }
 }
 
 /* ---------- the game window ---------- */

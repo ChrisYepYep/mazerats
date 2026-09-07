@@ -274,68 +274,42 @@
                  at first, and which put it behind .container, where nothing
                  could be hovered or clicked. -->
             <div class="archive-stack">
-                <!-- Tabs behind the window's right-hand edge, a stub of each
-                     showing, sliding the rest of the way out on hover. The
-                     art is one sprite (assets/img/side-tab-active.png,
-                     102x15) drawn as a 9-slice so it stays pixel-crisp at
-                     whatever size the tabs are set to — see .side-tab in
-                     css/style.css.
+                <!-- One handle, one panel, at every width.
 
-                     Real buttons, not decoration: the game has no other route
-                     in at all, so it has to be reachable by keyboard and to
-                     say what it is. Each accessible name leads with the words
-                     actually printed on the tab, so someone driving by voice
-                     can say what they can see. -->
-                <!-- On a phone the window runs to within 15px of both screen
-                     edges, so there is no margin for a tab to be tucked into
-                     and no free space above it either. The tabs become a menu
-                     down there instead, opened by this button at the right of
-                     the titlebar — which also means a third and fourth tab
-                     cost nothing but another row.
+                     This was three separate ribbons stacked down the window's
+                     right edge. At rest each showed 30px and no words — three
+                     blank stubs — and the labels only appeared on hover, which
+                     is an affordance a touch screen does not have. A fourth
+                     would have sat past the window's bottom edge, and keeping
+                     ribbons on a desktop while a phone got a drawer meant two
+                     mental models to maintain.
 
-                     Hidden from everyone above that width, including screen
-                     readers, because the tabs themselves are right there. -->
-                <button type="button" class="side-tab-burger" id="side-tab-burger"
-                        aria-expanded="false" aria-controls="side-tabs"
-                        aria-label="More ways into the archive">
-                    <span class="side-tab-burger-bars" aria-hidden="true"></span>
-                </button>
+                     A spine reads down the edge with its label always legible,
+                     and what it opens is one panel that can hold any number of
+                     ways in — with each row carrying its own state, so the menu
+                     is worth opening rather than merely a way to get somewhere.
 
-                <!-- A plain static wrapper, and that is the point: unpositioned,
-                     it does not become the containing block for the absolutely
-                     positioned tabs inside it, so on a desktop they still lay
-                     themselves out against .archive-stack exactly as before and
-                     this box has no size at all. Below 860px it becomes
-                     positioned and the tabs go static inside it, which turns
-                     the same markup into the drawer with no DOM to move. -->
-                <div class="side-tabs" id="side-tabs">
-                <button type="button" class="side-tab" id="daily-tab" aria-label="Guess the Maze — open the daily game">
-                    <span class="side-tab-label" aria-hidden="true">Guess the Maze</span>
-                    <span class="side-tab-arrow" aria-hidden="true">&#9654;</span>
-                </button>
+                     A real button: the daily game has no other route in, so it
+                     has to be reachable by keyboard and to say what it is. -->
+                <!-- One unit: the panel and the spine side by side, with the
+                     panel to the LEFT so it sits hidden behind the window
+                     while only the spine clears its edge. Opening slides the
+                     whole thing right, and the panel comes out from behind
+                     the frame — a card pulled from a slot, which is the
+                     motion the single tab always had, now carrying a panel
+                     rather than a word.
 
-                <!-- What's New sat in the row of small buttons under the
-                     search box with Timeline and Furni. It is not the same
-                     kind of thing as those two: they are ways of looking at
-                     the whole archive, and this is "show me the last few
-                     weeks" — which is the first thing a returning visitor
-                     wants and was the third button along in a row they had
-                     to read. Out here it is one press from anywhere.
-
-                     Keeps its id, so js/home.js's existing toggle and its
-                     active state carry over untouched. -->
-                <button type="button" class="side-tab side-tab--second" id="whats-new-btn" aria-pressed="false" aria-label="What's New — the latest additions to the archive">
-                    <span class="side-tab-label" aria-hidden="true">What's New</span>
-                    <span class="side-tab-arrow" aria-hidden="true">&#9654;</span>
-                </button>
-                <!-- The third tab, and it cost exactly one row of markup —
-                     which is the whole reason the phone layout became a
-                     menu rather than more ribbons. -->
-                <button type="button" class="side-tab side-tab--third" id="progress-tab" aria-label="Your progress through the archive">
-                    <span class="side-tab-label" aria-hidden="true">Your Progress</span>
-                    <span class="side-tab-arrow" aria-hidden="true">&#9654;</span>
-                </button>
-                </div><!-- /.side-tabs -->
+                     The panel is written by js/home.js rather than here
+                     because every row carries a live count. -->
+                <div class="side-drawer" id="side-drawer">
+                    <div class="side-menu" id="side-menu" role="group" aria-label="Ways into the archive"></div>
+                    <button type="button" class="side-spine" id="side-spine"
+                            aria-expanded="false" aria-controls="side-menu"
+                            aria-label="More ways into the archive">
+                        <span class="side-spine-label" aria-hidden="true">Menu</span>
+                        <span class="side-spine-arrow" aria-hidden="true">&#9664;</span>
+                    </button>
+                </div>
 
             <div class="chrome-window" id="browse-window" tabindex="-1">
                 <img class="window-peek-rat" src="assets/img/rat_peek.png" alt="" aria-hidden="true">
@@ -396,7 +370,7 @@
                          auto margin. -->
                     <div class="view-switch" role="group" aria-label="Views across the whole archive">
                         <!-- What's New used to lead this row; it is a side tab
-                             now (see .side-tab in the archive stack above).
+                             now (see .side-spine in the archive stack above).
                              What is left here is the pair that genuinely
                              belongs together: two ways of looking at the
                              archive as a whole. -->
