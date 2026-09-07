@@ -328,6 +328,13 @@
                     <span class="side-tab-label" aria-hidden="true">What's New</span>
                     <span class="side-tab-arrow" aria-hidden="true">&#9654;</span>
                 </button>
+                <!-- The third tab, and it cost exactly one row of markup —
+                     which is the whole reason the phone layout became a
+                     menu rather than more ribbons. -->
+                <button type="button" class="side-tab side-tab--third" id="progress-tab" aria-label="Your progress through the archive">
+                    <span class="side-tab-label" aria-hidden="true">Your Progress</span>
+                    <span class="side-tab-arrow" aria-hidden="true">&#9654;</span>
+                </button>
                 </div><!-- /.side-tabs -->
 
             <div class="chrome-window" id="browse-window" tabindex="-1">
@@ -803,6 +810,22 @@
             </div>
         </section>
     </template>
+
+    <!-- Your progress through the archive. Opened by the third side tab.
+         Everything in it is filled by renderProgress in js/home.js — it
+         reads the same walked and saved sets the rest of the page does, so
+         it can never disagree with the ticks on the mazes themselves. -->
+    <div class="modal-overlay progress-overlay" id="progress-overlay">
+        <div class="modal progress-window" id="progress-window" role="dialog" aria-modal="true" aria-labelledby="progress-title" tabindex="-1">
+            <div class="chrome-titlebar">
+                <h2 id="progress-title">Your Progress</h2>
+                <button class="chrome-close" id="progress-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+            </div>
+            <div class="chrome-frame">
+                <div class="progress-body" id="progress-body"></div>
+            </div>
+        </div>
+    </div>
 
     <!-- Room detail modal -->
     <div class="modal-overlay" id="room-modal">

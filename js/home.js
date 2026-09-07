@@ -4656,6 +4656,188 @@ document.addEventListener("DOMContentLoaded", () => {
         render();
     });
 
+    /* ---------- your progress through the archive ----------
+
+       What the walked and saved lists add up to, in one place. It reads the
+       same two sets everything else does rather than keeping its own count,
+       so it cannot drift from the ticks on the mazes themselves.
+
+       Works signed out. The numbers are this browser's then rather than the
+       account's, which is exactly what they have always been — the panel
+       says so, and offers the account as the way to carry them. */
+
+    /* Milestones over percentages, because "27 of 39" is a number and
+       "Halfway" is an event. Each is a real threshold against the mazes
+       that can actually be walked, so none of them is unreachable by
+       design — the closed ones are excluded from the denominator for the
+       same reason they are excluded from the count. */
+    const MILESTONES = [
+        { at: 1, name: "First steps", note: "Walked your first maze" },
+        { at: 5, name: "Getting your bearings", note: "Five walked" },
+        { at: 10, name: "Regular", note: "Ten walked" },
+        { at: 25, name: "Seasoned", note: "Twenty-five walked" },
+        { at: 50, name: "Veteran", note: "Fifty walked" }
+    ];
+
+    function progressFigures() {
+        const walkable = walkableRooms();
+        const walkedHere = walkable.filter(r => walkedIds.has(r.id));
+        const savedRooms = ROOMS.filter(r => savedIds.has(r.id));
+
+        // Only ones still to walk: a maze on both lists has been done, and
+        // showing it under "to walk" would be a list that never empties.
+        const toWalk = savedRooms.filter(r => !walkedIds.has(r.id));
+
+        const byDifficulty = {};
+        walkable.forEach(r => {
+            const d = (r.difficulty || "unknown").toLowerCase();
+            byDifficulty[d] = byDifficulty[d] || { total: 0, walked: 0 };
+            byDifficulty[d].total++;
+            if (walkedIds.has(r.id)) byDifficulty[d].walked++;
+        });
+
+        return { walkable, walkedHere, savedRooms, toWalk, byDifficulty };
+    }
+
+    function progressHtml() {
+        const f = progressFigures();
+        const total = f.walkable.length;
+        const done = f.walkedHere.length;
+        const pct = total ? Math.round((done / total) * 100) : 0;
+        const me = window.Account && Account.current;
+
+        const earned = MILESTONES.filter(m => done >= m.at);
+        const next = MILESTONES.find(m => done < m.at);
+
+        /* Ranked easy-to-hard rather than alphabetically, because that is
+           the order the ratings mean. But the ranking only decides the
+           ORDER — every difficulty actually present is listed, including
+           any the ranking has not heard of, which then sort to the end.
+
+           Written that way after the first cut hardcoded the list and
+           silently dropped "very-hard": six mazes vanished from a
+           breakdown whose totals were supposed to add up to the headline
+           figure directly above it. A list that can quietly disagree with
+           the number over it is worse than no list. */
+        const RANK = ["easy", "medium", "hard", "very-hard", "extreme", "unknown"];
+        const rankOf = d => {
+            const i = RANK.indexOf(d);
+            return i === -1 ? RANK.length : i;
+        };
+        const prettyDifficulty = d =>
+            d === "unknown" ? "Unrated" : d.replace(/-/g, " ");
+
+        const diffRows = Object.keys(f.byDifficulty)
+            .filter(d => f.byDifficulty[d].total)
+            .sort((a, b) => rankOf(a) - rankOf(b) || (a < b ? -1 : 1))
+            .map(d => {
+                const { total: t, walked: w } = f.byDifficulty[d];
+                const p = t ? Math.round((w / t) * 100) : 0;
+                return `<li class="progress-diff">
+                    <span class="progress-diff-name">${escapeHtml(prettyDifficulty(d))}</span>
+                    <span class="progress-diff-bar"><span style="width:${p}%"></span></span>
+                    <span class="progress-diff-n">${w}/${t}</span>
+                </li>`;
+            }).join("");
+
+        const savedList = f.toWalk.length
+            ? `<ul class="progress-saved">${f.toWalk.map(r => `
+                <li><button type="button" class="progress-saved-row" data-open-maze="${escapeHtml(r.id)}">
+                    <span class="progress-saved-name">${escapeHtml(r.name || r.id)}</span>
+                    <span class="progress-saved-by">${escapeHtml(r.creator || "")}</span>
+                </button></li>`).join("")}</ul>`
+            : `<p class="progress-note">Nothing saved yet. Open a maze and press <strong>Save</strong> to keep it here.</p>`;
+
+        return `
+            <section class="progress-head">
+                ${me && me.avatar ? `<img class="progress-face" src="${escapeHtml(me.avatar)}" alt="" aria-hidden="true">` : ""}
+                <div class="progress-head-text">
+                    <h3>${me ? escapeHtml(me.name) : "Your archive"}</h3>
+                    <p>${me
+                        ? "Kept against your account, so it follows you between devices."
+                        : `Kept in this browser. <button type="button" class="progress-signin" id="progress-signin">Sign in with Discord</button> to carry it with you.`}</p>
+                </div>
+            </section>
+
+            <section class="progress-block">
+                <div class="progress-bignum">
+                    <strong>${done}</strong><span>of ${total} walked</span>
+                </div>
+                <div class="progress-bar"><span style="width:${pct}%"></span></div>
+                <p class="progress-note">${pct}% of the mazes you can still walk today.</p>
+            </section>
+
+            ${diffRows ? `<section class="progress-block">
+                <h4 class="progress-head-sm">By difficulty</h4>
+                <ul class="progress-diffs">${diffRows}</ul>
+            </section>` : ""}
+
+            <section class="progress-block">
+                <h4 class="progress-head-sm">Milestones</h4>
+                ${earned.length
+                    ? `<ul class="progress-badges">${earned.map(m => `
+                        <li class="progress-badge" title="${escapeHtml(m.note)}">
+                            <span class="progress-badge-mark" aria-hidden="true"></span>
+                            <span>${escapeHtml(m.name)}</span>
+                        </li>`).join("")}</ul>`
+                    : `<p class="progress-note">None yet — the first arrives the moment you mark a maze as completed.</p>`}
+                ${next ? `<p class="progress-note">Next: <strong>${escapeHtml(next.name)}</strong> at ${next.at} walked — ${next.at - done} to go.</p>` : ""}
+            </section>
+
+            <section class="progress-block">
+                <h4 class="progress-head-sm">Saved to walk${f.toWalk.length ? ` <span class="progress-count">${f.toWalk.length}</span>` : ""}</h4>
+                ${savedList}
+            </section>`;
+    }
+
+    function renderProgress() {
+        const body = document.getElementById("progress-body");
+        if (!body) return;
+        body.innerHTML = progressHtml();
+
+        const signin = document.getElementById("progress-signin");
+        if (signin) signin.addEventListener("click", () => window.Account && Account.signIn());
+
+        // A saved maze opens where every other maze opens.
+        body.querySelectorAll("[data-open-maze]").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const room = ROOMS.find(r => r.id === btn.dataset.openMaze);
+                if (!room) return;
+                closeProgress();
+                openModal(normalize(room, false));
+            });
+        });
+    }
+
+    function openProgress() {
+        const overlay = document.getElementById("progress-overlay");
+        if (!overlay) return;
+        renderProgress();
+        overlay.classList.add("open");
+        document.body.classList.add("modal-open");
+        document.getElementById("progress-window").focus();
+    }
+
+    function closeProgress() {
+        const overlay = document.getElementById("progress-overlay");
+        if (!overlay) return;
+        overlay.classList.remove("open");
+        document.body.classList.remove("modal-open");
+    }
+
+    (function wireProgress() {
+        const tab = document.getElementById("progress-tab");
+        const overlay = document.getElementById("progress-overlay");
+        const close = document.getElementById("progress-close");
+        if (!tab || !overlay) return;
+        tab.addEventListener("click", openProgress);
+        if (close) close.addEventListener("click", closeProgress);
+        overlay.addEventListener("click", e => { if (e.target === overlay) closeProgress(); });
+        document.addEventListener("keydown", e => {
+            if (e.key === "Escape" && overlay.classList.contains("open")) closeProgress();
+        });
+    })();
+
     /* Pulls the account's ticks down as soon as we know who is signed in,
        and again if they sign in or out during the visit. onChange fires on
        every answer including "nobody", which syncWalked ignores. */

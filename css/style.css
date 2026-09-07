@@ -9726,6 +9726,14 @@ body[data-page="admin"] #activity-sessions {
     top: calc(var(--side-tab-top) + var(--side-tab-h) + var(--side-tab-gap));
 }
 
+/* And the third, one more step down. Both are derived from --side-tab-top
+   and --side-tab-h rather than written out, so moving the run or changing
+   its height keeps the spacing between them honest  and a fourth is one
+   more line of the same. */
+.side-tab--third {
+    top: calc(var(--side-tab-top) + 2 * (var(--side-tab-h) + var(--side-tab-gap)));
+}
+
 .side-tab:hover,
 .side-tab:focus-visible {
     /* All the way out, less the tuck that keeps its left end under the
@@ -9926,7 +9934,8 @@ body[data-page="admin"] #activity-sessions {
         transition: none;
     }
 
-    .side-tab--second { top: auto; }
+    .side-tab--second,
+    .side-tab--third { top: auto; }
 
     .side-tab:hover,
     .side-tab:focus-visible,
@@ -11252,3 +11261,237 @@ body[data-page="admin"] #activity-sessions {
 .modal-meta-actions .saved-toggle.is-saved .saved-toggle-mark::after { border-bottom-color: #5b4622; }
 .modal-meta-actions .saved-toggle:hover .saved-toggle-mark::after { border-bottom-color: #413425; }
 .modal-meta-actions .saved-toggle.is-saved:hover .saved-toggle-mark::after { border-bottom-color: #6d5529; }
+
+/* ---------- your progress ----------
+
+   The third window, opened by the third side tab. Same chrome as the game
+   and the maze sheets, so it is recognisably another panel of this site
+   rather than a settings screen that wandered in. */
+.progress-window { width: min(520px, 94vw); max-width: min(520px, 94vw); }
+
+.progress-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+    max-height: clamp(380px, 70vh, 620px);
+    overflow-y: auto;
+    scrollbar-color: var(--wood-dark) var(--frame-bg);
+}
+
+.progress-head {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+}
+
+.progress-face {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--amber);
+    flex: 0 0 auto;
+    image-rendering: auto;
+}
+
+.progress-head-text h3 {
+    margin: 0;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 0.95rem;
+    color: var(--amber-bright);
+}
+
+.progress-head-text p {
+    margin: 3px 0 0;
+    font-size: 0.7rem;
+    line-height: 1.45;
+    color: var(--parchment-dim);
+}
+
+/* Inline in the sentence rather than a button under it: the offer belongs
+   in the sentence that explains why you would take it. */
+.progress-signin {
+    padding: 0;
+    background: none;
+    border: 0;
+    color: var(--amber-bright);
+    font: inherit;
+    text-decoration: underline;
+    cursor: var(--cursor-pointer);
+}
+.progress-signin:hover { color: #fff8ec; }
+
+.progress-block {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+
+.progress-head-sm {
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--unknown);
+}
+
+.progress-count { color: var(--amber); }
+
+.progress-bignum {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    color: var(--amber-bright);
+}
+
+.progress-bignum strong {
+    font-size: 2rem;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.progress-bignum span {
+    font-size: 0.72rem;
+    color: var(--unknown);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.progress-bar {
+    height: 10px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--chrome-border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.progress-bar > span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(180deg, #8a6b32, #6b5327);
+    /* No transition: this is a fact on arrival, not an animation to watch. */
+}
+
+.progress-note {
+    margin: 0;
+    font-size: 0.68rem;
+    line-height: 1.5;
+    color: var(--parchment-dim);
+}
+.progress-note strong { color: var(--amber-bright); font-weight: 400; }
+
+/* Difficulty: name, bar, count. The bar is the column that carries the
+   comparison, so it takes the room and the two labels stay in fixed
+   tracks either side of it. */
+.progress-diffs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.progress-diff {
+    display: grid;
+    grid-template-columns: 62px 1fr 42px;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.68rem;
+    color: var(--parchment);
+}
+
+.progress-diff-name { text-transform: capitalize; }
+
+.progress-diff-bar {
+    height: 7px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--chrome-border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.progress-diff-bar > span {
+    display: block;
+    height: 100%;
+    background: var(--amber);
+}
+
+.progress-diff-n {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--parchment-dim);
+}
+
+.progress-badges {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.progress-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    background: rgba(120, 90, 45, 0.28);
+    border: 1px solid var(--amber);
+    border-radius: 10px;
+    font-size: 0.65rem;
+    color: var(--amber-bright);
+}
+
+/* A filled pip rather than an emoji: the rest of this site draws its own
+   marks, and an emoji would arrive in whatever the reader's system thinks
+   a medal looks like. */
+.progress-badge-mark {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--amber-bright);
+}
+
+.progress-saved {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.progress-saved-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 6px 9px;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--parchment);
+    font: inherit;
+    font-size: 0.7rem;
+    text-align: left;
+    cursor: var(--cursor-pointer);
+}
+
+.progress-saved-row:hover,
+.progress-saved-row:focus-visible {
+    border-color: var(--amber);
+    background: var(--wood-mid);
+    outline: none;
+}
+.progress-saved-row:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
+
+.progress-saved-by { color: var(--unknown); font-size: 0.62rem; white-space: nowrap; }
