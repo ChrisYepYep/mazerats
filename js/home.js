@@ -1260,10 +1260,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 </section>`;
         }).join("");
 
-        grid.innerHTML = archiveStatsHtml() +
+        /* Stats at the FOOT of the timeline, not the head of it.
+
+           At the top they were a wall of counts standing between someone
+           opening the Timeline and the timeline itself — the thing they
+           actually came for. At the bottom they read as what they are: what
+           all of that adds up to, once you have scrolled through it. */
+        grid.innerHTML =
             `<p class="timeline-summary">${escapeHtml(summary)}</p>` +
             omission +
-            `<div class="timeline">${html}</div>`;
+            `<div class="timeline">${html}</div>` +
+            archiveStatsHtml();
 
         grid.querySelectorAll(".timeline-open").forEach(btn => {
             btn.addEventListener("click", () => {

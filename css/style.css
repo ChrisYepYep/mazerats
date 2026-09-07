@@ -9274,16 +9274,21 @@ body[data-page="admin"] #activity-sessions {
     outline-offset: 3px;
 }
 
-/* ---------- what the archive holds, at the head of the Timeline ----------
+/* ---------- what the archive holds, at the FOOT of the Timeline ----------
 
-   Counts first, then the two or three things the furni scan can say that
-   nothing else on the site can. Deliberately not cards: the tiles are
-   separated by rules alone, because a row of bordered boxes reads as four
-   controls rather than one statement. */
+   Counts, then the two or three things the furni scan can say that nothing
+   else on the site can. Deliberately not cards: the tiles are separated by
+   rules alone, because a row of bordered boxes reads as four controls
+   rather than one statement.
+
+   The rule moved from the bottom edge to the top when the block did — it
+   is what separates the summary from the last year of the timeline above
+   it, and a rule under the final thing on the page would be closing off
+   nothing. */
 .archive-stats {
-    margin: 0 0 20px;
-    padding: 0 0 18px;
-    border-bottom: 1px solid var(--border);
+    margin: 22px 0 0;
+    padding: 18px 0 0;
+    border-top: 1px solid var(--border);
 }
 
 /* Two by two, not four across. The archive panel is a fixed column a little
@@ -9470,24 +9475,51 @@ body[data-page="admin"] #activity-sessions {
 
 
 
-/* ---------- the Daily tab, and the game behind it ----------
+/* ---------- the side tabs ----------
 
-   A tab tucked behind the archive window's right-hand edge with a little of
-   itself showing, which slides the rest of the way out when you reach for
-   it — a ribbon marking a page in a book.
+   Tabs tucked behind the archive window's right-hand edge with a little of
+   each showing, sliding the rest of the way out when you reach for one — a
+   ribbon marking a page in a book. Two of them: the daily game, and What's
+   New.
 
-   One sprite does both states. assets/img/side-tab-active.png is the whole
-   tab at 102x15; the rest state is that same tab with all but its last 23px
-   hidden behind the window, which is exactly what the separately-drawn
-   "inactive" cut turned out to be — identical pixels, checked column by
-   column. So there is nothing to swap: only how far it has been pulled.
+   THE SPRITE, AND WHY IT IS A 9-SLICE
 
-   --daily-tab-out is the one number worth moving. It is how much of the tab
-   clears the window at rest; everything else is derived from it, so the
-   whole thing can be nudged from here. */
-/* Shrink-wraps the archive window so the tab beside it can be positioned
-   against the edge you can actually see, and holds the two in a stacking
-   order of their own so the window paints over the tab.
+   assets/img/side-tab-active.png is the whole tab at 102x15. Read pixel by
+   pixel it turns out to be almost entirely flat:
+
+     row 0, row 14      transparent
+     row 1              #bda382, the top highlight
+     rows 2-12          #9c805d — one flat colour, every pixel
+     row 13             #6e5b43, the bottom shadow
+     columns 0-96       all identical to each other
+     columns 97-101     the rounded right-hand cap
+
+   So the only real art in it is a 5px cap and two 1px rules. Drawn as a
+   stretched background — background-size: 100% 100%, which is how this was
+   first built — those three get scaled by whatever ratio the tab happens to
+   be sized to, and 1px rules resampled to 1.47px are exactly the smeared
+   edges that stopped an enlarged tab looking like pixel art at all.
+
+   As a 9-slice they are not scaled. border-image-slice lifts the cap and
+   the two rules out at their source size, border-image-width redraws them
+   at that same size in CSS pixels, and only the flat middle is stretched —
+   where stretching a single colour cannot possibly show. The tab is then
+   pixel-exact at any width and height, which is precisely why
+   .chrome-window and .modal draw their frames this way too.
+
+   One sprite still does both states. The rest state is the same tab with
+   all but its last --side-tab-out hidden behind the window, which is what
+   the separately-drawn "inactive" cut turned out to be — identical pixels,
+   checked column by column. So there is nothing to swap: only how far it
+   has been pulled.
+
+   --side-tab-out is the one number worth moving. It is how much of a tab
+   clears the window at rest, and so it is also the size of the target you
+   are reaching for. */
+
+/* Shrink-wraps the archive window so the tabs beside it can be positioned
+   against the edge you can actually see, and holds them in a stacking order
+   of their own so the window paints over them.
 
    isolation: isolate rather than a z-index, so this box's own children are
    ordered among themselves without the wrapper having to take a position in
@@ -9499,55 +9531,72 @@ body[data-page="admin"] #activity-sessions {
     margin: 0 auto;
     isolation: isolate;
 
-    /* Sized to the label rather than guessed at: "GUESS THE MAZE" measures
-       91px in Volter Goldfish at 0.5625rem with this letter-spacing, where
-       "DAILY" was 31px. 140 leaves the 6px that stays tucked, ~10px of air
-       either side of the word, and the arrow's own 20px at the right end.
+    /* Sized to the longest label rather than guessed at: "GUESS THE MAZE"
+       measures 91px in Volter Goldfish at 0.5625rem with the tracking
+       below. 140 leaves the 6px that stays tucked, ~10px of air either
+       side, and the arrow's own 20px at the right end.
 
-       Taller too, at 22px rather than 15px. What you grab at rest is
-       --daily-tab-out by --daily-tab-h, so that was a 23x15 target; it is
-       30x22 now, which is nearly twice the area. */
-    --daily-tab-w: 140px;
-    --daily-tab-h: 22px;
-    --daily-tab-out: 30px;
-    /* How far the tab's left end stays tucked under the window once it is
-       fully out, so it still reads as coming FROM somewhere rather than
-       floating beside the frame. */
-    --daily-tab-tuck: 6px;
-    /* Where down the window's right edge it sits. Below the titlebar,
-       roughly level with the category tabs. */
-    --daily-tab-top: 92px;
+       What you grab at rest is --side-tab-out by --side-tab-h: a 30x22
+       target, where the first cut of this was 23x15. */
+    --side-tab-w: 140px;
+    --side-tab-h: 22px;
+    --side-tab-out: 30px;
+    /* How far a tab's left end stays tucked under the window once fully
+       out, so it still reads as coming FROM somewhere rather than floating
+       beside the frame. */
+    --side-tab-tuck: 6px;
+    /* Where down the window's right edge the first one sits. Below the
+       titlebar, roughly level with the category tabs. */
+    --side-tab-top: 92px;
+    /* Between one tab and the next. Enough to read as two ribbons rather
+       than one thick one. */
+    --side-tab-gap: 7px;
 }
 
-/* Over the tab. The window already had position: relative for its own
-   absolutely placed pieces; this only settles which of the two is in front. */
+/* Over the tabs. The window already had position: relative for its own
+   absolutely placed pieces; this only settles which of them is in front. */
 .archive-stack > #browse-window {
     z-index: 1;
 }
 
-.daily-tab {
+.side-tab {
     position: absolute;
-    top: var(--daily-tab-top);
+    top: var(--side-tab-top);
     /* Positioned by its RIGHT edge, so the width is fixed and only the
        offset animates — the tab slides as one piece instead of growing,
-       which is what makes it read as being pulled rather than stretched. */
-    /* Its right edge stands --daily-tab-out proud of the window's visible
-       edge, which puts the rest of it behind the frame. The wrapper hugs the
-       window and has no border of its own, so this offset means what it
+       which is what makes it read as being pulled rather than stretched.
+
+       Its right edge stands --side-tab-out proud of the window's visible
+       edge, which puts the rest of it behind the frame. The wrapper hugs
+       the window and has no border of its own, so this offset means what it
        says — measured against .chrome-window it would have been thrown out
        by the 14px border-image frame that `right` resolves against. */
-    right: calc(-1 * var(--daily-tab-out));
-    width: var(--daily-tab-w);
-    height: var(--daily-tab-h);
+    right: calc(-1 * var(--side-tab-out));
+    width: var(--side-tab-w);
+    height: var(--side-tab-h);
 
     /* Under the window, which sits at 1. Deliberately NOT a negative
-       z-index: that put the tab behind .container as well, so the part
+       z-index: that put the tabs behind .container as well, so the part
        sticking out could be seen but never hovered or pressed. */
     z-index: 0;
 
     padding: 0;
-    border: 0;
-    background: url('../assets/img/side-tab-active.png') no-repeat center / 100% 100%;
+    /* The 9-slice described at the top of this block. The four numbers are
+       the same on both properties, which is the whole trick: slice takes
+       them out of the source at that size, width puts them back at that
+       size, so nothing that carries detail is ever resampled. `fill` is
+       what draws the flat middle; without it the tab would be a frame
+       around a hole. Left is 0 because the left end has no cap — every
+       column from 0 to 96 is identical, and it lives under the window
+       anyway. */
+    border-style: solid;
+    border-width: 2px 5px 2px 0;
+    border-image-source: url('../assets/img/side-tab-active.png');
+    border-image-slice: 2 5 2 0 fill;
+    border-image-width: 2px 5px 2px 0;
+    border-image-repeat: stretch;
+    background: none;
+
     image-rendering: pixelated;
     cursor: var(--cursor-pointer);
     display: flex;
@@ -9555,14 +9604,29 @@ body[data-page="admin"] #activity-sessions {
     transition: right 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.daily-tab:hover,
-.daily-tab:focus-visible {
-    /* All the way out, less the tuck that keeps its left end under the
-       frame. */
-    right: calc(-1 * (var(--daily-tab-w) - var(--daily-tab-tuck)));
+/* The second ribbon down. Its own top is derived rather than written, so
+   moving --side-tab-top moves the pair together and changing --side-tab-h
+   keeps the gap between them honest. */
+.side-tab--second {
+    top: calc(var(--side-tab-top) + var(--side-tab-h) + var(--side-tab-gap));
 }
 
-.daily-tab:focus-visible {
+.side-tab:hover,
+.side-tab:focus-visible {
+    /* All the way out, less the tuck that keeps its left end under the
+       frame. */
+    right: calc(-1 * (var(--side-tab-w) - var(--side-tab-tuck)));
+}
+
+/* A tab whose view is currently showing stays out, with its label up and
+   its arrow turned — the same three things hover does, held rather than
+   played. What's New is a toggle, so it needs somewhere to say it is on;
+   the daily tab opens a window and never carries this. */
+.side-tab.active {
+    right: calc(-1 * (var(--side-tab-w) - var(--side-tab-tuck)));
+}
+
+.side-tab:focus-visible {
     outline: 2px solid var(--amber-bright);
     outline-offset: 2px;
     /* Above the window while focused — a ring drawn underneath it is no use
@@ -9571,15 +9635,15 @@ body[data-page="admin"] #activity-sessions {
 }
 
 /* Centred across the tab's own width, less the room the arrow takes at the
-   right end, so the word sits in the middle of the part you can see once it
+   right end, so the words sit in the middle of the part you can see once it
    is out rather than in the middle of the whole sprite. */
-.daily-tab-label {
+.side-tab-label {
     position: absolute;
-    /* Not left: 0. The tab keeps --daily-tab-tuck of its left end under the
+    /* Not left: 0. The tab keeps --side-tab-tuck of its left end under the
        window frame even when fully out, so a word centred across the whole
        sprite sits slightly left of centre in the part you can actually
-       read. Starting the box past the tuck centres it in the visible
-       part instead. */
+       read. Starting the box past the tuck centres it in the visible part
+       instead. */
     left: 8px;
     right: 20px;
     text-align: center;
@@ -9591,19 +9655,21 @@ body[data-page="admin"] #activity-sessions {
     text-transform: uppercase;
     color: #3a2812;
     /* Nothing to read while it is tucked away, and fading it in on the way
-       out keeps the word from appearing to slide out from under the frame. */
+       out keeps the words from appearing to slide out from under the
+       frame. */
     opacity: 0;
     transition: opacity 0.2s ease 0.06s;
 }
 
-.daily-tab:hover .daily-tab-label,
-.daily-tab:focus-visible .daily-tab-label { opacity: 1; }
+.side-tab:hover .side-tab-label,
+.side-tab:focus-visible .side-tab-label,
+.side-tab.active .side-tab-label { opacity: 1; }
 
 /* The same glyph and the same easing the Featured Mazes button uses, so the
-   two read as one family of control. It points right at rest — there is more
-   of this over here — and turns to point back at the window on hover, at
-   what pressing it will open. */
-.daily-tab-arrow {
+   two read as one family of control. It points right at rest — there is
+   more of this over here — and turns to point back at the window on hover,
+   at what pressing it will open. */
+.side-tab-arrow {
     position: absolute;
     right: 5px;
     font-family: 'Silkscreen', monospace;
@@ -9614,27 +9680,33 @@ body[data-page="admin"] #activity-sessions {
     transition: transform 0.3s ease;
 }
 
-.daily-tab:hover .daily-tab-arrow,
-.daily-tab:focus-visible .daily-tab-arrow { transform: rotate(180deg); }
+.side-tab:hover .side-tab-arrow,
+.side-tab:focus-visible .side-tab-arrow,
+.side-tab.active .side-tab-arrow { transform: rotate(180deg); }
 
 @media (prefers-reduced-motion: reduce) {
-    .daily-tab,
-    .daily-tab-label,
-    .daily-tab-arrow { transition: none; }
+    .side-tab,
+    .side-tab-label,
+    .side-tab-arrow { transition: none; }
 }
 
 /* On a narrow screen the archive window runs to the edges, so there is no
-   margin for a tab to sit in. It moves to the top-right corner of the window
-   and stops pretending to be behind anything. */
+   margin for a tab to sit in. They move onto the window's own right-hand
+   side and stop pretending to be behind anything — labels always up, since
+   there is no hover on a touch screen to reveal them with. */
 @media (max-width: 860px) {
-    .archive-stack { --daily-tab-top: 8px; }
-    .daily-tab {
+    .archive-stack {
+        --side-tab-top: 8px;
+        --side-tab-gap: 5px;
+    }
+    .side-tab {
         right: 8px;
         z-index: 3;
     }
-    .daily-tab:hover,
-    .daily-tab:focus-visible { right: 8px; }
-    .daily-tab-label { opacity: 1; }
+    .side-tab:hover,
+    .side-tab:focus-visible,
+    .side-tab.active { right: 8px; }
+    .side-tab-label { opacity: 1; }
 }
 
 /* ---------- the game window ---------- */

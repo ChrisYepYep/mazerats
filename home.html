@@ -274,23 +274,36 @@
                  at first, and which put it behind .container, where nothing
                  could be hovered or clicked. -->
             <div class="archive-stack">
-                <!-- The way into the daily game: a tab behind the window's
-                     right-hand edge with 23px of itself showing, which slides
-                     the rest of the way out on hover. The art is one sprite
-                     (assets/img/side-tab-active.png, 102x15) and the rest
-                     state is simply the part of it that clears the window —
-                     the separately drawn "inactive" cut of the same tab was
-                     pixel-for-pixel its right-hand 23 columns.
+                <!-- Tabs behind the window's right-hand edge, a stub of each
+                     showing, sliding the rest of the way out on hover. The
+                     art is one sprite (assets/img/side-tab-active.png,
+                     102x15) drawn as a 9-slice so it stays pixel-crisp at
+                     whatever size the tabs are set to — see .side-tab in
+                     css/style.css.
 
-                     A real button, not a decoration: it is the only route to
-                     the game, so it has to be reachable by keyboard and to
-                     say what it is. -->
-                <!-- The accessible name leads with the words actually printed
-                     on the tab, so someone driving by voice can say what they
-                     can see. -->
-                <button type="button" class="daily-tab" id="daily-tab" aria-label="Guess the Maze — open the daily game">
-                    <span class="daily-tab-label" aria-hidden="true">Guess the Maze</span>
-                    <span class="daily-tab-arrow" aria-hidden="true">&#9654;</span>
+                     Real buttons, not decoration: the game has no other route
+                     in at all, so it has to be reachable by keyboard and to
+                     say what it is. Each accessible name leads with the words
+                     actually printed on the tab, so someone driving by voice
+                     can say what they can see. -->
+                <button type="button" class="side-tab" id="daily-tab" aria-label="Guess the Maze — open the daily game">
+                    <span class="side-tab-label" aria-hidden="true">Guess the Maze</span>
+                    <span class="side-tab-arrow" aria-hidden="true">&#9654;</span>
+                </button>
+
+                <!-- What's New sat in the row of small buttons under the
+                     search box with Timeline and Furni. It is not the same
+                     kind of thing as those two: they are ways of looking at
+                     the whole archive, and this is "show me the last few
+                     weeks" — which is the first thing a returning visitor
+                     wants and was the third button along in a row they had
+                     to read. Out here it is one press from anywhere.
+
+                     Keeps its id, so js/home.js's existing toggle and its
+                     active state carry over untouched. -->
+                <button type="button" class="side-tab side-tab--second" id="whats-new-btn" aria-pressed="false" aria-label="What's New — the latest additions to the archive">
+                    <span class="side-tab-label" aria-hidden="true">What's New</span>
+                    <span class="side-tab-arrow" aria-hidden="true">&#9654;</span>
                 </button>
 
             <div class="chrome-window" id="browse-window" tabindex="-1">
@@ -351,7 +364,11 @@
                          left, with these held against the right by their own
                          auto margin. -->
                     <div class="view-switch" role="group" aria-label="Views across the whole archive">
-                        <button type="button" class="view-switch-btn" id="whats-new-btn" aria-pressed="false">What's New</button>
+                        <!-- What's New used to lead this row; it is a side tab
+                             now (see .side-tab in the archive stack above).
+                             What is left here is the pair that genuinely
+                             belongs together: two ways of looking at the
+                             archive as a whole. -->
                         <button type="button" class="view-switch-btn" id="timeline-btn" aria-pressed="false">Timeline</button>
                         <!-- The furni scan, read as a way in rather than as a
                              footnote. Everything behind this button already
