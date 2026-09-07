@@ -118,6 +118,28 @@
   status = 404
   force = true
 
+# Signing in with Discord. Two clean paths in front of one function, because
+# /auth/discord/callback is an address that has to be typed by hand into
+# Discord's developer portal and kept matching there forever — far better
+# that than the function's own URL with a query string on it.
+#
+# Rewrites (200), and note what that means here: the deployed service
+# forwards the INCOMING request's query string, not the one written in `to`
+# — the same behaviour that broke the /maze/:id share links. So the action
+# CANNOT be passed as ?action=callback in these lines; discord-auth.js reads
+# it off the request path instead. The query that does arrive (Discord's
+# own code and state, or the ?to= on the way out) is forwarded intact,
+# which is exactly what is needed.
+[[redirects]]
+  from = "/auth/discord/start"
+  to = "/.netlify/functions/discord-auth"
+  status = 200
+
+[[redirects]]
+  from = "/auth/discord/callback"
+  to = "/.netlify/functions/discord-auth"
+  status = 200
+
 # Generated from the archive itself rather than kept as a file — see
 # netlify/functions/sitemap.js.
 [[redirects]]

@@ -57,7 +57,10 @@
            come back to rides along and is validated server-side. */
         signIn(returnTo) {
             const to = returnTo || (location.pathname + location.search + location.hash);
-            location.href = `${ENDPOINT}?action=start&to=${encodeURIComponent(to)}`;
+            // The clean path, matching what is registered with Discord (see
+            // netlify.toml). "me" and "signout" below are only ever called
+            // by this file, so they stay on the function's own URL.
+            location.href = `/auth/discord/start?to=${encodeURIComponent(to)}`;
         },
 
         async signOut() {

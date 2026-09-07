@@ -64,7 +64,32 @@ function siteOrigin(event) {
     return `${proto}://${host}`;
 }
 
-const redirectUri = (event) => `${siteOrigin(event)}/.netlify/functions/discord-auth?action=callback`;
+/* A clean path, not the function's own URL with ?action=callback on it.
+
+   Two reasons. It is the address that has to be typed into Discord's
+   developer portal by hand, and a bare path is one less thing to get
+   wrong than a query string. And OAuth providers differ on whether they
+   accept a query string in a registered redirect URI at all — this side-
+   steps the question entirely.
+
+   /auth/discord/callback is a 200 rewrite to this function (see
+   netlify.toml). Note what that means: a rewrite forwards the INCOMING
+   query string, not the one written in the rewrite target, so the action
+   cannot be smuggled through it — which is exactly the trap the share
+   links fell into. The action is read off the path instead (see
+   actionFrom). */
+const redirectUri = (event) => `${siteOrigin(event)}/auth/discord/callback`;
+
+/* Explicit ?action wins; otherwise the path says. Anything unrecognised is
+   "me", which is the harmless read-only one. */
+function actionFrom(event) {
+    const named = (event.queryStringParameters || {}).action;
+    if (named) return named;
+    const path = String(event.path || event.rawUrl || "");
+    if (path.includes("/auth/discord/callback")) return "callback";
+    if (path.includes("/auth/discord/start")) return "start";
+    return "me";
+}
 
 /* Only ever a path on this site. The return address rides through Discord
    inside the signed state, but signed is not the same as safe — this is
@@ -92,7 +117,7 @@ function avatarUrl(user) {
 }
 
 exports.handler = async (event) => {
-    const action = (event.queryStringParameters || {}).action || "me";
+    const action = actionFrom(event);
 
     if (action === "me") {
         const player = playerFrom(event);
@@ -114,9 +139,14 @@ exports.handler = async (event) => {
 
     // ---------- send them to Discord ----------
     if (action === "start") {
+        const q = event.queryStringParameters || {};
         const nonce = crypto.randomBytes(16).toString("hex");
-        const to = safeReturn((event.queryStringParameters || {}).to);
-        const state = jwt.sign({ nonce, to }, process.env.SESSION_SECRET, { expiresIn: STATE_TTL });
+        const to = safeReturn(q.to);
+        /* Set only on the retry below, and carried through Discord so the
+           callback can tell "we already tried the quiet way" from "first
+           attempt". Without it the retry could bounce forever. */
+        const retried = q.consent === "1";
+        const state = jwt.sign({ nonce, to, retried }, process.env.SESSION_SECRET, { expiresIn: STATE_TTL });
 
         const authorize = new URL(`${DISCORD_API}/oauth2/authorize`);
         authorize.searchParams.set("client_id", process.env.DISCORD_CLIENT_ID);
@@ -124,9 +154,15 @@ exports.handler = async (event) => {
         authorize.searchParams.set("response_type", "code");
         authorize.searchParams.set("scope", "identify");
         authorize.searchParams.set("state", state);
-        // Skips Discord's "you have already authorised this" screen on a
-        // return visit, so signing back in is one hop rather than two.
-        authorize.searchParams.set("prompt", "none");
+
+        /* prompt=none skips Discord's "you have already authorised this"
+           screen on a return visit, so signing back in is one hop rather
+           than two. Discord documents that only for someone who HAS already
+           authorised, and says nothing about what it does for someone who
+           has not — which is every first sign-in, including the very first
+           one anybody makes. Rather than assume, the callback retries with
+           prompt=consent if Discord comes back saying it needed to ask. */
+        authorize.searchParams.set("prompt", retried ? "consent" : "none");
 
         return redirect(authorize.toString(), [
             `${STATE_COOKIE}=${nonce}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${STATE_TTL}`
@@ -141,16 +177,32 @@ exports.handler = async (event) => {
             `${STATE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
         ]);
 
-        // The visitor pressed Cancel on Discord's own screen. Not an error.
-        if (q.error) return fail("cancelled");
-        if (!q.code || !q.state) return fail("failed");
-
-        let claims;
-        try {
-            claims = jwt.verify(q.state, process.env.SESSION_SECRET);
-        } catch (e) {
-            return fail("expired");
+        // The state is read before the error is acted on, because whether an
+        // error is worth retrying depends on what we already tried.
+        let claims = null;
+        if (q.state) {
+            try { claims = jwt.verify(q.state, process.env.SESSION_SECRET); } catch (e) { claims = null; }
         }
+
+        if (q.error) {
+            // access_denied is a person pressing Cancel. Nothing to retry.
+            if (q.error === "access_denied") return fail("cancelled");
+            /* Anything else on a prompt=none attempt is Discord saying it
+               needed to ask after all — which is exactly what a first-ever
+               sign-in looks like. Go round once more with the approval
+               screen shown, and only give up if that fails too. */
+            if (claims && !claims.retried) {
+                const to = safeReturn(claims.to);
+                return redirect(
+                    `${origin}/auth/discord/start?consent=1&to=${encodeURIComponent(to)}`,
+                    [`${STATE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`]
+                );
+            }
+            return fail("failed");
+        }
+
+        if (!q.code || !q.state) return fail("failed");
+        if (!claims) return fail("expired");
         const cookieNonce = parseCookies(event.headers && (event.headers.cookie || event.headers.Cookie))[STATE_COOKIE];
         // Both halves, and they must match. Either one alone proves nothing.
         if (!cookieNonce || cookieNonce !== claims.nonce) return fail("failed");
