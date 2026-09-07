@@ -17,11 +17,24 @@ document.addEventListener("keydown", e => {
     if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
 
     const letter = e.key.toLowerCase();
+    /* Matched on the same reading of the name the sort uses (sortableName
+       in js/site.js), not on the raw rendered text — otherwise the two
+       disagree about where a name lives. "A Horrible Maze" sorts under H,
+       so H is the key that has to find it, and a name opening with one of
+       the font's picture glyphs has to be reachable by its first real
+       letter rather than by nothing at all.
+
+       Guarded because letter-jump.js is loaded by pages that may not have
+       site.js; falling back to the raw text is the old behaviour. */
+    const readable = typeof sortableName === "function"
+        ? (text => sortableName(text))
+        : (text => text);
+
     document.querySelectorAll(".chrome-list").forEach(list => {
         if (list.offsetParent === null) return;
         const match = Array.from(list.querySelectorAll(":scope > .chrome-list-row")).find(row => {
             const h3 = row.querySelector("h3");
-            return h3 && h3.textContent.trim().toLowerCase().startsWith(letter);
+            return h3 && readable(h3.textContent.trim()).toLowerCase().startsWith(letter);
         });
         if (match) match.scrollIntoView({ behavior: "smooth", block: "nearest" });
     });

@@ -29,6 +29,16 @@ const PICTURE_GLYPHS = new Set([
     0x00CE, 0x00D5, 0x00E6, 0x00EC, 0x00ED, 0x00EE, 0x00F5, 0x00F7
 ]);
 
+// A leading article is skipped too, the way a library or a record shop
+// files things: "A Horrible Maze" belongs under H, and "The Little Maze"
+// under L, because those are the words someone actually looks them up by.
+// Otherwise a third of the archive piles up under A and T.
+//
+// The trailing \s+ is what keeps this honest — it only fires on the article
+// as a whole word, so "Anniversary Maze" is not read as "An niversary" and
+// a hyphenated "A-Maze" keeps its A.
+const LEADING_ARTICLE = /^(?:a|an|the)\s+/i;
+
 // Digits count as real, so a name like "100% CONFUSED MAZE" still files
 // under 1 rather than jumping to C.
 function sortableName(name) {
@@ -38,7 +48,15 @@ function sortableName(name) {
     // never split in half.
     for (const ch of text) {
         if (!PICTURE_GLYPHS.has(ch.codePointAt(0)) && /[\p{L}\p{N}]/u.test(ch)) {
-            return text.slice(i);
+            const rest = text.slice(i);
+            // Applied after the glyphs are gone, so a decorated name like
+            // "★ The Little Maze" still reaches the article and files
+            // under L rather than under T.
+            const dropped = rest.replace(LEADING_ARTICLE, "");
+            // A name that is nothing BUT an article ("The") keeps it —
+            // sorting it as an empty string would float it above
+            // everything for no reason a reader could see.
+            return dropped || rest;
         }
         i += ch.length;
     }
