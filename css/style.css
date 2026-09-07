@@ -1308,6 +1308,19 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 /* In the modal it sits on the meta row with the status and the date, so it
    takes that row's slightly larger type rather than the row's small one. */
+/* Save and Completed live inside this one span, so the actions row's own
+   gap falls between the span and Share — never between the two buttons
+   inside it, which sat flush against each other.
+
+   gap: inherit rather than a repeated 6px: the row narrows its gap to 4px
+   on a small screen (see the responsive block), and inheriting the used
+   value means these two narrow with it instead of drifting out of step. */
+.modal-walked {
+    display: inline-flex;
+    align-items: center;
+    gap: inherit;
+}
+
 .modal-walked .walked-toggle {
     font-family: inherit;
     font-size: 0.72rem;
