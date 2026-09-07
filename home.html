@@ -613,10 +613,21 @@
         <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
     </footer>
 
-    <!-- Room detail modal -->
     <!-- Guess the Maze. Same .modal-overlay/.modal window every other panel
          on this site opens in, so the game wears the archive's own chrome
          rather than looking like a page borrowed from somewhere else.
+
+         Inside the frame it is a DECK of sheets rather than one changing
+         panel — the same trick the archive window plays with its results
+         frame (see .featured-frame in css/style.css), where a panel slides
+         down inside a clipped box until only a sliver of it shows. Here
+         there are seven of them: the splash, the five rooms, and the
+         results. Everything not yet reached waits tucked along the bottom
+         edge with its own labelled tab showing, and each one rises over the
+         last as you get to it, so the day reads as a short stack of pages
+         you work down through rather than a screen that keeps rewriting
+         itself.
+
          Driven entirely by js/guess.js. -->
     <div class="modal-overlay guess-overlay" id="guess-overlay">
         <div class="modal guess-window" id="guess-window" role="dialog" aria-modal="true" aria-labelledby="guess-title" tabindex="-1">
@@ -625,46 +636,125 @@
                 <button class="chrome-close" id="guess-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
             </div>
             <div class="chrome-frame">
-                <div class="guess-body">
+                <!-- Fixed height and clipped: the sheets inside are absolutely
+                     positioned against this box, and "tucked at the bottom" is
+                     a translate of its full height less a sliver. Both of
+                     those need a box with a height to be measured against. -->
+                <div class="guess-deck" id="guess-deck">
 
-                    <div class="guess-picture">
-                        <!-- Fixed square, drawn into rather than sized by the
-                             source: the crop is square by construction and the
-                             frame should not jump between reveal steps. -->
-                        <canvas id="guess-canvas" width="560" height="560" role="img"
-                                aria-label="A cropped piece of a maze room from the archive"></canvas>
-                    </div>
+                    <!-- Sheet 1 of 7. What the game is, before any of it
+                         happens — and the only place the rules are stated, so
+                         they are not cluttering a room you are trying to
+                         read. Shown every time the window opens, including
+                         part-way through a day, which is also what makes it
+                         the natural home for the streak. -->
+                    <section class="guess-sheet guess-sheet--intro" data-kind="intro" aria-label="How to play">
+                        <div class="guess-sheet-inner guess-splash">
+                            <p class="guess-splash-eyebrow">Every day, five rooms</p>
+                            <h3 class="guess-splash-title"><span>GUESS</span><span>THE MAZE</span></h3>
+                            <p class="guess-splash-date" id="guess-splash-date"></p>
 
-                    <div class="guess-panel">
-                        <div class="guess-headline">
-                            <p class="guess-round" id="guess-round">Room 1 of 5</p>
-                            <p class="guess-tries-left" id="guess-tries-left"></p>
+                            <!-- Numbered because these genuinely are a
+                                 sequence: what you are looking at, what
+                                 happens when you are wrong, and where the
+                                 pictures come from. -->
+                            <ol class="guess-rules">
+                                <li><span class="guess-rules-n" aria-hidden="true">1</span>
+                                    <p>Five pieces of five real rooms, cut out of the archive. Name the maze each one came from.</p></li>
+                                <li><span class="guess-rules-n" aria-hidden="true">2</span>
+                                    <p>Four guesses a room. Every miss <strong>pulls the view back a little</strong>, so a room you cannot place yet you probably can in a moment.</p></li>
+                                <li><span class="guess-rules-n" aria-hidden="true">3</span>
+                                    <p>Everyone gets the same five. New rooms at midnight, UTC.</p></li>
+                            </ol>
+
+                            <button type="button" class="guess-btn guess-btn--lead" id="guess-play">Start room 1 &rsaquo;</button>
+                            <p class="guess-splash-foot" id="guess-splash-foot"></p>
                         </div>
+                    </section>
 
-                        <!-- Five squares, one per room, filled in as the day
-                             goes: which is done, how it went, where you are. -->
-                        <ol class="guess-pips" id="guess-pips" aria-label="Progress through today's five rooms"></ol>
+                    <!-- Sheets 2-6 are cloned from the template below, once
+                         per room, and inserted here by js/guess.js. -->
 
-                        <ol class="guess-tries" id="guess-tries" aria-label="Guesses this room"></ol>
-
-                        <p class="guess-status" id="guess-status" role="status" hidden></p>
-
-                        <form class="guess-entry" id="guess-form" autocomplete="off">
-                            <label class="visually-hidden" for="guess-input">Which maze is this?</label>
-                            <input type="text" id="guess-input" placeholder="Which maze is this?" autocomplete="off">
-                            <div class="guess-suggest" id="guess-suggest" hidden></div>
-                            <button type="submit" class="guess-btn">Guess</button>
-                        </form>
-
-                        <div class="guess-between" id="guess-between" hidden></div>
-                        <div class="guess-summary" id="guess-summary" hidden></div>
-                    </div>
+                    <!-- Sheet 7. Deliberately not one of the room sheets: the
+                         day's score, streak and answers are about the sitting
+                         as a whole, and burying them in the fifth room would
+                         make the last room read differently from the other
+                         four. It waits at the very bottom of the stack all
+                         day, which also quietly says how much is left. -->
+                    <section class="guess-sheet guess-sheet--results" data-kind="results" aria-label="Today's results">
+                        <div class="guess-sheet-tab" aria-hidden="true"><span class="guess-sheet-tab-label">Results</span></div>
+                        <div class="guess-sheet-inner">
+                            <div class="guess-summary" id="guess-summary"></div>
+                        </div>
+                    </section>
 
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- One room, cloned five times (see js/guess.js's buildDeck). Ids would
+         have to be made unique per clone and then looked up by number, so
+         everything in here is found by class within its own sheet instead.
+         The one thing that would normally want an id is the text field, and
+         it carries its own aria-label rather than a separate <label for>. -->
+    <template id="guess-round-template">
+        <section class="guess-sheet guess-sheet--round" data-kind="round">
+            <!-- The part of the sheet that shows while it is still waiting
+                 its turn at the bottom of the deck. Not a button: you cannot
+                 skip ahead to room 4, so it would be a control that refuses
+                 every click. It is the edge of a page, and reads as one. -->
+            <div class="guess-sheet-tab" aria-hidden="true"><span class="guess-sheet-tab-label"></span></div>
+            <div class="guess-sheet-inner">
+                <div class="guess-body">
+                    <div class="guess-picture">
+                        <!-- Fixed square, drawn into rather than sized by the
+                             source: the crop is square by construction and the
+                             frame should not jump between reveal steps. -->
+                        <canvas class="guess-canvas" width="560" height="560" role="img"
+                                aria-label="A cropped piece of a maze room from the archive"></canvas>
+                        <span class="guess-picture-flag" aria-hidden="true"></span>
+                    </div>
+
+                    <div class="guess-panel">
+                        <div class="guess-headline">
+                            <p class="guess-round"></p>
+                            <p class="guess-tries-left"></p>
+                        </div>
+
+                        <!-- Five squares, one per room, filled in as the day
+                             goes: which is done, how it went, where you are. -->
+                        <ol class="guess-pips" aria-label="Progress through today's five rooms"></ol>
+
+                        <ol class="guess-tries" aria-label="Guesses this room"></ol>
+
+                        <p class="guess-status" role="status" hidden></p>
+
+                        <!-- The list of maze names is open from the start
+                             rather than appearing once you type. Most
+                             people cannot name thirty mazes from memory,
+                             and a field that only helps after you have
+                             already half-guessed the answer helps the
+                             people who needed it least. Typing filters it;
+                             it is a way in, not an autocomplete. -->
+                        <form class="guess-entry" autocomplete="off">
+                            <div class="guess-entry-row">
+                                <input type="text" class="guess-input" placeholder="Search the names…"
+                                       aria-label="Which maze is this? Type to filter the list below."
+                                       autocomplete="off" spellcheck="false">
+                                <button type="submit" class="guess-btn">Guess</button>
+                            </div>
+                            <div class="guess-suggest" role="group" aria-label="Mazes in the archive"></div>
+                        </form>
+
+                        <div class="guess-between" hidden></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </template>
+
+    <!-- Room detail modal -->
     <div class="modal-overlay" id="room-modal">
         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-name" tabindex="-1">
             <div class="chrome-titlebar">

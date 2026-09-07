@@ -9612,42 +9612,322 @@ body[data-page="admin"] #activity-sessions {
 
 /* ---------- the game window ---------- */
 
-.guess-window { width: min(880px, 94vw); }
-
-.guess-body {
-    display: grid;
-    /* Picture first and largest — it is the thing being read. The board is a
-       column of state beside it rather than a panel underneath. */
-    grid-template-columns: minmax(0, 1.15fr) minmax(230px, 0.85fr);
-    gap: 18px;
-    padding: 18px;
+/* max-width as well as width, and this is not belt-and-braces: .modal caps
+   every card on the site at 600px, which silently beat this window's own
+   width and had been holding the game to two thirds of the room it asks
+   for. Measured, not assumed — the picture column was coming out 212px
+   wide on a 1165px screen. */
+.guess-window {
+    width: min(900px, 94vw);
+    max-width: min(900px, 94vw);
 }
 
+/* --- the deck ------------------------------------------------------------
+   Seven sheets — the splash, five rooms, the results — stacked inside one
+   clipped box. A sheet that has not been reached is translated down by the
+   deck's full height less a sliver, so all that shows of it is its own
+   labelled tab along the bottom edge; reaching it slides it back to zero.
+
+   Same mechanic as the archive window's results frame (see
+   .featured-frame / #browse-window .chrome-frame above), which is what
+   makes the game feel like part of this site rather than a page borrowed
+   from somewhere else.
+
+   Fixed height on purpose. "Tucked at the bottom" is translateY(100% - n),
+   and a percentage translate needs a box with a height to be a percentage
+   OF — an auto-height deck would collapse to nothing the moment its
+   children went absolute. */
+.guess-deck {
+    position: relative;
+    overflow: hidden;
+    /* Named rather than written straight onto height, because the picture
+       below has to do arithmetic with it to stay square (see
+       .guess-picture) — and a second copy of this clamp would be a second
+       thing to keep in step. */
+    --deck-h: clamp(430px, 66vh, 545px);
+    height: var(--deck-h);
+    background: var(--bg-black);
+
+    /* How much of a waiting sheet shows. Also the unit the live sheet
+       reserves at its own foot, multiplied by --tucked (set by
+       js/guess.js's layout on every move) so its content can never end up
+       hidden behind the tabs of the sheets still queued below it. */
+    --tuck: 15px;
+    --tucked: 0;
+}
+
+/* --shade is how far below the sheet in play this one sits, set by
+   js/guess.js's layout (0 for the live sheet, 1 for the next tab down, and
+   so on). Each step lifts the ground by 2% toward a warmer tone, so the
+   run of tabs along the bottom edge reads as separate pages catching the
+   light rather than one striped block — and the sheet you are actually on
+   is always the darkest thing on screen.
+
+   Measured against the live sheet rather than against the deck, so the
+   gradient does not drift lighter as the day goes on: room 5 sits on
+   exactly the same ground room 1 did.
+
+   The flat colour is declared first and is what an engine without
+   color-mix keeps; the stack simply reads as one shade there. */
+.guess-sheet {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    --shade: 0;
+    background: #2e2418;
+    background: color-mix(in srgb, #2e2418, #8a7150 calc(var(--shade) * 2%));
+    border-top: 1px solid var(--chrome-border);
+    border-radius: 8px 8px 0 0;
+    /* The flat offset line .chrome-frame casts upward over whatever sits
+       above it, reused here so one sheet lying over another reads as two
+       pages rather than one flat colour change. */
+    box-shadow:
+        0 -3px 0 rgba(0, 0, 0, 0.45),
+        inset 0 1px 0 var(--chrome-highlight);
+    transition: transform 0.44s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Set for one frame while the window opens, so a day already part-played
+   shows its deck already stacked instead of seven sheets flying into
+   position (see start() in js/guess.js). */
+.guess-deck.is-settling .guess-sheet { transition: none; }
+
+/* The strip that shows while a sheet is still waiting its turn. Absolute
+   rather than in flow: in flow it would reserve its own height at the top
+   of every sheet, pushing the live sheet's content down by a row that is
+   only ever visible on the tucked ones. */
+.guess-sheet-tab {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--tuck);
+    display: flex;
+    align-items: center;
+    padding: 0 11px;
+    background: rgba(0, 0, 0, 0.34);
+    border-radius: 8px 8px 0 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+}
+
+.guess-sheet.is-tucked .guess-sheet-tab { opacity: 1; }
+
+/* Volter Goldfish is a bitmap face: it is drawn for exactly one size, and
+   0.5625rem/400 is that size everywhere on this site. Anything that needs
+   to be bigger than this uses Montserrat instead (see .guess-splash-title
+   and .guess-score below) rather than scaling this one up. Every Volter
+   Goldfish rule in this block restates the weight for the same reason —
+   700 would silently swap in the separately registered Bold face. */
+.guess-sheet-tab-label {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--amber);
+}
+
+.guess-sheet-inner {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 16px 16px calc(14px + var(--tucked) * var(--tuck));
+    scrollbar-color: var(--wood-dark) #2e2418;
+}
+
+/* Focused by js/guess.js when a sheet with no field to type in arrives —
+   the results, or a room already finished. Only the keyboard ever sees
+   the ring. */
+.guess-sheet-inner:focus { outline: none; }
+.guess-sheet-inner:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: -3px;
+}
+
+/* --- the splash ----------------------------------------------------------
+   What the game is, before any of it happens. Narrow measure and centred:
+   there is one thing to read here and then one button to press. */
+.guess-splash {
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 4px;
+}
+
+.guess-splash-eyebrow {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--unknown);
+    margin: 0;
+}
+
+/* Stacked in two lines, exactly the treatment the homepage hero gives
+   MAZE / RATS — and in the same face, since this is display type and
+   Volter Goldfish only ever sets 0.5625rem. Montserrat 800 comes from the
+   base h1-h4 rule near the top of this file; nothing here overrides it. */
+.guess-splash-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    margin: 8px 0 0;
+    font-size: clamp(1.5rem, 4.4vw, 2.1rem);
+    line-height: 0.86;
+    letter-spacing: 1px;
+    text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+}
+
+/* THE MAZE is the longer line of the two, so it is set smaller to keep the
+   block reading as one shape — the mirror of the hero's own nudge, where
+   the shorter RATS is set larger. */
+.guess-splash-title span:last-child {
+    font-size: 0.72em;
+    color: var(--parchment);
+    letter-spacing: 2px;
+}
+
+.guess-splash-date {
+    margin: 8px 0 0;
+    font-size: 0.72rem;
+    color: var(--parchment-dim);
+}
+
+/* Genuinely a sequence — what you are looking at, what a miss does, and
+   where the pictures come from — so the numbers carry meaning rather than
+   just marking three boxes. */
+.guess-rules {
+    list-style: none;
+    margin: 16px 0 18px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    max-width: 46ch;
+    text-align: left;
+}
+
+.guess-rules li {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 9px;
+    align-items: start;
+}
+
+.guess-rules-n {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 17px;
+    text-align: center;
+    color: var(--amber-bright);
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+}
+
+.guess-rules p {
+    margin: 0;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    color: var(--parchment);
+}
+
+.guess-rules strong { color: var(--amber-bright); font-weight: 400; }
+
+.guess-splash-foot {
+    margin: 14px 0 0;
+    font-size: 0.7rem;
+    color: var(--parchment-dim);
+}
+
+.guess-splash-foot strong {
+    color: var(--amber-bright);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+
+/* --- a room --------------------------------------------------------------
+   Picture first and largest — it is the thing being read. The board is a
+   column of state beside it rather than a panel underneath. */
+.guess-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(224px, 290px);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 16px;
+}
+
+/* Square, always, and by construction rather than by hope.
+
+   The obvious spelling — width: 100% + aspect-ratio + max-height: 100% —
+   does not survive a short sheet: once max-height bites, the ratio is
+   already spent deriving height FROM width, so the box just goes oblong.
+   Setting width from the smaller of the two candidates instead means the
+   ratio is never contradicted. The height available is the deck's own,
+   less this sheet's padding — which is why --deck-h exists as a variable
+   and why --tucked is one too: both are terms in this. */
 .guess-picture {
+    position: relative;
+    width: min(100%, calc(var(--deck-h) - 30px - var(--tucked) * var(--tuck)));
+    aspect-ratio: 1;
+    align-self: center;
+    justify-self: center;
     border: 1px solid var(--chrome-border);
     border-radius: 8px;
     background: var(--bg-black);
     box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
     overflow: hidden;
-    aspect-ratio: 1;
     transition: opacity 0.2s ease;
 }
 
-#guess-canvas {
+.guess-canvas {
     display: block;
     width: 100%;
     height: 100%;
+    object-fit: contain;
     image-rendering: pixelated;
 }
 
+/* Says out loud that the picture changed. A wrong guess widens the crop by
+   a step that is easy to miss, and without this the round reads as "same
+   square, one life gone" rather than "here, have more of it". */
+.guess-picture-flag {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    padding: 3px 7px;
+    background: rgba(0, 0, 0, 0.66);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    color: var(--amber);
+    pointer-events: none;
+}
+
 /* While a room's picture is being fetched and scored. */
-.guess-window.is-busy .guess-picture { opacity: 0.45; }
+.guess-sheet.is-busy .guess-picture { opacity: 0.45; }
 
 .guess-panel {
     display: flex;
     flex-direction: column;
     gap: 10px;
     min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-color: var(--wood-dark) #2e2418;
 }
 
 .guess-headline {
@@ -9659,46 +9939,50 @@ body[data-page="admin"] #activity-sessions {
 
 .guess-round {
     margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.72rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.05em;
     color: var(--amber-bright);
 }
 
 .guess-tries-left {
     margin: 0;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
+    font-size: 0.68rem;
     color: var(--parchment-dim);
+    font-variant-numeric: tabular-nums;
 }
 
-/* Five squares, one per room. Colour carries how it went and the number
-   carries which room it was, so neither has to be read alone. */
+/* The last guess reads differently from the other three. */
+.guess-tries-left.is-low { color: var(--danger); }
+
 .guess-pips {
     list-style: none;
+    display: flex;
+    gap: 5px;
     margin: 0;
     padding: 0;
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 5px;
 }
 
 .guess-pip {
+    flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 24px;
-    border: 1px solid var(--chrome-border);
-    border-radius: 4px;
-    background: var(--chrome-row);
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.6rem;
+    height: 22px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.28);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     color: var(--unknown);
 }
 
 .guess-pip.is-current { border-color: var(--amber); color: var(--amber-bright); }
 .guess-pip.is-lost { background: #4a2018; border-color: var(--danger); color: #e8c0b4; }
 /* Solved, shaded by how many guesses it took — the same reading the share
-   grid gives, in the same order. */
+   grid gives, so the two never disagree. */
 .guess-pip.is-won { border-color: var(--ok); color: #eaf5df; }
 .guess-pip.is-won.g1 { background: #3f5c2a; }
 .guess-pip.is-won.g2 { background: #4d5526; }
@@ -9707,11 +9991,11 @@ body[data-page="admin"] #activity-sessions {
 
 .guess-tries {
     list-style: none;
-    margin: 0;
-    padding: 0;
     display: flex;
     flex-direction: column;
     gap: 4px;
+    margin: 0;
+    padding: 0;
 }
 
 .guess-try {
@@ -9720,13 +10004,11 @@ body[data-page="admin"] #activity-sessions {
     justify-content: space-between;
     gap: 8px;
     min-height: 26px;
-    padding: 4px 9px;
-    border: 1px solid var(--chrome-border);
-    border-radius: 5px;
-    background: var(--chrome-row);
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    line-height: 1.4;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.22);
+    font-size: 0.7rem;
     color: var(--parchment);
 }
 
@@ -9739,56 +10021,67 @@ body[data-page="admin"] #activity-sessions {
 
 .guess-status {
     margin: 0;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    line-height: 1.6;
+    font-size: 0.68rem;
     color: var(--danger);
 }
 
-/* Positioned so the name picker can hang under the field. */
+/* Takes whatever height the board above it has not used, so the name list
+   inside fills the rest of the column instead of floating over it. */
 .guess-entry {
-    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.guess-entry-row {
+    flex: 0 0 auto;
     display: flex;
     gap: 6px;
 }
 
-#guess-input {
-    flex: 1 1 auto;
+.guess-input {
+    flex: 1;
     min-width: 0;
-    padding: 7px 10px;
-    background: var(--parchment);
-    border: 1.5px solid var(--chrome-border);
+    padding: 7px 9px;
+    background: var(--bg-black);
+    border: 1px solid var(--chrome-border);
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.5);
     border-radius: 4px;
-    color: #3a2812;
-    font-family: 'Roboto', sans-serif;
-    font-size: 0.8rem;
+    color: var(--parchment);
+    font-family: inherit;
+    font-size: 0.72rem;
 }
 
-#guess-input:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
+.guess-input:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
+/* In flow under the field rather than floating over the board. It is open
+   the whole time a room is live, so as an overlay it would be covering the
+   guesses you have already made every time a sheet rose. */
 .guess-suggest {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
-    z-index: 5;
+    flex: 1;
+    min-height: 74px;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    overflow: hidden;
-    box-shadow: var(--shadow);
+    background: var(--bg-black);
+    border: 1px solid var(--chrome-border);
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.5);
+    scrollbar-color: var(--wood-dark) var(--bg-black);
 }
 
 .guess-suggest-item {
-    padding: 7px 10px;
+    flex: 0 0 auto;
+    padding: 6px 9px;
     background: none;
-    border: 0;
+    border: none;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.4);
     text-align: left;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
     color: var(--parchment);
+    font-family: inherit;
+    font-size: 0.72rem;
     cursor: var(--cursor-pointer);
 }
 
@@ -9797,6 +10090,32 @@ body[data-page="admin"] #activity-sessions {
     background: var(--wood-mid);
     color: #fff8ec;
     outline: none;
+}
+
+/* The name currently sitting in the field. Clicking a name fills the box
+   rather than spending the guess outright — with the whole archive listed
+   and scrolling, a stray click would otherwise cost a life. */
+.guess-suggest-item.is-picked {
+    background: var(--wood-dark);
+    color: var(--amber-bright);
+    box-shadow: inset 2px 0 0 var(--amber);
+}
+
+/* Names already tried this room stay listed, struck through, rather than
+   vanishing — a list that reorders itself under the cursor between guesses
+   is harder to use than one that does not. */
+.guess-suggest-item.is-spent {
+    color: var(--unknown);
+    text-decoration: line-through;
+    cursor: default;
+}
+.guess-suggest-item.is-spent:hover { background: none; color: var(--unknown); }
+
+.guess-suggest-empty {
+    margin: 0;
+    padding: 10px 9px;
+    font-size: 0.7rem;
+    color: var(--parchment-dim);
 }
 
 .guess-btn {
@@ -9808,6 +10127,7 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment);
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
+    font-weight: 400;
     cursor: var(--cursor-pointer);
 }
 
@@ -9818,6 +10138,31 @@ body[data-page="admin"] #activity-sessions {
     color: #fff8ec;
 }
 .guess-btn:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+
+.guess-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* The one button on a sheet that moves the day forward — start, next room,
+   see the results. Sized and coloured to be the obvious thing to press,
+   since on those sheets it is the only thing to press. */
+/* Bigger by padding, not by type size — Volter Goldfish is a one-size
+   face, so weight here comes from the button's box and colour instead. */
+.guess-btn--lead {
+    align-self: center;
+    padding: 11px 24px;
+    letter-spacing: 0.04em;
+    background: linear-gradient(#5b4526, #43331c);
+    border-color: var(--amber);
+    color: #fff8ec;
+}
+
+.guess-btn--lead:hover,
+.guess-btn--lead:focus-visible {
+    background: linear-gradient(#6d5430, #513e22);
+    border-color: var(--amber-bright);
+}
 
 /* Between rooms: what it was, and the way on. */
 .guess-between {
@@ -9832,96 +10177,141 @@ body[data-page="admin"] #activity-sessions {
 
 .guess-reveal {
     margin: 0;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    line-height: 1.6;
+    font-size: 0.74rem;
+    line-height: 1.5;
     color: var(--parchment);
 }
+
 .guess-reveal strong { color: var(--amber-bright); font-weight: 400; }
 
-/* The end of the day. */
+.guess-reveal-verdict {
+    display: block;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    margin-bottom: 3px;
+}
+.guess-reveal-verdict.is-won { color: var(--ok); }
+.guess-reveal-verdict.is-lost { color: var(--danger); }
+
+/* The way back into the archive from a room you have just been shown —
+   the whole point of cutting the puzzles out of it. */
+.guess-reveal-link {
+    align-self: flex-start;
+    font-size: 0.7rem;
+    color: var(--amber);
+}
+
+/* --- the results ---------------------------------------------------------
+   Its own sheet rather than something that appears where room five was:
+   the score, the streak and the answers are about the sitting as a whole. */
 .guess-summary {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg-panel);
+    align-items: center;
+    text-align: center;
+    margin: auto 0;
 }
 
+.guess-summary-waiting {
+    margin: 0;
+    font-size: 0.74rem;
+    color: var(--parchment-dim);
+}
+
+/* The day's headline number, so it is display type — Montserrat, like
+   every other heading on the site, rather than Volter Goldfish scaled up
+   past the one size it is drawn for. */
 .guess-score {
     margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.78rem;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 1rem;
+    letter-spacing: 0.5px;
     color: var(--parchment);
 }
+
 .guess-score strong { color: var(--amber-bright); }
 
 .guess-grid {
     margin: 0;
-    font-size: 1.1rem;
-    letter-spacing: 0.12em;
+    font-size: 1.35rem;
+    letter-spacing: 3px;
     line-height: 1;
 }
 
 .guess-stats {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px 10px;
-    margin: 0;
-    padding: 10px 0 0;
-    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px 20px;
+    margin: 2px 0 0;
 }
 
 .guess-stats div { display: flex; flex-direction: column; gap: 2px; }
 
 .guess-stats dt {
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5rem;
+    font-size: 0.6rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--parchment-dim);
+    color: var(--unknown);
 }
 
 .guess-stats dd {
     margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.8rem;
-    font-variant-numeric: tabular-nums;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 0.9rem;
     color: var(--amber-bright);
+    font-variant-numeric: tabular-nums;
 }
 
 .guess-summary-actions { display: flex; gap: 6px; }
 
-/* The reason to come back, stated as a length of time rather than as
-   "tomorrow" — the same fact, and much more of a nudge. */
 .guess-next-up {
     margin: 0;
+    font-size: 0.68rem;
+    color: var(--parchment-dim);
+}
+
+.guess-answers-head {
+    margin: 6px 0 0;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
-    color: var(--parchment-dim);
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--unknown);
 }
 
 .guess-answers {
     list-style: none;
     margin: 0;
-    padding: 10px 0 0;
-    border-top: 1px dashed var(--border);
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 3px;
+    width: 100%;
+    max-width: 400px;
+    text-align: left;
 }
 
 .guess-answers li {
-    display: flex;
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
     align-items: baseline;
     gap: 8px;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.22);
+    font-size: 0.7rem;
 }
 
 .guess-answers-n { color: var(--unknown); font-variant-numeric: tabular-nums; }
+.guess-answers-mark { font-size: 0.62rem; color: var(--parchment-dim); }
 .guess-answers li.is-won a { color: var(--ok); }
 .guess-answers li.is-lost a { color: var(--danger); }
 
@@ -9930,13 +10320,13 @@ body[data-page="admin"] #activity-sessions {
     margin-top: 6px;
     padding: 6px;
     background: var(--bg-black);
-    border: 1px solid var(--border);
+    border: 1px solid var(--chrome-border);
     border-radius: 4px;
     color: var(--parchment);
-    font-family: 'Roboto', sans-serif;
-    font-size: 0.72rem;
+    font-family: inherit;
+    font-size: 0.62rem;
     resize: none;
-    min-height: 62px;
+    min-height: 66px;
 }
 
 /* Every block above that declares display has to restate it for the hidden
@@ -9946,11 +10336,60 @@ body[data-page="admin"] #activity-sessions {
 .guess-entry[hidden],
 .guess-suggest[hidden],
 .guess-between[hidden],
-.guess-summary[hidden],
+.guess-splash-foot[hidden],
 .guess-status[hidden] { display: none; }
 
+/* A sheet sliding up is the whole point of the layout, not decoration, so
+   what is left when motion is turned down is the placement without the
+   travel — sheets still sit where they sit, they just arrive there. */
+@media (prefers-reduced-motion: reduce) {
+    .guess-sheet,
+    .guess-sheet-tab { transition: none; }
+}
+
 @media (max-width: 760px) {
-    /* The picture goes above the board rather than beside it, and keeps the
-       full width — it is still the thing being read. */
-    .guess-body { grid-template-columns: 1fr; gap: 14px; padding: 14px; }
+    /* Taller deck, and the picture goes above the board rather than beside
+       it — it is still the thing being read, so it keeps the full width and
+       is capped against the viewport instead of against its column. */
+    .guess-deck { --deck-h: clamp(500px, 78vh, 680px); --tuck: 14px; }
+    .guess-sheet-inner { padding: 13px 13px calc(12px + var(--tucked) * var(--tuck)); }
+    /* Sized by its content rather than squeezed into the sheet's height.
+       Stacked, the picture and the board together want more room than a
+       phone has, and dividing what there is between them left the name
+       list two rows tall with the second one cut in half. The sheet
+       scrolls instead — which a phone is the right shape for. */
+    .guess-body {
+        flex: 0 0 auto;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto;
+        gap: 12px;
+    }
+    /* Stacked, so the height it has to fit inside is no longer the sheet's
+       — the board sits underneath it. Capped against the viewport instead,
+       by the same min() so it stays square. */
+    .guess-picture { width: min(100%, 44vh); }
+    .guess-panel { overflow: visible; }
+    /* A fixed box that scrolls its own contents, not a flex child that
+       grows to fit them: with the sheet itself now sized by its content,
+       flex: 1 had nothing to push back against and the list stretched to
+       all thirty-eight names, giving the sheet a thousand pixels of
+       scroll. Tall enough to read down, short enough that the picture and
+       the guesses are still on screen with it. */
+    .guess-suggest {
+        flex: 0 0 auto;
+        /* Measured, not picked: at 190px the list ran 22px past the last
+           tucked tab on a 375x812 phone. This lands a fresh round exactly
+           on the fold with nothing to scroll for. */
+        height: 165px;
+        min-height: 0;
+    }
+
+    /* The four empty slots are a desktop affordance — they show the shape
+       of the round before it is played. On a phone they cost 124px of the
+       first screen to say what the pips and "3 guesses left" directly
+       above them already say, and pushed the name list under the fold.
+       Guesses actually made still appear, one row at a time. */
+    .guess-try.is-empty { display: none; }
+    .guess-tries:not(:has(.guess-try:not(.is-empty))) { display: none; }
+    .guess-rules p { font-size: 0.72rem; }
 }

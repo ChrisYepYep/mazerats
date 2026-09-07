@@ -15,6 +15,26 @@
    nobody can find is a daily game nobody plays.
 
    ----------------------------------------------------------------------
+   The deck
+
+   The window holds seven sheets, not one panel that keeps rewriting itself:
+   the splash, one per room, and the results. Whatever you have not reached
+   yet waits tucked along the bottom edge showing its own labelled tab, and
+   each sheet rises over the last when you get to it. Three things fall out
+   of that which a single panel could not do:
+
+     - the day has a visible shape. Four tabs still showing along the bottom
+       is "four rooms left", read without counting anything;
+     - a room that is finished is not erased to make way for the next one.
+       It is still there, underneath, exactly as you left it;
+     - the results are somewhere you ARRIVE at, rather than something that
+       appears in the space room five used to occupy.
+
+   The mechanic is borrowed from the archive window's own results frame (see
+   .featured-frame in css/style.css), which slides down inside a clipped box
+   until only a sliver shows. Same idea, seven of them, in a stack.
+
+   ----------------------------------------------------------------------
    Choosing where to cut
 
    Habbo room screenshots are a small isometric room floating on a large
@@ -31,13 +51,15 @@
         from the image's own corners rather than assumed to be black, so a
         room shot on a lighter ground is judged on its own terms. This is the
         signal that actually kills empty crops.
-     2. How many distinct colours it holds. Twelve, not four — furni are
-        colourful and flat floor is not.
-     3. How varied it is, as mean deviation from the crop's own average.
-        This is what separates "a wall" from "a corner with things in it".
+     2. How many distinct colours it holds, quantised so near-identical
+        shades do not each count.
+     3. How much the brightness varies across it — a busy patch of wall and
+        a flat one can hold the same colours and be worth very different
+        amounts to guess from.
 
-   The three are combined rather than used as gates, so a crop that is a
-   little plain but very busy can still win, and vice versa.
+   The first is a floor (below 85% solid, the crop scores nothing at all);
+   the other two are weighted, not gated, so a crop that is a little plain
+   but very busy can still win, and vice versa.
    ---------------------------------------------------------------------- */
 (function () {
     "use strict";
@@ -53,13 +75,21 @@
        which is usually enough to place a room without simply giving it. */
     const REVEAL = [0.16, 0.24, 0.34, 0.46];
 
-    let el = {};          // the window's elements, filled by mount()
+    let el = {};          // the window's shared elements, filled by mount()
+    let sheets = [];      // the deck, in order: intro, 5 rooms, results
     let ROOMS = [];
     let pool = [];
     let state = null;     // this day's play
     let stats = null;     // the running record across days
-    let round = null;     // { maze, image, cx, cy, img } for the round in play
-    let preparing = false;
+    let rounds = [];      // { maze, image, cx, cy, img } per round, once ready
+    let preparing = {};   // round index -> true while its picture is loading
+
+    /* Which sheet is up. Not saved: the splash is where the window opens
+       every time, including part-way through a day, because it is the one
+       place that says what the game is and carries the streak. Reopening
+       mid-day and being dropped straight back into room 3 with no
+       explanation is a worse first second than one click. */
+    let view = "intro";   // "intro" | "round" | "results"
 
     // ---------- a stable random, one set of rooms per day ----------
 
@@ -139,6 +169,15 @@
             if (!chosen.includes(item)) chosen.push(item);
         }
         return chosen;
+    }
+
+    // Worked out once a day rather than on every render — renderSummary used
+    // to call pickDay() once per answer row, which re-shuffled the whole
+    // pool five times to read five values off it.
+    let picksCache = { day: "", picks: [] };
+    function picks() {
+        if (picksCache.day !== today()) picksCache = { day: today(), picks: pickDay() };
+        return picksCache.picks;
     }
 
     // ---------- reading the picture ----------
@@ -251,10 +290,13 @@
 
     // ---------- drawing ----------
 
-    function draw() {
-        if (!round || !round.img) return;
-        const img = round.img;
-        const result = state.results[state.round];
+    function draw(i) {
+        const sheet = roundSheet(i);
+        const data = rounds[i];
+        if (!sheet || !data || !data.img) return;
+
+        const img = data.img;
+        const result = state.results[i];
         const guessCount = result ? result.guesses.length : 0;
         const solvedOrSpent = result && result.done;
 
@@ -262,8 +304,9 @@
         const frac = solvedOrSpent ? 1 : REVEAL[step];
 
         const w = img.naturalWidth, h = img.naturalHeight;
-        const out = el.canvas.getContext("2d");
-        const side = el.canvas.width;
+        const canvas = sheet.refs.canvas;
+        const out = canvas.getContext("2d");
+        const side = canvas.width;
         out.imageSmoothingEnabled = false;   // pixel art: never blur it
         out.clearRect(0, 0, side, side);
 
@@ -280,8 +323,8 @@
         // Clamped so an expanding crop near an edge slides inward instead of
         // running off and drawing blank canvas.
         const half = size / 2;
-        const cx = Math.max(half, Math.min(w - half, round.cx));
-        const cy = Math.max(half, Math.min(h - half, round.cy));
+        const cx = Math.max(half, Math.min(w - half, data.cx));
+        const cy = Math.max(half, Math.min(h - half, data.cy));
         out.drawImage(img, cx - half, cy - half, size, size, 0, 0, side, side);
     }
 
@@ -300,7 +343,7 @@
     function loadState() {
         let saved = null;
         try { saved = JSON.parse(localStorage.getItem(STATE_KEY) || "null"); } catch (e) { saved = null; }
-        // Yesterday's game is not this one, and a stored day from a older
+        // Yesterday's game is not this one, and a stored day from an older
         // shape is not either — both are dropped rather than migrated.
         if (saved && saved.day === today() && Array.isArray(saved.results) && saved.results.length === ROUNDS) {
             return saved;
@@ -350,48 +393,54 @@
 
     // ---------- preparing a round ----------
 
-    /* Walks the day's picks for this round until one yields a usable crop.
+    /* Fetches and scores one room's picture. Safe to call for a round that
+       is already ready or already loading, which is what lets the next
+       round be started quietly in the background (see below) without any
+       coordination at the call sites. */
+    async function prepareRound(i) {
+        if (i == null || i < 0 || i >= ROUNDS) return;
+        if (rounds[i] || preparing[i]) return;
+        const pick = picks()[i];
+        if (!pick) return;
 
-       A room shot that is mostly background scores nothing anywhere in it,
-       and a round should not be "a black square" because the dice landed
-       there. If the round's own picture cannot be cropped it falls back to
-       the middle of it, which is still a real room from a real maze. */
-    async function prepareRound() {
-        if (preparing) return;
-        preparing = true;
-        round = null;
-        setBusy(true);
-
-        const picks = pickDay();
-        const pick = picks[state.round];
-        if (!pick) { preparing = false; setBusy(false); return; }
+        preparing[i] = true;
+        setBusy(i, true);
 
         let img = null;
         try {
             img = await loadImage(imgCdn(pick.image, 900, null, 82));
         } catch (e) {
-            el.status.textContent = "That room's picture would not load. Skipping to the next.";
-            el.status.hidden = false;
-            preparing = false;
-            setBusy(false);
+            preparing[i] = false;
+            setBusy(i, false);
+            const sheet = roundSheet(i);
+            if (sheet) {
+                sheet.refs.status.textContent = "That room's picture would not load. Try again in a moment.";
+                sheet.refs.status.hidden = false;
+            }
             return;
         }
 
-        const centre = findCropCentre(img, seededRandom(seedFrom(today() + ":" + state.round)));
-        round = {
+        const centre = findCropCentre(img, seededRandom(seedFrom(today() + ":" + i)));
+        rounds[i] = {
             maze: pick.maze,
             image: pick.image,
             img,
             cx: centre ? centre.x : img.naturalWidth / 2,
             cy: centre ? centre.y : img.naturalHeight / 2
         };
-        preparing = false;
-        setBusy(false);
-        renderAll();
+        preparing[i] = false;
+        setBusy(i, false);
+        renderRound(i);
+
+        /* The next room's picture, fetched while this one is being played.
+           A sheet rising to reveal a blank square it then fills in a second
+           later undoes most of what the animation is for. */
+        if (i + 1 < ROUNDS) prepareRound(i + 1);
     }
 
-    function setBusy(on) {
-        el.window.classList.toggle("is-busy", on);
+    function setBusy(i, on) {
+        const sheet = roundSheet(i);
+        if (sheet) sheet.el.classList.toggle("is-busy", on);
     }
 
     // ---------- guessing ----------
@@ -406,9 +455,9 @@
 
     function submitGuess(name) {
         const result = currentResult();
-        if (!result || result.done || !round) return;
+        if (!result || result.done || !rounds[state.round]) return;
 
-        const correct = normalise(name) === normalise(round.maze.name);
+        const correct = normalise(name) === normalise(rounds[state.round].maze.name);
         result.guesses.push({ name, correct });
         if (correct) { result.done = true; result.won = true; }
         else if (result.guesses.length >= TRIES) { result.done = true; result.won = false; }
@@ -425,33 +474,47 @@
         if (state.round >= ROUNDS - 1) return;
         state.round += 1;
         saveState();
-        el.input.value = "";
-        hideSuggest();
-        prepareRound();
-        renderAll();
+        prepareRound(state.round);
+        goTo("round");
     }
 
     // ---------- the name picker ----------
 
-    function hideSuggest() {
-        el.suggest.hidden = true;
-        el.suggest.innerHTML = "";
-    }
+    /* The whole archive, listed and scrollable, from the moment a room
+       opens. Typing filters the list rather than summoning it.
 
-    function showSuggest() {
-        const q = normalise(el.input.value);
-        if (!q) return hideSuggest();
-        const result = currentResult();
-        const already = new Set((result ? result.guesses : []).map(g => normalise(g.name)));
-        const hits = ROOMS
-            .filter(r => r.name && normalise(r.name).includes(q) && !already.has(normalise(r.name)))
-            .sort((a, b) => compareNames(a.name, b.name))
-            .slice(0, 6);
-        if (!hits.length) return hideSuggest();
-        el.suggest.innerHTML = hits
-            .map(r => `<button type="button" class="guess-suggest-item" data-name="${escapeHtml(r.name)}">${escapeHtml(r.name)}</button>`)
-            .join("");
-        el.suggest.hidden = false;
+       An autocomplete that only appears once you have typed something is
+       help for people who could already half-name the answer, which is the
+       group that needed it least. Nobody can name thirty mazes from
+       memory, and being able to read down them and go "that one" is most
+       of how this is actually played.
+
+       Names already tried this room stay in place, struck through and
+       unclickable, rather than being removed: a list that reshuffles under
+       the cursor between guesses is harder to use than one that holds
+       still, and seeing what you have ruled out is the useful part. */
+    function renderSuggest(sheet) {
+        const box = sheet.refs.suggest;
+        const result = state.results[sheet.roundIndex];
+        if (!result || result.done) { box.innerHTML = ""; return; }
+
+        const q = normalise(sheet.refs.input.value);
+        const spent = new Set((result.guesses || []).map(g => normalise(g.name)));
+
+        const names = ROOMS.filter(r => r.name).sort((a, b) => compareNames(a.name, b.name));
+        const hits = q ? names.filter(r => normalise(r.name).includes(q)) : names;
+
+        if (!hits.length) {
+            box.innerHTML = `<p class="guess-suggest-empty">No maze in the archive matches that.</p>`;
+            return;
+        }
+
+        box.innerHTML = hits.map(r => {
+            const key = normalise(r.name);
+            const isSpent = spent.has(key);
+            const cls = isSpent ? "is-spent" : (q && key === q ? "is-picked" : "");
+            return `<button type="button" class="guess-suggest-item ${cls}" data-name="${escapeHtml(r.name)}"${isSpent ? " disabled" : ""}>${escapeHtml(r.name)}</button>`;
+        }).join("");
     }
 
     function escapeHtml(str) {
@@ -459,7 +522,76 @@
             .replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
-    // ---------- the board ----------
+    // ---------- the deck ----------
+
+    function roundSheet(i) {
+        return sheets.find(s => s.kind === "round" && s.roundIndex === i) || null;
+    }
+
+    /* Where the sheet in play sits in the deck. Everything after it is still
+       tucked along the bottom; everything before it is finished and sits
+       underneath, covered. */
+    function liveIndex() {
+        if (view === "intro") return 0;
+        if (view === "results") return sheets.length - 1;
+        return 1 + state.round;
+    }
+
+    /* Places every sheet. The tucked ones are ordered so the LAST sheet
+       shows the lowest sliver and the next one up shows the highest, which
+       is what makes the bottom edge read as a stack of pages rather than a
+       pile in no particular order. */
+    function layout() {
+        const live = liveIndex();
+        const tuckedCount = sheets.length - 1 - live;
+        // Read by the live sheet's own padding, so its content never ends up
+        // underneath the tabs of the sheets still waiting below it.
+        el.deck.style.setProperty("--tucked", tuckedCount);
+
+        sheets.forEach((s, i) => {
+            const isLive = i === live;
+            const isTucked = i > live;
+            s.el.classList.toggle("is-live", isLive);
+            s.el.classList.toggle("is-tucked", isTucked);
+            s.el.style.zIndex = String(i);
+            /* How far below the sheet in play this one sits. The CSS lifts
+               the ground 2% per step, so the tabs along the bottom read as
+               separate pages rather than one striped block. Measured from
+               the live sheet, not from the top of the deck, so the sheet
+               you are on is always the darkest — and room 5 sits on the
+               same ground room 1 did. */
+            s.el.style.setProperty("--shade", String(Math.max(0, i - live)));
+            s.el.style.transform = isTucked
+                ? `translateY(calc(100% - ${sheets.length - i} * var(--tuck)))`
+                : "translateY(0)";
+            /* inert rather than aria-hidden: it takes the sheet out of the
+               tab order AND out of the accessibility tree in one, so a
+               finished room sitting underneath cannot be tabbed into by
+               someone who cannot see that it is covered. */
+            s.el.toggleAttribute("inert", !isLive);
+        });
+    }
+
+    /* Moves to a sheet. Everything that should happen on arrival happens
+       here rather than at each call site: the deck is re-placed, the sheet
+       is rendered, and whatever wants the caret gets it. */
+    function goTo(next) {
+        view = next;
+        renderAll();
+        if (!el.overlay.classList.contains("open")) return;
+
+        const live = sheets[liveIndex()];
+        if (!live) return;
+        if (live.kind === "round" && !state.results[live.roundIndex].done) {
+            live.refs.input.focus({ preventScroll: true });
+        } else {
+            // Not the input: on a finished room or the results there isn't
+            // one, and the sheet itself is what has just arrived.
+            live.el.querySelector(".guess-sheet-inner").focus({ preventScroll: true });
+        }
+    }
+
+    // ---------- rendering ----------
 
     /* One square per round, in the order they were played.
 
@@ -473,22 +605,48 @@
         return n === 1 ? "🟩" : n === 2 ? "🟨" : "🟧";
     }
 
-    function renderPips() {
-        el.pips.innerHTML = state.results.map((r, i) => {
+    function pipsHtml(activeRound) {
+        return state.results.map((r, i) => {
             const cls = !r.done
-                ? (i === state.round ? "is-current" : "is-todo")
+                ? (i === activeRound ? "is-current" : "is-todo")
                 : r.won
                     ? `is-won g${Math.min(r.guesses.length, 4)}`
                     : "is-lost";
-            return `<li class="guess-pip ${cls}" title="Room ${i + 1}"><span>${i + 1}</span></li>`;
+            const how = !r.done
+                ? (i === activeRound ? "in play" : "not yet played")
+                : r.won
+                    ? `found in ${r.guesses.length}`
+                    : "not found";
+            return `<li class="guess-pip ${cls}"><span aria-hidden="true">${i + 1}</span>
+                <span class="visually-hidden">Room ${i + 1}, ${how}</span></li>`;
         }).join("");
     }
 
-    function renderTries() {
-        const result = currentResult();
+    function renderRound(i) {
+        const sheet = roundSheet(i);
+        if (!sheet) return;
+        const refs = sheet.refs;
+        const result = state.results[i];
+        const roundOver = result.done;
+        const data = rounds[i];
+        const left = TRIES - result.guesses.length;
+
+        refs.label.textContent = `Room ${i + 1} of ${ROUNDS}`;
+        refs.triesLeft.textContent = roundOver ? "" : `${left} ${left === 1 ? "guess" : "guesses"} left`;
+        refs.triesLeft.classList.toggle("is-low", !roundOver && left === 1);
+
+        /* Says out loud that the picture changed. Without it a wrong guess
+           widens the crop by a step that is easy to miss, and the game reads
+           as "same square, one life gone" instead of "here, have more". */
+        refs.flag.textContent = roundOver
+            ? (result.won ? "The whole room" : "The whole room")
+            : `View ${Math.min(result.guesses.length + 1, REVEAL.length)} of ${REVEAL.length}`;
+
+        refs.pips.innerHTML = pipsHtml(i);
+
         const rows = [];
-        for (let i = 0; i < TRIES; i++) {
-            const g = result.guesses[i];
+        for (let n = 0; n < TRIES; n++) {
+            const g = result.guesses[n];
             if (!g) {
                 rows.push(`<li class="guess-try is-empty"></li>`);
             } else {
@@ -498,42 +656,61 @@
                 </li>`);
             }
         }
-        el.tries.innerHTML = rows.join("");
+        refs.tries.innerHTML = rows.join("");
+
+        draw(i);
+
+        // The entry form is only up while the round is live. The name list
+        // lives inside it, so it goes with it.
+        refs.form.hidden = roundOver;
+        renderSuggest(sheet);
+
+        if (roundOver) {
+            const maze = data ? data.maze : null;
+            const last = i === ROUNDS - 1;
+            refs.between.hidden = false;
+            refs.between.innerHTML = `
+                <p class="guess-reveal">
+                    <span class="guess-reveal-verdict ${result.won ? "is-won" : "is-lost"}">${result.won ? "Got it." : "Not this time."}</span>
+                    It was <strong>${escapeHtml(maze ? maze.name : "")}</strong>${maze && maze.creator ? ` by ${escapeHtml(maze.creator)}` : ""}.
+                </p>
+                ${maze ? `<a class="guess-reveal-link" href="home.html#maze-${encodeURIComponent(maze.id)}">See it in the archive &rsaquo;</a>` : ""}
+                <button type="button" class="guess-btn guess-btn--lead guess-advance">${last ? "See how you did &rsaquo;" : `Room ${i + 2} &rsaquo;`}</button>`;
+            const advance = refs.between.querySelector(".guess-advance");
+            if (advance) advance.addEventListener("click", () => (last ? goTo("results") : nextRound()));
+        } else {
+            refs.between.hidden = true;
+            refs.between.innerHTML = "";
+        }
     }
 
-    function renderAll() {
-        if (!state) return;
-        const result = currentResult();
-        const roundOver = result.done;
+    function renderIntro() {
+        const done = state.done;
+        const played = state.results.some(r => r.guesses.length);
+        el.play.innerHTML = done
+            ? "See today's results &rsaquo;"
+            : played
+                ? `Back to room ${state.round + 1} &rsaquo;`
+                : "Start room 1 &rsaquo;";
 
-        el.roundLabel.textContent = `Room ${state.round + 1} of ${ROUNDS}`;
-        el.triesLeft.textContent = roundOver
-            ? ""
-            : `${TRIES - result.guesses.length} ${TRIES - result.guesses.length === 1 ? "guess" : "guesses"} left`;
+        el.splashDate.textContent = new Date(today() + "T00:00:00Z")
+            .toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 
-        renderPips();
-        renderTries();
-        draw();
-
-        // The entry form is only up while a round is live.
-        el.form.hidden = roundOver || state.done;
-        el.status.hidden = true;
-
-        // Between rounds: what it was, and the way on.
-        if (roundOver && !state.done) {
-            el.between.hidden = false;
-            el.between.innerHTML = `
-                <p class="guess-reveal">${result.won ? "Got it." : "Not this time."}
-                    It was <strong>${escapeHtml(round ? round.maze.name : "")}</strong>${round && round.maze.creator ? ` by ${escapeHtml(round.maze.creator)}` : ""}.</p>
-                <button type="button" class="guess-btn" id="guess-next">Next room &rsaquo;</button>`;
-            const next = document.getElementById("guess-next");
-            if (next) next.addEventListener("click", nextRound);
+        /* The foot of the splash is the only place a streak makes sense: on
+           a room sheet it would be a distraction from the picture, and on
+           the results it is already in the table. Nothing is shown at all
+           until there is something to show — a counter reading zero is a
+           worse greeting than no counter. */
+        if (stats.days) {
+            const pct = stats.rounds ? Math.round((stats.solved / stats.rounds) * 100) : 0;
+            el.splashFoot.innerHTML = `Streak <strong>${stats.streak}</strong>
+                &nbsp;·&nbsp; Best <strong>${stats.best}</strong>
+                &nbsp;·&nbsp; <strong>${pct}%</strong> of rooms found across ${stats.days} ${stats.days === 1 ? "day" : "days"}`;
+            el.splashFoot.hidden = false;
         } else {
-            el.between.hidden = true;
-            el.between.innerHTML = "";
+            el.splashFoot.hidden = true;
+            el.splashFoot.innerHTML = "";
         }
-
-        renderSummary();
     }
 
     /* The end of the day: how it went, the streak it fed, and the grid.
@@ -543,12 +720,14 @@
        never quite is. */
     function renderSummary() {
         if (!state.done) {
-            el.summary.hidden = true;
-            el.summary.innerHTML = "";
+            /* Reachable before the fifth room is finished only by tabbing
+               the deck open in a browser that ignores inert, so it says
+               where it is rather than showing an empty box. */
+            el.summary.innerHTML = `<p class="guess-summary-waiting">The scores land here once all five rooms are done.</p>`;
             return;
         }
         const solved = state.results.filter(r => r.won).length;
-        el.summary.hidden = false;
+        const day = picks();
         el.summary.innerHTML = `
             <p class="guess-score"><strong>${solved} of ${ROUNDS}</strong> rooms found</p>
             <p class="guess-grid" aria-label="Result grid">${state.results.map(squareFor).join("")}</p>
@@ -562,12 +741,15 @@
                 <button type="button" class="guess-btn" id="guess-share">Copy result</button>
             </div>
             <p class="guess-next-up" id="guess-next-up"></p>
+            <h4 class="guess-answers-head">Today's five</h4>
             <ul class="guess-answers">
                 ${state.results.map((r, i) => {
-                    const p = pickDay()[i];
+                    const p = day[i];
+                    if (!p) return "";
                     return `<li class="${r.won ? "is-won" : "is-lost"}">
-                        <span class="guess-answers-n">${i + 1}</span>
+                        <span class="guess-answers-n" aria-hidden="true">${i + 1}</span>
                         <a href="home.html#maze-${encodeURIComponent(p.maze.id)}">${escapeHtml(p.maze.name)}</a>
+                        <span class="guess-answers-mark">${r.won ? `found in ${r.guesses.length}` : "missed"}</span>
                     </li>`;
                 }).join("")}
             </ul>`;
@@ -575,6 +757,30 @@
         const share = document.getElementById("guess-share");
         if (share) share.addEventListener("click", () => copyResult(share));
         tickCountdown();
+    }
+
+    function renderAll() {
+        if (!state) return;
+        renderIntro();
+        for (let i = 0; i < ROUNDS; i++) renderRound(i);
+        renderSummary();
+        layout();
+        updateTabs();
+    }
+
+    /* The labels on the sheets still waiting at the bottom. Rewritten on
+       every render because the last one changes as the day goes: "Results"
+       all day, and "Results — 4 of 5" once there is a score in it. */
+    function updateTabs() {
+        sheets.forEach(s => {
+            if (!s.refs.tab) return;
+            if (s.kind === "round") {
+                s.refs.tabLabel.textContent = `Room ${s.roundIndex + 1}`;
+            } else if (s.kind === "results") {
+                const solved = state.results.filter(r => r.won).length;
+                s.refs.tabLabel.textContent = state.done ? `Results — ${solved} of ${ROUNDS}` : "Results";
+            }
+        });
     }
 
     let countdownTimer = null;
@@ -631,29 +837,39 @@
         }
         pool = buildPool();
         if (!pool.length) {
-            el.status.textContent = "There are no room pictures in the archive to make a puzzle from yet.";
-            el.status.hidden = false;
-            setBusy(false);
+            el.play.disabled = true;
+            el.play.textContent = "Nothing to play yet";
+            el.splashFoot.textContent = "There are no room pictures in the archive to make a puzzle from yet.";
+            el.splashFoot.hidden = false;
             return;
         }
         stats = loadStats();
         state = loadState();
-        await prepareRound();
+
+        /* Placed with the animation switched off, so opening the window
+           shows the deck already stacked rather than seven sheets flying
+           into position. */
+        el.deck.classList.add("is-settling");
         renderAll();
+        void el.deck.offsetHeight;        // commit the placement before easing is restored
+        el.deck.classList.remove("is-settling");
+
+        prepareRound(state.round);
     }
 
     function open() {
         el.overlay.classList.add("open");
         document.body.classList.add("modal-open");
+        view = "intro";
         el.window.focus();
-        start();
-        if (state && !state.done && !currentResult().done) el.input.focus();
+        start().then(() => { if (state) goTo("intro"); });
     }
 
     function close() {
         el.overlay.classList.remove("open");
         document.body.classList.remove("modal-open");
         clearInterval(countdownTimer);
+        el.tab.focus({ preventScroll: true });
         // A pasted /guess link should not leave the address bar claiming the
         // game is open once it has been closed.
         if (location.pathname === "/guess") history.replaceState({}, "", "/home.html");
@@ -661,51 +877,69 @@
 
     // ---------- wiring ----------
 
-    function mount() {
-        el = {
-            overlay: document.getElementById("guess-overlay"),
-            window: document.getElementById("guess-window"),
-            close: document.getElementById("guess-close"),
-            canvas: document.getElementById("guess-canvas"),
-            roundLabel: document.getElementById("guess-round"),
-            triesLeft: document.getElementById("guess-tries-left"),
-            pips: document.getElementById("guess-pips"),
-            tries: document.getElementById("guess-tries"),
-            form: document.getElementById("guess-form"),
-            input: document.getElementById("guess-input"),
-            suggest: document.getElementById("guess-suggest"),
-            between: document.getElementById("guess-between"),
-            summary: document.getElementById("guess-summary"),
-            status: document.getElementById("guess-status"),
-            tab: document.getElementById("daily-tab")
-        };
-        if (!el.overlay || !el.tab) return;
+    /* Builds the five room sheets from the template and caches every element
+       each one needs, so nothing downstream has to query the DOM by index or
+       invent unique ids for five copies of the same markup. */
+    function buildDeck() {
+        const tpl = document.getElementById("guess-round-template");
+        const results = el.deck.querySelector('[data-kind="results"]');
+        if (!tpl || !results) return false;
 
-        el.tab.addEventListener("click", open);
-        el.close.addEventListener("click", close);
-        el.overlay.addEventListener("click", e => { if (e.target === el.overlay) close(); });
-        document.addEventListener("keydown", e => {
-            if (e.key !== "Escape" || !el.overlay.classList.contains("open")) return;
-            if (!el.suggest.hidden) hideSuggest();
-            else close();
+        for (let i = 0; i < ROUNDS; i++) {
+            const node = tpl.content.firstElementChild.cloneNode(true);
+            el.deck.insertBefore(node, results);
+        }
+
+        sheets = Array.from(el.deck.querySelectorAll(".guess-sheet")).map(node => {
+            const kind = node.dataset.kind;
+            const refs = {
+                tab: node.querySelector(".guess-sheet-tab"),
+                tabLabel: node.querySelector(".guess-sheet-tab-label"),
+                canvas: node.querySelector(".guess-canvas"),
+                label: node.querySelector(".guess-round"),
+                triesLeft: node.querySelector(".guess-tries-left"),
+                flag: node.querySelector(".guess-picture-flag"),
+                pips: node.querySelector(".guess-pips"),
+                tries: node.querySelector(".guess-tries"),
+                status: node.querySelector(".guess-status"),
+                form: node.querySelector(".guess-entry"),
+                input: node.querySelector(".guess-input"),
+                suggest: node.querySelector(".guess-suggest"),
+                between: node.querySelector(".guess-between")
+            };
+            // Focusable so goTo can put the caret on a sheet that has no
+            // field to put it in — the results, or a finished room.
+            const inner = node.querySelector(".guess-sheet-inner");
+            if (inner) inner.tabIndex = -1;
+            return { el: node, kind, roundIndex: -1, refs };
         });
 
-        el.input.addEventListener("input", showSuggest);
-        el.input.addEventListener("focus", showSuggest);
-        el.suggest.addEventListener("click", e => {
+        let n = 0;
+        sheets.forEach(s => { if (s.kind === "round") s.roundIndex = n++; });
+        sheets.filter(s => s.kind === "round").forEach(wireRound);
+        return true;
+    }
+
+    function wireRound(sheet) {
+        const refs = sheet.refs;
+
+        refs.input.addEventListener("input", () => renderSuggest(sheet));
+
+        /* Fills the field rather than spending the guess outright. With the
+           whole archive listed and scrolling under the pointer, a stray
+           click would otherwise cost a life — and there is a Guess button
+           two inches away to confirm with. */
+        refs.suggest.addEventListener("click", e => {
             const btn = e.target.closest(".guess-suggest-item");
-            if (!btn) return;
-            el.input.value = btn.dataset.name;
-            hideSuggest();
-            el.input.focus();
+            if (!btn || btn.disabled) return;
+            refs.input.value = btn.dataset.name;
+            renderSuggest(sheet);
+            refs.input.focus({ preventScroll: true });
         });
-        el.overlay.addEventListener("click", e => {
-            if (!e.target.closest(".guess-entry")) hideSuggest();
-        }, true);
 
-        el.form.addEventListener("submit", e => {
+        refs.form.addEventListener("submit", e => {
             e.preventDefault();
-            const typed = el.input.value.trim();
+            const typed = refs.input.value.trim();
             if (!typed) return;
             /* Only a real maze name counts. A typo would otherwise burn a
                guess on a maze that does not exist, which is a bad way to
@@ -713,13 +947,48 @@
                "Laberinto Cooperativo" correctly. */
             const match = ROOMS.find(r => r.name && normalise(r.name) === normalise(typed));
             if (!match) {
-                el.status.textContent = "No maze in the archive by that name — pick one from the list.";
-                el.status.hidden = false;
+                refs.status.textContent = "No maze in the archive by that name — pick one from the list.";
+                refs.status.hidden = false;
                 return;
             }
-            el.input.value = "";
-            hideSuggest();
+            refs.input.value = "";
+            refs.status.hidden = true;
             submitGuess(match.name);
+        });
+    }
+
+    function mount() {
+        el = {
+            overlay: document.getElementById("guess-overlay"),
+            window: document.getElementById("guess-window"),
+            close: document.getElementById("guess-close"),
+            deck: document.getElementById("guess-deck"),
+            play: document.getElementById("guess-play"),
+            splashDate: document.getElementById("guess-splash-date"),
+            splashFoot: document.getElementById("guess-splash-foot"),
+            summary: document.getElementById("guess-summary"),
+            tab: document.getElementById("daily-tab")
+        };
+        if (!el.overlay || !el.deck || !el.tab) return;
+        if (!buildDeck()) return;
+
+        el.tab.addEventListener("click", open);
+        el.close.addEventListener("click", close);
+        el.overlay.addEventListener("click", e => { if (e.target === el.overlay) close(); });
+
+        el.play.addEventListener("click", () => {
+            if (!state) return;
+            if (state.done) return goTo("results");
+            prepareRound(state.round);
+            goTo("round");
+        });
+
+        /* Escape closes the window outright. It used to have to close the
+           name list first, but the list is part of the board now rather
+           than something floating over it, so there is nothing to dismiss
+           on the way out. */
+        document.addEventListener("keydown", e => {
+            if (e.key === "Escape" && el.overlay.classList.contains("open")) close();
         });
 
         // /guess is a rewrite to this page (see netlify.toml), so a pasted
