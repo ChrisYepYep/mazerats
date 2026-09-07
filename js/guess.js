@@ -768,18 +768,16 @@
         updateTabs();
     }
 
-    /* The labels on the sheets still waiting at the bottom. Rewritten on
-       every render because the last one changes as the day goes: "Results"
-       all day, and "Results — 4 of 5" once there is a score in it. */
+    /* The labels on the sheets still waiting at the bottom. Fixed text —
+       the results tab carried the score for a while, which put the day's
+       answer on a tab that is on screen the whole time you are still
+       playing the rooms it is scoring. */
     function updateTabs() {
         sheets.forEach(s => {
-            if (!s.refs.tab) return;
-            if (s.kind === "round") {
-                s.refs.tabLabel.textContent = `Room ${s.roundIndex + 1}`;
-            } else if (s.kind === "results") {
-                const solved = state.results.filter(r => r.won).length;
-                s.refs.tabLabel.textContent = state.done ? `Results — ${solved} of ${ROUNDS}` : "Results";
-            }
+            if (!s.refs.tabLabel) return;
+            s.refs.tabLabel.textContent = s.kind === "round"
+                ? `Room ${s.roundIndex + 1}`
+                : "Results";
         });
     }
 

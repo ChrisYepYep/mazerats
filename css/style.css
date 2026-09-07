@@ -1837,14 +1837,20 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 /* The room-viewing modal's close button is just the pixel-art X itself —
    no button chrome — so it overrides .chrome-close's frame back out to
-   nothing. Scoped to its id rather than .chrome-close so the admin
+   nothing. Scoped by id rather than by .chrome-close so the admin
    confirm/info dialogs (which share that class) keep their plain "×"
    glyph in the normal cream button frame.
 
    Transparent, and the grip runs on underneath it: the X artwork is opaque
    and covers the dots where it sits, and the 6px of padding around it lets
-   them through, which is how Habbo's own close buttons sit on their bars. */
-#modal-close {
+   them through, which is how Habbo's own close buttons sit on their bars.
+
+   The game window is listed here too. Being a list of ids, this does not
+   pick up new windows on its own — the game shipped carrying the same X
+   sprite and got the cream button frame from .chrome-close instead, which
+   is what a white box behind the X means. */
+#modal-close,
+#guess-close {
     background: none;
     border: none;
     border-radius: 0;
@@ -1854,9 +1860,11 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding: 6px;
 }
 
-#modal-close:hover { background: none; }
+#modal-close:hover,
+#guess-close:hover { background: none; }
 
-#modal-close img {
+#modal-close img,
+#guess-close img {
     width: 14px;
     height: auto;
     image-rendering: pixelated;
