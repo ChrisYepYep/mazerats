@@ -5374,8 +5374,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
    against it as it always has. */
 .modal .chrome-titlebar { --titlebar-pad: 152px; }
 
-/* An event has no Completed, so its pair is one button wide. */
-.modal:not(:has(.modal-meta-actions .walked-toggle)) .chrome-titlebar { --titlebar-pad: 84px; }
+/* An event has no Completed, so its pair is one button wide.
+
+   :not(.is-ec) because an EC event is an event too: without it this matched
+   EC modals and outweighed their own reservation, which sits at the other
+   end of the bar and needs a different number. Nothing above 999px reads
+   either value — the buttons are in the tab by then — but this rule is not
+   inside a media query, so it reaches down into the narrow layout where
+   they are, and that is where it did the damage. */
+.modal:not(.is-ec):not(:has(.modal-meta-actions .walked-toggle)) .chrome-titlebar { --titlebar-pad: 84px; }
 
 /* Both drawn as the site's own small chrome buttons — the raised bevel and
    chrome border its nav and fields wear, at this row's size. They read as a
@@ -8613,8 +8620,12 @@ body[data-page="admin"] .site-footer p {
     transform: translateY(-50%);
 }
 
-/* 42px of stand-off above, plus the button itself. */
-.modal.is-ec .chrome-titlebar { --titlebar-pad: 116px; }
+/* There is no reservation to make at this width any more: above 999px the
+   Share button is in the tab on the modal's right edge, not on this bar, and
+   the titlebar keeps only the 40px .chrome-close needs (see "the same tab, on
+   the room modal"). The rule that was here reserved 116px for a button that
+   is no longer up here, and could not win anyway. The reservation that still
+   matters is the one in the narrow block, where the buttons do come back. */
 
 
 /* ---------- a Habbo article, shown in place of an event's full details ----------
@@ -10091,11 +10102,19 @@ body[data-page="admin"] #activity-sessions {
        trio underneath the title on a desktop was quietly clipping the first
        character or two of a long name here. */
     .modal .chrome-titlebar { --titlebar-pad: 102px; }
-    .modal:not(:has(.modal-meta-actions .walked-toggle)) .chrome-titlebar { --titlebar-pad: 52px; }
+    /* :not(.is-ec) because an EC event has no Completed toggle either, so
+       this matched it too — and beat its own rule below, which asks for
+       more. Specificity, not order: :not() and :has() take the specificity
+       of their most specific argument, so ".modal-meta-actions
+       .walked-toggle" makes this four class-level components against
+       .modal.is-ec's three, and moving either rule would not have helped.
+       Excluding EC here leaves its own rule to apply unopposed. */
+    .modal:not(.is-ec):not(:has(.modal-meta-actions .walked-toggle)) .chrome-titlebar { --titlebar-pad: 52px; }
     /* An EC event's Share sits at the same end as the close button (see
        .modal.is-ec's own rule), so that end has to hold both — 42px of
        stand-off plus the glyph-only button the labels above collapse it
-       to. */
+       to. Measured at 820px: the glyph starts 67px from the bar's right
+       edge, so 52px let a long name's box run 15px underneath it. */
     .modal.is-ec .chrome-titlebar { --titlebar-pad: 76px; }
     .modal .chrome-titlebar .modal-meta-actions { gap: 4px; }
     .modal .chrome-titlebar .modal-share-btn,
