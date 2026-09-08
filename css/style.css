@@ -948,13 +948,20 @@ main { display: block; flex: 1 0 auto; }
     }
 }
 
-/* Homepage's shorter top bar — also applied to the admin and welcome
-   (index.html) pages so every remaining page's header matches height/
-   spacing exactly, rather than the base .site-header padding further up
-   (still there as a fallback, but nothing should actually be using it). */
+/* Homepage's shorter top bar — also applied to the admin, welcome
+   (index.html) and map pages so every remaining page's header matches
+   height/spacing exactly, rather than the base .site-header padding further
+   up (still there as a fallback, but nothing should actually be using it).
+
+   The map was missing from this list until somebody noticed its top bar was
+   taller than everywhere else: 62px against 46px, being the base 14px of
+   padding rather than this 6px. That is exactly the drift this rule exists
+   to prevent, and it happened because the list is opt-in — a page added
+   after it was written does not join it by itself. */
 body[data-page="home"] .site-header,
 body[data-page="admin"] .site-header,
-body[data-page="welcome"] .site-header { padding: 6px 24px; }
+body[data-page="welcome"] .site-header,
+body[data-page="wizard"] .site-header { padding: 6px 24px; }
 body[data-page="home"] .hero { padding-top: 18px; }
 
 .hero-title {

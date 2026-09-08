@@ -109,13 +109,31 @@
    between. */
 .wiz-head .wiz-search { margin-left: auto; }
 
+/* The map's title, and the one place on this page NOT set in the hand the
+   map itself is lettered in.
+
+   Caveat is the map's handwriting — it is what the rooms are named in, and
+   what the typeface stands in for where a room has no cut-out of its own.
+   Used for the title as well it made the heading look like one more label
+   that had floated off the drawing.
+
+   An old-style serif instead, which is what a title page of this sort has
+   always been set in, and no download for it: Palatino and Book Antiqua
+   ship with Windows and macOS, Georgia is everywhere including Android, and
+   Times is the floor. All four are the same shape of letter — humanist,
+   calligraphic, a pen behind it — so the title reads the same wherever it
+   lands rather than falling back to something with a different character.
+
+   Slightly tighter and a little more spaced out than a body serif, because
+   at this size a title wants air between the letters more than it wants
+   size. */
 .wiz-head h1 {
     margin: 0;
-    font-family: 'Caveat', Georgia, serif;
-    font-size: clamp(28px, 4vw, 46px);
+    font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, 'Times New Roman', serif;
+    font-size: clamp(26px, 3.4vw, 40px);
     font-weight: 700;
     color: var(--amber-bright);
-    letter-spacing: 0.01em;
+    letter-spacing: 0.03em;
 }
 
 .wiz-intro,
