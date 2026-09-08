@@ -599,6 +599,35 @@ window.WizardMap = function WizardMap(options) {
         if (layer.contrast != null && layer.contrast !== 1) filters.push(`contrast(${layer.contrast})`);
         if (layer.saturate != null && layer.saturate !== 1) filters.push(`saturate(${layer.saturate})`);
         if (layer.blur) filters.push(`blur(${layer.blur}px)`);
+
+        /* An ink edge around the picture, for the ones that need to be told
+           apart from the paper rather than blended into it.
+
+           The house crests are why this exists. Three of them are drawn in
+           deep red, green and blue and sit at 3.4:1 to 6.7:1 against the
+           parchment; the fourth is Hufflepuff, which is gold, and gold on
+           tan measures 1.09:1 — the same brightness as the sheet it is lying
+           on. No blend mode and no filter fixes that, because there is
+           nothing dark in the picture to work with. What separates it from
+           the paper has to come from outside the picture, and an inked
+           outline is what a drawn map would have used anyway.
+
+           Two shadows rather than one: a tight dark line for the edge and a
+           wider faint one under it, which is what stops the first reading as
+           a sticker cut-out. Both are scaled to how big the picture is drawn
+           on the sheet, not left in fixed pixels — a 1px line around a crest
+           is an outline, and the same 1px around the castle would be
+           invisible. */
+        if (layer.ink) {
+            const strength = Math.max(0, Math.min(1, Number(layer.ink)));
+            // The drawn width in map pixels, which is the space these blurs
+            // are measured in.
+            const drawn = (Number(layer.w) || 8) / 100 * (map.width || 2000);
+            const near = (drawn * 0.008 * strength).toFixed(2);
+            const far = (drawn * 0.02 * strength).toFixed(2);
+            filters.push(`drop-shadow(0 0 ${near}px rgba(58, 38, 22, ${(0.7 * strength).toFixed(2)}))`);
+            filters.push(`drop-shadow(0 0 ${far}px rgba(58, 38, 22, ${(0.35 * strength).toFixed(2)}))`);
+        }
         el.style.filter = filters.join(" ");
     }
 

@@ -143,7 +143,7 @@ const FIELDS = {
        reads them. */
     layer: ["name", "image", "x", "y", "w", "h", "opacity", "z", "hidden",
         "blend", "rotation", "flipX", "flipY",
-        "grayscale", "sepia", "brightness", "contrast", "saturate", "blur",
+        "grayscale", "sepia", "brightness", "contrast", "saturate", "blur", "ink",
         "fromZoom", "toZoom"],
     /* `note` is what tells two rooms with the same name apart — there are
        three Grand Staircases on this map and two 6th Floor Corridors, and
@@ -244,7 +244,7 @@ exports.handler = async (event) => {
            is the one call here with no per-record confirmation behind it. */
         const MOVABLE = ["x", "y", "w", "h", "size", "rotation", "align", "points", "z",
             "opacity", "spacing", "gap", "blend", "flipX", "flipY",
-            "grayscale", "sepia", "brightness", "contrast", "saturate", "blur",
+            "grayscale", "sepia", "brightness", "contrast", "saturate", "blur", "ink",
             "fromZoom", "toZoom"];
         const writes = [];
         for (const item of items) {

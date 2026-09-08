@@ -139,7 +139,7 @@ window.AdminWizard = (function () {
            unsaved badge clears, and the change is gone. */
         const CARRIED = ["x", "y", "w", "h", "size", "rotation", "align", "points", "z",
             "opacity", "spacing", "gap", "blend", "flipX", "flipY",
-            "grayscale", "sepia", "brightness", "contrast", "saturate", "blur",
+            "grayscale", "sepia", "brightness", "contrast", "saturate", "blur", "ink",
             "fromZoom", "toZoom"];
         const items = [...pending.values()].map(({ kind, record }) => {
             const item = { kind, id: record.id };
@@ -1217,6 +1217,11 @@ window.AdminWizard = (function () {
             + field("Contrast", num("contrast", record.contrast == null ? "" : record.contrast, "0.05", 'min="0" max="3" placeholder="1"'), true)
             + field("Colour strength", num("saturate", record.saturate == null ? "" : record.saturate, "0.05", 'min="0" max="3" placeholder="1"'), true)
             + field("Blur (px)", num("blur", record.blur == null ? "" : record.blur, "0.5", 'min="0" max="40" placeholder="0"'), true)
+            /* For a picture that has to stand off the paper rather than sink
+               into it — a crest, a seal, anything whose own colours are as
+               pale as the parchment. 0 is no edge at all, which is what
+               every drawing on the map wants. */
+            + field("Ink edge", num("ink", record.ink == null ? "" : record.ink, "0.1", 'min="0" max="1" placeholder="0"'), true)
             + field("Flip", `<select data-set="flip">
                 ${opt("", "Not flipped", record.flipX ? (record.flipY ? "both" : "x") : (record.flipY ? "y" : ""))}
                 ${opt("x", "Left to right", record.flipX ? (record.flipY ? "both" : "x") : (record.flipY ? "y" : ""))}
