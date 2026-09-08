@@ -125,8 +125,12 @@ why the line above exists — a narrowed scan that looked identical to a full
 one would be how someone rescans three mazes, sees "Done", and believes the
 archive was done.
 
-Press **REFRESH** in the selector after adding a maze in the admin page;
-the list is cached in `tools/.cache/`.
+The list is cached in `tools/.cache/`, and re-fetched every time the
+selector is opened — so a maze added in the admin page is there the next
+time you open the page, without being asked for. **REFRESH** at the foot of
+the list asks again without leaving it, and says `Refreshing...` while it
+does. If a fetch fails, it says so on that same line rather than leaving
+the old list standing there looking current.
 
 ---
 

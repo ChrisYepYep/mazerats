@@ -1192,36 +1192,92 @@ function Draw-PageMazes($g, [int]$x, [int]$y, [int]$w, [int]$h) {
     $hintY = $y + $h - (Px 10)
     $rows = [Math]::Max(1, [Math]::Floor(($hintY - $listY - (Px 2)) / $rowH))
 
-    if ($script:Mazes.Count -eq 0) {
+    # Already filtered and ordered by Update-MazeMatches — deliberately not
+    # re-derived here, so a toggle cannot rearrange the list under the cursor.
+    $all = @($script:MazeMatches)
+    # The fetch is a background job under a known key, so "is one in flight"
+    # is just "is it still in the table" — Poll-Jobs takes it out.
+    $fetching = ($null -ne $script:Jobs["maze-list"])
+    $failed = (($script:Mazes.Count -eq 0) -and ($script:MazeError.Count -gt 0))
+
+    <# Only the list AREA changes with the state. The bar under it — what is
+       showing, and REFRESH — is drawn once, below, for every state there is.
+
+       REFRESH used to be drawn inside two of these branches, which meant it
+       was missing from the other two, and the one that mattered was "No maze
+       matches that.": type the name of the maze you added this morning, get
+       told there is no such maze, and the button that would go and ask the
+       database is the button that has just left the screen. #>
+    if ($failed) {
         <# Says what actually went wrong, rather than "Fetching..." for ever.
            The old wording was a guess at the cause AND a lie about the
            state: on a machine that had not run `npm install`, node exited
            immediately with "Cannot find module 'mongodb'" and this sat
            claiming to be fetching for the rest of the session. #>
-        if ($script:MazeError.Count) {
-            Draw-Text $g "Couldn't load the maze list:" $FontBody $Bad $x $listY
-            $i = 1
-            foreach ($line in $script:MazeError) {
-                if ($i -ge $rows) { break }
-                Draw-Text $g (Fit-Text $g $line $FontBody $w) $FontBody $ScreenDim $x ($listY + $i * $rowH)
-                $i++
-            }
-            Draw-Button $g "mazes-refresh" "RETRY" ($x + $w - (Px 44)) ($hintY - (Px 2)) (Px 44) (Px 12) $true
-        } else {
-            Draw-Text $g "Fetching the maze list..." $FontBody $ScreenDim $x $listY
+        Draw-Text $g "Couldn't load the maze list:" $FontBody $Bad $x $listY
+        $i = 1
+        foreach ($line in $script:MazeError) {
+            if ($i -ge $rows) { break }
+            Draw-Text $g (Fit-Text $g $line $FontBody $w) $FontBody $ScreenDim $x ($listY + $i * $rowH)
+            $i++
         }
-        return
     }
-
-    # Already filtered and ordered by Update-MazeMatches — deliberately not
-    # re-derived here, so a toggle cannot rearrange the list under the cursor.
-    $all = @($script:MazeMatches)
-
-    if ($all.Count -eq 0) {
+    elseif ($script:Mazes.Count -eq 0) {
+        # Not "Fetching..." unless something is: with nothing in flight and
+        # no error to show, that word is the same lie in a new place.
+        $empty = if ($fetching) { "Fetching the maze list..." } else { "No mazes yet. Press REFRESH." }
+        Draw-Text $g $empty $FontBody $ScreenDim $x $listY
+    }
+    elseif ($all.Count -eq 0) {
         Draw-Text $g "No maze matches that." $FontBody $ScreenDim $x $listY
-        return
+    }
+    else {
+        Draw-MazeRows $g $all $rows $rowH $x $listY $w
     }
 
+    <# What the bar says, in order of what is worth the one line available.
+
+       A fetch in flight comes first because it is the answer to "did my
+       press do anything" — and it is the only answer there is, now that the
+       press no longer writes its acknowledgement into the FURNI page's log,
+       where it could not be read from this page.
+
+       A failed refresh comes next, and it is the reason this bar exists at
+       all: MazeError was only ever painted when the list was EMPTY, so a
+       refresh that failed against a list already on screen failed in total
+       silence. You pressed REFRESH, nothing moved, and the console's account
+       of itself was a maze list it had known for a week was stale. #>
+    $hint = ""
+    $col = $ScreenDim
+    if ($script:Mazes.Count -eq 0) {
+        # Whatever there is to say about an empty list, the list area has
+        # already said it in full width. Saying it again down here just
+        # spends the line.
+        $hint = ""
+    } elseif ($fetching) {
+        $hint = "Refreshing..."
+    } elseif ($script:MazeError.Count) {
+        $hint = Fit-Text $g $script:MazeError[0] $FontBody ($w - (Px 46))
+        $col = $Bad
+    } elseif ($all.Count -eq 0) {
+        $hint = "0 of $($script:Mazes.Count) mazes"
+    } elseif ($all.Count -gt $rows) {
+        $from = $script:MazeScroll + 1
+        $to = [Math]::Min($all.Count, $script:MazeScroll + $rows)
+        $hint = "$from-$to of $($all.Count)  -  scroll"
+    } else {
+        $hint = "$($all.Count) mazes"
+    }
+    if ($hint) { Draw-Text $g $hint $FontBody $col $x $hintY }
+
+    $label = if ($failed) { "RETRY" } else { "REFRESH" }
+    Draw-Button $g "mazes-refresh" $label ($x + $w - (Px 44)) ($hintY - (Px 2)) (Px 44) (Px 12) $true
+}
+
+<# The rows themselves, lifted out so the state machine above reads as the
+   four states it is rather than trailing a screenful of painting behind its
+   last branch. #>
+function Draw-MazeRows($g, $all, [int]$rows, [int]$rowH, [int]$x, [int]$listY, [int]$w) {
     $script:MazeScroll = Limit-Scroll $script:MazeScroll $all.Count $rows
 
     for ($i = 0; $i -lt [Math]::Min($rows, $all.Count - $script:MazeScroll); $i++) {
@@ -1241,15 +1297,6 @@ function Draw-PageMazes($g, [int]$x, [int]$y, [int]$w, [int]$h) {
            moment those two derivations drifted apart. #>
         Draw-Row $g ("maze-tog:" + $m.Id) $label $(if ($on) { $Screen } else { $ScreenDim }) $x ($listY + $i * $rowH) $w $rowH
     }
-
-    if ($all.Count -gt $rows) {
-        $from = $script:MazeScroll + 1
-        $to = [Math]::Min($all.Count, $script:MazeScroll + $rows)
-        Draw-Text $g "$from-$to of $($all.Count)  -  scroll" $FontBody $ScreenDim $x $hintY
-    } else {
-        Draw-Text $g "$($all.Count) mazes" $FontBody $ScreenDim $x $hintY
-    }
-    Draw-Button $g "mazes-refresh" "REFRESH" ($x + $w - (Px 44)) ($hintY - (Px 2)) (Px 44) (Px 12) $true
 }
 
 <# The settings a scan is aimed with.
@@ -1992,13 +2039,29 @@ $surface.Add_MouseDown({
             $script:MazeQuery = ""
             $script:MazeScroll = 0
             Update-MazeMatches
-            # Only fetched if there is nothing to show. Pressing REFRESH is
-            # how you ask for a fresh list once there is one.
-            if ($script:Mazes.Count -eq 0) { Start-MazeFetch }
+            <# Fetched every time the page is opened, not only when there is
+               nothing to show.
+
+               "Only if empty" made the cache authoritative for the life of
+               the console, and the cache is a file on disk that survives
+               restarts — so the first fetch on a machine was, in practice,
+               the only one, and the selector went on offering last week's
+               archive until someone thought to press REFRESH. Opening this
+               page is a deliberate act, it happens rarely, and the fetch is
+               one background round trip that leaves the cached list on
+               screen while it runs. There is nothing to save by skipping it.
+
+               The list is still painted from the cache first, so this costs
+               no waiting: the new one lands a moment later through the
+               timer, and Refresh-Mazes re-applies the filter when it does. #>
+            Start-MazeFetch
         }
         "mazes-back"  { $script:Page = "furni"; $script:MazeQuery = ""; Update-MazeMatches }
         "mazes-clear" { $script:SelectedMazes = @(); Save-Settings; Update-MazeMatches }
-        "mazes-refresh" { Start-MazeFetch; Add-Line $script:FurniLines "Refreshing the maze list..." }
+        # The acknowledgement is the bar at the foot of this page, which says
+        # "Refreshing..." while the job is in flight. It used to be a line in
+        # the FURNI page's log, which is not a page you can see from here.
+        "mazes-refresh" { Start-MazeFetch }
         default {
             if ($b.Id -like "tab-*") {
                 $script:Page = $b.Id.Substring(4)
