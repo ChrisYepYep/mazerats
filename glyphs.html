@@ -46,10 +46,53 @@
 
   * { box-sizing: border-box; }
 
+  /* The site's own ground: the maze tile with the gradient over it.
+
+     Copied rather than linked because this page deliberately does not load
+     css/style.css — it is a single-theme reference sheet with its own small
+     palette, and pulling in the whole stylesheet to get a background would
+     bring the header, the chrome and the window furniture with it.
+
+     All five properties matter and none is decoration. The gradient is
+     drawn in OVERLAY at an effective 90%, which is what the alpha on every
+     stop already carries; the flat rgba(18,12,7,0.1) between the two layers
+     is the tile's missing tenth, since CSS has no per-layer opacity; each
+     layer needs its own size and repeat, or the full-height gradient
+     inherits the tile's 220px and repeats down the page as a row of dark
+     bands; and `fixed` pins the dark band to the top of the SCREEN rather
+     than the top of the document, so it does not scroll away down a long
+     sheet. The reasoning behind the stop values is written out in full
+     above body in css/style.css, and is not repeated here.
+
+     The path has one less step than the stylesheet's: this page is at the
+     root, style.css is in css/. */
   body {
     margin: 0;
     padding: 28px 20px 56px;
-    background: var(--ground);
+    background-color: var(--ground);
+    background-image:
+        linear-gradient(to bottom,
+            rgba(10, 7, 4, 0.7920) 0%,
+            rgba(10, 7, 4, 0.7899) 5%,
+            rgba(10, 7, 4, 0.7771) 10%,
+            rgba(10, 7, 4, 0.7480) 15%,
+            rgba(10, 7, 4, 0.7015) 20%,
+            rgba(10, 7, 4, 0.6400) 25%,
+            rgba(10, 7, 4, 0.5685) 30%,
+            rgba(10, 7, 4, 0.4935) 35%,
+            rgba(10, 7, 4, 0.4220) 40%,
+            rgba(10, 7, 4, 0.3605) 45%,
+            rgba(10, 7, 4, 0.3140) 50%,
+            rgba(10, 7, 4, 0.2849) 55%,
+            rgba(10, 7, 4, 0.2721) 60%,
+            rgba(10, 7, 4, 0.2700) 65%,
+            rgba(10, 7, 4, 0.2700) 100%),
+        linear-gradient(rgba(18, 12, 7, 0.1), rgba(18, 12, 7, 0.1)),
+        url('assets/img/MazeBG.png');
+    background-repeat: no-repeat, no-repeat, repeat;
+    background-size: 100% 100%, 100% 100%, 220px;
+    background-blend-mode: overlay, normal, normal;
+    background-attachment: fixed;
     color: var(--parchment);
     font-family: 'Roboto', system-ui, sans-serif;
     line-height: 1.55;
