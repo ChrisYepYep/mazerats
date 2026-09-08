@@ -2154,8 +2154,8 @@ window.AdminWizard = (function () {
             roomQuery = els.roomSearch.value;
             renderRoomList();
         });
-        $("wiz-admin-zoom-in").addEventListener("click", () => view.zoomTo(view.getZoom() * 1.5));
-        $("wiz-admin-zoom-out").addEventListener("click", () => view.zoomTo(view.getZoom() / 1.5));
+        $("wiz-admin-zoom-in").addEventListener("click", () => view.zoomBy(1.5));
+        $("wiz-admin-zoom-out").addEventListener("click", () => view.zoomBy(1 / 1.5));
         $("wiz-admin-zoom-reset").addEventListener("click", () => view.setZoom(1));
 
         /* Leaving with unsaved moves is the one way to lose real work here —

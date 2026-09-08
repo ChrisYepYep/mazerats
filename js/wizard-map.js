@@ -99,13 +99,88 @@ window.WizardMap = function WizardMap(options) {
        stage. Done per-axis rather than as one rule because at most zoom
        levels the map is wider than the frame and shorter than it at the same
        time, and a single rule has to be wrong about one of them. */
-    function clampPan() {
+    function clampedPan(px, py, atZoom) {
         const { w, h } = stageSize();
-        const scale = fit * zoom;
+        const scale = fit * atZoom;
         const mapW = map.width * scale;
         const mapH = map.height * scale;
-        panX = mapW <= w ? (w - mapW) / 2 : Math.min(0, Math.max(w - mapW, panX));
-        panY = mapH <= h ? (h - mapH) / 2 : Math.min(0, Math.max(h - mapH, panY));
+        return {
+            x: mapW <= w ? (w - mapW) / 2 : Math.min(0, Math.max(w - mapW, px)),
+            y: mapH <= h ? (h - mapH) / 2 : Math.min(0, Math.max(h - mapH, py))
+        };
+    }
+
+    function clampPan() {
+        const held = clampedPan(panX, panY, zoom);
+        panX = held.x;
+        panY = held.y;
+    }
+
+    /* ---------- gliding ----------
+
+       Where the view is going, as against where it is. Every zoom used to be
+       applied the instant it was asked for, which on a wheel with notches is
+       a series of jumps and on the buttons is a hard cut — and on a map, a
+       cut costs you your place, because the thing you were looking at is
+       suddenly a different size and somewhere else.
+
+       So the view keeps a target and eases towards it. Exponential easing
+       rather than a fixed-length tween, because the two things asking are
+       very different: a button press is one big step, and a trackpad sends
+       dozens of tiny ones a frame apart. A tween would have to be restarted
+       by every one of those and would never finish; easing towards whatever
+       the latest target is handles both, and settles at the same rate either
+       way.
+
+       Framerate-independent on purpose: the per-frame fraction is derived
+       from the time actually elapsed, so this eases at the same speed on a
+       144Hz screen as on a 60Hz one rather than four times faster. */
+    const GLIDE_RATE = 0.24;    // of the remaining distance, per 60Hz frame
+    const GLIDE_SNAP = 0.0005;  // close enough to call it arrived
+    let wantZoom = zoom;
+    let wantPanX = panX;
+    let wantPanY = panY;
+    let gliding = 0;
+    let lastFrame = 0;
+
+    // After anything that moves the view directly — a drag, a resize — so the
+    // glide does not pull it back to where it was going before.
+    function settle() {
+        wantZoom = zoom;
+        wantPanX = panX;
+        wantPanY = panY;
+        if (gliding) { cancelAnimationFrame(gliding); gliding = 0; }
+    }
+
+    function glideTo(nextZoom, nextPanX, nextPanY) {
+        wantZoom = nextZoom;
+        const held = clampedPan(nextPanX, nextPanY, nextZoom);
+        wantPanX = held.x;
+        wantPanY = held.y;
+        if (gliding) return;
+        lastFrame = performance.now();
+        gliding = requestAnimationFrame(step);
+    }
+
+    function step(now) {
+        const dt = Math.min(64, now - lastFrame) || 16.7;
+        lastFrame = now;
+        // 1 - (1 - rate)^frames: the fraction of the gap to close given how
+        // many 60Hz frames' worth of time has actually passed.
+        const k = 1 - Math.pow(1 - GLIDE_RATE, dt / 16.7);
+        zoom += (wantZoom - zoom) * k;
+        panX += (wantPanX - panX) * k;
+        panY += (wantPanY - panY) * k;
+        const done = Math.abs(wantZoom - zoom) < wantZoom * GLIDE_SNAP
+            && Math.abs(wantPanX - panX) < 0.4 && Math.abs(wantPanY - panY) < 0.4;
+        if (done) {
+            zoom = wantZoom;
+            panX = wantPanX;
+            panY = wantPanY;
+            gliding = 0;
+        }
+        applyTransform();
+        if (!done) gliding = requestAnimationFrame(step);
     }
 
     function applyTransform() {
@@ -127,30 +202,69 @@ window.WizardMap = function WizardMap(options) {
        pinch — so the thing under it stays under it. Without this, a wheel
        zoom walks whatever you were looking at off the edge of the window,
        which on a map is the difference between exploring and hunting. */
-    function zoomTo(next, screenX, screenY) {
+    /* Zooms about a point on the screen — the cursor, or the middle of a
+       pinch — so the thing under it stays under it.
+
+       The arithmetic works from where the view is GOING, not from where it
+       currently is. That is what lets three quick notches of the wheel add
+       up to three notches: worked from the lagging live value, each one
+       would be measured against a view still travelling from the last, and
+       the three together would land short. */
+    /* Zoom by a FACTOR — a notch of the wheel, a press of +, a double click.
+
+       This exists because "one and a half times bigger" has to mean one and
+       a half times bigger than where the view is HEADING, not than where it
+       has got to so far. Multiplying the live value was fine while zooming
+       was instant, since the two were the same number; now that the view
+       eases, three quick notches measured against a value still catching up
+       with the first one land at 1.4x instead of 2.5x. Two of the three
+       notches simply went missing, which felt exactly like a dropped input.
+
+       Every caller that used to write zoomTo(getZoom() * f) wants this. */
+    function zoomBy(factor, screenX, screenY, opts) {
+        return zoomTo(wantZoom * factor, screenX, screenY, opts);
+    }
+
+    function zoomTo(next, screenX, screenY, { smooth = true } = {}) {
         const limit = Math.max(map.minZoom || 1, Math.min(map.maxZoom || 6, next));
-        if (limit === zoom) return;
+        if (limit === wantZoom) return;
         const box = stage.getBoundingClientRect();
         const sx = screenX == null ? box.width / 2 : screenX - box.left;
         const sy = screenY == null ? box.height / 2 : screenY - box.top;
-        const before = fit * zoom;
+        const before = fit * wantZoom;
         const after = fit * limit;
-        panX = sx - ((sx - panX) / before) * after;
-        panY = sy - ((sy - panY) / before) * after;
-        zoom = limit;
-        applyTransform();
+        const toPanX = sx - ((sx - wantPanX) / before) * after;
+        const toPanY = sy - ((sy - wantPanY) / before) * after;
+        if (!smooth) {
+            zoom = limit;
+            panX = toPanX;
+            panY = toPanY;
+            settle();
+            applyTransform();
+            return;
+        }
+        glideTo(limit, toPanX, toPanY);
     }
 
     /* Puts a point on the map in the middle of the frame, at a given zoom.
        Used by search, by the exits inside a room's sheet, by a /wizard/<id>
        link arriving cold, and by the editor's room list. */
-    function flyTo(xPct, yPct, toZoom) {
+    function flyTo(xPct, yPct, toZoom, { smooth = true } = {}) {
         const { w, h } = stageSize();
-        if (toZoom != null) zoom = Math.max(map.minZoom || 1, Math.min(map.maxZoom || 6, toZoom));
-        const scale = fit * zoom;
-        panX = w / 2 - (xPct / 100) * map.width * scale;
-        panY = h / 2 - (yPct / 100) * map.height * scale;
-        applyTransform();
+        const target = toZoom == null ? wantZoom
+            : Math.max(map.minZoom || 1, Math.min(map.maxZoom || 6, toZoom));
+        const scale = fit * target;
+        const toPanX = w / 2 - (xPct / 100) * map.width * scale;
+        const toPanY = h / 2 - (yPct / 100) * map.height * scale;
+        if (!smooth) {
+            zoom = target;
+            panX = toPanX;
+            panY = toPanY;
+            settle();
+            applyTransform();
+            return;
+        }
+        glideTo(target, toPanX, toPanY);
     }
 
     /* A point on the screen as a position on the map, in the same per cent
@@ -1203,7 +1317,9 @@ window.WizardMap = function WizardMap(options) {
 
         if (pointers.size === 2 && pinchStart) {
             const [mx, my] = pinchMiddle();
-            zoomTo(pinchZoom * (pinchSpread() / pinchStart), mx, my);
+            // Fingers, like a drag: the map tracks the pinch itself rather
+            // than easing after it.
+            zoomTo(pinchZoom * (pinchSpread() / pinchStart), mx, my, { smooth: false });
             return;
         }
         if (!dragging) return;
@@ -1217,10 +1333,14 @@ window.WizardMap = function WizardMap(options) {
             stage.setPointerCapture(e.pointerId);
             stage.classList.add("is-dragging");
         }
+        // A drag is the hand, not a request: it moves the view directly and
+        // cancels any glide still running, which would otherwise haul the map
+        // back to wherever the last zoom was heading.
         panX += e.clientX - lastX;
         panY += e.clientY - lastY;
         lastX = e.clientX;
         lastY = e.clientY;
+        settle();
         applyTransform();
     });
 
@@ -1244,12 +1364,12 @@ window.WizardMap = function WizardMap(options) {
         // deltaMode 1 is lines rather than pixels (Firefox, mostly), and a
         // line is worth roughly sixteen pixels of the same gesture.
         const delta = e.deltaY * (e.deltaMode === 1 ? 16 : 1);
-        zoomTo(zoom * Math.exp(-delta / 400), e.clientX, e.clientY);
+        zoomBy(Math.exp(-delta / 400), e.clientX, e.clientY);
     }, { passive: false });
 
     stage.addEventListener("dblclick", e => {
         if (e.target.closest(".wiz-room")) return;
-        zoomTo(zoom * 1.8, e.clientX, e.clientY);
+        zoomBy(1.8, e.clientX, e.clientY);
     });
 
     // Arrow keys pan, +/- zoom — but only while the map itself has focus, so
@@ -1259,13 +1379,11 @@ window.WizardMap = function WizardMap(options) {
         const moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
         if (moves[e.key]) {
             e.preventDefault();
-            panX += moves[e.key][0];
-            panY += moves[e.key][1];
-            applyTransform();
+            glideTo(wantZoom, wantPanX + moves[e.key][0], wantPanY + moves[e.key][1]);
         } else if (e.key === "+" || e.key === "=") {
-            zoomTo(zoom * 1.4);
+            zoomBy(1.4);
         } else if (e.key === "-" || e.key === "_") {
-            zoomTo(zoom / 1.4);
+            zoomBy(1 / 1.4);
         }
     });
 
@@ -1281,7 +1399,9 @@ window.WizardMap = function WizardMap(options) {
             const midX = ((w / 2 - panX) / scale) / map.width * 100;
             const midY = ((h / 2 - panY) / scale) / map.height * 100;
             fit = computeFit();
-            flyTo(midX, midY);
+            // Not smooth: a resize has already moved everything, and easing
+            // into place afterwards reads as the map wobbling.
+            flyTo(midX, midY, null, { smooth: false });
         }, 120);
     });
 
@@ -1324,6 +1444,7 @@ window.WizardMap = function WizardMap(options) {
         applyBands,
         applyTransform,
         zoomTo,
+        zoomBy,
         flyTo,
         screenToPct,
         fullName,
@@ -1353,8 +1474,8 @@ window.WizardMap = function WizardMap(options) {
             if (el) applyLayerVisual(el, layer);
         },
         getZoom: () => zoom,
-        setZoom(next) { zoom = next; applyTransform(); },
-        refit() { fit = computeFit(); applyTransform(); },
+        setZoom(next) { zoom = next; settle(); applyTransform(); },
+        refit() { fit = computeFit(); settle(); applyTransform(); },
 
         /* The bounding box the rooms actually occupy, in map percentages.
 

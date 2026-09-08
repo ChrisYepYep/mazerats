@@ -162,6 +162,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const room = roomById(id);
         if (!room) return;
         hideTooltip();
+        // Read before the sheet is marked open below: whether it was ALREADY
+        // open decides whether this room is a new place in the history or a
+        // move within one. See the pushState at the end of this function.
+        const alreadyOpen = modal.classList.contains("open");
 
         modalTitle.textContent = view.fullName(room);
         const picture = room.image || room.thumb;
@@ -245,9 +249,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
         modal.classList.add("open");
         modal.querySelector(".modal").focus();
-        // A room is a place you can link to, so opening one is a place in the
-        // history: Back closes the sheet rather than leaving the site.
-        if (push) history.pushState({ room: room.id }, "", `/wizard/${addressFor(room.id)}`);
+        /* A room is a place you can link to, so opening one is a place in the
+           history: Back closes the sheet rather than leaving the site.
+
+           Walking on through "Leads to" REPLACES that entry instead of adding
+           another. It used to add one per room, which made the close button
+           unusable: closing calls history.back(), back landed on the room
+           before, popstate saw a room in the path and dutifully reopened the
+           sheet on it. Four rooms deep, closing took four presses and looked
+           like the window refusing to shut.
+
+           So the sheet is one entry however far you walk, and Back and the
+           close button now mean the same thing — which is the thing people
+           try. The address still changes with every room, so a link, a
+           refresh and a share all still land on the room you are looking
+           at. What is given up is stepping BACK through the rooms you walked,
+           and that is the right trade: nobody was getting that far, because
+           the way out was broken. */
+        if (push) {
+            const url = `/wizard/${addressFor(room.id)}`;
+            const entry = { room: room.id };
+            if (alreadyOpen) history.replaceState(entry, "", url);
+            else history.pushState(entry, "", url);
+        }
     }
 
     function closeRoom({ pop = true } = {}) {
@@ -341,8 +365,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const zoomInBtn = document.getElementById("wiz-zoom-in");
     const zoomOutBtn = document.getElementById("wiz-zoom-out");
-    zoomInBtn.addEventListener("click", () => view.zoomTo(view.getZoom() * 1.5));
-    zoomOutBtn.addEventListener("click", () => view.zoomTo(view.getZoom() / 1.5));
+    zoomInBtn.addEventListener("click", () => view.zoomBy(1.5));
+    zoomOutBtn.addEventListener("click", () => view.zoomBy(1 / 1.5));
 
     /* Back to where the map opens, not out to its full extent.
 
@@ -411,14 +435,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
            A pasted /wizard/<id> link overrides it, and lands on the room it
            names instead — that link was about a particular room. */
+        /* The opening view is set, not travelled to. Every other flyTo on
+           this page glides, which is what makes following a link inside the
+           map feel like moving rather than cutting — but the first view has
+           nowhere to glide FROM, and easing into it from the fitted whole
+           map is a lurch before the reader has looked at anything. */
         const wanted = roomIdFromPath();
         const room = wanted && roomById(wanted);
         if (room) {
-            view.flyTo(room.x, room.y, 2.6);
+            view.flyTo(room.x, room.y, 2.6, { smooth: false });
             openRoom(room.id, { push: false });
         } else if (map.startZoom) {
             view.flyTo(map.startX == null ? 50 : map.startX,
-                map.startY == null ? 50 : map.startY, map.startZoom);
+                map.startY == null ? 50 : map.startY, map.startZoom, { smooth: false });
         }
 
         stage.classList.add("is-ready");
