@@ -51,6 +51,28 @@
 
     // ---------- the pool ----------
 
+    /* A picture for the card, whatever shape the record keeps one in.
+
+       This was `thumb || entrance`, and it put a broken image on the board:
+       a maze with no thumbnail falls through to `entrance`, which is an
+       OBJECT — {image, label, …} — not a string, so the card asked the
+       browser for a picture called "[object Object]". The archive's own
+       entrance shots are stored that way and always have been; the game was
+       the thing making an assumption about them.
+
+       Every shape the archive uses, in the order a card would want them:
+       the thumbnail, then the entrance, then the first thing in the
+       gallery — and nothing at all rather than a guess. */
+    function pictureOf(record) {
+        const pick = value => {
+            if (typeof value === "string") return value.trim();
+            if (value && typeof value === "object" && typeof value.image === "string") return value.image.trim();
+            return "";
+        };
+        const gallery = Array.isArray(record.gallery) ? record.gallery : [];
+        return pick(record.thumb) || pick(record.entrance) || pick(gallery[0]) || "";
+    }
+
     function buildPool(rooms, events) {
         const out = [];
         (rooms || []).forEach(room => {
@@ -62,7 +84,7 @@
                 kind: "maze",
                 title: room.name,
                 by: room.creator || "",
-                thumb: room.thumb || room.entrance || "",
+                thumb: pictureOf(room),
                 at: when.at,
                 month: when.month,
                 precision: when.precision
@@ -77,7 +99,7 @@
                 kind: "event",
                 title: ev.title,
                 by: ev.host || "",
-                thumb: ev.thumb || ev.entrance || "",
+                thumb: pictureOf(ev),
                 at: when.at,
                 month: when.month,
                 precision: when.precision
@@ -257,9 +279,18 @@
             .replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
+    /* draggable="false" is not decoration, it is the whole reason the card
+       can be dragged at all.
+
+       An <img> is natively draggable in every browser, so pressing on the
+       picture and moving started the BROWSER's own image drag: it swallowed
+       the pointer events this game listens for, showed a ghost of the
+       photograph, and dropped nothing anywhere. The card looked stuck to the
+       spot. It never showed up in testing because a synthetic drag does not
+       start native drag-and-drop — only a real mouse does. */
     function thumbHtml(card) {
         return card.thumb
-            ? `<img class="ratro-thumb" src="${escapeHtml(card.thumb)}" alt="" loading="lazy">`
+            ? `<img class="ratro-thumb" src="${escapeHtml(card.thumb)}" alt="" loading="lazy" draggable="false">`
             : `<span class="ratro-thumb ratro-thumb--blank" aria-hidden="true"></span>`;
     }
 
@@ -555,11 +586,26 @@
             gaps().forEach(g => g.classList.remove("is-open"));
         }
 
+        /* Native drag-and-drop is refused outright. Belt and braces with
+           draggable="false" on the picture: anything else inside the card
+           that a browser decides is draggable — a selection of the title,
+           for instance — would take the gesture away in the same way. */
+        hand.addEventListener("dragstart", e => e.preventDefault());
+
         hand.addEventListener("pointerdown", e => {
             if (e.button != null && e.button !== 0) return;
+            // Stops the press turning into a text selection or an image
+            // drag before the first move has even been seen.
+            e.preventDefault();
             startX = e.clientX;
             startY = e.clientY;
-            hand.setPointerCapture(e.pointerId);
+            try {
+                hand.setPointerCapture(e.pointerId);
+            } catch (err) {
+                /* A pointer that is no longer active cannot be captured.
+                   Nothing to do about it, and it must not throw out of the
+                   handler — the drag simply does not start. */
+            }
         });
 
         hand.addEventListener("pointermove", e => {

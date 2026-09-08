@@ -12368,6 +12368,17 @@ body[data-page="admin"] #activity-sessions {
 .ratro-thumb {
     display: block;
     width: 100%;
+    /* The picture takes no pointer of its own, so a press anywhere on the
+       card is a press on the CARD — which is the thing that gets dragged.
+       -webkit-user-drag stops the browser offering the image as a drag of
+       its own, which is what made the card feel stuck: the native image drag
+       swallowed the gesture and dropped nothing. draggable="false" says the
+       same thing in the markup; both are here because the two mechanisms
+       are not the same mechanism. */
+    pointer-events: none;
+    -webkit-user-drag: none;
+    user-select: none;
+    -webkit-user-select: none;
     /* Square, so six cards in a row are six of the same shape and the line
        reads as a line rather than as a row of different pictures. */
     aspect-ratio: 1 / 1;
@@ -12423,6 +12434,10 @@ body[data-page="admin"] #activity-sessions {
     background: var(--bg-panel);
     cursor: grab;
     touch-action: none;
+    /* Nothing on the card is text somebody wants to select, and a press that
+       starts a selection is a press that does not start a drag. */
+    user-select: none;
+    -webkit-user-select: none;
     transition: transform 0.12s ease-out, opacity 0.12s ease-out;
 }
 
