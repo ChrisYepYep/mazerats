@@ -100,5 +100,138 @@ window.Daily = (function () {
         }
     }
 
-    return { today, seededRandom, seedFrom, shuffle, dayBefore, claimReset };
+    /* ---------- the leaderboards ----------
+
+       Ratrospect and Odd One Out share a board endpoint and, from here
+       down, share the drawing of it too: same spans, same rows, same look
+       as Guess the Maze, which is where the classes come from. Three daily
+       games with three subtly different boards would be three things to
+       keep in step for no gain to anybody reading them.
+
+       What each game passes in is what it DID — which gap a card went into,
+       which tile was picked. Never a score: the server derives the day and
+       works the points out for itself. See netlify/functions/daily-scores.js. */
+    const SCORES_URL = "/.netlify/functions/daily-scores";
+
+    const escapeHtml = str => String(str == null ? "" : str)
+        .replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+    /* Posts a finished day. Silent by design — whether a score reached a
+       board is not something to interrupt somebody's result with, and the
+       board underneath is the confirmation. Signed out it still posts and
+       is told, politely, that there is no name to put on a row. */
+    async function submit(game, day, moves) {
+        try {
+            const res = await fetch(SCORES_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ game, day, moves })
+            });
+            return res.ok ? await res.json() : null;
+        } catch (e) {
+            // The local record is already kept; there is nothing to say.
+            return null;
+        }
+    }
+
+    const RANGES = [
+        { key: "day", label: "Today", empty: "Nobody has finished today yet." },
+        { key: "week", label: "This week", empty: "No scores this week yet." },
+        { key: "month", label: "This month", empty: "No scores this month yet." },
+        { key: "allTime", label: "All time", empty: "No scores recorded yet." }
+    ];
+
+    function niceDate(iso) {
+        const d = new Date(iso + "T00:00:00Z");
+        return d.toLocaleDateString(undefined, { day: "numeric", month: "long", timeZone: "UTC" });
+    }
+
+    /* Someone else's day, as five squares. Safe beside a name because it
+       says how each round went and nothing about what was in it. */
+    function miniGrid(grid) {
+        if (!Array.isArray(grid) || !grid.length) return "";
+        const cells = grid.map(n => `<span class="guess-board-cell ${n ? "is-won g1" : "is-lost"}"></span>`).join("");
+        const solved = grid.filter(Boolean).length;
+        return `<span class="guess-board-grid" role="img" aria-label="${solved} of ${grid.length} right">${cells}</span>`;
+    }
+
+    function rows(list, mine, empty) {
+        if (!list || !list.length) return `<li class="guess-board-empty">${escapeHtml(empty)}</li>`;
+        return list.map((row, i) => `
+            <li class="guess-board-row${mine && row.id === mine ? " is-me" : ""}">
+                <span class="guess-board-rank" aria-hidden="true">${i + 1}</span>
+                ${row.avatar
+                    ? `<img class="guess-board-face" src="${escapeHtml(row.avatar)}" alt="" aria-hidden="true" loading="lazy">`
+                    : `<span class="guess-board-face is-blank" aria-hidden="true"></span>`}
+                <span class="guess-board-name">${escapeHtml(row.name || "Someone")}</span>
+                ${miniGrid(row.grid)}
+                <span class="guess-board-score">${row.points}</span>
+            </li>`).join("");
+    }
+
+    /* Draws the board into a host element and keeps it there: one fetch
+       brings all four spans, so the tabs are a redraw rather than a round
+       trip. Never throws — a board that will not load is a disappointment,
+       not a failure of the game, and the day's own result is already on
+       screen either way. */
+    function boards(host, game, opts) {
+        if (!host) return;
+        const o = opts || {};
+        let data = null;
+        let range = "day";
+
+        const me = () => (window.Account && Account.current ? Account.current.id : null);
+
+        function draw() {
+            if (!data) {
+                host.innerHTML = `<p class="guess-board-note">Fetching the scores…</p>`;
+                return;
+            }
+            if (data === "failed") {
+                host.innerHTML = `<p class="guess-board-note">The scoreboard could not be reached just now.</p>`;
+                return;
+            }
+            const invite = me() ? "" : `
+                <p class="guess-board-note guess-board-invite">
+                    Your ${o.points || 0} points are saved on this device.
+                    <button type="button" class="guess-btn" data-daily-signin>Sign in with Discord to be listed</button>
+                </p>`;
+            const spec = RANGES.find(r => r.key === range) || RANGES[0];
+            const span = range === "week" && data.weekFrom ? `Since ${niceDate(data.weekFrom)}`
+                : range === "month" && data.monthFrom ? `Since ${niceDate(data.monthFrom)}`
+                    : range === "day" ? "Your day against everyone else's"
+                        : "Every day the game has run";
+            const tabs = RANGES.map(r => `
+                <button type="button" class="guess-board-range${r.key === range ? " is-on" : ""}"
+                        data-range="${r.key}" aria-pressed="${r.key === range}">${escapeHtml(r.label)}</button>`).join("");
+
+            host.innerHTML = `
+                ${invite}
+                <div class="guess-board">
+                    <div class="guess-board-ranges" role="group" aria-label="Which span the board covers">${tabs}</div>
+                    <p class="guess-board-span">${escapeHtml(span)}</p>
+                    <ol class="guess-board-list">${rows(data[range], me(), spec.empty)}</ol>
+                </div>`;
+
+            host.querySelectorAll(".guess-board-range").forEach(btn => {
+                btn.addEventListener("click", () => { range = btn.dataset.range; draw(); });
+            });
+            const signin = host.querySelector("[data-daily-signin]");
+            if (signin && window.Account && Account.signIn) {
+                signin.addEventListener("click", () => Account.signIn());
+            }
+        }
+
+        draw();
+        fetch(`${SCORES_URL}?game=${encodeURIComponent(game)}&day=${encodeURIComponent(today())}`, {
+            headers: { Accept: "application/json" },
+            credentials: "same-origin"
+        })
+            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+            .then(body => { data = body; draw(); })
+            .catch(() => { data = "failed"; draw(); });
+    }
+
+    return { today, seededRandom, seedFrom, shuffle, dayBefore, claimReset, submit, boards };
 })();

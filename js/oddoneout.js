@@ -40,6 +40,7 @@
     let stats = null;
     let el = {};
     let showSplash = true;
+    let posted = false;
 
     // ---------- the pool ----------
 
@@ -179,6 +180,14 @@
 
     // ---------- drawing it ----------
 
+    /* The day, written out. Guess the Maze puts it under its title and it
+       is worth having: a daily game should say which day it is dealing,
+       especially one somebody has come back to after a while. */
+    function longDate() {
+        const d = new Date(day() + "T12:00:00Z");
+        return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+    }
+
     function escapeHtml(str) {
         return String(str == null ? "" : str)
             .replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -205,23 +214,24 @@
     function splashHtml() {
         const started = state.picks.length > 0;
         return `
-            <div class="daily-splash">
-                <p class="daily-splash-eyebrow">Every day, five rounds</p>
-                <h3 class="daily-splash-title">ODD ONE OUT</h3>
-                <p class="daily-splash-blurb">Four rooms. Three of them are from the same maze,
-                    and one has wandered in from somewhere else. Find the intruder.</p>
-                <ol class="daily-rules">
-                    <li><span class="daily-rules-n" aria-hidden="true">1</span>
-                        <p>The three that belong are <strong>different rooms</strong>, so they will not look alike — go on the building instead.</p></li>
-                    <li><span class="daily-rules-n" aria-hidden="true">2</span>
-                        <p>The floor, the palette, how densely it is furnished: a maze is <strong>one builder's habits</strong>, room after room.</p></li>
-                    <li><span class="daily-rules-n" aria-hidden="true">3</span>
-                        <p>One pick a round, <strong>a hundred points</strong> for each one you spot. No lives — every round is played.</p></li>
+            <div class="guess-splash">
+                <p class="guess-splash-eyebrow">Every day, five rounds</p>
+                <h3 class="guess-splash-title"><span>ODD ONE</span><span>OUT</span></h3>
+                <p class="guess-splash-date">${escapeHtml(longDate())}</p>
+
+                <ol class="guess-rules">
+                    <li><span class="guess-rules-n" aria-hidden="true">1</span>
+                        <p>Four rooms a round. Three are from the same maze and one has <strong>wandered in</strong> from somewhere else.</p></li>
+                    <li><span class="guess-rules-n" aria-hidden="true">2</span>
+                        <p>The three that belong are different rooms, so go on <strong>the building</strong>: the floor, the palette, how densely it is furnished.</p></li>
+                    <li><span class="guess-rules-n" aria-hidden="true">3</span>
+                        <p>One pick a round, a hundred points each. Everyone gets the same five, new at midnight, UTC.</p></li>
                 </ol>
+
                 <button type="button" class="guess-btn guess-btn--lead" id="odd-start">
                     ${started ? "Back to the rooms" : "Show me the first four"} &rsaquo;
                 </button>
-                ${stats.streak > 1 ? `<p class="daily-note">${stats.streak} day streak.</p>` : ""}
+                <p class="guess-splash-foot">${stats.streak > 1 ? escapeHtml(stats.streak + " day streak.") : ""}</p>
             </div>`;
     }
 
@@ -277,6 +287,8 @@
                 </div>
                 <p class="daily-note" id="odd-foot">Four more rooms tomorrow.</p>
 
+                <div class="guess-boards" id="odd-boards"></div>
+
                 <h4 class="guess-answers-head">Who was hiding where</h4>
                 <ul class="guess-answers">${rows}</ul>
             </div>`;
@@ -309,6 +321,14 @@
     }
 
     function wireResults() {
+        // Which tile was picked each round, in order. See the same note in
+        // js/ratrospect.js.
+        if (!posted) {
+            posted = true;
+            window.Daily.submit("odd", day(), state.picks.map(p => ({ tile: p.tile })));
+        }
+        window.Daily.boards(document.getElementById("odd-boards"), "odd", { points: score() });
+
         const share = document.getElementById("odd-share");
         if (share) {
             share.addEventListener("click", async () => {
@@ -344,7 +364,8 @@
         }
         loadState();
         loadStats();
-        showSplash = true;
+        showSplash = state.picks.length === 0 && !state.done;
+        posted = false;
         render();
     }
 

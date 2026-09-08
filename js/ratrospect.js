@@ -48,6 +48,9 @@
     let stats = null;
     let el = {};
     let showSplash = true;
+    // One submission a day, and one per window opening at most: the results
+    // card redraws on every range switch of the board it contains.
+    let posted = false;
 
     // ---------- the pool ----------
 
@@ -274,6 +277,14 @@
 
     // ---------- drawing it ----------
 
+    /* The day, written out. Guess the Maze puts it under its title and it
+       is worth having: a daily game should say which day it is dealing,
+       especially one somebody has come back to after a while. */
+    function longDate() {
+        const d = new Date(day() + "T12:00:00Z");
+        return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+    }
+
     function escapeHtml(str) {
         return String(str == null ? "" : str)
             .replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -326,23 +337,24 @@
     function splashHtml() {
         const started = state.results.length > 0;
         return `
-            <div class="daily-splash">
-                <p class="daily-splash-eyebrow">Every day, six from the archive</p>
-                <h3 class="daily-splash-title">RATROSPECT</h3>
-                <p class="daily-splash-blurb">The first card is already on the table with its date showing.
-                    Five more follow, one at a time — drag each one into the line where you think it belongs.</p>
-                <ol class="daily-rules">
-                    <li><span class="daily-rules-n" aria-hidden="true">1</span>
-                        <p>Put each card <strong>where it happened</strong> — before the line, after it, or in any gap between.</p></li>
-                    <li><span class="daily-rules-n" aria-hidden="true">2</span>
+            <div class="guess-splash">
+                <p class="guess-splash-eyebrow">Every day, six from the archive</p>
+                <h3 class="guess-splash-title"><span>RATRO</span><span>SPECT</span></h3>
+                <p class="guess-splash-date">${escapeHtml(longDate())}</p>
+
+                <ol class="guess-rules">
+                    <li><span class="guess-rules-n" aria-hidden="true">1</span>
+                        <p>One card is already down with its date showing. Drag each new one <strong>where it happened</strong> — before the line, after it, or into any gap.</p></li>
+                    <li><span class="guess-rules-n" aria-hidden="true">2</span>
                         <p>Right, and it stays with its date shown. Wrong, and it goes — and so does one of your <strong>three lives</strong>.</p></li>
-                    <li><span class="daily-rules-n" aria-hidden="true">3</span>
-                        <p>No two cards ever come from the <strong>same month</strong>, so there is always a right answer.</p></li>
+                    <li><span class="guess-rules-n" aria-hidden="true">3</span>
+                        <p>No two cards ever come from the <strong>same month</strong>. Everyone gets the same six, new at midnight, UTC.</p></li>
                 </ol>
+
                 <button type="button" class="guess-btn guess-btn--lead" id="ratro-start">
                     ${started ? "Back to the line" : "Deal the first card"} &rsaquo;
                 </button>
-                ${stats.streak > 1 ? `<p class="daily-note">${stats.streak} day streak.</p>` : ""}
+                <p class="guess-splash-foot">${stats.streak > 1 ? escapeHtml(stats.streak + " day streak.") : ""}</p>
             </div>`;
     }
 
@@ -501,6 +513,8 @@
                 </div>
                 <p class="daily-note" id="ratro-foot">A new six every day.</p>
 
+                <div class="guess-boards" id="ratro-boards"></div>
+
                 <h4 class="guess-answers-head">Today's order</h4>
                 <ul class="guess-answers">${rows}</ul>
             </div>`;
@@ -520,6 +534,16 @@
     }
 
     function wireResults() {
+        /* The run as it was played: which gap each card went into, in
+           order. The server deals the same six and works out for itself
+           which of those were right — see netlify/functions/daily-scores.js
+           for why the page never sends a score. */
+        if (!posted) {
+            posted = true;
+            window.Daily.submit("ratrospect", day(), state.results.map(r => ({ gap: r.gap })));
+        }
+        window.Daily.boards(document.getElementById("ratro-boards"), "ratrospect", { points: score() });
+
         const share = document.getElementById("ratro-share");
         if (!share) return;
         share.addEventListener("click", async () => {
@@ -687,6 +711,7 @@
            wants a reminder. */
         showSplash = state.results.length === 0 && !state.done;
         reveal = null;
+        posted = false;
         render();
     }
 

@@ -12151,7 +12151,6 @@ body[data-page="admin"] #activity-sessions {
 .modal.daily-window {
     width: min(720px, 94vw);
     max-width: min(720px, 94vw);
-    max-height: min(88vh, 920px);
     display: flex;
     flex-direction: column;
 }
@@ -12167,9 +12166,22 @@ body[data-page="admin"] #activity-sessions {
     display: flex;
 }
 
+/* A FIXED height, and it is the point of this rule rather than a detail of
+   it. The sheet holds four quite different things over a day — the rules,
+   the board, what just happened, the result — and sized to its contents the
+   window grew and shrank between every one of them, jumping under the
+   cursor mid-game. Guess the Maze solved this the same way and for the same
+   reason: its deck is a clamp, not a measurement.
+
+   The clamp rather than a flat number so a short window still fits it, and
+   the content scrolls inside a frame that never moves. */
 .daily-sheet {
-    flex: 1;
-    min-height: 0;
+    height: clamp(430px, 66vh, 560px);
+    /* Fills the frame across as well as standing to a fixed height: the
+       frame is a flex row, and without this the sheet is only as wide as
+       its widest line, leaving the rest of the window bare. */
+    flex: 1 1 auto;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 14px;
@@ -12179,16 +12191,6 @@ body[data-page="admin"] #activity-sessions {
     scrollbar-color: var(--wood-dark) #2e2418;
 }
 
-/* ---------- the way in ---------- */
-
-.daily-splash {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    align-items: flex-start;
-}
-
-.daily-splash-eyebrow,
 .daily-eyebrow {
     margin: 0;
     font-family: 'Silkscreen', monospace;
@@ -12196,61 +12198,6 @@ body[data-page="admin"] #activity-sessions {
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: #8a6a3d;
-}
-
-.daily-splash-title {
-    margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: clamp(1.3rem, 4.5vw, 1.9rem);
-    letter-spacing: 0.06em;
-    color: var(--amber-bright);
-}
-
-.daily-splash-blurb {
-    margin: 0;
-    max-width: 46ch;
-    font-size: 0.9rem;
-    line-height: 1.5;
-    color: var(--parchment);
-}
-
-/* The rules, numbered. Three of them: a fourth is a manual, and two cannot
-   say both what you do and how a round ends. */
-.daily-rules {
-    margin: 2px 0 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.daily-rules li {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-}
-
-.daily-rules p {
-    margin: 0;
-    font-size: 0.85rem;
-    line-height: 1.45;
-    color: var(--parchment-dim);
-}
-
-.daily-rules strong { color: var(--parchment); }
-
-.daily-rules-n {
-    flex: 0 0 auto;
-    width: 20px;
-    height: 20px;
-    display: grid;
-    place-items: center;
-    border: 1px solid var(--amber);
-    border-radius: 50%;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.6rem;
-    color: var(--amber-bright);
 }
 
 /* ---------- while it is being played ---------- */

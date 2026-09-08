@@ -7,17 +7,16 @@
    ----------------------------------------------------------------------
    Where a day actually lives, which is the whole difficulty
 
-   Guess the Maze keeps a row per player per day in `guess_scores`, because
-   it has a leaderboard and a leaderboard needs a server. Ratrospect and Odd
-   One Out keep nothing here at all: their day is in the player's own
-   browser, in localStorage, which is not something a server can reach into.
+   All three now keep a scored row per player per day — Guess the Maze in
+   guess_scores, the other two in daily_scores since they were given
+   leaderboards of their own. None of them keeps the day IN PROGRESS there:
+   that lives in the player's own browser, in localStorage, which is not
+   something a server can reach into.
 
-   So "reset" cannot mean one thing for all three, and pretending otherwise
-   would be a button that lies for two games out of three. It is two things,
-   and a reset does whichever apply:
+   So a reset is two things, and it does both:
 
      · the scored row for today is deleted, so the day can be played and
-       submitted again (Guess the Maze only — the others have no row);
+       submitted again;
 
      · a TICKET is written here, and the game claims it the next time that
        player opens it. The page asks "is there a reset waiting for me",
@@ -53,13 +52,16 @@ const RESETS = "daily_resets";
    and — by ticket — the browser's own copy. */
 const PLAYER_STATE = "player_state";
 
-/* The games this endpoint knows about. `scored` says whether the game keeps
-   rows in guess_scores — which decides whether a reset has anything to
-   delete on top of the ticket it always writes. */
+/* The games this endpoint knows about, and where each keeps its scores.
+
+   Guess the Maze has always had its own collection. The other two had none
+   at all until they were given leaderboards; they now write to
+   daily_scores, one row per player per day per game. `collection` is what a
+   reset has to clear on top of the ticket it always writes. */
 const GAMES = [
-    { key: "guess", name: "Guess the Maze", scored: true },
-    { key: "ratrospect", name: "Ratrospect", scored: false },
-    { key: "odd", name: "Odd One Out", scored: false }
+    { key: "guess", name: "Guess the Maze", collection: "guess_scores", filter: {} },
+    { key: "ratrospect", name: "Ratrospect", collection: "daily_scores", filter: { game: "ratrospect" } },
+    { key: "odd", name: "Odd One Out", collection: "daily_scores", filter: { game: "odd" } }
 ];
 
 const isGame = key => GAMES.some(g => g.key === key);
@@ -128,6 +130,16 @@ exports.handler = async (event) => {
            play: everyone with a scored row, plus anyone with a ticket
            waiting. A search box over Discord's whole user list would be a
            different feature and a worse one. */
+        /* Everyone the games have seen. Guess the Maze's own collection is
+           the older and larger one; the other two live in daily_scores, and
+           a player who has only ever played those must still be findable
+           here. */
+        const knownDaily = await db.collection("daily_scores").aggregate([
+            { $group: { _id: "$playerId", name: { $last: "$name" }, avatar: { $last: "$avatar" }, days: { $sum: 1 }, points: { $sum: "$points" }, lastDay: { $max: "$day" } } },
+            { $sort: { lastDay: -1 } },
+            { $limit: 200 }
+        ]).toArray();
+
         const known = await scores.aggregate([
             {
                 $group: {
@@ -145,15 +157,30 @@ exports.handler = async (event) => {
 
         const pending = await resets.find({}).toArray();
         const byPlayer = new Map();
-        known.forEach(row => byPlayer.set(row._id, {
-            id: row._id,
-            name: row.name || "Someone",
-            avatar: row.avatar || null,
-            days: row.days,
-            points: row.points,
-            lastDay: row.lastDay,
-            pending: []
-        }));
+        const addRow = row => {
+            const seen = byPlayer.get(row._id);
+            if (!seen) {
+                byPlayer.set(row._id, {
+                    id: row._id,
+                    name: row.name || "Someone",
+                    avatar: row.avatar || null,
+                    days: row.days,
+                    points: row.points,
+                    lastDay: row.lastDay,
+                    pending: []
+                });
+                return;
+            }
+            // Somebody who plays more than one of them: their days and
+            // points are the total across all three, and the most recent
+            // day is whichever game they played last.
+            seen.days += row.days;
+            seen.points += row.points;
+            if (!seen.lastDay || (row.lastDay && row.lastDay > seen.lastDay)) seen.lastDay = row.lastDay;
+            if (!seen.avatar && row.avatar) seen.avatar = row.avatar;
+        };
+        known.forEach(addRow);
+        knownDaily.forEach(addRow);
         pending.forEach(t => {
             if (!byPlayer.has(t.playerId)) {
                 byPlayer.set(t.playerId, {
@@ -177,21 +204,36 @@ exports.handler = async (event) => {
         let detail = null;
         if (params.playerId) {
             const id = String(params.playerId);
-            const rows = await scores.find({ playerId: id }, { projection: { _id: 0 } })
-                .sort({ day: -1 }).limit(30).toArray();
             const waiting = pending.filter(t => t.playerId === id).map(t => t.game);
-            detail = {
-                id,
-                games: GAMES.map(g => ({
+
+            // Each game's own rows, from wherever that game keeps them.
+            const perGame = await Promise.all(GAMES.map(async g => {
+                const rows = await db.collection(g.collection)
+                    .find(Object.assign({ playerId: id }, g.filter), { projection: { _id: 0 } })
+                    .sort({ day: -1 }).limit(30).toArray();
+                const todayRow = rows.find(r => r.day === today());
+                return {
                     key: g.key,
                     name: g.name,
-                    scored: g.scored,
-                    playedToday: g.scored ? rows.some(r => r.day === today()) : null,
-                    todayPoints: g.scored ? (rows.find(r => r.day === today()) || {}).points ?? null : null,
-                    days: g.scored ? rows.length : null,
-                    resetWaiting: waiting.includes(g.key)
-                })),
-                recent: rows.slice(0, 8).map(r => ({ day: r.day, points: r.points, solved: r.solved }))
+                    scored: true,
+                    playedToday: Boolean(todayRow),
+                    todayPoints: todayRow ? todayRow.points : null,
+                    days: rows.length,
+                    resetWaiting: waiting.includes(g.key),
+                    rows
+                };
+            }));
+
+            detail = {
+                id,
+                games: perGame.map(({ rows, ...rest }) => rest),
+                /* The recent list is Guess the Maze's, because it is the one
+                   with a solved-out-of-five to show and the longest history.
+                   A merged list of three games' days would need a column to
+                   say which game each row was, which is a report rather than
+                   the thing this panel is for. */
+                recent: (perGame.find(g => g.key === "guess") || { rows: [] }).rows
+                    .slice(0, 8).map(r => ({ day: r.day, points: r.points, solved: r.solved }))
             };
         }
 
@@ -221,11 +263,12 @@ exports.handler = async (event) => {
         }
 
         let mirrorCleared = false;
-        if (meta.scored) {
+        {
             // Today only. Deleting a player's whole history is a different
             // and much larger decision than giving them today back, and it
             // is not one a single button should be able to make.
-            const gone = await scores.deleteOne({ playerId, day: today() });
+            const gone = await db.collection(meta.collection)
+                .deleteOne(Object.assign({ playerId, day: today() }, meta.filter));
             deleted = gone.deletedCount || 0;
 
             /* And the account's mirror of the day in progress, which is the
@@ -233,8 +276,9 @@ exports.handler = async (event) => {
                Only cleared if it is TODAY's: a mirror left over from
                yesterday is already ignored by the game, and removing it
                would be tidying up something nobody asked about. */
-            const state = await db.collection(PLAYER_STATE)
-                .findOne({ playerId }, { projection: { guess: 1 } });
+            const state = meta.key === "guess"
+                ? await db.collection(PLAYER_STATE).findOne({ playerId }, { projection: { guess: 1 } })
+                : null;
             if (state && state.guess && state.guess.day === today()) {
                 await db.collection(PLAYER_STATE).updateOne({ playerId }, { $set: { guess: null } });
                 mirrorCleared = true;
