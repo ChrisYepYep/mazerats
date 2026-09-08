@@ -43,8 +43,36 @@ window.AdminWizard = (function () {
     let view = null;
     let data = { map: {}, rooms: [], paths: [], layers: [] };
     let mode = "move";
-    let selected = null;          // { kind, id }
+    let selected = null;          // { kind, id } — the one the inspector shows
+
+    /* Everything currently picked, `selected` included and always last.
+
+       A second list rather than making `selected` an array, because the two
+       answer different questions and almost every use wants the first one:
+       the inspector, the room list and the zoom-band controls all act on ONE
+       record and would each have had to decide what to do with five. What
+       reads this list is dragging, nudging and deleting — the operations
+       where "and the same again to the others" is the whole point. */
+    let picked = [];
+
+    const isPicked = (kind, id) => picked.some(p => p.kind === kind && p.id === id);
+
+    /* Locked: the map may be looked at and panned, but nothing on it moves.
+
+       The editor's own gestures are the problem it solves. Dragging the
+       parchment is how you pan, and the parchment is mostly covered in
+       rooms — so reaching for an empty patch to pull the map across, and
+       landing a pixel inside a name, silently drags the name instead. You
+       do not notice until the unsaved-changes count goes up. Locked, every
+       press falls through to the pan, and the count cannot move on its own.
+
+       Selecting still works, and so does the inspector: locking is about
+       what a DRAG does, not about making the map read-only. */
+    let locked = false;
+    const LOCK_KEY = "mazerats_wiz_locked";
+
     let trailFrom = null;         // first room picked in TRAIL mode
+    let marquee = null;           // the rubber band, while one is being drawn
     // What has been moved but not yet saved, keyed "kind:id" so a record
     // dragged five times is still one pending write.
     const pending = new Map();
@@ -110,7 +138,7 @@ window.AdminWizard = (function () {
            here but missing from either list is the worst kind of bug: the
            unsaved badge clears, and the change is gone. */
         const CARRIED = ["x", "y", "w", "h", "size", "rotation", "align", "points", "z",
-            "opacity", "spacing", "blend", "flipX", "flipY",
+            "opacity", "spacing", "gap", "blend", "flipX", "flipY",
             "grayscale", "sepia", "brightness", "contrast", "saturate", "blur",
             "fromZoom", "toZoom"];
         const items = [...pending.values()].map(({ kind, record }) => {
@@ -158,10 +186,15 @@ window.AdminWizard = (function () {
     // ---------- modes ----------
 
     const MODE_HELP = {
-        move: "Drag a name, a trail or a picture to move it. Drag the parchment to pan, scroll to zoom. Click something to select it; arrow keys nudge, shift+arrows nudge further.",
-        trail: "Click one room, then another, to lay a trail between them. Click a trail to select it, then drag its points to bend it — double-click a point to remove it, click the line to add one.",
+        move: "Drag a name, a trail or a picture to move it — drag the parchment to pan, scroll to zoom. PICK SEVERAL: shift-click each one, or shift-drag across bare parchment to draw a box round them, then drag any one to move the whole group. Arrow keys nudge, shift+arrows nudge further. Click a trail to select it, then click along it to add a bend.",
+        trail: "Click one room, then another, to lay a trail between them. Click a trail to select it — then click anywhere along it to add a bend, drag a dot to shape it, and double-click a dot to remove it. Its two ends, its bend and how near it comes to a name are all in the panel below the map.",
         zoom: "Zoom to where you want something to appear, select it, then set the band. Things outside their band are shown here as ghosts so you can still find them."
     };
+
+    // Said instead of the above whenever the map is locked, because none of
+    // it is true then and a help line that describes the wrong thing is
+    // worse than no help line.
+    const LOCKED_HELP = "The map is locked: drag anywhere to pan, scroll to zoom, click to look at something. Nothing moves until you unlock it.";
 
     function setMode(next) {
         mode = next;
@@ -170,27 +203,83 @@ window.AdminWizard = (function () {
             btn.classList.toggle("active", on);
             btn.setAttribute("aria-pressed", on ? "true" : "false");
         });
-        els.help.textContent = MODE_HELP[next];
+        els.help.textContent = locked ? LOCKED_HELP : MODE_HELP[next];
         els.stage.dataset.mode = next;
         trailFrom = null;
         drawHandles();
         renderInspector();
     }
 
+    function setLocked(next) {
+        locked = !!next;
+        try { localStorage.setItem(LOCK_KEY, locked ? "1" : "0"); } catch (err) { /* private mode */ }
+        if (els.lockBtn) {
+            els.lockBtn.setAttribute("aria-pressed", locked ? "true" : "false");
+            els.lockBtn.classList.toggle("is-on", locked);
+            els.lockBtn.textContent = locked ? "🔒 Locked" : "🔓 Unlocked";
+            els.lockBtn.title = locked
+                ? "Nothing on the map can be dragged. Click to unlock."
+                : "Everything can be dragged. Click to lock the map so only panning moves.";
+        }
+        // The stage carries it too, so the cursor and the handles can say so
+        // without every rule having to ask the script.
+        if (els.stage) els.stage.dataset.locked = locked ? "true" : "false";
+        if (els.help) els.help.textContent = locked ? LOCKED_HELP : MODE_HELP[mode];
+        drawHandles();
+        renderInspector();
+    }
+
     // ---------- selection ----------
 
-    function select(kind, id) {
-        selected = kind ? { kind, id } : null;
+    /* Picking one thing, or adding one to what is already picked.
+
+       `add` is shift or ctrl being held. Adding something already picked
+       takes it out again, which is what every other editor does and what
+       makes a mis-click recoverable without starting the selection over. */
+    function select(kind, id, add) {
+        if (!kind) {
+            picked = [];
+            selected = null;
+        } else if (!add) {
+            picked = [{ kind, id }];
+            selected = { kind, id };
+        } else if (isPicked(kind, id)) {
+            picked = picked.filter(p => !(p.kind === kind && p.id === id));
+            selected = picked.length ? picked[picked.length - 1] : null;
+        } else {
+            picked = picked.concat([{ kind, id }]);
+            selected = { kind, id };
+        }
+        afterSelectionChange();
+    }
+
+    // Replaces the whole selection at once — what the rubber band hands back.
+    function selectMany(list) {
+        picked = list.slice();
+        selected = picked.length ? picked[picked.length - 1] : null;
+        afterSelectionChange();
+    }
+
+    function afterSelectionChange() {
         restoreSelection();
         drawHandles();
         renderInspector();
         renderRoomList();
     }
 
-    // Re-applies the selection ring after a render has thrown away the
-    // elements it was on.
+    /* Re-applies the selection ring after a render has thrown away the
+       elements it was on.
+
+       Two classes, not one: everything picked gets .is-picked, and the one
+       the inspector is showing also gets .is-selected. With five names
+       picked, which one the fields below belong to is otherwise a guess. */
     function restoreSelection() {
-        els.canvas.querySelectorAll(".is-selected").forEach(el => el.classList.remove("is-selected"));
+        els.canvas.querySelectorAll(".is-selected, .is-picked")
+            .forEach(el => el.classList.remove("is-selected", "is-picked"));
+        for (const p of picked) {
+            const el = view.elementFor(p.kind, p.id);
+            if (el) el.classList.add("is-picked");
+        }
         if (!selected) return;
         const el = view.elementFor(selected.kind, selected.id);
         if (el) el.classList.add("is-selected");
@@ -209,6 +298,30 @@ window.AdminWizard = (function () {
        parchment returns nothing, and the map pans as usual. */
     let drag = null;
 
+    /* Whether the drag in progress has actually moved anything, and the
+       point it started from so that can be judged. A few pixels of slop, so
+       a press with an unsteady hand is still a press — the same allowance
+       the map itself makes for a pan (see dragMoved in js/wizard-map.js). */
+    let dragMoved = false;
+    let dragStart = null;
+    const DRAG_SLOP = 3;
+
+    /* Set when a drag that MOVED something finishes, and consumed by the
+       click that follows it.
+
+       A flag cleared on the next animation frame was the first attempt,
+       copying how the map suppresses the click after a pan. It does not
+       hold here: measured, the click after dragging a control point arrives
+       AFTER that frame has run, so the flag was already false and the click
+       went through and cleared the selection — the dot moved, the curve
+       followed, and every handle vanished as you let go.
+
+       A flag consumed by the click itself cannot be beaten by timing.
+       Cleared again on the next press so that a drag which happens to end
+       without a click — dragging a whole trail does — cannot leave it set
+       and swallow somebody's next real click. */
+    let swallowNextClick = false;
+
     /* The pointer is captured by the element BEING DRAGGED, not by the map
        frame around it.
 
@@ -224,13 +337,36 @@ window.AdminWizard = (function () {
        details open — which is almost always the next thing wanted. */
     function beginDrag(el, e, state) {
         drag = state;
+        dragMoved = false;
+        dragStart = { x: e.clientX, y: e.clientY };
         el.setPointerCapture(e.pointerId);
         e.preventDefault();
         return false;
     }
 
     function onPointerDown(e) {
+        // A fresh press: whatever the last gesture left behind is finished
+        // with. See swallowNextClick for why this cannot be left to lapse.
+        swallowNextClick = false;
         if (!ctx.canWrite()) return;
+
+        /* Locked: nothing here claims the press, so it reaches the map and
+           pans. Checked before every branch below, including the handles and
+           grips — a lock that still let a trail's control point be dragged
+           would be a lock nobody trusted. */
+        if (locked) return;
+
+        /* The rubber band. Shift on empty parchment, because shift on
+           something is "add that to the selection" and the two gestures have
+           to be told apart by what is under the pointer at the start. */
+        if (e.shiftKey && mode === "move" && !e.target.closest(".wiz-room, .wiz-layer, .wiz-trail, .wiz-handle, .wiz-grip")) {
+            const at = view.screenToPct(e.clientX, e.clientY);
+            marquee = { x0: at.x, y0: at.y, x1: at.x, y1: at.y, add: e.ctrlKey || e.metaKey, base: picked.slice() };
+            els.stage.setPointerCapture(e.pointerId);
+            e.preventDefault();
+            drawMarquee();
+            return false;
+        }
 
         // A trail's control point, in TRAIL mode.
         const handle = e.target.closest(".wiz-handle");
@@ -264,6 +400,24 @@ window.AdminWizard = (function () {
             const kind = target.dataset.kind;
             const record = find(kind, target.dataset.id);
             if (!record) return;
+
+            /* Pressing something already picked drags the WHOLE selection.
+
+               Pressing something outside it picks that one instead, first,
+               so a stray press does not haul five rooms across the map —
+               the same rule a file manager uses, and the one people already
+               expect from having dragged icons about. Shift is left alone
+               here: that press is adding to the selection, not starting a
+               drag. */
+            if (!e.shiftKey && !isPicked(kind, record.id)) select(kind, record.id);
+
+            if (picked.length > 1 && isPicked(kind, record.id)) {
+                return beginDrag(target, e, {
+                    kind: "group",
+                    from: view.screenToPct(e.clientX, e.clientY),
+                    members: groupOrigins()
+                });
+            }
             return beginDrag(target, e, {
                 kind, record,
                 from: view.screenToPct(e.clientX, e.clientY),
@@ -290,8 +444,61 @@ window.AdminWizard = (function () {
         }
     }
 
+    /* Where everything picked started, so a group drag can be worked out
+       from the original positions on every move rather than accumulating
+       small steps — which drifts, and drifts differently for each member. */
+    function groupOrigins() {
+        return picked.map(p => {
+            const record = find(p.kind, p.id);
+            if (!record) return null;
+            return p.kind === "path"
+                ? { kind: p.kind, record, points: (record.points || []).map(q => q.slice()) }
+                : { kind: p.kind, record, x: record.x, y: record.y };
+        }).filter(Boolean);
+    }
+
+    function drawMarquee() {
+        let box = els.canvas.querySelector(".admin-wiz-marquee");
+        if (!marquee) { if (box) box.remove(); return; }
+        if (!box) {
+            box = document.createElement("div");
+            box.className = "admin-wiz-marquee";
+            els.canvas.appendChild(box);
+        }
+        box.style.left = Math.min(marquee.x0, marquee.x1) + "%";
+        box.style.top = Math.min(marquee.y0, marquee.y1) + "%";
+        box.style.width = Math.abs(marquee.x1 - marquee.x0) + "%";
+        box.style.height = Math.abs(marquee.y1 - marquee.y0) + "%";
+    }
+
+    // Everything whose position falls inside the band. A trail counts if any
+    // of its points do, which is what "lassoing that corner of the map"
+    // means when the thing being lassoed is a line rather than a point.
+    function insideMarquee() {
+        const x0 = Math.min(marquee.x0, marquee.x1), x1 = Math.max(marquee.x0, marquee.x1);
+        const y0 = Math.min(marquee.y0, marquee.y1), y1 = Math.max(marquee.y0, marquee.y1);
+        const within = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+        const hits = [];
+        for (const room of data.rooms) if (within(room.x, room.y)) hits.push({ kind: "room", id: room.id });
+        for (const layer of data.layers) if (within(layer.x, layer.y)) hits.push({ kind: "layer", id: layer.id });
+        for (const path of data.paths) {
+            if ((path.points || []).some(p => within(p[0], p[1]))) hits.push({ kind: "path", id: path.id });
+        }
+        return hits;
+    }
+
     function onPointerMove(e) {
+        if (marquee) {
+            const at = view.screenToPct(e.clientX, e.clientY);
+            marquee.x1 = at.x; marquee.y1 = at.y;
+            drawMarquee();
+            return;
+        }
         if (!drag) return;
+        if (!dragMoved && dragStart
+            && (Math.abs(e.clientX - dragStart.x) > DRAG_SLOP || Math.abs(e.clientY - dragStart.y) > DRAG_SLOP)) {
+            dragMoved = true;
+        }
         const at = view.screenToPct(e.clientX, e.clientY);
         const dx = at.x - drag.from.x;
         const dy = at.y - drag.from.y;
@@ -323,6 +530,39 @@ window.AdminWizard = (function () {
             return;
         }
 
+        /* Everything picked, by the same amount.
+
+           Trails move whole — every point — because a trail caught up in a
+           group drag is being carried along with its rooms, and a trail that
+           kept its bends where they were while its ends moved would come out
+           a different shape. A trail pinned to a room that is ALSO in the
+           selection would otherwise be moved twice, once here and once by
+           followRoom below, so followRoom is not called during a group. */
+        if (drag.kind === "group") {
+            for (const m of drag.members) {
+                if (m.kind === "path") {
+                    m.record.points = m.points.map(([px, py]) =>
+                        [round(clamp(px + dx)), round(clamp(py + dy))]);
+                    redrawTrail(m.record);
+                    markMoved("path", m.record.id);
+                    continue;
+                }
+                m.record.x = round(clamp(m.x + dx));
+                m.record.y = round(clamp(m.y + dy));
+                const el = view.elementFor(m.kind, m.record.id);
+                if (el) { el.style.left = m.record.x + "%"; el.style.top = m.record.y + "%"; }
+                markMoved(m.kind, m.record.id);
+            }
+            // Trails hanging off a moved room. Ones already carried by the
+            // group are skipped, or their ends would be moved a second time
+            // and the trail would stretch away from its own room.
+            const carried = new Set(drag.members.filter(m => m.kind === "path").map(m => m.record.id));
+            for (const m of drag.members) {
+                if (m.kind === "room") followRoom(m.record, carried);
+            }
+            return;
+        }
+
         drag.record.x = round(clamp(drag.origin.x + dx));
         drag.record.y = round(clamp(drag.origin.y + dy));
         const el = view.elementFor(drag.kind, drag.record.id);
@@ -339,12 +579,57 @@ window.AdminWizard = (function () {
         markMoved(drag.kind, drag.record.id);
     }
 
-    function followRoom(room) {
+    /* A trail follows the room that moved, bends and all.
+
+       It used to move only the END point and leave every bend exactly where
+       it was. Drag a room a third of the way across the sheet and its trail
+       stayed nailed to a bend in the old place, so what had been a gentle
+       curve became a hairpin going out and back — the further the room went,
+       the worse the kink, and the only cure was to drag every point by hand
+       afterwards.
+
+       So the move is shared along the trail instead: the end that is
+       attached takes all of it, the far end takes none, and everything
+       between takes a share by how far along it sits. That is the same
+       thing a piece of string does when you pick up one end of it — the
+       shape near your hand comes with you, the shape at the other end
+       stays put — and it keeps the curve the shape somebody drew.
+
+       The far end is left alone on purpose: it belongs to a room that has
+       not moved, and dragging it would detach the trail from that one. */
+    function followRoom(room, skip) {
         for (const path of data.paths) {
             if (!Array.isArray(path.points) || path.points.length < 2) continue;
+            if (skip && skip.has(path.id)) continue;
+
+            const pts = path.points;
+            const last = pts.length - 1;
             let moved = false;
-            if (path.from === room.id) { path.points[0] = [room.x, room.y]; moved = true; }
-            if (path.to === room.id) { path.points[path.points.length - 1] = [room.x, room.y]; moved = true; }
+
+            // `weight` runs 1 at the attached end to 0 at the other.
+            const drag = (endIndex) => {
+                const dx = room.x - pts[endIndex][0];
+                const dy = room.y - pts[endIndex][1];
+                if (!dx && !dy) return;
+                for (let i = 0; i <= last; i++) {
+                    const along = endIndex === 0 ? i / last : (last - i) / last;
+                    const weight = 1 - along;
+                    if (!weight) continue;
+                    pts[i] = [
+                        round(clamp(pts[i][0] + dx * weight)),
+                        round(clamp(pts[i][1] + dy * weight))
+                    ];
+                }
+                // Pinned exactly, rather than left to the arithmetic above —
+                // a rounding error here is a trail that does not quite touch
+                // its own room.
+                pts[endIndex] = [room.x, room.y];
+                moved = true;
+            };
+
+            if (path.from === room.id) drag(0);
+            if (path.to === room.id) drag(last);
+
             if (moved) {
                 redrawTrail(path);
                 markMoved("path", path.id);
@@ -353,12 +638,32 @@ window.AdminWizard = (function () {
     }
 
     function onPointerUp() {
+        if (marquee) {
+            const band = marquee;
+            const hits = insideMarquee();
+            marquee = null;
+            drawMarquee();
+            /* A band that caught nothing clears the selection, unless it was
+               being added to — dragging a box over empty paper is how you
+               deselect everything without hunting for a bare patch to click. */
+            if (band.add) {
+                const merged = band.base.slice();
+                for (const h of hits) if (!merged.some(p => p.kind === h.kind && p.id === h.id)) merged.push(h);
+                selectMany(merged);
+            } else {
+                selectMany(hits);
+            }
+            if (hits.length) say(`${hits.length} picked. Drag any one of them to move them together.`, "");
+            return;
+        }
         if (!drag) return;
-        const was = drag;
         drag = null;
+        dragStart = null;
+        // Handed to the click that is about to arrive; see swallowNextClick.
+        if (dragMoved) swallowNextClick = true;
+        dragMoved = false;
         drawHandles();
-        if (was.kind === "resize" || was.kind === "trail") renderInspector();
-        else renderInspector();
+        renderInspector();
     }
 
     /* Redraws one trail in place rather than re-rendering the whole map —
@@ -489,23 +794,70 @@ window.AdminWizard = (function () {
 
     function onMapClick(e) {
         if (view.wasDrag()) return;
+
+        /* A gesture that MOVED something is not a click on it.
+
+           Every drag here ends with a click event, and this handler was
+           acting on all of them. Two things went wrong because of it, and
+           the first is why dragging a control point looked broken: a handle
+           lives in the handles layer, not inside .wiz-trail, so the click
+           ending its drag matched nothing here and fell through to "clicked
+           bare parchment" — which deselects. You dragged a dot, the curve
+           followed, and then every dot vanished as you let go.
+
+           The second arrived with add-a-bend: dragging a selected trail to
+           reposition it ended with a click ON that trail, which is now the
+           gesture for adding a bend — so moving a trail dropped a new point
+           into it every time.
+
+           view.wasDrag() does not cover either, and cannot: the map's own
+           drag tracking never starts for these, because onPointerDown
+           returns false to stop the map panning underneath them. So the
+           editor keeps its own flag for its own drags. */
+        if (swallowNextClick) { swallowNextClick = false; return; }
+        if (dragMoved) return;
+
+        // A press on a control point or a picture's grip is the start of a
+        // drag, never a selection — even when it turns out to be a still one.
+        if (e.target.closest(".wiz-handle, .wiz-grip")) return;
         const room = e.target.closest(".wiz-room");
         const trail = e.target.closest(".wiz-trail");
         const layer = e.target.closest(".wiz-layer");
 
+        // Shift or ctrl adds to the selection instead of replacing it.
+        const addToSelection = e.shiftKey || e.ctrlKey || e.metaKey;
+
+        /* Clicking a trail that is ALREADY selected drops a new bend at that
+           spot, and does it in every mode.
+
+           Adding a bend used to mean being in Trails mode and hitting the
+           thin guide line drawn between the dots — which is a thing you
+           have to be told about and then aim at. Now the rule is the one
+           anybody would guess: select the trail, then click along it
+           wherever you want it to turn. Click it again somewhere else for
+           another bend, as many as you like.
+
+           Only the SELECTED trail, so clicking a different one still
+           selects that one rather than quietly reshaping this one; and
+           never while locked, or the lock would have a hole in it. */
+        const onSelectedTrail = selected && selected.kind === "path" && !locked && !addToSelection
+            && (e.target.closest(".wiz-handle-line") || (trail && trail.dataset.id === selected.id));
+
         if (mode === "trail") {
             if (room) return pickForTrail(room.dataset.id);
-            if (trail) return select("path", trail.dataset.id);
-            if (selected && selected.kind === "path" && e.target.closest(".wiz-handle-line")) {
-                return addBendAt(e.clientX, e.clientY);
-            }
+            if (onSelectedTrail) return addBendAt(e.clientX, e.clientY);
+            if (trail) return select("path", trail.dataset.id, addToSelection);
             return select(null);
         }
 
-        if (room) return select("room", room.dataset.id);
-        if (layer) return select("layer", layer.dataset.id);
-        if (trail) return select("path", trail.dataset.id);
-        select(null);
+        if (onSelectedTrail) return addBendAt(e.clientX, e.clientY);
+
+        if (room) return select("room", room.dataset.id, addToSelection);
+        if (layer) return select("layer", layer.dataset.id, addToSelection);
+        if (trail) return select("path", trail.dataset.id, addToSelection);
+        // A plain click on bare parchment clears; a shift-click does not, or
+        // every near miss while building a selection would undo it.
+        if (!addToSelection) select(null);
     }
 
     async function pickForTrail(roomId) {
@@ -566,6 +918,9 @@ window.AdminWizard = (function () {
         path.points.splice(bestAt, 0, [round(at.x), round(at.y)]);
         redrawTrail(path);
         markMoved("path", path.id);
+        // The panel states how many points the trail has, and it had just
+        // become wrong — it still read 3 with four dots on the map.
+        renderInspector();
     }
 
     function pointToSegment(p, a, b) {
@@ -614,7 +969,50 @@ window.AdminWizard = (function () {
        — its picture, what it was, what is written about it — is the room
        form, because none of that is a question you answer by looking at
        where it sits. */
+    /* What the inspector says when more than one thing is picked.
+
+       Deliberately NOT the ordinary fields with the values blanked out. Five
+       rooms have five positions and no shared one, so a position field there
+       either lies or does nothing; what a selection of five actually has is
+       a count, and the handful of operations that mean something applied to
+       all of them at once. Those, and a way out. */
+    function renderMultiInspector() {
+        const counts = { room: 0, path: 0, layer: 0 };
+        for (const p of picked) counts[p.kind]++;
+        const parts = [];
+        if (counts.room) parts.push(counts.room === 1 ? "1 room" : `${counts.room} rooms`);
+        if (counts.path) parts.push(counts.path === 1 ? "1 trail" : `${counts.path} trails`);
+        if (counts.layer) parts.push(counts.layer === 1 ? "1 picture" : `${counts.layer} pictures`);
+
+        els.inspector.hidden = false;
+        els.inspector.innerHTML = `
+            <div class="admin-wiz-inspector-head">
+                <div>
+                    <p class="admin-wiz-inspector-kind">${picked.length} picked</p>
+                    <h4>${esc(parts.join(", "))}</h4>
+                </div>
+                <div class="admin-wiz-inspector-actions">
+                    <button type="button" class="admin-action-pill" data-act="multi-hide">Hide them</button>
+                    <button type="button" class="admin-action-pill" data-act="multi-show">Show them</button>
+                    <button type="button" class="admin-action-pill" data-act="multi-none">Pick none</button>
+                </div>
+            </div>
+            <p class="admin-hint">Drag any one of them to move the whole group. Arrow keys nudge them
+                together, shift+arrows further. Shift-click to add or remove one; shift-drag on bare
+                parchment to draw a box round several.</p>
+            ${counts.room > 1 ? `
+            <div class="admin-wiz-band-row">
+                <span class="admin-hint">Line them up:</span>
+                <button type="button" class="admin-action-pill" data-act="align-x">Same column</button>
+                <button type="button" class="admin-action-pill" data-act="align-y">Same row</button>
+                <button type="button" class="admin-action-pill" data-act="spread-x">Space out across</button>
+                <button type="button" class="admin-action-pill" data-act="spread-y">Space out down</button>
+            </div>` : ""}
+        `;
+    }
+
     function renderInspector() {
+        if (picked.length > 1) return renderMultiInspector();
         if (!selected) {
             els.inspector.hidden = true;
             els.inspector.innerHTML = "";
@@ -696,6 +1094,14 @@ window.AdminWizard = (function () {
        number does that in one move, and reading it off the existing points
        rather than storing it means it stays true for a trail shaped by hand
        and for one that has never been touched. */
+    // What a trail falls back to when it has no gap of its own. Matches
+    // DEFAULT_LABEL_GAP in js/wizard-map.js, which is the one that actually
+    // draws — this only fills in the placeholder text.
+    function mapGapDefault() {
+        const g = Number(data.map && data.map.labelGap);
+        return Number.isFinite(g) && g >= 0 ? g : 0.34;
+    }
+
     function bendOf(path) {
         const pts = path.points || [];
         if (pts.length < 3) return 0;
@@ -731,13 +1137,35 @@ window.AdminWizard = (function () {
 
     function trailFields(record) {
         const style = record.style || "walk";
+        const from = record.from ? find("room", record.from) : null;
+        const to = record.to ? find("room", record.to) : null;
+        // Named by where they actually go, not "forwards" and "backwards" —
+        // which end is which is not something anybody can tell by looking.
+        const there = to ? `to ${to.name}` : "to the far end";
+        const back = from ? `to ${from.name}` : "to the near end";
+        const opt = (v, label) => `<option value="${v}"${style === v ? " selected" : ""}>${esc(label)}</option>`;
         return field("Drawn as", `<select data-set="style">
-                <option value="walk"${style === "walk" ? " selected" : ""}>Footprints — a walked route</option>
-                <option value="line"${style === "line" ? " selected" : ""}>Pen stroke — a short link</option>
+                ${opt("walk", "Footprints — a walked route")}
+                ${opt("walk-there", `Footprints, all one way — walking ${there}`)}
+                ${opt("walk-back", `Footprints, all one way — walking ${back}`)}
+                ${opt("line", "Pen stroke — a short link")}
+                ${opt("arrow-there", `Arrow — one way only, ${there}`)}
+                ${opt("arrow-back", `Arrow — one way only, ${back}`)}
             </select>`)
+            + (style === "arrow-there" || style === "arrow-back" || style === "arrow"
+                ? `<p class="admin-hint">One way only. ${esc(style === "arrow-back" ? (to ? to.name : "The far room") : (from ? from.name : "The near room"))}
+                   leads along it; the room it points at does not lead back, and will not list it as a way out.</p>`
+                : "")
             + field(`Bend${(record.points || []).length > 3 ? " — replaces the bends you have placed" : ""}`,
                 `<input type="range" data-set="bend" min="-18" max="18" step="0.5" value="${bendOf(record)}">
                  <output class="admin-wiz-range-out">${bendOf(record)}</output>`)
+            /* How near this trail may come to a room's name, in per cent of
+               the sheet's width. Blank means "whatever the map says" — the
+               setting under Map settings — so the ordinary case is one
+               number for the whole map and this is the exception for the one
+               trail that wants to run closer or further off. */
+            + field("Gap from names", num("gap", record.gap == null ? "" : record.gap, "0.05",
+                `min="0" max="6" placeholder="map default (${mapGapDefault()})"`), true)
             + field("Footprint gap", num("spacing", record.spacing || "", "0.1", 'min="0.3" placeholder="auto"'), true)
             + field("Footprint size", num("size", record.size || "", "0.05", 'min="0.2" placeholder="auto"'), true)
             + field("Opacity", num("opacity", record.opacity == null ? "" : record.opacity, "0.05", 'min="0.05" max="1" placeholder="1"'), true)
@@ -819,10 +1247,14 @@ window.AdminWizard = (function () {
                 ${field("Runs to", `<select data-set="to"><option value="">— not set —</option>${options(path.to)}</select>`)}
             </div>
             <div class="admin-wiz-band-row">
+                <button type="button" class="admin-action-pill" data-act="add-bend">+ Add a bend</button>
                 <button type="button" class="admin-action-pill" data-act="reverse">Reverse direction</button>
                 <button type="button" class="admin-action-pill" data-act="straighten">Straighten</button>
                 <button type="button" class="admin-action-pill" data-act="reattach">Snap ends to rooms</button>
             </div>
+            <p class="admin-hint">This trail has <strong>${(path.points || []).length}</strong> points.
+                Click anywhere along it on the map to add a bend there, drag a dot to shape it, and
+                double-click a dot to take it out again.</p>
         `;
     }
 
@@ -930,9 +1362,84 @@ window.AdminWizard = (function () {
         markMoved(selected.kind, selected.id);
     }
 
+    /* Everything the group panel offers. Handled before the single-record
+       branches below, because those all begin by looking up ONE record and
+       there is no one record here. */
+    function onMultiAction(name) {
+        const records = picked.map(p => ({ p, record: find(p.kind, p.id) })).filter(x => x.record);
+        if (!records.length) return true;
+
+        if (name === "multi-none") { select(null); return true; }
+
+        /* Hiding saves each record outright rather than going on the unsaved
+           pile. `hidden` is deliberately NOT one of the fields a bulk save
+           may touch — see MOVABLE in netlify/functions/wizard.js, which
+           holds the line at "where a thing sits, never what it is" — so
+           marking these as moved would clear the badge and lose the change,
+           which is exactly the bug the note on CARRIED warns about. */
+        if (name === "multi-hide" || name === "multi-show") {
+            const hidden = name === "multi-hide";
+            (async () => {
+                let done = 0;
+                for (const { p, record } of records) {
+                    if (!!record.hidden === hidden) continue;
+                    record.hidden = hidden;
+                    if (await saveOne(p.kind, record)) done++;
+                    else { record.hidden = !hidden; break; }
+                }
+                view.setData(data);
+                view.render();
+                restoreSelection();
+                drawHandles();
+                renderRoomList();
+                say(done ? `${done} ${hidden ? "hidden" : "shown"}.` : "Nothing to change.", done ? "good" : "");
+            })();
+            return true;
+        }
+
+        // Lining up applies to rooms only: a trail has no single position to
+        // line up, and a picture lined up by its middle rarely looks it.
+        const rooms = records.filter(x => x.p.kind === "room");
+        if (rooms.length < 2) return true;
+
+        if (name === "align-x" || name === "align-y") {
+            const axis = name === "align-x" ? "x" : "y";
+            // To the average, not to the first picked: aligning to whichever
+            // one happened to be clicked first moves the other four a long
+            // way for no reason anybody watching could predict.
+            const mean = rooms.reduce((s, x) => s + x.record[axis], 0) / rooms.length;
+            for (const { p, record } of rooms) { record[axis] = round(mean); markMoved(p.kind, p.id); }
+        } else if (name === "spread-x" || name === "spread-y") {
+            const axis = name === "spread-x" ? "x" : "y";
+            const sorted = rooms.slice().sort((a, b) => a.record[axis] - b.record[axis]);
+            const first = sorted[0].record[axis];
+            const last = sorted[sorted.length - 1].record[axis];
+            const step = (last - first) / (sorted.length - 1);
+            // The two at the ends stay put and everything between is spaced
+            // evenly, so the group keeps the extent it already had.
+            sorted.forEach((x, i) => { x.record[axis] = round(first + step * i); markMoved(x.p.kind, x.p.id); });
+        } else {
+            return false;
+        }
+
+        for (const { record } of rooms) {
+            const el = view.elementFor("room", record.id);
+            if (el) { el.style.left = record.x + "%"; el.style.top = record.y + "%"; }
+            followRoom(record);
+        }
+        return true;
+    }
+
     function onInspectorClick(e) {
         const band = e.target.closest("[data-band]");
         const act = e.target.closest("[data-act]");
+
+        if (act && act.dataset.act.startsWith("multi-")) { onMultiAction(act.dataset.act); return; }
+        if (act && picked.length > 1 && /^(align|spread)-/.test(act.dataset.act)) {
+            onMultiAction(act.dataset.act);
+            return;
+        }
+
         if (!selected) return;
         const record = find(selected.kind, selected.id);
         if (!record) return;
@@ -948,6 +1455,29 @@ window.AdminWizard = (function () {
             return;
         }
         if (!act) return;
+
+        /* Adds a bend in the middle of the trail's longest straight, which
+           is where there is most room for one and so where it is most
+           likely to be wanted. The map's own click does the same job with
+           aim; this is for when the trail runs behind a room name and there
+           is nowhere on it to click. */
+        if (act.dataset.act === "add-bend") {
+            const pts = record.points || [];
+            if (pts.length < 2) return;
+            let at = 1, longest = -1;
+            for (let i = 1; i < pts.length; i++) {
+                const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+                if (d > longest) { longest = d; at = i; }
+            }
+            pts.splice(at, 0, [
+                round((pts[at - 1][0] + pts[at][0]) / 2),
+                round((pts[at - 1][1] + pts[at][1]) / 2)
+            ]);
+            redrawTrail(record);
+            markMoved("path", record.id);
+            renderInspector();
+            return say(`Bend added — ${record.points.length} points now. Drag it to shape the curve.`, "good");
+        }
 
         if (act.dataset.act === "edit") return openRoomForm(record.id);
         if (act.dataset.act === "delete") return deleteSelected();
@@ -1019,15 +1549,58 @@ window.AdminWizard = (function () {
                 : `the picture "${record.name || "untitled"}"`;
         const extra = selected.kind === "room" ? " Every trail that runs to it goes too." : "";
         if (!await ctx.confirm(`Delete ${esc(what)}?${extra} This cannot be undone.`)) return;
+        const kind = selected.kind, id = selected.id;
         try {
-            await ctx.api.deleteWizardItem(ctx.token(), selected.kind, selected.id);
-            selected = null;
-            say("Deleted.", "good");
-            await load();
+            await ctx.api.deleteWizardItem(ctx.token(), kind, id);
         } catch (err) {
             if (err.status === 401) return ctx.lockOut();
-            say("Could not delete — " + (err.message || "try again."), "bad");
+            return say("Could not delete — " + (err.message || "try again."), "bad");
         }
+
+        /* Taken out of what is already loaded, rather than reloading the map.
+
+           This used to call load(), which fetches the map afresh AND clears
+           the unsaved pile — so deleting one trail threw away every move
+           made since the last save and put the rooms back where the server
+           still thought they were. Half an hour of arranging, gone on a
+           delete, with the only clue a badge quietly going back to nought.
+
+           The server has done the delete; the same delete is applied here.
+           Everything else on the sheet keeps the position it has, unsaved or
+           not, and the badge keeps its count. */
+        const drop = (list, gone) => {
+            const at = list.findIndex(r => r.id === gone);
+            if (at >= 0) list.splice(at, 1);
+            pending.delete(`${kind === "room" ? "room" : kind === "path" ? "path" : "layer"}:${gone}`);
+        };
+
+        if (kind === "room") {
+            drop(data.rooms, id);
+            // The server takes a room's trails with it (see the DELETE
+            // branch in netlify/functions/wizard.js), so they go here too —
+            // otherwise they stay on screen until the next reload, drawing
+            // footprints to a room that no longer exists.
+            for (const path of data.paths.filter(p => p.from === id || p.to === id)) {
+                const at = data.paths.indexOf(path);
+                if (at >= 0) data.paths.splice(at, 1);
+                pending.delete(`path:${path.id}`);
+            }
+        } else if (kind === "path") {
+            drop(data.paths, id);
+        } else {
+            drop(data.layers, id);
+        }
+
+        selected = null;
+        picked = [];
+        view.setData(data);
+        view.render();
+        restoreSelection();
+        drawHandles();
+        renderRoomList();
+        renderInspector();
+        updateDirty();
+        say("Deleted.", "good");
     }
 
     // ---------- nudging ----------
@@ -1044,6 +1617,38 @@ window.AdminWizard = (function () {
         const moves = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
         if (moves[e.key]) {
             e.preventDefault();
+            // Locked means locked for the keyboard too, or the safety catch
+            // has a hole in it exactly the width of an arrow key.
+            if (locked) return say("The map is locked. Unlock it to move things.", "");
+
+            // Everything picked, together, by the same step.
+            if (picked.length > 1) {
+                for (const p of picked) {
+                    const rec = find(p.kind, p.id);
+                    if (!rec) continue;
+                    if (p.kind === "path") {
+                        rec.points = rec.points.map(([x, y]) =>
+                            [round(clamp(x + moves[e.key][0])), round(clamp(y + moves[e.key][1]))]);
+                        redrawTrail(rec);
+                    } else {
+                        rec.x = round(clamp(rec.x + moves[e.key][0]));
+                        rec.y = round(clamp(rec.y + moves[e.key][1]));
+                        const el = view.elementFor(p.kind, rec.id);
+                        if (el) { el.style.left = rec.x + "%"; el.style.top = rec.y + "%"; }
+                    }
+                    markMoved(p.kind, p.id);
+                }
+                // Same reasoning as the group drag: a trail already carried
+                // must not have its ends moved a second time.
+                const carried = new Set(picked.filter(p => p.kind === "path").map(p => p.id));
+                for (const p of picked) {
+                    if (p.kind !== "room") continue;
+                    const rec = find(p.kind, p.id);
+                    if (rec) followRoom(rec, carried);
+                }
+                return;
+            }
+
             const record = find(selected.kind, selected.id);
             if (!record) return;
             if (selected.kind === "path") {
@@ -1091,7 +1696,13 @@ window.AdminWizard = (function () {
             view.setData(data);
             view.render();
             select("layer", created.id);
-            say("Picture added. Drag it about, drag its corner to resize, and set a zoom band below.", "good");
+            // An oversized picture is scaled down to fit the upload limit
+            // rather than refused — say so, or it is a silent change to
+            // somebody's artwork. See uploadImageFile in js/admin.js.
+            say(uploaded.notice
+                ? uploaded.notice + " Drag it about, drag its corner to resize."
+                : "Picture added. Drag it about, drag its corner to resize, and set a zoom band below.",
+                "good");
         } catch (err) {
             if (err.status === 401) return ctx.lockOut();
             say("Could not add that picture — " + (err.message || "try again."), "bad");
@@ -1325,7 +1936,12 @@ window.AdminWizard = (function () {
                 ${field("Sheet height (px)", `<input type="number" name="height" min="200" value="${map.height}">`, true)}
                 ${field("Closest zoom", `<input type="number" name="maxZoom" step="0.5" min="1" value="${map.maxZoom}">`, true)}
                 ${field("Footprint gap", `<input type="number" name="footprintSpacing" step="0.1" min="0" value="${map.footprintSpacing || 0}">`, true)}
+                ${field("Gap from room names", `<input type="number" name="labelGap" step="0.05" min="0" max="6" value="${map.labelGap == null ? 0.34 : map.labelGap}">`, true)}
             </div>
+            <p class="admin-hint">How near a trail may come to a name, as a percentage of the sheet's
+                width, for every trail that has not been given its own. 0 lets them touch the writing;
+                around 0.3 is a hair's breadth; 1 is a clear margin. A single trail can differ — select
+                it and set <strong>Gap from names</strong>.</p>
 
             <div class="admin-wiz-band-row">
                 <span class="admin-hint">Opens at
@@ -1445,6 +2061,7 @@ window.AdminWizard = (function () {
             zoomLabel: $("wiz-admin-zoom"),
             inspector: $("wiz-admin-inspector"),
             expandBtn: $("wiz-admin-expand"),
+            lockBtn: $("wiz-admin-lock"),
             roomList: $("wiz-rooms-list"),
             roomSearch: $("wiz-rooms-search"),
             addRoomBtn: $("wiz-add-room-btn"),
@@ -1463,6 +2080,9 @@ window.AdminWizard = (function () {
             // A record hidden by its own zoom band is still a record that
             // has to be findable in order to be changed. See applyBands.
             revealHidden: true,
+            // The invisible band along each trail that makes it clickable at
+            // any zoom — see drawHitLine in js/wizard-map.js.
+            trailHitLines: true,
             onView: z => {
                 els.zoomLabel.textContent = `${Math.round(z * 100)}%`;
                 // The band buttons read "from here", so they have to know
@@ -1496,6 +2116,12 @@ window.AdminWizard = (function () {
         });
         els.savePositions.addEventListener("click", savePositions);
         els.expandBtn.addEventListener("click", () => toggleExpanded());
+        if (els.lockBtn) els.lockBtn.addEventListener("click", () => setLocked(!locked));
+        // Remembered, because it is a way of working rather than a setting
+        // for one sitting: somebody arranging pictures wants it on all
+        // afternoon, and having to find it again after every reload is how a
+        // safety catch stops being used.
+        try { setLocked(localStorage.getItem(LOCK_KEY) === "1"); } catch (err) { setLocked(false); }
         els.inspector.addEventListener("input", onInspectorInput);
         els.inspector.addEventListener("change", onInspectorInput);
         els.inspector.addEventListener("click", onInspectorClick);

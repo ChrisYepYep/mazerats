@@ -281,32 +281,69 @@
                                      full-page in a single class — see toggleExpanded in
                                      js/admin-wizard.js. -->
                                 <div class="admin-wiz-editor" id="wiz-admin-editor">
+                                    <!-- Grouped, and each group labelled, because an
+                                         unbroken row of eleven controls is a row you read
+                                         left to right every time you need one of them.
+                                         What the map IS in (the mode), what you can ADD to
+                                         it, how you LOOK at it, and what is unsaved — four
+                                         answers to four different questions, and the rules
+                                         put a hairline between them. -->
                                     <div class="admin-wiz-toolbar">
-                                        <div class="admin-wiz-modes" id="wiz-admin-modes" role="group" aria-label="Editor mode">
-                                            <button type="button" data-mode="move" class="active" aria-pressed="true">Move</button>
-                                            <button type="button" data-mode="trail" aria-pressed="false">Trails</button>
-                                            <button type="button" data-mode="zoom" aria-pressed="false">Zoom bands</button>
+                                        <div class="admin-wiz-group">
+                                            <span class="admin-wiz-group-label">Tool</span>
+                                            <div class="admin-wiz-modes" id="wiz-admin-modes" role="group" aria-label="Editor mode">
+                                                <button type="button" data-mode="move" class="active" aria-pressed="true" title="Move and arrange what is already on the map">Move</button>
+                                                <button type="button" data-mode="trail" aria-pressed="false" title="Lay new trails between rooms, and shape the ones there">Trails</button>
+                                                <button type="button" data-mode="zoom" aria-pressed="false" title="Set how far in the map must be zoomed before something appears">Zoom bands</button>
+                                            </div>
                                         </div>
 
-                                        <button type="button" class="admin-action-pill admin-add-btn" id="wiz-add-room-btn">+ Room</button>
-                                        <!-- A picture is added by choosing a file, so the
-                                             control IS the file input, dressed as a button
-                                             by its label. -->
-                                        <label class="admin-action-pill admin-add-btn admin-wiz-file-btn">
-                                            + Picture
-                                            <input type="file" id="wiz-add-layer-file" accept="image/*">
-                                        </label>
+                                        <div class="admin-wiz-group">
+                                            <span class="admin-wiz-group-label">Add</span>
+                                            <button type="button" class="admin-action-pill admin-add-btn" id="wiz-add-room-btn" title="Put a new room in the middle of the view">+ Room</button>
+                                            <!-- A picture is added by choosing a file, so the
+                                                 control IS the file input, dressed as a button
+                                                 by its label. -->
+                                            <label class="admin-action-pill admin-add-btn admin-wiz-file-btn" title="Drop a picture onto the parchment">
+                                                + Picture
+                                                <input type="file" id="wiz-add-layer-file" accept="image/*">
+                                            </label>
+                                        </div>
 
                                         <span class="admin-wiz-spacer"></span>
 
-                                        <span class="admin-wiz-dirty" id="wiz-admin-dirty" hidden></span>
-                                        <button type="button" class="admin-action-pill admin-pill-solid" id="wiz-admin-save-positions" disabled>Save Positions</button>
-                                        <span class="wiz-zoom-label" id="wiz-admin-zoom">100%</span>
-                                        <button type="button" class="admin-wiz-zoom-btn" id="wiz-admin-zoom-out" aria-label="Zoom out">&minus;</button>
-                                        <button type="button" class="admin-wiz-zoom-btn" id="wiz-admin-zoom-reset" aria-label="Fit the whole map">&#9635;</button>
-                                        <button type="button" class="admin-wiz-zoom-btn" id="wiz-admin-zoom-in" aria-label="Zoom in">+</button>
-                                        <button type="button" class="admin-action-pill" id="wiz-admin-expand" aria-pressed="false">Expand</button>
+                                        <div class="admin-wiz-group">
+                                            <span class="admin-wiz-group-label">View</span>
+                                            <!-- The lock sits with the view controls on
+                                                 purpose: it is what you press when you want
+                                                 to move around the map rather than change
+                                                 it, which is the same intent as zooming. -->
+                                            <button type="button" class="admin-action-pill admin-wiz-lock" id="wiz-admin-lock" aria-pressed="false">🔓 Unlocked</button>
+                                            <span class="wiz-zoom-label" id="wiz-admin-zoom">100%</span>
+                                            <button type="button" class="admin-wiz-zoom-btn" id="wiz-admin-zoom-out" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                                            <button type="button" class="admin-wiz-zoom-btn" id="wiz-admin-zoom-reset" aria-label="Fit the whole map" title="Fit the whole map">&#9635;</button>
+                                            <button type="button" class="admin-wiz-zoom-btn" id="wiz-admin-zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
+                                            <button type="button" class="admin-action-pill" id="wiz-admin-expand" aria-pressed="false" title="Fill the window with the map">Expand</button>
+                                        </div>
+
+                                        <div class="admin-wiz-group admin-wiz-group-save">
+                                            <span class="admin-wiz-dirty" id="wiz-admin-dirty" hidden></span>
+                                            <button type="button" class="admin-action-pill admin-pill-solid" id="wiz-admin-save-positions" disabled title="Write every move you have made back to the map">Save Positions</button>
+                                        </div>
                                     </div>
+
+                                    <!-- Above the map, not below it.
+
+                                         This line is how anybody finds out that
+                                         shift-click picks several things, or that
+                                         clicking a selected trail adds a bend to it. It
+                                         used to sit under the map — and the map is
+                                         taller than most screens, so the one place the
+                                         editor explains itself was the one place nobody
+                                         ever scrolled to. Somebody asked where the
+                                         multi-select had got to while it was working
+                                         perfectly, four hundred pixels below the fold. -->
+                                    <p class="admin-hint admin-wiz-help" id="wiz-admin-help"></p>
 
                                     <!-- Same class as the public map's frame, so the
                                          parchment, the cursor and the whole shape of it come
@@ -324,7 +361,6 @@
                                         </div>
                                     </div>
 
-                                    <p class="admin-hint admin-wiz-help" id="wiz-admin-help"></p>
                                     <p class="admin-wiz-status" id="wiz-admin-status" hidden></p>
 
                                     <div class="admin-wiz-inspector" id="wiz-admin-inspector" hidden></div>
