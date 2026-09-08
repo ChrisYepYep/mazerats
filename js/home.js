@@ -5320,7 +5320,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const fresh = whatsNewRecentCount();
         const f = progressFigures();
 
+        const r = typeof window.RatrospectStatus === "function" ? window.RatrospectStatus() : null;
+
         return [
+            /* A heading rather than a row: there are two games now, and left
+               in a flat list they read as two more places to go rather than
+               as the pair of things that are new every morning. Rows below a
+               heading belong to it until the next one. */
+            { heading: "Daily" },
             {
                 name: "Guess the Maze",
                 state: !g ? "Today's five rooms"
@@ -5333,6 +5340,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 // owns its own window, and the menu only asks for it.
                 run: () => { if (typeof window.openGuessGame === "function") window.openGuessGame(); }
             },
+            {
+                name: "Ratrospect",
+                state: !r ? "Put the archive in order"
+                    : r.finished ? `Done — ${r.points} points`
+                        : r.started ? `${r.done} of ${r.total} cards placed`
+                            : "Not played today",
+                badge: r && r.finished ? String(r.points) : "",
+                on: false,
+                run: () => { if (typeof window.openRatrospect === "function") window.openRatrospect(); }
+            },
+            { heading: "The archive" },
             {
                 name: "What's New",
                 state: fresh ? "Lately added and changed" : "Nothing new just now",
@@ -5380,7 +5398,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const isOpen = () => drawer.classList.contains("is-open");
 
         function render() {
-            menu.innerHTML = sideMenuEntries().map((e, i) => `
+            /* A heading is not a row: it carries no state, no badge and no
+               click, and rendering it as a disabled button would put it in
+               the tab order for no reason. The index still comes from the
+               same array, so what a row does is looked up by its own
+               position rather than by counting past the headings. */
+            menu.innerHTML = sideMenuEntries().map((e, i) => e.heading
+                ? `<p class="side-menu-heading">${escapeHtml(e.heading)}</p>`
+                : `
                 <button type="button" class="side-menu-item${e.on ? " is-on" : ""}" data-i="${i}">
                     <span class="side-menu-name">
                         <span>${escapeHtml(e.name)}</span>

@@ -735,6 +735,24 @@
         </div>
     </div>
 
+    <!-- ---------- Ratrospect ----------
+
+         The archive in the order it happened: one card face up, five more to
+         slot into the line around it. Everything inside is built by
+         js/ratrospect.js, which is why the body is empty here — the board,
+         the results and the splash are the same box at different moments,
+         and markup for all three would be markup for two of them being
+         hidden at any time. -->
+    <div class="modal-overlay ratro-overlay" id="ratro-overlay">
+        <div class="modal ratro-window" id="ratro-window" role="dialog" aria-modal="true" aria-labelledby="ratro-title" tabindex="-1">
+            <div class="chrome-titlebar">
+                <h2 id="ratro-title">Ratrospect</h2>
+                <button class="chrome-close" id="ratro-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+            </div>
+            <div class="chrome-body ratro-body" id="ratro-body"></div>
+        </div>
+    </div>
+
     <!-- One room, cloned five times (see js/guess.js's buildDeck). Ids would
          have to be made unique per clone and then looked up by number, so
          everything in here is found by class within its own sheet instead.
@@ -984,7 +1002,11 @@
     <script src="js/letter-jump.js?v=2"></script>
     <script src="js/console.js?v=2"></script>
     <!-- After site.js, which is where imgCdn and compareNames live. -->
+    <!-- The two daily games, and the day rules they share. daily.js
+         first: both games read it as they set themselves up. -->
+    <script src="js/daily.js?v=2"></script>
     <script src="js/guess.js?v=2"></script>
+    <script src="js/ratrospect.js?v=2"></script>
     <script src="js/track.js?v=2"></script>
 </body>
 </html>

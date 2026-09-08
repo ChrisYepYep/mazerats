@@ -38,6 +38,14 @@
   to = "/home.html"
   status = 200
 
+# The other daily game, on the same terms and for the same reason: a result
+# posted in a channel is a link somebody follows, and it should open the
+# game rather than the archive with the game somewhere inside it.
+[[redirects]]
+  from = "/ratrospect"
+  to = "/home.html"
+  status = 200
+
 # The Sorcerer's Atlas, at the clean /wizard URL. Same rewrite treatment
 # as /admin above, so the address bar keeps the URL that was typed.
 [[redirects]]
