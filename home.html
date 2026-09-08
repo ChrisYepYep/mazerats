@@ -254,7 +254,7 @@
                  between them is what a screen reader reads. Without it the
                  site announced itself as "Mazerats". -->
             <h1 class="hero-title"><span>MAZE</span> <span>RATS</span></h1>
-            <p class="tagline">An ongoing archive of maze rooms built across Habbo Hotel: Origins; their rooms, their builders, and the ones that are gone but not forgotten.</p>
+            <p class="tagline">An ongoing archive of maze rooms and maze-style events built across Habbo Hotel: Origins, documenting their rooms, their builders, the community events that put them to the test, and the legendary spaces that are gone but not forgotten.</p>
         </section>
 
         <div class="container">
@@ -428,7 +428,7 @@
     <div class="lightbox-overlay" id="image-lightbox">
         <button class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
         <button class="gallery-nav lightbox-prev" id="lightbox-prev" aria-label="Previous room">&#10094;</button>
-        <img class="lightbox-img" id="lightbox-img" alt="">
+        <img class="lightbox-img" id="lightbox-img" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
         <button class="gallery-nav lightbox-next" id="lightbox-next" aria-label="Next room">&#10095;</button>
         <span class="gallery-counter lightbox-counter" id="lightbox-counter"></span>
     </div>
@@ -815,6 +815,31 @@
     <!-- Room detail modal -->
     <div class="modal-overlay" id="room-modal">
         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-name" tabindex="-1">
+            <!-- Save, Completed and Share, on a tab against this window's
+                 right edge — the same spine the archive window wears, doing
+                 the same job for the same reason.
+
+                 They used to sit in the titlebar, and there was no longer
+                 room for them: the bar reserves space at both ends so the
+                 name stays centred, and that reservation was measured when
+                 there were two buttons. A third arrived and the reservation
+                 did not grow, so a long name was painted underneath them.
+                 Widening it instead would have squeezed every name into
+                 about eighty pixels, which trades an overlap for an
+                 ellipsis and is not a better window.
+
+                 The panel is empty here: js/home.js moves the actions it
+                 already builds into it, and moves them back to the titlebar
+                 on a screen too narrow for a tab to have anywhere to go. -->
+            <div class="modal-actions-drawer" id="modal-actions-drawer">
+                <div class="modal-actions-panel" id="modal-actions-panel"></div>
+                <button type="button" class="side-spine modal-actions-spine" id="modal-actions-spine"
+                        aria-expanded="false" aria-controls="modal-actions-panel"
+                        aria-label="Actions for this room">
+                    <span class="side-spine-label" aria-hidden="true">Actions</span>
+                    <span class="side-spine-arrow" aria-hidden="true">&#9654;</span>
+                </button>
+            </div>
             <div class="chrome-titlebar">
                 <h2 id="modal-name"></h2>
                 <button class="chrome-close" id="modal-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
@@ -831,7 +856,7 @@
                         <div class="modal-thumb modal-thumb-full" id="modal-thumb">
                             <div class="modal-thumb-frame" id="modal-thumb-frame">
                                 <div class="gallery-viewport" id="gallery-viewport">
-                                    <img class="modal-gallery-img" id="modal-gallery-img" alt="" style="display:none;">
+                                    <img class="modal-gallery-img" id="modal-gallery-img" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="display:none;">
                                     <span class="gallery-missing-pill" id="gallery-missing-pill" style="display:none;">Awaiting Room Image</span>
                                     <!-- An older version of this same room, slid up over the
                                          current image from the viewport's own bottom edge.
@@ -849,7 +874,7 @@
                                          lives in is translated off the bottom of the
                                          viewport until then. -->
                                     <div class="old-version-layer" id="old-version-layer">
-                                        <img class="old-version-img" id="old-version-img" alt="">
+                                        <img class="old-version-img" id="old-version-img" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
                                         <!-- Bottom-left, and only when there is more than
                                              one older version to choose between: with a
                                              single one the pill is already the control. -->
@@ -885,7 +910,7 @@
                                          on a plate. Empty and hidden for everything else, so a
                                          regular event is untouched. -->
                                     <p class="ec-modal-label" id="modal-ec-label" hidden></p>
-                                    <img class="ec-modal-badge" id="modal-ec-badge" alt="" hidden>
+                                    <img class="ec-modal-badge" id="modal-ec-badge" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" hidden>
                                 </div>
                                 <!-- Hidden as a whole when there is no room to visit, not just
                                      the button inside it — index.html's copy has always done

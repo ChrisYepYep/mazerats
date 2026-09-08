@@ -1134,8 +1134,16 @@ document.addEventListener("DOMContentLoaded", () => {
        own opening date or the event's date for everything catalogued before
        that field existed. The fallback is honest rather than exact: those
        older records genuinely have nothing better to sort by, and they are
-       the ones that have been here longest anyway. */
-    const WHATS_NEW_COUNT = 12;
+       the ones that have been here longest anyway.
+
+       The log is not truncated. It used to keep the twelve most recent, and
+       twelve turned out to be about one afternoon's work: a session that
+       touched a dozen mazes filled every slot, and the log answered "what
+       has changed lately" with "everything that changed yesterday" — with
+       nothing on screen admitting there was a thirteenth thing. A log that
+       silently ends is worse than a long one, and this one is bounded by
+       the archive itself, which is fifty-odd records grouped under a
+       handful of day headings. */
 
     /* The day everything already in the archive is counted as having been
        added.
@@ -1218,8 +1226,33 @@ document.addEventListener("DOMContentLoaded", () => {
                last — and among everything sharing the backfill date with
                nothing since, newest in its own right first. */
             .sort((a, b) => b.at.localeCompare(a.at) || String(b.own).localeCompare(String(a.own)))
-            .slice(0, WHATS_NEW_COUNT)
             .map(x => x.n);
+    }
+
+    /* How far back "lately" reaches, for the side menu's badge only — the
+       log itself shows everything.
+
+       The badge needs a number that means "worth opening this", and the
+       length of the whole log is not that number: it counts the archive,
+       not the news, and it would sit there reading 59 for ever. A window
+       decays on its own, which is the behaviour a "new" badge should have —
+       it empties out if nothing happens, without anybody having to mark
+       anything as read.
+
+       Fourteen days rather than seven because the archive goes quiet for a
+       week at a time and a badge that is usually empty is a badge nobody
+       looks at. It also, today, sits either side of the backfill date,
+       which is the right answer for a different reason: the fifty-odd
+       records catalogued in one go on 21 August are the archive's starting
+       state, not news about it. */
+    const WHATS_NEW_RECENT_DAYS = 14;
+
+    function whatsNewRecentCount() {
+        const cutoff = new Date(Date.now() - WHATS_NEW_RECENT_DAYS * 86400000)
+            .toISOString().slice(0, 10);
+        // Same string comparison the ranking uses: both sides are ISO, so
+        // the first ten characters are the day and the day is the question.
+        return whatsNewItems().filter(n => String(n.activityAt || "").slice(0, 10) >= cutoff).length;
     }
 
     /* The dated line What's New adds to a row, and nowhere else adds.
@@ -4666,6 +4699,79 @@ document.addEventListener("DOMContentLoaded", () => {
         (host || modalMeta).appendChild(btn);
     }
 
+    /* ---------- the actions tab on the modal ----------
+
+       Save, Completed and Share are built exactly as they always were. All
+       this decides is which of two places they are put in, and drives the
+       tab when the answer is the drawer. Why they left the titlebar is
+       written on the markup in home.html; the width this switches at, and
+       why it is that width, is in css/style.css under "the same tab, on the
+       room modal".
+
+       One node, MOVED — not two copies kept in step. These buttons carry
+       live state (is-saved, is-walked, aria-pressed) that delegated
+       listeners update by selector across the whole page, so a second copy
+       would be a second thing to keep correct, for nothing. */
+    const actionsDrawer = document.getElementById("modal-actions-drawer");
+    const actionsPanel = document.getElementById("modal-actions-panel");
+    const actionsSpine = document.getElementById("modal-actions-spine");
+    /* The same 1000px the stylesheet hides the tab at. Stated twice because
+       CSS cannot tell a script anything — kept findable by both sides
+       naming the other in a comment. */
+    const actionsFitDrawer = window.matchMedia("(min-width: 1000px)");
+
+    // Falls back to the titlebar whenever the drawer is not usable, which
+    // covers the narrow layout and a page where the markup is absent.
+    function actionsHost() {
+        return (actionsFitDrawer.matches && actionsPanel) ? actionsPanel : modalTitlebar;
+    }
+
+    function actionsOpen() {
+        return !!actionsDrawer && actionsDrawer.classList.contains("is-open");
+    }
+
+    function setActionsOpen(open) {
+        if (!actionsDrawer || !actionsSpine) return;
+        actionsDrawer.classList.toggle("is-open", open);
+        actionsSpine.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    if (actionsDrawer && actionsSpine && actionsPanel) {
+        actionsSpine.addEventListener("click", e => {
+            // Kept off the overlay's own click handlers: this press is on
+            // the tab, not past the modal, and neither of them should read
+            // it as either.
+            e.stopPropagation();
+            const open = !actionsOpen();
+            setActionsOpen(open);
+            if (open) {
+                const first = actionsPanel.querySelector("button");
+                if (first) first.focus({ preventScroll: true });
+            }
+        });
+
+        /* A press anywhere else inside the modal closes it, the same way the
+           archive's menu closes on a click past itself. Bound to the overlay
+           rather than the document because a document-level listener would
+           also catch the click on a list row that OPENED the modal, and
+           close a panel on the way in. */
+        modalOverlay.addEventListener("click", e => {
+            if (!actionsOpen()) return;
+            if (actionsDrawer.contains(e.target)) return;
+            setActionsOpen(false);
+        });
+
+        /* Crossing the width moves the actions rather than rebuilding them,
+           so a room already open keeps its Save and Completed exactly as
+           they stand through a resize or a phone being turned. */
+        actionsFitDrawer.addEventListener("change", () => {
+            const actions = modalOverlay.querySelector(".modal-meta-actions");
+            if (actions) actionsHost().appendChild(actions);
+            // The tab it was open on may be the thing that just went away.
+            setActionsOpen(false);
+        });
+    }
+
     /* opts.atImage opens the gallery on that picture rather than on the
        first one. Used by the furni listing, which names actual ROOMS — a
        row that says "the fountain is in Room 7" and then opens on Room 1
@@ -4677,6 +4783,9 @@ document.addEventListener("DOMContentLoaded", () => {
         modalCloseToken++;
         modalOverlay.classList.remove("closing");
         modalTriggerEl = document.activeElement;
+        // Shut for the incoming room. A tab left hanging open from the last
+        // one would be showing that one's Save state over this one's window.
+        setActionsOpen(false);
 
         modalName.textContent = n.name;
         modalCreator.textContent = n.subtitle;
@@ -4710,11 +4819,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
            The bar is not rebuilt between opens the way the meta row is, so
            the previous maze's pair has to be taken off by hand. */
-        const oldActions = modalTitlebar.querySelector(".modal-meta-actions");
+        const oldActions = modalOverlay.querySelector(".modal-meta-actions");
         if (oldActions) oldActions.remove();
         const actions = document.createElement("div");
         actions.className = "modal-meta-actions";
-        modalTitlebar.appendChild(actions);
+        /* Either the titlebar, as before, or the tab on the right edge —
+           see "the actions tab on the modal" above. Searched for on the
+           whole overlay just above rather than in the titlebar, because
+           after this line the previous room's set may be in either place. */
+        actionsHost().appendChild(actions);
         /* Completed first, then Share. Marking a maze off is the thing a
            visitor does here most often and the one that belongs to this
            maze alone; sharing is about sending it elsewhere, so it sits
@@ -4939,6 +5052,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const token = ++modalCloseToken;
         modalOverlay.classList.add("closing");
+        // Shut on the way out, so the tab does not slide home over a window
+        // that is fading out from under it.
+        setActionsOpen(false);
         stopAutoAdvance();
         closeLightbox();
         // These belong to the maze/event being viewed — leaving them
@@ -5199,7 +5315,9 @@ document.addEventListener("DOMContentLoaded", () => {
        Adding a fourth way in means one more entry in this array. */
     function sideMenuEntries() {
         const g = typeof window.GuessStatus === "function" ? window.GuessStatus() : null;
-        const fresh = whatsNewItems().length;
+        // The last fortnight's worth, not the log's length — see
+        // WHATS_NEW_RECENT_DAYS for why the two are different numbers.
+        const fresh = whatsNewRecentCount();
         const f = progressFigures();
 
         return [
@@ -5229,6 +5347,23 @@ document.addEventListener("DOMContentLoaded", () => {
                 badge: "",
                 on: false,
                 run: openProgress
+            },
+            {
+                /* The one entry here that leaves the site rather than
+                   opening something on it.
+
+                   It belongs in this menu even so: the menu is the list of
+                   things the archive can do for you, and looking up the
+                   character behind a name like "ª Funky Maze ª" is one of
+                   them — the sheet is the only place on the site that
+                   answers it. A new tab, so the archive, the list and
+                   wherever you had scrolled to are all still here when you
+                   come back with the character you went for. */
+                name: "Alt Codes",
+                state: "Type the pictures in Habbo names",
+                badge: "",
+                on: false,
+                run: () => window.open("glyphs.html", "_blank", "noopener")
             }
         ];
     }
@@ -5456,7 +5591,10 @@ document.addEventListener("DOMContentLoaded", () => {
     document.addEventListener("keydown", e => {
         if (!modalOverlay.classList.contains("open")) return;
         if (e.key === "Escape") {
+            // Innermost thing first, one press at a time: the picture over
+            // the modal, then the tab pulled out of it, then the modal.
             if (lightboxOverlay.classList.contains("open")) closeLightbox();
+            else if (actionsOpen()) { setActionsOpen(false); actionsSpine.focus({ preventScroll: true }); }
             else closeModal();
         }
         if (activeGallery) {

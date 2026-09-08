@@ -134,8 +134,15 @@ html::-webkit-scrollbar-button { display: none; width: 0; height: 0; background:
    (back when it held its own native scrollbar) — that job belongs to
    whichever element now touches the frame's actual right edge, which is
    this wrapper once the script has moved .home-results inside it. */
+/* Cancels whatever .chrome-body's right padding currently is, rather than
+   the 18px it happens to be on a wide screen.
+
+   It was a hardcoded -18px, and .chrome-body drops to 12px under 640px —
+   so on a phone the bar was pulled 6px past the frame's right edge and
+   .chrome-frame's overflow:hidden ate 6 of its 15 pixels. Reading the
+   padding back means the two cannot disagree again. */
 .custom-scrollbar-wrap--results {
-    margin-right: -18px;
+    margin-right: calc(var(--chrome-body-pad, 18px) * -1);
 }
 
 /* #browse-window .chrome-frame::after paints a 1px highlight line right
@@ -901,11 +908,44 @@ main { display: block; flex: 1 0 auto; }
 
 /* ---------- hero ---------- */
 
+/* Title and blurb side by side, in a block the same width as the archive
+   window and centred over it.
+
+   It was a centred stack: a large two-line title with the blurb centred
+   under it. The blurb has since grown to a sentence that wants the width,
+   and a centred paragraph that wide is a paragraph with a different left
+   edge on every line — hard to start reading, and nothing for the title to
+   sit against. Beside it, the title is what your eye lands on and the blurb
+   is a block with one left edge, in half the vertical space the stack took.
+
+   The width is the WINDOW's, not .container's. .container is 1080px and the
+   window inside it is 538px, so sizing this to the container put the M of
+   MAZE a long way left of the frame it sits above and read as a hero that
+   had come unmoored from the page. Matching .chrome-window's own two values
+   keeps the block's edges on the window's edges at every size, which is
+   what makes it read as a heading FOR the window rather than beside it. */
 .hero {
-    /* Bottom padding matches .hero-title's margin-bottom below, so the gap
-       from blurb to the window equals the gap from header to blurb. */
-    padding: 48px 20px 14px;
-    text-align: center;
+    width: 92%;
+    max-width: 538px;
+    margin: 0 auto;
+    /* Bottom padding matches the gap the archive window wants above it. */
+    padding: 48px 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    text-align: left;
+}
+
+/* Below the site's own narrow breakpoint, where 92% has started biting into
+   the 538px and the two would be fighting over the same 30 characters. Back
+   to the stack, still left-aligned — centring the text again would undo the
+   one thing that makes the blurb easy to start reading. */
+@media (max-width: 640px) {
+    .hero {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
 }
 
 /* Homepage's shorter top bar — also applied to the admin and welcome
@@ -934,10 +974,32 @@ body[data-page="home"] .hero { padding-top: 18px; }
    lines read as the same width instead of RATS looking narrower. */
 .hero-title span:last-child { font-size: 1.1em; }
 
+/* Half the old clamp, top and bottom, scoped to .hero so the welcome page's
+   big handstanding-rat title — which shares .hero-title — keeps its own
+   size from .welcome-title further down. */
+.hero .hero-title {
+    align-items: flex-start;
+    font-size: clamp(1.2rem, 3.5vw, 2.1rem);
+    /* The row's align-items centres the two children against each other;
+       the old bottom margin was for a stack and would now just push the
+       title off-centre. */
+    margin-bottom: 0;
+    /* Never squeezed: MAZE and RATS are the one thing here that must not
+       wrap or shrink to make room for the paragraph. */
+    flex: 0 0 auto;
+}
+
 .hero p.tagline {
-    max-width: 560px;
-    margin: 0 auto;
-    font-size: 0.9rem;
+    /* Was 560px and centred, for a blurb under a title. Now it is the
+       flexible half of a row inside a 538px block, so the block's own width
+       is the only ceiling it needs — a max-width here could only make it
+       narrower than the space it has been given. */
+    margin: 0;
+    /* Smaller than the old 0.9rem: it is a caption beside a title now, not
+       the only text on the page, and at this width the smaller size is also
+       what keeps it to four lines instead of six. */
+    font-size: 0.8rem;
+    line-height: 1.5;
     color: var(--parchment-dim);
 }
 
@@ -978,13 +1040,40 @@ body[data-page="home"] .hero { padding-top: 18px; }
    title), which the button — the narrower one — then stretches to fill
    (grid's default justify-items: stretch), so the button always matches
    the title's width exactly, at any viewport size. */
+/* minmax(0, max-content), not max-content, and that is what stops the
+   landing page scrolling sideways on a phone.
+
+   The column is sized to its widest child so the button always matches the
+   title exactly, which is the whole point of this box. But its widest child
+   is not always the title: the button's label changes with the landing
+   state, and "MAINTENANCE, BACK SOON!" plus the 46px of padding either side
+   of it comes to 409px. A bare `max-content` track is not allowed to be
+   narrower than that, so on a 375px phone the column was 409px wide, the
+   title stretched to match, and the page scrolled 17px sideways — on the
+   first screen anybody sees, in the state the site is in right now.
+
+   minmax(0, max-content) keeps the same behaviour whenever it fits and lets
+   the track shrink when it does not, which is the only difference between
+   the two and exactly the difference wanted here. */
 .welcome-stack {
     display: grid;
-    grid-template-columns: max-content;
+    grid-template-columns: minmax(0, max-content);
     justify-content: center;
+    max-width: 100%;
+}
+
+/* And having let the track shrink, the button has to cope with being
+   narrower than its own text rather than simply hanging out of it. */
+.welcome-stack .btn-enter {
+    max-width: 100%;
+    text-wrap: balance;
 }
 
 /* Same stacked MAZE/RATS treatment as the homepage hero, just bigger. */
+/* Unchanged, and worth a note saying so: the title is NOT what made this
+   page scroll sideways, however much it looks like the culprit. Measured at
+   375px, MAZE is 130px and RATS is 128px. What was 409px wide was the
+   button underneath — see .welcome-stack. */
 .welcome-title {
     font-size: clamp(3.4rem, 14vw, 7.5rem);
     margin-bottom: 30px;
@@ -1883,7 +1972,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
     image-rendering: pixelated;
 }
 
-.chrome-body { padding: 18px; }
+/* Through a variable because something else has to know this number: the
+   custom scrollbar cancels the right-hand half of it to reach the frame
+   edge (see .custom-scrollbar-wrap--results). Same arrangement as
+   .chrome-titlebar's --titlebar-pad, and for the same reason — when the
+   two were separate numbers, narrowing one of them silently moved the
+   scrollbar off the frame. */
+.chrome-body {
+    --chrome-body-pad: 18px;
+    padding: var(--chrome-body-pad);
+}
 
 .chrome-intro {
     color: var(--parchment-dim);
@@ -7530,6 +7628,7 @@ body[data-page="admin"] .search-box input {
 #about-btn { background-image: url('../assets/img/console/cnsl-tab-qmark-inactive.png'); }
 #about-btn.active { background-image: url('../assets/img/console/cnsl-tab-qmark-active.png'); }
 
+
 /* ---- console's own custom scrollbar — same mechanism as
    .custom-scrollbar-wrap elsewhere (see js/custom-scrollbar.js), just
    re-skinned with the console's own sprite set instead of the site's.
@@ -7699,8 +7798,10 @@ body[data-page="admin"] .search-box input {
         justify-content: flex-start;
         margin-top: 2px;
     }
-    /* Every px here comes straight off the row's usable width. */
-    .chrome-body { padding: 12px; }
+    /* Every px here comes straight off the row's usable width. Set through
+       the variable so the custom scrollbar's cancelling margin narrows with
+       it instead of overshooting the frame edge by the difference. */
+    .chrome-body { --chrome-body-pad: 12px; }
     /* Both values go through the variables, so the grips still reach past
        them to the frame. */
     .chrome-titlebar { --titlebar-pad: 34px; --titlebar-pad-y: 7px; }
@@ -7783,33 +7884,9 @@ body[data-page="admin"] .search-box input {
        118px with half a row of empty space beside it. */
     .search-box { flex: 1 1 100%; }
 
-    /* The titlebar pair drops its words and keeps its glyphs: the chain and
-       the tick box. Two labelled buttons would take 152px of each end of a
-       330px bar and leave the maze's name nowhere to go. The labels are
-       hidden from sight, not from a screen reader — each button carries its
-       own aria-label and title. */
-    .modal .chrome-titlebar { --titlebar-pad: 78px; }
-    .modal:not(:has(.modal-meta-actions .walked-toggle)) .chrome-titlebar { --titlebar-pad: 52px; }
-    /* An EC event's Share sits at the same end as the close button (see
-       .modal.is-ec's own rule), so that end has to hold both — 42px of
-       stand-off plus the glyph-only button the labels above collapse it
-       to. */
-    .modal.is-ec .chrome-titlebar { --titlebar-pad: 76px; }
-    .modal .chrome-titlebar .modal-meta-actions { gap: 4px; }
-    .modal .chrome-titlebar .modal-share-btn,
-    .modal .chrome-titlebar .saved-toggle,
-    .modal .chrome-titlebar .walked-toggle { padding: 4px 7px; }
-    .modal .chrome-titlebar .modal-share-label,
-    .modal .chrome-titlebar .saved-toggle-label,
-    .modal .chrome-titlebar .walked-toggle-label {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        margin: -1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-        white-space: nowrap;
-    }
+    /* The titlebar actions' glyph-only treatment used to live here. It now
+       applies from 999px down, next to the modal actions tab it is the
+       fallback for — see "the same tab, on the room modal". */
 
     .featured-refresh-full { display: none; }
     .featured-refresh-short { display: inline; }
@@ -9654,7 +9731,12 @@ body[data-page="admin"] #activity-sessions {
     z-index: 1;
 }
 
-.side-drawer {
+/* Shared with the room modal's own actions tab (.modal-actions-drawer),
+   which is the same object doing the same job on a different window — so
+   the geometry is written once here and the two differ only in the four
+   variables above and where they are anchored. */
+.side-drawer,
+.modal-actions-drawer {
     position: absolute;
     top: var(--spine-top);
     right: calc(-1 * var(--spine-out));
@@ -9668,7 +9750,8 @@ body[data-page="admin"] #activity-sessions {
 
 /* Out by exactly the panel's width, so the panel ends up where the spine
    was and the spine sits just past it. */
-.side-drawer.is-open {
+.side-drawer.is-open,
+.modal-actions-drawer.is-open {
     transform: translateX(var(--menu-w));
 }
 
@@ -9699,7 +9782,8 @@ body[data-page="admin"] #activity-sessions {
 }
 
 .side-spine:hover,
-.side-drawer.is-open .side-spine {
+.side-drawer.is-open .side-spine,
+.modal-actions-drawer.is-open .side-spine {
     background: #e6cfae;
 }
 
@@ -9733,7 +9817,8 @@ body[data-page="admin"] #activity-sessions {
     transition: transform 0.3s ease;
 }
 
-.side-drawer.is-open .side-spine-arrow {
+.side-drawer.is-open .side-spine-arrow,
+.modal-actions-drawer.is-open .side-spine-arrow {
     transform: rotate(180deg);
 }
 
@@ -9743,7 +9828,8 @@ body[data-page="admin"] #activity-sessions {
    with a tab on it, rather than a dark panel a light tab happens to be
    attached to. Only slightly darker, so the tab still reads as the front
    edge of it catching the light. */
-.side-menu {
+.side-menu,
+.modal-actions-panel {
     flex: 0 0 auto;
     width: var(--menu-w);
     display: flex;
@@ -9857,8 +9943,180 @@ body[data-page="admin"] #activity-sessions {
     font-variant-numeric: tabular-nums;
 }
 
+/* --- the same tab, on the room modal ------------------------------------
+
+   Save, Completed and Share live on a spine against the modal's right edge
+   rather than in its titlebar. Why they moved is written on the markup in
+   home.html; this is where they moved to.
+
+   Deliberately down here rather than up beside the other .modal rules: the
+   one rule below that has to beat an existing --titlebar-pad ties with it on
+   specificity, so it has to come later in the file to win, and every rule
+   this thing needs is easier to read in one place than split across two. */
+
+/* The positioning context the drawer is absolute against. .modal.is-ec
+   already does exactly this for the EC ribbon, which is the evidence that
+   nothing inside a modal was relying on resolving against an ancestor
+   further up. */
+.modal { position: relative; }
+
+.modal-actions-drawer {
+    --spine-w: 18px;
+    /* 16px of clearance, plus the 14px the modal's border-image frame is
+       thick. An absolutely positioned box is placed against its container's
+       PADDING box, which is inside that frame, so the archive's bare 16px
+       would leave the tab standing 2px proud of the window — all but the
+       last sliver of it tucked under the frame it is supposed to be coming
+       out from beneath. The archive's own drawer never had to account for
+       this: it hangs off .archive-stack, which is a plain wrapper with no
+       border at all. */
+    --spine-out: 30px;
+    /* Below the titlebar, against the top of the frame — the same relation
+       the archive's spine has to its own window. */
+    --spine-top: 58px;
+    /* Narrower than the archive's 164px. That panel carries a name, a line
+       of state and a count; this one carries three short words. */
+    --menu-w: 132px;
+
+    /* Behind the modal's own background, so the panel is genuinely tucked
+       inside the window and only the spine clears the edge — the archive
+       gets this from being a SIBLING of its window, which is not available
+       to a child. A negative z-index is what is available, and the warning
+       against it on .side-drawer does not apply here: that one would have
+       gone behind .container and become unclickable, whereas everything
+       this one has to be clicked on sticks out past the modal, over the
+       overlay, with nothing on top of it.
+
+       It only holds while .modal is NOT a stacking context, which is why
+       the panel is hidden outright when the tab is shut — see below. */
+    z-index: -1;
+}
+
+/* Shut, the panel is not merely hidden behind the modal — it is hidden.
+
+   "Behind" is not a promise the negative z-index above can keep. modalIn
+   and modalOut animate the modal's opacity AND its transform, and either of
+   those makes .modal a stacking context for the 200ms it runs; a negative
+   z-index child of a stacking context paints above that element's own
+   background instead of behind it. So on every open and every close the
+   card flicked in front of the window's frame and back. Nothing can be
+   revealed by a stacking change if it has nothing to reveal.
+
+   It also takes the three buttons out of the tab order while the tab is
+   shut, which is right on its own account: they were reachable by keyboard
+   from behind a closed panel, with no way to see what had been focused. */
+.modal-actions-panel {
+    visibility: hidden;
+    /* Held visible for exactly as long as the drawer takes to slide home,
+       so closing still reads as the card sliding back under the window
+       rather than blinking out of existence at the top of the movement. */
+    transition: visibility 0s linear 0.34s;
+}
+
+.modal-actions-drawer.is-open .modal-actions-panel {
+    visibility: visible;
+    transition-delay: 0s;
+}
+
+/* Closing the modal with the tab still pulled out: the slide home takes
+   0.34s and modalOut takes 0.2s, so the delay above would still have the
+   card on screen — and overlapping the frame — for the whole of the
+   animation that causes the flip. Gone at once instead. */
+.modal-overlay.closing .modal-actions-panel {
+    visibility: hidden;
+    transition: none;
+}
+
+/* The three buttons, stacked. In the titlebar they are a row that has to
+   stay on the title's line; here they are a short list on a card, and each
+   one takes the card's full width so they present one target edge rather
+   than three ragged ones. */
+.modal-actions-panel .modal-meta-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 5px;
+}
+
+/* Save and Completed arrive wrapped in a span so the titlebar can keep them
+   together as a pair. On the card there is no pair — there are three rows —
+   so the wrapper stops being a box and lets its two through. */
+.modal-actions-panel .modal-walked { display: contents; }
+
+.modal-actions-panel .modal-meta-actions .saved-toggle,
+.modal-actions-panel .modal-meta-actions .walked-toggle,
+.modal-actions-panel .modal-share-btn {
+    justify-content: center;
+    width: 100%;
+}
+
+/* With the actions gone from the bar, the name gets it back: this reserves
+   only what .chrome-close needs, at both ends, the way the bar has always
+   kept the title centred.
+
+   Ties on specificity with the "an event has no Completed" rule above and
+   wins on being later — see the note at the top of this section. It matches
+   only when the actions are genuinely not in the titlebar, so in the narrow
+   layout below, where they are, every reservation up there still applies
+   exactly as it did. */
+.modal:not(:has(.chrome-titlebar .modal-meta-actions)) .chrome-titlebar {
+    --titlebar-pad: 40px;
+}
+
+/* Under 1000px there is no longer room beside the modal for the panel to
+   open into — it is 600px wide and centred, so the space either side runs
+   out before the panel does, and an opened tab would push the overlay into
+   a horizontal scroll. Below that width the actions go back into the
+   titlebar as the glyph-only row further down, which needs no room beside
+   the window at all.
+
+   js/home.js moves the node itself at this same width; this only hides the
+   empty tab it leaves behind. */
+@media (max-width: 999px) {
+    .modal-actions-drawer { display: none; }
+
+    /* The titlebar row, as it has always been on a phone — and now on every
+       width that cannot fit the tab.
+
+       It drops its words and keeps its glyphs: the chain and the tick box.
+       Three labelled buttons want 242px of each end of the bar and leave the
+       room's name nowhere to go, which is the whole reason the tab exists.
+       The labels are hidden from sight, not from a screen reader — each
+       button carries its own aria-label and title, so the hover name and the
+       announced name both survive. */
+    /* Measured, not guessed: the three glyphs and their gaps end 92px from
+       the bar's left edge, and 10px past that is the same stand-off the row
+       itself starts with. 78px was the old value and it was measured when
+       there were TWO of them — the same arithmetic that put the labelled
+       trio underneath the title on a desktop was quietly clipping the first
+       character or two of a long name here. */
+    .modal .chrome-titlebar { --titlebar-pad: 102px; }
+    .modal:not(:has(.modal-meta-actions .walked-toggle)) .chrome-titlebar { --titlebar-pad: 52px; }
+    /* An EC event's Share sits at the same end as the close button (see
+       .modal.is-ec's own rule), so that end has to hold both — 42px of
+       stand-off plus the glyph-only button the labels above collapse it
+       to. */
+    .modal.is-ec .chrome-titlebar { --titlebar-pad: 76px; }
+    .modal .chrome-titlebar .modal-meta-actions { gap: 4px; }
+    .modal .chrome-titlebar .modal-share-btn,
+    .modal .chrome-titlebar .saved-toggle,
+    .modal .chrome-titlebar .walked-toggle { padding: 4px 7px; }
+    .modal .chrome-titlebar .modal-share-label,
+    .modal .chrome-titlebar .saved-toggle-label,
+    .modal .chrome-titlebar .walked-toggle-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .side-drawer,
+    .modal-actions-drawer,
     .side-spine,
     .side-spine-arrow { transition: none; }
 }
