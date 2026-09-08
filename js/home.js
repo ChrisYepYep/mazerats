@@ -5321,6 +5321,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const f = progressFigures();
 
         const r = typeof window.RatrospectStatus === "function" ? window.RatrospectStatus() : null;
+        const o = typeof window.OddOneOutStatus === "function" ? window.OddOneOutStatus() : null;
 
         return [
             /* A heading rather than a row: there are two games now, and left
@@ -5349,6 +5350,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 badge: r && r.finished ? String(r.points) : "",
                 on: false,
                 run: () => { if (typeof window.openRatrospect === "function") window.openRatrospect(); }
+            },
+            {
+                name: "Odd One Out",
+                state: !o ? "Spot the room that does not belong"
+                    : o.finished ? `Done — ${o.points} points`
+                        : o.started ? `${o.done} of ${o.total} rounds done`
+                            : "Not played today",
+                badge: o && o.finished ? String(o.points) : "",
+                on: false,
+                run: () => { if (typeof window.openOddOneOut === "function") window.openOddOneOut(); }
             },
             { heading: "The archive" },
             {

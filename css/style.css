@@ -12363,3 +12363,166 @@ body[data-page="admin"] #activity-sessions {
     .ratro-line .ratro-card { width: 150px; }
     .ratro-card-thumb { width: 46px; height: 34px; }
 }
+
+/* ---------- Odd One Out ----------
+
+   Four pictures, and almost nothing else: the pictures ARE the question, so
+   everything around them is kept quiet enough not to argue with them.
+
+   Shares its head, results and share-grid treatment with Ratrospect on
+   purpose — two daily games that dress their scores differently look like
+   two different sites. What is particular here is the grid. */
+.odd-window {
+    width: min(720px, 94vw);
+    max-height: min(88vh, 920px);
+    display: flex;
+    flex-direction: column;
+}
+
+.odd-body {
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.odd-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.odd-progress,
+.odd-score,
+.odd-done-eyebrow {
+    margin: 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
+}
+
+.odd-score { color: var(--amber-bright); }
+
+.odd-ask {
+    margin: 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--parchment);
+}
+
+.odd-hint,
+.odd-empty,
+.odd-foot {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--parchment-dim);
+}
+
+/* Two by two rather than four across. Four in a row on a desktop makes each
+   picture small enough that the detail the round turns on — a floor tile, a
+   wall pattern — is gone, and the whole game is in that detail. */
+.odd-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.odd-tile {
+    position: relative;
+    display: block;
+    padding: 0;
+    border: 2px solid var(--chrome-border);
+    border-radius: 6px;
+    background: var(--bg-black);
+    overflow: hidden;
+    cursor: var(--cursor-pointer);
+    transition: border-color 0.12s ease-out, transform 0.12s ease-out;
+}
+
+.odd-tile img {
+    display: block;
+    width: 100%;
+    /* A fixed shape so four rooms of different proportions read as four
+       equal candidates rather than as one big one and three small. */
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    /* ---------- why the picture is cropped ----------
+
+       Habbo screenshots carry the client's own room panel burnt into the
+       bottom-left corner, and it does not say something vague — it says
+       "[DOM] Bonsai Madness [2], Owner: oshiboi". The prefix in brackets is
+       the maze's own tag. Shown whole, this game could be won without
+       looking at a single room: find the picture whose label does not match
+       the other three.
+
+       So every tile is zoomed and held towards its top right, which is the
+       corner of a Habbo screenshot that never holds the panel. The numbers
+       are worked from where the panel actually sits: at this scale the
+       visible window is roughly the source's 28%-91% across and 10%-73%
+       down, and the panel lives below and to the left of both.
+
+       Every tile is cropped identically, which matters as much as the crop
+       itself — a treatment applied to one picture and not the others would
+       be its own giveaway. */
+    transform: scale(1.6);
+    transform-origin: 75% 28%;
+}
+
+.odd-tile:hover,
+.odd-tile:focus-visible {
+    border-color: var(--amber-bright);
+    transform: translateY(-2px);
+    outline: none;
+}
+
+/* ---------- the day's results ---------- */
+
+.odd-done { display: flex; flex-direction: column; gap: 10px; }
+
+.odd-done-score {
+    margin: 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 2rem;
+    color: var(--amber-bright);
+}
+
+.odd-done-score span {
+    font-size: 0.9rem;
+    color: var(--parchment-dim);
+}
+
+.odd-done-line { margin: 0; font-size: 0.85rem; color: var(--parchment); }
+
+.odd-grid-share { margin: 0; font-size: 1.1rem; letter-spacing: 0.1em; }
+
+.odd-results {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.odd-result {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    background: var(--bg-panel);
+    font-size: 0.82rem;
+    color: var(--parchment-dim);
+}
+
+.odd-result-mark { font-weight: 700; }
+.odd-result.is-right .odd-result-mark { color: #7fbf6a; }
+.odd-result.is-wrong .odd-result-mark { color: #c46a5a; }
+.odd-result-text strong { color: var(--parchment); }
+
+.odd-done-actions { display: flex; gap: 8px; }

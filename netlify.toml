@@ -46,6 +46,11 @@
   to = "/home.html"
   status = 200
 
+[[redirects]]
+  from = "/odd"
+  to = "/home.html"
+  status = 200
+
 # The Sorcerer's Atlas, at the clean /wizard URL. Same rewrite treatment
 # as /admin above, so the address bar keeps the URL that was typed.
 [[redirects]]
