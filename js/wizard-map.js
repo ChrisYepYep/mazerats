@@ -228,25 +228,74 @@ window.WizardMap = function WizardMap(options) {
        already existed. */
     function sampleCurve(points, perSegment) {
         if (points.length < 2) return points.slice();
-        // Doubling the ends gives the first and last real segments a
-        // neighbour to take their tangent from, so a trail curves out of its
-        // start instead of leaving at a hard angle.
-        const p = [points[0], ...points, points[points.length - 1]];
+
+        /* Two things were making some trails curve sweetly and others kink,
+           and both of them are here rather than in the points themselves.
+
+           The first is the parameterisation. This was UNIFORM Catmull-Rom —
+           every span of the curve given an equal share of the parameter
+           regardless of how long it actually is. That is well behaved only
+           while the control points are evenly spaced, and on this map they
+           are not: a trail with a bend near one end has a short span and a
+           long one, and uniform spacing makes the curve overshoot the short
+           span and swing wide coming out of it. That overshoot is the
+           jankiness — a curve bulging past its own corner and doubling
+           back. CENTRIPETAL spacing (the square root of each span's length)
+           is the standard cure and is provably free of the cusps and self
+           -intersections uniform spacing produces.
+
+           The second is that x and y are not the same unit. Both are
+           percentages, but x is a percentage of 5400 and y of 4600, so a
+           curve computed directly on them is computed in a space stretched
+           by 17% one way — which tilts every tangent and is why a trail
+           running diagonally looked lumpier than the same trail running
+           flat. Put into square units first, and taken back out at the end. */
+        const k = map.width / map.height;
+        const P = points.map(([x, y]) => [x * k, y]);
+
+        /* The ends are REFLECTED rather than doubled. A doubled end sits on
+           top of its neighbour, which is a span of zero length — fine under
+           uniform spacing, a division by zero under centripetal. Reflecting
+           gives the end a straight run-in instead, which is also a better
+           shape: the trail leaves its room heading where it is going. */
+        const first = [2 * P[0][0] - P[1][0], 2 * P[0][1] - P[1][1]];
+        const last = [2 * P[P.length - 1][0] - P[P.length - 2][0],
+                      2 * P[P.length - 1][1] - P[P.length - 2][1]];
+        const p = [first, ...P, last];
+
+        const knot = (a, b, t) => {
+            const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            // Never zero, or the interpolation below divides by nothing.
+            return t + Math.max(Math.sqrt(d), 1e-4);
+        };
+
         const out = [];
         for (let i = 1; i < p.length - 2; i++) {
+            const p0 = p[i - 1], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2];
+            const t0 = 0;
+            const t1 = knot(p0, p1, t0);
+            const t2 = knot(p1, p2, t1);
+            const t3 = knot(p2, p3, t2);
+
             for (let s = 0; s < perSegment; s++) {
-                const t = s / perSegment;
-                const t2 = t * t;
-                const t3 = t2 * t;
-                out.push([0, 1].map(axis => 0.5 * (
-                    2 * p[i][axis] +
-                    (-p[i - 1][axis] + p[i + 1][axis]) * t +
-                    (2 * p[i - 1][axis] - 5 * p[i][axis] + 4 * p[i + 1][axis] - p[i + 2][axis]) * t2 +
-                    (-p[i - 1][axis] + 3 * p[i][axis] - 3 * p[i + 1][axis] + p[i + 2][axis]) * t3
-                )));
+                const t = t1 + (s / perSegment) * (t2 - t1);
+                // Barry-Goldman: three nested linear blends, which is the
+                // form that takes an uneven knot spacing without special
+                // casing anything.
+                const mix = (A, B, ta, tb) => {
+                    const w = (tb - t) / (tb - ta);
+                    return [A[0] * w + B[0] * (1 - w), A[1] * w + B[1] * (1 - w)];
+                };
+                const a1 = mix(p0, p1, t0, t1);
+                const a2 = mix(p1, p2, t1, t2);
+                const a3 = mix(p2, p3, t2, t3);
+                const b1 = mix(a1, a2, t0, t2);
+                const b2 = mix(a2, a3, t1, t3);
+                const c = mix(b1, b2, t1, t2);
+                out.push([c[0] / k, c[1]]);
             }
         }
-        out.push(p[p.length - 1]);
+        out.push(points[points.length - 1]);
         return out;
     }
 
@@ -264,8 +313,10 @@ window.WizardMap = function WizardMap(options) {
        and picks up on the other side, which is what the original drawing
        does and is far less distracting than a footprint printed across
        somebody's name. */
-    function footprintsAlong(points, spacingPct, strideP, avoid, pad) {
-        const curve = sampleCurve(points, 12);
+    function footprintsAlong(points, spacingPct, strideP, avoid, pad, opts) {
+        const uniform = !!(opts && opts.uniform);
+        const backwards = !!(opts && opts.backwards);
+        const curve = backwards ? sampleCurve(points, 12).slice().reverse() : sampleCurve(points, 12);
         const prints = [];
         /* Percentages of two different dimensions are not the same distance,
            so a step measured in "per cent" has to be measured in per cent of
@@ -290,8 +341,14 @@ window.WizardMap = function WizardMap(options) {
                    feet on the line they are walking along, and prints all
                    dead centre read as a dotted rule rather than as
                    footsteps. The offset is perpendicular to the direction of
-                   travel and alternates with each step. */
-                const side = step % 2 ? 1 : -1;
+                   travel and alternates with each step.
+
+                   Unless the trail asks for a marching line instead, in
+                   which case every print is the same foot on the same side.
+                   That reads as a direction rather than as somebody's walk,
+                   which is what it is for: a route you are being shown the
+                   way along, not one somebody wandered. */
+                const side = uniform ? -1 : (step % 2 ? 1 : -1);
                 const nx = -((to[1] - from[1]) * aspect) / segment * side * stride;
                 const ny = ((to[0] - from[0]) / segment) * side * stride / aspect;
                 const x = from[0] + (to[0] - from[0]) * t + nx;
@@ -342,9 +399,35 @@ window.WizardMap = function WizardMap(options) {
 
        Which is why drawRooms runs before drawTrails: the names have to
        exist to be measured. */
+    /* How near a trail is allowed to get to a name, as a percentage of the
+       sheet's width.
+
+       This was two numbers written into this function — 0.3 and 0.35 — and
+       there was no way to change them without editing the script. It is the
+       single setting that decides whether the map reads as tidy or as
+       cramped, so it belongs to the map: `labelGap` on the map record, and
+       `gap` on any one trail that wants to differ from it.
+
+       Measured in the width for BOTH directions, then converted, so a gap
+       of 0.4 is the same distance on the paper whichever way the trail
+       comes in. The old pair were not — 0.3 across and 0.35 down are, on a
+       sheet 5400 by 4600, 16px and 16px by luck rather than by intent, and
+       any change to either would have broken the match silently. */
+    const DEFAULT_LABEL_GAP = 0.34;
+
+    function gapFor(path) {
+        const own = path && path.gap;
+        const value = own == null || own === "" ? map.labelGap : own;
+        const gap = Number(value);
+        return Number.isFinite(gap) && gap >= 0 ? gap : DEFAULT_LABEL_GAP;
+    }
+
+    // The same clearance stated in each axis's own percentage.
+    function gapPad(gap) {
+        return { x: gap, y: gap * (map.width / map.height) };
+    }
+
     function labelBoxes() {
-        const marginX = 0.3;
-        const marginY = 0.35;
         const boxes = [];
         for (const room of rooms) {
             const el = roomEls.get(room.id);
@@ -359,9 +442,12 @@ window.WizardMap = function WizardMap(options) {
             const scale = room.size || 1;
             const halfW = el.offsetWidth * scale / 2 / map.width * 100;
             const halfH = el.offsetHeight * scale / 2 / map.height * 100;
+            // The raw extent of the writing. The clearance around it is
+            // added per trail, since each one may ask for its own — see
+            // gapFor.
             boxes.push({
-                x0: room.x - halfW - marginX, x1: room.x + halfW + marginX,
-                y0: room.y - halfH - marginY, y1: room.y + halfH + marginY
+                x0: room.x - halfW, x1: room.x + halfW,
+                y0: room.y - halfH, y1: room.y + halfH
             });
         }
         return boxes;
@@ -516,6 +602,43 @@ window.WizardMap = function WizardMap(options) {
        chosen by a number derived from the trail's id and the step. Derived
        rather than random so a redraw lays down the same walk: prints that
        reshuffled every time the map was panned would shimmer. */
+    /* An invisible line along the whole trail, for the editor to catch
+       clicks on.
+
+       Two things made a trail almost impossible to select before this, and
+       neither of them was the size of the target in the drawing.
+
+       A footprint trail has no line at all — it is a row of separate prints
+       with gaps between them, and only the prints could be hit. And a pen
+       stroke, though it IS a line, is drawn in MAP units, so its clickable
+       width shrank with the zoom: measured at the zoom this editor opens
+       on, the whole target was 4.6 screen pixels wide. That is why "click a
+       trail to select it, then drag its points" read as broken — the first
+       step failed, so the handles never appeared to be dragged.
+
+       vector-effect: non-scaling-stroke is what fixes it properly. The
+       stroke is laid in map coordinates like everything else, but its WIDTH
+       is taken in screen pixels, so the band stays the same easy size to
+       hit whether the whole castle is on screen or two rooms are.
+
+       Editor only. On the page a trail is not something you click, and an
+       invisible band over every one of them would sit between the reader
+       and the room names underneath. */
+    function drawHitLine(group, path) {
+        if (!options.trailHitLines) return;
+        const samples = sampleCurve(path.points, 16);
+        if (samples.length < 2) return;
+        const svg = document.createElementNS(SVG_NS, "svg");
+        svg.setAttribute("class", "wiz-trail-hit");
+        svg.setAttribute("viewBox", `0 0 ${map.width} ${map.height}`);
+        svg.setAttribute("preserveAspectRatio", "none");
+        const line = document.createElementNS(SVG_NS, "polyline");
+        line.setAttribute("points", samples
+            .map(([x, y]) => `${(x / 100) * map.width},${(y / 100) * map.height}`).join(" "));
+        svg.appendChild(line);
+        group.appendChild(svg);
+    }
+
     function layTrail(group, path, boxes) {
         const points = path.points;
         const aspect = map.height / map.width;
@@ -536,8 +659,18 @@ window.WizardMap = function WizardMap(options) {
            the editor that has never been given a style: below about six per
            cent of the sheet there is no room for enough prints to read as a
            walk anyway, so a short one becomes a stroke either way. */
+        const gap = gapPad(gapFor(path));
+
+        // Laid first so it sits UNDER the drawing, and so a footprint trail
+        // has something to be clicked on between its prints.
+        drawHitLine(group, path);
+
         const style = path.style || (length < ARC_UNDER ? "line" : "walk");
-        if (style === "line") return drawArc(group, path, boxes, length);
+        if (style === "line") return drawArc(group, path, boxes, length, gap);
+        // An arrow is drawn instead of walked, and the two directions differ
+        // only in which end the head lands on.
+        if (style === "arrow" || style === "arrow-there") return drawArrow(group, path, boxes, length, gap, false);
+        if (style === "arrow-back") return drawArrow(group, path, boxes, length, gap, true);
 
         // Between a little over half size and full size, reached by about a
         // third of the way across the sheet.
@@ -558,12 +691,21 @@ window.WizardMap = function WizardMap(options) {
         // Half a print, in each direction, as a percentage of the dimension
         // that direction is measured in. A print is taller than it is wide,
         // and turns as the trail turns, so the longer side is used for both.
+        // Half a print clear of the writing, PLUS whatever clearance this
+        // trail asks for on top — the print is a shape with width, so it
+        // has to keep its own half out of the way before the gap counts.
         const pad = {
-            x: printHeight / 2,
-            y: printHeight / 2 * (map.width / map.height)
+            x: printHeight / 2 + gap.x,
+            y: printHeight / 2 * (map.width / map.height) + gap.y
         };
 
-        for (const print of footprintsAlong(points, spacing, stride, boxes, pad)) {
+        /* Which of the three walks this is. "walk" is somebody's own
+           wandering — alternating feet, laid from the first room to the
+           second. The other two are a marching line, all one foot, and they
+           differ only in which way they march. */
+        const marching = style === "walk-there" || style === "walk-back";
+        for (const print of footprintsAlong(points, spacing, stride, boxes, pad,
+            { uniform: marching, backwards: style === "walk-back" })) {
             const el = document.createElement("span");
             el.className = "wiz-print";
             el.style.left = print.x + "%";
@@ -600,6 +742,26 @@ window.WizardMap = function WizardMap(options) {
 
     const SVG_NS = "http://www.w3.org/2000/svg";
 
+    /* Drawn as an arrow, and therefore a route you can only take one way.
+
+       The arrow is not decoration on top of an ordinary trail — it is the
+       statement that this is one-way, and the map has to mean it everywhere,
+       not just where it is drawn. What that changes is the "Leads to" list
+       on a room's sheet: the room the arrow points AT does not lead back
+       along it, so it must not offer it as a way out. See wizard.js.
+
+       Exported rather than kept here because the sheet is drawn by
+       js/wizard.js and this is the one place that knows what a style means. */
+    const ONE_WAY_STYLES = { "arrow": 1, "arrow-there": 1, "arrow-back": 1 };
+
+    // Which room a one-way trail may be followed FROM, or null when it can
+    // be taken either way. An "arrow-back" runs the other way round, so its
+    // origin is the trail's `to` end.
+    function walkableFrom(path) {
+        if (!path || !ONE_WAY_STYLES[path.style]) return null;
+        return path.style === "arrow-back" ? path.to : path.from;
+    }
+
     /* A pen line from one name to the next, drawn to look drawn.
 
        Three things do that, and all three matter. It TAPERS — thick through
@@ -614,19 +776,26 @@ window.WizardMap = function WizardMap(options) {
        inside is in map pixels and needs no conversion — and so the trail
        still hides, fades and highlights as a single element like any
        other. */
-    function drawArc(group, path, boxes, length) {
-        const samples = sampleCurve(path.points, 24);
-        if (samples.length < 2) return;
+    /* The trail as a run of map-pixel points, cut back at each end until it
+       is clear of the writing there.
 
-        // In map pixels, which is what the path data below is written in.
+       Shared by the pen stroke and the arrow, because both want the same
+       thing: a line that reaches toward each name without striking through
+       it. Null when there is nothing honest left — the two names are
+       touching, and any line between them would be drawn across one. */
+    function trimmedLine(path, boxes, gap, steps) {
+        const samples = sampleCurve(path.points, steps || 24);
+        if (samples.length < 2) return null;
+
+        // In map pixels, which is what the path data is written in.
         const pts = samples.map(([x, y]) => [x / 100 * map.width, y / 100 * map.height]);
 
-        /* Trimmed back from each end until it is clear of the writing there.
-           A stroke that ran to the middle of a name would be struck through
-           it; one that stops at the edge reads as pointing at it. */
+        // Grown by this trail's own clearance before being converted, so the
+        // line stops the asked-for distance short of the writing.
+        const g = gap || gapPad(gapFor(path));
         const pixelBoxes = (boxes || []).map(b => ({
-            x0: b.x0 / 100 * map.width, x1: b.x1 / 100 * map.width,
-            y0: b.y0 / 100 * map.height, y1: b.y1 / 100 * map.height
+            x0: (b.x0 - g.x) / 100 * map.width, x1: (b.x1 + g.x) / 100 * map.width,
+            y0: (b.y0 - g.y) / 100 * map.height, y1: (b.y1 + g.y) / 100 * map.height
         }));
         const inside = p => pixelBoxes.some(b => p[0] > b.x0 && p[0] < b.x1 && p[1] > b.y0 && p[1] < b.y1);
         let head = 0;
@@ -634,9 +803,12 @@ window.WizardMap = function WizardMap(options) {
         while (head < tail && inside(pts[head])) head++;
         while (tail > head && inside(pts[tail])) tail--;
         const line = pts.slice(head, tail + 1);
-        // Trimmed away to nothing: the two names are touching, and there is
-        // no honest line to draw between them.
-        if (line.length < 3) return;
+        return line.length < 3 ? null : line;
+    }
+
+    function drawArc(group, path, boxes, length, gap) {
+        const line = trimmedLine(path, boxes, gap);
+        if (!line) return;
 
         // How heavy the stroke is. Thinner for a shorter line, the way a
         // short pen mark is, and thinner again for a secret way.
@@ -675,6 +847,75 @@ window.WizardMap = function WizardMap(options) {
         const shape = document.createElementNS(SVG_NS, "path");
         shape.setAttribute("d", d);
         svg.appendChild(shape);
+        group.appendChild(svg);
+    }
+
+    /* A slim arrow, the way an old map draws a route you can only take one
+       way.
+
+       Deliberately NOT the pen stroke with a head stuck on the end. The
+       stroke is a drawn mark — it tapers to nothing at both ends and wavers
+       as it goes, which is what makes it read as ink. An arrow is a
+       different thing: it is a statement about direction, and it has to be
+       even along its length and sharp at its point or it does not read as
+       one. So it is a thin line of constant weight with a plain open head,
+       and no waver at all.
+
+       The head sits at the END the route leads TO, which is the whole
+       meaning of the mark — see ONE_WAY_STYLES for what that implies about
+       the rooms it joins. */
+    function drawArrow(group, path, boxes, length, gap, backwards) {
+        let line = trimmedLine(path, boxes, gap, 20);
+        if (!line) return;
+        // Drawn from origin to destination, so the head lands on the right
+        // end. Reversing the points is the whole of the difference between
+        // the two directions.
+        if (backwards) line = line.slice().reverse();
+
+        const weight = (map.width / 2600) * (path.secret ? 0.75 : 1);
+        const tip = line[line.length - 1];
+        const prev = line[Math.max(0, line.length - 3)];
+        const dx = tip[0] - prev[0], dy = tip[1] - prev[1];
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+
+        /* The head, sized off the line's own weight so the two stay in
+           proportion at any sheet size, and held between sensible limits so
+           a very short hop still gets a head you can see and a long run
+           across the castle does not get a spearhead. */
+        const head = Math.min(Math.max(weight * 7, map.width / 320), map.width / 150);
+        const spread = head * 0.42;
+        // The shaft stops short of the point, so the head is a clean V
+        // rather than a triangle with a line pushed through it.
+        const stopX = tip[0] - ux * head * 0.55, stopY = tip[1] - uy * head * 0.55;
+        const shaft = line.slice(0, -1).concat([[stopX, stopY]]);
+
+        const svg = document.createElementNS(SVG_NS, "svg");
+        svg.setAttribute("class", "wiz-arc wiz-arrow");
+        svg.setAttribute("viewBox", `0 0 ${map.width} ${map.height}`);
+        svg.setAttribute("preserveAspectRatio", "none");
+
+        const stem = document.createElementNS(SVG_NS, "polyline");
+        stem.setAttribute("points", shaft.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" "));
+        stem.setAttribute("class", "wiz-arrow-stem");
+        stem.setAttribute("stroke-width", weight.toFixed(2));
+        svg.appendChild(stem);
+
+        // An open V, not a filled triangle: a filled head at this size reads
+        // as a blob, and the drawing this is meant to sit beside is all thin
+        // pen lines.
+        const barbX = ux * head, barbY = uy * head;
+        const perpX = -uy * spread, perpY = ux * spread;
+        const barbs = document.createElementNS(SVG_NS, "polyline");
+        barbs.setAttribute("points", [
+            `${(tip[0] - barbX + perpX).toFixed(1)},${(tip[1] - barbY + perpY).toFixed(1)}`,
+            `${tip[0].toFixed(1)},${tip[1].toFixed(1)}`,
+            `${(tip[0] - barbX - perpX).toFixed(1)},${(tip[1] - barbY - perpY).toFixed(1)}`
+        ].join(" "));
+        barbs.setAttribute("class", "wiz-arrow-head");
+        barbs.setAttribute("stroke-width", weight.toFixed(2));
+        svg.appendChild(barbs);
+
         group.appendChild(svg);
     }
 
@@ -844,8 +1085,27 @@ window.WizardMap = function WizardMap(options) {
     }
 
     stage.addEventListener("pointerdown", e => {
-        if (e.target.closest(".wiz-controls, .wiz-search, .wiz-handle")) return;
+        /* The map's own chrome. Neither pans the map nor is any business of
+           the editor's, so this returns before anything else happens. */
+        if (e.target.closest(".wiz-controls, .wiz-search")) return;
+
+        /* The editor gets first refusal on every other press, INCLUDING one
+           on a trail's control point.
+
+           `.wiz-handle` used to be in the list above, and that single word
+           was why dragging a control point did nothing at all. The intent
+           was right — a press on a handle must never pan the map — but
+           returning here happens BEFORE options.onPointerDown is called, so
+           the editor was never told the press had happened and its drag
+           never started. Every other fix for "the nodes don't work" was
+           downstream of this one: the handles were the right size, in the
+           right place, and on top, and the press still went nowhere.
+
+           So the guard moves BELOW the handover instead. The editor claims
+           the press by returning false; if there is no editor, the press on
+           a handle still stops here and still does not pan the map. */
         if (options.onPointerDown && options.onPointerDown(e) === false) return;
+        if (e.target.closest(".wiz-handle")) return;
         if (!panEnabled) return;
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.size === 2) {
@@ -1082,6 +1342,9 @@ window.WizardMap = function WizardMap(options) {
         // The editor turns this off while a drag means something other than
         // panning the map.
         setPanEnabled(on) { panEnabled = on; },
-        wasDrag: () => dragMoved
+        wasDrag: () => dragMoved,
+        // Which room a one-way trail may be followed from, or null when it
+        // runs both ways. See ONE_WAY_STYLES.
+        walkableFrom
     };
 };

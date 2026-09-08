@@ -215,6 +215,12 @@ document.addEventListener("DOMContentLoaded", () => {
             if (path.hidden) continue;
             const other = path.from === room.id ? path.to : path.to === room.id ? path.from : null;
             if (other === null) continue;
+            /* A trail drawn as an arrow runs one way only, and this room may
+               not be the end it runs from. Standing at the room the arrow
+               points AT, the trail is not a way out — offering it as one
+               would be a door that does not open. */
+            const oneWayFrom = view.walkableFrom(path);
+            if (oneWayFrom && oneWayFrom !== room.id) continue;
             if (!other) { unnamed++; continue; }
             const target = roomById(other);
             // A hidden room is off the map, so it is not somewhere this room

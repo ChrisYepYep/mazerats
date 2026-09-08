@@ -120,7 +120,13 @@ const FIELDS = {
         // Where the map opens — a point and a zoom, rather than the whole
         // sheet fitted. Set from the editor by looking at what you want
         // people to see and pressing a button.
-        "startX", "startY", "startZoom", "texture"],
+        "startX", "startY", "startZoom", "texture",
+        /* How near a trail may come to a room's name, for every trail that
+           has not been given its own — see gapFor in js/wizard-map.js. On
+           the map rather than baked into the script because it is the one
+           number that decides whether the sheet reads as tidy or cramped,
+           and the right value is a matter of looking at it. */
+        "labelGap"],
     /* A picture placed on the map, and how it sits in the paper. `blend` is
        a CSS blend mode — multiply is what makes an illustration read as
        drawn onto the parchment rather than pasted over it — and the rest
@@ -147,8 +153,13 @@ const FIELDS = {
        for a route between junctions, a pen stroke for a door into a dead
        end. The builder sets it from the two rooms; the editor can overrule
        it for any single one. */
+    /* `gap` is this one trail's own clearance from the room names,
+       overriding the map's. Most trails never set it; the ones that do are
+       the ones running between two names close together, where the map-wide
+       figure either strikes through the writing or trims the trail to
+       nothing. */
     path: ["from", "to", "points", "spacing", "size", "opacity", "secret",
-        "style", "exit", "linkType", "notes", "hidden", "fromZoom", "toZoom"]
+        "style", "exit", "linkType", "notes", "hidden", "gap", "fromZoom", "toZoom"]
 };
 
 function pick(kind, body) {
@@ -224,7 +235,7 @@ exports.handler = async (event) => {
            endpoints, no kind. That is the line worth holding, because this
            is the one call here with no per-record confirmation behind it. */
         const MOVABLE = ["x", "y", "w", "h", "size", "rotation", "align", "points", "z",
-            "opacity", "spacing", "blend", "flipX", "flipY",
+            "opacity", "spacing", "gap", "blend", "flipX", "flipY",
             "grayscale", "sepia", "brightness", "contrast", "saturate", "blur",
             "fromZoom", "toZoom"];
         const writes = [];
