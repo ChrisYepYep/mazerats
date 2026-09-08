@@ -1133,6 +1133,17 @@
         if (started) return;
         started = true;
 
+        /* A day given back by an administrator. The scored row for today has
+           already been deleted server-side; this is the other half, which
+           only the browser holding the day can do. Claimed before the state
+           below is read, so what loads is a fresh day rather than the one
+           being cleared. See netlify/functions/daily-games.js. */
+        if (window.Daily && await window.Daily.claimReset("guess")) {
+            try {
+                localStorage.removeItem(STATE_KEY);
+            } catch (e) { /* private mode */ }
+        }
+
         if (!ROOMS.length) {
             try { ROOMS = await Api.getRooms(); } catch (e) { ROOMS = []; }
         }

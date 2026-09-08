@@ -529,6 +529,12 @@
             try { events = await Api.getEvents(); } catch (e) { events = []; }
             pool = buildPool(rooms, events);
         }
+        /* A day given back by an administrator lands here: the ticket is
+           claimed before the stored day is read, so what loads is the fresh
+           day rather than the one being cleared. */
+        if (await window.Daily.claimReset("ratrospect")) {
+            try { localStorage.removeItem(STATE_KEY); } catch (e) { /* private mode */ }
+        }
         loadState();
         loadStats();
         // The rules are shown every time the window opens, including part-way

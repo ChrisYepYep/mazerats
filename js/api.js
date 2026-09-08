@@ -374,6 +374,32 @@ const Api = {
         return this._write("/.netlify/functions/wizard", "PUT", token, { action: "bulk", items });
     },
 
+    /* ---------- the daily games, from the admin's side ----------
+
+       One call answers both halves of the panel: the list of players the
+       games have seen, and — when a player is named — where that one stands
+       in each game. Two endpoints would mean two round trips to draw one
+       screen, and the list is small enough that the saving is imaginary. */
+    getDailyPlayers(token, q, playerId) {
+        const params = new URLSearchParams();
+        if (q) params.set("q", q);
+        if (playerId) params.set("playerId", playerId);
+        const tail = params.toString();
+        return this._write("/.netlify/functions/daily-games" + (tail ? "?" + tail : ""), "GET", token);
+    },
+
+    /* Gives one player one game's day back. The scored row for today goes
+       (where the game has one), and a ticket is left for the game to collect
+       from the player's own browser the next time they open it — which is
+       the only way to reach a day that lives in localStorage. */
+    resetDailyGame(token, playerId, game) {
+        return this._write("/.netlify/functions/daily-games", "POST", token, { playerId, game });
+    },
+
+    cancelDailyReset(token, playerId, game) {
+        return this._write("/.netlify/functions/daily-games", "POST", token, { playerId, game, action: "cancel" });
+    },
+
     getBans(token) { return this._write("/.netlify/functions/bans", "GET", token); },
     createBan(token, ip, reason) { return this._write("/.netlify/functions/bans", "POST", token, { ip, reason }); },
     deleteBan(token, id) { return this._write(`/.netlify/functions/bans?id=${encodeURIComponent(id)}`, "DELETE", token); },

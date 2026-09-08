@@ -67,5 +67,38 @@ window.Daily = (function () {
         return d.toISOString().slice(0, 10);
     }
 
-    return { today, seededRandom, seedFrom, shuffle, dayBefore };
+    /* Has an administrator given this player their day back?
+
+       A game's day lives in this browser, which no server can reach into, so
+       a reset is left here as a ticket for the game to collect: the page
+       asks on the way in, clears its own stored day if there is one waiting,
+       and tells the server the ticket is spent. Whichever device they open
+       it on next is where it lands.
+
+       Never throws and never blocks the game. A player who is not signed in
+       has no ticket by definition, and an endpoint that is having a bad
+       afternoon must not be the reason somebody cannot play — so anything
+       going wrong here is read as "no reset waiting", which is true far more
+       often than not. */
+    async function claimReset(game) {
+        try {
+            const res = await fetch("/.netlify/functions/daily-games?mine=1", { credentials: "same-origin" });
+            if (!res.ok) return false;
+            const body = await res.json();
+            if (!body || !Array.isArray(body.games) || !body.games.includes(game)) return false;
+            // Spend it BEFORE clearing, so a failure here cannot leave a
+            // ticket that wipes the player's day again on every open.
+            await fetch("/.netlify/functions/daily-games?mine=1", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ game })
+            });
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    return { today, seededRandom, seedFrom, shuffle, dayBefore, claimReset };
 })();

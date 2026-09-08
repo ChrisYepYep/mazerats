@@ -555,6 +555,7 @@ document.addEventListener("DOMContentLoaded", () => {
         loadAboutText();
         loadContactMessages();
         loadBans();
+        loadDaily();
     }
 
     /* ---------- the atlas panel ----------
@@ -4178,6 +4179,255 @@ document.addEventListener("DOMContentLoaded", () => {
         adminNavEl.addEventListener("click", e => {
             const btn = e.target.closest(".chrome-nav-btn");
             if (btn) showPanel(btn.dataset.panel);
+        });
+    }
+
+    /* ---------- the daily games ----------
+
+       Three games, one puzzle each a day, and one thing an administrator
+       actually needs to do with them: give somebody their day back when
+       something has gone wrong with it.
+
+       The panel is deliberately two columns and not a table. A table would
+       be every player against every game, which is a report — and the
+       decision being made here is never "how is everyone doing", it is
+       "this person, this game". So: pick a player, see where they stand,
+       act on one game.
+
+       What a reset means differs by game and the panel says so rather than
+       showing three identical buttons that do different amounts. Guess the
+       Maze keeps a scored row per player per day, so its row is deleted and
+       the day can be submitted again. Ratrospect and Odd One Out keep their
+       day in the player's own browser, which nothing here can reach — for
+       those, and for the browser half of Guess the Maze, a ticket is left
+       for the game to collect the next time that player opens it. See
+       netlify/functions/daily-games.js. */
+
+    const dailySearchEl = document.getElementById("daily-search");
+    const dailyPlayersEl = document.getElementById("daily-players");
+    const dailyDetailEl = document.getElementById("daily-detail");
+    let dailyPlayers = [];
+    let dailyPicked = null;
+    let dailyDetail = null;
+    let dailyToday = "";
+    let dailyNote = "";
+
+    async function loadDaily(playerId) {
+        if (!dailyPlayersEl) return;
+        try {
+            const data = await Api.getDailyPlayers(adminToken, dailySearchEl ? dailySearchEl.value.trim() : "", playerId || "");
+            dailyPlayers = data.players || [];
+            dailyDetail = data.detail || null;
+            dailyToday = data.today || "";
+        } catch (e) {
+            dailyPlayers = [];
+            dailyDetail = null;
+        }
+        renderDailyPlayers();
+        renderDailyDetail();
+    }
+
+    function renderDailyPlayers() {
+        if (!dailyPlayersEl) return;
+        dailyPlayersEl.innerHTML = "";
+
+        if (!dailyPlayers.length) {
+            const empty = document.createElement("p");
+            empty.className = "admin-empty";
+            empty.textContent = dailySearchEl && dailySearchEl.value.trim()
+                ? "Nobody by that name has played."
+                : "Nobody has played a daily game yet.";
+            dailyPlayersEl.appendChild(empty);
+            return;
+        }
+
+        dailyPlayers.forEach(player => {
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "chrome-list-row admin-row admin-daily-player";
+            if (dailyPicked === player.id) row.classList.add("is-on");
+
+            /* A Discord display name is somebody else's text, so it goes in
+               as a text node. Every name on this panel arrives the same way
+               and is treated the same way. */
+            const info = document.createElement("div");
+            info.className = "row-info";
+
+            const heading = document.createElement("h3");
+            heading.textContent = player.name;
+            info.appendChild(heading);
+
+            const meta = document.createElement("p");
+            meta.className = "row-creator";
+            const bits = [];
+            if (player.days) bits.push(player.days + (player.days === 1 ? " day" : " days") + " scored");
+            if (player.lastDay) bits.push("last played " + player.lastDay);
+            if (player.pending.length) bits.push(player.pending.length + " reset waiting");
+            meta.textContent = bits.join(" · ") || "No scored days";
+            info.appendChild(meta);
+
+            row.appendChild(info);
+
+            if (player.pending.length) {
+                const flag = document.createElement("span");
+                flag.className = "admin-daily-flag";
+                flag.textContent = "RESET WAITING";
+                row.appendChild(flag);
+            }
+
+            row.addEventListener("click", () => {
+                dailyPicked = player.id;
+                loadDaily(player.id);
+            });
+            dailyPlayersEl.appendChild(row);
+        });
+    }
+
+    function renderDailyDetail() {
+        if (!dailyDetailEl) return;
+        dailyDetailEl.innerHTML = "";
+
+        if (!dailyDetail) {
+            const hint = document.createElement("p");
+            hint.className = "admin-empty";
+            hint.textContent = "Pick a player to see their games.";
+            dailyDetailEl.appendChild(hint);
+            return;
+        }
+
+        const player = dailyPlayers.find(p => p.id === dailyDetail.id);
+        const head = document.createElement("div");
+        head.className = "admin-daily-head";
+
+        const name = document.createElement("h3");
+        name.className = "admin-subheading";
+        name.textContent = player ? player.name : "This player";
+        head.appendChild(name);
+
+        const when = document.createElement("p");
+        when.className = "admin-hint";
+        when.textContent = "Today is " + dailyToday + ", counted in UTC — the same day boundary the games use.";
+        head.appendChild(when);
+
+        /* What the last action actually did, said where the action was
+           taken. A reset has two halves and only one of them has happened
+           by the time this appears — a line that says so is the difference
+           between a control you trust and one you press twice. */
+        if (dailyNote) {
+            const note = document.createElement("p");
+            note.className = "admin-daily-note";
+            note.textContent = dailyNote;
+            head.appendChild(note);
+        }
+        dailyDetailEl.appendChild(head);
+
+        dailyDetail.games.forEach(game => {
+            const card = document.createElement("div");
+            card.className = "admin-daily-game";
+
+            const title = document.createElement("h4");
+            title.className = "admin-daily-game-name";
+            title.textContent = game.name;
+            card.appendChild(title);
+
+            const state = document.createElement("p");
+            state.className = "admin-hint";
+            if (game.resetWaiting) {
+                state.textContent = "A reset is waiting. It takes effect the next time they open this game.";
+            } else if (!game.scored) {
+                state.textContent = "Kept in the player's browser — this page cannot see whether they have played today.";
+            } else if (game.playedToday) {
+                state.textContent = "Played today, " + game.todayPoints + " points" +
+                    (game.days ? " · " + game.days + " scored " + (game.days === 1 ? "day" : "days") + " in all" : "");
+            } else {
+                state.textContent = "Nothing scored today" +
+                    (game.days ? " · " + game.days + " scored " + (game.days === 1 ? "day" : "days") + " in all" : "");
+            }
+            card.appendChild(state);
+
+            const actions = document.createElement("div");
+            actions.className = "admin-daily-actions";
+
+            if (game.resetWaiting) {
+                const cancel = document.createElement("button");
+                cancel.type = "button";
+                cancel.className = "admin-action-pill";
+                cancel.textContent = "Call it off";
+                cancel.addEventListener("click", async () => {
+                    cancel.disabled = true;
+                    try {
+                        await Api.cancelDailyReset(adminToken, dailyDetail.id, game.key);
+                        dailyNote = "Reset called off — they keep today as it stands.";
+                    } catch (err) {
+                        if (err.status === 401) { lockOut(); return; }
+                        alert(err.message || "Could not call that off — try again.");
+                    }
+                    loadDaily(dailyDetail.id);
+                });
+                actions.appendChild(cancel);
+            } else {
+                const reset = document.createElement("button");
+                reset.type = "button";
+                reset.className = "admin-action-pill admin-pill-solid";
+                reset.textContent = "Reset today";
+                reset.addEventListener("click", async () => {
+                    /* Asked plainly, and the question says which game and
+                       whose. A reset is not destructive in the way deleting
+                       a maze is, but it does take somebody's score off a
+                       board, and that is worth one press of confirmation. */
+                    const who = player ? player.name : "this player";
+                    /* Written as two whole sentences rather than one glued
+                       together from a conditional half: the version that
+                       built it up out of clauses read "back? their saved day
+                       is cleared" whenever the game had no scored row, which
+                       is two of the three. */
+                    const what = game.scored
+                        ? "Their scored row for today is deleted, and their saved day is cleared the next time they open the game."
+                        : "Their saved day is cleared the next time they open the game.";
+                    if (!confirm("Give " + who + " today's " + game.name + " back?\n\n" + what)) return;
+                    reset.disabled = true;
+                    try {
+                        const out = await Api.resetDailyGame(adminToken, dailyDetail.id, game.key);
+                        dailyNote = out.scoreRowsDeleted
+                            ? "Scored row for today deleted. Their saved day clears the next time they open the game."
+                            : "Waiting: their saved day clears the next time they open the game.";
+                    } catch (err) {
+                        if (err.status === 401) { lockOut(); return; }
+                        alert(err.message || "Could not reset that — try again.");
+                    }
+                    loadDaily(dailyDetail.id);
+                });
+                actions.appendChild(reset);
+            }
+
+            card.appendChild(actions);
+            dailyDetailEl.appendChild(card);
+        });
+
+        if (dailyDetail.recent && dailyDetail.recent.length) {
+            const head2 = document.createElement("h4");
+            head2.className = "admin-daily-game-name";
+            head2.textContent = "Recent scored days";
+            dailyDetailEl.appendChild(head2);
+
+            const list = document.createElement("ul");
+            list.className = "admin-daily-recent";
+            dailyDetail.recent.forEach(row => {
+                const li = document.createElement("li");
+                li.textContent = row.day + " — " + row.points + " points, " + row.solved + " of 5 found";
+                list.appendChild(li);
+            });
+            dailyDetailEl.appendChild(list);
+        }
+    }
+
+    if (dailySearchEl) {
+        let dailyTimer = null;
+        dailySearchEl.addEventListener("input", () => {
+            clearTimeout(dailyTimer);
+            // A keystroke is not a query: waited out, the way the archive's
+            // own search box does it.
+            dailyTimer = setTimeout(() => loadDaily(dailyPicked), 220);
         });
     }
 

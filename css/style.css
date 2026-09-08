@@ -12156,11 +12156,27 @@ body[data-page="admin"] #activity-sessions {
     flex-direction: column;
 }
 
-.daily-body {
-    overflow-y: auto;
+/* The window holds a frame, and the frame holds one darker sheet — which is
+   what Guess the Maze does, and most of why that window looks finished. The
+   game sits ON something rather than floating in the window's own colour,
+   and the sheet is where the scrolling happens, so the frame keeps its edges
+   while the content moves inside them. */
+.daily-frame {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+}
+
+.daily-sheet {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 14px;
+    overflow-y: auto;
+    padding: 16px;
+    background: #2e2418;
+    scrollbar-color: var(--wood-dark) #2e2418;
 }
 
 /* ---------- the way in ---------- */
@@ -12526,4 +12542,114 @@ body[data-page="admin"] #activity-sessions {
     border-color: var(--amber-bright);
     transform: translateY(-2px);
     outline: none;
+}
+
+/* ---------- the admin's daily-games panel ----------
+
+   Two columns: who, then what. The decision this panel exists for is always
+   "this player, this game", never "how is everyone doing", so the player
+   list stays narrow and fixed and the detail beside it gets the room.
+
+   On a narrow window they stack, list first — picking still has to come
+   before acting. */
+.admin-daily {
+    display: grid;
+    grid-template-columns: minmax(220px, 300px) 1fr;
+    gap: 14px;
+    align-items: start;
+}
+
+.admin-daily-players {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+/* A row here is a button, because picking a player is the whole job of this
+   column. It keeps the list row's own look so the panel does not become a
+   different kind of list from every other one on the page. */
+.admin-daily-player {
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 0;
+    font: inherit;
+    cursor: var(--cursor-pointer);
+}
+
+.admin-daily-player.is-on {
+    background: var(--bg-panel-light);
+    box-shadow: inset 3px 0 0 var(--amber-bright);
+}
+
+/* Said on the row rather than only in the detail: an admin scanning the
+   list for "who have I already dealt with" should not have to open each
+   one to find out. */
+.admin-daily-flag {
+    align-self: center;
+    flex: 0 0 auto;
+    padding: 2px 6px;
+    border: 1px solid var(--amber);
+    border-radius: 10px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.48rem;
+    letter-spacing: 0.08em;
+    color: var(--amber-bright);
+}
+
+.admin-daily-head { margin-bottom: 12px; }
+
+.admin-daily-note {
+    margin: 8px 0 0;
+    padding: 7px 9px;
+    border-left: 3px solid var(--amber-bright);
+    border-radius: 3px;
+    background: var(--bg-panel);
+    font-size: 0.8rem;
+    color: var(--parchment);
+}
+
+/* One card per game, and they are the same size whatever the game keeps:
+   three games that behave differently should still LOOK like three of the
+   same thing, or the panel reads as three features rather than one. */
+.admin-daily-game {
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.admin-daily-game-name {
+    margin: 0 0 4px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--parchment);
+}
+
+.admin-daily-game .admin-hint { margin: 0 0 8px; }
+
+.admin-daily-actions { display: flex; gap: 8px; }
+
+.admin-daily-recent {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.admin-daily-recent li {
+    padding: 5px 8px;
+    border-radius: 4px;
+    background: var(--bg-panel);
+    font-size: 0.76rem;
+    color: var(--parchment-dim);
+}
+
+@media (max-width: 900px) {
+    .admin-daily { grid-template-columns: 1fr; }
+    .admin-daily-players { max-height: 40vh; }
 }

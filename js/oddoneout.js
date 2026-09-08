@@ -338,6 +338,10 @@
             try { rooms = await Api.getRooms(); } catch (e) { rooms = []; }
             pool = buildPool(rooms);
         }
+        // See the same claim in js/ratrospect.js.
+        if (await window.Daily.claimReset("odd")) {
+            try { localStorage.removeItem(STATE_KEY); } catch (e) { /* private mode */ }
+        }
         loadState();
         loadStats();
         showSplash = true;

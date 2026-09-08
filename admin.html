@@ -77,6 +77,7 @@
                     <button type="button" class="chrome-nav-btn" data-panel="console" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Console</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="messages" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Messages</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="wizard" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Atlas</span></button>
+                    <button type="button" class="chrome-nav-btn" data-panel="daily" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Daily</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="activity" id="activity-nav-btn" role="tab" aria-selected="false" hidden><span class="chrome-nav-btn-label">Activity</span></button>
@@ -445,6 +446,29 @@
                                             </p>
                                         </div>
                                     </div>
+                                </div>
+                            </section>
+
+                            <!-- ---------- Daily games ----------
+
+                                 Everything is drawn by js/admin.js: the
+                                 player list, the per-game standing, and the
+                                 reset controls. Empty here for the same
+                                 reason the other list panels are — the shape
+                                 of a row depends on what is in it. -->
+                            <section class="admin-panel" data-panel="daily" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Daily games</h3>
+                                        <p class="admin-hint">Guess the Maze, Ratrospect and Odd One Out. Pick a player to see where they stand and, where it is warranted, give them a day back &mdash; one game at a time.</p>
+                                    </div>
+                                    <div class="admin-panel-actions">
+                                        <input type="search" id="daily-search" class="admin-input" placeholder="Find a player..." aria-label="Find a player">
+                                    </div>
+                                </header>
+                                <div class="admin-daily">
+                                    <div class="chrome-list admin-daily-players" id="daily-players"></div>
+                                    <div class="admin-daily-detail" id="daily-detail"></div>
                                 </div>
                             </section>
 
