@@ -395,6 +395,56 @@
                                         </div>
                                     </header>
                                     <form class="admin-form is-open" id="wiz-map-form"></form>
+
+                                    <!-- ---------- a GIF of the map ----------
+
+                                         Framed by hand rather than by typing
+                                         coordinates: move the map above to
+                                         where the shot should begin, press
+                                         Set start, move it to where it should
+                                         end, press Set end. The two little
+                                         readouts say what is remembered, so
+                                         it is never a mystery what pressing
+                                         Make would produce. -->
+                                    <header class="admin-panel-head admin-panel-head-sub">
+                                        <div>
+                                            <h3 class="admin-subheading">Make a GIF</h3>
+                                            <p class="admin-hint">A slow zoom across the map, drawn from the map itself. Move the map above into the opening shot and press <strong>Set start</strong>, then move it to where the zoom should finish and press <strong>Set end</strong>.</p>
+                                        </div>
+                                    </header>
+                                    <div class="admin-form is-open" id="wiz-gif-panel">
+                                        <div class="admin-wiz-band-row">
+                                            <button type="button" class="admin-action-pill" id="wiz-gif-set-start">Set start</button>
+                                            <span class="admin-hint" id="wiz-gif-start-out">Not set</span>
+                                        </div>
+                                        <div class="admin-wiz-band-row">
+                                            <button type="button" class="admin-action-pill" id="wiz-gif-set-end">Set end</button>
+                                            <span class="admin-hint" id="wiz-gif-end-out">Not set</span>
+                                        </div>
+                                        <div class="admin-wiz-inspector-grid">
+                                            <label class="admin-field admin-field-narrow">Width (px)
+                                                <input type="number" id="wiz-gif-width" min="240" max="900" step="20" value="480">
+                                            </label>
+                                            <label class="admin-field admin-field-narrow">Seconds
+                                                <input type="number" id="wiz-gif-seconds" min="1" max="20" step="0.5" value="5">
+                                            </label>
+                                            <label class="admin-field admin-field-narrow">Frames a second
+                                                <input type="number" id="wiz-gif-fps" min="5" max="25" step="1" value="12">
+                                            </label>
+                                        </div>
+                                        <p class="admin-hint">A GIF has no compression between frames, so its size is roughly width &times; height &times; frames. 480px for five seconds at 12 a second is around 2MB; Discord takes 10MB. The estimate below is worked out before anything is made.</p>
+                                        <div class="admin-wiz-band-row">
+                                            <button type="button" class="admin-action-pill admin-pill-solid" id="wiz-gif-make" disabled>Make the GIF</button>
+                                            <span class="admin-hint" id="wiz-gif-status">Set a start and an end first.</span>
+                                        </div>
+                                        <div id="wiz-gif-result" hidden>
+                                            <img id="wiz-gif-preview" alt="The GIF just made" class="admin-wiz-gif-preview">
+                                            <p class="admin-wiz-band-row">
+                                                <a class="admin-action-pill" id="wiz-gif-save" download="sorcerers-atlas.gif">Save it</a>
+                                                <span class="admin-hint" id="wiz-gif-size"></span>
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
                             </section>
 
@@ -532,6 +582,10 @@
          unlocked: the map engine, then the atlas panel built on it. -->
     <script src="js/wizard-map.js?v=2"></script>
     <script src="js/admin-wizard.js?v=2"></script>
+    <!-- The GIF maker, and the GIF encoder underneath it. Only the admin
+         page has any use for either, so neither is on the public map. -->
+    <script src="js/gif-encode.js?v=2"></script>
+    <script src="js/wizard-gif.js?v=2"></script>
     <script src="js/admin.js?v=2"></script>
     <script src="js/password-field.js?v=2"></script>
     <script src="js/glyph-palette.js?v=2"></script>
