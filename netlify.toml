@@ -38,7 +38,7 @@
   to = "/home.html"
   status = 200
 
-# The Habbo Hogwarts map, at the clean /wizard URL. Same rewrite treatment
+# The Sorcerer's Atlas, at the clean /wizard URL. Same rewrite treatment
 # as /admin above, so the address bar keeps the URL that was typed.
 [[redirects]]
   from = "/wizard"

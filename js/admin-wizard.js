@@ -1,4 +1,4 @@
-/* The Hogwarts panel in the admin page — where the map at /wizard is made.
+/* The atlas panel in the admin page — where the map at /wizard is made.
 
    Its own file rather than another thousand lines on the end of js/admin.js,
    and not a self-contained page either: js/admin.js owns the session, the
@@ -1788,7 +1788,7 @@ window.AdminWizard = (function () {
         form.innerHTML = `
             ${field("Name", `<input type="text" name="name" required value="${esc(room.name)}">`)}
             ${field("Note — only needed when two rooms share a name", `<input type="text" name="note" value="${esc(room.note || "")}" placeholder="north, middle, by the lake…">`)}
-            ${field("Full name from the sheet", `<input type="text" name="fullName" value="${esc(room.fullName || "")}" placeholder="Hogwarts - Library">`)}
+            ${field("Full name from the sheet", `<input type="text" name="fullName" value="${esc(room.fullName || "")}" placeholder="Castle - Library">`)}
             ${field("Floor / area", `<input type="text" name="floor" value="${esc(room.floor || "")}" placeholder="Third Floor, Grounds, Hogsmeade…">`)}
             ${field("Status", `<select name="status">${STATUS_OPTIONS
                 .map(([v, l]) => `<option value="${v}"${(room.status || "") === v ? " selected" : ""}>${l}</option>`).join("")}</select>`)}

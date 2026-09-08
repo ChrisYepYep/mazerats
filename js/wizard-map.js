@@ -1,7 +1,7 @@
-/* The Habbo Hogwarts map, as a thing that can be drawn and moved about.
+/* The Sorcerer's Atlas, as a thing that can be drawn and moved about.
 
    Two pages need this and need it to agree with itself: /wizard, where a
-   visitor reads the map (js/wizard.js), and the Hogwarts panel in the admin,
+   visitor reads the map (js/wizard.js), and the atlas panel in the admin,
    where it is edited (js/admin-wizard.js). An editor that drew the map even
    slightly differently from the page would be an editor you cannot trust —
    you would arrange a name until it looked right and find it somewhere else
@@ -38,7 +38,7 @@
        view.setData(payload);   // { map, rooms, paths, layers }
        view.flyTo(x, y, 2.5);
 
-   The caller owns the markup — see wizard.html and the Hogwarts panel in
+   The caller owns the markup — see wizard.html and the atlas panel in
    admin.html for the elements this expects to find inside `stage`. */
 window.WizardMap = function WizardMap(options) {
     const stage = options.stage;

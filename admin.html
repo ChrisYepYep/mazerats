@@ -3,7 +3,7 @@
 <head>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Caveat is here for the Hogwarts panel, which letters room names in
+    <!-- Caveat is here for the atlas panel, which letters room names in
          it exactly as /wizard does. Without it the editor drew the map in a
          fallback serif — legible, but not the map, and the whole point of
          the editor sharing the page's engine is that what you arrange is
@@ -16,7 +16,7 @@
     <title>Admin — Maze Rats</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css?v=2">
-    <!-- The Hogwarts panel's map, and the editor around it. Shared with
+    <!-- The atlas panel's map, and the editor around it. Shared with
          wizard.html rather than duplicated, so the editor's parchment and
          the page's parchment are the same parchment. -->
     <link rel="stylesheet" href="css/wizard.css?v=2">
@@ -76,7 +76,7 @@
                     <button type="button" class="chrome-nav-btn" data-panel="events" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Events</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="console" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Console</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="messages" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Messages</span></button>
-                    <button type="button" class="chrome-nav-btn" data-panel="wizard" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Hogwarts</span></button>
+                    <button type="button" class="chrome-nav-btn" data-panel="wizard" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Atlas</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
                     <button type="button" class="chrome-nav-btn" data-panel="activity" id="activity-nav-btn" role="tab" aria-selected="false" hidden><span class="chrome-nav-btn-label">Activity</span></button>
@@ -253,7 +253,7 @@
                                 <div class="chrome-list" id="contact-messages-list"></div>
                             </section>
 
-                            <!-- ---------- Hogwarts ----------
+                            <!-- ---------- the atlas ----------
                                  The map at /wizard. Everything here is
                                  js/admin-wizard.js, which draws with the
                                  same engine the public page does
@@ -270,7 +270,7 @@
                             <section class="admin-panel" data-panel="wizard" hidden>
                                 <header class="admin-panel-head">
                                     <div>
-                                        <h3 class="admin-panel-title">Habbo Hogwarts</h3>
+                                        <h3 class="admin-panel-title">The Sorcerer's Atlas</h3>
                                         <p class="admin-hint">The interactive map at <strong>mazerats.net/wizard</strong>. Drag names into place, lay footprint trails between rooms, and decide what appears at which zoom.</p>
                                     </div>
                                     <button class="admin-action-pill admin-pill-solid admin-add-btn" id="wiz-add-room-btn" type="button">+ Add a Room</button>
@@ -529,7 +529,7 @@
     <script src="js/event-status.js?v=2"></script>
     <script src="js/site.js?v=2"></script>
     <!-- Both before admin.js, which calls into them once a session is
-         unlocked: the map engine, then the Hogwarts panel built on it. -->
+         unlocked: the map engine, then the atlas panel built on it. -->
     <script src="js/wizard-map.js?v=2"></script>
     <script src="js/admin-wizard.js?v=2"></script>
     <script src="js/admin.js?v=2"></script>

@@ -1,5 +1,5 @@
 /* ===========================================================
-   The Habbo Hogwarts map — /wizard, and its editor in the
+   The Sorcerer's Atlas — /wizard, and its editor in the
    admin page. Loaded alongside css/style.css, never instead
    of it: the header, the window chrome, the modal frame and
    the whole palette come from there.
@@ -798,7 +798,7 @@
 }
 
 /* ===========================================================
-   The editor — the Hogwarts panel in admin.html.
+   The editor — the atlas panel in admin.html.
 
    Everything above is shared with it: the parchment, the room
    labels, the footprints and the frame are the same rules, so

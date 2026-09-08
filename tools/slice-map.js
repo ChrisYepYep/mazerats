@@ -1,4 +1,4 @@
-/* Cuts the Habbo Hogwarts map into the pieces the interactive version is
+/* Cuts the Sorcerer's Atlas into the pieces the interactive version is
    built from.
 
    The map arrives as one transparent PNG — every room name, every footprint

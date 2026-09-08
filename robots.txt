@@ -16,7 +16,7 @@ Disallow: /admin.html
 # glyphs. Useful when building the site, meaningless in a search result.
 Disallow: /glyphs.html
 
-# The Habbo Hogwarts map. Reachable by anyone with the link, but still
+# The Sorcerer's Atlas. Reachable by anyone with the link, but still
 # being drawn — half its rooms have no picture and no description yet, and
 # a search result pointing at that is worse than no search result at all.
 # Lift this (and the noindex in wizard.html's own markup) when it is ready

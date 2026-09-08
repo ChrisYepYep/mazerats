@@ -36,8 +36,8 @@
          crawler does not have to fetch the page to find out. Lift both
          together. -->
     <meta name="robots" content="noindex, nofollow">
-    <title>Habbo Hogwarts — Maze Rats</title>
-    <meta name="description" content="An interactive map of Habbo Hogwarts on Habbo Hotel: Origins — every room, the passages between them, and what each one held.">
+    <title>The Sorcerer's Atlas — Maze Rats</title>
+    <meta name="description" content="An interactive map of the magical hallways within Habbo Hotel: Origins — every room, the passages between them, and what each one held.">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css?v=2">
     <link rel="stylesheet" href="css/wizard.css?v=2">
@@ -51,13 +51,13 @@
                 <span class="brand-text">MAZE RATS</span>
                 <span class="brand-tagline">Every maze. One place.</span>
             </a>
-            <span class="header-badge">Hogwarts</span>
+            <span class="header-badge">Sorcerer's Atlas</span>
         </div>
     </header>
 
     <main>
         <div class="wiz-head">
-            <h1 id="wiz-title">Habbo Hogwarts</h1>
+            <h1 id="wiz-title">The Sorcerer's Atlas</h1>
             <p class="wiz-intro" id="wiz-intro" hidden></p>
             <p class="wiz-credit" id="wiz-credit" hidden></p>
             <!-- Beside the title rather than floating over the map. Sat
@@ -75,7 +75,7 @@
              own full size, moved and scaled as one piece. tabindex so the
              arrow keys can pan it without a mouse — see the keydown handler
              in js/wizard.js. -->
-        <div class="wiz-stage" id="wiz-stage" tabindex="0" role="application" aria-label="Map of Habbo Hogwarts. Drag to pan, scroll to zoom, click a room for more.">
+        <div class="wiz-stage" id="wiz-stage" tabindex="0" role="application" aria-label="The Sorcerer's Atlas. Drag to pan, scroll to zoom, click a room for more.">
 
             <div class="wiz-canvas" id="wiz-canvas">
                 <div class="wiz-layers" id="wiz-layers"></div>
@@ -135,7 +135,7 @@
          travels with it rather than being left to luck. -->
     <script src="js/event-status.js?v=2"></script>
     <script src="js/site.js?v=2"></script>
-    <!-- The map engine, shared with the Hogwarts panel in the admin page so
+    <!-- The map engine, shared with the atlas panel in the admin page so
          the editor and the page can never disagree about where a name sits.
          Must load before wizard.js, which calls it. -->
     <script src="js/wizard-map.js?v=2"></script>

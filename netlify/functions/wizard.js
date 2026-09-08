@@ -1,4 +1,4 @@
-/* /.netlify/functions/wizard — the Habbo Hogwarts map at /wizard.
+/* /.netlify/functions/wizard — The Sorcerer's Atlas at /wizard.
 
    One endpoint and one collection for the whole map, rather than the
    four the pieces would otherwise want. The public page needs every part
@@ -26,7 +26,7 @@
    pixel would silently mean somewhere else afterwards.
 
    Writes need the "wizard" scope rather than the "site" one every other
-   endpoint here asks for, which is what lets a Hogwarts-only account exist
+   endpoint here asks for, which is what lets an atlas-only account exist
    at all. See WRITE_SCOPES in _auth.js. */
 const { getDb } = require("./_db");
 const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED } = require("./_auth");
@@ -77,7 +77,7 @@ async function ensureIdIndex(collection) {
 const MAP_DEFAULTS = {
     kind: "map",
     id: MAP_ID,
-    title: "Habbo Hogwarts",
+    title: "The Sorcerer's Atlas",
     intro: "",
     background: "",
     width: 2000,

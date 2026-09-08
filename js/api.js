@@ -159,7 +159,7 @@ const Api = {
 
     /* folder decides both where the image is filed in blob storage and who
        is allowed to put it there — "rooms" (the default, the archive) needs
-       a full admin, "wizard" needs only the Hogwarts scope. See
+       a full admin, "wizard" needs only the atlas scope. See
        FOLDER_SCOPES in netlify/functions/upload.js. */
     uploadImage(token, prefix, filename, dataUrl, folder) {
         return this._write("/.netlify/functions/upload", "POST", token, { prefix, filename, dataUrl, folder });
@@ -337,7 +337,7 @@ const Api = {
         return this._write("/.netlify/functions/admin-activity" + q, "GET", token);
     },
 
-    /* ---------- the Hogwarts map at /wizard ----------
+    /* ---------- the atlas at /wizard ----------
 
        One request for the whole map — background, artwork, room names and
        footprint trails — because the page cannot draw any of it correctly

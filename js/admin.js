@@ -462,7 +462,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
        An Albus account reads as view-only HERE, which is exactly right —
        the archive, the events, the accounts and the settings are all
-       read-only to it. The one place it is not is the Hogwarts panel, and
+       read-only to it. The one place it is not is the atlas panel, and
        that exception is made in the stylesheet (body.is-albus, see
        css/wizard.css) rather than by weakening this: the blanket rule stays
        blanket, and the exception is one selector naming one panel. */
@@ -470,7 +470,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return currentUserRole === "owner" || currentUserRole === "admin";
     }
 
-    // And the other half of that line: who may change the Hogwarts map.
+    // And the other half of that line: who may change the atlas.
     // Mirrors WRITE_SCOPES in netlify/functions/_auth.js, which is where the
     // rule is actually enforced.
     function canWriteWizard() {
@@ -498,7 +498,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function applyRoleVisibility() {
         const owner = canScanFurni();
         document.body.classList.toggle("is-viewer", !canWrite());
-        // Lifts the blanket greying back off the Hogwarts panel alone. See
+        // Lifts the blanket greying back off the atlas panel alone. See
         // canWrite above for why the exception lives in a class rather than
         // in the rule.
         document.body.classList.toggle("is-albus", currentUserRole === "wizard");
@@ -557,7 +557,7 @@ document.addEventListener("DOMContentLoaded", () => {
         loadBans();
     }
 
-    /* ---------- the Hogwarts panel ----------
+    /* ---------- the atlas panel ----------
 
        js/admin-wizard.js is a separate file with its own state, and this is
        the whole of the join between them: it gets the session, the role and
@@ -600,7 +600,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     /* folder decides where the image is filed and, with it, who is allowed
        to put it there: "rooms" (the default — the archive) needs a full
-       admin, "wizard" needs only the Hogwarts scope, which is what lets an
+       admin, "wizard" needs only the atlas scope, which is what lets an
        Albus account upload a room picture without gaining the run of the
        maze archive's storage. See FOLDER_SCOPES in
        netlify/functions/upload.js. */
@@ -622,7 +622,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
     // What a picture is allowed to grow to before it is scaled down. Wide
-    // enough for an illustration across the whole Hogwarts sheet, and for a
+    // enough for an illustration across the whole atlas sheet, and for a
     // room screenshot at more than life size.
     const MAX_UPLOAD_EDGE = 3000;
 
@@ -3269,7 +3269,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <select name="role">
                     <option value="admin">Standard Admin</option>
                     <option value="viewer">View Only (read-only)</option>
-                    <option value="wizard">Albus (the Hogwarts map only)</option>
+                    <option value="wizard">Albus (the atlas only)</option>
                     ${currentUserRole === "owner" ? '<option value="owner">Owner (can delete other admins)</option>' : ""}
                 </select>
               `);
@@ -4147,7 +4147,7 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.setAttribute("aria-selected", on ? "true" : "false");
         });
         /* The map has to be measured to be drawn, and a hidden element
-           measures zero — so the Hogwarts panel's first view is only
+           measures zero — so the atlas panel's first view is only
            correct once it is actually on screen. Every other panel here is
            a list and does not care. */
         if (name === "wizard" && typeof AdminWizard !== "undefined") AdminWizard.onShown();
@@ -4155,7 +4155,7 @@ document.addEventListener("DOMContentLoaded", () => {
            Editing the map is a long job done over many sittings, and being
            put back on the maze list every time the page reloads — which it
            does on every save to a function, and every time the dev server
-           restarts — means finding your way back to the Hogwarts tab a
+           restarts — means finding your way back to the atlas tab a
            hundred times an afternoon. */
         try { localStorage.setItem(PANEL_KEY, name); } catch (e) { /* private mode */ }
     }

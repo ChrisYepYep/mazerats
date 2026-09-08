@@ -45,7 +45,7 @@ function sessionOf(event) {
                and nothing else: every write endpoint refuses them (see
                canWrite below, which is what actually enforces it — the admin
                page hiding its buttons is only a courtesy).
-     wizard  — the Hogwarts map, and nothing else. Reads everything a viewer
+     wizard  — the atlas, and nothing else. Reads everything a viewer
                reads; writes only through netlify/functions/wizard.js. See
                WRITE_SCOPES below for how that line is actually drawn.
 
@@ -66,7 +66,7 @@ function resolveRole(admin) {
 
    Three scopes today: "site" is the archive and everything around it
    (mazes, events, contributors, settings, bans, other people's accounts),
-   "wizard" is the Hogwarts map at /wizard and nothing else, and "self" is
+   "wizard" is the atlas at /wizard and nothing else, and "self" is
    the caller's own password. A guard with no scope means "site", so every
    endpoint written before this existed keeps exactly the rule it had — an
    owner or admin, nobody else.
@@ -160,10 +160,10 @@ const forbidden = (message) => ({
 const READ_ONLY = forbidden("This account is view-only and cannot make changes.");
 
 // And what one returns to an account that CAN write, just not here — a
-// Hogwarts account reaching an archive endpoint. Told apart from the above
+// atlas account reaching an archive endpoint. Told apart from the above
 // because "view-only" would be a plain untruth to somebody who has just
 // finished saving a room on the map.
-const OUT_OF_SCOPE = forbidden("This account can only make changes to the Hogwarts map.");
+const OUT_OF_SCOPE = forbidden("This account can only make changes to the atlas.");
 
 /* The refusal that fits the caller, for endpoints that care to be accurate
    about it. Free of charge after canWrite: roleOf is memoized per request,
@@ -171,7 +171,7 @@ const OUT_OF_SCOPE = forbidden("This account can only make changes to the Hogwar
 
    Endpoints written before scopes existed keep returning READ_ONLY, which
    stays correct for them in the case that actually happens — a viewer. A
-   Hogwarts account is refused by those too, just with a slightly blunt
+   atlas account is refused by those too, just with a slightly blunt
    message, and only ever by hand-crafting the request: the admin page never
    shows it a control that would send one. */
 async function refuseWrite(event) {

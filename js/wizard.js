@@ -1,4 +1,4 @@
-/* The public Habbo Hogwarts map at /wizard.
+/* The public Sorcerer's Atlas at /wizard.
 
    A drawing of a castle nobody can walk any more, made walkable again: the
    whole map at a glance, and everything on it — a name, a trail of
@@ -387,9 +387,9 @@ document.addEventListener("DOMContentLoaded", () => {
         view.render();
 
         const map = data.map || {};
-        document.title = `${map.title || "Habbo Hogwarts"} — Maze Rats`;
+        document.title = `${map.title || "The Sorcerer's Atlas"} — Maze Rats`;
         const heading = document.getElementById("wiz-title");
-        if (heading) heading.textContent = map.title || "Habbo Hogwarts";
+        if (heading) heading.textContent = map.title || "The Sorcerer's Atlas";
         const intro = document.getElementById("wiz-intro");
         if (intro && map.intro) { intro.textContent = map.intro; intro.hidden = false; }
         const credit = document.getElementById("wiz-credit");

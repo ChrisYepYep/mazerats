@@ -1,4 +1,4 @@
-/* Builds the Habbo Hogwarts map from the connection sheet.
+/* Builds the Sorcerer's Atlas from the connection sheet.
 
    tools/hogwarts-data.json is the truth — ninety-three rooms and the
    ninety-six teleports between them, transcribed from the spreadsheet. This
@@ -1145,7 +1145,7 @@ for (const trail of trails) {
 
 function floorLabel(room) {
     if (room.zone !== "castle") {
-        return { hogsmeade: "Hogsmeade", grounds: "Grounds", approach: "Approach", express: "Hogwarts Express", privet: "Privet Drive", secret: "Secret" }[room.zone] || "";
+        return { hogsmeade: "Hogsmeade", grounds: "Grounds", approach: "Approach", express: "The Express", privet: "Privet Drive", secret: "Secret" }[room.zone] || "";
     }
     const f = room.floor;
     if (f === "dungeon") return "Dungeons";
@@ -1375,7 +1375,7 @@ async function commit() {
                     updatedAt: now
                 },
                 $setOnInsert: {
-                    createdAt: now, title: "Habbo Hogwarts",
+                    createdAt: now, title: "The Sorcerer's Atlas",
                     footprint: FOOTPRINT, footprintSpacing: 1.1, footprintSize: 0.9,
                     credit: "Map created by ChrisYepYep"
                 }

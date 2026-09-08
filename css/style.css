@@ -1947,7 +1947,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
    Selected on carrying the sprite rather than by a list of ids, which is
    what this was and which meant every window had to remember to add
    itself. Four of the five never did — the game, the event and privacy
-   modals, and the Hogwarts room sheet all fell through to .chrome-close's
+   modals, and the atlas room sheet all fell through to .chrome-close's
    own white gradient, which is what a white box behind the X is.
 
    The admin confirm/info dialogs share the .chrome-close class but write a
@@ -10921,7 +10921,7 @@ body[data-page="admin"] #activity-sessions {
 /* Every block above that declares display has to restate it for the hidden
    case — the attribute is only display:none from the browser's own
    stylesheet, so any class-level display outranks it. This is the same trap
-   the Hogwarts room sheet fell into. */
+   the atlas room sheet fell into. */
 .guess-entry[hidden],
 .guess-suggest[hidden],
 .guess-between[hidden],

@@ -9,7 +9,7 @@
    a standard admin can still create accounts, but only as "admin",
    "viewer" or "wizard", and can't remove anyone. A viewer can do none of
    it, and cannot change anything anywhere else on the site either. A wizard
-   is the same as a viewer everywhere except the Hogwarts map at /wizard,
+   is the same as a viewer everywhere except the atlas at /wizard,
    which it owns outright; the one thing it may change in HERE is its own
    password.
    The username ChrisYepYep is always treated as owner regardless of what's
@@ -158,7 +158,7 @@ exports.handler = async (event) => {
            DELETE handler below already draws for removing accounts.
 
            Changing your own password is the "self" scope rather than "site",
-           so a Hogwarts account — which has no business anywhere else in
+           so an atlas account — which has no business anywhere else in
            here — can still do this one thing to its own row. Resetting
            SOMEBODY ELSE'S is a site action and stays owner-only, checked
            below. See WRITE_SCOPES in _auth.js. */

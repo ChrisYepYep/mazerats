@@ -28,7 +28,7 @@ function slugify(text) {
 /* Every uploaded image lives under a top-level folder in the blob store,
    and that folder is also what decides who may write it. "rooms/" is the
    archive — maze and event pictures — and needs the "site" scope; "wizard/"
-   is the Hogwarts map and needs the "wizard" one. See WRITE_SCOPES in
+   is the atlas and needs the "wizard" one. See WRITE_SCOPES in
    _auth.js.
 
    Written as a table rather than as a string comparison at each call site
