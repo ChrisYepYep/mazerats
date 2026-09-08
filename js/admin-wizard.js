@@ -1928,8 +1928,13 @@ window.AdminWizard = (function () {
 
             <div class="admin-wiz-images">
                 ${imageFieldHtml("background", "Parchment background — optional, the drawn texture shows through where there is none", map.background)}
+                ${imageFieldHtml("backgroundDetail", "The same parchment, scanned larger — optional, fetched only when someone zooms in past the level below", map.backgroundDetail)}
                 ${imageFieldHtml("footprint", "Fallback footprint sprite", map.footprint)}
             </div>
+            <p class="admin-hint">The second sheet is what keeps the paper's grain from going soft
+                up close. Nobody downloads it until they zoom past
+                <strong>${map.backgroundDetailZoom || 2.5}&times;</strong>, so the map still opens on the
+                small one. Leave it empty and the small sheet is simply scaled up, as it always was.</p>
 
             <div class="admin-wiz-inspector-grid">
                 ${field("Sheet width (px)", `<input type="number" name="width" min="200" value="${map.width}">`, true)}
@@ -1937,6 +1942,7 @@ window.AdminWizard = (function () {
                 ${field("Closest zoom", `<input type="number" name="maxZoom" step="0.5" min="1" value="${map.maxZoom}">`, true)}
                 ${field("Footprint gap", `<input type="number" name="footprintSpacing" step="0.1" min="0" value="${map.footprintSpacing || 0}">`, true)}
                 ${field("Gap from room names", `<input type="number" name="labelGap" step="0.05" min="0" max="6" value="${map.labelGap == null ? 0.34 : map.labelGap}">`, true)}
+                ${field("Big sheet loads at", `<input type="number" name="backgroundDetailZoom" step="0.5" min="1" value="${map.backgroundDetailZoom == null ? 2.5 : map.backgroundDetailZoom}">`, true)}
             </div>
             <p class="admin-hint">How near a trail may come to a name, as a percentage of the sheet's
                 width, for every trail that has not been given its own. 0 lets them touch the writing;
@@ -1996,7 +2002,7 @@ window.AdminWizard = (function () {
         submitBtn.textContent = "Saving…";
         try {
             const images = {};
-            for (const key of ["background", "footprint"]) {
+            for (const key of ["background", "backgroundDetail", "footprint"]) {
                 const file = fd.get(key + "File");
                 images[key] = file && file.size
                     ? (await ctx.uploadImage("map", file)).url
@@ -2010,6 +2016,12 @@ window.AdminWizard = (function () {
                 height: Number(fd.get("height")),
                 maxZoom: Number(fd.get("maxZoom")),
                 footprintSpacing: Number(fd.get("footprintSpacing")),
+                backgroundDetailZoom: Number(fd.get("backgroundDetailZoom")) || 2.5,
+                /* Not `|| 0.34`: 0 is a real answer here — it means "let the
+                   trails touch the writing" — and || would quietly turn it
+                   back into the default every time it was chosen. */
+                labelGap: fd.get("labelGap") === "" || fd.get("labelGap") === null
+                    ? 0.34 : Number(fd.get("labelGap")),
                 ...(pendingStart || {}),
                 ...images
             });

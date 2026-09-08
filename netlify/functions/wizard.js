@@ -80,6 +80,13 @@ const MAP_DEFAULTS = {
     title: "The Sorcerer's Atlas",
     intro: "",
     background: "",
+    /* The same sheet of parchment photographed larger, and the zoom it is
+       worth fetching at. Empty means there is only the one sheet, which is
+       what every map had before this and what a map without a big scan
+       still wants: a second copy that is never sharper than the first is
+       half a megabyte spent on nothing. */
+    backgroundDetail: "",
+    backgroundDetailZoom: 2.5,
     width: 2000,
     height: 1125,
     minZoom: 1,
@@ -115,7 +122,8 @@ const FIELDS = {
        in tools/slice-map.js for where they come from, and layTrail in
        js/wizard-map.js for how they are dealt out. `footprint` is the single
        older sprite, kept as the fallback for a map with no bank. */
-    map: ["title", "intro", "background", "width", "height", "minZoom", "maxZoom",
+    map: ["title", "intro", "background", "backgroundDetail", "backgroundDetailZoom",
+        "width", "height", "minZoom", "maxZoom",
         "footprint", "footprints", "footprintSpacing", "footprintSize", "credit",
         // Where the map opens — a point and a zoom, rather than the whole
         // sheet fitted. Set from the editor by looking at what you want

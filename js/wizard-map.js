@@ -119,6 +119,7 @@ window.WizardMap = function WizardMap(options) {
            grab. They divide by this. */
         canvas.style.setProperty("--wiz-scale", scale);
         applyBands();
+        ensureDetail();
         if (options.onView) options.onView(zoom);
     }
 
@@ -453,6 +454,41 @@ window.WizardMap = function WizardMap(options) {
         return boxes;
     }
 
+    /* The parchment, twice.
+
+       The sheet the map opens on only ever has to look right at the size it
+       is drawn — the whole map in a window — and a scan big enough to hold
+       up at 6x is several times the file. Paying for that on the first
+       paint would be paying for detail nobody has asked to see yet.
+
+       So the big one is fetched the first time somebody zooms past
+       backgroundDetailZoom, and left in place afterwards: it is the same
+       picture, so a second visit to that zoom has nothing to load. The
+       small sheet stays underneath rather than being swapped out, which is
+       what makes the arrival invisible — there is never a moment with no
+       paper, however slow the fetch.
+
+       A zoom band would have been the obvious way to do this and is the
+       wrong one: bands are opacity, and an <img> at opacity 0 has already
+       been downloaded. */
+    let bgEl = null;
+    let detailEl = null;
+
+    function ensureDetail() {
+        if (detailEl || !bgEl || !map.backgroundDetail) return;
+        const at = Number(map.backgroundDetailZoom) || 2.5;
+        if (zoom < at) return;
+        const el = document.createElement("img");
+        el.className = "wiz-bg wiz-bg-detail";
+        el.alt = "";
+        // Faded in on load, not on creation: a picture revealed before it
+        // has decoded is a blank rectangle over the paper.
+        el.addEventListener("load", () => el.classList.add("is-in"));
+        el.src = map.backgroundDetail;
+        bgEl.after(el);
+        detailEl = el;
+    }
+
     function drawLayers() {
         layersEl.innerHTML = "";
         layerEls.clear();
@@ -480,12 +516,17 @@ window.WizardMap = function WizardMap(options) {
         // The uploaded background, where there is one, sits on the paper and
         // under the pictures — so a picture blends into whichever of the two
         // is beneath it.
+        bgEl = null;
+        detailEl = null;
         if (map.background) {
             const bg = document.createElement("img");
             bg.className = "wiz-bg";
             bg.src = map.background;
             bg.alt = "";
             layersEl.appendChild(bg);
+            bgEl = bg;
+            // In case the map is redrawn while already zoomed in.
+            ensureDetail();
         }
 
         for (const layer of layers) {
