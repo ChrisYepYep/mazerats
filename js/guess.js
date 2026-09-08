@@ -1133,17 +1133,6 @@
         if (started) return;
         started = true;
 
-        /* A day given back by an administrator. The scored row for today has
-           already been deleted server-side; this is the other half, which
-           only the browser holding the day can do. Claimed before the state
-           below is read, so what loads is a fresh day rather than the one
-           being cleared. See netlify/functions/daily-games.js. */
-        if (window.Daily && await window.Daily.claimReset("guess")) {
-            try {
-                localStorage.removeItem(STATE_KEY);
-            } catch (e) { /* private mode */ }
-        }
-
         if (!ROOMS.length) {
             try { ROOMS = await Api.getRooms(); } catch (e) { ROOMS = []; }
         }
@@ -1192,7 +1181,45 @@
         document.body.classList.add("modal-open");
         view = "intro";
         el.window.focus();
-        start().then(() => { if (state) goTo("intro"); });
+        claimAdminReset()
+            .then(() => start())
+            .then(() => { if (state) goTo("intro"); });
+    }
+
+    /* A day given back by an administrator.
+
+       On EVERY open rather than once per page load. It lived inside start()
+       at first, which runs exactly once — so a player who had already opened
+       the game in that tab could be reset, reopen, and find their finished
+       day still sitting there. The window is the thing being opened; the
+       claim belongs with it.
+
+       All three copies of the day have to go, and this is the one the server
+       cannot reach: the scored row and the account's mirror are deleted by
+       netlify/functions/daily-games.js, and localStorage by this. Missing
+       the account mirror is what made the first version of this appear to do
+       nothing — the game cleared its own copy and then adopted the finished
+       day straight back off the account. */
+    async function claimAdminReset() {
+        if (!window.Daily) return;
+        let given = false;
+        try { given = await window.Daily.claimReset("guess"); } catch (e) { given = false; }
+        if (!given) return;
+        try { localStorage.removeItem(STATE_KEY); } catch (e) { /* private mode */ }
+        /* And the copy in memory, which start() will not rebuild for a page
+           that has already run it. Without this the deck redraws from the
+           day that was just taken away.
+
+           renderAll, NOT buildDeck: buildDeck clones five round sheets and
+           inserts them, so calling it a second time leaves a deck of ten.
+           renderAll is what start() itself uses to draw the sheets from
+           whatever state holds. */
+        state = blankDay();
+        saveState();
+        if (started) {
+            renderAll();
+            prepareRound(state.round);
+        }
     }
 
     function close() {

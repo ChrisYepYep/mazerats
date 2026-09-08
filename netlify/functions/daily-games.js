@@ -39,6 +39,19 @@ const { playerFrom } = require("./_player");
 
 const SCORES = "guess_scores";
 const RESETS = "daily_resets";
+/* Guess the Maze keeps a THIRD copy of the day, and missing it is what made
+   the first version of this reset appear to do nothing at all.
+
+   A signed-in player's day in progress is mirrored onto their account in
+   player_state.guess, so a day begun on a phone can be finished on a laptop
+   (see netlify/functions/player-data.js). On opening, the game clears its
+   local day, then asks the account for its state and adopts whatever comes
+   back — so deleting the score row and the browser copy while leaving this
+   one simply restored the finished day a moment later.
+
+   A reset therefore clears all three: the scored row, the account's mirror,
+   and — by ticket — the browser's own copy. */
+const PLAYER_STATE = "player_state";
 
 /* The games this endpoint knows about. `scored` says whether the game keeps
    rows in guess_scores — which decides whether a reset has anything to
@@ -207,12 +220,25 @@ exports.handler = async (event) => {
             return json(200, { cancelled: Boolean(gone.deletedCount), game });
         }
 
+        let mirrorCleared = false;
         if (meta.scored) {
             // Today only. Deleting a player's whole history is a different
             // and much larger decision than giving them today back, and it
             // is not one a single button should be able to make.
             const gone = await scores.deleteOne({ playerId, day: today() });
             deleted = gone.deletedCount || 0;
+
+            /* And the account's mirror of the day in progress, which is the
+               copy the game reads back the instant it has cleared its own.
+               Only cleared if it is TODAY's: a mirror left over from
+               yesterday is already ignored by the game, and removing it
+               would be tidying up something nobody asked about. */
+            const state = await db.collection(PLAYER_STATE)
+                .findOne({ playerId }, { projection: { guess: 1 } });
+            if (state && state.guess && state.guess.day === today()) {
+                await db.collection(PLAYER_STATE).updateOne({ playerId }, { $set: { guess: null } });
+                mirrorCleared = true;
+            }
         }
 
         const player = await scores.findOne({ playerId }, { projection: { name: 1, avatar: 1 } });
@@ -233,6 +259,7 @@ exports.handler = async (event) => {
             game,
             playerId,
             scoreRowsDeleted: deleted,
+            accountDayCleared: mirrorCleared,
             /* Said plainly so the admin page can say it too: the browser
                half has not happened yet and will not until the player opens
                the game. */

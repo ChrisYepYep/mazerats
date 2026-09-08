@@ -12442,47 +12442,151 @@ body[data-page="admin"] #activity-sessions {
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
 }
 
-/* The line reads oldest to newest and scrolls rather than wraps: a timeline
-   on two rows is not a timeline. */
-.ratro-line {
+/* ---------- Ratrospect: the timeline itself ----------
+
+   The cards used to stand in a row with nothing underneath them, and the
+   places you could drop one into were invisible until a drag was already
+   happening — so the board did not say what it was or where anything could
+   go. There is a drawn rail now, its ends are labelled, and every slot on
+   it is visible before you pick anything up. */
+.ratro-timeline {
     display: flex;
-    align-items: stretch;
-    gap: 0;
-    overflow-x: auto;
-    padding: 4px 2px 12px;
+    align-items: center;
+    gap: 8px;
 }
 
-/* A gap between two cards. Narrow until something is carried over it, then
-   it opens to the width of a card — which shows where the card would land
-   without a word being written. */
+/* Set across rather than down. Turned on its side it was three cramped
+   letters a column wide, which is a decoration; the words are there to say
+   which way time runs, so they have to be readable at a glance. */
+.ratro-end {
+    flex: 0 0 auto;
+    align-self: flex-end;
+    padding-bottom: 8px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.48rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: #8a6a3d;
+}
+
+/* The rail is a background rather than an element, and `local` is the whole
+   trick: it makes the painting area the SCROLLED content rather than the
+   visible box, so the line is drawn under every card at any width instead
+   of stopping at the edge of the window. */
+.ratro-line {
+    position: relative;
+    flex: 1 1 auto;
+    display: flex;
+    align-items: flex-end;
+    gap: 0;
+    overflow-x: auto;
+    padding: 6px 4px 26px;
+    background-image: linear-gradient(rgba(226, 178, 96, 0.45), rgba(226, 178, 96, 0.45));
+    background-repeat: no-repeat;
+    background-position: 0 calc(100% - 12px);
+    background-size: 100% 2px;
+    background-attachment: local;
+}
+
+/* Every card stands on the rail: a short stem from the card down to the
+   line, so a card reads as a point in time rather than as a tile that
+   happens to be near one. */
+.ratro-card.is-down { position: relative; }
+
+.ratro-card.is-down::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    width: 2px;
+    height: 12px;
+    background: rgba(226, 178, 96, 0.45);
+    transform: translateX(-50%);
+}
+
+.ratro-card.is-down.is-right { border-color: #7fbf6a; }
+.ratro-card.is-down.is-wrong { border-color: #c46a5a; opacity: 0.9; }
+
+/* A slot on the rail, visible from the start. It widens under a dragged
+   card rather than appearing from nothing, so the line opens where the card
+   is going instead of flickering into existence. */
 .ratro-gap {
     flex: 0 0 auto;
-    width: 14px;
     align-self: stretch;
-    margin: 0 3px;
-    border: 2px dashed transparent;
+    width: 26px;
+    margin: 0 4px 12px;
+    border: 2px dashed rgba(226, 178, 96, 0.45);
     border-radius: 6px;
     background: transparent;
+    color: #8a6a3d;
     cursor: var(--cursor-pointer);
     transition: width 0.16s ease-out, border-color 0.16s ease-out, background-color 0.16s ease-out;
 }
 
 .ratro-gap:hover,
 .ratro-gap:focus-visible {
-    border-color: var(--amber);
-    background: rgba(226, 178, 96, 0.1);
+    border-color: var(--amber-bright);
+    background: rgba(226, 178, 96, 0.12);
     outline: none;
 }
 
 .ratro-gap.is-open {
     width: 132px;
     border-color: var(--amber-bright);
-    background: rgba(226, 178, 96, 0.14);
+    background: rgba(226, 178, 96, 0.16);
 }
+
+/* Where a wrong card should have gone: the same shape as a slot, holding
+   the words instead of a card. */
+.ratro-slot-ghost {
+    flex: 0 0 auto;
+    align-self: stretch;
+    display: grid;
+    place-items: center;
+    width: 132px;
+    margin-bottom: 12px;
+    padding: 4px;
+    border: 2px dashed #7fbf6a;
+    border-radius: 6px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.5rem;
+    line-height: 1.4;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #7fbf6a;
+    text-align: center;
+}
+
+/* ---------- what just happened ---------- */
+
+.ratro-verdict {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    border-radius: 6px;
+    border-left: 3px solid transparent;
+    background: var(--bg-panel);
+}
+
+.ratro-verdict.is-right { border-left-color: #7fbf6a; }
+.ratro-verdict.is-wrong { border-left-color: #c46a5a; }
+
+.ratro-verdict-line {
+    margin: 0;
+    font-size: 0.86rem;
+    color: var(--parchment-dim);
+}
+
+.ratro-verdict-line strong { color: var(--parchment); }
 
 @media (max-width: 620px) {
     .ratro-card { width: 108px; }
-    .ratro-gap.is-open { width: 108px; }
+    .ratro-gap.is-open,
+    .ratro-slot-ghost { width: 108px; }
 }
 
 /* ==========================================================================

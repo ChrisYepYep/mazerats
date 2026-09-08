@@ -190,24 +190,50 @@
     const finished = () => state.done || state.lives <= 0
         || state.results.length >= CARDS || !current();
 
-    /* A gap is "after this many cards": 0 is before everything, line.length
-       is after everything. Right or wrong is then whether the card's own
-       date falls inside that gap — the same question the player was asked,
-       rather than a second rule that could disagree with it. */
+    /* Where a card belongs: how many cards already down are older than it.
+
+       A gap is named the same way — "after this many cards", 0 being before
+       everything — so being right is simply the two numbers matching. The
+       first version asked instead whether the date fell between the
+       neighbours either side, which is the same question in more words and
+       could not say where a wrong card SHOULD have gone. This can, and the
+       reveal is built on it. */
+    const gapFor = (card, down) => down.filter(c => c.at < card.at).length;
+
+    /* What just happened, held until the player has seen it.
+
+       The game used to place a card and move straight on: a wrong one
+       vanished, a life went out, and nothing on screen said which card it
+       was, when it was actually from, or where it belonged. That is the
+       whole of what felt broken about it — every wrong answer taught you
+       nothing, so the game was five coin tosses with a scoreboard. */
+    let reveal = null;
+
     function placeAt(gap) {
-        if (finished()) return;
+        if (finished() || reveal) return;
         const card = current();
         if (!card) return;
         const down = line();
-        const after = gap === 0 ? null : down[gap - 1];
-        const before = gap >= down.length ? null : down[gap];
-        const right = (!after || card.at > after.at) && (!before || card.at < before.at);
+        const correctGap = gapFor(card, down);
+        const right = gap === correctGap;
 
         state.results.push({ index: nextIndex(), gap, right });
         if (!right) state.lives -= 1;
-        if (state.lives <= 0 || state.results.length >= CARDS) state.done = true;
         saveState();
-        if (state.done) bankDay();
+        reveal = { card, gap, correctGap, right, down };
+        render();
+    }
+
+    /* Done looking. The day only ends here rather than at the moment of
+       placing, so the last card of a run — and the one that takes the last
+       life — is shown before the results replace the board. */
+    function nextCard() {
+        reveal = null;
+        if (state.lives <= 0 || state.results.length >= CARDS) {
+            state.done = true;
+            saveState();
+            bankDay();
+        }
         render();
     }
 
@@ -244,8 +270,19 @@
             el.body.innerHTML = `<p class="daily-note">The archive is not answering just now — try again in a moment.</p>`;
             return;
         }
-        if (finished()) { el.body.innerHTML = resultsHtml(); return wireResults(); }
+        if (finished() && !reveal) {
+            /* Banked here as well as in nextCard, because a day can arrive
+               at its end without passing through that button: close the
+               window on the last reveal, or reload the page, and the
+               results are what loads. Banking twice is not possible —
+               bankDay returns the moment it sees today already counted. */
+            if (!state.done) { state.done = true; saveState(); }
+            bankDay();
+            el.body.innerHTML = resultsHtml();
+            return wireResults();
+        }
         if (showSplash) { el.body.innerHTML = splashHtml(); return wireSplash(); }
+        if (reveal) { el.body.innerHTML = revealHtml(); return wireReveal(); }
         el.body.innerHTML = boardHtml();
         wireBoard();
     }
@@ -278,42 +315,70 @@
             </div>`;
     }
 
+    function headHtml() {
+        const lives = Array.from({ length: LIVES }, (_, i) =>
+            `<span class="daily-life${i < state.lives ? "" : " is-spent"}" aria-hidden="true"></span>`).join("");
+        const placed = state.results.length + (reveal ? 0 : 1);
+        return `
+            <div class="daily-head">
+                <p class="daily-step">Card <strong>${Math.min(placed, CARDS)}</strong> of ${CARDS}</p>
+                <span class="daily-lives" aria-label="${state.lives} of ${LIVES} lives left">${lives}</span>
+                <p class="daily-points">${score()}<span> pts</span></p>
+            </div>`;
+    }
+
+    function downCardHtml(card, extra) {
+        return `
+            <article class="ratro-card is-down${extra ? " " + extra : ""}">
+                ${thumbHtml(card)}
+                <p class="ratro-card-title">${escapeHtml(card.title)}</p>
+                <p class="ratro-card-when">${escapeHtml(whenText(card))}</p>
+            </article>`;
+    }
+
+    /* The line, built as cards and gaps alternating.
+
+       `withCard` drops one extra card into a chosen gap, which is what the
+       reveal uses to show the placement exactly where the player put it
+       rather than describing it in a sentence underneath. */
+    function lineHtml(down, opts) {
+        const o = opts || {};
+        const pieces = [];
+        for (let i = 0; i <= down.length; i++) {
+            if (o.withCard && o.at === i) {
+                pieces.push(downCardHtml(o.withCard, o.right ? "is-right" : "is-wrong"));
+            } else if (o.belongedAt === i) {
+                // Where it should have gone: an empty slot in the line, so
+                // the answer is a place rather than a sentence about a place.
+                pieces.push(`<span class="ratro-slot-ghost" aria-hidden="true">belonged here</span>`);
+            }
+            if (o.gaps) {
+                const after = i === 0 ? null : down[i - 1];
+                const before = i >= down.length ? null : down[i];
+                const label = !after ? `Before ${before.title}`
+                    : !before ? `After ${after.title}`
+                        : `Between ${after.title} and ${before.title}`;
+                pieces.push(`<button type="button" class="ratro-gap" data-gap="${i}" aria-label="${escapeHtml(label)}"></button>`);
+            }
+            if (i < down.length) pieces.push(downCardHtml(down[i]));
+        }
+        /* The rail is drawn, not implied. Cards standing in a row with
+           nothing under them are a row of cards; a line with ends marked
+           OLDER and NEWER, and slots sitting on it, is a timeline you can
+           see where to drop something into. */
+        return `
+            <div class="ratro-timeline">
+                <span class="ratro-end" aria-hidden="true">Older</span>
+                <div class="ratro-line" id="ratro-line" role="group" aria-label="The timeline so far">${pieces.join("")}</div>
+                <span class="ratro-end" aria-hidden="true">Newer</span>
+            </div>`;
+    }
+
     function boardHtml() {
         const down = line();
         const card = current();
-
-        const lives = Array.from({ length: LIVES }, (_, i) =>
-            `<span class="daily-life${i < state.lives ? "" : " is-spent"}" aria-hidden="true"></span>`).join("");
-
-        /* Cards and gaps alternate, and the gaps are buttons. During a drag
-           the one nearest the pointer opens into a slot the card can fall
-           into; without a drag they are still the way in, which is what
-           makes this playable with a keyboard. */
-        const pieces = [];
-        for (let i = 0; i <= down.length; i++) {
-            const after = i === 0 ? null : down[i - 1];
-            const before = i >= down.length ? null : down[i];
-            const label = !after ? `Before ${before.title}`
-                : !before ? `After ${after.title}`
-                    : `Between ${after.title} and ${before.title}`;
-            pieces.push(`<button type="button" class="ratro-gap" data-gap="${i}" aria-label="${escapeHtml(label)}"></button>`);
-            if (before) {
-                pieces.push(`
-                    <article class="ratro-card is-down">
-                        ${thumbHtml(before)}
-                        <p class="ratro-card-title">${escapeHtml(before.title)}</p>
-                        <p class="ratro-card-when">${escapeHtml(whenText(before))}</p>
-                    </article>`);
-            }
-        }
-
         return `
-            <div class="daily-head">
-                <p class="daily-step">Card <strong>${state.results.length + 1}</strong> of ${CARDS}</p>
-                <span class="daily-lives" aria-label="${state.lives} of ${LIVES} lives left">${lives}</span>
-                <p class="daily-points">${score()}<span> pts</span></p>
-            </div>
-
+            ${headHtml()}
             <div class="ratro-hand-wrap">
                 <article class="ratro-card is-hand" id="ratro-hand" tabindex="0"
                     aria-label="${escapeHtml(card.title)} — drag into the line, or press a gap below">
@@ -324,8 +389,36 @@
                 </article>
                 <p class="daily-ask">Drag it into the line below — oldest on the left.</p>
             </div>
+            ${lineHtml(down, { gaps: true })}`;
+    }
 
-            <div class="ratro-line" id="ratro-line" role="group" aria-label="The line so far">${pieces.join("")}</div>`;
+    /* What just happened, shown rather than described.
+
+       The card sits in the line where it was put, wearing its real date and
+       marked right or wrong. A wrong one leaves an empty slot where it
+       should have gone, so the correction is a place on the line rather
+       than a sentence to be decoded — and then it is taken away again,
+       because a wrong card does not stay. */
+    function revealHtml() {
+        const r = reveal;
+        const last = state.results.length >= CARDS || state.lives <= 0;
+        return `
+            ${headHtml()}
+            <div class="ratro-verdict${r.right ? " is-right" : " is-wrong"}">
+                <p class="ratro-verdict-line">
+                    ${r.right ? "Right where it goes." : "Not there."}
+                    <strong>${escapeHtml(r.card.title)}</strong> — ${escapeHtml(whenText(r.card))}
+                </p>
+                <button type="button" class="guess-btn guess-btn--lead" id="ratro-next">
+                    ${last ? "See the day" : "Next card"} &rsaquo;
+                </button>
+            </div>
+            ${lineHtml(r.down, {
+                withCard: r.card,
+                at: r.gap,
+                right: r.right,
+                belongedAt: r.right ? -1 : r.correctGap
+            })}`;
     }
 
     /* Something a person might actually say, rather than a status line.
@@ -407,6 +500,11 @@
                 if (foot) foot.textContent = "Could not copy it — your browser said no.";
             }
         });
+    }
+
+    function wireReveal() {
+        const next = document.getElementById("ratro-next");
+        if (next) next.addEventListener("click", nextCard);
     }
 
     function wireBoard() {
@@ -537,10 +635,12 @@
         }
         loadState();
         loadStats();
-        // The rules are shown every time the window opens, including part-way
-        // through a day — which is also what makes it the natural home for
-        // the streak.
-        showSplash = true;
+        /* The rules on the way in, but only for a day nobody has started.
+           Shown on every open they became a door to push through before
+           every card; the header keeps a way back to them for anyone who
+           wants a reminder. */
+        showSplash = state.results.length === 0 && !state.done;
+        reveal = null;
         render();
     }
 
