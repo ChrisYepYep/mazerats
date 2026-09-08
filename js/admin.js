@@ -60,7 +60,27 @@ document.addEventListener("DOMContentLoaded", () => {
     const floatingSaveBtn = document.getElementById("floating-save-btn");
     const floatingCancelBtn = document.getElementById("floating-cancel-btn");
 
-    let adminToken = localStorage.getItem(TOKEN_KEY) || "";
+    /* The token, read and written behind a guard.
+
+       Every other store on the site is wrapped (see loadWalked in js/home.js,
+       the session id in js/track.js, the landing state in js/api.js); this
+       one was bare, and a browser set to block site data throws on the very
+       first line rather than returning null. That took the whole admin panel
+       down before it had drawn anything — with no message, because the
+       script that would have shown one had already stopped. Signing in
+       simply will not persist in that browser, which is a far smaller
+       problem than the page not loading. */
+    function readToken() {
+        try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; }
+    }
+    function writeToken(value) {
+        try {
+            if (value) localStorage.setItem(TOKEN_KEY, value);
+            else localStorage.removeItem(TOKEN_KEY);
+        } catch (e) { /* blocked or full: the session lasts this page only */ }
+    }
+
+    let adminToken = readToken();
     let currentUsername = "";
     let currentUserRole = "admin";
     let workingRooms = [];
@@ -185,7 +205,7 @@ document.addEventListener("DOMContentLoaded", () => {
             adminToken = result.token;
             currentUsername = result.username;
             currentUserRole = result.role || "admin";
-            localStorage.setItem(TOKEN_KEY, adminToken);
+            writeToken(adminToken);
             await enterAdmin();
         } catch (err) {
             loginError.textContent = err.message || "Wrong username or password — try again.";
@@ -197,7 +217,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     function lockOut() {
-        localStorage.removeItem(TOKEN_KEY);
+        writeToken("");
         adminToken = "";
         currentUsername = "";
         currentUserRole = "admin";
@@ -210,7 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function doLogout() {
-        localStorage.removeItem(TOKEN_KEY);
+        writeToken("");
         adminToken = "";
         currentUsername = "";
         currentUserRole = "admin";
@@ -584,9 +604,101 @@ document.addEventListener("DOMContentLoaded", () => {
        Albus account upload a room picture without gaining the run of the
        maze archive's storage. See FOLDER_SCOPES in
        netlify/functions/upload.js. */
+    /* The most an upload may be, and it is the browser's job to know it.
+
+       This has to match MAX_BYTES in netlify/functions/upload.js, and that
+       limit is itself set by what Netlify will carry: a function's request
+       payload caps at 6MB, and an image travels as base64 inside JSON, which
+       is four bytes on the wire for every three of picture. So 4MB of image
+       is about 5.5MB of request — the most that fits with room to spare.
+
+       The check belongs HERE rather than only on the server because of what
+       happens without it. Nothing stopped a thirty-megabyte PNG being read
+       into a data URL, turned into a forty-megabyte string and posted in one
+       piece; the server has to buffer the whole thing before it can reach
+       the line that would have rejected it, and locally that is enough to
+       take the dev server down with it. A limit you can only discover by
+       exceeding it is not a limit, it is a trap. */
+    const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+    // What a picture is allowed to grow to before it is scaled down. Wide
+    // enough for an illustration across the whole Hogwarts sheet, and for a
+    // room screenshot at more than life size.
+    const MAX_UPLOAD_EDGE = 3000;
+
+    const readableSize = bytes => bytes >= 1024 * 1024
+        ? (bytes / 1024 / 1024).toFixed(1) + "MB"
+        : Math.max(1, Math.round(bytes / 1024)) + "KB";
+
+    /* Brings an oversized picture under the limit by making it smaller, and
+       says so, rather than refusing it.
+
+       Refusing was the other option and it is worse for what this is for:
+       the pictures being uploaded are illustrations and screenshots, they
+       come off a camera or a canvas at whatever size that tool used, and
+       "make it smaller yourself and come back" is a task nobody wants in
+       the middle of laying out a map.
+
+       The FORMAT is kept — a PNG stays a PNG — because the map's art is
+       flat colour and pixel edges, and quietly re-encoding that as JPEG
+       would soften every one of them. Only the dimensions come down, in
+       steps, until it fits. */
+    async function shrinkForUpload(file) {
+        const bitmap = await createImageBitmap(file).catch(() => null);
+        if (!bitmap) return null;
+
+        const type = file.type === "image/jpeg" ? "image/jpeg" : "image/png";
+        let scale = Math.min(1, MAX_UPLOAD_EDGE / Math.max(bitmap.width, bitmap.height));
+
+        for (let attempt = 0; attempt < 6; attempt++) {
+            const w = Math.max(1, Math.round(bitmap.width * scale));
+            const h = Math.max(1, Math.round(bitmap.height * scale));
+            const canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const ctx2d = canvas.getContext("2d");
+            ctx2d.imageSmoothingQuality = "high";
+            ctx2d.drawImage(bitmap, 0, 0, w, h);
+
+            const blob = await new Promise(res => canvas.toBlob(res, type, 0.92));
+            if (!blob) return null;
+            if (blob.size <= MAX_UPLOAD_BYTES) {
+                bitmap.close && bitmap.close();
+                return { blob, width: w, height: h };
+            }
+            // Still too big: take another 25% off and try again.
+            scale *= 0.75;
+        }
+        bitmap.close && bitmap.close();
+        return null;
+    }
+
     async function uploadImageFile(prefix, file, folder) {
-        const dataUrl = await readFileAsDataUrl(file);
-        return Api.uploadImage(adminToken, prefix, file.name, dataUrl, folder);
+        let toSend = file;
+        let notice = "";
+
+        if (file.size > MAX_UPLOAD_BYTES) {
+            const original = readableSize(file.size);
+            const smaller = await shrinkForUpload(file);
+            if (!smaller) {
+                throw new Error(`That image is ${original}, and the most that can be uploaded is `
+                    + `${readableSize(MAX_UPLOAD_BYTES)}. It could not be scaled down automatically — `
+                    + `save it smaller and try again.`);
+            }
+            toSend = new File([smaller.blob], file.name, { type: smaller.blob.type });
+            notice = `That image was ${original}, over the ${readableSize(MAX_UPLOAD_BYTES)} limit — `
+                + `uploaded at ${smaller.width}×${smaller.height} (${readableSize(toSend.size)}) instead.`;
+        }
+
+        const dataUrl = await readFileAsDataUrl(toSend);
+        const result = await Api.uploadImage(adminToken, prefix, toSend.name, dataUrl, folder);
+        /* Handed back rather than announced from in here. Every caller shows
+           its own progress in its own place — a little "Uploading…" beside
+           the field being filled — and there is no one banner for this to
+           put a message in. Callers that have somewhere to say it, say it;
+           the rest ignore it and the upload simply works. */
+        if (notice) result.notice = notice;
+        return result;
     }
 
     function blobKeyFromUrl(url) {
@@ -739,7 +851,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <input type="file" class="admin-gallery-thumb-file admin-related-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp">
                             <span class="admin-gallery-thumb-replace-text">Replace Image</span>
                         </label>
-                        <input type="text" class="admin-gallery-label admin-related-name" value="${r.name || ""}" placeholder="Image name">
+                        <input type="text" class="admin-gallery-label admin-related-name" value="${escapeHtml(r.name || "")}" placeholder="Image name">
                     </div>
                     <div class="admin-gallery-actions-secondary">
                         <button type="button" class="admin-pill-btn admin-related-up" ${i === 0 ? "disabled" : ""} title="Move up">&#9650; Up</button>
@@ -1465,7 +1577,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="admin-gallery-row" data-sub-index="${vi}">
                     <div class="admin-gallery-row-top">
                         <div class="admin-gallery-thumb" style="${v.image ? `background-image:url('${imgCdn(v.image, 100, 100, 55)}');` : ""}"></div>
-                        <input type="text" class="admin-gallery-label admin-${kind}-oldversions-sublabel" value="${v.label || ""}" placeholder="Label (optional)">
+                        <input type="text" class="admin-gallery-label admin-${kind}-oldversions-sublabel" value="${escapeHtml(v.label || "")}" placeholder="Label (optional)">
                     </div>
                     <div class="admin-gallery-actions-secondary">
                         ${oldVersionMoveButtonsHtml(`admin-${kind}-oldversions`, vi, items.length)}
@@ -1729,7 +1841,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="admin-gallery-row" data-sub-index="${vi}">
                     <div class="admin-gallery-row-top">
                         <div class="admin-gallery-thumb" style="${v.image ? `background-image:url('${imgCdn(v.image, 100, 100, 55)}');` : ""}"></div>
-                        <input type="text" class="admin-gallery-label admin-oldversions-sublabel" value="${v.label || ""}" placeholder="Label (optional)">
+                        <input type="text" class="admin-gallery-label admin-oldversions-sublabel" value="${escapeHtml(v.label || "")}" placeholder="Label (optional)">
                     </div>
                     <div class="admin-gallery-actions-secondary">
                         ${oldVersionMoveButtonsHtml("admin-oldversions", vi, g.oldVersions.length)}
@@ -1788,7 +1900,7 @@ document.addEventListener("DOMContentLoaded", () => {
                                        <input type="file" class="admin-gallery-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp">
                                        <span class="admin-gallery-thumb-upload-text">Drag or click to upload image</span>
                                    </label>`}
-                            <input type="text" class="admin-gallery-label" value="${g.label || ""}" placeholder="Room label">
+                            <input type="text" class="admin-gallery-label" value="${escapeHtml(g.label || "")}" placeholder="Room label">
                         </div>
                         <div class="admin-gallery-actions">
                             <button type="button" class="admin-pill-btn admin-gallery-oldversions-toggle ${expanded ? "active" : ""}" title="Add or view older versions of this room">${oldVersionsLabel}</button>
@@ -2685,8 +2797,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         cfg.formEl.innerHTML = `
             <h3 class="admin-form-title">${isEdit ? "Edit " + cfg.singular : "Add a New " + cfg.singular}</h3>
-            ${fieldRow(cfg.titleLabel, `<input type="text" name="title" required value="${item[cfg.fieldMap.title] || ""}">`)}
-            ${fieldRow(cfg.subtitleLabel, `<input type="text" name="subtitle" value="${item[cfg.fieldMap.subtitle] || ""}">`)}
+            ${fieldRow(cfg.titleLabel, `<input type="text" name="title" required value="${escapeHtml(item[cfg.fieldMap.title] || "")}">`)}
+            ${fieldRow(cfg.subtitleLabel, `<input type="text" name="subtitle" value="${escapeHtml(item[cfg.fieldMap.subtitle] || "")}">`)}
             ${ecSeasonFieldHtml}
             ${statusFieldHtml}
             ${difficultyFieldHtml}
@@ -2708,9 +2820,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span class="admin-thumb-status"></span>
                 </div>
             `)}
-            ${fieldRow("Short description (shown on the card)", `<textarea name="description" rows="2">${item.description || ""}</textarea>`)}
+            ${fieldRow("Short description (shown on the card)", `<textarea name="description" rows="2">${escapeHtml(item.description || "")}</textarea>`)}
             ${articleFieldHtml}
-            ${fieldRow("Full details (shown in the popup, optional)", `<textarea name="details" rows="4">${item.details || ""}</textarea>`)}
+            ${fieldRow("Full details (shown in the popup, optional)", `<textarea name="details" rows="4">${escapeHtml(item.details || "")}</textarea>`)}
             ${fieldRow("Links &amp; References (optional, shown directly beneath the description)", `<textarea name="linksReferences" rows="3">${item.linksReferences || ""}</textarea>`)}
             ${fieldRow("Habbo link (optional)", `<input type="text" name="habboLink" value="${item.habboLink || ""}" placeholder="https://...">`)}
             ${entranceSectionHtml}
@@ -3344,7 +3456,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         contributorsFormEl.innerHTML = `
             <h3 class="admin-form-title">${isEdit ? "Edit Contributor" : "Add a New Contributor"}</h3>
-            ${fieldRow("Username (Habbo)", `<input type="text" name="username" value="${contributor.username || ""}" required autocomplete="off">`)}
+            ${fieldRow("Username (Habbo)", `<input type="text" name="username" value="${escapeHtml(contributor.username || "")}" required autocomplete="off">`)}
             <!-- Divs, not labels. A <label> wrapping a group of checkboxes
                  belongs to the FIRST one, so clicking the heading "Mazes
                  contributed to" would tick whichever maze happened to sort
