@@ -39,6 +39,7 @@
     let state = null;
     let stats = null;
     let el = {};
+    let showSplash = true;
 
     // ---------- the pool ----------
 
@@ -135,7 +136,12 @@
     function loadStats() {
         let s = null;
         try { s = JSON.parse(localStorage.getItem(STATS_KEY) || "null"); } catch (e) { s = null; }
-        stats = s && typeof s === "object" ? s : { played: 0, streak: 0, best: 0, bestScore: 0, lastDay: "" };
+        /* Merged over the defaults rather than trusted whole: a stats object
+           saved by an earlier shape of this game is still an object, so it
+           passes any "is this a thing" test while missing half the fields —
+           which is how "Best day undefined" ended up on the results card. */
+        stats = Object.assign({ days: 0, streak: 0, bestDay: 0, points: 0, lastDay: "" },
+            s && typeof s === "object" ? s : null);
     }
 
     function saveStats() {
@@ -146,9 +152,9 @@
     function bankDay() {
         if (stats.lastDay === day()) return;
         stats.streak = stats.lastDay === window.Daily.dayBefore(day()) ? stats.streak + 1 : 1;
-        stats.played += 1;
-        stats.best = Math.max(stats.best || 0, stats.streak);
-        stats.bestScore = Math.max(stats.bestScore || 0, score());
+        stats.days += 1;
+        stats.bestDay = Math.max(stats.bestDay || 0, score());
+        stats.points = (stats.points || 0) + score();
         stats.lastDay = day();
         saveStats();
     }
@@ -182,11 +188,41 @@
         if (!el.body) return;
         const rounds = dealt();
         if (!rounds.length) {
-            el.body.innerHTML = `<p class="odd-empty">The archive is not answering just now — try again in a moment.</p>`;
+            el.body.innerHTML = `<p class="daily-note">The archive is not answering just now — try again in a moment.</p>`;
             return;
         }
-        el.body.innerHTML = finished() ? resultsHtml() : roundHtml(rounds[roundNow()]);
-        wire();
+        if (finished()) { el.body.innerHTML = resultsHtml(); return wireResults(); }
+        if (showSplash) { el.body.innerHTML = splashHtml(); return wireSplash(); }
+        el.body.innerHTML = roundHtml(rounds[roundNow()]);
+        wireRound();
+    }
+
+    /* The rules, on the way in. This game's premise cannot be worked out by
+       looking at it: four pictures of four different rooms look exactly like
+       four pictures of four different rooms, and nothing on screen says that
+       three of them share a builder. Told once, in a sentence, it becomes a
+       game; left unsaid, it is a shrug and a guess. */
+    function splashHtml() {
+        const started = state.picks.length > 0;
+        return `
+            <div class="daily-splash">
+                <p class="daily-splash-eyebrow">Every day, five rounds</p>
+                <h3 class="daily-splash-title">ODD ONE OUT</h3>
+                <p class="daily-splash-blurb">Four rooms. Three of them are from the same maze,
+                    and one has wandered in from somewhere else. Find the intruder.</p>
+                <ol class="daily-rules">
+                    <li><span class="daily-rules-n" aria-hidden="true">1</span>
+                        <p>The three that belong are <strong>different rooms</strong>, so they will not look alike — go on the building instead.</p></li>
+                    <li><span class="daily-rules-n" aria-hidden="true">2</span>
+                        <p>The floor, the palette, how densely it is furnished: a maze is <strong>one builder's habits</strong>, room after room.</p></li>
+                    <li><span class="daily-rules-n" aria-hidden="true">3</span>
+                        <p>One pick a round, <strong>a hundred points</strong> for each one you spot. No lives — every round is played.</p></li>
+                </ol>
+                <button type="button" class="guess-btn guess-btn--lead" id="odd-start">
+                    ${started ? "Back to the rooms" : "Show me the first four"} &rsaquo;
+                </button>
+                ${stats.streak > 1 ? `<p class="daily-note">${stats.streak} day streak.</p>` : ""}
+            </div>`;
     }
 
     function roundHtml(round) {
@@ -196,13 +232,13 @@
             </button>`).join("");
 
         return `
-            <div class="odd-head">
-                <p class="odd-progress">Round <strong>${roundNow() + 1}</strong> of ${dealt().length}</p>
-                <p class="odd-score">${score()} pts</p>
+            <div class="daily-head">
+                <p class="daily-step">Round <strong>${roundNow() + 1}</strong> of ${dealt().length}</p>
+                <p class="daily-points">${score()}<span> pts</span></p>
             </div>
-            <p class="odd-ask">Three of these are the same maze. Which one is not?</p>
+            <p class="daily-ask">Three of these are the same maze. Which one is not?</p>
             <div class="odd-grid">${tiles}</div>
-            <p class="odd-hint">Go on the building rather than the room: the floor, the palette,
+            <p class="daily-note">Go on the building rather than the room: the floor, the palette,
                 how densely it is furnished.</p>`;
     }
 
@@ -210,34 +246,49 @@
         const rounds = dealt();
         const right = state.picks.filter(p => p.right).length;
         /* A wrong pick is always one of the home maze's own pictures — there
-           is only one imposter in the four — so naming the maze you chose
+           is only one intruder in the four — so naming the maze you chose
            reads as nonsense: "was hiding in Alt Maze, you said Alt Maze".
            What actually happened is that you took one of the three that
-           belonged, and that is what it says. */
+           belonged, and that is what the row says. */
         const rows = state.picks.map((pick, i) => {
             const round = rounds[i];
-            return `<li class="odd-result${pick.right ? " is-right" : " is-wrong"}">
-                    <span class="odd-result-mark" aria-hidden="true">${pick.right ? "✓" : "✗"}</span>
-                    <span class="odd-result-text">
-                        <strong>${escapeHtml(round.imposter.name)}</strong> was hiding in
-                        ${escapeHtml(round.home.name)}${pick.right ? "" : " — you took one of the three that belonged"}
-                    </span>
+            return `<li class="${pick.right ? "is-won" : "is-lost"}">
+                    <span class="guess-answers-n" aria-hidden="true">${i + 1}</span>
+                    <span class="daily-answers-name">${escapeHtml(round.imposter.name)}</span>
+                    <span class="guess-answers-mark">in ${escapeHtml(round.home.name)}</span>
+                    <span class="guess-answers-mark daily-answers-points">${pick.right ? "+" + POINTS_EACH : "—"}</span>
                 </li>`;
         }).join("");
 
         return `
-            <div class="odd-done">
-                <p class="odd-done-eyebrow">That is the day</p>
-                <p class="odd-done-score">${score()}<span> / ${rounds.length * POINTS_EACH}</span></p>
-                <p class="odd-done-line">${right} of ${state.picks.length} spotted${
-                    stats.streak > 1 ? ` · ${stats.streak} day streak` : ""}</p>
-                <p class="odd-grid-share" aria-hidden="true">${shareGrid()}</p>
-                <ul class="odd-results">${rows}</ul>
-                <div class="odd-done-actions">
+            <div class="guess-summary daily-summary">
+                <p class="guess-score daily-verdict">${verdictFor(right)}</p>
+                <p class="guess-points"><strong>${score()}</strong><span>points</span></p>
+                <p class="guess-next-up">${right} of ${rounds.length} spotted</p>
+                <p class="guess-grid" aria-label="Result grid">${shareGrid()}</p>
+                <dl class="guess-stats">
+                    <div><dt>Streak</dt><dd>${stats.streak}</dd></div>
+                    <div><dt>Best day</dt><dd>${stats.bestDay}</dd></div>
+                    <div><dt>Days played</dt><dd>${stats.days}</dd></div>
+                    <div><dt>All-time</dt><dd>${stats.points}</dd></div>
+                </dl>
+                <div class="guess-summary-actions">
                     <button type="button" class="guess-btn" id="odd-share">Copy result</button>
                 </div>
-                <p class="odd-foot" id="odd-foot">Four more rooms tomorrow.</p>
+                <p class="daily-note" id="odd-foot">Four more rooms tomorrow.</p>
+
+                <h4 class="guess-answers-head">Who was hiding where</h4>
+                <ul class="guess-answers">${rows}</ul>
             </div>`;
+    }
+
+    /* Something a person might say, rather than a status line — see the
+       same decision in js/ratrospect.js. */
+    function verdictFor(right) {
+        if (right === ROUNDS) return "All five. Nothing got past you.";
+        if (right === ROUNDS - 1) return "One slipped through.";
+        if (right === 0) return "Not a single one. Brutal.";
+        return right + " of " + ROUNDS + " — those builders know what they are doing.";
     }
 
     const shareGrid = () => state.picks.map(p => (p.right ? "🟩" : "🟥")).join("");
@@ -246,10 +297,18 @@
         return `Odd One Out ${day()} — ${score()}/${dealt().length * POINTS_EACH}\n${shareGrid()}\n${location.origin}/odd`;
     }
 
-    function wire() {
+    function wireSplash() {
+        const start = document.getElementById("odd-start");
+        if (start) start.addEventListener("click", () => { showSplash = false; render(); });
+    }
+
+    function wireRound() {
         el.body.querySelectorAll(".odd-tile").forEach(btn => {
             btn.addEventListener("click", () => choose(Number(btn.dataset.tile)));
         });
+    }
+
+    function wireResults() {
         const share = document.getElementById("odd-share");
         if (share) {
             share.addEventListener("click", async () => {
@@ -272,7 +331,7 @@
         document.body.classList.add("modal-open");
         el.window.focus();
         if (!pool.length) {
-            el.body.innerHTML = `<p class="odd-empty">Dealing…</p>`;
+            el.body.innerHTML = `<p class="daily-note">Dealing…</p>`;
             let rooms = [];
             // Api is a top-level const in js/api.js — a global binding, but not
             // a property of window. Called bare, as the other games call it.
@@ -281,6 +340,7 @@
         }
         loadState();
         loadStats();
+        showSplash = true;
         render();
     }
 

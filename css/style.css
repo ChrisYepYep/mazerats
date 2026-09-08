@@ -11350,8 +11350,11 @@ body[data-page="admin"] #activity-sessions {
 
 /* ---------- the boards' range switch, and other people's grids ---------- */
 
+/* Centred, because the board under them is centred and a switch pushed to
+   one edge of a centred card reads as something that has come loose. */
 .guess-board-ranges {
     display: flex;
+    justify-content: center;
     gap: 4px;
     flex-wrap: wrap;
     margin-bottom: 6px;
@@ -12127,39 +12130,126 @@ body[data-page="admin"] #activity-sessions {
     .furni-room-row { transition: none; }
 }
 
-/* ---------- Ratrospect ----------
+/* ==========================================================================
+   The daily games
+   ==========================================================================
 
-   The archive in the order it happened. Its window borrows the site's own
-   chrome, so what is styled here is only the board: the card being placed,
-   the line it goes into, and the slots between.
+   Ratrospect and Odd One Out are two games, and they are one FIXTURE: same
+   window, same way in, same score out of five hundred, pasted into the same
+   channel side by side. So the parts that are not the game itself — the
+   rules you are shown on the way in, and the card you are left with on the
+   way out — are shared here rather than written twice and left to drift.
 
-   Everything below the head is laid out as a column rather than a canvas,
-   because the game is read top to bottom — what to place, then where the
-   line currently stands — and the line itself is the one thing allowed to
-   scroll sideways. */
-.ratro-window {
-    width: min(760px, 94vw);
-    max-height: min(86vh, 900px);
+   What is particular to each game lives under its own prefix further down:
+   the line of cards for Ratrospect, the four pictures for Odd One Out. */
+
+/* .modal sets max-width: 600px on itself, so a plain .daily-window loses to
+   it on specificity and the window silently stays narrow — which is exactly
+   what happened, and why the results card was spilling out of its frame.
+   .guess-window solves it the same way: say both, from a selector carrying
+   .modal. */
+.modal.daily-window {
+    width: min(720px, 94vw);
+    max-width: min(720px, 94vw);
+    max-height: min(88vh, 920px);
     display: flex;
     flex-direction: column;
 }
 
-.ratro-body {
+.daily-body {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
 }
 
-.ratro-head {
+/* ---------- the way in ---------- */
+
+.daily-splash {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.daily-splash-eyebrow,
+.daily-eyebrow {
+    margin: 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #8a6a3d;
+}
+
+.daily-splash-title {
+    margin: 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: clamp(1.3rem, 4.5vw, 1.9rem);
+    letter-spacing: 0.06em;
+    color: var(--amber-bright);
+}
+
+.daily-splash-blurb {
+    margin: 0;
+    max-width: 46ch;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--parchment);
+}
+
+/* The rules, numbered. Three of them: a fourth is a manual, and two cannot
+   say both what you do and how a round ends. */
+.daily-rules {
+    margin: 2px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.daily-rules li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.daily-rules p {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    color: var(--parchment-dim);
+}
+
+.daily-rules strong { color: var(--parchment); }
+
+.daily-rules-n {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--amber);
+    border-radius: 50%;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.6rem;
+    color: var(--amber-bright);
+}
+
+/* ---------- while it is being played ---------- */
+
+.daily-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(226, 178, 96, 0.18);
 }
 
-.ratro-progress,
-.ratro-score {
+.daily-step,
+.daily-points {
     margin: 0;
     font-family: 'Silkscreen', monospace;
     font-size: 0.6rem;
@@ -12168,14 +12258,28 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment-dim);
 }
 
-.ratro-score { color: var(--amber-bright); }
+.daily-step strong { color: var(--parchment); }
+.daily-points { color: var(--amber-bright); }
+.daily-points span { color: var(--parchment-dim); }
 
-/* Three lives, drawn as pips rather than hearts: a heart on a parchment map
-   of a castle is somebody else's game. A spent one stays in place hollow,
-   so what you have left is read against what you started with. */
-.ratro-lives { display: inline-flex; gap: 5px; }
+.daily-ask {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--parchment);
+}
 
-.ratro-life {
+.daily-note {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--parchment-dim);
+}
+
+/* Lives, as pips rather than hearts — a heart belongs to a different sort of
+   game. A spent one stays in place hollow, so what is left reads against
+   what there was. */
+.daily-lives { display: inline-flex; gap: 5px; }
+
+.daily-life {
     width: 9px;
     height: 9px;
     border-radius: 50%;
@@ -12183,249 +12287,195 @@ body[data-page="admin"] #activity-sessions {
     box-shadow: 0 0 0 1px #000;
 }
 
-.ratro-life.is-spent {
+.daily-life.is-spent {
     background: transparent;
     box-shadow: inset 0 0 0 1px #6b5231;
 }
 
-.ratro-ask {
-    margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.68rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+/* ---------- the card you are left with ----------
+
+   Nothing here draws it: the results card IS Guess the Maze's, class for
+   class, so the three daily games hand back the same card with different
+   numbers on it. See .guess-summary and the rules under it.
+
+   What follows is only what that shared card does not already say. */
+
+/* The verdict rides on .guess-score, which is sized for the score it
+   usually carries. This is a sentence rather than a number, so it is the
+   paper colour and a size down. */
+.daily-verdict {
+    font-size: 0.86rem;
+    letter-spacing: 0.2px;
     color: var(--parchment);
 }
 
-.ratro-hint,
-.ratro-empty {
-    margin: 0;
-    font-size: 0.78rem;
-    color: var(--parchment-dim);
+/* The name in a row of the shared answers list: the one part that has to be
+   allowed to run out of room. */
+.daily-answers-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--parchment);
 }
 
-/* A card. The one in hand and the ones on the line are the same object at
-   two moments, so they are the same rule with a modifier — a separate
-   treatment for each would drift the moment either was touched. */
-.ratro-card {
+.daily-answers-points { font-variant-numeric: tabular-nums; }
+
+/* ==========================================================================
+   Ratrospect - the line of cards
+   ========================================================================== */
+
+.ratro-hand-wrap {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
+    gap: 8px;
+}
+
+/* A card: square picture, name under it, and the date under that once it is
+   down. The one in hand and the ones on the line are the same object at two
+   moments, so they are one rule with a modifier rather than two treatments
+   that drift apart. */
+.ratro-card {
+    width: 132px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
     background: var(--bg-panel-light);
     border: 2px solid var(--chrome-border);
     border-radius: 6px;
     box-shadow: inset 0 1px 0 rgba(255, 236, 200, 0.08);
+    text-align: center;
 }
 
-.ratro-card-thumb {
-    width: 62px;
-    height: 46px;
+.ratro-thumb {
+    display: block;
+    width: 100%;
+    /* Square, so six cards in a row are six of the same shape and the line
+       reads as a line rather than as a row of different pictures. */
+    aspect-ratio: 1 / 1;
     object-fit: cover;
     border-radius: 3px;
     background: var(--bg-black);
-    flex: 0 0 auto;
 }
 
-.ratro-card-text { min-width: 0; }
+.ratro-thumb--blank {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 3px;
+    background: var(--bg-black);
+}
 
 .ratro-card-kind {
     margin: 0;
     font-family: 'Silkscreen', monospace;
-    font-size: 0.5rem;
+    font-size: 0.48rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: #8a6a3d;
 }
 
 .ratro-card-title {
-    margin: 1px 0 0;
-    font-size: 0.9rem;
-    line-height: 1.2;
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.25;
     color: var(--parchment);
+    /* Two lines and then an ellipsis: a five-word maze name should not make
+       one card twice the height of its neighbours. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
-.ratro-card-by,
+.ratro-card-by { margin: 0; font-size: 0.68rem; color: var(--parchment-dim); }
+
 .ratro-card-when {
-    margin: 2px 0 0;
-    font-size: 0.72rem;
-    color: var(--parchment-dim);
+    margin: 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.52rem;
+    letter-spacing: 0.04em;
+    color: var(--amber-bright);
 }
 
-.ratro-card-when { color: var(--amber-bright); }
-
-/* The card in hand is the question, so it is the loudest thing on the
-   board. */
+/* The card in hand is the question, so it is the loudest thing on the board,
+   and it says it can be picked up by lifting under the cursor. */
 .ratro-card.is-hand {
     border-color: var(--amber-bright);
     background: var(--bg-panel);
+    cursor: grab;
+    touch-action: none;
+    transition: transform 0.12s ease-out, opacity 0.12s ease-out;
 }
 
-/* The line reads oldest to newest, left to right, and scrolls rather than
-   wraps: a timeline that wraps onto a second row stops being a line. */
+.ratro-card.is-hand:hover { transform: translateY(-2px); }
+.ratro-card.is-hand:active { cursor: grabbing; }
+
+/* Left in place while the ghost is carried rather than removed: taking it
+   out of the flow would jump the whole board the moment a drag started. */
+.ratro-card.is-lifted { opacity: 0.25; }
+
+.ratro-card.is-ghost {
+    position: fixed;
+    z-index: 1200;
+    margin: 0;
+    transform: translate(-50%, -50%) rotate(-2deg);
+    pointer-events: none;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+}
+
+/* The line reads oldest to newest and scrolls rather than wraps: a timeline
+   on two rows is not a timeline. */
 .ratro-line {
     display: flex;
     align-items: stretch;
-    gap: 6px;
+    gap: 0;
     overflow-x: auto;
-    padding: 4px 2px 10px;
+    padding: 4px 2px 12px;
 }
 
-.ratro-line .ratro-card {
+/* A gap between two cards. Narrow until something is carried over it, then
+   it opens to the width of a card — which shows where the card would land
+   without a word being written. */
+.ratro-gap {
     flex: 0 0 auto;
-    width: 190px;
-}
-
-/* The slot between two cards. Deliberately tall and thin — it is a gap in a
-   line, and it should look like the place a card would go rather than like
-   another button in a row of buttons. */
-.ratro-slot {
-    flex: 0 0 auto;
-    width: 30px;
-    border: 2px dashed #6b5231;
+    width: 14px;
+    align-self: stretch;
+    margin: 0 3px;
+    border: 2px dashed transparent;
     border-radius: 6px;
     background: transparent;
-    color: #8a6a3d;
-    font-size: 1rem;
     cursor: var(--cursor-pointer);
-    transition: background-color 0.12s ease-out, border-color 0.12s ease-out, color 0.12s ease-out;
+    transition: width 0.16s ease-out, border-color 0.16s ease-out, background-color 0.16s ease-out;
 }
 
-.ratro-slot:hover,
-.ratro-slot:focus-visible {
-    border-color: var(--amber-bright);
-    background: rgba(226, 178, 96, 0.12);
-    color: var(--amber-bright);
+.ratro-gap:hover,
+.ratro-gap:focus-visible {
+    border-color: var(--amber);
+    background: rgba(226, 178, 96, 0.1);
     outline: none;
 }
 
-/* ---------- the day's results ---------- */
-
-.ratro-done { display: flex; flex-direction: column; gap: 10px; }
-
-.ratro-done-eyebrow {
-    margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.6rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--parchment-dim);
+.ratro-gap.is-open {
+    width: 132px;
+    border-color: var(--amber-bright);
+    background: rgba(226, 178, 96, 0.14);
 }
 
-.ratro-done-score {
-    margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 2rem;
-    color: var(--amber-bright);
-}
-
-.ratro-done-score span {
-    font-size: 0.9rem;
-    color: var(--parchment-dim);
-}
-
-.ratro-done-line { margin: 0; font-size: 0.85rem; color: var(--parchment); }
-
-.ratro-grid { margin: 0; font-size: 1.1rem; letter-spacing: 0.1em; }
-
-.ratro-results {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.ratro-result {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 5px 8px;
-    border-radius: 4px;
-    background: var(--bg-panel);
-    font-size: 0.82rem;
-}
-
-.ratro-result-mark { font-weight: 700; }
-.ratro-result.is-right .ratro-result-mark { color: #7fbf6a; }
-.ratro-result.is-wrong .ratro-result-mark { color: #c46a5a; }
-.ratro-result-name { flex: 1 1 auto; color: var(--parchment); }
-.ratro-result-when { color: var(--parchment-dim); font-size: 0.75rem; }
-
-.ratro-done-actions { display: flex; gap: 8px; }
-
-.ratro-foot { margin: 0; font-size: 0.75rem; color: var(--parchment-dim); }
-
-/* On a phone the line is the thing worth the width, so the cards in it
-   narrow rather than the board scrolling as a whole. */
 @media (max-width: 620px) {
-    .ratro-line .ratro-card { width: 150px; }
-    .ratro-card-thumb { width: 46px; height: 34px; }
+    .ratro-card { width: 108px; }
+    .ratro-gap.is-open { width: 108px; }
 }
 
-/* ---------- Odd One Out ----------
+/* ==========================================================================
+   Odd One Out - the four pictures
+   ========================================================================== */
 
-   Four pictures, and almost nothing else: the pictures ARE the question, so
-   everything around them is kept quiet enough not to argue with them.
-
-   Shares its head, results and share-grid treatment with Ratrospect on
-   purpose — two daily games that dress their scores differently look like
-   two different sites. What is particular here is the grid. */
-.odd-window {
-    width: min(720px, 94vw);
-    max-height: min(88vh, 920px);
-    display: flex;
-    flex-direction: column;
-}
-
-.odd-body {
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.odd-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.odd-progress,
-.odd-score,
-.odd-done-eyebrow {
-    margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.6rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--parchment-dim);
-}
-
-.odd-score { color: var(--amber-bright); }
-
-.odd-ask {
-    margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.68rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--parchment);
-}
-
-.odd-hint,
-.odd-empty,
-.odd-foot {
-    margin: 0;
-    font-size: 0.78rem;
-    color: var(--parchment-dim);
-}
-
-/* Two by two rather than four across. Four in a row on a desktop makes each
-   picture small enough that the detail the round turns on — a floor tile, a
-   wall pattern — is gone, and the whole game is in that detail. */
+/* Two by two rather than four across: four in a row on a desktop makes each
+   picture small enough to lose the detail the round turns on, and the whole
+   game is in that detail. */
 .odd-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -12447,28 +12497,26 @@ body[data-page="admin"] #activity-sessions {
 .odd-tile img {
     display: block;
     width: 100%;
-    /* A fixed shape so four rooms of different proportions read as four
-       equal candidates rather than as one big one and three small. */
-    aspect-ratio: 4 / 3;
+    /* Square, like every other picture in these two games. */
+    aspect-ratio: 1 / 1;
     object-fit: cover;
     /* ---------- why the picture is cropped ----------
 
        Habbo screenshots carry the client's own room panel burnt into the
-       bottom-left corner, and it does not say something vague — it says
-       "[DOM] Bonsai Madness [2], Owner: oshiboi". The prefix in brackets is
+       bottom-left corner, and it does not say something vague: it says
+       "[DOM] Bonsai Madness [2], Owner: oshiboi". The bracketed prefix is
        the maze's own tag. Shown whole, this game could be won without
-       looking at a single room: find the picture whose label does not match
-       the other three.
+       looking at a single room — find the label that does not match the
+       other three.
 
-       So every tile is zoomed and held towards its top right, which is the
-       corner of a Habbo screenshot that never holds the panel. The numbers
-       are worked from where the panel actually sits: at this scale the
-       visible window is roughly the source's 28%-91% across and 10%-73%
-       down, and the panel lives below and to the left of both.
+       So every tile is zoomed and held towards its top right, which is where
+       a Habbo screenshot never puts the panel. At this scale the visible
+       window is roughly the source's 28%-91% across and 10%-73% down, and
+       the panel lives below and to the left of both.
 
-       Every tile is cropped identically, which matters as much as the crop
-       itself — a treatment applied to one picture and not the others would
-       be its own giveaway. */
+       Every tile is cropped identically, which matters as much as the crop:
+       a treatment applied to one picture and not the others would be its own
+       giveaway. */
     transform: scale(1.6);
     transform-origin: 75% 28%;
 }
@@ -12479,50 +12527,3 @@ body[data-page="admin"] #activity-sessions {
     transform: translateY(-2px);
     outline: none;
 }
-
-/* ---------- the day's results ---------- */
-
-.odd-done { display: flex; flex-direction: column; gap: 10px; }
-
-.odd-done-score {
-    margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 2rem;
-    color: var(--amber-bright);
-}
-
-.odd-done-score span {
-    font-size: 0.9rem;
-    color: var(--parchment-dim);
-}
-
-.odd-done-line { margin: 0; font-size: 0.85rem; color: var(--parchment); }
-
-.odd-grid-share { margin: 0; font-size: 1.1rem; letter-spacing: 0.1em; }
-
-.odd-results {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.odd-result {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 5px 8px;
-    border-radius: 4px;
-    background: var(--bg-panel);
-    font-size: 0.82rem;
-    color: var(--parchment-dim);
-}
-
-.odd-result-mark { font-weight: 700; }
-.odd-result.is-right .odd-result-mark { color: #7fbf6a; }
-.odd-result.is-wrong .odd-result-mark { color: #c46a5a; }
-.odd-result-text strong { color: var(--parchment); }
-
-.odd-done-actions { display: flex; gap: 8px; }
