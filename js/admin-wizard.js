@@ -2113,6 +2113,12 @@ window.AdminWizard = (function () {
             onPointerDown
         });
 
+        /* The GIF maker draws the map as a visitor would see it, which means
+           knowing which records are hidden and what each one's "appear at"
+           does at a zoom the editor is not sitting at. It asks the view,
+           rather than keeping its own copy of either. */
+        if (window.WizardGif) window.WizardGif.attach(view);
+
         els.stage.addEventListener("pointermove", onPointerMove);
         window.addEventListener("pointerup", onPointerUp);
         els.stage.addEventListener("click", onMapClick);

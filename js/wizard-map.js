@@ -294,17 +294,24 @@ window.WizardMap = function WizardMap(options) {
     /* 0 outside the band, 1 well inside it, and a ramp across the edges. The
        ramp is what makes a forest become a clearing full of names rather
        than cutting to one. */
-    function bandOpacity(item) {
+    /* atZoom defaults to the zoom the map is actually at, which is what the
+       page always wants. It is a parameter because the GIF maker asks the
+       same question about a zoom the map is NOT at — "what would be visible
+       three quarters of the way through this animation" — and asking it
+       here rather than working it out again there is what keeps one answer
+       to it. */
+    function bandOpacity(item, atZoom) {
+        const z = atZoom == null ? zoom : atZoom;
         const from = item.fromZoom;
         const to = item.toZoom;
         let opacity = 1;
         if (from != null) {
             const edge = from * FADE;
-            opacity = Math.min(opacity, edge ? (zoom - from + edge) / (edge * 2) : (zoom >= from ? 1 : 0));
+            opacity = Math.min(opacity, edge ? (z - from + edge) / (edge * 2) : (z >= from ? 1 : 0));
         }
         if (to != null) {
             const edge = to * FADE;
-            opacity = Math.min(opacity, edge ? (to + edge - zoom) / (edge * 2) : (zoom <= to ? 1 : 0));
+            opacity = Math.min(opacity, edge ? (to + edge - z) / (edge * 2) : (z <= to ? 1 : 0));
         }
         return Math.max(0, Math.min(1, opacity));
     }
@@ -1474,6 +1481,13 @@ window.WizardMap = function WizardMap(options) {
             if (el) applyLayerVisual(el, layer);
         },
         getZoom: () => zoom,
+        /* For anything that has to reason about a zoom other than the
+           current one — the GIF maker, which draws frames at zooms the map
+           is not at. getFit is the scale the whole map is drawn at when the
+           zoom is 1, which is what turns "this much of the map is in shot"
+           into a zoom number. */
+        getFit: () => fit,
+        bandOpacityAt: (item, atZoom) => bandOpacity(item, atZoom),
         setZoom(next) { zoom = next; settle(); applyTransform(); },
         refit() { fit = computeFit(); settle(); applyTransform(); },
 
