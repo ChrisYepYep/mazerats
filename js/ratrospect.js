@@ -358,6 +358,18 @@
             </div>`;
     }
 
+    /* The bar across the top: which card this is, what is left to lose, and
+       what has been won.
+
+       The three lives used to be three unlabelled dots between the other
+       two, and nothing on the board said what they were. A pip only reads as
+       a life once you have lost one and watched it go out — which means the
+       one thing on the board with a consequence attached explained itself
+       by punishing you, and only after it was too late to matter.
+
+       So the word is simply there. It costs four characters of the same
+       microtype the two numbers either side of it already use, and it turns
+       an ornament into a count of the thing you can run out of. */
     function headHtml() {
         const lives = Array.from({ length: LIVES }, (_, i) =>
             `<span class="daily-life${i < state.lives ? "" : " is-spent"}" aria-hidden="true"></span>`).join("");
@@ -365,7 +377,10 @@
         return `
             <div class="daily-head">
                 <p class="daily-step">Card <strong>${Math.min(placed, CARDS)}</strong> of ${CARDS}</p>
-                <span class="daily-lives" aria-label="${state.lives} of ${LIVES} lives left">${lives}</span>
+                <p class="daily-lives" aria-label="${state.lives} of ${LIVES} lives left">
+                    <span class="daily-lives-label" aria-hidden="true">Lives</span>
+                    <span class="daily-lives-pips" aria-hidden="true">${lives}</span>
+                </p>
                 <p class="daily-points">${score()}<span> pts</span></p>
             </div>`;
     }
@@ -430,7 +445,14 @@
                     <p class="ratro-card-title">${escapeHtml(card.title)}</p>
                     ${card.by ? `<p class="ratro-card-by">${escapeHtml(card.by)}</p>` : ""}
                 </article>
-                <p class="daily-ask">Drag it into the line below — oldest on the left.</p>
+                <!-- Which way round the line runs is not said here any more.
+                     It used to read "oldest on the left", which stopped
+                     being true on a phone the moment the line stood up —
+                     and the rail says it better than a sentence can anyway,
+                     with OLDER and NEWER written on its two ends, whichever
+                     two ends those are. What is left is the part the rail
+                     cannot say: that there are two ways to play a card. -->
+                <p class="daily-ask">Drag it onto the line below, or tap a slot.</p>
             </div>
             ${lineHtml(down, { gaps: true })}`;
     }
@@ -483,18 +505,8 @@
        daily games that dress their scores differently look like two
        different sites. */
     function resultsHtml() {
-        const cards = dealt();
         const right = state.results.filter(r => r.right).length;
         const ranOut = state.lives <= 0 && state.results.length < CARDS;
-        const rows = state.results.map((r, i) => {
-            const card = cards[r.index];
-            return `<li class="${r.right ? "is-won" : "is-lost"}">
-                    <span class="guess-answers-n" aria-hidden="true">${i + 1}</span>
-                    <span class="daily-answers-name">${escapeHtml(card.title)}</span>
-                    <span class="guess-answers-mark">${escapeHtml(whenText(card))}</span>
-                    <span class="guess-answers-mark daily-answers-points">${r.right ? "+" + POINTS_EACH : "—"}</span>
-                </li>`;
-        }).join("");
 
         return `
             <div class="guess-summary daily-summary">
@@ -514,10 +526,13 @@
                 <p class="daily-note" id="ratro-foot">A new six every day.</p>
 
                 <div class="guess-boards" id="ratro-boards"></div>
-
-                <h4 class="guess-answers-head">Today's order</h4>
-                <ul class="guess-answers">${rows}</ul>
             </div>`;
+        /* The six cards and their real dates used to be listed here, in
+           order. They are gone for the reason the same list is gone from
+           Guess the Maze: this card is what somebody pastes into a channel
+           where nobody else has played yet, and the grid above is safe to
+           paste precisely because it names nothing. Every card is already
+           revealed as it is placed, on the line where it was placed. */
     }
 
     const shareGrid = () => state.results.map(r => (r.right ? "🟩" : "🟥")).join("")
@@ -589,14 +604,44 @@
 
         const gaps = () => [...lineEl.querySelectorAll(".ratro-gap")];
 
-        function nearestGap(x) {
+        /* ---------- which way time runs on this screen ----------
+
+           The line is a row on a desktop and a column on a phone, because a
+           row of six cards on a phone is a 190px window you scroll sideways
+           through while trying to drag something into it. That is a layout
+           decision and it is made in the stylesheet, where layout decisions
+           belong — so this asks the element what it actually is rather than
+           re-deriving it from a width the CSS might disagree about.
+
+           One breakpoint, in one file. Everything below reads `down` and
+           works either way. */
+        const isDown = () => getComputedStyle(lineEl).flexDirection.startsWith("column");
+
+        /* Which slot the pointer is over: how many cards it has already
+           passed, measured along whichever axis the line runs. */
+        function nearestGap(x, y) {
+            const down = isDown();
             const cards = [...lineEl.querySelectorAll(".ratro-card.is-down")];
             let index = 0;
             for (const card of cards) {
                 const box = card.getBoundingClientRect();
-                if (x > box.left + box.width / 2) index++;
+                const past = down
+                    ? y > box.top + box.height / 2
+                    : x > box.left + box.width / 2;
+                if (past) index++;
             }
             return index;
+        }
+
+        /* Whether the pointer is near enough to the line to be aiming at it.
+           The slack goes on the axis ACROSS the line — a card carried a
+           little above or below a row is still being carried at that row —
+           so which axis that is swaps with the layout. */
+        function overLine(x, y) {
+            const box = lineEl.getBoundingClientRect();
+            return isDown()
+                ? x > box.left - 60 && x < box.right + 60
+                : y > box.top - 60 && y < box.bottom + 60;
         }
 
         function openAt(index) {
@@ -648,9 +693,7 @@
             ghost.style.left = e.clientX + "px";
             ghost.style.top = e.clientY + "px";
 
-            const box = lineEl.getBoundingClientRect();
-            const over = e.clientY > box.top - 60 && e.clientY < box.bottom + 60;
-            if (over) openAt(nearestGap(e.clientX));
+            if (overLine(e.clientX, e.clientY)) openAt(nearestGap(e.clientX, e.clientY));
             else closeGaps();
         });
 

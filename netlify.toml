@@ -51,6 +51,18 @@
   to = "/home.html"
   status = 200
 
+# Fallin' Furni. A page of its own rather than a window on the homepage, unlike
+# the three daily games above: it wants the whole viewport for the room, and it
+# is not a once-a-day puzzle whose result gets pasted into a channel.
+#
+# A rewrite for the same reason as /admin and /wizard — the address bar keeps
+# what was typed. Note the page carries robots noindex of its own while the
+# game is still being built, so this URL is reachable but not findable.
+[[redirects]]
+  from = "/fallinfurni"
+  to = "/fallinfurni.html"
+  status = 200
+
 # The Sorcerer's Atlas, at the clean /wizard URL. Same rewrite treatment
 # as /admin above, so the address bar keeps the URL that was typed.
 [[redirects]]
@@ -79,7 +91,7 @@
 # should ever be hitting this path directly.
 [[redirects]]
   from = "/netlify/functions/*"
-  to = "/index.html"
+  to = "/404.html"
   status = 404
   force = true
 
@@ -91,43 +103,43 @@
 # be reading the project's own tooling either.
 [[redirects]]
   from = "/tools/*"
-  to = "/index.html"
+  to = "/404.html"
   status = 404
   force = true
 
 [[redirects]]
   from = "/README.md"
-  to = "/index.html"
+  to = "/404.html"
   status = 404
   force = true
 
 [[redirects]]
   from = "/package.json"
-  to = "/index.html"
+  to = "/404.html"
   status = 404
   force = true
 
 [[redirects]]
   from = "/package-lock.json"
-  to = "/index.html"
+  to = "/404.html"
   status = 404
   force = true
 
 [[redirects]]
   from = "/.env.example"
-  to = "/index.html"
+  to = "/404.html"
   status = 404
   force = true
 
 [[redirects]]
   from = "/start-dev.*"
-  to = "/index.html"
+  to = "/404.html"
   status = 404
   force = true
 
 [[redirects]]
   from = "/deno.lock"
-  to = "/index.html"
+  to = "/404.html"
   status = 404
   force = true
 

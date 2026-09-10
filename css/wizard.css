@@ -164,6 +164,15 @@
     position: relative;
     aspect-ratio: var(--wiz-aspect, 16 / 9);
     max-height: calc(100vh - 200px);
+    /* Said twice on purpose, and the second line is the one that matters on
+       a phone. 100vh there is the viewport with the browser's own chrome
+       hidden — a height the page does not actually have until you scroll —
+       so a frame sized by it hangs its bottom edge, and the zoom buttons
+       sitting on that edge, below the fold. Worse on a map than anywhere
+       else, because the usual way out is to scroll down to them, and a swipe
+       on the map pans the map. dvh is the height that is really there.
+       Browsers without it keep the line above. */
+    max-height: calc(100dvh - 200px);
     min-height: 360px;
     margin: 0 16px 16px;
     overflow: hidden;
@@ -189,12 +198,24 @@
         inset 0 0 70px rgba(0, 0, 0, 0.5),
         var(--shadow);
     cursor: grab;
+    /* The browser is told to keep its hands off every touch that lands
+       here: a swipe on the map pans the map rather than scrolling the page
+       out from under it. This covers the labels and trails inside too —
+       touch-action is resolved by walking up from whatever was touched — so
+       it is said once, here, rather than on each of ninety-three buttons.
+
+       It is not the whole of the mobile story. Safari's two-finger pinch is
+       not a touch-action behaviour and ignores this completely; that half is
+       refused in js/wizard-map.js, where the gesture events are. */
     touch-action: none;
     /* Nothing on the map is text you drag-select, and a drag that starts a
        selection instead of a pan is the single most annoying thing a map
        can do. */
     user-select: none;
     -webkit-user-select: none;
+    /* A press held on a room label is somebody starting a drag, not
+       somebody asking iOS for a share sheet and a magnifying glass. */
+    -webkit-touch-callout: none;
     opacity: 0;
     transition: opacity 0.4s ease;
 }
@@ -1519,6 +1540,10 @@ body.is-albus .admin-panel[data-panel="wizard"] .admin-form-actions button {
     .wiz-stage {
         margin: 0 8px 8px;
         height: clamp(360px, calc(100vh - 190px), 900px);
+        /* See the note on max-height in the base rule: vh is the phone
+           viewport as it will be once the browser's chrome scrolls away,
+           dvh is the one on screen now. */
+        height: clamp(360px, calc(100dvh - 190px), 900px);
     }
     .wiz-head { padding: 10px 12px 8px; }
     .wiz-search { width: calc(100% - 24px); }

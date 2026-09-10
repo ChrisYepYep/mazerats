@@ -250,6 +250,46 @@
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   footer { color: var(--dim); font-size: 0.78rem; border-top: 1px solid var(--raised); padding-top: 14px; max-width: 66ch; }
+
+  /* The site's own footing, restated here rather than borrowed.
+
+     This page is deliberately standalone — it does not load css/style.css,
+     which is why it can be opened and read on its own — so it cannot use
+     .site-footer the way every other page does. What it was missing is not
+     styling, though: it was the Habbo Fan Site Policy notice and the way
+     through to the privacy policy, which the rest of the site carries on
+     every page and which this one owes its readers just as much. Sized down
+     from the note above it, because it is the small print under the small
+     print. */
+  .site-legal {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--raised);
+    font-size: 0.72rem;
+    line-height: 1.6;
+  }
+  .site-legal p { margin: 0 0 6px; }
+  .site-legal a { color: var(--amber); }
+  .site-legal a:hover { color: var(--ink); }
+
+  /* The brand, so the page says which site it belongs to rather than only
+     offering a way off it. */
+  .brand-line {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .brand-line a {
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.9rem;
+    color: var(--ink);
+    text-decoration: none;
+    letter-spacing: 0.5px;
+  }
+  .brand-line a:hover { color: var(--amber); }
+  .brand-line span { color: var(--dim); font-size: 0.72rem; }
   code { font-family: 'Silkscreen', monospace; font-size: 0.72em; color: var(--amber); }
 
   @media (prefers-reduced-motion: reduce) {
@@ -266,6 +306,10 @@
        everybody else nothing at all — so it now says what the page is FOR
        before it says what it is made of. -->
   <header>
+    <div class="brand-line">
+      <a href="home.html">MAZE RATS</a>
+      <span>Every maze. One place.</span>
+    </div>
     <a class="back" href="home.html">&larr; Back to the archive</a>
     <h1>Alt Codes</h1>
     <p class="lede">The little pictures you see in Habbo room names &mdash; the stars, hearts, arrows and
@@ -1101,6 +1145,11 @@
 
   <footer>
     Read from <code>assets/fonts/VolterGoldfish.ttf</code> &mdash; 269 mapped codepoints in all, 95 of them printable ASCII. The bold cut carries 245, missing 25 of the upper-range glyphs, so a picture that works in body text may vanish when something is set bold. The font is embedded in this page, so what you see is the real thing.
+
+    <div class="site-legal">
+      <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
+      <p>&copy; 2026 Origins Maze Rats. All rights reserved. &nbsp;&middot;&nbsp; <a href="/privacy">Privacy Policy</a></p>
+    </div>
   </footer>
 </div>
 

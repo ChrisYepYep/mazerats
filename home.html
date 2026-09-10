@@ -273,6 +273,29 @@
                  paint under everything with a negative z-index — which it did
                  at first, and which put it behind .container, where nothing
                  could be hovered or clicked. -->
+            <!-- ---------- the day's games, on a phone ----------
+
+                 Shown only where a pointer is coarse, and it exists because
+                 of what the spine on the right becomes on a phone: a 30x26px
+                 tab against the window's edge, which measured out as the
+                 smallest control on the page and was the ONLY way to reach
+                 any of the three daily games. A game that is new every
+                 morning is the reason somebody comes back, and it was behind
+                 the hardest thing on the screen to press.
+
+                 So the games are offered directly here instead, above the
+                 archive, as three full-width rows carrying the same live
+                 state the menu shows — which is the point of the menu, and
+                 the reason a bare link would be worse. Filled by
+                 renderDailyStrip in js/home.js from the same
+                 sideMenuEntries() the panel is built from, so the two can
+                 never disagree about whether today has been played.
+
+                 The spine stays exactly where it is. This is a second way
+                 in, not a replacement: What's New, Your Progress and Alt
+                 Codes still live behind it. -->
+            <section class="daily-strip" id="daily-strip" aria-label="Today's games" hidden></section>
+
             <div class="archive-stack">
                 <!-- One handle, one panel, at every width.
 
@@ -320,11 +343,19 @@
                 <div class="chrome-titlebar">
                     <h2>Origins Maze Archive</h2>
                 </div>
-                <div class="chrome-nav chrome-nav-top" id="top-nav">
+                <!-- A landmark, so somebody arriving by screen reader can jump
+                     to the archive's own navigation rather than tabbing the
+                     length of the page to find it. role rather than a <nav>
+                     element only because the class is load-bearing in a
+                     twelve-thousand-line stylesheet; to assistive technology
+                     the two are the same thing. The sub-row below says which
+                     of the two it is, since two unlabelled navigation
+                     landmarks are worse than one. -->
+                <div class="chrome-nav chrome-nav-top" id="top-nav" role="navigation" aria-label="Mazes or events">
                     <button type="button" class="chrome-nav-btn chrome-nav-btn-mazes" data-top="mazes"><img class="chrome-nav-icon" src="assets/img/mazes_icon.png" alt="" aria-hidden="true"><span class="chrome-nav-btn-label">Mazes</span></button>
                     <button type="button" class="chrome-nav-btn chrome-nav-btn-events" data-top="events"><img class="chrome-nav-icon" src="assets/img/events_icon.png" alt="" aria-hidden="true"><span class="chrome-nav-btn-label">Events</span></button>
                 </div>
-                <div class="chrome-nav chrome-nav-sub" id="sub-nav" style="display:none;">
+                <div class="chrome-nav chrome-nav-sub" id="sub-nav" role="navigation" aria-label="Filter within this category" style="display:none;">
                     <button type="button" class="chrome-nav-btn"></button>
                     <button type="button" class="chrome-nav-btn"></button>
                     <button type="button" class="chrome-nav-btn"></button>
@@ -337,7 +368,15 @@
                              control beside it already carries a real label
                              for the same reason. -->
                         <label class="visually-hidden" for="room-search">Search the archive by name, builder or tag</label>
-                        <input type="text" id="room-search" placeholder="Name, builder or tag…">
+                        <!-- The placeholder names furni deliberately. The search
+                             reads the whole record now — description, details and
+                             every piece the scan found in the rooms — and the one
+                             part of that nobody would guess at is that "bonsai"
+                             or "piano" finds the mazes containing one. A field
+                             that says "Name, builder or tag" is a field nobody
+                             tries it in. -->
+                        <input type="text" id="room-search" placeholder="Name, builder, tag or furni…"
+                               aria-label="Search the archive by name, builder, tag, description or the furni in a room">
                     </div>
                     <div class="sort-box">
                         <!-- The option text reads "Sort by: …" and carries the
@@ -702,9 +741,9 @@
                                  pictures come from. -->
                             <ol class="guess-rules">
                                 <li><span class="guess-rules-n" aria-hidden="true">1</span>
-                                    <p>Five pieces of five real rooms, cut out of the archive. Name the maze each one came from.</p></li>
+                                    <p>Five pieces of five real rooms, cut out of the archive. Pick the maze each one came from — <strong>five names</strong>, one of them right.</p></li>
                                 <li><span class="guess-rules-n" aria-hidden="true">2</span>
-                                    <p>Four guesses a room. Every miss <strong>pulls the view back a little</strong>, so a room you cannot place yet you probably can in a moment.</p></li>
+                                    <p>Three guesses a room. Every miss <strong>pulls the view back a little</strong>, so a room you cannot place yet you probably can in a moment.</p></li>
                                 <li><span class="guess-rules-n" aria-hidden="true">3</span>
                                     <p>Everyone gets the same five. New rooms at midnight, UTC.</p></li>
                             </ol>
@@ -801,26 +840,20 @@
                              goes: which is done, how it went, where you are. -->
                         <ol class="guess-pips" aria-label="Progress through today's five rooms"></ol>
 
-                        <ol class="guess-tries" aria-label="Guesses this room"></ol>
-
                         <p class="guess-status" role="status" hidden></p>
 
-                        <!-- The list of maze names is open from the start
-                             rather than appearing once you type. Most
-                             people cannot name thirty mazes from memory,
-                             and a field that only helps after you have
-                             already half-guessed the answer helps the
-                             people who needed it least. Typing filters it;
-                             it is a way in, not an autocomplete. -->
-                        <form class="guess-entry" autocomplete="off">
-                            <div class="guess-entry-row">
-                                <input type="text" class="guess-input" placeholder="Search the names…"
-                                       aria-label="Which maze is this? Type to filter the list below."
-                                       autocomplete="off" spellcheck="false">
-                                <button type="submit" class="guess-btn">Guess</button>
-                            </div>
-                            <div class="guess-suggest" role="group" aria-label="Mazes in the archive"></div>
-                        </form>
+                        <!-- Five names, one of them right, filled in by
+                             renderOptions in js/guess.js. Pressing one
+                             spends a guess — there is no confirm step,
+                             because with five named buttons the press is
+                             the choice.
+
+                             This replaced a text field over a scrolling
+                             list of every maze in the archive. That asked
+                             people to RECALL a name; this asks them to
+                             recognise a room, which is the thing the
+                             picture is actually testing. -->
+                        <div class="guess-options" role="group" aria-label="Which maze is this?"></div>
 
                         <div class="guess-between" hidden></div>
                     </div>

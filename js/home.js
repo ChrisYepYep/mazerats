@@ -336,12 +336,71 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
+    /* Everything a record actually says about itself, as one lower-cased
+       string, worked out once per record and kept.
+
+       The search used to read three fields — name, "by <builder>", and the
+       tags — which is a search of the archive's LABELS rather than of the
+       archive. Everything a maze is actually about lived in prose nobody
+       could search: the description, the longer details, and the furni the
+       scan found in its rooms. Somebody who remembered a maze had a piano
+       in it, or was "the one with the aquarium corridor", had no way to ask.
+
+       So the haystack is the whole record. The furni is the part that earns
+       this most — five hundred room images were scanned piece by piece and
+       the result was reachable only by opening a maze and reading down a
+       strip. Now "bonsai" finds the mazes with a bonsai in them.
+
+       Cached on the record, because matchesQuery runs once per record per
+       keystroke and the furni map alone is a few hundred entries: building
+       this string fresh each time turned typing into a stutter. The cache
+       is keyed to nothing — a record is normalized once and replaced
+       wholesale when the archive reloads, so it cannot go stale. */
+    function searchHaystack(n) {
+        if (n._haystack !== undefined) return n._haystack;
+        const parts = [
+            n.name,
+            n.subtitle,
+            n.description,
+            n.details,
+            ...(n.tags || []),
+            n.difficulty,
+            n.statusLabel
+        ];
+        /* The furni is stored keyed by the gallery image it was found in,
+           so the same piece appears once per room it stands in — flattened
+           and de-duplicated, or a maze with a dozen rooms of the same tile
+           would carry it a dozen times for nothing.
+
+           A scanned image is a record — { items: [...] } — rather than a
+           bare list, so that an image which found nothing can still say it
+           was scanned; a plain array is what anything added by hand looks
+           like. Both shapes are unwrapped exactly as renderFurniStrip
+           unwraps them, and hidden pieces are skipped for the same reason
+           it skips them: they exist precisely so they do not reach the
+           site, and a maze should not be findable by a piece a person
+           deliberately took off it. */
+        const furni = n.furni && typeof n.furni === "object" ? n.furni : null;
+        if (furni) {
+            const seen = new Set();
+            for (const key of Object.keys(furni)) {
+                const record = furni[key];
+                const items = Array.isArray(record) ? record : (record && record.items) || [];
+                for (const piece of items) {
+                    if (!piece || piece.hidden) continue;
+                    const label = piece.name;
+                    if (label && !seen.has(label)) { seen.add(label); parts.push(label); }
+                }
+            }
+        }
+        n._haystack = parts.filter(Boolean).join("   ").toLowerCase();
+        return n._haystack;
+    }
+
     function matchesQuery(n) {
         const q = query.trim().toLowerCase();
         if (!q) return true;
-        return n.name.toLowerCase().includes(q) ||
-            n.subtitle.toLowerCase().includes(q) ||
-            (n.tags || []).some(t => t.toLowerCase().includes(q));
+        return searchHaystack(n).includes(q);
     }
 
     // Order matters here — it's also the ascending "easiest first" sort
@@ -652,6 +711,20 @@ document.addEventListener("DOMContentLoaded", () => {
         // the default sort if it was already selected when switching into
         // it, so a stale hidden option is never left sitting selected.
         const isEvents = topView === "events";
+
+        /* Featured Mazes is about mazes, so it is not offered while the
+           Events tab is showing.
+
+           Switching tabs already turned the panel itself off — see the
+           topNavBtns handler — but the frame around it stayed, so browsing
+           events came with a "Featured Mazes" header and a "Refresh
+           recommendations" button sitting above the events list, offering to
+           do something to a set of things that were not on screen. The whole
+           frame goes, rather than just the button, or the events list would
+           be left with an empty 41px band above it where the header used to
+           be. Same thought as the difficulty sort options below. */
+        if (featuredFrame) featuredFrame.hidden = isEvents;
+
         // Explains the auto-archiving rule (see eventStatus) at the point it
         // actually matters — sitting in the Archive listing itself, rather
         // than as a note somewhere the visitor has to go looking for.
@@ -1097,6 +1170,34 @@ document.addEventListener("DOMContentLoaded", () => {
         return imgCdn(thumb, 160, 160, 65);
     }
 
+    /* What the thumbnail is a picture OF, in words.
+
+       This is for search engines rather than for screen readers, and the
+       distinction is the whole reason it is safe to add. The row around this
+       image is role="button" with its own aria-label, and an aria-label
+       replaces everything inside the element it sits on — so assistive
+       technology still announces "View Alt Maze, button" exactly as before
+       and never reads this twice. What changes is what an image crawler
+       sees: five hundred room screenshots that said nothing about
+       themselves now say which maze they are from and who built it, which
+       is the only description of them that exists anywhere.
+
+       The builder is included where there is one, because "Alt Maze" and
+       "Alt Maze by markeh" are differently useful in an image search, and
+       the second costs nothing. */
+    function rowThumbAlt(n) {
+        const name = (n.name || "").trim();
+        const kind = n.isEvent ? "event" : "maze room";
+        if (!name) return `A ${kind} from the Origins Maze Rats archive`;
+        /* `owner`, not `creator`. These rows are handed the normalised shape
+           built by normalize(), which keeps the builder under `owner` and
+           spends `creator` on the way in — reading the wrong one here would
+           not have thrown, it would just have quietly dropped the
+           attribution from every one of them. */
+        const by = (n.owner || "").trim();
+        return by ? `${name} — a ${kind} by ${by}` : `${name} — a ${kind}`;
+    }
+
     function roomRowHtml(n, isOpenView) {
         // Events always show their date; mazes only do on the Open list.
         const showDate = isOpenView || n.isEvent;
@@ -1104,7 +1205,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return `
             <div class="chrome-list-row featured" data-difficulty="${n.difficulty || ""}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
                 <div class="row-thumb">
-                    ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${rowThumbUrl(n.thumb)}" alt="" loading="lazy"></div>` : ""}
+                    ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${rowThumbUrl(n.thumb)}" alt="${escapeHtml(rowThumbAlt(n))}" loading="lazy"></div>` : ""}
                 </div>
                 <div class="row-info">
                     ${whatsNewDatesHtml(n)}
@@ -4863,7 +4964,21 @@ document.addEventListener("DOMContentLoaded", () => {
             modalArticleTitle.textContent = article.title || "";
             modalArticleMeta.textContent = [article.date, article.category].filter(Boolean).join("  —  ");
             modalArticleBody.innerHTML = article.body;
-            modalArticleLink.href = article.url || "#";
+            /* The whole line goes when there is nowhere for it to point,
+               rather than falling back to "#".
+
+               An article can be stored without a source URL — nothing in the
+               admin form requires one — and the link was shown regardless,
+               so an article like that offered "Read it on Habbo Origins" and
+               then jumped the reader to the top of the page. A link that
+               does not go anywhere is worse than no link, because it costs a
+               press to find out. The paragraph is hidden too, not just the
+               anchor: hiding the anchor alone leaves its own empty line of
+               margin under the article body. */
+            const source = article.url || "";
+            modalArticleLink.href = source || "#";
+            const sourceLine = modalArticleLink.closest(".modal-article-source");
+            if (sourceLine) sourceLine.hidden = !source;
             modalArticle.hidden = false;
         } else {
             // Emptied, not just hidden: an article left in the DOM is a
@@ -5323,6 +5438,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const r = typeof window.RatrospectStatus === "function" ? window.RatrospectStatus() : null;
         const o = typeof window.OddOneOutStatus === "function" ? window.OddOneOutStatus() : null;
 
+        /* Read fresh rather than captured once, for the same reason
+           featuredFrameCount is — a phone turned landscape crosses this
+           line, and the next time the menu opens it should answer to where
+           it is now. Same 640 the featured panel uses; one number for "this
+           is a phone" rather than two that can drift apart. */
+        const onPhone = window.innerWidth <= FEATURED_PHONE_MAX;
+
         return [
             /* A heading rather than a row: there are two games now, and left
                in a flat list they read as two more places to go rather than
@@ -5361,6 +5483,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 on: false,
                 run: () => { if (typeof window.openOddOneOut === "function") window.openOddOneOut(); }
             },
+            {
+                /* Not a daily puzzle and not a window: Fallin' Furni is a room
+                   you walk about in, and it wants the whole viewport rather
+                   than a 204px console pane. So this one NAVIGATES, where the
+                   three above open in place. */
+                name: "Fallin' Furni",
+                state: "Sit on every seat, in order",
+                badge: "",
+                on: false,
+                run: () => { window.location.href = "/fallinfurni"; }
+            },
             { heading: "The archive" },
             {
                 name: "What's New",
@@ -5394,7 +5527,69 @@ document.addEventListener("DOMContentLoaded", () => {
                 on: false,
                 run: () => window.open("glyphs.html", "_blank", "noopener")
             }
-        ];
+        ].filter(e => !(onPhone && e.name === "Alt Codes"));
+        /* The sheet is a reference table of several hundred characters
+           beside the key combinations that type them, and a key combination
+           is a thing a phone does not have. Offering it there is a tab that
+           opens onto a page you cannot use for the one thing it is for, so
+           on a phone the menu simply does not carry it. The page itself is
+           untouched and still answers to its own address. */
+    }
+
+    /* ---------- the day's games, offered directly ----------
+
+       The three daily rows out of the side menu, put above the archive where
+       a thumb can reach them. See the note in home.html for why: on a phone
+       the spine that holds them is the smallest control on the page, and it
+       is the only way in.
+
+       Built from sideMenuEntries() rather than from a list of its own, so a
+       fourth game means one more entry in that array and nothing here — and
+       so the state each row shows ("2 of 5 rooms done", "Done — 300 points")
+       is the same state the menu shows, read at the same moment.
+
+       Rendered at every width and hidden by the stylesheet on a fine
+       pointer, rather than being built only when a media query matches:
+       matchMedia here would need a listener to survive a phone being turned
+       on its side, and the markup costs three rows. */
+    const dailyStrip = document.getElementById("daily-strip");
+
+    function renderDailyStrip() {
+        if (!dailyStrip) return;
+        const entries = sideMenuEntries();
+        // Everything under the "Daily" heading, and nothing after the next
+        // one — so the strip follows the menu's own grouping rather than
+        // naming the three games a second time.
+        const start = entries.findIndex(e => e.heading === "Daily");
+        if (start === -1) { dailyStrip.hidden = true; return; }
+        const games = [];
+        for (let i = start + 1; i < entries.length; i++) {
+            if (entries[i].heading) break;
+            games.push({ entry: entries[i], i });
+        }
+        if (!games.length) { dailyStrip.hidden = true; return; }
+
+        dailyStrip.hidden = false;
+        dailyStrip.innerHTML = `
+            <p class="daily-strip-head">Today's games</p>
+            ${games.map(({ entry, i }) => `
+                <button type="button" class="daily-strip-item" data-i="${i}">
+                    <span class="daily-strip-name">
+                        <span>${escapeHtml(entry.name)}</span>
+                        ${entry.badge ? `<span class="side-menu-badge">${escapeHtml(entry.badge)}</span>` : ""}
+                    </span>
+                    <span class="daily-strip-state">${escapeHtml(entry.state)}</span>
+                </button>`).join("")}`;
+
+        dailyStrip.querySelectorAll(".daily-strip-item").forEach(btn => {
+            btn.addEventListener("click", () => {
+                // Re-read at the moment of the press, exactly as the menu
+                // does — the strip may have been drawn before the games
+                // published their hooks.
+                const entry = sideMenuEntries()[Number(btn.dataset.i)];
+                if (entry && entry.run) entry.run();
+            });
+        });
     }
 
     (function wireSideMenu() {
@@ -5414,7 +5609,14 @@ document.addEventListener("DOMContentLoaded", () => {
                the tab order for no reason. The index still comes from the
                same array, so what a row does is looked up by its own
                position rather than by counting past the headings. */
-            menu.innerHTML = sideMenuEntries().map((e, i) => e.heading
+            /* Built once and kept, rather than asked for again inside the
+               click. The list is no longer the same length at every width —
+               a phone drops the Alt Codes row — so re-deriving it later
+               risks looking up a row by an index that was true when the
+               button was drawn and is not now. The rows a click can reach
+               are exactly the rows that were drawn. */
+            const entries = sideMenuEntries();
+            menu.innerHTML = entries.map((e, i) => e.heading
                 ? `<p class="side-menu-heading">${escapeHtml(e.heading)}</p>`
                 : `
                 <button type="button" class="side-menu-item${e.on ? " is-on" : ""}" data-i="${i}">
@@ -5427,7 +5629,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             menu.querySelectorAll(".side-menu-item").forEach(btn => {
                 btn.addEventListener("click", () => {
-                    const entry = sideMenuEntries()[Number(btn.dataset.i)];
+                    const entry = entries[Number(btn.dataset.i)];
                     // Closed BEFORE the view changes underneath it, or the
                     // menu is left sitting over the thing it just went to.
                     setOpen(false);
@@ -5467,6 +5669,20 @@ document.addEventListener("DOMContentLoaded", () => {
             setOpen(false);
             spine.focus({ preventScroll: true });
         });
+
+        /* The strip is drawn with the menu, and redrawn whenever a game
+           window closes.
+
+           A daily game changes its own state and then hands the page back —
+           finish Ratrospect and the strip behind it still says "Not played
+           today" until something asks again. The overlays all clear
+           .modal-open from <body> on their way out, so that is the one
+           signal common to all three, and watching the attribute costs
+           nothing and needs no cooperation from the games themselves. */
+        renderDailyStrip();
+        new MutationObserver(() => {
+            if (!document.body.classList.contains("modal-open")) renderDailyStrip();
+        }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
     })();
 
     // Switches straight to that category, keeping whichever sub-filter was

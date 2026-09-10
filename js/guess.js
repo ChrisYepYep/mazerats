@@ -65,32 +65,73 @@
     "use strict";
 
     const ROUNDS = 5;
-    const TRIES = 4;
-    /* Bumped from _v2/_stats when scoring arrived. Both stored shapes gained
-       a field, and the version in the key is what makes that a clean break
-       rather than a migration: a day already in progress under the old
-       shape is simply not read, so nobody ends up half-scored. */
-    const STATE_KEY = "mazerats_guess_v3";
-    const STATS_KEY = "mazerats_guess_stats_v2";
+    const TRIES = 3;
+
+    /* Five names offered a round, one of them right.
+
+       The room used to be named against the whole archive — a scrolling list
+       of every maze, filtered by typing. That is a recall question, and
+       recall is the wrong question to ask about a picture: somebody who
+       looks at a crop and thinks "that green floor is the co-op one" still
+       could not produce the words "Laberinto Cooperativo" from nothing, so
+       the game was testing whether you could name the archive rather than
+       whether you could read a room.
+
+       Five is the number that keeps a wrong guess meaningful. With three
+       tries against five names, guessing blind wins three rounds in five —
+       enough that a lucky day is possible, not enough that anybody arrives
+       at a good week without recognising rooms. Four names and three tries
+       would make the third guess a certainty. */
+    const OPTIONS = 5;
+
+    /* Both bumped when the round became multiple choice.
+
+       The day: a state saved under the old shape holds up to four guesses
+       against a game that now allows three, and its results would be scored
+       against a POINTS array one entry shorter — so it is not read at all
+       rather than migrated, which is the same clean break _v3 made when
+       scoring arrived.
+
+       The running record: every total in it was counted at 100/70/45/25, so
+       carried forward it would read as one number made of two different
+       scales — an all-time total nobody can now match a day against, and a
+       "best day" that a perfect day under the new scoring cannot beat.
+       Starting the count again is the honest version of that.
+
+       What this CANNOT reset is a signed-in player's totals, and the reason
+       is worth knowing before anyone reads a number here and believes it:
+       for an account, these figures are not this file's at all. They are
+       recomputed on every open by statsFor in
+       netlify/functions/player-data.js, counted from the guess_scores rows
+       that were actually recorded — old-scale points included — and merged
+       over whatever is stored here. Only a signed-out player's record lives
+       in this key alone. Genuinely levelling the two scales means rescoring
+       or retiring those rows, which is a decision about the leaderboard
+       rather than about local storage. */
+    const STATE_KEY = "mazerats_guess_v4";
+    const STATS_KEY = "mazerats_guess_stats_v3";
 
     /* Each wrong guess widens the view around the same centre, so the reveal
        reads as stepping back from one spot rather than as being shown a
-       different picture each time. The last step is about half the image,
-       which is usually enough to place a room without simply giving it. */
-    const REVEAL = [0.16, 0.24, 0.34, 0.46];
+       different picture each time. Three steps rather than four, and spread
+       wider to cover the same ground: the last is still about half the
+       image, which is usually enough to place a room without simply giving
+       it away. */
+    const REVEAL = [0.16, 0.28, 0.44];
 
     /* What a room is worth, by the view you named it on. Steeply weighted
        toward the first: the whole game is whether you can place a room from
        a scrap of it, so recognising it from the tightest crop should be
        worth appreciably more than getting there by elimination. Falling
-       away rather than halving, so a fourth-view save is still clearly
+       away rather than halving, so a third-view save is still clearly
        worth more than a miss.
 
-       500 is therefore a perfect day, which is a number a player can hold
-       in their head — and the same array is used by the server to score a
-       submitted day (see netlify/functions/guess-scores.js), so the two can
-       never disagree about what a round was worth. */
-    const POINTS = [100, 70, 45, 25];
+       500 is still a perfect day, which is a number a player can hold in
+       their head and the number the two games next door also add up to —
+       and the same array is used by the server to score a submitted day
+       (see netlify/functions/guess-scores.js), so the two can never
+       disagree about what a round was worth. Change one, change both. */
+    const POINTS = [100, 60, 30];
 
     function pointsFor(result) {
         if (!result || !result.done || !result.won) return 0;
@@ -562,42 +603,125 @@
         goTo("round");
     }
 
-    // ---------- the name picker ----------
+    // ---------- the five names ----------
 
-    /* The whole archive, listed and scrollable, from the moment a room
-       opens. Typing filters the list rather than summoning it.
+    /* A seeded shuffle of a list, without disturbing the caller's copy.
 
-       An autocomplete that only appears once you have typed something is
-       help for people who could already half-name the answer, which is the
-       group that needed it least. Nobody can name thirty mazes from
-       memory, and being able to read down them and go "that one" is most
-       of how this is actually played.
+       Every draw in this file has to come out the same for everyone on the
+       same day, which means no Math.random and a fixed order going in —
+       see poolOrder above for what happens when the order going in is left
+       to the database. */
+    function shuffledBy(list, seed) {
+        const rand = seededRandom(seed);
+        return list
+            .map(item => ({ item, k: rand() }))
+            .sort((a, b) => a.k - b.k)
+            .map(o => o.item);
+    }
 
-       Names already tried this room stay in place, struck through and
-       unclickable, rather than being removed: a list that reshuffles under
-       the cursor between guesses is harder to use than one that holds
-       still, and seeing what you have ruled out is the useful part. */
-    function renderSuggest(sheet) {
-        const box = sheet.refs.suggest;
+    /* The five names a round offers, the right one among them.
+
+       The four decoys are not drawn at random. A crop of a dim stone
+       corridor offered against four bright Christmas mazes is a round you
+       win without looking at the picture — the wrong answers rule
+       themselves out, and the question stops being about the room. So a
+       decoy is preferred from a maze that shares a tag with the answer:
+       same theme, same sort of build, the kind of maze the picture could
+       plausibly have come from. Only when there are not four of those does
+       it fall back to the rest of the archive.
+
+       That is the same reasoning Odd One Out uses to choose its imposter,
+       and for the same reason — see the note at the top of
+       js/oddoneout.js.
+
+       Settled by the day, the round and the answer's own id, so the five
+       are the same five for everybody, survive a reload, and do not shift
+       under a player who guesses once and comes back after lunch. */
+    function optionsFor(i) {
+        const pick = picks()[i];
+        if (!pick) return [];
+        const answer = pick.maze;
+
+        const tagsOf = r => (r.tags || []).map(t => String(t).toLowerCase()).filter(Boolean);
+        const mine = new Set(tagsOf(answer));
+
+        // Sorted before anything is drawn from it, for the same reason the
+        // picture pool is: an unordered list makes an unreproducible shuffle.
+        const others = ROOMS
+            .filter(r => r.name && r.id && r.id !== answer.id)
+            .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+        const seed = seedFrom("guess:options:" + today() + ":" + i + ":" + answer.id);
+        const related = others.filter(r => tagsOf(r).some(t => mine.has(t)));
+        const relatedIds = new Set(related.map(r => r.id));
+        const rest = others.filter(r => !relatedIds.has(r.id));
+
+        const decoys = shuffledBy(related, seed)
+            .concat(shuffledBy(rest, seed ^ 0x9e3779b9))
+            .slice(0, OPTIONS - 1);
+
+        /* Shuffled again with the answer in it, or the right name would sit
+           in first place every round — which is a game about noticing where
+           the list stops being sorted. */
+        return shuffledBy([answer].concat(decoys), seed ^ 0x85ebca6b).map(r => r.name);
+    }
+
+    // Worked out once a day rather than on every render, exactly as picks()
+    // is: renderAll redraws all five rounds on every guess, and rebuilding
+    // five shuffles of the archive each time is five shuffles nobody asked
+    // for.
+    let optionsCache = { day: "", rounds: [] };
+    function optionsRound(i) {
+        if (optionsCache.day !== today()) optionsCache = { day: today(), rounds: [] };
+        if (!optionsCache.rounds[i]) optionsCache.rounds[i] = optionsFor(i);
+        return optionsCache.rounds[i];
+    }
+
+    /* The five buttons.
+
+       While the round is live they are the guess: pressing one spends it.
+       There is no separate confirm, because with five large named buttons
+       the press IS the choice — the field-and-confirm pair the old list
+       needed existed to protect against a stray click in a scrolling list
+       of thirty-eight names, and that list is gone.
+
+       They stay on screen after the round ends rather than being hidden,
+       wearing the answer: the right name marked as right whether or not it
+       was picked, and the wrong picks marked as wrong. A multiple choice
+       question should be answered where it was asked. */
+    function renderOptions(sheet) {
+        const box = sheet.refs.options;
         const result = state.results[sheet.roundIndex];
-        if (!result || result.done) { box.innerHTML = ""; return; }
+        if (!box || !result) return;
 
-        const q = normalise(sheet.refs.input.value);
+        /* The answer comes from picks(), not from rounds[] — the day's five
+           mazes are known the moment the archive has loaded, whereas
+           rounds[] is not filled until each picture has been fetched and
+           cropped. Read from picks(), the names are on screen with the
+           sheet; read from rounds[], they appeared a beat later, which made
+           the board look like it was still deciding. */
+        const pick = picks()[sheet.roundIndex];
+        if (!pick) { box.innerHTML = ""; return; }
+
         const spent = new Set((result.guesses || []).map(g => normalise(g.name)));
+        const answer = normalise(pick.maze.name);
+        const over = result.done;
 
-        const names = ROOMS.filter(r => r.name).sort((a, b) => compareNames(a.name, b.name));
-        const hits = q ? names.filter(r => normalise(r.name).includes(q)) : names;
-
-        if (!hits.length) {
-            box.innerHTML = `<p class="guess-suggest-empty">No maze in the archive matches that.</p>`;
-            return;
-        }
-
-        box.innerHTML = hits.map(r => {
-            const key = normalise(r.name);
-            const isSpent = spent.has(key);
-            const cls = isSpent ? "is-spent" : (q && key === q ? "is-picked" : "");
-            return `<button type="button" class="guess-suggest-item ${cls}" data-name="${escapeHtml(r.name)}"${isSpent ? " disabled" : ""}>${escapeHtml(r.name)}</button>`;
+        box.innerHTML = optionsRound(sheet.roundIndex).map(name => {
+            const key = normalise(name);
+            const isAnswer = key === answer;
+            const wasTried = spent.has(key);
+            // is-idle is a name that was never tried and was not the answer.
+            // Only reachable once the round is over — while it is live an
+            // untouched name is simply a name you can still press.
+            const cls = over
+                ? (isAnswer ? "is-answer" : wasTried ? "is-wrong" : "is-idle")
+                : (wasTried ? "is-wrong" : "");
+            const mark = over && isAnswer ? "✓" : wasTried ? "✕" : "";
+            return `<button type="button" class="guess-option ${cls}" data-name="${escapeHtml(name)}"${wasTried || over ? " disabled" : ""}>
+                <span class="guess-option-name">${escapeHtml(name)}</span>
+                ${mark ? `<span class="guess-option-mark" aria-hidden="true">${mark}</span>` : ""}
+            </button>`;
         }).join("");
     }
 
@@ -670,13 +794,16 @@
 
         const live = sheets[liveIndex()];
         if (!live) return;
-        if (live.kind === "round" && !state.results[live.roundIndex].done) {
-            live.refs.input.focus({ preventScroll: true });
-        } else {
-            // Not the input: on a finished room or the results there isn't
-            // one, and the sheet itself is what has just arrived.
-            live.el.querySelector(".guess-sheet-inner").focus({ preventScroll: true });
-        }
+        /* The sheet itself takes the focus, never one of the five names.
+
+           It used to land on the text field, which was right when there was
+           one: the caret arriving in the box was the invitation to type.
+           Landing on the first OPTION would be a different thing entirely —
+           a highlighted answer, offered before the picture has been looked
+           at, one keypress from being spent. So the sheet is what arrives,
+           and Tab reaches the names in the order they are drawn. */
+        const inner = live.el.querySelector(".guess-sheet-inner");
+        if (inner) inner.focus({ preventScroll: true });
     }
 
     // ---------- rendering ----------
@@ -732,26 +859,13 @@
 
         refs.pips.innerHTML = pipsHtml(i);
 
-        const rows = [];
-        for (let n = 0; n < TRIES; n++) {
-            const g = result.guesses[n];
-            if (!g) {
-                rows.push(`<li class="guess-try is-empty"></li>`);
-            } else {
-                rows.push(`<li class="guess-try ${g.correct ? "is-right" : "is-wrong"}">
-                    <span class="guess-try-text">${escapeHtml(g.name)}</span>
-                    <span class="guess-try-mark" aria-hidden="true">${g.correct ? "✓" : "✕"}</span>
-                </li>`);
-            }
-        }
-        refs.tries.innerHTML = rows.join("");
-
         draw(i);
 
-        // The entry form is only up while the round is live. The name list
-        // lives inside it, so it goes with it.
-        refs.form.hidden = roundOver;
-        renderSuggest(sheet);
+        /* The five names stay up after the round ends, wearing the answer —
+           see renderOptions. There is no longer a separate list of guesses
+           made: with the options themselves marked, a second list saying the
+           same thing in a different order was the same information twice. */
+        renderOptions(sheet);
 
         if (roundOver) {
             const maze = data ? data.maze : null;
@@ -828,7 +942,10 @@
         }
         const solved = state.results.filter(r => r.won).length;
         const scored = dayPoints();
-        const day = picks();
+        // picks() was read here only to name the five mazes in the answer
+        // list below, which is gone — and it is not a free call: it deals
+        // the whole day off a seeded shuffle of every room picture in the
+        // archive.
         el.summary.innerHTML = `
             <p class="guess-points"><strong>${scored}</strong><span>points</span></p>
             <p class="guess-score">${solved} of ${ROUNDS} rooms found</p>
@@ -847,21 +964,21 @@
             <!-- Filled in by renderBoards once the scores come back, so the
                  results are readable the instant the day ends rather than
                  waiting on the network. -->
-            <div class="guess-boards" id="guess-boards"></div>
+            <div class="guess-boards" id="guess-boards"></div>`;
 
-            <h4 class="guess-answers-head">Today's five</h4>
-            <ul class="guess-answers">
-                ${state.results.map((r, i) => {
-                    const p = day[i];
-                    if (!p) return "";
-                    return `<li class="${r.won ? "is-won" : "is-lost"}">
-                        <span class="guess-answers-n" aria-hidden="true">${i + 1}</span>
-                        <a href="home.html#maze-${encodeURIComponent(p.maze.id)}">${escapeHtml(p.maze.name)}</a>
-                        <span class="guess-answers-mark">${r.won ? `found in ${r.guesses.length}` : "missed"}</span>
-                        <span class="guess-answers-points">${pointsFor(r) ? "+" + pointsFor(r) : "—"}</span>
-                    </li>`;
-                }).join("")}
-            </ul>`;
+        /* The day's five mazes, named and linked, used to be listed here.
+
+           They are gone because of where this card ends up. It is the thing
+           somebody screenshots into a channel the moment they finish, and
+           everyone else in that channel has the same five rooms waiting for
+           them — so the list turned every shared result into a spoiler for
+           the people it was being shared with. The grid above says how the
+           day went and names nothing, which is exactly why it is safe to
+           paste; the answers underneath undid that.
+
+           Nothing is lost from the play itself: each maze is already named
+           at the end of its own round, on the sheet where it was guessed,
+           with a link into the archive. */
 
         const share = document.getElementById("guess-share");
         if (share) share.addEventListener("click", () => copyResult(share));
@@ -1012,8 +1129,39 @@
             </li>`).join("");
     }
 
-    function renderBoards() {
+    /* Splits the board area into this game's board and the combined one, and
+       hands the second column to js/daily.js.
+
+       Guess the Maze keeps its own board code and its own endpoint — it came
+       first, is scored by netlify/functions/guess-scores.js against its own
+       POINTS array, and its rows carry a grid the other two do not. What it
+       does NOT need its own copy of is the day added up across all three,
+       so that half is drawn by the same renderer Ratrospect and Odd One Out
+       use.
+
+       Built once and remembered: renderBoards runs again on every range
+       switch, and rebuilding the pair each time would throw the combined
+       board away and re-fetch it for a press that has nothing to do with
+       it. */
+    let boardPanel = null;
+    function boardColumns() {
         const host = document.getElementById("guess-boards");
+        if (!host) return null;
+        if (boardPanel && host.contains(boardPanel)) return boardPanel;
+        host.innerHTML = `
+            <div class="guess-boards-pair">
+                <div class="guess-boards-own"></div>
+                <div class="guess-boards-all"></div>
+            </div>`;
+        boardPanel = host.querySelector(".guess-boards-own");
+        if (window.Daily && Daily.combinedBoard) {
+            Daily.combinedBoard(host.querySelector(".guess-boards-all"));
+        }
+        return boardPanel;
+    }
+
+    function renderBoards() {
+        const host = boardColumns();
         if (!host) return;
 
         const me = window.Account && Account.current ? Account.current.id : null;
@@ -1262,11 +1410,8 @@
                 triesLeft: node.querySelector(".guess-tries-left"),
                 flag: node.querySelector(".guess-picture-flag"),
                 pips: node.querySelector(".guess-pips"),
-                tries: node.querySelector(".guess-tries"),
                 status: node.querySelector(".guess-status"),
-                form: node.querySelector(".guess-entry"),
-                input: node.querySelector(".guess-input"),
-                suggest: node.querySelector(".guess-suggest"),
+                options: node.querySelector(".guess-options"),
                 between: node.querySelector(".guess-between")
             };
             // Focusable so goTo can put the caret on a sheet that has no
@@ -1282,40 +1427,15 @@
         return true;
     }
 
+    /* Delegated to the box rather than bound to five buttons, because the
+       five are rewritten on every render — a listener per button would be
+       re-attached on every guess, and the round only has three. */
     function wireRound(sheet) {
-        const refs = sheet.refs;
-
-        refs.input.addEventListener("input", () => renderSuggest(sheet));
-
-        /* Fills the field rather than spending the guess outright. With the
-           whole archive listed and scrolling under the pointer, a stray
-           click would otherwise cost a life — and there is a Guess button
-           two inches away to confirm with. */
-        refs.suggest.addEventListener("click", e => {
-            const btn = e.target.closest(".guess-suggest-item");
+        sheet.refs.options.addEventListener("click", e => {
+            const btn = e.target.closest(".guess-option");
             if (!btn || btn.disabled) return;
-            refs.input.value = btn.dataset.name;
-            renderSuggest(sheet);
-            refs.input.focus({ preventScroll: true });
-        });
-
-        refs.form.addEventListener("submit", e => {
-            e.preventDefault();
-            const typed = refs.input.value.trim();
-            if (!typed) return;
-            /* Only a real maze name counts. A typo would otherwise burn a
-               guess on a maze that does not exist, which is a bad way to
-               lose — the picker is there precisely so nobody has to spell
-               "Laberinto Cooperativo" correctly. */
-            const match = ROOMS.find(r => r.name && normalise(r.name) === normalise(typed));
-            if (!match) {
-                refs.status.textContent = "No maze in the archive by that name — pick one from the list.";
-                refs.status.hidden = false;
-                return;
-            }
-            refs.input.value = "";
-            refs.status.hidden = true;
-            submitGuess(match.name);
+            sheet.refs.status.hidden = true;
+            submitGuess(btn.dataset.name);
         });
     }
 

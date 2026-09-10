@@ -398,7 +398,7 @@ html::-webkit-scrollbar-button { display: none; width: 0; height: 0; background:
     color: var(--amber-bright);
     border: 2px solid var(--amber);
     border-top: none;
-    font-family: 'Silkscreen', 'Pixelify Sans', monospace;
+    font-family: 'Silkscreen', monospace;
     font-size: 0.6875rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -1173,7 +1173,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 .btn {
     display: inline-block;
-    font-family: 'Silkscreen', 'Roboto', sans-serif;
+    font-family: 'Silkscreen', monospace;
     font-weight: 700;
     font-size: 0.8rem;
     letter-spacing: 0.5px;
@@ -2703,6 +2703,14 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-radius: 8px;
 }
 
+/* Said out loud, because the rule above declares a display and any
+   class-level display outranks the display:none the browser's own
+   stylesheet attaches to [hidden]. js/home.js hides this frame while the
+   Events tab is showing; without this line, setting the attribute would do
+   nothing at all and the frame would stay exactly where it was. The same
+   trap is documented on .guess-options[hidden] further down. */
+.featured-frame[hidden] { display: none; }
+
 /* Overrides the base .chrome-nav-btn's own flex: 1 — that's meant for
    sitting alongside siblings in a horizontal nav row (top-nav, sub-nav),
    not for a button that's now the fixed-height header of a vertical flex
@@ -3843,7 +3851,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     /* Lifted clear of the icons' own baseline. */
     top: -2px;
     color: var(--parchment-dim);
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     font-weight: 400;
     line-height: 23px;
@@ -4120,7 +4128,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .furni-strip-empty {
     margin: 0;
     /* The console's own type, at .console-blurb's size and weight. */
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     font-weight: 400;
     /* Both zeroed for the pixel font: letter-spacing pushes Volter off the
@@ -4251,7 +4259,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-overflow: ellipsis;
     pointer-events: none;
     color: var(--parchment-dim);
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     font-weight: 400;
 }
@@ -4334,7 +4342,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
        silhouette so the folded corner isn't squared off behind it. */
     filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.4));
     color: #2f2a24;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     font-weight: 400;
     line-height: 1.35;
@@ -7212,7 +7220,7 @@ body[data-page="admin"] .search-box input {
     padding: 0 4px 4px;
     margin: 0;
     color: #996600;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-weight: 700;
     font-size: 0.6rem;
     letter-spacing: 0;
@@ -7259,7 +7267,7 @@ body[data-page="admin"] .search-box input {
     background-repeat: repeat;
     image-rendering: pixelated;
     overflow: hidden;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     color: #eeeeee;
     /* External 2px shadow on the top/left (the screen reading as recessed,
        light notionally coming from the bottom-right) and a 1px highlight
@@ -7301,7 +7309,7 @@ body[data-page="admin"] .search-box input {
 
 .console-page-title {
     margin: 0 0 4px;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-weight: 700;
     font-size:  0.5625rem;
     color: #eeeeee;
@@ -7373,7 +7381,7 @@ body[data-page="admin"] .search-box input {
     background: transparent;
     border: 1px solid #eeeeee;
     color: #eeeeee;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     box-sizing: border-box;
 }
@@ -7450,7 +7458,7 @@ body[data-page="admin"] .search-box input {
     border: 1px solid #eeeeee;
     border-radius: 2px;
     color: #eeeeee;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     padding: 4px 12px;
     cursor: var(--cursor-pointer);
@@ -7620,7 +7628,7 @@ body[data-page="admin"] .search-box input {
     left: 0;
     right: 0;
     text-align: center;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.4rem;
     font-weight: 400;
     color: #7b4a00;
@@ -7999,7 +8007,7 @@ body[data-page="admin"] .search-box input {
 
 .site-loader-label {
     margin: 0;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.6875rem;
     font-weight: 400;
     letter-spacing: 1px;
@@ -8218,9 +8226,15 @@ body[data-page="admin"] .container {
     margin-top: 0;
 }
 
+/* These are <h3>s, so they arrive carrying the base heading rule's weight of
+   800 — see the note on .legal-doc h1 for why that is the one thing a pixel
+   face must not be asked for. Volter Goldfish registers 400 and 700 and
+   nothing above it, so 800 was being drawn as a smeared 700 on all nine
+   panel titles. */
 .admin-panel-title {
     margin: 0;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 700;
     font-size: 1.15rem;
     color: var(--amber-bright);
 }
@@ -9257,9 +9271,21 @@ body[data-page="admin"] #activity-sessions {
     color: var(--amber);
 }
 
+/* The weight is restated, and it is not a detail.
+
+   The base h1-h4 rule sets 800, which is right for Montserrat and wrong for
+   anything else. Silkscreen ships two weights, 400 and 700, so asking it for
+   800 does not select a heavier file — there isn't one — it makes the
+   browser synthesise the extra weight by smearing the 700 face sideways. On
+   a pixel font that is not bolder, it is blurred: the whole point of the
+   typeface is that every stem is a whole number of pixels wide.
+
+   Every rule below that swaps in Silkscreen says the weight too, for the
+   same reason. */
 .legal-doc h1 {
     margin: 0 0 18px;
     font-family: 'Silkscreen', monospace;
+    font-weight: 700;
     font-size: clamp(1.4rem, 4vw, 2rem);
     line-height: 1.2;
     color: var(--parchment);
@@ -9289,6 +9315,7 @@ body[data-page="admin"] #activity-sessions {
 .legal-section h2 {
     margin: 0 0 9px;
     font-family: 'Silkscreen', monospace;
+    font-weight: 700;
     font-size: 0.78rem;
     letter-spacing: 0.06em;
     line-height: 1.5;
@@ -10375,7 +10402,24 @@ body[data-page="admin"] #activity-sessions {
 /* --- the splash ----------------------------------------------------------
    What the game is, before any of it happens. Narrow measure and centred:
    there is one thing to read here and then one button to press. */
+/* The column is declared HERE rather than borrowed, and that is the whole
+   of the fix for the two games next door.
+
+   Guess the Maze puts this class on .guess-sheet-inner, which is already a
+   flex column — so align-items and gap below found a flex container and did
+   what they say. Ratrospect and Odd One Out build their splash as a plain
+   <div class="guess-splash"> inside .daily-sheet, where there was no flex
+   container of its own: align-items had nothing to align, and the rules
+   list — which sets its own max-width and zero side margins — sat hard
+   against the left edge under a centred title. Same markup, same class, two
+   different layouts, because the container came from somewhere else.
+
+   Saying it here costs Guess the Maze nothing (it restates what
+   .guess-sheet-inner already sets) and gives the other two the container
+   the rest of this rule has always assumed. */
 .guess-splash {
+    display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     text-align: center;
@@ -10611,35 +10655,12 @@ body[data-page="admin"] #activity-sessions {
 .guess-pip.is-won.g3,
 .guess-pip.is-won.g4 { background: #5a4a22; }
 
-.guess-tries {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin: 0;
-    padding: 0;
-}
-
-.guess-try {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    min-height: 26px;
-    padding: 5px 8px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.22);
-    font-size: 0.7rem;
-    color: var(--parchment);
-}
-
-.guess-try-text { overflow-wrap: anywhere; }
-.guess-try.is-empty { opacity: 0.4; }
-.guess-try.is-right { border-color: var(--ok); color: #d8e8c6; }
-.guess-try.is-right .guess-try-mark { color: var(--ok); }
-.guess-try.is-wrong { border-color: var(--danger); }
-.guess-try.is-wrong .guess-try-mark { color: var(--danger); }
+/* The list of guesses made this room used to live here, under the pips. It
+   is gone: the five names now carry their own state — tried ones struck
+   through and marked, the right one revealed in place when the round ends —
+   so a separate list of the same guesses in a different order was the same
+   information twice, costing a hundred-odd pixels of a column that has five
+   buttons to fit. See renderOptions in js/guess.js. */
 
 .guess-status {
     margin: 0;
@@ -10647,9 +10668,16 @@ body[data-page="admin"] #activity-sessions {
     color: var(--danger);
 }
 
-/* Takes whatever height the board above it has not used, so the name list
-   inside fills the rest of the column instead of floating over it. */
-.guess-entry {
+/* ---------- the five names ----------
+
+   What replaced the text field and the scrolling list of every maze in the
+   archive. That pair asked people to RECALL a name; five buttons ask them
+   to recognise a room, which is the thing the picture is testing.
+
+   Takes whatever height the board above it has not used, and the five share
+   it evenly, so the column is full whatever the sheet's height works out to
+   rather than leaving a gap under the last name. */
+.guess-options {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -10657,87 +10685,80 @@ body[data-page="admin"] #activity-sessions {
     gap: 6px;
 }
 
-.guess-entry-row {
-    flex: 0 0 auto;
+/* Each name is a real target rather than a row in a list: pressing one
+   spends a guess, so it should look like the thing that does that. Left
+   aligned, because these are names of varying length and a centred column
+   of them has no edge to read down. */
+.guess-option {
+    flex: 1 1 auto;
+    min-height: 34px;
     display: flex;
-    gap: 6px;
-}
-
-.guess-input {
-    flex: 1;
-    min-width: 0;
-    padding: 7px 9px;
-    background: var(--bg-black);
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    background: linear-gradient(#3b3022, #2f2618);
     border: 1px solid var(--chrome-border);
-    box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.5);
     border-radius: 4px;
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
     color: var(--parchment);
     font-family: inherit;
-    font-size: 0.72rem;
-}
-
-.guess-input:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
-
-/* In flow under the field rather than floating over the board. It is open
-   the whole time a room is live, so as an overlay it would be covering the
-   guesses you have already made every time a sheet rose. */
-.guess-suggest {
-    flex: 1;
-    min-height: 74px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-black);
-    border: 1px solid var(--chrome-border);
-    border-radius: 4px;
-    box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.5);
-    scrollbar-color: var(--wood-dark) var(--bg-black);
-}
-
-.guess-suggest-item {
-    flex: 0 0 auto;
-    padding: 6px 9px;
-    background: none;
-    border: none;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.4);
+    font-size: 0.74rem;
+    line-height: 1.25;
     text-align: left;
-    color: var(--parchment);
-    font-family: inherit;
-    font-size: 0.72rem;
     cursor: var(--cursor-pointer);
+    transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
 }
 
-.guess-suggest-item:hover,
-.guess-suggest-item:focus-visible {
+.guess-option-name { min-width: 0; overflow-wrap: anywhere; }
+
+.guess-option-mark {
+    flex: 0 0 auto;
+    font-size: 0.8rem;
+}
+
+.guess-option:hover:not(:disabled),
+.guess-option:focus-visible:not(:disabled) {
     background: var(--wood-mid);
+    border-color: var(--amber);
     color: #fff8ec;
     outline: none;
 }
 
-/* The name currently sitting in the field. Clicking a name fills the box
-   rather than spending the guess outright — with the whole archive listed
-   and scrolling, a stray click would otherwise cost a life. */
-.guess-suggest-item.is-picked {
-    background: var(--wood-dark);
-    color: var(--amber-bright);
-    box-shadow: inset 2px 0 0 var(--amber);
-}
+.guess-option:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
-/* Names already tried this room stay listed, struck through, rather than
-   vanishing — a list that reorders itself under the cursor between guesses
-   is harder to use than one that does not. */
-.guess-suggest-item.is-spent {
+/* A name already tried stays exactly where it was, struck through. Removing
+   it would reorder the four still standing under the cursor between
+   guesses, which is the one thing a list being read down must not do — and
+   seeing what has been ruled out is half of how the third guess is made. */
+.guess-option.is-wrong {
+    background: rgba(0, 0, 0, 0.28);
+    border-color: var(--danger);
     color: var(--unknown);
     text-decoration: line-through;
     cursor: default;
 }
-.guess-suggest-item.is-spent:hover { background: none; color: var(--unknown); }
 
-.guess-suggest-empty {
-    margin: 0;
-    padding: 10px 9px;
-    font-size: 0.7rem;
-    color: var(--parchment-dim);
+.guess-option.is-wrong .guess-option-mark { color: var(--danger); }
+
+/* Once the round is over: the right name marked as right whether or not it
+   was the one picked, and the names never tried faded back. A multiple
+   choice question should be answered where it was asked. */
+.guess-option.is-answer {
+    background: #3f5c2a;
+    border-color: var(--ok);
+    color: #eaf5df;
+    cursor: default;
+}
+
+.guess-option.is-answer .guess-option-mark { color: #d8e8c6; }
+
+/* Never tried, and not the answer. Faded rather than removed, so the round
+   still reads as the five it was asked from. */
+.guess-option.is-idle {
+    background: rgba(0, 0, 0, 0.22);
+    color: var(--unknown);
+    cursor: default;
 }
 
 .guess-btn {
@@ -10898,44 +10919,11 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment-dim);
 }
 
-.guess-answers-head {
-    margin: 6px 0 0;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--unknown);
-}
-
-.guess-answers {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    width: 100%;
-    max-width: 400px;
-    text-align: left;
-}
-
-.guess-answers li {
-    display: grid;
-    grid-template-columns: 16px 1fr auto;
-    align-items: baseline;
-    gap: 8px;
-    padding: 4px 8px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.22);
-    font-size: 0.7rem;
-}
-
-.guess-answers-n { color: var(--unknown); font-variant-numeric: tabular-nums; }
-.guess-answers-mark { font-size: 0.62rem; color: var(--parchment-dim); }
-.guess-answers li.is-won a { color: var(--ok); }
-.guess-answers li.is-lost a { color: var(--danger); }
+/* The list of the day's answers that used to close every results card —
+   .guess-answers and its parts — is gone from all three games, so its
+   styling goes with it rather than sitting here waiting for markup that no
+   longer exists. See renderSummary in js/guess.js for why the list went.
+   The narrow-window overrides for it further down went at the same time. */
 
 .guess-share-fallback {
     width: 100%;
@@ -10955,8 +10943,7 @@ body[data-page="admin"] #activity-sessions {
    case — the attribute is only display:none from the browser's own
    stylesheet, so any class-level display outranks it. This is the same trap
    the atlas room sheet fell into. */
-.guess-entry[hidden],
-.guess-suggest[hidden],
+.guess-options[hidden],
 .guess-between[hidden],
 .guess-splash-foot[hidden],
 .guess-status[hidden] { display: none; }
@@ -10989,30 +10976,32 @@ body[data-page="admin"] #activity-sessions {
     /* Stacked, so the height it has to fit inside is no longer the sheet's
        — the board sits underneath it. Capped against the viewport instead,
        by the same min() so it stays square. */
-    .guess-picture { width: min(100%, 44vh); }
+    /* The percentage, not the vh, is what binds on a phone: on a 375px
+       screen the column is 270px and 44vh is 357, so the picture is as wide
+       as the sheet lets it be and lowering the vh term changes nothing at
+       all. The room a fifth name needs has to come off the width. 92% is
+       measured rather than picked — see the note on .guess-option below. */
+    .guess-picture { width: min(92%, 44vh); }
     .guess-panel { overflow: visible; }
-    /* A fixed box that scrolls its own contents, not a flex child that
-       grows to fit them: with the sheet itself now sized by its content,
-       flex: 1 had nothing to push back against and the list stretched to
-       all thirty-eight names, giving the sheet a thousand pixels of
-       scroll. Tall enough to read down, short enough that the picture and
-       the guesses are still on screen with it. */
-    .guess-suggest {
-        flex: 0 0 auto;
-        /* Measured, not picked: at 190px the list ran 22px past the last
-           tucked tab on a 375x812 phone. This lands a fresh round exactly
-           on the fold with nothing to scroll for. */
-        height: 165px;
-        min-height: 0;
-    }
+    /* Sized by their own content rather than sharing out a height. Stacked
+       under the picture the sheet is no longer the thing bounding this
+       column, so flex: 1 has nothing to push back against — the five would
+       simply stretch to whatever was left. A fixed comfortable row height
+       each, and the sheet scrolls if a long name wraps, which a phone is
+       the right shape for. */
+    /* Sized by their own content rather than sharing out a height: stacked
+       under the picture the sheet is no longer the thing bounding this
+       column, so flex: 1 would simply stretch the five to fill whatever was
+       left.
 
-    /* The four empty slots are a desktop affordance — they show the shape
-       of the round before it is played. On a phone they cost 124px of the
-       first screen to say what the pips and "3 guesses left" directly
-       above them already say, and pushed the name list under the fold.
-       Guesses actually made still appear, one row at a time. */
-    .guess-try.is-empty { display: none; }
-    .guess-tries:not(:has(.guess-try:not(.is-empty))) { display: none; }
+       The heights here and the 92% above are one measurement, not two
+       guesses. A round has to fit the sheet with nothing to scroll for —
+       all five names have to be on screen together, or the game is asking
+       you to compare things you cannot see at once — and the sheet's own
+       foot is already spoken for by 82px of reserved space for the five
+       tucked tabs below it. What was left came up 32px short. */
+    .guess-options { flex: 0 0 auto; gap: 5px; }
+    .guess-option { flex: 0 0 auto; min-height: 36px; }
     .guess-rules p { font-size: 0.72rem; }
 }
 
@@ -11218,28 +11207,79 @@ body[data-page="admin"] #activity-sessions {
 .guess-reveal-points.is-won strong { color: var(--ok); }
 .guess-reveal-points.is-lost strong { color: var(--danger); }
 
-/* The answer rows gained a fourth column for what each room scored. */
-.guess-answers li { grid-template-columns: 16px 1fr auto auto; }
-
-.guess-answers-points {
-    min-width: 34px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    color: var(--amber);
-}
-
-.guess-answers li.is-lost .guess-answers-points { color: var(--unknown); }
-
 /* ---------- the leaderboards ---------- */
 
+/* The 400px cap was right when this held one board. It now holds two side
+   by side, so the cap moves to the pair below and this simply gives them
+   the width the results card has. */
 .guess-boards {
     display: flex;
     flex-direction: column;
     gap: 12px;
     width: 100%;
-    max-width: 400px;
     margin-top: 4px;
 }
+
+/* ---------- two boards, side by side ----------
+
+   The game's own board on the left, the day added up across all three on
+   the right. They are the same width because neither is the footnote: one
+   asks who is best at this game and the other asks who turned up, and a
+   player can lead one while being nowhere on the other.
+
+   auto-fit with a 260px floor rather than a media query, so the pair
+   answers to the space it is actually given. That matters here more than
+   usual — this markup appears inside three different windows at three
+   different widths, and Guess the Maze's is a 900px deck while the other
+   two are 720px. Below roughly 540px of room the two stack, which is what
+   a phone gets. */
+.guess-boards-pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    align-items: start;
+    width: 100%;
+}
+
+/* Each column keeps the measure a list of ten names wants, rather than
+   stretching to half of whatever the window happens to be. */
+.guess-boards-own,
+.guess-boards-all {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Names the second column, since "All time" in its range row could
+   otherwise be read as belonging to the board on the left. */
+.guess-board-title {
+    margin: 0 0 2px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--amber-bright);
+}
+
+/* How many of the three games a row's points came from. Sits where the
+   per-game board puts its result grid, because it does the same job there:
+   the one piece of context that stops a number being misread. */
+.guess-board-games {
+    flex: 0 0 auto;
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.28);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--amber);
+}
+
+.guess-board-games span { color: var(--unknown); }
 
 .guess-board {
     display: flex;
@@ -12176,7 +12216,13 @@ body[data-page="admin"] #activity-sessions {
    The clamp rather than a flat number so a short window still fits it, and
    the content scrolls inside a frame that never moves. */
 .daily-sheet {
-    height: clamp(430px, 66vh, 560px);
+    /* Named rather than written straight onto height, because Odd One Out
+       has to do arithmetic with it to size its pictures against the height
+       they have to fit in (see .odd-grid) — and a second copy of this clamp
+       would be a second thing to keep in step. Guess the Maze names its
+       deck height as --deck-h for exactly the same reason. */
+    --daily-h: clamp(430px, 66vh, 560px);
+    height: var(--daily-h);
     /* Fills the frame across as well as standing to a fixed height: the
        frame is a flex row, and without this the sheet is only as wide as
        its widest line, leaving the rest of the window bare. */
@@ -12191,10 +12237,28 @@ body[data-page="admin"] #activity-sessions {
     scrollbar-color: var(--wood-dark) #2e2418;
 }
 
+/* ---------- one pixel face per window ----------
+
+   These three windows are one game each, and they were set in two typefaces
+   between them. Guess the Maze letters all its microtype in Volter Goldfish
+   — the face the rest of this site uses, at the single size it is drawn for
+   — while Ratrospect and Odd One Out were written later in Silkscreen. That
+   was invisible until the two met: Ratrospect's splash carries a Volter
+   Goldfish eyebrow, and the board directly underneath it counts the cards in
+   Silkscreen, so one window says the same kind of thing twice in two
+   different hands.
+
+   Everything below moves to Volter Goldfish at 0.5625rem/400, which is not a
+   preference but the rule the face itself imposes — it is a bitmap, drawn
+   for exactly that size, and the note on .guess-sheet-tab-label explains why
+   anything wanting to be bigger reaches for Montserrat rather than scaling
+   this. Restating the weight matters for the same reason: 700 would silently
+   swap in the separately registered bold cut. */
 .daily-eyebrow {
     margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.58rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: #8a6a3d;
@@ -12214,8 +12278,9 @@ body[data-page="admin"] #activity-sessions {
 .daily-step,
 .daily-points {
     margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.6rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--parchment-dim);
@@ -12239,8 +12304,29 @@ body[data-page="admin"] #activity-sessions {
 
 /* Lives, as pips rather than hearts — a heart belongs to a different sort of
    game. A spent one stays in place hollow, so what is left reads against
-   what there was. */
-.daily-lives { display: inline-flex; gap: 5px; }
+   what there was.
+
+   Named, because three dots on their own are decoration: the word is set in
+   the same microtype as the two readouts either side of it, so the bar
+   reads as three labelled figures rather than a number, some dots, and
+   another number. See headHtml in js/ratrospect.js. */
+.daily-lives {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+}
+
+.daily-lives-label {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
+}
+
+.daily-lives-pips { display: inline-flex; gap: 5px; }
 
 .daily-life {
     width: 9px;
@@ -12272,19 +12358,12 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment);
 }
 
-/* The name in a row of the shared answers list: the one part that has to be
-   allowed to run out of room. */
-.daily-answers-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--parchment);
-}
+/* .daily-answers-name and .daily-answers-points styled the shared answers
+   list that used to close Ratrospect's and Odd One Out's results cards.
+   That list is gone from both — see resultsHtml in js/oddoneout.js — and
+   these went with it.
 
-.daily-answers-points { font-variant-numeric: tabular-nums; }
-
-/* ==========================================================================
+   ==========================================================================
    Ratrospect - the line of cards
    ========================================================================== */
 
@@ -12344,8 +12423,9 @@ body[data-page="admin"] #activity-sessions {
 
 .ratro-card-kind {
     margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.48rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: #8a6a3d;
@@ -12368,8 +12448,9 @@ body[data-page="admin"] #activity-sessions {
 
 .ratro-card-when {
     margin: 0;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.52rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     letter-spacing: 0.04em;
     color: var(--amber-bright);
 }
@@ -12424,8 +12505,9 @@ body[data-page="admin"] #activity-sessions {
     flex: 0 0 auto;
     align-self: flex-end;
     padding-bottom: 8px;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.48rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     white-space: nowrap;
@@ -12511,8 +12593,9 @@ body[data-page="admin"] #activity-sessions {
     padding: 4px;
     border: 2px dashed #7fbf6a;
     border-radius: 6px;
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.5rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     line-height: 1.4;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -12545,10 +12628,146 @@ body[data-page="admin"] #activity-sessions {
 
 .ratro-verdict-line strong { color: var(--parchment); }
 
+/* ---------- Ratrospect on a phone ----------
+
+   The line turns on its side, and the reason is that it has to.
+
+   Across, this board asks a phone for six cards and seven slots in a strip
+   about 190px wide — what is left of a 375px screen once the sheet's
+   padding and the OLDER and NEWER labels either end have taken their share.
+   That is not quite two cards. Every card after the second lived off the
+   edge of a sideways scroller, and the gesture the game is built on was
+   "drag a card into a gap you cannot see, in a strip that scrolls under
+   your finger while you do it". It was not hard, it was not possible.
+
+   Down, the same six cards get the full width of the sheet and the axis a
+   phone is actually shaped for. A card becomes a row — picture, name, date
+   — so six of them are a list you scroll the ordinary way; a slot becomes a
+   full-width bar, which is a tap target rather than a 26px sliver. Nothing
+   about the game changes: the same cards, the same slots, the same drag,
+   and the gaps are still the buttons they always were for anyone who would
+   rather tap than drag.
+
+   OLDER and NEWER go above and below, which is where they have to be once
+   the axis turns — they are the only thing saying which end of the list is
+   the past.
+
+   js/ratrospect.js reads the direction off this rule rather than carrying a
+   width of its own, so the drag follows the layout and the breakpoint is
+   written once. */
 @media (max-width: 620px) {
     .ratro-card { width: 108px; }
     .ratro-gap.is-open,
     .ratro-slot-ghost { width: 108px; }
+
+    /* The board is the sheet's remaining height, and the line takes what is
+       left of it after the card in hand. min-height: 0 on both, or a flex
+       child refuses to shrink below its content and the scroller never
+       scrolls — it just makes the whole sheet longer. */
+    .ratro-timeline {
+        flex: 1 1 auto;
+        min-height: 0;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 5px;
+    }
+
+    .ratro-end {
+        align-self: stretch;
+        padding-bottom: 0;
+        text-align: center;
+    }
+
+    .ratro-line {
+        flex-direction: column;
+        align-items: stretch;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        /* Room down the left for the rail and the stems that meet it. */
+        padding: 4px 2px 4px 22px;
+        /* The rail turns with the line: a 2px column down the left rather
+           than a 2px row along the bottom. `local` still does the same job
+           it does across — the rail is painted onto the scrolled content,
+           so it runs the full length of the list instead of stopping at the
+           bottom of the visible box. */
+        background-position: 11px 0;
+        background-size: 2px 100%;
+    }
+
+    /* A card on the line becomes a row: picture, then name and date. The
+       card in hand keeps its shape below — it is the question, and it
+       should not look like one of the answers. */
+    .ratro-card.is-down {
+        width: auto;
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr);
+        align-items: center;
+        gap: 9px;
+        text-align: left;
+    }
+
+    .ratro-card.is-down .ratro-thumb,
+    .ratro-card.is-down .ratro-thumb--blank {
+        grid-row: span 2;
+        width: 42px;
+    }
+
+    /* The stem reaches sideways to the rail now rather than down to it. */
+    .ratro-card.is-down::after {
+        left: -13px;
+        top: 50%;
+        width: 13px;
+        height: 2px;
+        transform: translateY(-50%);
+    }
+
+    /* A slot is a full-width bar. It grows in height under a dragged card,
+       which is the same gesture the desktop board makes across. */
+    .ratro-gap {
+        width: auto;
+        align-self: stretch;
+        height: 24px;
+        margin: 5px 0;
+        transition: height 0.16s ease-out, border-color 0.16s ease-out, background-color 0.16s ease-out;
+    }
+
+    .ratro-gap.is-open {
+        width: auto;
+        height: 60px;
+    }
+
+    .ratro-slot-ghost {
+        width: auto;
+        align-self: stretch;
+        height: 44px;
+        margin: 5px 0;
+    }
+
+    /* The card in hand lies down too, and this is what buys the list its
+       room: standing up it is a 108px picture with three lines under it,
+       most of a phone's remaining height for one card. On its side it is
+       the same card in about a third of the space, and what it gives back
+       goes to the line, which is the part you have to be able to see. */
+    .ratro-card.is-hand {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 76px minmax(0, 1fr);
+        grid-template-rows: auto auto auto;
+        align-items: center;
+        column-gap: 10px;
+        row-gap: 2px;
+        text-align: left;
+    }
+
+    .ratro-card.is-hand .ratro-thumb,
+    .ratro-card.is-hand .ratro-thumb--blank {
+        grid-row: 1 / -1;
+        width: 76px;
+    }
+
+    .ratro-hand-wrap { align-items: stretch; }
+    .daily-ask { text-align: center; }
 }
 
 /* ==========================================================================
@@ -12558,10 +12777,32 @@ body[data-page="admin"] #activity-sessions {
 /* Two by two rather than four across: four in a row on a desktop makes each
    picture small enough to lose the detail the round turns on, and the whole
    game is in that detail. */
+/* Sized against the height it has to fit in, not just the width it is
+   offered — which is what it used to do, and why the round did not fit.
+
+   Four tiles two-by-two in a column as wide as this window is a square some
+   623px on a side, dropped into a sheet that is a fixed 560px tall. The
+   bottom row fell off the end and the sheet grew a scrollbar, so a game
+   whose whole question is "compare these four" showed you two and a half of
+   them and asked you to scroll between them.
+
+   The sheet's height is fixed and deliberate (see --daily-h), so the square
+   can simply be told what is left of it: everything but the head, the
+   question, the note under it, the three gaps between those and the sheet's
+   own padding. 150px covers that with a little to spare for the two lines
+   of prose wrapping to three on a narrow window. min() against the full
+   width keeps it honest the other way, on a window short enough that the
+   height is no longer the thing running out first.
+
+   Centred rather than stretched, so the four sit as a block in the middle
+   of the sheet instead of hugging its left edge. */
 .odd-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;
+    width: min(100%, calc(var(--daily-h) - 150px));
+    aspect-ratio: 1;
+    margin-inline: auto;
 }
 
 .odd-tile {
@@ -12718,4 +12959,341 @@ body[data-page="admin"] #activity-sessions {
 @media (max-width: 900px) {
     .admin-daily { grid-template-columns: 1fr; }
     .admin-daily-players { max-height: 40vh; }
+}
+
+/* ==========================================================================
+   404
+   ==========================================================================
+
+   Deliberately quiet. A 404 is a page somebody arrives at by accident and
+   wants to leave immediately, so it says what happened once and then spends
+   the rest of its height on the ways back in rather than on an apology or a
+   joke that has to be read twice. */
+.lost-page {
+    width: 92%;
+    max-width: 620px;
+    margin: 0 auto;
+    padding: 52px 0 64px;
+    text-align: center;
+}
+
+.lost-page:focus { outline: none; }
+
+/* Big, and the only decorative thing here. Set in the display face rather
+   than the pixel one for the same reason the game splashes are: Volter
+   Goldfish is drawn for 9px and nothing else. Barely-there amber, because
+   it is a label for the situation and the sentence under it is the
+   headline. */
+.lost-code {
+    margin: 0;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 900;
+    font-size: clamp(3.4rem, 14vw, 5.5rem);
+    line-height: 0.9;
+    letter-spacing: 2px;
+    /* Measured against the page rather than picked: at 16% this sat on the
+       maze-tile background as a smudge you had to look for, which on the
+       one page whose job is to be instantly legible is the wrong kind of
+       restraint. Enough amber to read as a numeral, still well under the
+       heading beneath it. */
+    color: rgba(226, 178, 96, 0.34);
+    text-shadow: 0 3px 0 rgba(0, 0, 0, 0.55);
+}
+
+.lost-title {
+    margin: 6px 0 0;
+    font-size: clamp(1.3rem, 5vw, 1.9rem);
+    text-wrap: balance;
+}
+
+.lost-lede {
+    margin: 14px auto 0;
+    max-width: 46ch;
+    font-size: 0.92rem;
+    line-height: 1.65;
+    color: var(--parchment-dim);
+    text-wrap: pretty;
+}
+
+/* The way back. One: the archive, which is where everything else on this
+   site is reached from anyway.
+
+   The column is capped and the row centred rather than left to fill the
+   measure. With `1fr` and a single card the grid stretched it across the
+   full 620px, which stops reading as something to press and starts reading
+   as a banner — the wider a lone button gets, the less it looks like one.
+   auto-fit is kept so that a second way back, if one is ever wanted here,
+   sits beside this one without needing the rule rewritten. */
+.lost-ways {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 300px));
+    justify-content: center;
+    gap: 10px;
+    margin: 30px 0 0;
+    text-align: left;
+}
+
+.lost-way {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 62px;
+    justify-content: center;
+    padding: 12px 14px;
+    background: linear-gradient(#3b3022, #2f2618);
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
+    text-decoration: none;
+    transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
+}
+
+.lost-way:hover { background: var(--wood-mid); border-color: var(--amber); }
+.lost-way:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+
+.lost-way-name {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--amber-bright);
+}
+
+.lost-way-note {
+    font-size: 0.76rem;
+    line-height: 1.4;
+    color: var(--parchment-dim);
+}
+
+.lost-foot {
+    margin: 26px auto 0;
+    max-width: 44ch;
+    font-size: 0.76rem;
+    line-height: 1.6;
+    /* --unknown is the site's "this is greyed out" colour, and against the
+       patterned background it read as disabled rather than as quiet. */
+    color: var(--parchment-dim);
+}
+
+/* ==========================================================================
+   The day's games, on a phone
+   ==========================================================================
+
+   Hidden by default and shown only where the pointer is coarse — the same
+   test the touch-target block below uses, and for the same reason. On a
+   desktop the spine is an easy target and the menu behind it is the right
+   home for these; on a phone that spine is 30x26px and these three are the
+   reason somebody comes back tomorrow. */
+.daily-strip { display: none; }
+
+@media (pointer: coarse) {
+    .daily-strip {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 92%;
+        max-width: 560px;
+        margin: 0 auto 16px;
+    }
+
+    /* Said out loud, because the rule above declares a display and a
+       class-level display outranks the one [hidden] carries — see
+       .featured-frame[hidden] for the same trap. */
+    .daily-strip[hidden] { display: none; }
+
+    .daily-strip-head {
+        margin: 0 0 2px;
+        font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+        font-size: 0.5625rem;
+        font-weight: 400;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--amber);
+    }
+
+    /* One row per game: its name, whatever it has scored today, and how far
+       through it you are. The same three things the menu row shows, because
+       it is built from the same row. */
+    .daily-strip-item {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 3px;
+        min-height: 52px;
+        padding: 8px 12px;
+        background: linear-gradient(#3b3022, #2f2618);
+        border: 1px solid var(--chrome-border);
+        border-radius: 6px;
+        box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
+        text-align: left;
+        cursor: var(--cursor-pointer);
+    }
+
+    .daily-strip-item:active { background: var(--wood-mid); }
+
+    .daily-strip-name {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+        font-size: 0.5625rem;
+        font-weight: 400;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--parchment);
+    }
+
+    .daily-strip-state {
+        font-size: 0.72rem;
+        color: var(--parchment-dim);
+    }
+}
+
+/* ==========================================================================
+   Touch targets
+   ==========================================================================
+
+   Last in the file on purpose. Everything here contradicts a size set
+   earlier, and this is the one kind of rule that should win outright rather
+   than be threaded into thirty separate blocks where the next person to
+   adjust a padding quietly undoes it.
+
+   Scoped to (pointer: coarse), not to a width. The problem is a fingertip,
+   not a narrow window: a 16px-tall pill is perfectly usable with a mouse in
+   a 375px browser window and unusable with a thumb on a 375px phone. A
+   desktop window dragged narrow is untouched by all of it.
+
+   Two techniques, and which one is used depends on whether the control's
+   SIZE is part of the design:
+
+     - where it is not, the box simply grows to at least 44px;
+     - where it is — the header pills are a deliberately fine row of small
+       caps, and inflating them would wreck the header — the visible box is
+       left exactly as it is and an invisible ::after is stretched out over
+       it. The finger gets its 44px, the eye still gets the pill.
+
+   44 is the figure both Apple and Google land on, and it is a floor rather
+   than a target. Measured before this: twenty-three controls under 28px on
+   the homepage, the worst of them 12px tall. */
+@media (pointer: coarse) {
+
+    /* --- controls whose size is not load-bearing --- */
+
+    .view-switch-btn,
+    .chrome-nav-btn,
+    .chrome-tab,
+    .side-menu-item,
+    .guess-btn {
+        min-height: 44px;
+    }
+
+    /* The archive's minimise bar was a 12px sliver spanning the window —
+       easy to hit by accident while scrolling and hard to hit on purpose. */
+    .chrome-frame-minimize-toggle {
+        min-height: 30px;
+    }
+
+    /* The spine is still the way to What's New, Your Progress and Alt
+       Codes, so it has to be reachable even though the games it used to
+       gatekeep now have a strip of their own above the archive. Taller
+       rather than wider: it is a vertical tab against the window's edge,
+       and widening it would push it over the list it sits beside. */
+    .side-spine {
+        min-height: 96px;
+        justify-content: center;
+    }
+
+    /* A room's name gets the width the window can spare.
+
+       The titlebar reserves the same room at both ends so the name stays
+       centred, and on a phone that reservation — three action icons on the
+       left, a close button on the right — left about half the bar for the
+       name itself, so "100% CONFUSED MAZE" arrived as "100% CONFUSED …".
+       Two lines are allowed instead of one, which costs a few pixels of
+       chrome on the rooms whose names need it and nothing at all on the
+       ones that do not. */
+    .modal .chrome-titlebar h2 {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+        line-height: 1.25;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    /* --- controls that keep their size and gain a reach ---
+
+       The header pills are small caps by design and inflating them would
+       wreck the row, so the visible box is left alone and an invisible
+       ::after is stretched over it.
+
+       30px, not 44. The two pill rows — Discord/Sign in above, Dev Mode/
+       Admin below — sit exactly 30px apart centre to centre, and a reach
+       taller than the pitch does not gain anything: it laps over the row
+       above or below, and whichever pill comes later in the markup wins the
+       overlap and starts swallowing its neighbour's presses. A control that
+       is hard to hit is a nuisance; a control that silently opens a
+       different one is a bug. So the reach grows to the pitch and stops,
+       which still nearly doubles a 16px pill.
+
+       Getting these to a true 44 means giving the header row itself more
+       height, which is a design decision rather than a bug fix. */
+    .header-badge,
+    .header-signin,
+    .header-console-btn {
+        position: relative;
+    }
+
+    .header-badge::after,
+    .header-signin::after,
+    .header-console-btn::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: max(100%, 44px);
+        height: max(100%, 30px);
+        /* A hit area, not a layer: nothing to see, and nothing that can
+           cover the pill's own text. */
+        background: transparent;
+    }
+
+    /* --- controls whose parent clips, so the reach has to be real ---
+
+       Neither of these can use the trick above: both sit inside a box with
+       overflow: hidden, which crops an ::after the moment it grows past the
+       edge. Measured, not assumed — the events headline's reach was coming
+       out at 14px and the scrollbar arrow's at nothing at all. So these get
+       actual height instead. */
+    /* Padding on the link itself, and the viewport grown to hold it. NOT
+       flex on the viewport: it clips a sliding carousel whose outgoing
+       slide is an absolutely positioned clone, and turning it into a flex
+       container is the kind of change that looks fine standing still and
+       goes wrong mid-animation. The slide keeps its own layout; only the
+       anchor inside it gets taller. */
+    .header-events-title {
+        padding: 7px 0;
+    }
+
+    .header-events-viewport {
+        min-height: 40px;
+    }
+
+    .custom-scrollbar-arrow {
+        min-height: 26px;
+    }
+
+    /* The fansite row wraps to three lines on a phone, one line about 30px
+       below the next, and the links within a line sit 16px apart. Padding
+       rather than a reach for exactly the reason given above: overlapping
+       hit areas here would have each row quietly stealing presses from the
+       one above it. 12px top and bottom takes a 18px link to 42px without
+       any of them touching. */
+    .fellow-fansites a {
+        display: inline-block;
+        padding: 12px 3px;
+    }
 }

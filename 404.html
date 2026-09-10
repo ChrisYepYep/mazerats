@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#120c07">
+    <!-- A 404 is not a page anybody should arrive at from a search result,
+         and one that got indexed would be a result that promises an archive
+         and delivers an apology. -->
+    <meta name="robots" content="noindex, nofollow">
+    <title>Lost in the maze — Maze Rats</title>
+    <meta name="description" content="That page is not in the archive.">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="css/style.css?v=2">
+    <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
+</head>
+<body data-page="notfound">
+
+    <a class="skip-link" href="#lost-main">Skip to the page</a>
+
+    <header class="site-header">
+        <div class="brand-group">
+            <a class="brand" href="home.html">
+                <span class="brand-text">MAZE RATS</span>
+                <span class="brand-tagline">Every maze. One place.</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- The page a wrong address lands on.
+
+         Every unknown path used to rewrite to index.html with a 404 status
+         attached, which meant a mistyped URL showed the front door and said
+         nothing at all: the visitor saw a normal landing page, could not
+         tell anything had gone wrong, and the only clue was a status code
+         nobody reads. Worse on this site than most, because /maze/:id and
+         /wizard/:id are addresses people paste to each other — a link that
+         has gone stale is a thing that genuinely happens here.
+
+         So it says what happened, in the voice the rest of the site uses,
+         and then does the one useful thing a 404 can do: offer the ways
+         back in. -->
+    <main class="lost-page" id="lost-main" tabindex="-1">
+        <p class="lost-code" aria-hidden="true">404</p>
+        <h1 class="lost-title">You have taken a wrong turn</h1>
+        <p class="lost-lede">There is no page at that address. It may have been renamed, it may never
+            have existed, or the link that brought you here may be older than the thing it points at.</p>
+
+        <!-- One way back, not three.
+
+             The atlas and Guess the Maze were offered here too. Both are
+             reachable from the archive — the atlas by its own address, the
+             games from the menu on the archive's right-hand edge — so
+             listing them turned the one thing this page has to say into a
+             choice of three, and the choice mattered least to the person
+             who most needs this page: somebody who arrived by mistyping. -->
+        <div class="lost-ways">
+            <a class="lost-way" href="home.html">
+                <span class="lost-way-name">The archive</span>
+                <span class="lost-way-note">Every maze and event, searchable</span>
+            </a>
+        </div>
+
+        <p class="lost-foot">If you followed a link from somewhere on this site, it is a fault worth
+            knowing about &mdash; let us know using the console found at the top of the archive page.</p>
+    </main>
+
+    <footer class="site-footer">
+        <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
+        <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
+    </footer>
+
+    <script src="js/api.js?v=2"></script>
+    <script src="js/event-status.js?v=2"></script>
+    <!-- Puts the Fellow Fansites row and the Privacy Policy link into the
+         footer, exactly as it does on every other page. -->
+    <script src="js/site.js?v=2"></script>
+    <script src="js/track.js?v=2"></script>
+</body>
+</html>

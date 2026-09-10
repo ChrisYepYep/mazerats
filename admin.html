@@ -8,7 +8,7 @@
          fallback serif — legible, but not the map, and the whole point of
          the editor sharing the page's engine is that what you arrange is
          what you get. -->
-    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
@@ -92,6 +92,23 @@
                         <h3 class="admin-sidebar-title">Quick add</h3>
                         <button type="button" class="admin-action-pill" id="sidebar-add-room-btn">+ Add Maze</button>
                         <button type="button" class="admin-action-pill" id="sidebar-add-event-btn">+ Add Event</button>
+                    </div>
+
+                    <!-- Fallin' Furni levels are built in the game itself, not
+                         here. The editor needs the room canvas — an 8x13
+                         isometric floor you place furni on by clicking tiles —
+                         so it lives on the game page and this is the way in.
+                         The levels themselves are stored server-side through
+                         /.netlify/functions/ff-levels, with the same admin
+                         session as everything else on this page, so publishing
+                         from there is publishing from here. -->
+                    <div class="admin-rail-group">
+                        <h3 class="admin-sidebar-title">Fallin' Furni</h3>
+                        <p class="admin-hint">
+                            Levels are built on the game's own room. Opens in a new tab.
+                        </p>
+                        <a class="admin-action-pill" href="/fallinfurni?edit=1"
+                           target="_blank" rel="noopener">Open level editor</a>
                     </div>
 
                     <!-- ---------- Landing page state ---------- -->
@@ -301,7 +318,14 @@
 
                                         <div class="admin-wiz-group">
                                             <span class="admin-wiz-group-label">Add</span>
-                                            <button type="button" class="admin-action-pill admin-add-btn" id="wiz-add-room-btn" title="Put a new room in the middle of the view">+ Room</button>
+                                            <!-- Its own id. It used to share "wiz-add-room-btn"
+                                                 with the pill in the panel header above, and
+                                                 getElementById returns only the first match — so
+                                                 this button, the one actually inside the editor
+                                                 where a room gets added, was the one that never
+                                                 received a click handler at all. Both are wired
+                                                 now; see els.addRoomBtns in js/admin-wizard.js. -->
+                                            <button type="button" class="admin-action-pill admin-add-btn" id="wiz-add-room-toolbar" title="Put a new room in the middle of the view">+ Room</button>
                                             <!-- A picture is added by choosing a file, so the
                                                  control IS the file input, dressed as a button
                                                  by its label. -->

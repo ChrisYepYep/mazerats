@@ -39,6 +39,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const view = WizardMap({
         stage,
         canvas: document.getElementById("wiz-canvas"),
+        /* The sheet's "(1)", "(2)", "(3)" stay in the editor and never reach
+           a reader — see roomName in js/wizard-map.js for why the number is
+           bookkeeping rather than part of the room. Everything on this page
+           that shows a name goes through view.roomName or view.fullName, so
+           there is one place the rule lives rather than six. */
+        showRoomNumbers: false,
         /* The zoom readout, and the two buttons that drive it. Both are
            disabled at the ends of the range rather than left accepting
            clicks that do nothing — the console's own scrollbar ships
@@ -113,7 +119,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const thumb = room.thumb || room.image;
         tooltipEl.innerHTML = `
             ${thumb ? `<img class="wiz-tip-thumb" src="${escapeHtml(thumb)}" alt="">` : ""}
-            <p class="wiz-tip-name">${escapeHtml(room.name)}</p>
+            <p class="wiz-tip-name">${escapeHtml(view.roomName(room))}</p>
             ${room.note ? `<p class="wiz-tip-note">${escapeHtml(room.note)}</p>` : ""}
             ${room.floor ? `<p class="wiz-tip-floor">${escapeHtml(room.floor)}</p>` : ""}
             ${room.description ? `<p class="wiz-tip-desc">${escapeHtml(firstLine(room.description))}</p>` : ""}
@@ -182,7 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
         modalNoImg.hidden = !!picture || bare;
         if (picture) {
             modalImg.src = picture;
-            modalImg.alt = `${room.name} — the room as it was`;
+            modalImg.alt = `${view.roomName(room)} — the room as it was`;
         } else {
             // Both, not just the src: an <img> with no src but a leftover
             // alt is drawn as a broken-image box carrying the PREVIOUS
@@ -240,7 +246,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         modalExits.innerHTML = exits.length || unnamed
             ? `<h4>Leads to</h4><div class="wiz-exit-row">${exits
-                .map(e => `<button type="button" class="wiz-exit${e.secret ? " is-secret" : ""}" data-go="${escapeHtml(e.id)}"${e.via ? ` title="${escapeHtml(e.via)}"` : ""}>${escapeHtml(e.name)}${e.via ? `<span class="wiz-exit-via">${escapeHtml(e.via)}</span>` : ""}</button>`)
+                .map(e => `<button type="button" class="wiz-exit${e.secret ? " is-secret" : ""}" data-go="${escapeHtml(e.id)}"${e.via ? ` title="${escapeHtml(e.via)}"` : ""}>${escapeHtml(view.roomName(e))}${e.via ? `<span class="wiz-exit-via">${escapeHtml(e.via)}</span>` : ""}</button>`)
                 .join("")}${unnamed ? `<span class="wiz-exit-unknown">${unnamed} trail${unnamed > 1 ? "s" : ""} nobody has followed yet</span>` : ""}</div>`
             : "";
         modalExits.hidden = !exits.length && !unnamed;
@@ -336,7 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 .slice(0, 8);
             resultsEl.innerHTML = hits.length
                 ? hits.map(r => `<button type="button" class="wiz-result" data-go="${escapeHtml(r.id)}">
-                        <span class="wiz-result-name">${escapeHtml(r.name)}</span>
+                        <span class="wiz-result-name">${escapeHtml(view.roomName(r))}</span>
                         ${r.note || r.floor ? `<span class="wiz-result-note">${escapeHtml(r.note || r.floor)}</span>` : ""}
                     </button>`).join("")
                 : `<p class="wiz-result-empty">Nothing on the map by that name.</p>`;
@@ -359,6 +365,45 @@ document.addEventListener("DOMContentLoaded", () => {
         document.addEventListener("click", e => {
             if (!e.target.closest(".wiz-search")) hideResults();
         });
+    }
+
+    /* ---------- where the map opens, on a frame this size ----------
+
+       Zoom on this map is a multiple of "fitted to the frame", not a size.
+       That is the right way round for panning and for the +/- buttons, and
+       it is exactly wrong for an opening view: the same 190% that an admin
+       set while looking at a 1238px-wide frame is, in a 359px one, the same
+       fraction of a frame three and a half times smaller — so every room
+       name comes out three and a half times smaller with it. Measured on a
+       375px phone, sixty-eight of the seventy legible labels were under
+       twelve pixels tall and the smallest was three. The map was not broken;
+       it had simply been opened at a size nobody could read.
+
+       So the stored zoom is treated as what it is — a decision about how big
+       the drawing should LOOK, taken at a particular frame size — and
+       re-expressed for the frame actually in front of the reader. Both
+       scales are worked out the same way the engine works out its own fit,
+       which is why FIT_MARGIN does not appear: it is a constant factor in
+       both halves and cancels.
+
+       A phone therefore opens further in, seeing less of the castle at a
+       size worth seeing, which is the trade a small screen always makes.
+       Capped at the map's own maxZoom, and never applied to a frame already
+       as big as the reference — a desktop is unaffected, to the pixel. */
+    const REFERENCE_STAGE_W = 1240;
+    const REFERENCE_STAGE_H = 700;
+
+    function openingZoom(map) {
+        const want = map.startZoom;
+        if (!want) return want;
+        const box = stage.getBoundingClientRect();
+        if (!box.width || !box.height) return want;
+        const w = map.width || 2000;
+        const h = map.height || 1125;
+        const refScale = Math.min(REFERENCE_STAGE_W / w, REFERENCE_STAGE_H / h);
+        const nowScale = Math.min(box.width / w, box.height / h);
+        if (!nowScale || nowScale >= refScale) return want;
+        return Math.min(map.maxZoom || 6, want * (refScale / nowScale));
     }
 
     // ---------- controls ----------
@@ -384,8 +429,11 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("wiz-zoom-reset").addEventListener("click", () => {
         const map = view.getMap();
         if (map && map.startZoom) {
+            // The same re-expressed zoom the map opened at, so "back to the
+            // opening view" returns to the view that was actually opened
+            // rather than to a smaller one the reader has never seen.
             view.flyTo(map.startX == null ? 50 : map.startX,
-                map.startY == null ? 50 : map.startY, map.startZoom);
+                map.startY == null ? 50 : map.startY, openingZoom(map));
         } else {
             view.fitContent();
         }
@@ -447,7 +495,7 @@ document.addEventListener("DOMContentLoaded", () => {
             openRoom(room.id, { push: false });
         } else if (map.startZoom) {
             view.flyTo(map.startX == null ? 50 : map.startX,
-                map.startY == null ? 50 : map.startY, map.startZoom, { smooth: false });
+                map.startY == null ? 50 : map.startY, openingZoom(map), { smooth: false });
         }
 
         stage.classList.add("is-ready");

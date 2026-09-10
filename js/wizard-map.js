@@ -1157,11 +1157,34 @@ window.WizardMap = function WizardMap(options) {
         }
     }
 
+    /* ---------- the numbered rooms ----------
+
+       The connection spreadsheet numbers its repeats — "Grand Staircase
+       (1)", "3rd Floor Corridor (2)" — because a spreadsheet has to be able
+       to name a row, and seven identically-named corridors would otherwise
+       be seven rows nobody could tell apart.
+
+       That number is bookkeeping, not part of the room. Nobody standing in
+       the castle was ever in corridor number two, and the original drawing
+       letters none of them. So the editor keeps it, where telling one row
+       from another is the whole job, and the public map drops it.
+
+       Only a bare number in trailing brackets. "Hagrid's Hut (Inside)" and
+       "Hidden Passage (Secret) (Maze)" are describing the room rather than
+       counting it, and both survive this untouched. */
+    const NUMBER_SUFFIX = /\s*\(\d+\)\s*$/;
+
+    function roomName(room) {
+        const name = String((room && room.name) || "");
+        return options.showRoomNumbers === false ? name.replace(NUMBER_SUFFIX, "") : name;
+    }
+
     // The name as a reader should see it. The note is what tells three Grand
     // Staircases apart, so it belongs anywhere they might appear together — a
     // search result, a list of exits — and nowhere they cannot, like the map.
     function fullName(room) {
-        return room.note ? `${room.name} (${room.note})` : room.name;
+        const name = roomName(room);
+        return room.note ? `${name} (${room.note})` : name;
     }
 
     function drawRooms() {
@@ -1199,7 +1222,7 @@ window.WizardMap = function WizardMap(options) {
             }
             const text = document.createElement("span");
             text.className = "wiz-room-name";
-            text.textContent = room.name;
+            text.textContent = roomName(room);
             el.appendChild(text);
 
             roomsEl.appendChild(el);
@@ -1301,8 +1324,14 @@ window.WizardMap = function WizardMap(options) {
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.size === 2) {
             pinchStart = pinchSpread();
-            pinchZoom = zoom;
+            pinchZoom = wantZoom;
             dragging = false;
+            /* A pinch is a gesture, not a press, so the click it ends with
+               is not a click on whatever happened to be under a finger.
+               Without this, pinching to read a corner of the castle opened
+               the room sheet of the label you pinched over — see the
+               roomsEl click handler, which tests exactly this flag. */
+            dragMoved = true;
             return;
         }
         dragging = true;
@@ -1337,7 +1366,14 @@ window.WizardMap = function WizardMap(options) {
         // take it any earlier.
         if (!dragMoved && (Math.abs(e.clientX - startX) > 3 || Math.abs(e.clientY - startY) > 3)) {
             dragMoved = true;
-            stage.setPointerCapture(e.pointerId);
+            /* Guarded, because this is the one line in the drag that can
+               throw. Safari rejects setPointerCapture for a pointer it no
+               longer considers active — which happens the moment the
+               browser has decided the gesture is its own — and an
+               exception here aborts the handler BEFORE the pan below it.
+               The capture is an improvement to the drag, not a
+               precondition for it, so losing it must not cost the frame. */
+            try { stage.setPointerCapture(e.pointerId); } catch (err) { /* not ours to capture */ }
             stage.classList.add("is-dragging");
         }
         // A drag is the hand, not a request: it moves the view directly and
@@ -1354,6 +1390,18 @@ window.WizardMap = function WizardMap(options) {
     function endPointer(e) {
         pointers.delete(e.pointerId);
         if (pointers.size < 2) pinchStart = 0;
+        /* One finger lifted out of a pinch, and one still down. That finger
+           is a drag now — it was not before, because the pinch turned
+           dragging off — so it is handed the gesture rather than being
+           ignored until it too is lifted. Re-seeded from where it actually
+           IS, not from where the pinch began, or the map would jump by
+           however far the fingers had travelled while pinching. */
+        if (pointers.size === 1 && !dragging) {
+            const [only] = [...pointers.values()];
+            dragging = true;
+            startX = lastX = only.x;
+            startY = lastY = only.y;
+        }
         if (pointers.size === 0) {
             dragging = false;
             stage.classList.remove("is-dragging");
@@ -1365,6 +1413,48 @@ window.WizardMap = function WizardMap(options) {
     }
     stage.addEventListener("pointerup", endPointer);
     stage.addEventListener("pointercancel", endPointer);
+
+    /* ---------- keeping the gesture ----------
+
+       Everything above is written in pointer events, which is the right way
+       to write it and is enough on a desktop. On a phone it is not enough on
+       its own, because a browser will happily decide that a touch it has
+       already reported to us is really its own — a scroll, or a pinch of the
+       whole page — and the moment it does, it fires pointercancel and the
+       drag ends. One finger moved the map three pixels and stopped; two
+       fingers zoomed the entire page instead of the map. That is what
+       "doesn't work on mobile" was.
+
+       `touch-action: none` on the stage (css/wizard.css) is the standards
+       answer and handles the one-finger case in every engine that honours
+       it. The two-finger case it does not touch: pinch-to-zoom of the
+       VISUAL VIEWPORT is not a touch-action behaviour at all, and Safari
+       reports it through its own non-standard gesture events, which have to
+       be refused by name.
+
+       So both are said explicitly, and both listeners are non-passive
+       because a passive listener is one whose preventDefault is ignored:
+
+         - touchmove, refused only once a gesture of ours is actually
+           running. Refusing every touchmove on the stage would also refuse
+           the page scroll that begins on it, and the map is most of a phone
+           screen — that would strand a reader who simply wants to get past
+           it to the footer;
+         - gesturestart and gesturechange, refused outright. These fire
+           only on Safari and only for a two-finger pinch, and over the map
+           a pinch always means the map.
+
+       The taps are deliberately left alone: preventDefault on touchstart
+       would stop the browser synthesising the click that opens a room, so
+       the map would pan beautifully and nothing on it could be opened. */
+    stage.addEventListener("touchmove", e => {
+        if (pointers.size || dragging) e.preventDefault();
+    }, { passive: false });
+
+    const refuseGesture = e => e.preventDefault();
+    stage.addEventListener("gesturestart", refuseGesture, { passive: false });
+    stage.addEventListener("gesturechange", refuseGesture, { passive: false });
+    stage.addEventListener("gestureend", refuseGesture, { passive: false });
 
     stage.addEventListener("wheel", e => {
         e.preventDefault();
@@ -1455,6 +1545,7 @@ window.WizardMap = function WizardMap(options) {
         flyTo,
         screenToPct,
         fullName,
+        roomName,
         /* Re-lays one trail's footprints in place, without touching the rest
            of the map. The editor calls this on every frame of a drag, and
            rebuilding ninety trails and ninety-three names sixty times a

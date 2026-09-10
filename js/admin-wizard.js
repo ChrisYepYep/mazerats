@@ -2081,7 +2081,12 @@ window.AdminWizard = (function () {
             lockBtn: $("wiz-admin-lock"),
             roomList: $("wiz-rooms-list"),
             roomSearch: $("wiz-rooms-search"),
-            addRoomBtn: $("wiz-add-room-btn"),
+            /* Two of them, and both mean the same thing: the pill in the
+               panel header and the one in the editor's own Add group. They
+               are collected as a list rather than looked up singly because
+               they used to share one id, which meant only the header pill
+               was ever found and the editor's button did nothing. */
+            addRoomBtns: [$("wiz-add-room-btn"), $("wiz-add-room-toolbar")].filter(Boolean),
             addLayerInput: $("wiz-add-layer-file"),
             mapForm: $("wiz-map-form")
         };
@@ -2150,7 +2155,7 @@ window.AdminWizard = (function () {
         els.inspector.addEventListener("click", onInspectorClick);
         els.mapForm.addEventListener("submit", submitMapForm);
         els.mapForm.addEventListener("click", onMapFormClick);
-        els.addRoomBtn.addEventListener("click", addRoom);
+        els.addRoomBtns.forEach(btn => btn.addEventListener("click", addRoom));
         els.addLayerInput.addEventListener("change", () => {
             const file = els.addLayerInput.files[0];
             els.addLayerInput.value = "";

@@ -156,6 +156,17 @@ window.Daily = (function () {
         return `<span class="guess-board-grid" role="img" aria-label="${solved} of ${grid.length} right">${cells}</span>`;
     }
 
+    /* How many of the day's games a row's points came from.
+
+       Only ever drawn on the combined board, where it is the thing that
+       stops the ranking being misread: without it, a player on 500 and a
+       player on 1400 look like one is four times better, when in fact one
+       played a single game well and the other played all three. */
+    function gamesPill(n) {
+        if (!n) return "";
+        return `<span class="guess-board-games" title="${n} of 3 games played">${n}<span aria-hidden="true">/3</span></span>`;
+    }
+
     function rows(list, mine, empty) {
         if (!list || !list.length) return `<li class="guess-board-empty">${escapeHtml(empty)}</li>`;
         return list.map((row, i) => `
@@ -165,9 +176,75 @@ window.Daily = (function () {
                     ? `<img class="guess-board-face" src="${escapeHtml(row.avatar)}" alt="" aria-hidden="true" loading="lazy">`
                     : `<span class="guess-board-face is-blank" aria-hidden="true"></span>`}
                 <span class="guess-board-name">${escapeHtml(row.name || "Someone")}</span>
-                ${miniGrid(row.grid)}
+                ${row.games ? gamesPill(row.games) : miniGrid(row.grid)}
                 <span class="guess-board-score">${row.points}</span>
             </li>`).join("");
+    }
+
+    /* ---------- the day across all three games ----------
+
+       Drawn beside a game's own board rather than instead of it, and it
+       answers a different question: the board on the left is who is best at
+       this game, and this one is who turned up. A player who is nowhere near
+       the top of any single board can lead this one by playing all three
+       every morning, which is exactly the habit worth rewarding.
+
+       Published so Guess the Maze can use it too — that game keeps its own
+       board code and its own endpoint (see netlify/functions/guess-scores.js),
+       and the combined figures come from neither of them. One renderer,
+       three games, one shape on screen.
+
+       Never throws, and never takes the game's own board down with it: a
+       second board that cannot be reached says so in its own column and
+       leaves the first alone. */
+    const COMBINED_EMPTY = {
+        day: "Nobody has finished a game today yet.",
+        week: "No scores this week yet.",
+        month: "No scores this month yet.",
+        allTime: "No scores recorded yet."
+    };
+
+    function combinedBoard(host) {
+        if (!host) return;
+        let data = null;
+        let range = "day";
+
+        const me = () => (window.Account && Account.current ? Account.current.id : null);
+
+        function draw() {
+            if (!data) {
+                host.innerHTML = `<p class="guess-board-note">Fetching the scores…</p>`;
+                return;
+            }
+            if (data === "failed") {
+                host.innerHTML = `<p class="guess-board-note">The combined board could not be reached just now.</p>`;
+                return;
+            }
+            const tabs = RANGES.map(r => `
+                <button type="button" class="guess-board-range${r.key === range ? " is-on" : ""}"
+                        data-range="${r.key}" aria-pressed="${r.key === range}">${escapeHtml(r.label)}</button>`).join("");
+
+            host.innerHTML = `
+                <div class="guess-board">
+                    <p class="guess-board-title">All three games</p>
+                    <div class="guess-board-ranges" role="group" aria-label="Which span the combined board covers">${tabs}</div>
+                    <p class="guess-board-span">Guess the Maze, Ratrospect and Odd One Out added together</p>
+                    <ol class="guess-board-list">${rows(data[range], me(), COMBINED_EMPTY[range] || COMBINED_EMPTY.day)}</ol>
+                </div>`;
+
+            host.querySelectorAll(".guess-board-range").forEach(btn => {
+                btn.addEventListener("click", () => { range = btn.dataset.range; draw(); });
+            });
+        }
+
+        draw();
+        fetch(`${SCORES_URL}?game=all&day=${encodeURIComponent(today())}`, {
+            headers: { Accept: "application/json" },
+            credentials: "same-origin"
+        })
+            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+            .then(body => { data = body; draw(); })
+            .catch(() => { data = "failed"; draw(); });
     }
 
     /* Draws the board into a host element and keeps it there: one fetch
@@ -181,15 +258,31 @@ window.Daily = (function () {
         let data = null;
         let range = "day";
 
+        /* Two columns: this game's board, and the same day across all three.
+           The host is split here rather than in each game's markup so that
+           adding a fourth game means nothing new to lay out — and so the two
+           boards cannot drift apart in how they are framed.
+
+           The game's own board keeps the original host element's identity by
+           being drawn into the first column; everything below still writes
+           into `panel` exactly as it used to write into `host`. */
+        host.innerHTML = `
+            <div class="guess-boards-pair">
+                <div class="guess-boards-own"></div>
+                <div class="guess-boards-all"></div>
+            </div>`;
+        const panel = host.querySelector(".guess-boards-own");
+        combinedBoard(host.querySelector(".guess-boards-all"));
+
         const me = () => (window.Account && Account.current ? Account.current.id : null);
 
         function draw() {
             if (!data) {
-                host.innerHTML = `<p class="guess-board-note">Fetching the scores…</p>`;
+                panel.innerHTML = `<p class="guess-board-note">Fetching the scores…</p>`;
                 return;
             }
             if (data === "failed") {
-                host.innerHTML = `<p class="guess-board-note">The scoreboard could not be reached just now.</p>`;
+                panel.innerHTML = `<p class="guess-board-note">The scoreboard could not be reached just now.</p>`;
                 return;
             }
             const invite = me() ? "" : `
@@ -206,7 +299,7 @@ window.Daily = (function () {
                 <button type="button" class="guess-board-range${r.key === range ? " is-on" : ""}"
                         data-range="${r.key}" aria-pressed="${r.key === range}">${escapeHtml(r.label)}</button>`).join("");
 
-            host.innerHTML = `
+            panel.innerHTML = `
                 ${invite}
                 <div class="guess-board">
                     <div class="guess-board-ranges" role="group" aria-label="Which span the board covers">${tabs}</div>
@@ -214,10 +307,10 @@ window.Daily = (function () {
                     <ol class="guess-board-list">${rows(data[range], me(), spec.empty)}</ol>
                 </div>`;
 
-            host.querySelectorAll(".guess-board-range").forEach(btn => {
+            panel.querySelectorAll(".guess-board-range").forEach(btn => {
                 btn.addEventListener("click", () => { range = btn.dataset.range; draw(); });
             });
-            const signin = host.querySelector("[data-daily-signin]");
+            const signin = panel.querySelector("[data-daily-signin]");
             if (signin && window.Account && Account.signIn) {
                 signin.addEventListener("click", () => Account.signIn());
             }
@@ -233,5 +326,8 @@ window.Daily = (function () {
             .catch(() => { data = "failed"; draw(); });
     }
 
-    return { today, seededRandom, seedFrom, shuffle, dayBefore, claimReset, submit, boards };
+    // combinedBoard is published so Guess the Maze can draw the same second
+    // column beside its own board — that game keeps its own board code and
+    // its own endpoint, and this is the one piece all three share.
+    return { today, seededRandom, seedFrom, shuffle, dayBefore, claimReset, submit, boards, combinedBoard };
 })();

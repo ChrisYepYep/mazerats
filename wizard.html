@@ -21,12 +21,24 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Caveat on top of the site's usual three. It is the closest thing on
-         Google Fonts to the brush hand the map is lettered in, and it is
-         only ever asked to stand in: every room that was on the original
-         drawing shows its own cut-out handwriting, and the typeface is for
-         the rooms added afterwards, for the heading, and for the moment
-         before the images load. -->
-    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+         Google Fonts to the brush hand the map is lettered in.
+
+         It was written here as a stand-in — the intent being that a room
+         from the original drawing shows its own cut-out handwriting and
+         only the rooms added afterwards fall back to type. That is not what
+         is on screen today: no room on the map carries a labelImage, so
+         Caveat letters all ninety-three of them and the cut-outs are a
+         capability rather than a fact.
+
+         Everything needed for it exists — tools/slice-map.js cuts the
+         labels out of tools/source/hogwarts-map.png by alpha, drawRooms in
+         js/wizard-map.js prefers the picture over the text, and the API
+         already passes labelImage through. What has not happened is the
+         run. Until it does, this comment describes the map as it actually
+         is, because a comment promising otherwise is how somebody spends an
+         afternoon looking for the bug that is stopping the cut-outs from
+         showing. -->
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">

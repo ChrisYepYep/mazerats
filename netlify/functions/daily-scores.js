@@ -247,6 +247,100 @@ async function board(col, game, from, to) {
     return rows.map(r => ({ id: r._id, name: r.name, avatar: r.avatar, points: r.points, solved: r.solved, days: r.days }));
 }
 
+/* ---------- the combined board ----------
+
+   One row per player, their points summed across every daily game they
+   played in the span. Read from both collections — see the note at the call
+   site for why there are two — and folded together in memory rather than
+   with a $unionWith, so this keeps working on a MongoDB older than 4.4 and
+   stays readable next to the aggregation above it.
+
+   Reading more than BOARD_SIZE from each side before folding is the part
+   that matters: a player who is eleventh at Ratrospect and eleventh at Odd
+   One Out can be third combined, and taking the top ten of each first would
+   lose them. The cap is generous rather than exact — a true answer needs
+   every row, and this is a leaderboard, not an audit. */
+const COMBINE_DEPTH = 200;
+
+async function playerTotals(col, match) {
+    return col.aggregate([
+        { $match: match },
+        {
+            $group: {
+                _id: { player: "$playerId", game: "$game" },
+                points: { $sum: "$points" },
+                days: { $sum: 1 },
+                name: { $last: "$name" },
+                avatar: { $last: "$avatar" }
+            }
+        },
+        { $sort: { points: -1 } },
+        { $limit: COMBINE_DEPTH }
+    ]).toArray();
+}
+
+function fold(...lists) {
+    const byPlayer = new Map();
+    for (const list of lists) {
+        for (const r of list) {
+            const id = r._id && r._id.player !== undefined ? r._id.player : r._id;
+            if (!id) continue;
+            const seen = byPlayer.get(id) || { id, points: 0, days: 0, games: new Set(), name: "", avatar: "" };
+            seen.points += r.points || 0;
+            seen.days += r.days || 0;
+            // guess_scores rows carry no `game` field of their own — the
+            // collection IS the game — so the caller labels them.
+            seen.games.add((r._id && r._id.game) || r.game || "guess");
+            // Newest name wins, so a Discord rename shows through rather
+            // than the board keeping whatever they were first called.
+            if (r.name) seen.name = r.name;
+            if (r.avatar) seen.avatar = r.avatar;
+            byPlayer.set(id, seen);
+        }
+    }
+    return [...byPlayer.values()]
+        .map(r => ({ id: r.id, name: r.name, avatar: r.avatar, points: r.points, days: r.days, games: r.games.size }))
+        // Points first; then more games played, because doing all three is
+        // the thing this board exists to notice.
+        .sort((a, b) => b.points - a.points || b.games - a.games || a.days - b.days)
+        .slice(0, BOARD_SIZE);
+}
+
+async function combinedBoards(db, params) {
+    const day = String(params.day || today()).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json(400, { error: "Bad day" });
+
+    const daily = db.collection(COLLECTION);
+    const guess = db.collection("guess_scores");
+    const week = rangeBounds("week", day);
+    const month = rangeBounds("month", day);
+    const all = rangeBounds("all", day);
+
+    const span = (from, to) => ({ day: { $gte: from, $lte: to } });
+
+    try {
+        const [dToday, gToday, dWeek, gWeek, dMonth, gMonth, dAll, gAll] = await Promise.all([
+            playerTotals(daily, { day }), playerTotals(guess, { day }),
+            playerTotals(daily, span(week.from, week.to)), playerTotals(guess, span(week.from, week.to)),
+            playerTotals(daily, span(month.from, month.to)), playerTotals(guess, span(month.from, month.to)),
+            playerTotals(daily, span(all.from, all.to)), playerTotals(guess, span(all.from, all.to))
+        ]);
+
+        return json(200, {
+            date: day,
+            weekFrom: week.from,
+            monthFrom: month.from,
+            combined: true,
+            day: fold(dToday, gToday),
+            week: fold(dWeek, gWeek),
+            month: fold(dMonth, gMonth),
+            allTime: fold(dAll, gAll)
+        });
+    } catch (e) {
+        return json(500, { error: "Could not read the scores" });
+    }
+}
+
 exports.handler = async (event) => {
     let db;
     try {
@@ -261,6 +355,29 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === "GET") {
         const game = String(params.game || "");
+
+        /* ---------- the day across all three games ----------
+
+           A separate board, asked for by name, rather than a fourth span on
+           an existing one: it answers a different question. The per-game
+           boards ask who is best at Ratrospect; this asks who turned up.
+
+           It has to read two collections, and that is not tidiness — it is
+           where the rows actually are. Ratrospect and Odd One Out were
+           written together and share `daily_scores`; Guess the Maze came
+           first and has `guess_scores` to itself, scored by its own function
+           against its own POINTS array. Neither is wrong and merging them
+           would be a migration for no benefit, so the combining happens
+           here, at the one point that wants both.
+
+           Everything is summed per player across whichever games they
+           played, so a player who plays one game is not penalised into
+           invisibility — they simply have one game's worth of points
+           against someone else's three. `games` says how many of the three
+           each row's points came from, so the board can be honest about
+           that rather than leaving it to be guessed. */
+        if (game === "all") return combinedBoards(db, params);
+
         if (!GAMES.includes(game)) return json(400, { error: "Unknown game" });
         const day = String(params.day || today()).slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json(400, { error: "Bad day" });

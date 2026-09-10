@@ -255,20 +255,6 @@
     function resultsHtml() {
         const rounds = dealt();
         const right = state.picks.filter(p => p.right).length;
-        /* A wrong pick is always one of the home maze's own pictures — there
-           is only one intruder in the four — so naming the maze you chose
-           reads as nonsense: "was hiding in Alt Maze, you said Alt Maze".
-           What actually happened is that you took one of the three that
-           belonged, and that is what the row says. */
-        const rows = state.picks.map((pick, i) => {
-            const round = rounds[i];
-            return `<li class="${pick.right ? "is-won" : "is-lost"}">
-                    <span class="guess-answers-n" aria-hidden="true">${i + 1}</span>
-                    <span class="daily-answers-name">${escapeHtml(round.imposter.name)}</span>
-                    <span class="guess-answers-mark">in ${escapeHtml(round.home.name)}</span>
-                    <span class="guess-answers-mark daily-answers-points">${pick.right ? "+" + POINTS_EACH : "—"}</span>
-                </li>`;
-        }).join("");
 
         return `
             <div class="guess-summary daily-summary">
@@ -288,10 +274,13 @@
                 <p class="daily-note" id="odd-foot">Four more rooms tomorrow.</p>
 
                 <div class="guess-boards" id="odd-boards"></div>
-
-                <h4 class="guess-answers-head">Who was hiding where</h4>
-                <ul class="guess-answers">${rows}</ul>
             </div>`;
+        /* "Who was hiding where" — the imposter and the maze it was hiding
+           in, for each of the five rounds — used to be listed here, and it
+           was the most spoiling of the three lists: it gave away both halves
+           of every round at once. Gone for the same reason as the others,
+           this card being the thing that gets pasted into a channel where
+           nobody else has played yet. */
     }
 
     /* Something a person might say, rather than a status line — see the

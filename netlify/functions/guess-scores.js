@@ -34,9 +34,14 @@ const { playerFrom } = require("./_player");
 
 const COLLECTION = "guess_scores";
 const ROUNDS = 5;
-// Must stay in step with POINTS in js/guess.js — the page shows the number,
-// this decides it.
-const POINTS = [100, 70, 45, 25];
+/* Must stay in step with POINTS in js/guess.js — the page shows the number,
+   this decides it. Three entries since the round became multiple choice:
+   five names and three guesses, so a round cannot be won on a fourth view
+   because there is no fourth view. The length is load-bearing beyond the
+   scoring — scoreRounds below rejects a claimed `tries` outside it, so a day
+   submitted by an older page, or a crafted one claiming four, scores that
+   round nothing rather than reading past the end of this array. */
+const POINTS = [100, 60, 30];
 const BOARD_SIZE = 10;
 
 const json = (statusCode, data) => ({
