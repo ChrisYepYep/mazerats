@@ -1,0 +1,693 @@
+/* Fallin' Furni. Borrows the site's palette from style.css rather than
+   inventing one, so the game reads as part of the archive.
+
+   Room on the left at its EXACT pixel size, builder's panel docked on the
+   right. The canvas is never scaled: at 0.99 of itself a pixel-art room
+   resamples every hard edge and the whole thing goes soft by a pixel or two in
+   places — which is precisely what it looked like when the stage was a
+   percentage width. 672x464 or nothing. */
+
+.ff-page {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 20px 16px 48px;
+}
+
+.ff-head { margin-bottom: 14px; }
+
+.ff-head h1 {
+    font-family: "Silkscreen", "Pixelify Sans", monospace;
+    color: var(--amber-bright);
+    font-size: 24px;
+    margin: 0 0 6px;
+    letter-spacing: 0.02em;
+}
+
+.ff-head p {
+    color: var(--parchment-dim);
+    margin: 0;
+    font-size: 13.5px;
+    max-width: 70ch;
+}
+
+.ff-layout {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.ff-left { flex: 0 0 auto; }
+
+.ff-stage {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    padding: 8px;
+    line-height: 0;
+    position: relative;          /* the title screen sits over the room */
+}
+
+/* ---- title screen
+
+   Covers the canvas, not the page: the first level is drawn underneath and
+   showing through, so Play reveals a room that is already there. */
+.ff-title {
+    position: absolute;
+    inset: 8px;                  /* the stage's own padding */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 7, 4, 0.82);
+    line-height: 1.5;
+    text-align: center;
+    z-index: 2;
+}
+
+/* Gone once the round starts, and back again on Stop. */
+.ff-title[data-state="playing"] { display: none; }
+body.is-editing .ff-title { display: none; }
+
+.ff-title-inner { padding: 18px 24px; max-width: 42ch; }
+
+.ff-title h2 {
+    font-family: "Silkscreen", "Pixelify Sans", monospace;
+    color: var(--amber-bright);
+    font-size: 26px;
+    margin: 0 0 10px;
+    letter-spacing: 0.02em;
+    text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.ff-title-sub {
+    color: var(--parchment);
+    font-size: 13px;
+    margin: 0 0 18px;
+}
+
+.ff-title-form label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--amber);
+    margin-bottom: 6px;
+}
+
+.ff-title-row { display: flex; gap: 6px; justify-content: center; }
+
+.ff-title-row input {
+    background: var(--wood-dark);
+    border: 1px solid var(--border);
+    color: var(--parchment);
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    width: 190px;
+}
+
+.ff-title-row input:focus { outline: none; border-color: var(--amber); }
+
+.ff-title-row button {
+    background: var(--wood-mid);
+    border: 1px solid var(--amber);
+    color: var(--amber-bright);
+    padding: 8px 18px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.ff-title-row button:hover:not([disabled]) { background: var(--chrome-highlight); }
+.ff-title-row button[disabled] { opacity: 0.45; cursor: default; border-color: var(--border); color: var(--parchment-dim); }
+
+/* The loading line. Only says anything while there is something to wait for. */
+.ff-title-load {
+    color: var(--amber);
+    font-size: 11.5px;
+    margin: 10px 0 0;
+    min-height: 1.2em;
+}
+
+.ff-title[data-state="ready"] .ff-title-load,
+.ff-title[data-state="empty"] .ff-title-load { color: var(--parchment-dim); }
+.ff-title[data-state="loading"] .ff-title-load::after {
+    content: "";
+    animation: ff-dots 1.2s steps(4, end) infinite;
+}
+
+@keyframes ff-dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+
+.ff-title .ff-status { text-align: center; }
+
+/* No percentages, no max-width: the canvas is its own size or it is wrong. */
+#ff-canvas {
+    display: block;
+    width: 672px;
+    height: 464px;
+    image-rendering: pixelated;
+    background: var(--bg-black);
+}
+
+/* ---- readout and play bar */
+
+.ff-hud {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--chrome-fill);
+    border: 1px solid var(--border);
+    border-top: none;
+    padding: 7px 10px;
+}
+
+/* `display: flex` beats the `hidden` attribute's own `display: none`. */
+.ff-hud[hidden] { display: none; }
+
+.ff-hud-clock {
+    font-family: "Silkscreen", monospace;
+    font-size: 17px;
+    color: var(--amber-bright);
+    min-width: 58px;
+}
+
+.ff-hud-seq { display: flex; gap: 3px; flex: 1 1 auto; flex-wrap: wrap; }
+
+.ff-pip {
+    width: 9px; height: 9px;
+    border: 1px solid var(--border);
+    background: var(--wood-dark);
+    display: block;
+}
+
+.ff-pip.is-on { background: var(--ok); border-color: var(--ok); }
+.ff-pip[hidden] { display: none; }
+
+.ff-hud-msg { font-size: 12px; color: var(--parchment-dim); text-align: right; }
+
+.ff-playbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-top: none;
+    padding: 8px 10px;
+}
+
+.ff-inline-hint { font-size: 12px; color: var(--parchment-dim); }
+
+/* ---- the editor panel */
+
+.ff-editor {
+    flex: 1 1 300px;
+    min-width: 280px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+}
+
+.ff-edit-only { display: none; }
+body.is-editing .ff-edit-only { display: flex; }
+body.is-editing .ff-play-only { display: none; }
+
+/* The level bar never scrolls away: which level you are on and the buttons
+   that keep it are the two things you must always be able to reach. */
+.ff-levelbar {
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--chrome-row);
+}
+
+.ff-levelbar h3 {
+    font-family: "Silkscreen", monospace;
+    font-size: 11px;
+    color: var(--amber);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0 0 8px;
+}
+
+.ff-levelmeta { display: flex; gap: 6px; margin-top: 8px; }
+.ff-levelmeta label {
+    flex: 1 1 auto;
+    font-size: 11px;
+    color: var(--parchment-dim);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.ff-levelmeta label:last-child { flex: 0 0 68px; }
+.ff-levelmeta input {
+    background: var(--wood-dark);
+    border: 1px solid var(--border);
+    color: var(--parchment);
+    padding: 5px 6px;
+    font-family: inherit;
+    font-size: 12px;
+    min-width: 0;
+}
+
+.ff-modes {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--wood-dark);
+}
+
+.ff-modes button {
+    flex: 1 1 auto;
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--border);
+    color: var(--parchment-dim);
+    font-family: inherit;
+    font-size: 11.5px;
+    padding: 8px 4px;
+    cursor: pointer;
+}
+
+.ff-modes button:last-child { border-right: none; }
+.ff-modes button:hover { color: var(--parchment); }
+.ff-modes button.is-on {
+    color: var(--amber-bright);
+    background: var(--chrome-row-featured);
+}
+
+.ff-modebody { padding: 10px; overflow-y: auto; flex: 1 1 auto; }
+
+.ff-mode h3 {
+    font-family: "Silkscreen", monospace;
+    font-size: 10.5px;
+    color: var(--amber);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 10px 0 6px;
+}
+.ff-mode h3:first-child { margin-top: 0; }
+
+/* ---- controls */
+
+.ff-select {
+    width: 100%;
+    background: var(--wood-dark);
+    border: 1px solid var(--border);
+    color: var(--parchment);
+    padding: 6px 7px;
+    font-family: inherit;
+    font-size: 12.5px;
+    margin-bottom: 8px;
+}
+
+.ff-select:focus { outline: none; border-color: var(--amber); }
+.ff-narrow { width: 62px; flex: 0 0 auto; }
+
+.ff-btn-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+.ff-btn-row .ff-select { margin-bottom: 0; }
+
+.ff-btn-row button,
+.ff-playbar button {
+    background: var(--wood-mid);
+    border: 1px solid var(--border);
+    color: var(--parchment);
+    padding: 6px 10px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12.5px;
+    white-space: nowrap;
+}
+
+.ff-btn-row button:hover,
+.ff-playbar button:hover { background: var(--chrome-highlight); color: var(--amber-bright); }
+
+.ff-primary {
+    background: var(--wood-mid) !important;
+    border-color: var(--amber) !important;
+    color: var(--amber-bright) !important;
+}
+
+.ff-btn-row button[disabled] { opacity: 0.4; cursor: default; }
+.ff-btn-row button[disabled]:hover { background: var(--wood-mid); color: var(--parchment); }
+
+.ff-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--parchment-dim);
+    margin-bottom: 7px;
+}
+
+.ff-field input {
+    width: 96px;
+    background: var(--wood-dark);
+    border: 1px solid var(--border);
+    color: var(--parchment);
+    padding: 5px 6px;
+    font-family: inherit;
+    font-size: 12px;
+}
+
+.ff-swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.ff-swatch {
+    aspect-ratio: 1;
+    border: 2px solid rgba(0, 0, 0, 0.55);
+    padding: 0;
+    cursor: pointer;
+}
+
+.ff-swatch:hover { border-color: var(--amber); }
+.ff-swatch.is-on { border-color: var(--amber-bright); box-shadow: 0 0 0 2px rgba(199,166,121,0.35); }
+
+.ff-status {
+    margin: 8px 0 0;
+    font-size: 11.5px;
+    min-height: 1.1em;
+    color: var(--parchment-dim);
+}
+
+.ff-status.is-good { color: var(--ok); }
+.ff-status.is-bad { color: var(--danger); }
+.ff-status.is-busy { color: var(--amber); }
+
+/* A rules combination that cannot work — everything landing at once, or the
+   clock running out before the last piece does. */
+.ff-sel.is-warn { color: var(--danger); }
+
+.ff-guides {
+    margin-left: auto;
+    font-size: 11.5px;
+    color: var(--parchment-dim);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.ff-guides input { accent-color: var(--amber); }
+body:not(.is-editing) .ff-guides { display: none; }
+
+/* The two that throw work away. Quieter than the row above them — reachable,
+   not inviting. */
+.ff-danger-row { margin-top: -2px; }
+
+.ff-danger-row button {
+    flex: 1 1 auto;
+    font-size: 11.5px;
+    padding: 5px 8px;
+    color: var(--parchment-dim);
+}
+
+.ff-danger-row button:hover:not([disabled]) {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: var(--wood-dark);
+}
+
+.ff-danger-row button[disabled] { opacity: 0.35; cursor: default; }
+.ff-danger-row button[disabled]:hover { color: var(--parchment-dim); border-color: var(--border); }
+
+/* Shown in place of the whole page when someone asks for ?edit=1 without an
+   owner account. Deliberately the only thing on screen. */
+.ff-refused {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    padding: 24px;
+    max-width: 60ch;
+}
+
+.ff-refused h1 {
+    font-family: "Silkscreen", "Pixelify Sans", monospace;
+    color: var(--amber-bright);
+    font-size: 20px;
+    margin: 0 0 12px;
+}
+
+.ff-refused p { color: var(--parchment-dim); font-size: 13.5px; margin: 0 0 10px; }
+.ff-refused a { color: var(--amber-bright); }
+
+/* Armed, waiting for the click that says where. */
+.ff-btn-row button.is-armed {
+    border-color: var(--amber-bright);
+    color: var(--amber-bright);
+    background: var(--wood-mid);
+}
+
+.ff-signin {
+    margin: 6px 0 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--parchment-dim);
+}
+
+.ff-signin a { color: var(--amber-bright); }
+.ff-signin[hidden] { display: none; }
+
+.ff-hint {
+    color: var(--parchment-dim);
+    font-size: 11.5px;
+    margin: 0 0 8px;
+    line-height: 1.5;
+}
+
+.ff-sel {
+    font-size: 11.5px;
+    color: var(--amber);
+    margin: 0 0 8px;
+}
+
+/* ---- furni picker */
+
+.ff-furni-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 8px;
+}
+
+.ff-furni {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--wood-dark);
+    border: 1px solid var(--border);
+    color: var(--parchment);
+    padding: 3px 5px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10.5px;
+    text-align: left;
+    min-width: 0;
+}
+
+.ff-furni img {
+    width: 22px; height: 22px;
+    object-fit: contain;
+    image-rendering: pixelated;
+    flex: 0 0 auto;
+}
+
+.ff-furni span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ff-furni:hover { border-color: var(--amber); }
+.ff-furni.is-on { border-color: var(--amber-bright); background: var(--wood-mid); }
+
+.ff-seat {
+    margin-left: auto;
+    font-style: normal;
+    font-size: 8.5px;
+    color: var(--ok);
+    flex: 0 0 auto;
+}
+
+/* ---- zones */
+
+.ff-zone-list, .ff-item-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 8px;
+}
+
+.ff-zone, .ff-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--wood-dark);
+    border: 1px solid var(--border);
+    padding: 5px 7px;
+    font-size: 11.5px;
+    color: var(--parchment);
+    cursor: pointer;
+}
+
+.ff-zone.is-on { border-color: var(--amber-bright); background: var(--wood-mid); }
+.ff-zone small, .ff-item small { color: var(--parchment-dim); margin-left: auto; }
+.ff-item { cursor: default; }
+.ff-item em { font-style: normal; color: var(--amber); }
+
+.ff-zone button, .ff-item button {
+    background: transparent;
+    border: none;
+    color: var(--danger);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    flex: 0 0 auto;
+}
+
+.ff-zone-detail {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    margin-top: 4px;
+}
+
+.ff-zone-detail[hidden] { display: none; }
+
+/* Below the room's own width there is nothing sensible to do but stack and
+   let the room scroll horizontally — shrinking it is what caused the blur. */
+@media (max-width: 1010px) {
+    .ff-layout { flex-direction: column; }
+    .ff-editor { width: 688px; max-width: 100%; }
+    .ff-left { max-width: 100%; overflow-x: auto; }
+}
+
+/* ---- title screen: who you are, and the board */
+
+.ff-title-who {
+    font-size: 11.5px;
+    color: var(--parchment-dim);
+    margin: 10px 0 0;
+}
+
+/* A button that reads as a link: the action is a navigation, but it needs to
+   be a button so it is reachable by keyboard and announced as an action. */
+.ff-linkish {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--amber-bright);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.ff-board {
+    margin: 14px auto 0;
+    max-width: 34ch;
+    text-align: left;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+}
+
+.ff-board[hidden] { display: none; }
+
+.ff-board h3 {
+    font-family: "Silkscreen", monospace;
+    font-size: 10.5px;
+    color: var(--amber);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0 0 6px;
+    text-align: center;
+}
+
+.ff-board ol {
+    list-style: decimal inside;
+    margin: 0;
+    padding: 0;
+    font-size: 11.5px;
+    color: var(--parchment);
+}
+
+.ff-board li {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 0;
+}
+
+.ff-board li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ff-board li em { font-style: normal; color: var(--parchment-dim); flex: 0 0 auto; }
+
+/* ---- between rounds
+
+   Same footprint as the title screen and over the same room: the finished
+   round stays visible behind it, which is the point — you are looking at
+   what you just did, not at a modal that replaced it. */
+.ff-round {
+    position: absolute;
+    inset: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 7, 4, 0.86);
+    line-height: 1.5;
+    text-align: center;
+    z-index: 3;
+}
+
+.ff-round[hidden] { display: none; }
+
+.ff-round-inner { padding: 18px 26px; min-width: 260px; }
+
+.ff-round h2 {
+    font-family: "Silkscreen", "Pixelify Sans", monospace;
+    font-size: 20px;
+    margin: 0 0 6px;
+    letter-spacing: 0.02em;
+    color: var(--ok);
+}
+
+.ff-round[data-outcome="lost"] h2 { color: var(--danger); }
+
+.ff-round-why {
+    color: var(--parchment);
+    font-size: 12.5px;
+    margin: 0 0 14px;
+    min-height: 1.2em;
+}
+
+.ff-round-stats {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 3px 14px;
+    justify-content: center;
+    margin: 0 0 16px;
+    font-size: 12px;
+}
+
+.ff-round-stats dt { color: var(--parchment-dim); text-align: right; }
+.ff-round-stats dd { color: var(--parchment); margin: 0; text-align: left; }
+
+.ff-round-buttons { display: flex; gap: 8px; justify-content: center; }
+
+.ff-round-buttons button {
+    background: var(--wood-mid);
+    border: 1px solid var(--border);
+    color: var(--parchment);
+    padding: 8px 16px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.ff-round-buttons button:hover { background: var(--chrome-highlight); color: var(--amber-bright); }
+
+/* Status shown on the play bar while the title screen is down. */
+.ff-inline-hint.is-good { color: var(--ok); }
+.ff-inline-hint.is-bad { color: var(--danger); }
+.ff-inline-hint.is-busy { color: var(--amber); }

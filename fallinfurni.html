@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://www.habbo.com">
+    <link rel="preconnect" href="https://furniindex.com">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#120c07">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Fallin' Furni — Maze Rats</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/fallinfurni.css">
+</head>
+<body>
+    <main class="ff-page">
+        <header class="ff-head">
+            <h1>Fallin' Furni</h1>
+            <p>
+                Furni drops from the ceiling. Sit on every seat in the order it
+                landed, before the clock runs out — and mind the things that
+                fall which are not seats at all.
+            </p>
+        </header>
+
+        <div class="ff-layout">
+            <!-- The room. Rendered at its exact pixel size: this is pixel art,
+                 and a canvas scaled to 0.99 of itself resamples every edge. -->
+            <div class="ff-left">
+                <div class="ff-stage">
+                    <canvas id="ff-canvas" width="672" height="464"
+                            aria-label="An eight by thirteen Habbo guest room"></canvas>
+
+                    <!-- The title screen, over the first level rather than
+                         instead of it: the room is already built and lit
+                         behind this, so pressing Play reveals it rather than
+                         loading it. Never shown to the builder. -->
+                    <!-- Between rounds. Holds the result still until the
+                         player chooses to go on, rather than swapping the
+                         next room in under them. -->
+                    <div class="ff-round" id="ff-round" hidden>
+                        <div class="ff-round-inner">
+                            <h2 id="ff-round-title">Round complete</h2>
+                            <p class="ff-round-why" id="ff-round-why"></p>
+                            <dl class="ff-round-stats" id="ff-round-stats"></dl>
+                            <div class="ff-round-buttons">
+                                <button type="button" id="ff-round-go" class="ff-primary">Next level</button>
+                                <button type="button" id="ff-round-quit">Back to title</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ff-title ff-play-only" id="ff-title" data-state="loading">
+                        <div class="ff-title-inner">
+                            <h2>Fallin' Furni</h2>
+                            <p class="ff-title-sub">
+                                Sit on every seat in the order it lands, before the
+                                clock runs out.
+                            </p>
+
+                            <form id="ff-name-form" class="ff-title-form" autocomplete="off">
+                                <label for="ff-name">Your Habbo Origins name</label>
+                                <div class="ff-title-row">
+                                    <input id="ff-name" type="text" name="habbo"
+                                           placeholder="Username" maxlength="32"
+                                           autocomplete="off" spellcheck="false">
+                                    <button type="submit" id="ff-title-play" disabled>Play</button>
+                                </div>
+                            </form>
+
+                            <p id="ff-play-status" class="ff-status"></p>
+
+                            <!-- Discord is what puts a name on the board. The
+                                 game is playable signed out; this says so
+                                 rather than blocking the way in. -->
+                            <p class="ff-title-who" id="ff-title-who"></p>
+
+                            <div class="ff-board" id="ff-board" hidden>
+                                <h3>Best runs</h3>
+                                <ol id="ff-board-list"></ol>
+                            </div>
+
+                            <p class="ff-title-load" id="ff-title-load">Building the room…</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ff-hud" id="ff-hud" hidden>
+                    <div class="ff-hud-clock"><span id="ff-clock">0:00</span></div>
+                    <div class="ff-hud-seq" id="ff-seq"></div>
+                    <div class="ff-hud-msg" id="ff-msg"></div>
+                </div>
+
+                <div class="ff-playbar">
+                    <button type="button" id="ff-start" class="ff-primary">Play</button>
+                    <button type="button" id="ff-stop">Stop</button>
+                    <span id="ff-hint" class="ff-inline-hint">Click a tile to walk there.</span>
+                    <!-- Builder's diagnostic: draws each piece's footprint and
+                         anchor so a screenshot can show what is misaligned. -->
+                    <label class="ff-guides ff-edit-only" id="ff-guides-wrap">
+                        <input type="checkbox" id="ff-guides"> Alignment guides
+                    </label>
+                </div>
+            </div>
+
+            <!-- The builder's panel. Removed entirely for a player. -->
+            <aside class="ff-editor ff-edit-only" id="ff-editor" aria-label="Level editor">
+
+                <!-- Always visible, never behind a tab: which level you are on,
+                     and the two buttons that keep your work. -->
+                <div class="ff-levelbar">
+                    <select id="ff-level-list" class="ff-select" aria-label="Level"></select>
+                    <div class="ff-btn-row">
+                        <button type="button" id="ff-level-new">New</button>
+                        <button type="button" id="ff-save" class="ff-primary">Save</button>
+                        <button type="button" id="ff-publish">Publish</button>
+                    </div>
+                    <!-- Scrapping work is not a Rules setting, which is where
+                         Delete used to live and where nobody found it. -->
+                    <div class="ff-btn-row ff-danger-row">
+                        <button type="button" id="ff-level-discard">Discard changes</button>
+                        <button type="button" id="ff-level-delete">Delete level</button>
+                    </div>
+                    <div class="ff-levelmeta">
+                        <label>Name <input id="ff-level-name" type="text" maxlength="60"></label>
+                        <label>Order <input id="ff-level-order" type="number" min="0" max="99"></label>
+                    </div>
+                    <p id="ff-status" class="ff-status"></p>
+                    <!-- Shown only when the server would not list levels. A
+                         dead "sign in" line in the dropdown said what was
+                         wrong without offering the way out of it. -->
+                    <p id="ff-signin" class="ff-signin" hidden>
+                        <span class="ff-signin-why"></span>
+                        <a href="/admin" target="_blank" rel="noopener">Sign in</a>
+                        to keep levels on the site — until then, saving keeps them in this browser only.
+                    </p>
+                </div>
+
+                <nav class="ff-modes" id="ff-modes" role="tablist" aria-label="Editor mode">
+                    <button type="button" data-mode="room" class="is-on">Room</button>
+                    <button type="button" data-mode="decor">Decorate</button>
+                    <button type="button" data-mode="zones">Drop zones</button>
+                    <button type="button" data-mode="rules">Rules</button>
+                </nav>
+
+                <div class="ff-modebody">
+
+                    <!-- ROOM: the level's own floor and wallpaper. -->
+                    <section class="ff-mode" data-mode="room">
+                        <h3>Floor</h3>
+                        <select id="ff-floor-pattern" class="ff-select" aria-label="Floor pattern"></select>
+                        <div id="ff-floor-colours" class="ff-swatches"></div>
+                        <h3>Wallpaper</h3>
+                        <select id="ff-wall-pattern" class="ff-select" aria-label="Wallpaper pattern"></select>
+                        <div id="ff-wall-colours" class="ff-swatches"></div>
+                    </section>
+
+                    <!-- DECORATE: furni that is simply THERE. Never falls. -->
+                    <section class="ff-mode" data-mode="decor" hidden>
+                        <p class="ff-hint">
+                            Furni placed here is part of the room — it is there when
+                            the round starts and never falls. Click a furni, then a
+                            tile to place it. Click a placed piece to select it, then
+                            <strong>Move</strong> and click where it should go.
+                            <strong>R</strong> turns it, <strong>Del</strong> removes it.
+                        </p>
+                        <input id="ff-furni-q" class="ff-select" type="text"
+                               placeholder="Search furni…" autocomplete="off"
+                               aria-label="Search furni">
+                        <div id="ff-furni-list" class="ff-furni-list"></div>
+                        <p id="ff-sel" class="ff-sel">Nothing selected.</p>
+                        <div class="ff-btn-row">
+                            <button type="button" id="ff-move" disabled>Move</button>
+                            <button type="button" id="ff-rotate" disabled>Rotate</button>
+                            <button type="button" id="ff-delete" disabled>Delete</button>
+                        </div>
+                    </section>
+
+                    <!-- DROP ZONES: an area, and separately what rains into it. -->
+                    <section class="ff-mode" data-mode="zones" hidden>
+                        <p class="ff-hint">
+                            <strong>Drag on the room</strong> to draw an area, then list
+                            the furni that falls into it and how many of each. You never
+                            place them: the game rolls fresh landing tiles inside the
+                            area every time the level is played.
+                        </p>
+                        <div class="ff-btn-row">
+                            <button type="button" id="ff-zone-add" class="ff-primary">+ New zone (whole room)</button>
+                        </div>
+                        <div id="ff-zone-list" class="ff-zone-list"></div>
+
+                        <div id="ff-zone-detail" class="ff-zone-detail" hidden>
+                            <h3>Zone contents</h3>
+                            <p id="ff-zone-area" class="ff-sel"></p>
+                            <label class="ff-field">Name
+                                <input id="ff-zone-name" type="text" maxlength="40">
+                            </label>
+                            <div id="ff-zone-items" class="ff-item-list"></div>
+
+                            <!-- The zone's OWN furni picker. Nothing here is
+                                 placed on the room: you choose a furni, say how
+                                 many of it fall, and the game rolls a fresh
+                                 landing tile inside the area every round. -->
+                            <h3>Add falling furni</h3>
+                            <input id="ff-drop-q" class="ff-select" type="text"
+                                   placeholder="Search furni…" autocomplete="off"
+                                   aria-label="Search furni to drop">
+                            <div id="ff-drop-list" class="ff-furni-list"></div>
+                            <p id="ff-item-pick" class="ff-sel"></p>
+                            <div class="ff-btn-row">
+                                <select id="ff-item-role" class="ff-select" aria-label="Role">
+                                    <option value="sequence">Sequence seat</option>
+                                    <option value="decoy">Decoy seat</option>
+                                    <option value="poi">Poi — instant fail</option>
+                                    <option value="obstacle">Obstacle</option>
+                                </select>
+                                <input id="ff-item-count" class="ff-select ff-narrow" type="number"
+                                       min="1" max="30" value="1" aria-label="How many">
+                                <button type="button" id="ff-item-add" class="ff-primary">Add</button>
+                            </div>
+                            <div class="ff-btn-row">
+                                <button type="button" id="ff-zone-delete">Delete zone</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- RULES: the clock and the two difficulty levers. -->
+                    <section class="ff-mode" data-mode="rules" hidden>
+                        <!-- SECONDS, not milliseconds. These were in ms, which
+                             is a unit for code and not for a person building a
+                             level: typing "2" meaning two seconds set the gap
+                             to two THOUSANDTHS of a second and every seat
+                             landed in the same frame. -->
+                        <label class="ff-field">Round lasts (seconds)
+                            <input id="ff-rule-seconds" type="number" min="5" max="300" step="1">
+                        </label>
+                        <label class="ff-field">Seconds between drops
+                            <input id="ff-rule-delay" type="number" min="0.05" max="5" step="0.05">
+                        </label>
+                        <label class="ff-field">Land at least (tiles) away
+                            <input id="ff-rule-reach" type="number" min="0" max="12" step="1">
+                        </label>
+                        <label class="ff-field">Each piece falls for (seconds)
+                            <input id="ff-rule-speed" type="number" min="0.1" max="3" step="0.05">
+                        </label>
+                        <!-- Says what these numbers add up to, so a value that
+                             makes no sense is obvious before you play it. -->
+                        <p id="ff-rule-summary" class="ff-sel"></p>
+                        <p class="ff-hint">
+                            The two levers that make a later round harder: a shorter
+                            gap piles the sequence up faster than you can walk it,
+                            and a longer reach lands pieces further from wherever you
+                            are standing.
+                        </p>
+                        <div class="ff-btn-row">
+                            <button type="button" id="ff-export">Copy JSON</button>
+                        </div>
+                    </section>
+                </div>
+            </aside>
+
+            <!-- A player has no side panel at all now: who they are is asked
+                 on the title screen, over the room. -->
+        </div>
+    </main>
+
+    <script src="js/account.js"></script>
+    <script src="js/room-patterns.js"></script>
+    <script src="js/furni-library.js"></script>
+    <script src="js/furni-offsets.js"></script>
+    <script src="js/avatar-parts.js"></script>
+    <script src="js/room-iso.js"></script>
+    <script src="js/room-path.js"></script>
+    <script src="js/room-levels.js"></script>
+    <script src="js/room-furni.js"></script>
+    <script src="js/room-drop.js"></script>
+    <script src="js/room-game.js"></script>
+    <script src="js/room-editor.js"></script>
+    <script src="js/fallinfurni.js"></script>
+</body>
+</html>
