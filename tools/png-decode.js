@@ -4,9 +4,10 @@
    on the artwork needs — the browser refuses getImageData on a canvas that
    has touched furniindex.com, so measuring a sprite has to happen here.
 
-   Handles the colour types these files actually use: 8-bit RGBA, RGB,
-   greyscale and palette, with the five standard filters. Interlaced images
-   are refused rather than half-read. */
+   Handles the colour types these files actually use: RGBA, RGB, greyscale
+   and palette, with the five standard filters, at 8 bits and — for greyscale
+   and palette, which are the only ones PNG allows to be packed — at 1, 2 and
+   4. Interlaced images are refused rather than half-read. */
 
 const zlib = require("zlib");
 const fs = require("fs");
@@ -35,14 +36,20 @@ function decodePng(buf) {
     }
     if (!ihdr) throw new Error("no IHDR");
     if (ihdr.interlace) throw new Error("interlaced png not supported");
-    if (ihdr.depth !== 8) throw new Error(`unsupported bit depth ${ihdr.depth}`);
+    if (ihdr.depth !== 8 && !(ihdr.depth < 8 && (ihdr.colour === 0 || ihdr.colour === 3)))
+        throw new Error(`unsupported bit depth ${ihdr.depth}`);
 
     const { w, h, colour } = ihdr;
     const ch = CHANNELS[colour];
     if (!ch) throw new Error(`unsupported colour type ${colour}`);
 
     const raw = zlib.inflateSync(Buffer.concat(idat));
-    const stride = w * ch;
+    /* Sub-byte depths: 1, 2 and 4 bits, packed high bits first and padded to a
+       whole byte at the end of each row. Only greyscale and palette images can
+       be packed that way, which is the check above. FurniIndex publish some of
+       their artwork as 4-bit palette PNGs — a file this reader used to refuse
+       outright, which is not a failure a caller should have to work around. */
+    const stride = ihdr.depth === 8 ? w * ch : Math.ceil(w * ihdr.depth / 8);
     const out = Buffer.alloc(w * h * 4);
 
     let prev = Buffer.alloc(stride);
@@ -69,12 +76,28 @@ function decodePng(buf) {
         }
         prev = line;
 
+        // Unpack a sub-byte row into one byte per sample before reading it.
+        const row = ihdr.depth === 8 ? line : (() => {
+            const d = ihdr.depth, per = 8 / d, mask = (1 << d) - 1;
+            const b = Buffer.alloc(w);
+            for (let x = 0; x < w; x++) {
+                const shift = 8 - d * ((x % per) + 1);
+                b[x] = (line[(x / per) | 0] >> shift) & mask;
+            }
+            return b;
+        })();
+
         for (let x = 0; x < w; x++) {
             const o = (y * w + x) * 4;
-            const i = x * ch;
+            const i = ihdr.depth === 8 ? x * ch : x;
+            const line = row;
             if (colour === 6) { out[o] = line[i]; out[o + 1] = line[i + 1]; out[o + 2] = line[i + 2]; out[o + 3] = line[i + 3]; }
             else if (colour === 2) { out[o] = line[i]; out[o + 1] = line[i + 1]; out[o + 2] = line[i + 2]; out[o + 3] = 255; }
-            else if (colour === 0) { out[o] = out[o + 1] = out[o + 2] = line[i]; out[o + 3] = 255; }
+            else if (colour === 0) {
+                // A 4-bit grey of 15 is white, not near-black: scale to 0-255.
+                const g = ihdr.depth === 8 ? line[i] : Math.round(line[i] * 255 / ((1 << ihdr.depth) - 1));
+                out[o] = out[o + 1] = out[o + 2] = g; out[o + 3] = 255;
+            }
             else if (colour === 4) { out[o] = out[o + 1] = out[o + 2] = line[i]; out[o + 3] = line[i + 1]; }
             else if (colour === 3) {
                 const idx = line[i];

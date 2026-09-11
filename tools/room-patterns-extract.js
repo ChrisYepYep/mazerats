@@ -55,16 +55,47 @@
    which is the hole), and every pattern's palette rides along in the data
    file. Recolouring at runtime is then the same lookup the client did.
 
-   HOW A PALETTE ENTRY IS READ. #000000 always means "the chosen colour,
-   unchanged". Beyond that there are two kinds of ramp, and room-iso.js tells
-   them apart by saturation: the chromatic ones (brick, invaders, the picture
-   wallpapers) are real artwork and get painted literally, while the neutral
-   ones are tonal patterns whose own range is stretched over a visible band.
+   HOW A PALETTE ENTRY IS READ. It MULTIPLIES the chosen colour: final =
+   entry * colour / 255, componentwise. White leaves the colour alone, a grey
+   darkens it, and a chromatic entry (brick, invaders, the picture wallpapers)
+   paints itself, because every pattern with a chromatic ramp ships exactly
+   one swatch and it is always #ffffff. One rule, no special cases.
 
-   THE PALETTES ARE EXPORTED IN FULL, all 256 entries, because the neutral
-   ramps are authored against a different bank of the palette — the same grid
-   of position classes, offset by 102 — and the entries that matter for them
-   sit outside the stencil's own index range entirely. */
+   ----------------------------------------------------------------------
+   THE CLUT IS IN FILE ORDER, and getting that wrong is what made every rule
+   above look like it needed special cases.
+
+   Director CLUTs in some casts run last-colour-first, and this tool used to
+   reverse them. Read backwards, these palettes are quietly ruinous rather
+   than obviously broken:
+
+       plain wallpaper   55 of its 64 face classes land on #000000, which
+                         reads as "unchanged" — a flat wall, which is what a
+                         plain wall looks like, so nothing seemed wrong
+       stripes, tiles1,  ALL 33 classes land on #000000. Every one of these
+       half1/2/3,        wallpapers rendered as a blank wall, and the fix
+       vstripes1         looked like it had to be a palette BANK offset
+       wood floor        its grain lands on #0000ff and the floor is ruled
+                         with pure blue lines
+       plain floor       its tile grid lands on #ffcc99 and comes out peach,
+                         lighter than the floor rather than darker
+
+   Read forwards all six behave, and two reserved classes fall straight out
+   of it — see OUTLINE and WALL_TOP in room-iso.js. Three independent checks
+   on a real Origins render agree to within a pixel value or two:
+
+       class 255 -> #000000        the room's black outline
+       class 241 -> #969698        the wall's top surface, measured at 0.60
+                                   of the face against 0.588 here
+       class 246 -> #eeeeee        the floor's tile rule, measured at 0.935
+                                   of the floor against 0.933 here
+
+   And floor_basic turns out to be the plain Mac system palette — white at 0,
+   black at 255, the EE/DD/BB/AA/88/77/55/44/22/00 grey tail at 246..255 —
+   which it visibly is not when reversed.
+
+   THE PALETTES ARE EXPORTED IN FULL, all 256 entries. The stencils only paint
+   a subset, but which subset varies by pattern and the table is small. */
 
 const fs = require("fs");
 const path = require("path");
@@ -115,7 +146,7 @@ function build(cctPath) {
         if (!m) return null;
         const cid = cast.childOf.get(`${m.id}:CLUT`);
         if (cid === undefined) return null;
-        const pal = readClut(cast.chunk(cast.byId.get(cid)));
+        const pal = readClut(cast.chunk(cast.byId.get(cid)), { reverse: false });
         return pal && pal.length >= 16 ? pal : null;
     }
 
@@ -331,13 +362,85 @@ function build(cctPath) {
 /* Which bitmap each `stencil` number means. Floors have three; walls have a
    left and a right panel per number, because the two faces are drawn
    separately and are not mirrors of each other. */
+/* The END CAPS are the 7px of wall thickness you see where a wall stops, and
+   they are panels like any other — same palette classes, so they take the
+   wallpaper with them. The cast has them for stencils 0 and 3 only (there is
+   no left_wallend_1_...), so a stencil-1 wallpaper borrows stencil 0's; the
+   two are the same shape at different resolutions and the cap is seven pixels
+   wide, where the difference cannot show. */
+const END_STENCIL = (n) => (n === 3 ? 3 : 0);
+
 const STENCILS = {
     floor: (n) => [[`floor-${n}`, `flat_floor_${n}_a_0_0_0`]],
     wall: (n) => [
         [`wall-left-${n}`, `left_wallpart_${n}_a_0_0_0`],
-        [`wall-right-${n}`, `right_wallpart_${n}_a_0_2_0`]
+        [`wall-right-${n}`, `right_wallpart_${n}_a_0_2_0`],
+        [`wall-left-end-${END_STENCIL(n)}`, `left_wallend_${END_STENCIL(n)}_b_0_0_0`],
+        [`wall-right-end-${END_STENCIL(n)}`, `right_wallend_${END_STENCIL(n)}_b_0_2_0`]
     ]
 };
+
+/* THE DOORWAY, which the room model places and nothing else in the cast
+   explains.
+
+   model_a.room — the 8x13 room this game is built on — lists its left wall as
+   thirteen pieces, and the FIFTH of them is not a `left_wallpart` but a
+   `left_wallmask`: the same panel with the doorway cut out of it. The door
+   itself is a separate sprite dropped into that hole:
+
+     [#member: "left_wallmask_0_a_0_0_0", #locH: 247, #locV: 185, ... #locY: 5]
+     [#member: "leftdoor_open", #locH: 269, #locV: 180, #width: 32,
+      #height: 101, #palette: #systemMac, #id: "command: GOAWAY"]
+
+   With the registration points from the cast (-31,115 for the mask, -10,79
+   for the door) those put the mask's top-left at (278, 70) and the door's at
+   (279, 101) — so the door hangs 31px below the top of its wall panel and its
+   bottom sits flush with the panel's. Both numbers are used verbatim in
+   room-iso.js.
+
+   ITS COLOURS ARE NOT IN THIS CAST. leftdoor_open declares palette member 0,
+   which is the movie's own palette and lives in habbo.dcr, so the extractor
+   falls back to a grey ramp and the door comes out nearly black. The five
+   tones below were read off a real Origins render instead, by aligning the
+   sprite against the door in the capture: every one of its index classes maps
+   to exactly one colour there, and the pixel counts agree class for class
+   (1971, 341, 297, 105, 35). */
+const DOOR_TONES = {
+    255: [0, 0, 0],          // the outline, and the shadow inside the frame
+    253: [27, 27, 27],       // the reveal down the hinge side
+    252: [54, 54, 54],       // the door face
+    251: [68, 68, 68],       // the lit edge
+    172: [40, 40, 40]        // handle and plate
+};
+
+function emitDoor(data, assetDir) {
+    const out = [];
+
+    for (const n of [0, 1, 3]) {
+        const map = data.indexMap(`left_wallmask_${n}_a_0_0_0`);
+        if (!map) { out.push([`wall-left-mask-${n}`, null]); continue; }
+        fs.writeFileSync(path.join(assetDir, `wall-left-mask-${n}.png`),
+            encodePng(map.w, map.h, map.rgba));
+        out.push([`wall-left-mask-${n}`, map.used.size + " indices"]);
+    }
+
+    const door = data.indexMap("leftdoor_open");
+    if (!door) { out.push(["door", null]); return out; }
+    const rgba = Buffer.alloc(door.w * door.h * 4);
+    const missing = new Set();
+    for (let i = 0; i < door.w * door.h; i++) {
+        const idx = door.index[i];
+        if (idx === 0) continue;              // index 0 is the hole, as ever
+        const c = DOOR_TONES[idx];
+        if (!c) { missing.add(idx); continue; }
+        rgba[i * 4] = c[0]; rgba[i * 4 + 1] = c[1]; rgba[i * 4 + 2] = c[2];
+        rgba[i * 4 + 3] = 255;
+    }
+    fs.writeFileSync(path.join(assetDir, "door.png"), encodePng(door.w, door.h, rgba));
+    out.push(["door", door.w + "x" + door.h +
+        (missing.size ? "  UNTONED INDICES " + [...missing].join(",") : "")]);
+    return out;
+}
 
 function emitStencils(data, assetDir) {
     fs.mkdirSync(assetDir, { recursive: true });
@@ -364,15 +467,9 @@ function emitStencils(data, assetDir) {
 }
 
 function emit(data, outPath, wanted) {
-    /* Every palette in FULL, all 256 entries.
-
-       An earlier version kept only the indices the stencils paint, which was a
-       reasonable-looking economy and quietly broke half the wallpapers: the
-       shade ramps are authored against a different palette bank — the same
-       8x8 grid of position classes, offset by 102 — so the entries that
-       matter for them sit outside the stencil's own index set entirely.
-       room-iso.js finds that offset at runtime and needs the whole table to
-       do it. */
+    /* Every palette in FULL, all 256 entries. Which indices a stencil paints
+       varies by pattern, the reserved classes (255, 246, 241) sit at the far
+       end of the table, and the whole thing is a few kilobytes. */
     const palettes = {};
     const names = new Set([...data.floors, ...data.walls].map(g => g.palette));
     for (const name of names) {
@@ -408,8 +505,9 @@ function emit(data, outPath, wanted) {
    palette INDEXES, not colours — \`palette\` looks up the ramp in \`palettes\`
    below, and each entry in \`colours\` is one selectable swatch.
 
-   A ramp entry of #000000 means "the chosen colour unchanged"; anything else
-   is a shade relative to it. See room-iso.js for how that is applied. */
+   A ramp entry MULTIPLIES the chosen colour — white leaves it alone, grey
+   darkens it, and a chromatic entry paints itself because those patterns ship
+   a single white swatch. See room-iso.js for how that is applied. */
 (function () {
     "use strict";
     window.RoomPatterns = ${JSON.stringify(body, null, 4)};
@@ -434,6 +532,9 @@ if (require.main === module) {
     console.log(`\nstencils -> ${assetDir}`);
     for (const [file, used] of usedByStencil) {
         console.log(`  ${file.padEnd(16)} ${used ? used.size + " indices" : "MISSING MEMBER"}`);
+    }
+    for (const [file, note] of emitDoor(data, assetDir)) {
+        console.log(`  ${file.padEnd(16)} ${note || "MISSING MEMBER"}`);
     }
 
     const bytes = emit(data, out, wanted);

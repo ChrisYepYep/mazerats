@@ -58,15 +58,34 @@ class Reader {
 
 function openCast(file) {
     const b = fs.readFileSync(file);
-    if (b.toString("latin1", 0, 4) !== "XFIR") {
-        throw new Error(`${path.basename(file)}: not an XFIR container`);
-    }
+    const magic = b.toString("latin1", 0, 4);
+    /* BOTH BYTE ORDERS EXIST IN THIS CLIENT, and refusing one of them hid a
+       whole cast.
 
-    // 0..3 "XFIR", 4..7 size, 8..11 "CDGF"; the chunk list starts at 12.
+       Most of the .cct files are little-endian: they start "XFIR", their
+       second fourCC is "CDGF", and every tag on disk is byte-reversed. Four
+       are the other way round — "RIFX", "FGDC", tags the right way round —
+       and among them is hh_furni_2025.cct, which is where every 2025 furni
+       lives: the dark-mode set, the anniversary `*_dpolyfon*` set, the lot.
+
+       This reader used to throw "not an XFIR container" at those, which read
+       as "this cast holds nothing we want" rather than "this reader cannot
+       open it", and the furni inside were written off as not being in the
+       client at all. They were in it the whole time.
+
+       Nothing but the order changes: same Afterburner layout, same varints
+       (which are 7-bit big-endian either way), same member records. */
+    const big = magic === "RIFX";
+    if (!big && magic !== "XFIR") {
+        throw new Error(`${path.basename(file)}: not an XFIR or RIFX container`);
+    }
+    const tagOf = (s) => (big ? s : rev(s));
+
+    // 0..3 magic, 4..7 size, 8..11 the second fourCC; the chunk list is at 12.
     const r = new Reader(b, 12);
     let map = null, dataStart = null;
     while (r.p < b.length) {
-        const tag = rev(r.fourcc());
+        const tag = tagOf(r.fourcc());
         if (tag === "Fver" || tag === "Fcdr") { const n = r.vint(); r.p += n; continue; }
         if (tag === "ABMP") {
             const len = r.vint();
@@ -88,7 +107,7 @@ function openCast(file) {
     const res = [];
     for (let i = 0; i < count; i++) {
         const id = m.vint(), off = m.vint(), comp = m.vint(), decomp = m.vint(), ctype = m.vint();
-        const tag = rev(map.toString("latin1", m.p, m.p + 4)); m.p += 4;
+        const tag = tagOf(map.toString("latin1", m.p, m.p + 4)); m.p += 4;
         res.push({ id, off, comp, decomp, ctype, tag });
     }
     const byId = new Map(res.map(e => [e.id, e]));
@@ -123,15 +142,18 @@ function openCast(file) {
     const keyChunk = chunk(res.find(e => e.tag === "KEY*"));
     const childOf = new Map();                          // `${castId}:${tag}` -> sectionId
     if (keyChunk.length >= 12) {
-        const hdrLen = keyChunk.readUInt16LE(0);
-        const entrySize = keyChunk.readUInt16LE(2) || 12;
-        const used = keyChunk.readUInt32LE(8);
+        // KEY* follows the CONTAINER's order, so it flips with it.
+        const u16 = (o) => (big ? keyChunk.readUInt16BE(o) : keyChunk.readUInt16LE(o));
+        const u32 = (o) => (big ? keyChunk.readUInt32BE(o) : keyChunk.readUInt32LE(o));
+        const hdrLen = u16(0);
+        const entrySize = u16(2) || 12;
+        const used = u32(8);
         const fits = Math.floor((keyChunk.length - hdrLen) / entrySize);
         for (let i = 0; i < Math.min(used, fits); i++) {
             const o = hdrLen + i * entrySize;
-            const sectionId = keyChunk.readUInt32LE(o);
-            const castId = keyChunk.readUInt32LE(o + 4);
-            const tag = rev(keyChunk.toString("latin1", o + 8, o + 12));
+            const sectionId = u32(o);
+            const castId = u32(o + 4);
+            const tag = tagOf(keyChunk.toString("latin1", o + 8, o + 12));
             childOf.set(`${castId}:${tag}`, sectionId);
         }
     }
@@ -241,25 +263,32 @@ function unpackBits(src, expected) {
     return out;
 }
 
-/* Director CLUT: 16 bits per channel, entries stored last-colour-first. */
-/* A CLUT is 6 bytes per entry, high byte first of each 16-bit channel.
+/* A CLUT is 6 bytes per entry, high byte first of each 16-bit channel, and it
+   is in FILE ORDER: entry i is palette index i.
 
-   THE ORDER IS THE TRICKY PART, and the two callers here disagree about it,
-   so it is a parameter rather than a silent assumption.
+   THIS WAS BACKWARDS AND IT COST A LOT. The reversed reading was the default
+   here, and it is wrong in the quiet way — it produces a palette, just not the
+   right one, so everything renders and nothing throws. Two independent proofs
+   that forwards is right:
 
-   Reversed (the default) is what the room and avatar extraction were built
-   and verified against. But the furni casts are plainly in FILE order, and
-   that is not a guess either: chair_polyfon's own pixels were compared
-   against the same chair as FurniIndex publish it, which gives the true
-   colour for each index —
+     furni    chair_polyfon's own pixels were compared against the same chair
+              as FurniIndex publish it, which gives the true colour per index:
+              4 -> #737373, 7 -> #bfbfbf, 24 -> #f5fdfa, 128 -> #4f4f4f,
+              255 -> #000000. All five match forwards; none match backwards.
 
-       4 -> #737373    7 -> #bfbfbf    24 -> #f5fdfa
-     128 -> #4f4f4f  255 -> #000000
+     room     read forwards, floor_basic IS the Mac system palette (white at
+              0, black at 255, the EE/DD/BB/AA/88/77/55/44/22/00 grey tail at
+              246..255) and the wall panels' two reserved classes fall out
+              exactly: 255 -> #000000 is the room's black outline and
+              241 -> #969698 the wall's top surface, measured on a real
+              Origins render at 0.588 of the face against 0.60. Read
+              backwards, six wallpapers render blank and the wood floor's
+              grain comes out pure blue.
 
-   — and the cast's palette matches all five exactly when read forwards, and
-   none of them when read backwards. Hence `reverse: false` for furni. */
+   `reverse: true` is kept only so that a caller can demonstrate the
+   difference; nothing in this repo passes it. */
 function readClut(buf, opts) {
-    const reverse = !opts || opts.reverse !== false;
+    const reverse = !!(opts && opts.reverse === true);
     const n = Math.floor(buf.length / 6);
     const pal = new Array(n);
     for (let i = 0; i < n; i++) {
@@ -287,12 +316,46 @@ function extract(file, { out, filter, list }) {
        is looked up alongside the pixels; the grey ramp is only for members
        that genuinely have none (the outline stencils the client flood-fills). */
     const grey = greyPalette();
+    const isPalette = (slot) => {
+        const id = cast.castTable[slot];
+        return id !== undefined && cast.childOf.has(`${id}:CLUT`);
+    };
+
+    /* WHICH SLOT A PALETTE REFERENCE MEANS, which is not always memberNum - 1.
+
+       Member numbering usually starts at 1, so slot = memberNum - 1. In
+       hh_entry_us it starts three higher: the hotel view's bitmaps all say
+       palette member 30 and the `Hotel_view_us_Palette` they plainly mean sits
+       at slot 26. Left uncorrected the whole hotel view came out greyscale —
+       which looks like artwork rather than a bug, since half of it is grey
+       concrete anyway.
+
+       So the shift is MEASURED per cast rather than assumed: whichever one
+       makes the most palette references land on a member that actually has a
+       CLUT. A cast whose references are already right scores best at zero and
+       nothing changes. */
+    const paletteShift = (() => {
+        const wanted = [];
+        for (const e of cast.res.filter(x => x.tag === "CASt")) {
+            const m = readMember(cast.chunk(e));
+            if (m && m.bitmap && m.bitmap.paletteMember > 0) wanted.push(m.bitmap.paletteMember);
+        }
+        if (!wanted.length) return 0;
+        let best = 0, bestHit = -1;
+        for (let k = 0; k <= 8; k++) {
+            let hit = 0;
+            for (const n of wanted) if (isPalette(n - 1 - k)) hit++;
+            if (hit > bestHit) { bestHit = hit; best = k; }
+        }
+        return best;
+    })();
+
     const clutCache = new Map();
     const paletteFor = (memberNum) => {
-        if (memberNum === null || memberNum < 0) return grey;   // built-in palette
+        if (memberNum === null || memberNum <= 0) return grey;  // built-in palette
         if (clutCache.has(memberNum)) return clutCache.get(memberNum);
         let pal = grey;
-        const ownerId = cast.castTable[memberNum - 1];
+        const ownerId = cast.castTable[memberNum - 1 - paletteShift];
         if (ownerId !== undefined) {
             const clutId = cast.childOf.get(`${ownerId}:CLUT`);
             if (clutId !== undefined) {
