@@ -4,12 +4,23 @@
    diagonally and a four-connected path up a room reads as a staircase that
    nobody would ever choose to walk.
 
-   Two rules the original enforced and this one does too:
+   Three rules, and the first two are about what a route COSTS rather than
+   what it looks like — see the long note above `stepCost`.
 
-   - No cutting corners. A diagonal step is only legal if BOTH orthogonal
-     tiles beside it are clear. Without this an avatar slips through the gap
-     between two furni placed corner to corner, which in Fallin' Furni would
-     mean obstacles can be walked straight past.
+   - Every step costs the same, because every step takes the same time. The
+     quickest route is the one with the fewest tiles, not the one that is
+     shortest with a ruler.
+
+   - Ties break toward taking the DIAGONAL steps first, because that is what
+     the real client does — measured, not guessed. Habbo sent from (3,3) to
+     (7,11) walks four diagonals and then four straight, and from (7,5) to
+     (3,3) it walks two diagonals and then two straight.
+
+   - Corners may be cut past ONE obstacle but not two. A diagonal is refused
+     only when both tiles beside it are blocked, which is what seals the gap
+     between two furni placed corner to corner — the blocking trick players
+     actually use — while leaving a single chair something you can walk around
+     rather than a cross-shaped no-go zone.
 
    - The destination may be occupied even when the route to it is not. Sitting
      on a seat means walking ONTO the seat's tile, so the goal tile is treated
@@ -66,26 +77,79 @@
         return i === -1 ? 2 : i;
     }
 
-    /* Octile distance: the true cost of an eight-connected walk with diagonals
-       priced at sqrt(2), so it never overestimates and A* stays optimal. */
+    /* COST IS STEPS, NOT DISTANCE, and that is the whole point.
+
+       This used to price a diagonal at sqrt(2) and a straight at 1 — octile
+       distance, the geometrically honest answer. It is the wrong question. An
+       avatar crosses one tile in WALK_MS whichever way it goes, so what costs
+       a player time is the NUMBER of steps, and a route that is shorter on a
+       ruler can be slower to walk.
+
+       The two disagree often. Four diagonal steps measure 5.66 against five
+       straight ones at 5.00, so octile took the five-step route every time:
+       geometrically shorter, a whole step slower, and visibly the long way
+       round. Pricing every step at 1 and measuring the remainder in Chebyshev
+       distance — max(dx, dy), which is exactly the fewest moves an
+       eight-connected walk can take — asks for the quickest route instead.
+
+       WHICH shortest route, though, still has to be decided, and the obvious
+       answer is wrong. Making diagonals fractionally cheaper so that routes
+       with more of them win produces a WEAVE: walking six tiles straight up
+       becomes three steps up-left and three up-right, same six steps, all of
+       them diagonal and every one of them cheaper. Six diagonals beat six
+       straights on that arithmetic, so the avatar zigzags to a destination
+       directly in front of it.
+
+       WHICH of the equally short routes, then. This was settled by watching
+       the real client rather than reasoning about it. Sent from tile (7,5) to
+       (3,3) with a chair on the line, Habbo walked
+
+           (6,4)  (5,3)  (4,3)  (3,3)
+
+       — four steps, and both DIAGONALS TAKEN FIRST, then two straight. An
+       earlier tie-break here hugged the straight line between start and goal
+       and produced (6,5) (5,5) (4,4) (3,3): same length, same destination,
+       visibly not the same walk.
+
+       So ties break on how many diagonal steps are still OWED — min(dx, dy)
+       to the goal. A diagonal reduces both axes and so reduces that number;
+       a straight step does not. Taking them early is therefore cheaper by a
+       hair, and the route front-loads its diagonals the way Habbo's does.
+
+       This also happens to kill the weave that a plain "prefer diagonals"
+       bonus caused: walking six tiles straight up owes no diagonals at all
+       (min is zero the whole way), so there is nothing to gain by zigzagging
+       and the avatar walks straight. */
+    const stepCost = () => 1;
+
     function heuristic(ax, ay, bx, by) {
-        const dx = Math.abs(ax - bx), dy = Math.abs(ay - by);
-        return (dx + dy) + (Math.SQRT2 - 2) * Math.min(dx, dy);
+        return Math.max(Math.abs(ax - bx), Math.abs(ay - by));
     }
+
+    // Diagonal steps still owed on the way to the goal.
+    const owed = (x, y, goal) => Math.min(Math.abs(x - goal.x), Math.abs(y - goal.y));
+    const OWED = 0.001;
 
     /* `blocked(x, y)` answers whether a tile cannot be walked THROUGH.
        Returns an array of {x, y, dir} steps beginning with the first tile
        moved onto, or null if there is no route. */
-    function findPath(start, goal, blocked) {
+    /* `enterGoal` says whether the destination may be walked into when it is
+       occupied — true for a seat, false for furni you can only walk around.
+       It defaults to true, which is what every caller wanted back when a seat
+       was the only reason to click an occupied tile. */
+    function findPath(start, goal, blocked, enterGoal) {
+        if (enterGoal === undefined) enterGoal = true;
         if (!inside(goal.x, goal.y)) return null;
         if (start.x === goal.x && start.y === goal.y) return [];
+        if (!enterGoal && blocked(goal.x, goal.y)) return null;
 
         const key = (x, y) => y * COLS + x;
         const goalKey = key(goal.x, goal.y);
 
         const g = new Map([[key(start.x, start.y), 0]]);
         const cameFrom = new Map();
-        const open = [{ x: start.x, y: start.y, f: heuristic(start.x, start.y, goal.x, goal.y) }];
+        const est = (x, y) => heuristic(x, y, goal.x, goal.y) + OWED * owed(x, y, goal);
+        const open = [{ x: start.x, y: start.y, f: est(start.x, start.y) }];
         const closed = new Set();
 
         while (open.length) {
@@ -105,21 +169,44 @@
                 const nk = key(nx, ny);
                 if (closed.has(nk)) continue;
 
-                // The goal itself is enterable even when occupied; nothing else is.
+                /* THE GOAL IS ENTERABLE ONLY IF THE CALLER SAYS SO.
+
+                   It used to be enterable unconditionally, so that walking
+                   onto a chair could put you in it — and that one exemption
+                   let the avatar step onto ANYTHING by clicking it. A bar
+                   desk, a divider, a fridge: click it and the figure walked
+                   into the furni and stood inside it.
+
+                   A seat is the one thing you walk into. Everything else is
+                   an obstacle whether you clicked it or not, so `enterGoal`
+                   is the caller's answer to "is there something here worth
+                   standing in", not a property of being the destination. */
                 if (nk !== goalKey && blocked(nx, ny)) continue;
+                if (nk === goalKey && !enterGoal && blocked(nx, ny)) continue;
 
                 if (d.dx !== 0 && d.dy !== 0) {
-                    // No squeezing between two diagonally touching blockers.
-                    if (blocked(cur.x + d.dx, cur.y) || blocked(cur.x, cur.y + d.dy)) continue;
+                    /* BOTH sides have to be blocked to refuse a diagonal, not
+                       either one.
+
+                       Refusing when either was blocked is the strict
+                       no-corner-cutting rule, and it made the room far more
+                       obstructive than Habbo's: every single chair grew an
+                       invisible no-go zone across its two diagonals, so the
+                       avatar took long detours around one piece of furniture.
+                       That got worse the moment seats started blocking.
+
+                       Two furni touching corner to corner still seal the gap
+                       between them, which is the room-blocking trick players
+                       actually use. One does not. */
+                    if (blocked(cur.x + d.dx, cur.y) && blocked(cur.x, cur.y + d.dy)) continue;
                 }
 
-                const step = (d.dx !== 0 && d.dy !== 0) ? Math.SQRT2 : 1;
-                const tentative = g.get(ck) + step;
+                const tentative = g.get(ck) + stepCost(d.dx, d.dy);
                 if (g.has(nk) && tentative >= g.get(nk)) continue;
 
                 g.set(nk, tentative);
                 cameFrom.set(nk, { x: cur.x, y: cur.y });
-                open.push({ x: nx, y: ny, f: tentative + heuristic(nx, ny, goal.x, goal.y) });
+                open.push({ x: nx, y: ny, f: tentative + est(nx, ny) });
             }
         }
 

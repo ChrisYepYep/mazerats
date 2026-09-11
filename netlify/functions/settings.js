@@ -17,6 +17,20 @@ const VALID_STATES = ["enter", "coming-soon", "maintenance"];
 const DEFAULT_STATE = "enter";
 const DEFAULT_ABOUT_TEXT = "";
 
+/* Which furni falls past Fallin' Furni's title screen. A site-wide choice
+   rather than a per-level one — the title screen is not a level — so it
+   lives here with the other two settings rather than in a level document.
+
+   An EMPTY list means "whatever the game ships with", which is how it
+   behaves before anyone has ever set it. Ten is the cap the builder is given;
+   it is enforced here as well as in the page, because the page is not where
+   trust lives.
+
+   Class names only, checked against the same shape the furni casts use, so a
+   stored value can never be anything but a name the game could look up. */
+const MAX_LOBBY_FURNI = 10;
+const CLASS_NAME = /^[A-Za-z0-9_]{1,64}$/;
+
 exports.handler = async (event) => {
     let db;
     try {
@@ -30,7 +44,8 @@ exports.handler = async (event) => {
         const doc = await settings.findOne({ _id: "site" });
         return json(200, {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
-            aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT
+            aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT,
+            lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : []
         });
     }
 
@@ -57,6 +72,25 @@ exports.handler = async (event) => {
         if (body.aboutText !== undefined) {
             update.aboutText = String(body.aboutText);
         }
+        if (body.lobbyFurni !== undefined) {
+            if (!Array.isArray(body.lobbyFurni)) {
+                return json(400, { error: "lobbyFurni must be an array of furni class names" });
+            }
+            // De-duplicated, because the title screen draws one of each and a
+            // name listed twice would only bias which one turns up.
+            const seen = [];
+            for (const raw of body.lobbyFurni) {
+                const name = String(raw || "").trim();
+                if (!CLASS_NAME.test(name)) {
+                    return json(400, { error: `Not a furni class name: ${name.slice(0, 40)}` });
+                }
+                if (!seen.includes(name)) seen.push(name);
+            }
+            if (seen.length > MAX_LOBBY_FURNI) {
+                return json(400, { error: `At most ${MAX_LOBBY_FURNI} furni on the title screen` });
+            }
+            update.lobbyFurni = seen;
+        }
         if (Object.keys(update).length === 0) {
             return json(400, { error: "Nothing to update" });
         }
@@ -68,7 +102,8 @@ exports.handler = async (event) => {
         const doc = await settings.findOne({ _id: "site" });
         return json(200, {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
-            aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT
+            aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT,
+            lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : []
         });
     }
 

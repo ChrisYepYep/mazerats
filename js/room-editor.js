@@ -98,6 +98,49 @@
        plinth reads as one rotation there and has two in the game. Falling back
        to their count only when the client has nothing keeps the pieces that
        are not in this build working as before. */
+    /* WHICH STATES THIS FURNI HAS — the client's word for "on".
+
+       A lamp off and a lamp on are one class with two sets of members, and
+       the same mechanism runs a fireplace through eleven frames and
+       gothiccandelabra through seven. The list is the state NUMBERS rather
+       than a count, because a class need not number them 0..n.
+
+       The client's own artwork answers first. Anything it does not carry
+       falls back to the catalogue, where a state is a row of the image grid. */
+    function stateList(className) {
+        const fromClient = Furni.statesOf(className);
+        if (fromClient.length) return fromClient;
+        const row = state.catalogue.get(className);
+        const grid = (row && row.largeImages) || [];
+        return grid.length ? grid.map((_, i) => i) : [0];
+    }
+
+    /* Step the held furni to its next state and wrap. One button does both
+       halves of a two-state toggle and cycles anything longer. */
+    function cycleBrushState() {
+        if (!state.brush) return 0;
+        const list = stateList(state.brush);
+        const at = Math.max(0, list.indexOf(brush.state));
+        brush.state = list[(at + 1) % list.length];
+        onChange();
+        return brush.state;
+    }
+
+    /* The same for a piece already down. Geometry cannot change — a lamp that
+       is on stands exactly where it stood — so this needs no fits() test, only
+       the artwork for the new state. */
+    function cycleSelectedState() {
+        const f = state.selected;
+        if (!f) return false;
+        const list = stateList(f.className);
+        if (list.length < 2) return false;
+        const at = Math.max(0, list.indexOf(f.state || 0));
+        const next = list[(at + 1) % list.length];
+        Object.assign(f, { state: next }, spriteFor(f.className, next, f.rotation || 0));
+        commit();
+        return true;
+    }
+
     function rotationCount(className) {
         const fromClient = Furni.rotationsOf(className);
         if (fromClient) return fromClient;
@@ -153,7 +196,8 @@
     function rebuild() {
         state.placed = (state.level.decor || []).map(d => Furni.make(d.className, d.x, d.y, {
             meta: metaFor(d.className), rotation: d.rotation, state: d.state,
-            ...spriteFor(d.className, d.state, d.rotation), role: "decor"
+            lift: Levels.height(d.z), role: "decor",
+            ...spriteFor(d.className, d.state, d.rotation)
         }));
         state.selected = null;
         onChange();
@@ -161,25 +205,74 @@
 
     function commit() {
         state.level.decor = state.placed.map(f => ({
-            className: f.className, x: f.x, y: f.y, rotation: f.rotation, state: f.state
+            className: f.className, x: f.x, y: f.y,
+            rotation: f.rotation, state: f.state, z: Levels.height(f.lift)
         }));
         onChange();
     }
 
     // ---- editing
 
-    function place(x, y) {
+    /* PLACING WORKS THE WAY IT DOES IN THE GAME: the piece you are holding
+       keeps its rotation and its height from one placement to the next, and
+       you see it under the pointer before you commit to it — `ghost()` below
+       is what the room draws.
+
+       In Habbo you pick an item, it follows the mouse as a translucent copy,
+       you turn it while it is still in your hand, and only the click puts it
+       down. Before this, the editor showed a coloured outline of the
+       footprint and nothing else, so you were placing a sofa blind and finding
+       out which way it faced afterwards. */
+    const brush = { rotation: 0, lift: 0, state: 0 };
+
+    // The piece the brush would place at this tile, placed or not.
+    function ghost(x, y) {
         if (!state.brush) return null;
         const meta = metaFor(state.brush);
         const piece = Furni.make(state.brush, x, y, {
-            meta, rotation: 0, state: 0,
-            ...spriteFor(state.brush, 0, 0), role: "decor"
+            meta, rotation: brush.rotation, state: brush.state, lift: brush.lift,
+            role: "decor", ...spriteFor(state.brush, brush.state, brush.rotation)
         });
-        if (!Furni.fits(state.placed, piece)) return null;
+        piece.ok = Furni.fits(state.placed, piece, null, true);
+        return piece;
+    }
+
+    function place(x, y) {
+        const piece = ghost(x, y);
+        if (!piece || !piece.ok) return null;
+        delete piece.ok;
         state.placed.push(piece);
         state.selected = piece;
         commit();
         return piece;
+    }
+
+    // Turn what is in your hand, before it is put down.
+    function rotateBrush() {
+        if (!state.brush) return 0;
+        const n = rotationCount(state.brush);
+        brush.rotation = n < 2 ? 0 : (brush.rotation + 1) % n;
+        onChange();
+        return brush.rotation;
+    }
+
+    function setBrushLift(z) {
+        brush.lift = Levels.height(z);
+        onChange();
+        return brush.lift;
+    }
+
+    /* A brush is picked up fresh: rotation back to zero, height kept, because
+       height is a setting you are working at and rotation belongs to the item.
+       Habbo does the same — a run of chairs all face the way you last turned
+       one, but picking a different item starts it square. */
+    function setBrush(className) {
+        state.brush = className || null;
+        brush.rotation = 0;
+        brush.state = 0;
+        state.selected = null;
+        onChange();
+        return state.brush;
     }
 
     function selectAt(x, y) {
@@ -192,8 +285,69 @@
         const f = state.selected;
         if (!f) return false;
         const moved = { ...f, x, y };
-        if (!Furni.fits(state.placed, moved, f)) return false;
+        if (!Furni.fits(state.placed, moved, f, true)) return false;
         f.x = x; f.y = y;
+        commit();
+        return true;
+    }
+
+    /* ---- PRECISE MOVE, which is Habbo's own "Advanced" furni tool.
+
+       hh_room.cct builds a window titled "Precise Move" whose help line reads
+       "Edit exact floor position and height." and which holds three fields —
+       Floor X, Floor Y, Height — each with a decrement and an increment
+       button. Reading its bytecode gives the steps exactly: the X and Y
+       buttons push integers, the Height buttons push 0.1, and
+       normalizeAdvancedAltitudeText formats whatever you type to three
+       decimal places. A bad value puts "Invalid values." in the status line
+       rather than moving anything.
+
+       It also PREVIEWS. openAdvancedFurniEditor remembers the piece's
+       original location, previewAdvancedFurniEditor applies the typed values
+       to the real object as you type, and restoreAdvancedFurniPreview puts it
+       back if you cancel. That is worth copying rather than showing a separate
+       ghost: you judge a height by looking at the room, not at a number. */
+
+    let preciseOriginal = null;         // {piece, x, y, lift}
+
+    function beginPrecise() {
+        const f = state.selected;
+        if (!f) return null;
+        preciseOriginal = { piece: f, x: f.x, y: f.y, lift: f.lift || 0 };
+        return { x: f.x, y: f.y, z: f.lift || 0 };
+    }
+
+    /* Apply values to the live piece without committing them, so the room
+       shows the move while the dialog is open. Returns whether they are
+       legal; an illegal set is still shown, because seeing WHY it is refused
+       is the point. */
+    function previewPrecise(x, y, z) {
+        const f = preciseOriginal && preciseOriginal.piece;
+        if (!f) return false;
+        const fp = { ...f, x, y, lift: Levels.height(z) };
+        f.x = x; f.y = y; f.lift = fp.lift;
+        onChange();
+        return Furni.fits(state.placed, fp, f, true);
+    }
+
+    function cancelPrecise() {
+        const o = preciseOriginal;
+        preciseOriginal = null;
+        if (!o) return;
+        o.piece.x = o.x; o.piece.y = o.y; o.piece.lift = o.lift;
+        onChange();
+    }
+
+    function savePrecise(x, y, z) {
+        const f = preciseOriginal && preciseOriginal.piece;
+        if (!f) return false;
+        const lift = Levels.height(z);
+        if (!Furni.fits(state.placed, { ...f, x, y, lift }, f, true)) {
+            cancelPrecise();
+            return false;
+        }
+        f.x = x; f.y = y; f.lift = lift;
+        preciseOriginal = null;
         commit();
         return true;
     }
@@ -207,7 +361,7 @@
         const n = rotationCount(f.className);
         if (n < 2) return false;                    // this furni does not turn
         const turned = Furni.rotate(f, n, spriteFor);
-        if (!Furni.fits(state.placed, turned, f)) return false;
+        if (!Furni.fits(state.placed, turned, f, true)) return false;
         Object.assign(f, turned);
         commit();
         return true;
@@ -438,6 +592,34 @@
     /* What the editor draws on top of the room. Only what the CURRENT MODE
        needs: zone rectangles while working on zones, the placement ghost while
        decorating. Showing everything at once turned the room into a diagram. */
+    /* A translucent copy of a piece, drawn THROUGH A BUFFER rather than by
+       turning the alpha down and letting it paint.
+
+       A furni in the library is several part bitmaps that overlap each other —
+       a sofa's back tucks behind its arm — and drawing each of them at 65%
+       blends every overlap twice, so the seams come out darker than the rest
+       and the ghost looks patchy where it should look solid. Rendering the
+       whole piece opaque into its own canvas and fading THAT keeps it one
+       picture. The buffer is kept and reused; it is repainted every frame the
+       pointer moves. */
+    let ghostBuf = null, ghostCtx = null;
+
+    function drawGhost(ctx, piece, alpha) {
+        if (!ghostBuf) {
+            ghostBuf = document.createElement("canvas");
+            ghostBuf.width = Iso.WIDTH;
+            ghostBuf.height = Iso.HEIGHT;
+            ghostCtx = ghostBuf.getContext("2d");
+            ghostCtx.imageSmoothingEnabled = false;
+        }
+        ghostCtx.clearRect(0, 0, ghostBuf.width, ghostBuf.height);
+        if (!Furni.draw(ghostCtx, piece)) return;      // nothing loaded yet
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(ghostBuf, 0, 0);
+        ctx.restore();
+    }
+
     function drawOverlay(ctx, hover) {
         /* The paint loop starts before the catalogue has finished loading —
            a few seconds of network — so there is a window with no level yet
@@ -464,13 +646,20 @@
 
         if (state.mode === "decor") {
             if (state.selected) Furni.outline(ctx, state.selected, "#ffff00");
-            if (state.brush && hover) {
-                const fp = Furni.footprint(metaFor(state.brush), 0);
-                const probe = { x: hover.x, y: hover.y, w: fp.w, h: fp.h };
-                const ok = Furni.fits(state.placed, probe);
-                for (const t of Furni.tilesOf(probe)) {
-                    Iso.highlight(ctx, t.x, t.y, ok ? "#40ff80" : "#ff4040");
+
+            /* THE PIECE IN YOUR HAND, drawn where it would land.
+
+               Habbo shows the actual furni following the pointer, turned the
+               way you turned it, so you place a sofa knowing which way it
+               faces and how much room it takes. The footprint outline stays
+               underneath it, in green or red, because the picture alone does
+               not say whether the tiles are free. */
+            const held = state.brush && hover ? ghost(hover.x, hover.y) : null;
+            if (held) {
+                for (const t of Furni.tilesOf(held)) {
+                    Iso.highlight(ctx, t.x, t.y, held.ok ? "#40ff80" : "#ff4040");
                 }
+                drawGhost(ctx, held, held.ok ? 0.65 : 0.35);
             }
         }
 
@@ -489,7 +678,10 @@
 
     window.RoomEditor = {
         state, load, search, setLevel, rebuild, commit,
-        place, selectAt, moveSelected, rotateSelected, deleteSelected,
+        place, ghost, setBrush, rotateBrush, setBrushLift, brush,
+        stateList, cycleBrushState, cycleSelectedState,
+        beginPrecise, previewPrecise, cancelPrecise, savePrecise,
+        selectAt, moveSelected, rotateSelected, deleteSelected,
         addZone, removeZone, selectZone, setZoneArea, renameZone, zone,
         addItem, removeItem, setRoom, save, restore, discardDraft,
         drawOverlay, drawDragArea, spriteUrl, spriteFor, rotationCount, metaFor, playable,

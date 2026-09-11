@@ -88,8 +88,21 @@
     function spotsFor(list, entry, meta, avoid, minDistance) {
         const spots = [];
         const near = [];
-        const w = Math.max(1, Number(meta.x) || 1);
-        const h = Math.max(1, Number(meta.y) || 1);
+
+        /* THE FOOTPRINT HAS TO BE THE ROTATED ONE.
+
+           furnidata's x/y describe a furni in its default direction, and
+           Furni.footprint turns them with it — a 3x1 bench that lands rotated
+           occupies 1x3. This used the raw meta instead, so every check below
+           was done against the wrong shape: the scan ran to the wrong edge of
+           the area, Furni.fits bounds-checked the wrong rectangle, and a
+           turned bench could hang a tile off the room entirely. Asking
+           Furni.footprint is asking the same function Furni.make will use a
+           few lines further down, which is the point — there is only one
+           answer to what shape this piece is. */
+        const fp = Furni.footprint(meta, entry.rotation, entry.className, entry.state);
+        const w = fp.w;
+        const h = fp.h;
         const reach = Math.max(0, minDistance || 0);
 
         for (let y = entry.area.y; y <= entry.area.y + entry.area.h - h; y++) {
@@ -129,7 +142,8 @@
         const queue = window.RoomLevels.schedule(level, rng);
         const decor = (level.decor || []).map(d => Furni.make(d.className, d.x, d.y, {
             meta: metaFor(d.className), rotation: d.rotation, state: d.state,
-            ...urlFor(d.className, d.state, d.rotation), role: "decor"
+            lift: Number(d.z) || 0, role: "decor",
+            ...urlFor(d.className, d.state, d.rotation)
         }));
 
         return {

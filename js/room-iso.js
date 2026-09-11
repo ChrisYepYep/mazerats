@@ -27,13 +27,16 @@
        floor-1   filled, regular dot texture            (fuzzy and the tiles)
        floor-2   wood
        wall-{left,right}-{0,1,3}
+       wall-left-mask-{0,1,3}   the panel with the doorway cut out of it
+       wall-{left,right}-end-{0,3}   the 7px of wall thickness at each end
+       door                     leftdoor_open, the one sprite here that is
+                                never tinted
 
    The client kept these as indexed bitmaps and swapped the PALETTE to
    recolour them, which is how one 130x71 bitmap became every floor in the
    hotel. Canvas has no palettes, so `colourise` below does the equivalent by
-   remapping each distinct source colour onto a tone of the chosen base, and
-   caches the result — a repaint reuses it, and only changing pattern or
-   colour rebuilds.
+   multiplying the chosen colour through the pattern's ramp, and caches the
+   result — a repaint reuses it, and only changing pattern or colour rebuilds.
 
    ----------------------------------------------------------------------
    The Origins look, measured rather than guessed
@@ -44,11 +47,12 @@
    are even-length, which is what gives it away — so each figure is half what
    was measured there:
 
-     wall face          the chosen colour
-     left wall          face x 0.93   (measured #e5bd00 against #f6cc00)
+     wall face          the chosen colour x ROOM_LIGHT
+     left wall          a further x 0.916
      wall top edge      part of the PANEL BITMAP, not drawn separately — the
-                        stencil's own first rows carry it, and filling a band
-                        above them as well drew the top of the wall twice
+                        stencil's own rows carry both the 5px top surface and
+                        the black rules either side of it, as reserved palette
+                        classes 241 and 255
      floor slab edge    5px, solid, in the floor's light tone
      black lines        1px, pure #000, between every one of those surfaces
                         and around the whole room silhouette
@@ -76,11 +80,35 @@
     const FLOOR_EDGE = 5;           // the slab's visible thickness
     const LINE = 1;                 // every black rule in the room
 
-    const ORIGIN_X = (ROWS - 1) * HALF_W + HALF_W;
-    const ORIGIN_Y = WALL_H + WALL_TOP + LINE * 2;
+    /* The seven pixels of wall thickness on show where each wall stops, and
+       the reason the room is 686 wide rather than 672: both end caps stand
+       OUTSIDE the run, so without room for them the canvas cut them off at
+       its own edges. See the note on END CAPS in drawWalls. */
+    const WALL_END = 7;
 
-    const WIDTH = ORIGIN_X + (COLS - 1) * HALF_W + HALF_W;
-    const HEIGHT = ORIGIN_Y + (COLS + ROWS - 2) * HALF_H + TILE_H + FLOOR_EDGE + LINE;
+    /* THE STAGE IS BIGGER THAN THE ROOM, by a margin all the way round.
+
+       The room used to be drawn edge to edge, so its black outline sat on the
+       canvas border and the two became one line — the room looked cropped by
+       the frame rather than standing inside it. A margin gives it somewhere to
+       sit, and the canvas's own background is what shows through.
+
+       The stage is 720x498: 720 because that is the width the client's own
+       hotel view is drawn at, so the title screen needs no cropping at all,
+       and the height follows from the room plus the same margin. Everything
+       below is measured from ORIGIN, so the margin only has to be added here
+       and the whole room moves with it. */
+    const ROOM_W = (ROWS - 1) * HALF_W + HALF_W + WALL_END + (COLS - 1) * HALF_W + HALF_W + WALL_END;
+    const ROOM_H = WALL_H + WALL_TOP + LINE * 2 +
+        (COLS + ROWS - 2) * HALF_H + TILE_H + FLOOR_EDGE + LINE;
+
+    const WIDTH = 720;
+    const HEIGHT = 498;
+    const MARGIN_X = Math.floor((WIDTH - ROOM_W) / 2);
+    const MARGIN_Y = Math.floor((HEIGHT - ROOM_H) / 2);
+
+    const ORIGIN_X = (ROWS - 1) * HALF_W + HALF_W + WALL_END + MARGIN_X;
+    const ORIGIN_Y = WALL_H + WALL_TOP + LINE * 2 + MARGIN_Y;
 
     const STENCIL_DIR = "assets/room/";
     const stencils = new Map();     // src -> HTMLImageElement
@@ -115,121 +143,54 @@
     const css = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
     const shade = (hex, f) => css(scale(hex, f));
 
-    const lum = (r, g, b) => (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    const hex = (c) => "#" + c.map(v => v.toString(16).padStart(2, "0")).join("");
+
+    /* HOW BRIGHT THE ROOM IS, measured off a real Origins render rather than
+       chosen. Both figures reproduce that render to within one colour value
+       everywhere they apply, which is why there are only two of them.
+
+       A floor whose swatch is #999966 paints at (151,151,100) and a wall whose
+       swatch is #bcbfce paints its right face at (180,183,197): both 0.985 of
+       the swatch, so that is the room's own light and it is shared. The left
+       wall then takes a further 0.916, and that single factor is the whole of
+       the difference between the two faces — the left and right panel
+       stencils paint the SAME position classes, so nothing in the artwork
+       distinguishes them and the shading has to come from here.
+
+       Everything else follows from the palette: the top of the wall is class
+       241, which every wallpaper ramp puts at about #969698, so it lands at
+       0.588 of the face without being drawn separately. */
+    const ROOM_LIGHT = 0.985;
+    const LEFT_WALL = 0.916;
 
     /* Recolour a stencil, doing what the client's palette swap did.
 
        The stencil png carries a palette INDEX per pixel (in all three
-       channels; alpha 0 marks the hole). The pattern's ramp maps that index to
-       a shade, and the shade is applied to the colour the player picked:
+       channels; alpha 0 marks the hole). The ramp turns that index into a
+       colour, and there is exactly one rule for how:
 
-           ramp says #000000   the base colour, unchanged
-           anything else       a shade of the base, by luminance
+           final = ramp entry * the chosen colour / 255
 
-       The ramps are not literal colours — a floor whose ramp says #ffffff is
-       not a white floor. Measured on a real Origins render, the three tones of
-       a grey floor sit at about 0.88, 1.00 and 1.05 of the base, and DARK and
-       LIGHT are the two ends of that: #050505 is the shadow class, #ffffff the
-       highlight. Hence the narrow band below rather than a straight multiply,
-       which would paint half the floor black.
+       White leaves the colour alone, which is why index 0 — the hole, where
+       the base shows through — needs no special handling: every one of these
+       palettes puts #ffffff there. Grey darkens, so the wall's top surface
+       (class 241, about #969698 in every wallpaper) comes out at 0.588 of the
+       face, and the room's black outline (class 255, #000000) comes out
+       black, with neither of them drawn separately. And a chromatic entry
+       paints itself, because a pattern with real artwork in its ramp — brick,
+       invaders, the picture wallpapers — ships exactly one swatch and it is
+       always #ffffff.
 
-       This replaces an earlier version that ranked the stencil's own colours
-       by luminance and ignored the ramp entirely. It looked plausible and was
-       badly wrong: four of the six floors share a stencil and differ ONLY by
-       ramp, so all four came out identical. */
-    /* A shade ramp's tones are stretched over this band rather than read as
-       absolute luminance.
-
-       The reason is that the ramps are not on a common scale. wall_stripes
-       says #e8e8e8 and #f8f8f8 — six percent apart — and mapping those by
-       luminance onto a fixed band puts the two halves of a striped wallpaper
-       within one percent of each other, which is a flat wall. Painting them
-       literally instead gives clear stripes but turns the wall nearly white,
-       because both tones are near-white and they cover most of it.
-
-       Each ramp's own darkest and lightest non-black tones are therefore
-       stretched to the ends of this band. A ramp whose tones are bunched
-       (stripes) gets its contrast opened up; one already spread across the
-       range (lively, which runs #050505 to #ffffff) is left much as it was.
-       The pattern is whatever the ramp draws; only how far apart the tones sit
-       is decided here. */
-    const SHADE_LOW = 0.86;
-    const SHADE_HIGH = 1.12;
-
-    /* There are TWO kinds of ramp and they must not be treated alike.
-
-       A SHADE ramp is entirely neutral — wall_white is #000000, #050505,
-       #f8f8f8, #ffffff and nothing else. Those are tones, and the pattern
-       takes its colour from the swatch the player picked.
-
-       A LITERAL ramp carries real artwork. wall_color_invaders holds #712321,
-       #bc664d, #902a2b; wall_color_brick1 holds a whole blue-green brick
-       palette. Those patterns ship with exactly ONE swatch and it is always
-       #ffffff, which is the catalogue's way of saying "no tint — paint what
-       the ramp says". Twenty of the thirty-one wallpapers are this kind, and
-       shading them against a white base is what rendered them all as blank
-       white walls.
-
-       Telling them apart by saturation reads it off the data rather than
-       hard-coding which group is which. */
-    const CHROMA_MIN = 12;
-
-    function isLiteralRamp(ramp) {
-        for (const hex of Object.values(ramp)) {
-            const [r, g, b] = rgb(hex);
-            if (Math.max(r, g, b) - Math.min(r, g, b) > CHROMA_MIN) return true;
-        }
-        return false;
-    }
-
-    /* WHICH PALETTE BANK A RAMP WAS AUTHORED AGAINST.
-
-       The wall stencil paints a regular 8x8 grid of position classes at
-       indices 17..24, 33..40, 49..56 … 129..136 — eight runs of eight,
-       stepping sixteen. The brick and invaders ramps colour exactly those, all
-       sixty-six of them, and render in full detail.
-
-       The shade ramps — stripes, half1/2/3, tiles1, vstripes — colour the
-       IDENTICAL structure starting at 119 instead of 17: 119..126, 135..142,
-       and so on, offset by 102 the whole way. Same grid, different bank. Read
-       at face value they touch five of the stencil's sixty-six classes, so the
-       striped wallpaper came out as a few sparse dots and, when I went looking
-       for a stencil that fitted those indices instead, as brickwork.
-
-       So the offset is found rather than assumed: whichever shift lines the
-       stencil's classes up with the most of the ramp's coloured entries wins.
-       Offset 0 for the ramps drawn in the low bank, 102 for the high one, and
-       anything else the data turns out to want. */
-    function bankOffset(indices, ramp) {
-        const coloured = new Set();
-        for (const [k, v] of Object.entries(ramp)) {
-            if (v !== "#000000") coloured.add(Number(k));
-        }
-        if (!coloured.size) return 0;
-
-        let best = 0, bestHit = -1;
-        for (const off of CANDIDATE_OFFSETS) {
-            let hit = 0;
-            for (const i of indices) if (coloured.has(i + off)) hit++;
-            if (hit > bestHit) { bestHit = hit; best = off; }
-        }
-        return best;
-    }
-
-    // 0 and 102 are the two the client actually uses; the rest are cheap
-    // insurance against a bank this room's patterns do not happen to need.
-    const CANDIDATE_OFFSETS = [0, 102, 34, 68, 136, 170, 204];
-
-    /* `darken` scales the FINISHED colour, after the ramp has been applied.
-
-       The wall's top surface needs to read darker than its face whichever kind
-       of ramp is in play, and darkening the base colour only achieves that for
-       the tonal ramps — a literal ramp paints its own artwork colours and
-       ignores the base entirely, so a brick wall came out with a white strip
-       along the top instead of a shaded one. Scaling the output covers both. */
-    function colourise(stencilName, paletteName, baseHex, darken) {
-        const dim = darken === undefined ? 1 : darken;
-        const key = stencilName + "|" + paletteName + "|" + baseHex + "|" + dim;
+       ONE RULE, AND IT REPLACED THREE. This used to sort the ramp's tones by
+       luminance, stretch them across a band, decide by saturation whether a
+       ramp was artwork or shading, and search for a "palette bank offset" of
+       102 to make the striped wallpapers appear at all. Every one of those was
+       a workaround for reading the CLUT backwards, and all of them went when
+       tools/room-patterns-extract.js started reading it in file order — see
+       the long note there for the six separate things that were wrong, and
+       for the render the numbers above are measured against. */
+    function colourise(stencilName, paletteName, baseHex) {
+        const key = stencilName + "|" + paletteName + "|" + baseHex;
         const hit = tinted.get(key);
         if (hit) return hit;
 
@@ -250,56 +211,35 @@
         out.width = w; out.height = h;
         const octx = out.getContext("2d");
         octx.imageSmoothingEnabled = false;
-        octx.fillStyle = dim === 1 ? baseHex : css(scale(baseHex, dim));
+        octx.fillStyle = baseHex;
         octx.fillRect(0, 0, w, h);               // index 0 IS the surface
         const dst = octx.getImageData(0, 0, w, h);
         const dpx = dst.data;
 
-        // Which classes this stencil paints, so the bank can be worked out.
-        const present = new Set();
-        for (let i = 0; i < px.length; i += 4) if (px[i + 3] >= 128) present.add(px[i]);
-        const offset = bankOffset(present, ramp);
-
-        const literal = isLiteralRamp(ramp);
-
-        /* The luminance range this ramp actually uses, over the classes this
-           stencil paints — the span that gets stretched to SHADE_LOW..HIGH. */
-        let loLum = 1, hiLum = 0;
-        if (!literal) {
-            for (const index of present) {
-                const entry = ramp[index + offset] || ramp[index];
-                if (!entry || entry === "#000000") continue;
-                const [er, eg, eb] = rgb(entry);
-                const l = lum(er, eg, eb);
-                if (l < loLum) loLum = l;
-                if (l > hiLum) hiLum = l;
-            }
-        }
-        const span = hiLum - loLum;
-
+        const base = rgb(baseHex);
         const cache = new Map();                 // index -> rgb triple
         for (let i = 0; i < px.length; i += 4) {
             if (px[i + 3] < 128) continue;       // hole: leave the base showing
             const index = px[i];
             let c = cache.get(index);
             if (c === undefined) {
-                const entry = ramp[index + offset] || ramp[index];
-                if (!entry || entry === "#000000") {
-                    c = null;                    // base, unchanged
-                } else if (literal) {
-                    c = rgb(entry);              // real artwork: paint it as-is
+                const entry = ramp[index];
+                if (!entry) {
+                    c = null;                    // no entry: the base, unchanged
                 } else {
-                    const [er, eg, eb] = rgb(entry);
-                    // Stretch this ramp's own range across the band.
-                    const t = span > 0.001 ? (lum(er, eg, eb) - loLum) / span : 0.5;
-                    c = scale(baseHex, SHADE_LOW + t * (SHADE_HIGH - SHADE_LOW));
+                    const e = rgb(entry);
+                    c = [
+                        Math.round(base[0] * e[0] / 255),
+                        Math.round(base[1] * e[1] / 255),
+                        Math.round(base[2] * e[2] / 255)
+                    ];
                 }
                 cache.set(index, c);
             }
             if (c === null) continue;
-            dpx[i] = Math.round(c[0] * dim);
-            dpx[i + 1] = Math.round(c[1] * dim);
-            dpx[i + 2] = Math.round(c[2] * dim);
+            dpx[i] = c[0];
+            dpx[i + 1] = c[1];
+            dpx[i + 2] = c[2];
             dpx[i + 3] = 255;
         }
         octx.putImageData(dst, 0, 0);
@@ -438,14 +378,15 @@
     }
 
     function drawFloor(ctx, group, colour) {
-        const tile = colourise("floor-" + group.stencil, group.palette, colour);
+        const lit = hex(scale(colour, ROOM_LIGHT));
+        const tile = colourise("floor-" + group.stencil, group.palette, lit);
         if (!tile) return;
 
         fillFloor(ctx, tile);
 
         // The slab's two viewer-facing sides, in the floor's lighter tone.
-        const side = shade(colour, 1.0);
-        const sideDark = shade(colour, 0.82);
+        const side = shade(lit, 1.0);
+        const sideDark = shade(lit, 0.82);
         const n = tileTop(0, 0);
         const e = tileTop(COLS - 1, 0);
         const s = tileTop(COLS - 1, ROWS - 1);
@@ -486,7 +427,7 @@
        antialias against each other and rule the wall with pale seams, and a
        per-segment top strip steps like a battlement. The stencil supplies the
        pattern's own repeat, so nothing is lost by drawing the run in one go. */
-    function wallRun(ctx, from, to, tile, faceTint) {
+    function wallRun(ctx, from, to, tile, faceTint, opening, endCap) {
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(from.sx, from.sy);
@@ -508,12 +449,28 @@
             const span = Math.abs(to.sx - from.sx) / HALF_W;
             const stepX = to.sx > from.sx ? HALF_W : -HALF_W;
             const stepY = HALF_H;
+            const panelAt = (i) => ({
+                x: Math.round((stepX > 0 ? from.sx + stepX * i : from.sx + stepX * i - HALF_W)),
+                y: Math.round(from.sy + stepY * i - WALL_H)
+            });
+
             for (let i = 0; i < span; i++) {
-                const x = from.sx + stepX * i;
-                const y = from.sy + stepY * i;
-                ctx.drawImage(tile,
-                    Math.round(stepX > 0 ? x : x - HALF_W),
-                    Math.round(y - WALL_H));
+                if (opening && opening.at === i && opening.panel) continue;
+                const p = panelAt(i);
+                ctx.drawImage(tile, p.x, p.y);
+            }
+
+            /* The doorway last, so that neither neighbour paints over it.
+
+               The masked panel is registered a pixel further left than a plain
+               one (-31 against -32) and is a pixel wider, and that extra
+               column is the near edge of the door frame — drawn inside the
+               loop it would be overwritten by whichever panel is stamped
+               next. */
+            if (opening && opening.panel && opening.at < span) {
+                const p = panelAt(opening.at);
+                ctx.drawImage(opening.panel, p.x - 1, p.y);
+                if (opening.door) ctx.drawImage(opening.door, p.x, p.y + DOOR_DROP);
             }
         } else {
             ctx.fillStyle = faceTint;
@@ -521,41 +478,82 @@
         }
         ctx.restore();
 
-        /* NO SEPARATE TOP BAND IS DRAWN. The panel bitmap already carries the
-           wall's top edge in its own first few rows — measured on the render,
-           the face began with a 6px strip of the ramp's top-edge colour — so
-           filling a band above it as well drew the top of the wall twice, and
-           left the wallpaper starting a visible step below the real top.
+        /* NEITHER THE TOP BAND NOR THE RULE ALONG THE TOP IS DRAWN HERE. The
+           panel bitmap carries both, as reserved palette classes: 241 is the
+           wall's 5px top surface and 255 is the 1px black rule, one above the
+           band and one below it. Filling a band or ruling a line here as well
+           drew the top of the wall twice — and, because the extra rule landed
+           a pixel below the stencil's own, ate a row of the band.
 
-           Letting the stencil's own rows be the top is both simpler and what
-           the wallpaper running over the edge is supposed to look like. */
+           They only APPEAR once the palette is read in file order; before
+           that class 255 came out near-white and 241 came out as the face
+           colour, so the wall had a pale line where its black edge belongs and
+           no top surface at all. */
 
-        // Hard black along the wall's top edge and down its far end.
-        hardLine(ctx, from.sx, from.sy - WALL_H, to.sx, to.sy - WALL_H, "#000");
-        hardLine(ctx, to.sx, to.sy, to.sx, to.sy - WALL_H, "#000");
+        /* THE END CAP: the wall's own thickness, where it stops.
+
+           model_a.room puts a `wallend` piece at the far end of each wall, at
+           the same locH/locV as the last panel but registered seven pixels
+           further along — so it sits immediately beyond the run, its top level
+           with the panel's top at that end. Seven pixels wide: a black rule,
+           five of the wall's top surface, a black rule.
+
+           It is drawn OUTSIDE the clip, because it is outside the wall. The
+           1px black line that used to stand in for it is what the cap's own
+           first column draws anyway. */
+        const capX = to.sx > from.sx ? to.sx : to.sx - WALL_END;
+        if (endCap) ctx.drawImage(endCap, Math.round(capX), Math.round(to.sy - WALL_H));
+        else hardLine(ctx, to.sx, to.sy, to.sx, to.sy - WALL_H, "#000");
     }
+
+    /* THE DOORWAY, and it is a hole rather than a decal.
+
+       model_a.room is the client's own description of a room this exact size
+       — thirteen pieces down the left wall, eight along the right — and the
+       FIFTH piece of its left wall is not a `left_wallpart` but a
+       `left_wallmask`: the same panel with the opening cut out of it. The door
+       is a separate sprite dropped into that hole:
+
+         [#member: "left_wallmask_0_a_0_0_0", #locH: 247, #locV: 185, #locY: 5]
+         [#member: "leftdoor_open",  #locH: 269, #locV: 180,
+          #width: 32, #height: 101, #id: "command: GOAWAY"]
+
+       With the cast's registration points those put the panel's top-left at
+       (278, 70) and the door's at (279, 101): the door hangs 31px below the
+       top of its panel, and its foot is flush with the panel's. Counting the
+       pieces from the corner outward, the fifth stands against tile (0, 4). */
+    const DOOR_AT = 4;
+    const DOOR_DROP = 31;
 
     function drawWalls(ctx, group, colour) {
         const corner = tileTop(0, 0);
         const rightEnd = tileTop(COLS - 1, 0);
         const leftEnd = tileTop(0, ROWS - 1);
 
-        // Measured against a real render: the left wall sits at 0.93 of the
-        // right. The wall's top edge is not applied here — it is part of the
-        // panel bitmap, in its own first rows.
-        const LEFT = 0.93;
-        const leftHex = "#" + scale(colour, LEFT).map(v => v.toString(16).padStart(2, "0")).join("");
+        const rightHex = hex(scale(colour, ROOM_LIGHT));
+        const leftHex = hex(scale(colour, ROOM_LIGHT * LEFT_WALL));
 
-        const rightTile = colourise("wall-right-" + group.stencil, group.palette, colour);
+        const rightTile = colourise("wall-right-" + group.stencil, group.palette, rightHex);
         const leftTile = colourise("wall-left-" + group.stencil, group.palette, leftHex);
+        const maskTile = colourise("wall-left-mask-" + group.stencil, group.palette, leftHex);
+
+        // Only stencils 0 and 3 ship an end cap; 1 borrows 0's seven pixels.
+        const endN = group.stencil === 3 ? 3 : 0;
+        const rightCap = colourise("wall-right-end-" + endN, group.palette, rightHex);
+        const leftCap = colourise("wall-left-end-" + endN, group.palette, leftHex);
+
+        // The door takes no tint: it is the same five greys in every room.
+        const doorImg = stencil("door");
+        const door = doorImg.complete && doorImg.naturalWidth ? doorImg : null;
 
         wallRun(ctx, corner,
             { sx: rightEnd.sx + HALF_W, sy: rightEnd.sy + HALF_H },
-            rightTile, shade(colour, 1));
+            rightTile, shade(rightHex, 1), null, rightCap);
 
         wallRun(ctx, corner,
             { sx: leftEnd.sx - HALF_W, sy: leftEnd.sy + HALF_H },
-            leftTile, shade(leftHex, 1));
+            leftTile, shade(leftHex, 1),
+            maskTile ? { at: DOOR_AT, panel: maskTile, door } : null, leftCap);
     }
 
     function group(kind, id) {
@@ -604,7 +602,13 @@
     function preloadStencils(cb) {
         onReady = cb;
         for (const s of [0, 1, 2]) stencil("floor-" + s);
-        for (const s of [0, 1, 3]) { stencil("wall-left-" + s); stencil("wall-right-" + s); }
+        for (const s of [0, 1, 3]) {
+            stencil("wall-left-" + s);
+            stencil("wall-right-" + s);
+            stencil("wall-left-mask-" + s);
+        }
+        for (const s of [0, 3]) { stencil("wall-left-end-" + s); stencil("wall-right-end-" + s); }
+        stencil("door");
     }
 
     window.RoomIso = {

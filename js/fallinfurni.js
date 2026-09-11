@@ -30,6 +30,7 @@
     const Furni = window.RoomFurni;
     const Levels = window.RoomLevels;
     const Game = window.RoomGame;
+    const Lobby = window.RoomLobby;
 
     /* The editor loads only for ?edit=1. It pulls the whole 1,283-item
        catalogue and 15,000 furnidata records — exactly what a level builder
@@ -47,13 +48,39 @@
     const FPS = 24;
     const FRAME_MS = 1000 / FPS;
 
-    /* Milliseconds to cross one tile. Habbo walks at half a second a tile —
-       one step of the four-frame cycle in animation.xml every 125ms — and 430
-       read as very slightly hurried against it. A diagonal step covers more
-       screen than a straight one in the same time, which is why diagonals feel
-       faster in Habbo too; that is the real behaviour, not a bug to even out. */
-    const WALK_MS = 500;
+    /* Milliseconds to cross one tile, and the four-frame cycle walked across
+       it — one stride per tile, so the limbs speed up and slow down with the
+       feet rather than drifting out of step with them.
+
+       I have had this wrong in both directions. 430 was the first guess; I
+       raised it to 500 reasoning that Habbo walks at half a second a tile, and
+       that was worse. The client cannot settle it — it holds no walk constant,
+       because the SERVER sends each step and the pace is its tick rate (see
+       tools/lingo-names.js: sendMoveGoal, and no walk timing anywhere).
+
+       So it was MEASURED off the running client instead. Two walks were
+       captured at 50ms and the avatar's travel tracked by frame difference:
+
+           4 grid-diagonal steps, 240px across   ->  513 ms/tile
+           6 grid-diagonal steps, 375px across   ->  502 ms/tile
+
+       (A grid-diagonal step moves exactly 64px across and none down, which is
+       what makes it a clean ruler; both runs came out flat in y, confirming
+       the geometry.) Half a second a tile, near enough.
+
+       Which means the game felt slow for a different reason. It was walking
+       further than it needed to — octile costing and a strict corner rule
+       between them made 17% of routes longer than the minimum — and an extra
+       step reads as sluggishness even when each step is the right length. The
+       fix for "too slow" was in js/room-path.js, not here.
+
+       Still live-tunable under ?debug=1 via FallinFurni.setWalkMs(n). */
+    let WALK_MS = 500;
     const WALK_FRAMES = 4;          // the walk cycle, as animation.xml defines it
+    /* 84ms a frame, measured off the running client: the stride opens every
+       168ms and a four-frame cycle opens twice. Nothing to do with WALK_MS —
+       see the note in avatarAt. */
+    const WALK_FRAME_MS = 84;
 
     /* The imaging service returns size=l at 128x220, DOUBLE the 64x110 the
        64x32 grid is drawn against — measured, not assumed. */
@@ -249,10 +276,22 @@
         const t = Math.min(1, (now - state.stepAt) / WALK_MS);
         const a = Iso.tileCenter(state.stepFrom.x, state.stepFrom.y);
         const b = Iso.tileCenter(state.pos.x, state.pos.y);
-        /* One full cycle per tile, so the stride matches the ground covered.
-           Because a tile is exactly one cycle, each step picking up at frame 0
-           already continues the gait — no phase to carry between tiles. */
-        const frame = Math.min(WALK_FRAMES - 1, Math.floor(t * WALK_FRAMES));
+        /* THE LEGS RUN ON THEIR OWN CLOCK, not on the tile's.
+
+           This used to fit exactly one four-frame cycle into each tile, on the
+           reasoning that one stride per tile keeps the feet honest. It reads as
+           trudging, and measurement says why: in the real client the stride
+           opens every 168ms — twice per cycle, so a frame every 84ms, near
+           enough 12fps, about 5.9 frames across a 493ms tile. One cycle per
+           tile is 4 frames at 8fps, two thirds the rate. The avatar was
+           covering the ground at the right speed while moving its limbs too
+           slowly, which is exactly what "sluggish but the speed matches" looks
+           like.
+
+           So the cycle free-runs on the clock and the tile no longer divides
+           it. The phase carries across steps by construction, which is also
+           more correct than restarting at frame 0 every tile. */
+        const frame = Math.floor(now / WALK_FRAME_MS) % WALK_FRAMES;
         return {
             sx: a.sx + (b.sx - a.sx) * t,
             sy: a.sy + (b.sy - a.sy) * t,
@@ -271,8 +310,18 @@
         dirty = true;
     }
 
+    /* Clicking a tile. A SEAT is the one occupied tile you may walk into —
+       that is the whole game — and everything else with furni on it is an
+       obstacle, so clicking a bar desk leaves the figure where it is rather
+       than walking it into the furniture.
+
+       Nothing happens on such a click, rather than the figure sidling up to
+       the nearest free tile beside it. A guess about where you meant to go is
+       worse than no movement when the clock is running: it costs the same
+       seconds and puts you somewhere you did not ask for. */
     function walkTo(x, y) {
-        const route = Path.findPath(state.pos, { x, y }, blocked);
+        const seat = Furni.seatAt(state.furni, x, y);
+        const route = Path.findPath(state.pos, { x, y }, blocked, !!seat);
         if (!route || !route.length) return;
         state.path = route;
         if (!state.stepFrom) beginStep(gameNow());
@@ -317,15 +366,62 @@
         }
     }
 
+    /* THE ROOM IS ONE SORTED LIST OF PARTS, not of furni.
+
+       Habbo gives every part of a furni its own depth — see the note on
+       zshift in js/room-furni.js — and the avatar is simply another entry in
+       that list. Sitting on a sofa then works out on its own: the sofa's back
+       has a shift below the avatar's and its near arm one above, so the sort
+       puts the figure between them without anything here knowing what a sofa
+       is.
+
+       Drawing whole furni and then slotting the avatar somewhere among them
+       cannot express that, which is why it used to render the figure on top of
+       the arm it should be tucked behind. */
     function paintScene(ctx2, now) {
         const at = avatarAt(now);
-        const pieces = Furni.sorted(state.furni).map(f => ({
-            key: Furni.depthOf(f, 0), draw: () => Furni.draw(ctx2, f)
-        }));
+        const pieces = [];
+        let order = 0;
 
-        const tile = state.stepFrom ? state.pos : state.pos;
+        /* THE TILE CURSOR IS PART OF THE SCENE, not something laid over it.
+
+           It used to be drawn after everything, so the yellow diamond sat on
+           top of whatever furni it was pointing at — pointing THROUGH a sofa
+           rather than at the floor beside it. It belongs in the depth sort for
+           the same reason the avatar does: a piece standing in front of that
+           tile should cover it, and a piece behind it should not.
+
+           Pushed FIRST and at the very start of its tile's band, so anything
+           else standing on the same tile draws over it — the sort is stable,
+           so an equal key keeps this underneath. */
+        const builderOverlay = Editor && !(game && game.state === Game.RUNNING);
+        if (state.hover && !builderOverlay) {
+            const h = state.hover;
+            pieces.push({
+                key: Furni.tileDepth(h.x, h.y) * 1000,
+                draw: () => Iso.highlight(ctx2, h.x, h.y, "#ffff00")
+            });
+        }
+
+        for (const f of state.furni) {
+            const parts = Furni.partsOf(f);
+            if (parts) {
+                for (const p of parts) {
+                    pieces.push({ key: p.depth * 1000 + (order++), draw: () => Furni.drawPart(ctx2, p) });
+                }
+            } else {
+                // Not in the library: one flat sprite at its far corner.
+                const f2 = f;
+                pieces.push({
+                    key: Furni.depthOfPart(f2) * 1000 + (order++),
+                    draw: () => Furni.draw(ctx2, f2)
+                });
+            }
+        }
+
+        const tile = state.pos;
         pieces.push({
-            key: (tile.x + tile.y) * 10000 + 5000,
+            key: Furni.tileDepth(tile.x, tile.y) * 1000 + 500,
             draw: () => {
                 const sprite = avatarSprite(state.figure, at.dir, at.action, at.frame);
                 if (!sprite.ready) return;
@@ -343,28 +439,39 @@
     }
 
     function draw(now) {
+        /* THE TITLE SCREEN IS NOT A ROOM. Before a run starts — and only for a
+           player, never for the builder, who needs to see what they are
+           editing — the stage shows the hotel view with furni drifting past
+           it. See js/room-lobby.js. */
+        if (Lobby && !Editor && !game) {
+            Lobby.draw(ctx, now);
+            return;
+        }
+
         Iso.drawRoom(ctx, state);
 
         paintScene(ctx, now);
 
-        /* The seat wanted next, outlined OVER the scene rather than under it.
-           Drawn first it lands beneath the very furni it is pointing at, which
-           is where it cannot be seen — and this is the one thing on screen the
-           player has to be able to find. A 1px outline over a chair reads
-           perfectly well and hides nothing that matters. */
-        if (game && game.state === Game.RUNNING) {
-            const next = game.nextSeat();
-            if (next) Furni.outline(ctx, next, "#40ff80");
-        }
+        /* THE NEXT SEAT IS NOT MARKED, and that is the game.
+
+           There used to be a green outline on whichever seat you had to sit on
+           next. It made the round readable and it made it pointless: the whole
+           thing is remembering the order the furni landed in, and an arrow
+           pointing at the answer removes the only thing the player is being
+           asked to do. Watching where they land IS the game — the readout
+           already says so. */
 
         /* The editor's overlays — drop areas, selection, the placement ghost —
            are builder's furniture and have no business in a running round.
            They stay off while the game is playing even in the builder's view,
            or the room fills with rectangles at exactly the moment the player
            needs to read where things landed. */
+        /* The builder's overlay stays ON TOP — zone rectangles and the piece
+           in your hand are tools for reading the room, not things standing in
+           it. The player's tile cursor is drawn in the scene instead; see
+           paintScene. */
         const playing = game && game.state === Game.RUNNING;
         if (Editor && !playing) Editor.drawOverlay(ctx, state.hover);
-        else if (state.hover) Iso.highlight(ctx, state.hover.x, state.hover.y, "#ffff00");
 
         if (Editor && guides) drawGuides(ctx);
 
@@ -413,9 +520,12 @@
         /* Hidden means frozen. Returning before anything is read keeps a
            stray frame — some browsers still fire one occasionally — from
            advancing a round nobody is watching. */
-        if (document.hidden) return;
+        if (document.hidden || loading) return;
 
         const now = gameNow();
+        // Before the paint gate: the board's crawl wants every frame, and it
+        // has nothing to draw on the canvas.
+        stepBoard(performance.now());
         if (now - lastPaint < FRAME_MS) return;
         lastPaint = now;
 
@@ -450,6 +560,8 @@
             dirty = true;
         }
         if (state.stepFrom) dirty = true;
+        // The title screen is always moving — furni is falling past the hotel.
+        if (Lobby && !Editor && !game) dirty = true;
         if (!dirty) return;
         dirty = false;
         draw(now);
@@ -494,7 +606,8 @@
             room: "Pick a floor and wallpaper for this level.",
             decor: "Click a furni, then a tile to place it. R turns, Del removes.",
             zones: "Drag across the room to draw a drop zone.",
-            rules: "Set the clock and how hard this round should be."
+            rules: "Set the clock and how hard this round should be.",
+            splash: "Pick what falls past the title screen. Saves as you change it."
         }[mode] || "";
     }
 
@@ -510,7 +623,34 @@
 
        The elements are looked up once, not per frame, for the same reason. */
     const hudEls = {};
-    let hudLast = { clock: "", total: -1, done: -1, msg: "", hidden: null };
+    let hudLast = { clock: "", total: -1, done: -1, msg: "", round: null, hidden: null,
+                    score: -1, stamp: "", deltaTimer: 0 };
+
+    /* WHAT THE STATE BUTTON SHOULD SAY.
+
+       Two states is a switch and reads as one — "Switch on" when it is off,
+       "Switch off" when it is on. More than two is not a switch: a fireplace
+       has eleven frames and gothiccandelabra seven, and pretending those are
+       an on/off would be a lie about what the button does. Those say which
+       frame you are on and that pressing steps to the next.
+
+       Null means one state, and the button is hidden rather than disabled —
+       a dead control on nine furni out of ten is just clutter. */
+    function stateLabel(className, at) {
+        if (!Editor || !className) return null;
+        const list = Editor.stateList(className);
+        if (!list || list.length < 2) return null;
+        const i = Math.max(0, list.indexOf(Number(at) || 0));
+        if (list.length === 2) return i === 0 ? "Switch on" : "Switch off";
+        return `State ${i + 1}/${list.length}`;
+    }
+
+    function describeState(f) {
+        const list = Editor.stateList(f.className);
+        const i = Math.max(0, list.indexOf(Number(f.state) || 0));
+        if (list.length === 2) return i === 0 ? "off" : "on";
+        return `state ${i + 1} of ${list.length}`;
+    }
 
     function renderHud(now) {
         if (!hudEls.root) {
@@ -518,6 +658,9 @@
             hudEls.clock = document.getElementById("ff-clock");
             hudEls.seq = document.getElementById("ff-seq");
             hudEls.msg = document.getElementById("ff-msg");
+            hudEls.round = document.getElementById("ff-round-of");
+            hudEls.score = document.getElementById("ff-score");
+            hudEls.delta = document.getElementById("ff-score-delta");
             hudEls.pips = [];
         }
 
@@ -547,6 +690,39 @@
             hudLast.done = p.done; hudLast.total = p.total;
         }
 
+        /* Which round of the run, beside the clock. Only a RUN has rounds —
+           the builder testing one level has none — so it says nothing rather
+           than "Round 1 of 1" there. */
+        const round = run ? run.progressLabel() : "";
+        if (hudEls.round && round !== hudLast.round) { hudEls.round.textContent = round; hudLast.round = round; }
+
+        /* THE SCORE. A run's score is what earlier rounds banked plus the one
+           in play, so the number never resets between levels — a builder
+           testing a single level sees that round's own total, which is the
+           same number with nothing banked.
+
+           The delta is written only when it CHANGES, and what makes it change
+           is a new seat rather than a new value: sit on two wrong chairs in a
+           row and both are worth -75, so comparing the figure alone would show
+           the first one and swallow the second. `sat.length` moves on a right
+           seat and `penalty` on a wrong one, which between them move on every
+           event that scores. */
+        const score = run ? run.score() : game.score;
+        if (score !== hudLast.score) {
+            hudEls.score.textContent = score.toLocaleString();
+            hudEls.score.parentNode.classList.toggle("is-under", score < 0);
+            hudLast.score = score;
+        }
+        const stamp = `${game.sat.length}:${game.penalty}:${game.state}`;
+        if (stamp !== hudLast.stamp) {
+            hudLast.stamp = stamp;
+            const d = game.lastScore;
+            hudEls.delta.textContent = d ? (d > 0 ? `+${d}` : String(d)) : "";
+            hudEls.delta.classList.toggle("is-down", d < 0);
+            clearTimeout(hudLast.deltaTimer);
+            hudLast.deltaTimer = setTimeout(() => { hudEls.delta.textContent = ""; }, 1600);
+        }
+
         const msg = game.state === Game.WON ? "Every seat, in order — round complete." : game.message;
         if (msg !== hudLast.msg) { hudEls.msg.textContent = msg; hudLast.msg = msg; }
     }
@@ -555,7 +731,7 @@
     function resetHud() {
         if (hudEls.seq) hudEls.seq.innerHTML = "";
         hudEls.pips = [];
-        hudLast = { clock: "", total: -1, done: -1, msg: "", hidden: null };
+        hudLast = { clock: "", total: -1, done: -1, msg: "", round: null, hidden: null };
     }
 
     // ---- editor glue
@@ -599,6 +775,122 @@
             return;
         }
         Editor.selectAt(t.x, t.y);
+    }
+
+    /* ---- PRECISE MOVE, wired to Habbo's Advanced tool field for field.
+
+       The client's own rules, read out of hh_room.cct:
+
+         - three fields, Floor X, Floor Y and Height
+         - X and Y step by 1, Height by 0.1 — that 0.1 is a literal in
+           eventProcAdvancedFurniEditor, not a guess
+         - Height is normalised to three decimals, so 2 shows as 2.000
+         - the room previews as you type, and Cancel puts the piece back
+         - a value that will not do leaves "Invalid values." in the status line
+           and moves nothing
+
+       The one thing added is saying WHICH way it is invalid, because a
+       builder who typed 9 into a room eight tiles wide deserves better than
+       being told the values are invalid. */
+    const precise = { open: false };
+
+    const preciseEls = () => ({
+        panel: document.getElementById("ff-precise-panel"),
+        x: document.getElementById("ff-precise-x"),
+        y: document.getElementById("ff-precise-y"),
+        z: document.getElementById("ff-precise-z"),
+        status: document.getElementById("ff-precise-status"),
+        button: document.getElementById("ff-precise")
+    });
+
+    const fmtHeight = (n) => Number(n || 0).toFixed(3);
+
+    function openPrecise() {
+        const at = Editor.beginPrecise();
+        if (!at) return;
+        const el = preciseEls();
+        precise.open = true;
+        el.x.value = String(at.x);
+        el.y.value = String(at.y);
+        el.z.value = fmtHeight(at.z);
+        el.status.textContent = "";
+        el.panel.hidden = false;
+        el.button.classList.add("is-armed");
+        el.z.focus();
+        el.z.select();
+    }
+
+    function closePrecise() {
+        if (!precise.open) return;
+        precise.open = false;
+        Editor.cancelPrecise();
+        const el = preciseEls();
+        el.panel.hidden = true;
+        el.button.classList.remove("is-armed");
+        dirty = true;
+    }
+
+    /* What the three fields say, and whether they say anything usable.
+       Integers for the floor, a plain decimal for the height — the client
+       checks the text the same way, character by character, before it will
+       let a value through. */
+    function preciseValues() {
+        const el = preciseEls();
+        const xs = el.x.value.trim(), ys = el.y.value.trim(), zs = el.z.value.trim();
+        const intish = /^-?\d+$/;
+        const floatish = /^\d*(\.\d*)?$/;
+        if (!intish.test(xs) || !intish.test(ys) || !floatish.test(zs) || zs === "" || zs === ".") return null;
+        return { x: Number(xs), y: Number(ys), z: Number(zs) };
+    }
+
+    function preciseWhyNot(v) {
+        if (!v) return "Invalid values.";
+        const f = Editor.state.selected;
+        if (!f) return "Nothing selected.";
+        if (v.x < 0 || v.y < 0 || v.x + f.w > Iso.COLS || v.y + f.h > Iso.ROWS) {
+            return `Outside the room — X 0 to ${Iso.COLS - f.w}, Y 0 to ${Iso.ROWS - f.h}.`;
+        }
+        if (v.z < 0 || v.z > Levels.MAX_HEIGHT) return `Height is 0 to ${Levels.MAX_HEIGHT}.`;
+        return "Something is already there at that height.";
+    }
+
+    function previewPrecise() {
+        if (!precise.open) return;
+        const el = preciseEls();
+        const v = preciseValues();
+        if (!v) { el.status.textContent = "Invalid values."; return; }
+        const ok = Editor.previewPrecise(v.x, v.y, v.z);
+        el.status.textContent = ok ? "" : preciseWhyNot(v);
+        dirty = true;
+    }
+
+    function stepPrecise(field, step) {
+        if (!precise.open) return;
+        const el = preciseEls();
+        const input = el[field];
+        const now = Number(input.value.trim());
+        const next = (Number.isFinite(now) ? now : 0) + step;
+        input.value = field === "z"
+            ? fmtHeight(Math.max(0, Math.min(Levels.MAX_HEIGHT, next)))
+            : String(Math.round(next));
+        previewPrecise();
+    }
+
+    function savePrecise() {
+        if (!precise.open) return;
+        const el = preciseEls();
+        const v = preciseValues();
+        if (!v || !Editor.savePrecise(v.x, v.y, v.z)) {
+            el.status.textContent = preciseWhyNot(v);
+            // The piece is back where it was; the dialog stays open to fix.
+            if (v) { Editor.beginPrecise(); previewPrecise(); }
+            return;
+        }
+        precise.open = false;
+        el.panel.hidden = true;
+        el.button.classList.remove("is-armed");
+        status("Moved.", "good");
+        dirty = true;
     }
 
     function syncEditor() {
@@ -676,14 +968,107 @@
         }
     }
 
+    /* ---- THE SPLASH TAB: what falls past the title screen.
+
+       Site-wide rather than per level, so it is read from and written to the
+       site's own settings rather than to a level document — see
+       settings.lobbyFurni, which caps the list at ten and checks every name.
+       Saved on every change: there is no Save button because there is nothing
+       to lose by writing a one-line list immediately, and a tab that looks
+       saved but is not is worse than a few extra requests.
+
+       WHAT CAN BE PICKED is what the title screen can actually draw: every
+       class in the furni library, plus the handful that exist only as flat
+       pictures (the Club sofa, which this client ships no full artwork for).
+       Anything else would be chosen, saved, and then silently not appear. */
+    let splashFurni = [];
+    let splashPick = null;
+
+    const splashDrawable = (className) =>
+        !!(window.FurniLibrary && window.FurniLibrary[className]) ||
+        !!(Lobby && Lobby.IMAGE_ONLY && Lobby.IMAGE_ONLY[className]);
+
+    function splashNameOf(className) {
+        const row = (Editor.search(className, 1) || [])[0];
+        return row && row.className === className ? row.name : className;
+    }
+
+    async function loadSplash() {
+        try {
+            const res = await fetch("/.netlify/functions/settings", { credentials: "same-origin" });
+            const data = res.ok ? await res.json() : {};
+            splashFurni = Array.isArray(data.lobbyFurni) && data.lobbyFurni.length
+                ? data.lobbyFurni.slice()
+                : (Lobby ? Lobby.DEFAULT_FURNI.slice() : []);
+        } catch {
+            splashFurni = Lobby ? Lobby.DEFAULT_FURNI.slice() : [];
+        }
+        renderSplash();
+    }
+
+    async function saveSplash() {
+        try {
+            const res = await fetch("/.netlify/functions/settings", {
+                method: "PUT",
+                credentials: "same-origin",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-admin-token": Editor.authToken() || ""
+                },
+                body: JSON.stringify({ lobbyFurni: splashFurni })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { status(data.error || "Could not save the splash furni.", "bad"); return; }
+            status("Splash furni saved.", "good");
+        } catch (e) {
+            status(`Could not save the splash furni: ${e.message}`, "bad");
+        }
+        renderSplash();
+    }
+
+    function renderSplash() {
+        const listEl = document.getElementById("ff-splash-list");
+        const countEl = document.getElementById("ff-splash-count");
+        const addBtn = document.getElementById("ff-splash-add");
+        if (!listEl || !countEl) return;
+
+        const max = (Lobby && Lobby.MAX_FURNI) || 10;
+        countEl.textContent = `${splashFurni.length} of ${max} — ${splashFurni.length ? "" : "the game's own default is falling."}`.trim();
+
+        listEl.innerHTML = "";
+        for (const className of splashFurni) {
+            const row = document.createElement("div");
+            row.className = "ff-item";
+            const ok = splashDrawable(className);
+            row.innerHTML = `<span>${escapeText(splashNameOf(className))}</span>` +
+                (ok ? "" : '<em class="ff-sel is-warn">no artwork</em>');
+            const rm = document.createElement("button");
+            rm.type = "button";
+            rm.textContent = "Remove";
+            rm.addEventListener("click", () => {
+                splashFurni = splashFurni.filter(c => c !== className);
+                saveSplash();
+            });
+            row.appendChild(rm);
+            listEl.appendChild(row);
+        }
+
+        renderPicker("ff-splash-picker", "ff-splash-q", splashPick, (cls) => {
+            splashPick = splashPick === cls ? null : cls;
+            renderSplash();
+        });
+
+        if (addBtn) addBtn.disabled = !splashPick || splashFurni.length >= max;
+    }
+
     function renderEditorPanel() {
         if (!Editor || !Editor.state.level) return;
         const sel = Editor.state.selected;
         const rots = sel ? Editor.rotationCount(sel.className) : 0;
 
         renderPicker("ff-furni-list", "ff-furni-q", Editor.state.brush, (cls) => {
-            Editor.state.brush = Editor.state.brush === cls ? null : cls;
-            Editor.state.selected = null;
+            Editor.setBrush(Editor.state.brush === cls ? null : cls);
+            closePrecise();
             renderEditorPanel();
             dirty = true;
         });
@@ -692,19 +1077,48 @@
             renderEditorPanel();
         });
 
+        /* What is in your hand, said above what is on the floor — they are two
+           different things and the panel used to show only the second. */
+        const held = Editor.state.brush;
+        const heldRots = held ? Editor.rotationCount(held) : 0;
+        const heldEl = document.getElementById("ff-held");
+        const heldRow = document.getElementById("ff-held-row");
+        heldEl.hidden = !held;
+        heldRow.hidden = !held;
+        if (held) {
+            const row = (Editor.search(held, 1) || [])[0];
+            heldEl.textContent = `Holding ${row ? row.name : held}` +
+                (heldRots > 1 ? ` · facing ${Editor.brush.rotation + 1}/${heldRots}` : " · does not turn") +
+                " — click a tile to put it down.";
+            document.getElementById("ff-brush-rotate").disabled = heldRots < 2;
+            const heldState = stateLabel(held, Editor.brush.state);
+            const heldStateBtn = document.getElementById("ff-brush-state");
+            heldStateBtn.hidden = !heldState;
+            if (heldState) heldStateBtn.textContent = heldState;
+        }
+
         document.getElementById("ff-sel").textContent = sel
             ? `${sel.name} — ${sel.w}x${sel.h} at ${sel.x},${sel.y}` +
-            (rots > 1 ? ` · rotation ${sel.rotation + 1}/${rots}` : " · does not turn")
+            (sel.lift ? ` · height ${fmtHeight(sel.lift)}` : "") +
+            (rots > 1 ? ` · rotation ${sel.rotation + 1}/${rots}` : " · does not turn") +
+            (stateLabel(sel.className, sel.state) ? ` · ${describeState(sel)}` : "")
             : "Nothing selected.";
-        if (!sel) moving = false;            // nothing to move
+        if (!sel) { moving = false; closePrecise(); }   // nothing to move
         const moveBtn = document.getElementById("ff-move");
         moveBtn.disabled = !sel;
         moveBtn.classList.toggle("is-armed", moving);
         moveBtn.textContent = moving ? "Click a tile…" : "Move";
         document.getElementById("ff-rotate").disabled = !sel || rots < 2;
+        const selState = sel ? stateLabel(sel.className, sel.state) : null;
+        const selStateBtn = document.getElementById("ff-state");
+        selStateBtn.hidden = !selState;
+        selStateBtn.disabled = !selState;
+        if (selState) selStateBtn.textContent = selState;
         document.getElementById("ff-delete").disabled = !sel;
+        document.getElementById("ff-precise").disabled = !sel;
 
         renderZones();
+        renderSplash();
         const L = Editor.state.level;
         for (const [id, key, scale] of RULE_FIELDS) {
             const el = document.getElementById(id);
@@ -895,12 +1309,23 @@
         document.addEventListener("keydown", (ev) => {
             if (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName || "")) return;
             if (ev.key === "r" || ev.key === "R") {
-                if (!Editor.rotateSelected()) status("It will not turn there.", "bad");
+                /* R turns whatever is IN YOUR HAND first, and only then the
+                   piece on the floor — which is the order Habbo works in, and
+                   the order you want: while placing a row of chairs you are
+                   turning the one you are holding, not the last one down. */
+                if (Editor.state.brush) { Editor.rotateBrush(); renderEditorPanel(); }
+                else if (!Editor.rotateSelected()) status("It will not turn there.", "bad");
                 else status("", "");
                 ev.preventDefault();
             }
+            /* F for the switch, and the same hand-before-floor order as R. */
+            if (ev.key === "f" || ev.key === "F") {
+                if (Editor.state.brush) { Editor.cycleBrushState(); renderEditorPanel(); dirty = true; }
+                else if (Editor.cycleSelectedState()) { renderEditorPanel(); dirty = true; }
+                ev.preventDefault();
+            }
             if (ev.key === "Delete" || ev.key === "Backspace") { Editor.deleteSelected(); ev.preventDefault(); }
-            if (ev.key === "Escape") { Editor.state.brush = null; renderEditorPanel(); dirty = true; }
+            if (ev.key === "Escape") { Editor.setBrush(null); closePrecise(); renderEditorPanel(); dirty = true; }
         });
 
         document.getElementById("ff-furni-q").addEventListener("input", renderEditorPanel);
@@ -916,10 +1341,65 @@
         });
         document.getElementById("ff-delete").addEventListener("click", () => Editor.deleteSelected());
 
+        document.getElementById("ff-brush-state").addEventListener("click", () => {
+            Editor.cycleBrushState();
+            renderEditorPanel();
+            dirty = true;
+        });
+        document.getElementById("ff-state").addEventListener("click", () => {
+            if (Editor.cycleSelectedState()) { renderEditorPanel(); dirty = true; }
+        });
+        document.getElementById("ff-brush-rotate").addEventListener("click", () => {
+            Editor.rotateBrush();
+            renderEditorPanel();
+        });
+        document.getElementById("ff-brush-drop").addEventListener("click", () => {
+            Editor.setBrush(null);
+            renderEditorPanel();
+        });
+
+        // ---- Precise Move
+        document.getElementById("ff-precise").addEventListener("click", () => {
+            if (precise.open) closePrecise(); else openPrecise();
+        });
+        document.getElementById("ff-precise-cancel").addEventListener("click", closePrecise);
+        document.getElementById("ff-precise-save").addEventListener("click", savePrecise);
+        for (const el of document.querySelectorAll("#ff-precise-panel input")) {
+            el.addEventListener("input", previewPrecise);
+            el.addEventListener("keydown", (ev) => {
+                if (ev.key === "Enter") { savePrecise(); ev.preventDefault(); }
+                if (ev.key === "Escape") { closePrecise(); ev.preventDefault(); }
+            });
+        }
+        for (const b of document.querySelectorAll("#ff-precise-panel button[data-precise]")) {
+            b.addEventListener("click", () => stepPrecise(b.dataset.precise, Number(b.dataset.step)));
+        }
+
         // Modes.
         for (const b of document.querySelectorAll("#ff-modes button")) {
             b.addEventListener("click", () => setMode(b.dataset.mode));
         }
+
+        // Splash: what falls past the title screen.
+        document.getElementById("ff-splash-q").addEventListener("input", renderSplash);
+        document.getElementById("ff-splash-add").addEventListener("click", () => {
+            const max = (Lobby && Lobby.MAX_FURNI) || 10;
+            if (!splashPick) return;
+            if (splashFurni.includes(splashPick)) { status("That is already on the splash screen.", "bad"); return; }
+            if (splashFurni.length >= max) { status(`Ten is the limit.`, "bad"); return; }
+            if (!splashDrawable(splashPick)) {
+                status("The title screen has no artwork for that one — it would not appear.", "bad");
+                return;
+            }
+            splashFurni.push(splashPick);
+            splashPick = null;
+            saveSplash();
+        });
+        document.getElementById("ff-splash-reset").addEventListener("click", () => {
+            splashFurni = Lobby ? Lobby.DEFAULT_FURNI.slice() : [];
+            saveSplash();
+        });
+        loadSplash();
 
         // Zones: the area is its own thing, its contents are another.
         document.getElementById("ff-zone-add").addEventListener("click", () => {
@@ -1328,10 +1808,31 @@
         Object.assign(state, Levels.toRoomOpts(level));
         state.furni = (level.decor || []).map(d => Furni.make(d.className, d.x, d.y, {
             meta: metaFor(d.className), rotation: d.rotation, state: d.state,
-            ...urlFor(d.className, d.state, d.rotation), role: "decor"
+            lift: Number(d.z) || 0, role: "decor",
+            ...urlFor(d.className, d.state, d.rotation)
         }));
         refreshBlocked();
         dirty = true;
+    }
+
+    /* Which furni falls past the title screen, from the site's settings.
+
+       Quiet on failure on purpose: a settings endpoint that is slow, cold or
+       simply down should cost the player nothing, and the game already has a
+       sensible pair of its own. The only thing a failure loses is the
+       builder's choice. */
+    async function loadLobbyFurni() {
+        if (!Lobby) return;
+        try {
+            const res = await fetch("/.netlify/functions/settings", { credentials: "same-origin" });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (Array.isArray(data.lobbyFurni) && data.lobbyFurni.length) {
+                Lobby.setFurni(data.lobbyFurni);
+                Lobby.preload(() => { dirty = true; });
+                dirty = true;
+            }
+        } catch { /* the default pair keeps falling */ }
     }
 
     function titleState(name, note) {
@@ -1370,11 +1871,10 @@
         titleState("loading", "Loading the furni…");
         await loadLevelFurni(published);
 
-        previewLevel(published[0]);
-        /* Give the sprites a moment to arrive so the first paint is the
-           finished room rather than an empty floor that fills in. They are
-           already requested; this only waits for them. */
-        await waitForSprites(1200);
+        /* No room is built here any more. The title screen is the hotel view,
+           so what has to be ready is the hotel view and the seats falling past
+           it — the level's own room is built behind the room loader when a
+           round starts, which is where Habbo builds it too. */
         titleState("ready", "");
     }
 
@@ -1424,7 +1924,11 @@
             if (!res.ok) throw new Error(String(res.status));
             const data = await res.json();
             list.innerHTML = "";
-            for (const row of (data.top || []).slice(0, 8)) {
+            /* EVERY row the server sends, not the first eight. The list has a
+               height and scrolls now, so a board that grows is a longer scroll
+               rather than a truncated table — and nobody sitting at position
+               nine has to be told they are not on it. */
+            for (const row of (data.top || [])) {
                 const li = document.createElement("li");
                 li.innerHTML = `<span>${escapeText(row.name)}</span>` +
                     `<em>${row.levels} ${row.levels === 1 ? "level" : "levels"} · ${asClock(row.ms)}</em>`;
@@ -1439,6 +1943,90 @@
     const escapeText = (s) => String(s || "").replace(/[<>&"]/g, c => (
         { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]
     ));
+
+    /* ---- THE BOARD READS ITSELF OUT when nobody is doing anything.
+
+       A leaderboard that only ever shows its first screenful hides everybody
+       below the fold, and the title screen is exactly where you would expect
+       to be able to read the whole thing without touching anything. So after
+       twenty seconds of stillness it scrolls, slowly, down and back up again,
+       pausing at each end.
+
+       IT GIVES WAY IMMEDIATELY. Any pointer move, key, wheel or touch anywhere
+       on the page stops it where it is and starts the twenty seconds again —
+       including a scroll of the list itself, which is the one that matters: a
+       reader dragging the list must not be fighting it.
+
+       TELLING OUR OWN SCROLL FROM THE READER'S is the whole difficulty, and
+       the obvious way does not work. A flag set around the assignment to
+       scrollTop is already back to false by the time the event arrives,
+       because `scroll` is dispatched asynchronously — so the crawl saw its own
+       movement as a reader touching the list, stopped itself, and waited
+       another twenty seconds. Measured: it advanced three pixels every
+       twenty-two seconds instead of fourteen a second.
+
+       So it compares POSITIONS instead. `lastSet` is the value we assigned;
+       if that is where the list is when the event arrives, the event is ours.
+
+       Wall time, not the game clock: this has nothing to do with a round and
+       must not freeze when one pauses. */
+    const BOARD_IDLE_MS = 20000;
+    const BOARD_SPEED = 14;             // px a second, about a name every 1.4s
+    const BOARD_END_PAUSE_MS = 2200;
+
+    const board = { idleAt: 0, at: 0, dir: 1, holdUntil: 0, lastSet: -1, running: false };
+
+    function boardActivity() {
+        board.idleAt = performance.now();
+        board.running = false;
+    }
+
+    function watchBoardActivity() {
+        const list = document.getElementById("ff-board-list");
+        for (const ev of ["pointermove", "pointerdown", "keydown", "wheel", "touchstart"]) {
+            document.addEventListener(ev, boardActivity, { passive: true });
+        }
+        if (list) {
+            list.addEventListener("scroll", () => {
+                // Where we last put it? Then this is our own crawl arriving.
+                if (Math.abs(list.scrollTop - board.lastSet) < 1.5) return;
+                boardActivity();
+            }, { passive: true });
+        }
+        board.idleAt = performance.now();
+    }
+
+    function stepBoard(wallNow) {
+        const list = document.getElementById("ff-board-list");
+        const box = document.getElementById("ff-board");
+        if (!list || !box || box.hidden) return;
+
+        // Only on the title screen, and only when there is something to scroll.
+        const showing = !Editor && !game;
+        const over = list.scrollHeight - list.clientHeight;
+        if (!showing || over <= 1) { board.running = false; return; }
+
+        if (!board.running) {
+            if (wallNow - board.idleAt < BOARD_IDLE_MS) return;
+            // Pick up from wherever the reader left it, and go the long way.
+            board.at = list.scrollTop;
+            board.dir = board.at >= over - 1 ? -1 : 1;
+            board.holdUntil = 0;
+            board.running = true;
+            board.lastAt = wallNow;
+        }
+
+        const dt = Math.min(200, wallNow - (board.lastAt || wallNow));
+        board.lastAt = wallNow;
+        if (wallNow < board.holdUntil) return;
+
+        board.at += board.dir * BOARD_SPEED * dt / 1000;
+        if (board.at >= over) { board.at = over; board.dir = -1; board.holdUntil = wallNow + BOARD_END_PAUSE_MS; }
+        else if (board.at <= 0) { board.at = 0; board.dir = 1; board.holdUntil = wallNow + BOARD_END_PAUSE_MS; }
+
+        list.scrollTop = board.at;
+        board.lastSet = list.scrollTop;   // as the browser rounded it
+    }
 
     /* Send a finished run. Signed out is not an error — the endpoint says so
        and the page stays quiet about it, because nothing was promised. */
@@ -1492,6 +2080,12 @@
             ["Time", `${taken.toFixed(1)}s of ${secs}s`]
         ];
         if (game.penalty) rows.push(["Penalties", `+${game.penalty}s`]);
+        /* Points, and the streak that earned them. The streak is shown even
+           when it is short, because the number a player wants after a bad
+           round is the one that tells them what went wrong — "best run: 3"
+           after eleven seats says it plainly. */
+        rows.push(["Points", (run ? run.score() : game.score).toLocaleString()]);
+        if (game.best > 1) rows.push(["Best streak", `${game.best} in a row`]);
         if (run) rows.push(["Levels cleared", String(run.index + (won ? 1 : 0))]);
 
         const dl = document.getElementById("ff-round-stats");
@@ -1515,6 +2109,83 @@
         if (box) box.hidden = true;
         roundEndedAt = 0;
     };
+
+    /* ---- THE WHOLE RUN, level by level.
+
+       A round's result cannot be recovered once the run has moved on — the
+       score is folded into the bank and the next round is built over the top —
+       so RoomGame.createRun freezes a summary as each one ends and this reads
+       them back. Nothing is recomputed here.
+
+       Every row is a level PLAYED. A run that fell over on level three has
+       three rows, and the third is marked: "how far did I get" is the question
+       this screen is answering, and an empty row for a level never reached
+       would answer it worse than no row at all. */
+    function showRunEnd(theRun, cleared) {
+        const box = document.getElementById("ff-runend");
+        if (!box || !theRun) return;
+        const rows = theRun.results || [];
+
+        document.getElementById("ff-runend-title").textContent =
+            cleared ? "Run complete" : "Run over";
+        box.dataset.outcome = cleared ? "won" : "lost";
+
+        const last = rows[rows.length - 1];
+        document.getElementById("ff-runend-why").textContent = cleared
+            ? `All ${rows.length} ${rows.length === 1 ? "level" : "levels"} cleared.`
+            : last
+                ? `${last.name} — ${last.why === "poi" ? "the wrong chair entirely" : "out of time"}.`
+                : "";
+
+        const tbody = document.getElementById("ff-runend-rows");
+        tbody.innerHTML = "";
+        let seats = 0, seatsOf = 0, seconds = 0, points = 0, streak = 0;
+
+        for (const r of rows) {
+            seats += r.seats; seatsOf += r.seatsOf;
+            seconds += r.seconds; points += r.points;
+            if (r.streak > streak) streak = r.streak;
+
+            const tr = document.createElement("tr");
+            if (!r.won) tr.className = "is-lost";
+            const cells = [
+                r.name,
+                `${r.seats}/${r.seatsOf}`,
+                // The penalty is inside the clock either way; saying so is the
+                // difference between "I was slow" and "I sat on the wrong one".
+                r.penalty ? `${r.seconds.toFixed(1)}s +${r.penalty}s` : `${r.seconds.toFixed(1)}s`,
+                r.streak > 1 ? String(r.streak) : "—",
+                r.points.toLocaleString()
+            ];
+            cells.forEach((text, i) => {
+                const cell = document.createElement(i === 0 ? "th" : "td");
+                if (i === 0) cell.scope = "row";
+                cell.textContent = text;
+                tr.appendChild(cell);
+            });
+            tbody.appendChild(tr);
+        }
+
+        document.getElementById("ff-runend-seats").textContent = `${seats}/${seatsOf}`;
+        document.getElementById("ff-runend-time").textContent = `${seconds.toFixed(1)}s`;
+        document.getElementById("ff-runend-streak").textContent = streak > 1 ? String(streak) : "—";
+        document.getElementById("ff-runend-points").textContent = points.toLocaleString();
+
+        box.hidden = false;
+    }
+
+    function hideRunEndPanel() {
+        const box = document.getElementById("ff-runend");
+        if (box) box.hidden = true;
+    }
+
+    function hideRunEnd() {
+        hideRunEndPanel();
+        // Back to the hotel view; no room is kept behind the title.
+        if (Lobby) Lobby.reset();
+        showTitle();
+        dirty = true;
+    }
 
     /* The ONE place a run moves between levels.
 
@@ -1541,17 +2212,177 @@
             if (what === "finished") status("Every round cleared.", "good");
             else status("Run over.", "bad");
             submitRun(cleared);
+            /* The breakdown is shown BEFORE the run is thrown away — it is the
+               only thing holding the per-round summaries. The title screen
+               comes back when the player closes it. */
+            showRunEnd(run, what === "finished");
             game = null; run = null;
-            if (published && published.length) previewLevel(published[0]);
-            showTitle();
         }
         renderHud(now);
         dirty = true;
     }
 
+    /* ---- LOADING A ROOM, the way the client does.
+
+       hh_room.cct puts up `room_loader.window` — a small box holding
+       `gen_loaderbar` and `general_loader_text`, the text being "Loading room"
+       — while the room's casts come down, and takes it away when they are
+       there. Ours has the same job and the same shape: the pieces of the level
+       are already requested, and this waits for them with something to look at
+       rather than letting the room fill in under the player.
+
+       THE CLOCK DOES NOT RUN WHILE IT IS UP. `loading` freezes the tick the
+       same way a hidden tab does, and the time spent is added to `pausedFor`
+       afterwards, so a round that took two seconds to load still starts with
+       its full time on it. Both halves are needed: without the freeze the
+       first furni falls behind the loader; without the pause the round is
+       short by however long the load took. */
+    let loading = false;
+
+    const loaderEls = {};
+
+    function roomLoader(on, fraction) {
+        if (!loaderEls.root) {
+            loaderEls.root = document.getElementById("ff-loader");
+            loaderEls.fill = document.getElementById("ff-loader-fill");
+            loaderEls.text = document.getElementById("ff-loader-text");
+        }
+        if (!loaderEls.root) return;
+        loaderEls.root.hidden = !on;
+        if (loaderEls.fill) {
+            loaderEls.fill.style.width = `${Math.round(Math.max(0, Math.min(1, fraction || 0)) * 100)}%`;
+        }
+    }
+
+    /* The bar has to be honest AND it has to move, and those pull opposite
+       ways. Three terms settle it:
+
+         ready   how many of the room's sprites are actually in
+         paced   elapsed against a typical load, so a slow one still creeps
+                 rather than sitting at whatever fraction arrived first
+         sweep   elapsed against the minimum dwell, which CAPS the other two
+
+       The cap is the part worth having. Coming back to a room whose furni is
+       already in memory, `ready` is 1 on the first frame, and a bar that hits
+       100% in 70ms and then sits there for the rest of the dwell reads as a
+       flicker rather than a load. Capping it makes the bar fill over the
+       dwell, and it still cannot reach the end before the room really is
+       there, because `ready` holds it back when there is something to wait
+       for. */
+    const LOADER_MIN_MS = 420;          // long enough to read, short enough not to grate
+    const LOADER_PACE_MS = 1400;
+
+    async function loadRoom() {
+        const started = performance.now();
+        loading = true;
+        roomLoader(true, 0);
+
+        const urls = spriteUrlsInRoom();
+        const ready = () => urls.length
+            ? urls.filter(u => { const s = Furni.sprite(u); return s.ready || s.failed; }).length / urls.length
+            : 1;
+
+        await new Promise((resolve) => {
+            const step = () => {
+                const elapsed = performance.now() - started;
+                const paced = Math.min(0.95, elapsed / LOADER_PACE_MS);
+                const sweep = Math.min(1, elapsed / LOADER_MIN_MS);
+                roomLoader(true, Math.min(Math.max(ready(), paced), sweep));
+                if (ready() >= 1 && elapsed >= LOADER_MIN_MS) { resolve(); return; }
+                if (elapsed > 4000) { resolve(); return; }
+                setTimeout(step, 40);
+            };
+            step();
+        });
+
+        roomLoader(true, 1);
+        roomLoader(false, 1);
+
+        /* THE COUNT-IN RUNS INSIDE THE SAME FREEZE as the loader.
+
+           `loading` stays true across it and `pausedFor` is added once at the
+           end, so three seconds of counting costs the round nothing — the same
+           accounting the loader already needed, for the same reason. Doing it
+           after the unfreeze would start the clock and drop the first furni
+           behind the number.
+
+           ONE PAINT FIRST, by hand. `loading` returns out of `tick` before
+           anything is drawn, which the loader could afford because its panel
+           covers the canvas — the count cannot, because the room behind it is
+           the entire point. Without this the numbers land over whatever the
+           canvas last held, which on the first level of a run is the hotel
+           view you just pressed Play on. */
+        dirty = true;
+        draw(gameNow());
+        await countIn();
+
+        loading = false;
+        pausedFor += performance.now() - started;
+        lastPaint = 0;
+        dirty = true;
+    }
+
+    /* Three, two, one — over a room that is already drawn and standing still.
+
+       That is the whole point of it. The level's furni, its walls and the
+       avatar's starting tile are all up, and the count is the moment you get
+       to look at them before the first piece falls. It is not a loading
+       screen; the loading already happened. */
+    const COUNT_MS = 700;
+
+    function countIn() {
+        const root = document.getElementById("ff-countin");
+        const n = document.getElementById("ff-countin-n");
+        if (!root || !n) return Promise.resolve();
+
+        const beats = ["3", "2", "1", "Go"];
+        return new Promise((resolve) => {
+            let i = 0;
+            root.hidden = false;
+            const step = () => {
+                if (i >= beats.length) {
+                    root.hidden = true;
+                    resolve();
+                    return;
+                }
+                const word = beats[i++];
+                n.textContent = word;
+                n.classList.toggle("is-go", word === "Go");
+                /* Restarting the animation needs the element out of the
+                   document's animation list and back in; toggling the class
+                   alone re-uses the running one and the second number does not
+                   move. */
+                n.style.animation = "none";
+                void n.offsetWidth;
+                n.style.animation = "";
+                setTimeout(step, word === "Go" ? COUNT_MS * 0.7 : COUNT_MS);
+            };
+            step();
+        });
+    }
+
+    // Every part file the room is currently waiting on.
+    function spriteUrlsInRoom() {
+        const urls = [];
+        for (const f of state.furni) {
+            const parts = Furni.partsOf(f);
+            if (parts) for (const p of parts) urls.push(p.url);
+            else if (f.url) urls.push(f.url);
+        }
+        return urls;
+    }
+
     // Resolve once every sprite the room wants has loaded, or after `ms`.
     function waitForSprites(ms) {
-        const urls = state.furni.map(f => f.url).filter(Boolean);
+        /* Every PART's url, not the piece's — a furni in the library is drawn
+           from several files and the room is only finished when they have all
+           arrived. */
+        const urls = [];
+        for (const f of state.furni) {
+            const parts = Furni.partsOf(f);
+            if (parts) for (const p of parts) urls.push(p.url);
+            else if (f.url) urls.push(f.url);
+        }
         if (!urls.length) return Promise.resolve();
         return new Promise((resolve) => {
             const started = performance.now();
@@ -1567,7 +2398,14 @@
         });
     }
 
-    // Put the player and the room where the level says, and clear the readout.
+    /* Put the player and the room where the level says, clear the readout, and
+       put the room loader up while the level's furni arrives.
+
+       Not awaited: `loadRoom` sets its own flag synchronously, so the round is
+       frozen from this line onwards and unfreezes itself when the room is
+       there. The builder is spared it — they are testing the same level over
+       and over with everything already in memory, and half a second of
+       "Loading room" each time is friction rather than atmosphere. */
     function beginLevel(level) {
         state.pos = { x: level.start.x, y: level.start.y };
         state.path = []; state.stepFrom = null;
@@ -1576,6 +2414,7 @@
         state.furni = game.renderList();
         refreshBlocked();
         dirty = true;
+        if (!Editor) loadRoom();
     }
 
 
@@ -1585,6 +2424,7 @@
        away as they go. */
     async function startRound() {
         hideRoundEnd();
+        hideRunEndPanel();
         resetHud();
         if (Editor) {
             const level = currentLevel();
@@ -1632,8 +2472,8 @@
         game = null; run = null;
         if (Editor) syncEditor();
         else {
-            // Back to the title, over the first level again.
-            if (published && published.length) previewLevel(published[0]);
+            // Back to the title, which is the hotel view rather than a room.
+            if (Lobby) Lobby.reset();
             showTitle();
         }
         resetHud();
@@ -1676,7 +2516,14 @@
                 (t && state.hover && (t.x !== state.hover.x || t.y !== state.hover.y));
             if (changed) { state.hover = t; dirty = true; }
             if (t && dragFrom) extendDrag(t);
-            canvas.style.cursor = t ? "pointer" : "default";
+            /* NO CURSOR IS SET HERE. This used to write a `pointer` inline
+               whenever the mouse was over a tile, which is what a web page
+               does over something clickable and is not what a Habbo room
+               does: the room keeps the plain arrow and says what is under the
+               pointer with the tile outline instead. The inline style also
+               beat the stylesheet, so the rule on #ff-canvas never got a look
+               in. The builder still wants a pointer, and asks for it in
+               css/fallinfurni.css under body.is-editing. */
         });
         canvas.addEventListener("mouseleave", () => { state.hover = null; endDrag(); dirty = true; });
 
@@ -1728,6 +2575,11 @@
         document.getElementById("ff-stop").addEventListener("click", stopRound);
 
         document.getElementById("ff-round-go").addEventListener("click", nextRound);
+        document.getElementById("ff-runend-close").addEventListener("click", hideRunEnd);
+        document.getElementById("ff-runend-again").addEventListener("click", () => {
+            hideRunEnd();
+            startRound().catch(e => status(`Could not start: ${e.message}`, "bad"));
+        });
         document.getElementById("ff-round-quit").addEventListener("click", () => {
             // Abandoning a run still records how far it got.
             if (run) submitRun(run.index);
@@ -1753,12 +2605,36 @@
                 get game() { return game; },
                 get run() { return run; },
                 get state() { return state; },
-                nextRound
+                nextRound,
+                /* Walk speed, live. Lower is faster; the limbs follow because
+                   the cycle is one stride per tile. Tell me the number that
+                   matches Habbo and it becomes the default. */
+                get walkMs() { return WALK_MS; },
+                get walkFrameMs() { return WALK_FRAME_MS; },
+                /* Whether the room loader has the paint loop frozen. Exposed
+                   because a stuck `loading` looks exactly like a dead game —
+                   no repaint, no readout, no error — and there is otherwise
+                   no way to tell it from one. */
+                get loading() { return loading; },
+                setWalkMs(ms) {
+                    const n = Number(ms);
+                    if (Number.isFinite(n) && n >= 80 && n <= 2000) WALK_MS = n;
+                    return WALK_MS;
+                }
             };
         }
 
         preload(state.figure);
+        // The hotel view and the furni that falls past it, before anything
+        // else — it is the first thing on screen. Which furni is a site
+        // setting the builder picks; until it answers, the game's own default
+        // pair is what falls, so the title screen is never empty waiting.
+        if (Lobby && !Editor) {
+            Lobby.preload(() => { dirty = true; });
+            loadLobbyFurni();
+        }
         if (state.name) lookup(state.name);
+        watchBoardActivity();
         watchVisibility();
         requestAnimationFrame(tick);
 

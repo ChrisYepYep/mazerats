@@ -5,7 +5,7 @@
    right. The canvas is never scaled: at 0.99 of itself a pixel-art room
    resamples every hard edge and the whole thing goes soft by a pixel or two in
    places — which is precisely what it looked like when the stage was a
-   percentage width. 672x464 or nothing. */
+   percentage width. 720x498 or nothing. */
 
 .ff-page {
     max-width: 1080px;
@@ -38,13 +38,108 @@
 
 .ff-left { flex: 0 0 auto; }
 
+/* ---- the game in the archive's own window
+
+   .chrome-window draws its frame with a 14px border-image, so its CONTENT box
+   is already inside the frame. The stage below therefore carries no border,
+   no padding and no background of its own: the canvas runs to the window's
+   inner edge on all four sides and the frame's rounded corners clip the very
+   tips of it, which is what seats it in the window rather than floating it
+   inside one. */
+.ff-window {
+    width: max-content;          /* the canvas decides, not a fixed 538px */
+    max-width: 100%;
+}
+
+/* A titlebar with nothing in it. The grips are the bar's ::before and
+   ::after, and between them sits `gap` — 10px of clear bar that exists to
+   hold a title away from the dots. With no title there is nothing to hold
+   apart, and that gap becomes a notch in the middle of an otherwise
+   continuous pattern. Closed, the two grips meet and the bar reads as one
+   run of dots from corner to corner, which is what Habbo's own untitled
+   windows look like. */
+.chrome-titlebar-plain {
+    /* `gap` is the clear bar that holds a title away from the dots. With no
+       title there is nothing to hold apart and it becomes a notch in the
+       middle of the pattern. */
+    gap: 0;
+
+    /* AND THE PADDING GOES THROUGH THE CUSTOM PROPERTY, not through
+       padding-left/right.
+
+       The grips are the bar's ::before and ::after, and each reaches out of
+       the bar by -(--titlebar-pad + --titlebar-bleed): the pad cancels the
+       bar's own padding and the bleed carries it the rest of the way to the
+       window's frame. Zeroing `padding-left`/`padding-right` directly left
+       --titlebar-pad at its default 40px, so the margins still pulled 40px
+       further than there was bar to cancel — and the pattern hung 40px off
+       each side of the window. Setting the property instead keeps the two
+       in step. */
+    --titlebar-pad: 0px;
+
+    /* With no content the padding alone left a 12px sliver against the
+       31-41px bars everywhere else on the site. The pattern is a 1px on,
+       1px off grid, so any height shows whole rows. */
+    min-height: 22px;
+
+    /* Four pixels more clear bar under the pattern than the site's default
+       3px, so the dots stop short of the game rather than running straight
+       into its top edge. The bar keeps its height; only the pattern inside it
+       is cut. */
+    --titlebar-grip-inset: 7px;
+}
+
+/* NO `font-size: 0` HERE, however tempting. It was, to kill the inline-box
+   gap under the canvas — which `display: block` on the canvas had already
+   dealt with — and it silently broke the leaderboard: `ch` is the width of
+   the font's zero, so a `max-width: 34ch` inherited into a zero-size context
+   resolves to 0px. The board collapsed to nothing and its heading wrapped
+   one word per line. */
+/* The game sits INSIDE the window, not flush against its frame: the same
+   1px black and 8px radius every other panel on the site is drawn with (see
+   .chrome-frame in style.css). `overflow: hidden` is what makes the radius
+   real — without it the canvas's square corners poke through the rounded
+   ones. */
 .ff-stage {
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    box-shadow: var(--shadow);
-    padding: 8px;
     line-height: 0;
     position: relative;          /* the title screen sits over the room */
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* The bevel that makes the panel read as SUNK into the window: a 1px
+   highlight down the top and left, a 1px shadow up the right and bottom.
+   Same idea as .chrome-frame's own inset highlight in style.css, and the
+   same --chrome-highlight tone, with the dark side added.
+
+   Both lines are SOLID colours rather than translucent black. A
+   semi-transparent shadow takes its final colour from whatever the room
+   happens to be showing underneath, so the same edge read as a firm line
+   over the hotel view's bright sky and as nothing at all over the black
+   margin around a room. --wood-dark is the palette's own darkest brown and
+   holds either way.
+
+   IT HAS TO BE A PSEUDO-ELEMENT, not an inset box-shadow on .ff-stage
+   itself. An inset shadow paints over its element's background but UNDER
+   its content, and the canvas fills this box exactly — the bevel would be
+   behind it and invisible. This lies over the canvas instead.
+
+   Above everything, including the title screen and the room loader, because
+   the edge of the panel should read whatever is being shown inside it; and
+   pointer-events: none so it never eats a click meant for the room. */
+.ff-stage::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    border-radius: inherit;
+    box-shadow:
+        inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight),
+        inset 0 -1px 0 var(--wood-dark),
+        inset -1px 0 0 var(--wood-dark);
 }
 
 /* ---- title screen
@@ -53,7 +148,7 @@
    showing through, so Play reveals a room that is already there. */
 .ff-title {
     position: absolute;
-    inset: 8px;                  /* the stage's own padding */
+    inset: 0;                    /* the canvas has no padding around it now */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -67,7 +162,11 @@
 .ff-title[data-state="playing"] { display: none; }
 body.is-editing .ff-title { display: none; }
 
-.ff-title-inner { padding: 18px 24px; max-width: 42ch; }
+.ff-title-inner { padding: 18px 24px; }
+
+/* The 42ch column, on the prose rather than on the box — see .ff-title-sub. */
+.ff-title .ff-status,
+.ff-title-load { max-width: 42ch; margin-left: auto; margin-right: auto; }
 
 .ff-title h2 {
     font-family: "Silkscreen", "Pixelify Sans", monospace;
@@ -78,15 +177,22 @@ body.is-editing .ff-title { display: none; }
     text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
 }
 
+/* ONE LINE, always — the instruction reads as an instruction, not as two
+   halves broken after "the".
+
+   The box used to be capped at 42ch and everything inside it wrapped to that.
+   The cap now lives on the PROSE below instead, so the box sizes itself to
+   this sentence and the form, the board and the sign-in line go on centring
+   inside it. Nothing else grows: the form row centres itself, and the board
+   keeps its own 34ch. */
 .ff-title-sub {
     color: var(--parchment);
-    font-size: 13px;
     margin: 0 0 18px;
+    white-space: nowrap;
 }
 
 .ff-title-form label {
     display: block;
-    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--amber);
@@ -100,8 +206,6 @@ body.is-editing .ff-title { display: none; }
     border: 1px solid var(--border);
     color: var(--parchment);
     padding: 8px 10px;
-    font-family: inherit;
-    font-size: 13px;
     width: 190px;
 }
 
@@ -112,8 +216,6 @@ body.is-editing .ff-title { display: none; }
     border: 1px solid var(--amber);
     color: var(--amber-bright);
     padding: 8px 18px;
-    font-family: inherit;
-    font-size: 13px;
     cursor: pointer;
 }
 
@@ -142,35 +244,146 @@ body.is-editing .ff-title { display: none; }
 /* No percentages, no max-width: the canvas is its own size or it is wrong. */
 #ff-canvas {
     display: block;
-    width: 672px;
-    height: 464px;
+    width: 720px;
+    height: 498px;
     image-rendering: pixelated;
     background: var(--bg-black);
+    /* A plain arrow, as the room has in Habbo — over the floor, over furni,
+       over everything. What is under the pointer is said by the tile outline,
+       not by the cursor changing shape.
+
+       Left to `auto` a canvas inherits the text caret, so the room came with
+       an I-beam over it; and the mousemove handler in fallinfurni.js used to
+       write an inline `pointer` over every tile, which beat this rule
+       outright. Both are gone. */
+    cursor: default;
 }
 
-/* ---- readout and play bar */
+/* The builder is a tool rather than a room, so there a tile you can click
+   says so the way the rest of the page does. */
+body.is-editing #ff-canvas { cursor: pointer; }
 
+/* ---- ONE TYPEFACE INSIDE THE WINDOW.
+
+   Everything in the game reads in Volter Goldfish at 0.5625rem — 9px — and
+   weight 400, which is Habbo's own interface type and the same stack the
+   homepage's sub-nav uses. Headings keep their own faces and sizes: they are
+   the only thing here that is meant to be shouted.
+
+   Declared on the window and inherited rather than listed per element, so
+   anything added later is in step without being told. The few rules further
+   down that set a size of their own are the exceptions, and each says why.
+
+   NOT the builder's panel: that is a tool docked beside the game, and a
+   nine-pixel face across a form full of numbers is a worse tool. */
+.ff-window,
+.ff-window input,
+.ff-window button,
+.ff-window select,
+.ff-window textarea {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+}
+
+.ff-window h1,
+.ff-window h2,
+.ff-window h3 { font-weight: 700; }
+
+/* ---- EVERY CONTROL INSIDE THE WINDOW IS ROUNDED, to the same 8px the
+   homepage's sub-nav buttons use (.chrome-nav-sub .chrome-nav-btn in
+   style.css) and the same the game panel itself is cut to. One rule rather
+   than a radius repeated down each of the four button rules below, so a
+   control added later is round without anyone remembering to make it so.
+
+   Scoped to the window: the builder's own panel is a tool docked beside the
+   game, not part of it, and keeps the site's square form controls. */
+.ff-window button,
+.ff-window input[type="text"],
+.ff-window .ff-loader-box { border-radius: 8px; }
+
+/* ---- readout and play bar
+
+   THE READOUT IS IN THE ROOM. It was a full-width strip under the game,
+   which made the window taller than the game it contained and put the clock
+   at the far end of the page from where the player is looking. It sits in
+   the room's top-left corner now, over the black margin around the floor —
+   which is exactly the ground the room has spare, and where Habbo's own room
+   widgets sit.
+
+   Under the round-end screen and the room loader (z-index 3 and 4) so a
+   finished round is not read through a clock, and under the bevel at 5. */
 .ff-hud {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 1;
     display: flex;
-    align-items: center;
-    gap: 12px;
-    background: var(--chrome-fill);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+    background: rgba(10, 7, 4, 0.72);
     border: 1px solid var(--border);
-    border-top: none;
-    padding: 7px 10px;
+    border-radius: 8px;
+    padding: 6px 9px 7px;
+    line-height: 1.25;
+}
+
+/* The clock and which round it is, side by side above the pips. */
+.ff-hud-top {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
 }
 
 /* `display: flex` beats the `hidden` attribute's own `display: none`. */
 .ff-hud[hidden] { display: none; }
 
 .ff-hud-clock {
-    font-family: "Silkscreen", monospace;
-    font-size: 17px;
     color: var(--amber-bright);
-    min-width: 58px;
 }
 
-.ff-hud-seq { display: flex; gap: 3px; flex: 1 1 auto; flex-wrap: wrap; }
+.ff-hud-round {
+    color: var(--parchment-dim);
+    white-space: nowrap;
+}
+
+/* THE SCORE, and the figure that appears beside it.
+
+   The running total is the calm part — one number, amber, that only ever
+   climbs. What teaches the game is the second half: the value of the seat you
+   just sat on, green when it was the right one and red when it was not, which
+   arrives at the instant of the mistake and fades on its own. A player who
+   sits on the wrong chair used to get no answer at all; now they get one
+   before they have finished sitting down.
+
+   Fixed width on the delta so a score of 1,250 does not shuffle sideways every
+   time a +100 appears and goes. */
+.ff-hud-score {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    color: var(--amber-bright);
+}
+
+.ff-hud-score em {
+    font-style: normal;
+    color: var(--ok);
+    min-width: 34px;
+    transition: opacity 420ms ease-out;
+}
+
+.ff-hud-score em:empty { opacity: 0; }
+
+/* A total in the red is a total in red. The sign alone is easy to miss at
+   9px, and the one moment it matters is the moment it went under. */
+.ff-hud-score.is-under #ff-score { color: var(--danger); }
+.ff-hud-score em.is-down { color: var(--danger); }
+
+/* Capped so a long round cannot run the panel across the room: past that it
+   wraps into a second row of pips, which grows downward into the black
+   margin rather than sideways over the floor. */
+.ff-hud-seq { display: flex; gap: 3px; flex-wrap: wrap; max-width: 168px; }
 
 .ff-pip {
     width: 9px; height: 9px;
@@ -182,7 +395,14 @@ body.is-editing .ff-title { display: none; }
 .ff-pip.is-on { background: var(--ok); border-color: var(--ok); }
 .ff-pip[hidden] { display: none; }
 
-.ff-hud-msg { font-size: 12px; color: var(--parchment-dim); text-align: right; }
+/* Left-aligned and capped, because it is a column now rather than the right
+   end of a bar. */
+.ff-hud-msg {
+    color: var(--parchment-dim);
+    max-width: 190px;
+}
+
+.ff-hud-msg:empty { display: none; }
 
 .ff-playbar {
     display: flex;
@@ -194,7 +414,7 @@ body.is-editing .ff-title { display: none; }
     padding: 8px 10px;
 }
 
-.ff-inline-hint { font-size: 12px; color: var(--parchment-dim); }
+.ff-inline-hint {}
 
 /* ---- the editor panel */
 
@@ -212,6 +432,10 @@ body.is-editing .ff-title { display: none; }
 .ff-edit-only { display: none; }
 body.is-editing .ff-edit-only { display: flex; }
 body.is-editing .ff-play-only { display: none; }
+
+/* A button that is edit-only wants to look like a button, not like a flex
+   container whose label has been stretched to fill it. */
+body.is-editing button.ff-edit-only { display: inline-block; }
 
 /* The level bar never scrolls away: which level you are on and the buttons
    that keep it are the two things you must always be able to reach. */
@@ -314,8 +538,6 @@ body.is-editing .ff-play-only { display: none; }
     color: var(--parchment);
     padding: 6px 10px;
     cursor: pointer;
-    font-family: inherit;
-    font-size: 12.5px;
     white-space: nowrap;
 }
 
@@ -370,7 +592,6 @@ body.is-editing .ff-play-only { display: none; }
 
 .ff-status {
     margin: 8px 0 0;
-    font-size: 11.5px;
     min-height: 1.1em;
     color: var(--parchment-dim);
 }
@@ -465,6 +686,53 @@ body:not(.is-editing) .ff-guides { display: none; }
     font-size: 11.5px;
     color: var(--amber);
     margin: 0 0 8px;
+}
+
+/* ---- Precise Move
+
+   Laid out as Habbo's Advanced tool is: a label, a decrement, the value, an
+   increment, one row per field, with the status line under all three. */
+.ff-precise {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    background: var(--chrome-fill);
+}
+
+.ff-precise h3 { margin: 0 0 4px; }
+.ff-precise .ff-hint { margin: 0 0 10px; }
+
+.ff-precise-row {
+    display: grid;
+    grid-template-columns: 4.5em 26px 1fr 26px;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.ff-precise-row label {
+    font-size: 11.5px;
+    color: var(--parchment-dim);
+}
+
+.ff-precise-row button {
+    padding: 0;
+    height: 24px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.ff-precise-row input {
+    width: 100%;
+    text-align: center;
+    font-family: inherit;
+}
+
+.ff-precise-status {
+    min-height: 1.2em;
+    margin: 2px 0 8px;
+    font-size: 11.5px;
+    color: var(--danger);
 }
 
 /* ---- furni picker */
@@ -567,10 +835,16 @@ body:not(.is-editing) .ff-guides { display: none; }
 
 /* ---- title screen: who you are, and the board */
 
+/* ONE CENTRED LINE. It is a sentence with a button in the middle of it, so
+   wrapping split "Sign in with Discord" from what signing in is for and left
+   the tail sitting under the button rather than beside it. No width cap and
+   no wrap, and the box grows to it the way it grows to the instruction above
+   — both are single lines by design. */
 .ff-title-who {
-    font-size: 11.5px;
     color: var(--parchment-dim);
     margin: 10px 0 0;
+    text-align: center;
+    white-space: nowrap;
 }
 
 /* A button that reads as a link: the action is a navigation, but it needs to
@@ -605,13 +879,30 @@ body:not(.is-editing) .ff-guides { display: none; }
     text-align: center;
 }
 
+/* SEVEN NAMES TALL AND THEN IT SCROLLS.
+
+   The board used to show the first eight rows and stop, so the height was
+   whatever the server happened to send. It is fixed now, and the rest is a
+   scroll — which is what lets the list grow without the title screen growing
+   with it, and what the idle crawl in fallinfurni.js moves.
+
+   `overscroll-behavior: contain` so that reaching the end of the list does not
+   then start scrolling the page underneath it. */
 .ff-board ol {
     list-style: decimal inside;
     margin: 0;
-    padding: 0;
-    font-size: 11.5px;
+    padding: 0 4px 0 0;
     color: var(--parchment);
+    max-height: 134px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--amber) var(--wood-dark);
 }
+
+.ff-board ol::-webkit-scrollbar { width: 6px; }
+.ff-board ol::-webkit-scrollbar-track { background: var(--wood-dark); }
+.ff-board ol::-webkit-scrollbar-thumb { background: var(--amber); }
 
 .ff-board li {
     display: flex;
@@ -628,9 +919,59 @@ body:not(.is-editing) .ff-guides { display: none; }
    Same footprint as the title screen and over the same room: the finished
    round stays visible behind it, which is the point — you are looking at
    what you just did, not at a modal that replaced it. */
+/* ---- Loading a room
+
+   Habbo's own room loader is a SMALL BOX, not a full-screen curtain: the room
+   carries on being drawn behind it and the box sits in the middle with a bar
+   and one line of text. Copying that rather than blacking the stage out is
+   most of what makes it feel like the client. */
+.ff-loader {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 7, 4, 0.45);
+    z-index: 4;
+}
+
+.ff-loader[hidden] { display: none; }
+
+.ff-loader-box {
+    min-width: 210px;
+    padding: 14px 18px 16px;
+    border: 1px solid var(--border);
+    background: var(--chrome-fill);
+    text-align: center;
+}
+
+.ff-loader-text {
+    margin: 0 0 10px;
+    letter-spacing: 0.06em;
+    color: var(--amber-bright);
+}
+
+/* The bar fills rather than slides. The client's own loader bar is a genuine
+   progress bar — it is counting cast files down — so an indeterminate barber's
+   pole would be the wrong idea even though it is the easier one. */
+.ff-loader-bar {
+    height: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-black);
+    overflow: hidden;
+}
+
+.ff-loader-bar i {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--amber);
+    transition: width 120ms linear;
+}
+
 .ff-round {
     position: absolute;
-    inset: 8px;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -656,7 +997,6 @@ body:not(.is-editing) .ff-guides { display: none; }
 
 .ff-round-why {
     color: var(--parchment);
-    font-size: 12.5px;
     margin: 0 0 14px;
     min-height: 1.2em;
 }
@@ -667,7 +1007,6 @@ body:not(.is-editing) .ff-guides { display: none; }
     gap: 3px 14px;
     justify-content: center;
     margin: 0 0 16px;
-    font-size: 12px;
 }
 
 .ff-round-stats dt { color: var(--parchment-dim); text-align: right; }
@@ -680,8 +1019,6 @@ body:not(.is-editing) .ff-guides { display: none; }
     border: 1px solid var(--border);
     color: var(--parchment);
     padding: 8px 16px;
-    font-family: inherit;
-    font-size: 13px;
     cursor: pointer;
 }
 
@@ -691,3 +1028,112 @@ body:not(.is-editing) .ff-guides { display: none; }
 .ff-inline-hint.is-good { color: var(--ok); }
 .ff-inline-hint.is-bad { color: var(--danger); }
 .ff-inline-hint.is-busy { color: var(--amber); }
+
+/* ---- THE RUN, broken down
+
+   Same scrim and the same buttons as a round ending, because it is the same
+   moment one step further out — but a table rather than a definition list:
+   five levels side by side is a comparison, and a comparison wants columns
+   you can read down. */
+.ff-runend-inner {
+    padding: 14px 18px 16px;
+    max-width: 100%;
+}
+
+.ff-runend h2 { margin-bottom: 4px; }
+.ff-runend .ff-round-why { margin-bottom: 10px; }
+
+/* The room is 498px tall and a long run is taller than that, so the table
+   scrolls inside the panel rather than growing out of the window. */
+.ff-runend-scroll {
+    max-height: 250px;
+    overflow-y: auto;
+    overflow-x: auto;
+    margin-bottom: 14px;
+}
+
+.ff-runend-table {
+    border-collapse: collapse;
+    margin: 0 auto;
+    text-align: right;
+    /* Digits in columns want to line up; these are read as a comparison. */
+    font-variant-numeric: tabular-nums;
+}
+
+.ff-runend-table th,
+.ff-runend-table td {
+    padding: 3px 9px;
+    white-space: nowrap;
+}
+
+.ff-runend-table thead th {
+    color: var(--amber);
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+}
+
+.ff-runend-table tbody td { color: var(--parchment); }
+
+/* The level's name is the row's label, so it reads left like a label. */
+.ff-runend-table th[scope="row"],
+.ff-runend-table tbody td:first-child {
+    text-align: left;
+    color: var(--parchment-dim);
+}
+
+/* The round the run ended on. Marked rather than explained: the row itself
+   says which level and how far you got. */
+.ff-runend-table tr.is-lost td { color: var(--danger); }
+.ff-runend-table tr.is-lost td:first-child { color: var(--danger); }
+
+.ff-runend-table tfoot th,
+.ff-runend-table tfoot td {
+    border-top: 1px solid var(--border);
+    color: var(--amber-bright);
+    padding-top: 5px;
+}
+
+/* ---- 3, 2, 1
+
+   Over the room with no scrim: the board is already laid out and the point of
+   the count is to give you a moment to read it. Dimming the thing you are
+   meant to be looking at would defeat it. */
+.ff-countin {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 4;
+}
+
+.ff-countin[hidden] { display: none; }
+
+.ff-countin-n {
+    font-family: "Silkscreen", "Pixelify Sans", monospace;
+    font-size: 72px;
+    line-height: 1;
+    color: var(--amber-bright);
+    /* A hard pixel shadow rather than a blur — the room behind it is pixel
+       art and a soft glow reads as a different game. */
+    text-shadow: 3px 3px 0 rgba(10, 7, 4, 0.85);
+    animation: ff-countin-beat 1s steps(12, end);
+}
+
+/* Each number lands hard and eases out over its second, so the count has a
+   pulse rather than three still frames. */
+@keyframes ff-countin-beat {
+    0%   { transform: scale(1.7); opacity: 0; }
+    12%  { transform: scale(1); opacity: 1; }
+    75%  { transform: scale(1); opacity: 1; }
+    100% { transform: scale(0.92); opacity: 0.25; }
+}
+
+/* "Go" is the same beat without the shrink — it leaves on the round starting,
+   not on a fade. */
+.ff-countin-n.is-go { font-size: 46px; color: var(--ok); animation-duration: 0.6s; }
+
+@media (prefers-reduced-motion: reduce) {
+    .ff-countin-n { animation: none; }
+}

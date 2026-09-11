@@ -69,8 +69,12 @@ function cleanLevel(body) {
         floor: pick(body.floor || {}, ["pattern", "colour"]),
         wall: pick(body.wall || {}, ["pattern", "colour"]),
         start: pick(body.start || {}, ["x", "y"]),
+        /* `z` is the decorative height from the editor's Advanced panel and
+           `state` the on/off switch; both were authored, sanitised by
+           js/room-levels.js and then dropped here, which is the exact failure
+           the note below describes happening to `zones`. */
         decor: Array.isArray(body.decor) ? body.decor.slice(0, 200).map(d =>
-            pick(d, ["className", "x", "y", "rotation", "state"])) : [],
+            pick(d, ["className", "x", "y", "rotation", "state", "z"])) : [],
         /* A zone is an AREA and, separately, the items that rain into it (see
            js/room-levels.js). Whitelisting is what keeps this collection from
            being used as free storage, but it also means a field the schema

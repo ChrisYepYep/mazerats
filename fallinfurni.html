@@ -1,6 +1,184 @@
 <!DOCTYPE html>
-<html lang="en">
+<!-- Hidden in the MARKUP, not by the gate script below, so there is no gap in
+     which a gated visitor could see this page before being sent away. The
+     script reveals it; the <noscript> in the head is the escape hatch. -->
+<html lang="en" style="visibility:hidden">
 <head>
+    <!-- Pre-load Coming Soon/Maintenance gate — first thing in <head>, ahead
+         of every other resource, so it starts the settings/auth check as
+         early as possible. <html>'s own inline visibility:hidden above (set
+         directly in the markup, not by this script, so there's no gap where
+         real content could paint before this runs) keeps the whole page
+         invisible until this resolves — a gated, non-admin visitor never
+         sees home.html's real content flash before being bounced to
+         index.html, unlike the old js/site.js gate, which only ever ran on
+         DOMContentLoaded, well after the page had already painted. Plain
+         fetch() rather than js/api.js's helpers, since that script hasn't
+         loaded yet this early — duplicating the same two calls it wraps. */
+    -->
+    <!-- The one thing that must survive this script not running at all.
+         <html> ships hidden and only script reveals it, so a visitor with
+         JavaScript off, an extension that blocks the inline script above,
+         or any error before reveal() gets a permanently blank page. This
+         costs nothing on the ordinary path — a browser running the script
+         never applies it — and turns the worst case into a page that says
+         what is wrong. -->
+    <noscript>
+        <style>html { visibility: visible !important; }</style>
+    </noscript>
+    <script>
+    (function () {
+        var TOKEN_KEY = "mazerats_admin_token";
+
+        function reveal() {
+            document.documentElement.style.visibility = "";
+        }
+
+        /* Every request in here is on a leash.
+
+           This gate held the whole document at visibility:hidden until its
+           settings fetch settled, and that fetch had no timeout of any kind.
+           A request that merely HANGS — a cold function on flaky mobile data,
+           which is the ordinary case, not the exotic one — resolves neither
+           then nor catch, so the page stayed invisible for as long as the
+           visitor was willing to look at it. No content, no error, no
+           recovery.
+
+           js/api.js already solved this for every other read on the site
+           (see _getWithFallback); the gate simply never got the same
+           treatment, which is what made it the one place a hang could not be
+           survived. Same two attempts and the same reasoning: the first is
+           on a short leash so a genuinely dead endpoint cannot hold the
+           page, the second is generous because a cold start on a slow
+           connection is by far the likeliest cause. */
+        function fetchWithTimeout(url, options, ms) {
+            // Ancient browsers without AbortController lose the timeout, not
+            // the gate — a plain fetch is still what they had before.
+            if (typeof AbortController === "undefined") return fetch(url, options);
+            var controller = new AbortController();
+            var timer = setTimeout(function () { controller.abort(); }, ms);
+            var opts = options || {};
+            opts.signal = controller.signal;
+            return fetch(url, opts).then(function (res) {
+                clearTimeout(timer);
+                return res;
+            }, function (err) {
+                clearTimeout(timer);
+                throw err;
+            });
+        }
+
+        function getSettings() {
+            var attempts = [6000, 12000];
+            function attempt(i) {
+                return fetchWithTimeout("/.netlify/functions/settings", null, attempts[i])
+                    .then(function (res) {
+                        if (!res.ok) throw new Error("settings fetch failed");
+                        return res.json();
+                    })
+                    .catch(function (e) {
+                        if (i + 1 < attempts.length) return attempt(i + 1);
+                        throw e;
+                    });
+            }
+            return attempt(0);
+        }
+
+        // Same "Dev Mode" pill js/site.js used to add — the DOM isn't
+        // necessarily parsed yet the moment the settings/auth fetches
+        // resolve, so this waits for it rather than assuming .site-header/
+        // .brand-group already exist.
+        function applyAdminNotice() {
+            function run() {
+                var header = document.querySelector(".site-header");
+                if (header) header.classList.add("site-header-notice");
+                var brandGroup = document.querySelector(".brand-group");
+                if (!brandGroup) return;
+                var pill = document.createElement("span");
+                pill.className = "header-badge header-state-pill";
+                pill.textContent = "Dev Mode";
+                brandGroup.appendChild(pill);
+                // Home AND Admin: this page is neither of them, and while the
+                // site is gated they are the only two places to go from here.
+                [["Home", "home.html"], ["Admin", "admin.html"]].forEach(function (pair) {
+                    var link = document.createElement("a");
+                    link.className = "header-badge header-state-pill header-state-link";
+                    link.href = pair[1];
+                    link.textContent = pair[0];
+                    brandGroup.appendChild(link);
+                });
+            }
+            if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", run);
+            } else {
+                run();
+            }
+        }
+
+        // Shared with js/api.js, which writes it on every successful read.
+        var LANDING_STATE_KEY = "mazerats_landing_state";
+        function rememberState(state) {
+            try { localStorage.setItem(LANDING_STATE_KEY, state); } catch (e) { /* private mode */ }
+        }
+        function lastKnownState() {
+            try { return localStorage.getItem(LANDING_STATE_KEY); } catch (e) { return null; }
+        }
+
+        getSettings()
+            .then(function (settings) {
+                rememberState(settings.landingState);
+                return settings.landingState;
+            })
+            .catch(function () {
+                /* Settings unreachable. This used to reveal() outright — fail
+                   open — which meant an outage or a slow cold start put the
+                   whole site in front of visitors while it was still gated,
+                   and js/api.js's own fallback did the same thing on the page
+                   that links here. Falling back to the last state actually
+                   seen keeps a live site working through a hiccup for anyone
+                   who has been here before, without opening a gated one to
+                   someone who hasn't. */
+                return lastKnownState() || "coming-soon";
+            })
+            .then(function (state) {
+                if (state !== "coming-soon" && state !== "maintenance") {
+                    reveal();
+                    return;
+                }
+
+                var token = localStorage.getItem(TOKEN_KEY);
+                if (!token) {
+                    location.replace("index.html");
+                    return;
+                }
+
+                // On the same leash, for the same reason: a hung verify
+                // leaves the page exactly as invisible as a hung settings
+                // call did. An admin's own session check can afford less
+                // patience than the public read above.
+                return fetchWithTimeout("/.netlify/functions/auth", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "x-admin-token": token },
+                    body: JSON.stringify({ action: "verify" })
+                }, 8000)
+                    .then(function (res) { return res.ok ? res.json() : null; })
+                    .then(function (result) {
+                        if (!result || !result.username) {
+                            location.replace("index.html");
+                            return;
+                        }
+                        applyAdminNotice();
+                        reveal();
+                    });
+            })
+            .catch(function () {
+                // Reached only if the admin verify call itself fails. The
+                // state says this page is gated and the token could not be
+                // confirmed, so the answer is the same as no token at all.
+                location.replace("index.html");
+            });
+    })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://www.habbo.com">
@@ -11,10 +189,39 @@
     <meta name="theme-color" content="#120c07">
     <meta name="robots" content="noindex, nofollow">
     <title>Fallin' Furni — Maze Rats</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=2">
     <link rel="stylesheet" href="css/fallinfurni.css">
 </head>
-<body>
+<body data-page="fallinfurni">
+
+    <header class="site-header">
+        <div class="brand-group">
+            <div class="brand">
+                <span class="brand-text">MAZE RATS</span>
+                <span class="brand-tagline">Every maze. One place.</span>
+            </div>
+            <button type="button" class="header-console-btn" id="header-console-btn" aria-label="Console"><img src="assets/img/console-icon.png" alt="" aria-hidden="true"></button>
+            <a class="header-badge" href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Discord</a>
+            <!-- Filled by js/account.js: a "Sign in" button, or the signed-in
+                 person's avatar and name. Rendered there rather than written
+                 here because it has two states and neither is correct until
+                 the server has said which. Kept as an empty slot in the
+                 markup so the header does not reflow when it arrives. -->
+            <div class="account-slot" id="account-slot"></div>
+        </div>
+        <div class="header-events-group">
+            <div class="header-events" id="header-events">
+                <p class="header-events-label">Upcoming Events</p>
+                <div class="header-events-viewport" id="header-events-viewport">
+                    <div class="header-events-slide" id="header-events-slide">
+                        <p class="header-events-title"></p>
+                        <p class="header-events-when"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
     <main class="ff-page">
         <header class="ff-head">
             <h1>Fallin' Furni</h1>
@@ -29,14 +236,33 @@
             <!-- The room. Rendered at its exact pixel size: this is pixel art,
                  and a canvas scaled to 0.99 of itself resamples every edge. -->
             <div class="ff-left">
+                <!-- The archive's own window, around the game. No title in the
+                     bar: there is nothing to name that the heading above has
+                     not already said, and without one the grip pattern runs
+                     the full width unbroken, which is what Habbo's own
+                     title-less windows look like. -->
+                <div class="chrome-window ff-window" id="ff-window" tabindex="-1">
+                    <div class="chrome-titlebar chrome-titlebar-plain"></div>
                 <div class="ff-stage">
-                    <canvas id="ff-canvas" width="672" height="464"
+                    <canvas id="ff-canvas" width="720" height="498"
                             aria-label="An eight by thirteen Habbo guest room"></canvas>
 
-                    <!-- The title screen, over the first level rather than
-                         instead of it: the room is already built and lit
-                         behind this, so pressing Play reveals it rather than
-                         loading it. Never shown to the builder. -->
+                    <!-- Loading a room, the way the client does it: a small
+                         box with a bar and the words "Loading room", over
+                         whatever is behind. hh_room.cct builds the same thing
+                         out of `room_loader.window`, `gen_loaderbar` and
+                         `general_loader_text`. -->
+                    <div class="ff-loader" id="ff-loader" hidden>
+                        <div class="ff-loader-box">
+                            <p class="ff-loader-text" id="ff-loader-text">Loading room</p>
+                            <div class="ff-loader-bar"><i id="ff-loader-fill"></i></div>
+                        </div>
+                    </div>
+
+                    <!-- The title screen, over the HOTEL VIEW rather than over
+                         the first level: showing the room you are about to
+                         play gave the level away, and gave every level the
+                         same front page. Never shown to the builder. -->
                     <!-- Between rounds. Holds the result still until the
                          player chooses to go on, rather than swapping the
                          next room in under them. -->
@@ -47,18 +273,60 @@
                             <dl class="ff-round-stats" id="ff-round-stats"></dl>
                             <div class="ff-round-buttons">
                                 <button type="button" id="ff-round-go" class="ff-primary">Next level</button>
-                                <button type="button" id="ff-round-quit">Back to title</button>
+                                <button type="button" id="ff-round-quit">Quit</button>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- THE RUN, when every level has been played. A round's
+                         result is gone the moment the next one is built, so
+                         RoomGame.createRun freezes a summary per round and
+                         this reads them back. -->
+                    <div class="ff-round ff-runend" id="ff-runend" hidden>
+                        <div class="ff-runend-inner">
+                            <h2 id="ff-runend-title">Run complete</h2>
+                            <p class="ff-round-why" id="ff-runend-why"></p>
+                            <div class="ff-runend-scroll">
+                                <table class="ff-runend-table">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Level</th>
+                                            <th scope="col">Seats</th>
+                                            <th scope="col">Time</th>
+                                            <th scope="col">Streak</th>
+                                            <th scope="col">Points</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="ff-runend-rows"></tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <th scope="row">Total</th>
+                                            <td id="ff-runend-seats"></td>
+                                            <td id="ff-runend-time"></td>
+                                            <td id="ff-runend-streak"></td>
+                                            <td id="ff-runend-points"></td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                            <div class="ff-round-buttons">
+                                <button type="button" id="ff-runend-again" class="ff-primary">Play again</button>
+                                <button type="button" id="ff-runend-close">Back to title</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Three, two, one. Over the room, which is already
+                         drawn and still: you get to read the board before the
+                         first thing falls. -->
+                    <div class="ff-countin" id="ff-countin" hidden aria-hidden="true">
+                        <span class="ff-countin-n" id="ff-countin-n">3</span>
                     </div>
 
                     <div class="ff-title ff-play-only" id="ff-title" data-state="loading">
                         <div class="ff-title-inner">
                             <h2>Fallin' Furni</h2>
-                            <p class="ff-title-sub">
-                                Sit on every seat in the order it lands, before the
-                                clock runs out.
-                            </p>
+                            <p class="ff-title-sub">Sit on every seat in the order it lands, before the clock runs out!</p>
 
                             <form id="ff-name-form" class="ff-title-form" autocomplete="off">
                                 <label for="ff-name">Your Habbo Origins name</label>
@@ -85,17 +353,48 @@
                             <p class="ff-title-load" id="ff-title-load">Building the room…</p>
                         </div>
                     </div>
+
+                    <!-- The readout, IN the room rather than under it. It was
+                         a full-width strip below the game, which made the
+                         window taller than the game and put the clock a long
+                         way from where the player is looking. It sits in the
+                         room's top-left corner now, over the black margin
+                         around the floor, the way Habbo's own room widgets
+                         sit inside the room. -->
+                    <div class="ff-hud" id="ff-hud" hidden>
+                        <div class="ff-hud-top">
+                            <div class="ff-hud-clock"><span id="ff-clock">0:00</span></div>
+                            <!-- Which round of the run. A player needs to know
+                                 where they are in one. -->
+                            <div class="ff-hud-round" id="ff-round-of"></div>
+                        </div>
+                        <!-- The run's points, and what the last seat was worth.
+                             The second half is the part that teaches the rule:
+                             a figure appearing in red the moment you sit on
+                             the wrong chair says more than any instruction. -->
+                        <div class="ff-hud-score">
+                            <span id="ff-score">0</span><em id="ff-score-delta"></em>
+                        </div>
+                        <div class="ff-hud-seq" id="ff-seq"></div>
+                        <div class="ff-hud-msg" id="ff-msg"></div>
+                    </div>
                 </div>
 
-                <div class="ff-hud" id="ff-hud" hidden>
-                    <div class="ff-hud-clock"><span id="ff-clock">0:00</span></div>
-                    <div class="ff-hud-seq" id="ff-seq"></div>
-                    <div class="ff-hud-msg" id="ff-msg"></div>
-                </div>
-
-                <div class="ff-playbar">
-                    <button type="button" id="ff-start" class="ff-primary">Play</button>
-                    <button type="button" id="ff-stop">Stop</button>
+                <!-- BUILDER'S BAR. For a player it held one line — "Click a
+                     tile to walk there." — under a game whose whole control
+                     scheme is clicking a tile, and it pushed the window's
+                     bottom edge a strip further down for the privilege. The
+                     round counter it also carried now lives in the readout
+                     above. -->
+                <div class="ff-playbar ff-edit-only">
+                    <!-- BUILDER'S CONTROLS. A player starts a run from the
+                         title screen and leaves one from the round-end screen,
+                         so down here Play only ever repeated a button that was
+                         already on screen. The builder has no title screen at
+                         all — it is hidden for them — so these two are the
+                         only way to test the level being edited. -->
+                    <button type="button" id="ff-start" class="ff-primary ff-edit-only">Play</button>
+                    <button type="button" id="ff-stop" class="ff-edit-only">Stop</button>
                     <span id="ff-hint" class="ff-inline-hint">Click a tile to walk there.</span>
                     <!-- Builder's diagnostic: draws each piece's footprint and
                          anchor so a screenshot can show what is misaligned. -->
@@ -103,9 +402,9 @@
                         <input type="checkbox" id="ff-guides"> Alignment guides
                     </label>
                 </div>
+                </div>
             </div>
 
-            <!-- The builder's panel. Removed entirely for a player. -->
             <aside class="ff-editor ff-edit-only" id="ff-editor" aria-label="Level editor">
 
                 <!-- Always visible, never behind a tab: which level you are on,
@@ -143,6 +442,7 @@
                     <button type="button" data-mode="decor">Decorate</button>
                     <button type="button" data-mode="zones">Drop zones</button>
                     <button type="button" data-mode="rules">Rules</button>
+                    <button type="button" data-mode="splash">Splash</button>
                 </nav>
 
                 <div class="ff-modebody">
@@ -164,17 +464,65 @@
                             the round starts and never falls. Click a furni, then a
                             tile to place it. Click a placed piece to select it, then
                             <strong>Move</strong> and click where it should go.
-                            <strong>R</strong> turns it, <strong>Del</strong> removes it.
+                            <strong>R</strong> turns it, <strong>F</strong> switches
+                            a lamp or candle on and off, <strong>Del</strong> removes it.
                         </p>
                         <input id="ff-furni-q" class="ff-select" type="text"
                                placeholder="Search furni…" autocomplete="off"
                                aria-label="Search furni">
                         <div id="ff-furni-list" class="ff-furni-list"></div>
+
+                        <!-- What you are holding, and which way round it is.
+                             Habbo lets you turn a piece before you put it
+                             down, and the room shows it under the pointer. -->
+                        <p id="ff-held" class="ff-sel" hidden></p>
+                        <div class="ff-btn-row" id="ff-held-row" hidden>
+                            <button type="button" id="ff-brush-rotate">Turn it</button>
+                            <!-- Habbo's on/off. Hidden for the furni that has
+                                 only one state, which is most of them. -->
+                            <button type="button" id="ff-brush-state" hidden>Switch on</button>
+                            <button type="button" id="ff-brush-drop">Put it down</button>
+                        </div>
+
                         <p id="ff-sel" class="ff-sel">Nothing selected.</p>
                         <div class="ff-btn-row">
                             <button type="button" id="ff-move" disabled>Move</button>
                             <button type="button" id="ff-rotate" disabled>Rotate</button>
+                            <button type="button" id="ff-state" disabled hidden>Switch on</button>
                             <button type="button" id="ff-delete" disabled>Delete</button>
+                            <button type="button" id="ff-precise" disabled>Advanced</button>
+                        </div>
+
+                        <!-- PRECISE MOVE — Habbo's own Advanced furni tool,
+                             field for field: Floor X, Floor Y and Height, each
+                             with a decrement and an increment, previewing in
+                             the room as you change it. -->
+                        <div id="ff-precise-panel" class="ff-precise" hidden>
+                            <h3>Precise Move</h3>
+                            <p class="ff-hint">Edit exact floor position and height.</p>
+                            <div class="ff-precise-row">
+                                <label for="ff-precise-x">Floor X</label>
+                                <button type="button" data-precise="x" data-step="-1" aria-label="Floor X down">&minus;</button>
+                                <input id="ff-precise-x" type="text" inputmode="numeric" autocomplete="off">
+                                <button type="button" data-precise="x" data-step="1" aria-label="Floor X up">+</button>
+                            </div>
+                            <div class="ff-precise-row">
+                                <label for="ff-precise-y">Floor Y</label>
+                                <button type="button" data-precise="y" data-step="-1" aria-label="Floor Y down">&minus;</button>
+                                <input id="ff-precise-y" type="text" inputmode="numeric" autocomplete="off">
+                                <button type="button" data-precise="y" data-step="1" aria-label="Floor Y up">+</button>
+                            </div>
+                            <div class="ff-precise-row">
+                                <label for="ff-precise-z">Height</label>
+                                <button type="button" data-precise="z" data-step="-0.1" aria-label="Height down">&minus;</button>
+                                <input id="ff-precise-z" type="text" inputmode="decimal" autocomplete="off">
+                                <button type="button" data-precise="z" data-step="0.1" aria-label="Height up">+</button>
+                            </div>
+                            <p id="ff-precise-status" class="ff-precise-status"></p>
+                            <div class="ff-btn-row">
+                                <button type="button" id="ff-precise-save" class="ff-primary">Save</button>
+                                <button type="button" id="ff-precise-cancel">Cancel</button>
+                            </div>
                         </div>
                     </section>
 
@@ -258,18 +606,186 @@
                             <button type="button" id="ff-export">Copy JSON</button>
                         </div>
                     </section>
+
+                    <!-- SPLASH: what falls past the title screen. Site-wide,
+                         not part of any level — it is saved to the site's own
+                         settings the moment it changes, which is why this tab
+                         has no Save of its own. -->
+                    <section class="ff-mode" data-mode="splash" hidden>
+                        <p class="ff-hint">
+                            The furni that drifts down the title screen, behind
+                            the Fallin' Furni sign. This is a setting for the
+                            whole site rather than for one level, and it saves
+                            as soon as you change it.
+                        </p>
+                        <p id="ff-splash-count" class="ff-sel"></p>
+                        <div id="ff-splash-list" class="ff-item-list"></div>
+                        <h3>Add furni</h3>
+                        <input id="ff-splash-q" class="ff-select" type="text"
+                               placeholder="Search furni…" autocomplete="off"
+                               aria-label="Search furni to add to the title screen">
+                        <div id="ff-splash-picker" class="ff-furni-list"></div>
+                        <div class="ff-btn-row">
+                            <button type="button" id="ff-splash-add" class="ff-primary">Add to splash</button>
+                            <button type="button" id="ff-splash-reset">Back to default</button>
+                        </div>
+                    </section>
                 </div>
             </aside>
-
-            <!-- A player has no side panel at all now: who they are is asked
-                 on the title screen, over the room. -->
         </div>
     </main>
 
-    <script src="js/account.js"></script>
+    <!-- Draggable Habbo-style console, opened via the header's console button -->
+    <div class="console-modal" id="console-modal" style="display:none;">
+        <div class="console-frame" id="console-frame">
+            <div class="console-border" aria-hidden="true"></div>
+            <!-- The top strip: a grip either side of the title, which sits
+                 inside it so the dots genuinely stop where the letters start
+                 rather than running behind them under a plate. Also the
+                 primary drag handle — the title itself takes no pointer
+                 events, so a drag begun on it lands here (see css) — and no
+                 longer aria-hidden, now that it carries the title. -->
+            <div class="console-top-pattern" id="console-drag-handle">
+                <h2 class="console-title" id="console-drag-handle-title">Habbo Console</h2>
+            </div>
+            <button type="button" class="console-close-btn" id="console-close-btn" aria-label="Close console"></button>
+            <div class="console-screen" id="console-screen">
+                <div class="console-screen-scroll" id="console-screen-scroll">
+                    <!-- The Contact tab lands here: not on a form, but on the
+                         choice between the two reasons anyone opens it. A
+                         single free-text box had to serve both, so a maze
+                         submission arrived as a paragraph with the builder
+                         and the room missing half the time — and someone who
+                         just wanted to say hello was reading a prompt about
+                         mazes. Asking which first lets each form ask properly. -->
+                    <div class="console-page" id="console-page-contact">
+                        <h3 class="console-page-title">Contact Us</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <div class="console-choice">
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-contact">Contact</button>
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-submit">Maze Submission</button>
+                        </div>
+                    </div>
+                    <!-- The message form itself, reached from the choice above.
+                         Not tab-reachable on its own; the CONTACT tab stays lit
+                         while it shows, because this is still that tab. -->
+                    <div class="console-page" id="console-page-message" style="display:none;">
+                        <h3 class="console-page-title">Contact Us</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <p class="console-blurb">Need to contact us? Do it right here!</p>
+                        <!-- The two fields below it are labelled; this one was
+                             carrying a placeholder alone, which disappears as
+                             soon as anyone types into it. -->
+                        <label class="visually-hidden" for="console-contact-message">Your message</label>
+                        <textarea class="console-input console-input-message" id="console-contact-message" placeholder="Just leaving some feedback..."></textarea>
+                        <label class="console-field-label" for="console-contact-username">Your Origins username:</label>
+                        <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="L1C">
+                        <!-- Two states, one of which js/console.js hides.
+                             Signed in, there is nothing to type: the name is
+                             already known and, unlike a typed one, it is
+                             Discord's own answer rather than a claim. -->
+                        <div id="console-contact-discord-field">
+                            <label class="console-field-label" for="console-contact-discord">Your Discord username:</label>
+                            <input type="text" class="console-input console-input-discord" id="console-contact-discord" placeholder="Optional">
+                        </div>
+                        <p class="console-blurb console-signed-as" id="console-contact-signed-as" hidden></p>
+                        <!-- Honeypot — invisible to real visitors (see .console-hp-field),
+                             left blank by them; anything filling it out gets silently
+                             dropped server-side (netlify/functions/contact.js). -->
+                        <input type="text" class="console-hp-field" id="console-contact-hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+                        <div class="console-contact-actions">
+                            <button type="button" class="console-btn console-btn-cancel" id="console-contact-cancel">Back</button>
+                            <button type="button" class="console-btn console-btn-send" id="console-contact-send">Send</button>
+                        </div>
+                        <p class="console-form-status" id="console-contact-status" style="display:none;"></p>
+                    </div>
+                    <!-- Also reached from the choice screen. It posts through the
+                         same endpoint the message form does
+                         (netlify/functions/contact.js — honeypot, per-IP rate
+                         limit and admin inbox included), with its fields written
+                         into the message so nothing new is needed server-side. -->
+                    <div class="console-page" id="console-page-submit" style="display:none;">
+                        <h3 class="console-page-title">Submit a Maze</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <!-- No em dash in here: the console is set in Volter
+                             Goldfish, which draws one as a musical note (see
+                             PICTURE_GLYPHS in js/site.js). -->
+                        <p class="console-blurb">Found one we've missed? Tell us what you know. The name is enough to start with.</p>
+                        <label class="console-field-label" for="console-submit-name">Maze name:</label>
+                        <input type="text" class="console-input console-input-line" id="console-submit-name" placeholder="The Little Maze">
+                        <label class="console-field-label" for="console-submit-builder">Who built it:</label>
+                        <input type="text" class="console-input console-input-line" id="console-submit-builder" placeholder="Origins username">
+                        <label class="console-field-label" for="console-submit-notes">Anything else:</label>
+                        <textarea class="console-input console-input-message" id="console-submit-notes" placeholder="Opening date, mechanics, what you love about this maze..."></textarea>
+                        <label class="console-field-label" for="console-submit-username">Your Origins username:</label>
+                        <input type="text" class="console-input console-input-line" id="console-submit-username" placeholder="So we can credit you">
+                        <input type="text" class="console-hp-field" id="console-submit-hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+                        <div class="console-contact-actions">
+                            <button type="button" class="console-btn console-btn-cancel" id="console-submit-back">Back</button>
+                            <button type="button" class="console-btn console-btn-send" id="console-submit-send">Send</button>
+                        </div>
+                        <p class="console-form-status" id="console-submit-status" style="display:none;"></p>
+                    </div>
+                    <div class="console-page console-page-thanks" id="console-page-thanks" style="display:none;">
+                        <p class="console-thanks-message">We'll be in touch for more details, thanks!</p>
+                        <button type="button" class="console-btn console-btn-ok" id="console-thanks-ok">OK</button>
+                    </div>
+                    <div class="console-page" id="console-page-people" style="display:none;">
+                        <h3 class="console-page-title">Contributors</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <div class="console-contributors-list" id="console-contributors-list"></div>
+                    </div>
+                    <div class="console-page" id="console-page-privacy" style="display:none;">
+                        <h3 class="console-page-title">Privacy Policy</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <div class="console-privacy-body" id="console-privacy-body"></div>
+                        <!-- The same policy has a page of its own at
+                             /privacy: an address that can be linked to and
+                             indexed, and somewhere to read it that is not a
+                             204px window inside a console. The console copy
+                             stays exactly as it was; this is the way out to
+                             the formal one. -->
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <p class="console-blurb console-privacy-out">
+                            <a href="privacy.html" target="_blank" rel="noopener">Open the full policy as a page &rsaquo;</a>
+                        </p>
+                    </div>
+                    <div class="console-page" id="console-page-about" style="display:none;">
+                        <h3 class="console-page-title">About</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <p class="console-blurb console-about-blurb" id="console-about-blurb"></p>
+                    </div>
+                </div>
+                <div class="console-screen-shadow" aria-hidden="true"></div>
+            </div>
+            <div class="console-buttons" id="console-buttons">
+                <button type="button" class="console-tab-btn" id="contact-btn" data-page="contact" aria-label="Contact Us"><span class="console-tab-label">CONTACT</span></button>
+                <button type="button" class="console-tab-btn" id="people-btn" data-page="people" aria-label="Contributors"><span class="console-tab-label">SOURCE</span></button>
+                <button type="button" class="console-tab-btn" id="privacy-btn" data-page="privacy" aria-label="Privacy Policy"><span class="console-tab-label">PRIVACY</span></button>
+                <button type="button" class="console-tab-btn" id="about-btn" data-page="about" aria-label="About"><span class="console-tab-label">ABOUT</span></button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="site-footer">
+        <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
+        <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
+    </footer>
+
+    <!-- The shared chrome's own dependencies, in home.html's order: site.js
+         reads EventStatus for the header's ticker and Api for everything, and
+         the console reads PrivacyContent for its privacy page. -->
+    <script src="js/api.js?v=2"></script>
+    <script src="js/event-status.js?v=2"></script>
+    <script src="js/privacy-content.js?v=2"></script>
+    <script src="js/site.js?v=2"></script>
+    <script src="js/custom-scrollbar.js?v=2"></script>
+    <script src="js/console.js?v=2"></script>
+    <script src="js/account.js?v=2"></script>
     <script src="js/room-patterns.js"></script>
     <script src="js/furni-library.js"></script>
     <script src="js/furni-offsets.js"></script>
+    <script src="js/furni-fallback.js"></script>
     <script src="js/avatar-parts.js"></script>
     <script src="js/room-iso.js"></script>
     <script src="js/room-path.js"></script>
@@ -277,6 +793,9 @@
     <script src="js/room-furni.js"></script>
     <script src="js/room-drop.js"></script>
     <script src="js/room-game.js"></script>
+    <!-- Before room-lobby.js, which reads it at load. -->
+    <script src="js/hotel-views.js"></script>
+    <script src="js/room-lobby.js"></script>
     <script src="js/room-editor.js"></script>
     <script src="js/fallinfurni.js"></script>
 </body>

@@ -124,6 +124,28 @@
     let zoneSeq = 0;
     const newZoneId = () => `z${Date.now().toString(36)}${(zoneSeq++).toString(36)}`;
 
+    /* HEIGHT, which Habbo calls altitude and its Advanced tool calls Height.
+
+       One unit is one tile-height, 32px, the same unit `lift` has always used
+       for stacking and for the fall from the ceiling. Three decimal places
+       because that is the precision the client's own field keeps — it
+       normalises whatever you type to `0.000` — and the ± buttons there step
+       by 0.1, which is the figure the Advanced editor's bytecode pushes.
+
+       THE CEILING IS OURS. The client sets no limit at all: it hands whatever
+       you typed to the server as ORIGINS_SET_FURNI_LOCATION and lets the
+       server refuse. Ours has to stop somewhere, and the wall is 115px — 3.6
+       tiles — so ten tiles is already well off the top of the room and
+       anything beyond it is a typo rather than a decoration. */
+    const HEIGHT_STEP = 0.1;
+    const MAX_HEIGHT = 10;
+
+    function height(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return 0;
+        return Math.round(Math.max(0, Math.min(MAX_HEIGHT, n)) * 1000) / 1000;
+    }
+
     /* Fill in whatever a stored level is missing and clamp anything that could
        put furni outside the room. Returns a NEW level; the argument is not
        modified, so the editor can diff against what it had.
@@ -145,6 +167,7 @@
             className: String(d.className || ""),
             rotation: Number(d.rotation) || 0,
             state: Number(d.state) || 0,
+            z: height(d.z),
             ...inRoom(d)
         })).filter(d => d.className);
 
@@ -307,6 +330,7 @@
 
     window.RoomLevels = {
         SCHEMA, DEFAULTS, ITEM_DEFAULTS, ROLES, ROLE_LABELS,
+        HEIGHT_STEP, MAX_HEIGHT, height,
         normalise, blankZone, furniUsed, totalDrops, schedule,
         toRoomOpts, fromRoomOpts, curve, fetchPublished
     };
