@@ -63,6 +63,21 @@
   to = "/fallinfurni.html"
   status = 200
 
+# Quiz Night, the host's quiz app. A page of its own for the same reason
+# Fallin' Furni is one — it wants the whole viewport, and it is not a daily
+# puzzle whose result gets pasted into a channel. This one goes further and
+# drops the site's header and nav entirely: it is held in one hand by a
+# person talking to a room, and every pixel of chrome is a pixel not showing
+# the question.
+#
+# A rewrite, so a link typed as /quiz stays /quiz in the address bar — which
+# matters more here than anywhere else on the site, because this is a URL
+# read out loud and typed in by hand.
+[[redirects]]
+  from = "/quiz"
+  to = "/quiz.html"
+  status = 200
+
 # The Sorcerer's Atlas, at the clean /wizard URL. Same rewrite treatment
 # as /admin above, so the address bar keeps the URL that was typed.
 [[redirects]]

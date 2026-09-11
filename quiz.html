@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8">
+    <!-- viewport-fit=cover plus the env(safe-area-inset-*) padding in the
+         stylesheet: this is held in one hand, and the Next button sits right
+         where an iPhone's home indicator is. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#120c07">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="description" content="A pub-style pop culture quiz for a host to read aloud — questions and answers together, players and scores kept as you go.">
+    <!-- Added to the home screen it should open like an app rather than a
+         tab, because a host holding this for an hour does not want browser
+         chrome eating the screen. -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Quiz">
+    <title>Quiz Night — Maze Rats</title>
+
+    <!-- The tab icon, inline as a data URI the way every other page on the
+         site does it — a "?" in the site's amber rather than the archive's
+         "MZ", so a host with the quiz and the archive both open can tell the
+         two tabs apart at a glance. -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='47' font-family='Georgia, serif' font-size='44' font-weight='700' fill='%23c7a679' text-anchor='middle'%3E%3F%3C/text%3E%3C/svg%3E">
+
+    <!-- iOS will not take an SVG here, and without a real PNG "Add to Home
+         Screen" saves a blurred screenshot of the page instead — which makes
+         the web-app meta tags above a half-promise. Pixel art, scaled
+         nearest-neighbour, to match the rest of the site. -->
+    <link rel="apple-touch-icon" href="assets/img/quiz-icon.png">
+
+    <link rel="stylesheet" href="css/quiz.css">
+</head>
+<body class="qz-body">
+
+<!-- ============================ SETUP ============================ -->
+<!-- The starting card. Three things and nothing else: who is playing, what
+     they are being asked about, and how long it runs. -->
+<main class="qz-screen" id="qz-setup">
+    <div class="qz-wrap">
+
+        <header class="qz-hero">
+            <p class="qz-eyebrow">Maze Rats</p>
+            <h1>Quiz Night</h1>
+            <p class="qz-hero-sub">
+                You read them out. The answer sits right underneath, for your
+                eyes only. Tap whoever got it and the scores keep themselves.
+            </p>
+        </header>
+
+        <!-- A session already saved on this device. Shown only when there is
+             one, and put above everything else because if it's here it is
+             almost certainly what the host came back for. -->
+        <section class="qz-resume" id="qz-resume" hidden>
+            <div class="qz-resume-main">
+                <h2>Quiz in progress</h2>
+                <p id="qz-resume-detail"></p>
+            </div>
+            <div class="qz-resume-actions">
+                <button type="button" class="qz-btn qz-btn-primary" id="qz-resume-go">Resume</button>
+                <button type="button" class="qz-btn qz-btn-quiet" id="qz-resume-drop">Discard</button>
+            </div>
+        </section>
+
+        <section class="qz-card">
+            <div class="qz-card-head">
+                <h2>Players</h2>
+                <span class="qz-count" id="qz-player-count">0</span>
+            </div>
+
+            <form class="qz-addrow" id="qz-add-form" autocomplete="off">
+                <input type="text" id="qz-add-name" maxlength="18"
+                       placeholder="Add a player or team…"
+                       autocomplete="off" autocapitalize="words" spellcheck="false"
+                       aria-label="Player name">
+                <button type="submit" class="qz-add-btn" id="qz-add-btn" aria-label="Add player">Add</button>
+            </form>
+
+            <ul class="qz-players" id="qz-players"></ul>
+            <p class="qz-empty" id="qz-players-empty">No players yet — add at least one to start.</p>
+        </section>
+
+        <section class="qz-card">
+            <div class="qz-card-head">
+                <h2>Categories</h2>
+                <button type="button" class="qz-mini" id="qz-cat-all">All</button>
+            </div>
+            <div class="qz-cats" id="qz-cats"></div>
+            <p class="qz-note" id="qz-cat-note"></p>
+        </section>
+
+        <section class="qz-card">
+            <div class="qz-card-head">
+                <h2>Round length</h2>
+            </div>
+            <div class="qz-seg" id="qz-length" role="group" aria-label="Number of questions">
+                <button type="button" data-len="15">15</button>
+                <button type="button" data-len="25" class="is-on">25</button>
+                <button type="button" data-len="40">40</button>
+                <button type="button" data-len="0">All</button>
+            </div>
+            <p class="qz-note">Questions are shuffled and drawn evenly from the categories you picked.</p>
+        </section>
+
+        <button type="button" class="qz-start" id="qz-start" disabled>Start the quiz</button>
+        <p class="qz-fineprint">
+            Everything is saved on this device as you go. Lock the phone, close
+            the tab, come back tomorrow — the quiz will be exactly where you
+            left it.
+        </p>
+    </div>
+</main>
+
+<!-- ============================= PLAY ============================= -->
+<div class="qz-screen qz-play" id="qz-play" hidden>
+
+    <header class="qz-top">
+        <button type="button" class="qz-icon" id="qz-menu-btn" aria-label="Quiz menu">
+            <span aria-hidden="true">☰</span>
+        </button>
+
+        <div class="qz-progress">
+            <div class="qz-progress-bar"><span id="qz-progress-fill"></span></div>
+            <p class="qz-progress-text" id="qz-progress-text">Question 1 of 25</p>
+        </div>
+
+        <button type="button" class="qz-icon qz-icon-score" id="qz-score-btn" aria-label="Show scores">
+            <span aria-hidden="true">&#127942;</span>
+        </button>
+    </header>
+
+    <div class="qz-stage" id="qz-stage">
+        <p class="qz-cat-pill" id="qz-cat-pill">Music</p>
+
+        <!-- The question, at the size of something meant to be read aloud
+             from arm's length rather than looked at. -->
+        <p class="qz-question" id="qz-question"></p>
+
+        <!-- The answer. Visible by default — the host needs it in the same
+             glance as the question — with a hide-until-tapped mode for when
+             the phone gets passed around or put on the table. -->
+        <div class="qz-answer" id="qz-answer">
+            <p class="qz-answer-label">Answer</p>
+            <p class="qz-answer-text" id="qz-answer-text"></p>
+            <button type="button" class="qz-reveal" id="qz-reveal">
+                Tap to reveal the answer
+            </button>
+        </div>
+
+        <section class="qz-award">
+            <p class="qz-award-label">Who got it?</p>
+            <div class="qz-award-grid" id="qz-award-grid"></div>
+            <p class="qz-award-hint">Tap a name to give a point. Tap again to take it back.</p>
+        </section>
+    </div>
+
+    <footer class="qz-bottom">
+        <button type="button" class="qz-nav qz-nav-prev" id="qz-prev">Back</button>
+        <button type="button" class="qz-nav qz-nav-next" id="qz-next">Next</button>
+    </footer>
+</div>
+
+<!-- ============================= DONE ============================= -->
+<main class="qz-screen" id="qz-done" hidden>
+    <div class="qz-wrap">
+        <header class="qz-hero">
+            <p class="qz-eyebrow">That's your lot</p>
+            <h1>Final scores</h1>
+        </header>
+        <ol class="qz-final" id="qz-final"></ol>
+        <button type="button" class="qz-start" id="qz-again">Another round, same players</button>
+        <button type="button" class="qz-btn qz-btn-quiet qz-wide" id="qz-newquiz">Start a brand new quiz</button>
+    </div>
+</main>
+
+<!-- ====================== SCOREBOARD SHEET ======================= -->
+<div class="qz-sheet-backdrop" id="qz-sheet-backdrop" hidden></div>
+<section class="qz-sheet" id="qz-sheet" hidden aria-label="Scoreboard">
+    <div class="qz-sheet-grip"></div>
+    <div class="qz-sheet-head">
+        <h2>Scores</h2>
+        <button type="button" class="qz-mini" id="qz-sheet-close">Done</button>
+    </div>
+    <ol class="qz-board" id="qz-board"></ol>
+    <p class="qz-note">Use −/+ to fix a score by hand if someone was awarded a point for the wrong answer.</p>
+</section>
+
+<!-- ========================= MENU SHEET ========================== -->
+<section class="qz-sheet" id="qz-menu" hidden aria-label="Quiz menu">
+    <div class="qz-sheet-grip"></div>
+    <div class="qz-sheet-head">
+        <h2>Quiz</h2>
+        <button type="button" class="qz-mini" id="qz-menu-close">Done</button>
+    </div>
+
+    <label class="qz-toggle">
+        <span>
+            <strong>Hide answers until tapped</strong>
+            <small>For when the phone gets passed around.</small>
+        </span>
+        <input type="checkbox" id="qz-opt-hide">
+        <span class="qz-switch" aria-hidden="true"></span>
+    </label>
+
+    <label class="qz-toggle">
+        <span>
+            <strong>Keep the screen awake</strong>
+            <small>Stops the phone dimming mid-question.</small>
+        </span>
+        <input type="checkbox" id="qz-opt-wake" checked>
+        <span class="qz-switch" aria-hidden="true"></span>
+    </label>
+
+    <div class="qz-menu-actions">
+        <button type="button" class="qz-btn qz-btn-quiet" id="qz-menu-finish">Finish now &amp; show scores</button>
+        <button type="button" class="qz-btn qz-btn-danger" id="qz-menu-abandon">Abandon this quiz</button>
+    </div>
+</section>
+
+<script src="js/quiz-questions.js"></script>
+<script src="js/quiz.js"></script>
+</body>
+</html>

@@ -1,0 +1,954 @@
+/* Quiz Night — the host's quiz app at /quiz.
+ *
+ * Standalone rather than built on css/style.css, which is the one place on
+ * this site that is deliberately NOT dressed as the archive. Everything else
+ * here is a desktop page with a header, a nav and a Habbo window frame around
+ * it; this is a thing held in one hand, in a room, while talking. It gets the
+ * palette and the fonts so it still reads as ours, and nothing else — no nav,
+ * no chrome, no window borders, because every pixel of those is a pixel not
+ * showing the question.
+ *
+ * Mobile first in the literal sense: the rules below are written for a phone
+ * and the ONE media query at the bottom widens it for anything bigger. There
+ * is no narrow-layout block restating earlier rules, which is the trap the
+ * main stylesheet fell into.
+ */
+
+:root {
+    --bg-black: #120c07;
+    --bg-panel: #1d140c;
+    --bg-panel-light: #2a1c10;
+    --wood-mid: #4a3018;
+    --amber: #ab8b64;
+    --amber-bright: #c7a679;
+    --parchment: #d8cbb2;
+    --parchment-dim: #a89a84;
+    --danger: #a1462f;
+    --ok: #6f8f4f;
+    --ok-bright: #8fb368;
+    --border: rgba(201, 151, 79, 0.35);
+    --border-soft: rgba(201, 151, 79, 0.18);
+    --shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+
+    /* The safe areas, resolved once. On a notched iPhone these are real
+       numbers; everywhere else env() falls back to 0 and the layout is
+       unchanged. */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    /* 100% rather than 100vh: on mobile Safari 100vh is the height with the
+       browser chrome HIDDEN, so a fixed footer sized against it sits below
+       the fold until you scroll. The play screen uses dvh with a % fallback
+       instead — see .qz-play. */
+    height: 100%;
+}
+
+body.qz-body {
+    background: var(--bg-black);
+    color: var(--parchment);
+    font-family: 'Roboto', system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    /* Stops the pull-to-refresh bounce dragging the whole quiz down when the
+       host swipes at a question near the top. */
+    overscroll-behavior-y: none;
+}
+
+/* A phone keyboard's autozoom triggers on any input under 16px, which then
+   leaves the page zoomed in and the host fighting it. Nothing here goes
+   below 16px on an input, ever. */
+input, button { font-family: inherit; }
+
+/* ================================ screens =============================== */
+
+.qz-screen[hidden] { display: none !important; }
+
+.qz-wrap {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: calc(var(--safe-top) + 28px) 16px calc(var(--safe-bottom) + 40px);
+}
+
+/* ================================= hero ================================ */
+
+.qz-hero { margin-bottom: 22px; }
+
+.qz-eyebrow {
+    font-family: 'Silkscreen', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin: 0 0 8px;
+}
+
+.qz-hero h1 {
+    font-family: 'Silkscreen', monospace;
+    font-size: 30px;
+    line-height: 1.1;
+    color: var(--amber-bright);
+    margin: 0 0 10px;
+}
+
+.qz-hero-sub {
+    margin: 0;
+    color: var(--parchment-dim);
+    font-size: 14.5px;
+    max-width: 44ch;
+}
+
+/* ================================ cards ================================ */
+
+.qz-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 14px;
+}
+
+.qz-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.qz-card-head h2 {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin: 0;
+}
+
+.qz-count {
+    font-family: 'Silkscreen', monospace;
+    font-size: 12px;
+    color: var(--parchment-dim);
+    background: var(--bg-panel-light);
+    border-radius: 999px;
+    padding: 3px 10px;
+    min-width: 28px;
+    text-align: center;
+}
+
+.qz-note {
+    margin: 10px 0 0;
+    font-size: 12.5px;
+    color: var(--parchment-dim);
+    line-height: 1.4;
+}
+
+.qz-empty {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--parchment-dim);
+    font-style: italic;
+}
+
+.qz-fineprint {
+    margin: 16px 2px 0;
+    font-size: 12px;
+    color: var(--parchment-dim);
+    line-height: 1.5;
+    text-align: center;
+}
+
+/* ================================ resume =============================== */
+
+.qz-resume {
+    background: linear-gradient(180deg, var(--wood-mid), var(--bg-panel-light));
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 18px;
+    box-shadow: var(--shadow);
+}
+
+.qz-resume[hidden] { display: none !important; }
+
+.qz-resume h2 {
+    font-family: 'Silkscreen', monospace;
+    font-size: 15px;
+    color: var(--amber-bright);
+    margin: 0 0 6px;
+}
+
+.qz-resume p {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--parchment);
+}
+
+.qz-resume-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.qz-resume-actions .qz-btn { flex: 1; }
+
+/* ============================== add player ============================= */
+
+.qz-addrow {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.qz-addrow input {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: var(--bg-black);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    color: var(--parchment);
+    font-size: 16px;
+    padding: 12px 14px;
+}
+
+.qz-addrow input::placeholder { color: #6f6354; }
+
+.qz-addrow input:focus {
+    outline: none;
+    border-color: var(--amber);
+    box-shadow: 0 0 0 3px rgba(199, 166, 121, 0.15);
+}
+
+.qz-add-btn {
+    flex: 0 0 auto;
+    background: var(--wood-mid);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--parchment);
+    font-weight: 700;
+    font-size: 15px;
+    padding: 0 18px;
+    cursor: pointer;
+}
+
+.qz-add-btn:disabled { opacity: 0.4; cursor: default; }
+.qz-add-btn:active:not(:disabled) { background: var(--amber); color: var(--bg-black); }
+
+/* ============================= player chips ============================ */
+
+.qz-players {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.qz-players:empty { display: none; }
+
+.qz-players li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-panel-light);
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    padding: 7px 8px 7px 14px;
+    font-size: 14.5px;
+    font-weight: 500;
+    max-width: 100%;
+}
+
+.qz-players .qz-chip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qz-players button {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--parchment-dim);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.qz-players button:active { background: var(--danger); color: #fff; }
+
+/* ============================== categories ============================= */
+
+.qz-cats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.qz-cat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+    background: var(--bg-panel-light);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    color: var(--parchment-dim);
+    padding: 12px 10px;
+    font-size: 13.5px;
+    font-weight: 500;
+    line-height: 1.25;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.qz-cat .qz-cat-icon { font-size: 17px; flex: 0 0 auto; }
+.qz-cat .qz-cat-label { flex: 1 1 auto; }
+
+.qz-cat[aria-pressed="true"] {
+    background: var(--wood-mid);
+    border-color: var(--amber);
+    color: var(--parchment);
+}
+
+/* The tick is the state, so it only exists when the state does. */
+.qz-cat .qz-cat-tick {
+    flex: 0 0 auto;
+    font-size: 13px;
+    color: var(--ok-bright);
+    opacity: 0;
+}
+
+.qz-cat[aria-pressed="true"] .qz-cat-tick { opacity: 1; }
+
+.qz-mini {
+    background: none;
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    color: var(--amber);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 5px 12px;
+    cursor: pointer;
+}
+
+.qz-mini:active { background: var(--wood-mid); }
+
+/* =========================== segmented control ========================= */
+
+.qz-seg {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    background: var(--bg-black);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    padding: 5px;
+}
+
+.qz-seg button {
+    background: none;
+    border: none;
+    border-radius: 8px;
+    color: var(--parchment-dim);
+    font-family: 'Silkscreen', monospace;
+    font-size: 13px;
+    padding: 11px 0;
+    cursor: pointer;
+}
+
+.qz-seg button.is-on {
+    background: var(--wood-mid);
+    color: var(--amber-bright);
+}
+
+/* =============================== buttons =============================== */
+
+.qz-btn {
+    border-radius: 10px;
+    border: 1px solid var(--border-soft);
+    background: var(--bg-panel-light);
+    color: var(--parchment);
+    font-size: 15px;
+    font-weight: 600;
+    padding: 13px 16px;
+    cursor: pointer;
+}
+
+.qz-btn-primary {
+    background: var(--amber);
+    border-color: var(--amber-bright);
+    color: #1a1209;
+    font-weight: 800;
+}
+
+.qz-btn-quiet { background: transparent; color: var(--parchment-dim); }
+.qz-btn-danger { background: transparent; border-color: rgba(161, 70, 47, 0.6); color: #d08a76; }
+.qz-wide { display: block; width: 100%; margin-top: 10px; }
+
+.qz-start {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    background: var(--amber);
+    border: none;
+    border-radius: 14px;
+    color: #1a1209;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    padding: 17px;
+    cursor: pointer;
+    box-shadow: var(--shadow);
+}
+
+.qz-start:disabled {
+    background: var(--bg-panel-light);
+    color: #6f6354;
+    box-shadow: none;
+    cursor: default;
+}
+
+.qz-start:active:not(:disabled) { background: var(--amber-bright); }
+
+/* ============================== play screen ============================ */
+
+/* Three rows: a fixed-height header, a scrolling middle, a fixed-height
+   footer. The middle is the only thing that moves, so the question counter
+   and the Next button are always exactly where the host's thumb left them.
+   dvh (the dynamic viewport) is what makes this survive Safari's shrinking
+   address bar; the % is the fallback for browsers without it. */
+.qz-play {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    height: 100dvh;
+}
+
+.qz-play[hidden] { display: none !important; }
+
+.qz-top {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: calc(var(--safe-top) + 10px) 12px 10px;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-panel);
+}
+
+.qz-icon {
+    flex: 0 0 auto;
+    width: 42px;
+    height: 42px;
+    border-radius: 11px;
+    border: 1px solid var(--border-soft);
+    background: var(--bg-panel-light);
+    color: var(--parchment);
+    font-size: 17px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.qz-icon:active { background: var(--wood-mid); }
+
+.qz-progress { flex: 1 1 auto; min-width: 0; }
+
+.qz-progress-bar {
+    height: 5px;
+    border-radius: 999px;
+    background: var(--bg-black);
+    overflow: hidden;
+}
+
+.qz-progress-bar span {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--amber);
+    border-radius: 999px;
+    transition: width 0.2s ease;
+}
+
+.qz-progress-text {
+    margin: 6px 0 0;
+    font-family: 'Silkscreen', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    color: var(--parchment-dim);
+    text-align: center;
+}
+
+.qz-stage {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 18px 16px 24px;
+}
+
+.qz-cat-pill {
+    display: inline-block;
+    margin: 0 0 14px;
+    background: var(--bg-panel-light);
+    border: 1px solid var(--border-soft);
+    border-radius: 999px;
+    color: var(--amber);
+    font-family: 'Silkscreen', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 6px 12px;
+}
+
+/* Read aloud from arm's length, so: big, high contrast, and generously
+   spaced. This is the single most important element on the page. */
+.qz-question {
+    margin: 0 0 18px;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 25px;
+    font-weight: 700;
+    line-height: 1.28;
+    letter-spacing: -0.01em;
+    color: #f0e7d5;
+}
+
+/* ------------------------------- answer ------------------------------- */
+
+.qz-answer {
+    position: relative;
+    background: rgba(111, 143, 79, 0.13);
+    border: 1px solid rgba(143, 179, 104, 0.4);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 24px;
+}
+
+.qz-answer-label {
+    margin: 0 0 4px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ok-bright);
+}
+
+.qz-answer-text {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #dfeccb;
+}
+
+/* The hidden state. The button covers the answer completely rather than the
+   answer being blurred — a blurred short answer is still readable at a
+   glance, and the whole point is that it isn't. */
+.qz-reveal {
+    position: absolute;
+    inset: 0;
+    border: none;
+    border-radius: 13px;
+    background: var(--bg-panel-light);
+    color: var(--amber);
+    font-family: 'Silkscreen', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    display: none;
+}
+
+.qz-answer.is-hidden .qz-reveal { display: block; }
+
+/* ------------------------------ awarding ------------------------------ */
+
+.qz-award-label {
+    margin: 0 0 10px;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--amber);
+}
+
+.qz-award-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+/* One player who won't fit next to anyone gets the full width instead of
+   sitting lonely in half of it. */
+.qz-award-grid.is-single { grid-template-columns: 1fr; }
+
+.qz-award-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    color: var(--parchment);
+    font-size: 15px;
+    font-weight: 600;
+    text-align: left;
+    padding: 14px 12px;
+    min-height: 54px;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+}
+
+.qz-award-btn .qz-award-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qz-award-btn .qz-award-score {
+    flex: 0 0 auto;
+    font-family: 'Silkscreen', monospace;
+    font-size: 12px;
+    color: var(--parchment-dim);
+    background: var(--bg-black);
+    border-radius: 999px;
+    padding: 3px 9px;
+}
+
+.qz-award-btn[aria-pressed="true"] {
+    background: var(--ok);
+    border-color: var(--ok-bright);
+    color: #16200c;
+}
+
+.qz-award-btn[aria-pressed="true"] .qz-award-score {
+    background: rgba(0, 0, 0, 0.28);
+    color: #e6f3d4;
+}
+
+.qz-award-hint {
+    margin: 12px 0 0;
+    font-size: 12.5px;
+    color: var(--parchment-dim);
+}
+
+/* ------------------------------- footer ------------------------------- */
+
+.qz-bottom {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 10px;
+    padding: 10px 12px calc(var(--safe-bottom) + 10px);
+    border-top: 1px solid var(--border-soft);
+    background: var(--bg-panel);
+}
+
+.qz-nav {
+    border-radius: 12px;
+    border: 1px solid var(--border-soft);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 16px;
+    font-weight: 800;
+    padding: 16px 0;
+    cursor: pointer;
+}
+
+.qz-nav-prev {
+    flex: 0 0 32%;
+    background: var(--bg-panel-light);
+    color: var(--parchment-dim);
+}
+
+.qz-nav-prev:disabled { opacity: 0.35; cursor: default; }
+
+.qz-nav-next {
+    flex: 1 1 auto;
+    background: var(--amber);
+    border-color: var(--amber-bright);
+    color: #1a1209;
+}
+
+.qz-nav-next:active { background: var(--amber-bright); }
+
+/* ============================ final scores ============================= */
+
+.qz-final {
+    list-style: none;
+    margin: 0 0 24px;
+    padding: 0;
+}
+
+.qz-final li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+}
+
+.qz-final li.is-winner {
+    background: linear-gradient(180deg, var(--wood-mid), var(--bg-panel-light));
+    border-color: var(--amber);
+}
+
+.qz-final .qz-rank {
+    flex: 0 0 auto;
+    font-family: 'Silkscreen', monospace;
+    font-size: 15px;
+    color: var(--amber);
+    min-width: 26px;
+}
+
+.qz-final .qz-final-name {
+    flex: 1 1 auto;
+    font-size: 16.5px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qz-final .qz-final-score {
+    flex: 0 0 auto;
+    font-family: 'Silkscreen', monospace;
+    font-size: 16px;
+    color: var(--amber-bright);
+}
+
+/* ============================== sheets ================================= */
+
+.qz-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 20;
+}
+
+.qz-sheet-backdrop[hidden] { display: none !important; }
+
+.qz-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 21;
+    max-height: 82vh;
+    overflow-y: auto;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border);
+    border-radius: 18px 18px 0 0;
+    padding: 8px 16px calc(var(--safe-bottom) + 20px);
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.6);
+}
+
+.qz-sheet[hidden] { display: none !important; }
+
+.qz-sheet-grip {
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--wood-mid);
+    margin: 4px auto 12px;
+}
+
+.qz-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.qz-sheet-head h2 {
+    font-family: 'Silkscreen', monospace;
+    font-size: 15px;
+    color: var(--amber-bright);
+    margin: 0;
+}
+
+.qz-board {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.qz-board li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.qz-board li:last-child { border-bottom: none; }
+
+.qz-board .qz-rank {
+    font-family: 'Silkscreen', monospace;
+    font-size: 13px;
+    color: var(--amber);
+    min-width: 24px;
+}
+
+.qz-board .qz-board-name {
+    flex: 1 1 auto;
+    font-size: 15.5px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qz-board .qz-board-score {
+    font-family: 'Silkscreen', monospace;
+    font-size: 15px;
+    color: var(--amber-bright);
+    min-width: 26px;
+    text-align: center;
+}
+
+.qz-adjust {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    border-radius: 9px;
+    border: 1px solid var(--border-soft);
+    background: var(--bg-panel-light);
+    color: var(--parchment);
+    font-size: 17px;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+}
+
+.qz-adjust:active { background: var(--wood-mid); }
+
+/* ------------------------------ toggles ------------------------------- */
+
+.qz-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border-soft);
+    cursor: pointer;
+}
+
+.qz-toggle > span:first-child { flex: 1 1 auto; }
+.qz-toggle strong { display: block; font-size: 15px; font-weight: 600; }
+.qz-toggle small { display: block; font-size: 12.5px; color: var(--parchment-dim); margin-top: 2px; }
+
+/* The checkbox stays in the accessibility tree and keeps the label's click
+   behaviour; the pill next to it is what is actually seen. */
+.qz-toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.qz-switch {
+    flex: 0 0 auto;
+    position: relative;
+    width: 50px;
+    height: 30px;
+    border-radius: 999px;
+    background: var(--bg-black);
+    border: 1px solid var(--border-soft);
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.qz-switch::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--parchment-dim);
+    transition: transform 0.15s, background 0.15s;
+}
+
+.qz-toggle input:checked + .qz-switch {
+    background: var(--ok);
+    border-color: var(--ok-bright);
+}
+
+.qz-toggle input:checked + .qz-switch::after {
+    transform: translateX(20px);
+    background: #eaf4dc;
+}
+
+.qz-toggle input:focus-visible + .qz-switch {
+    box-shadow: 0 0 0 3px rgba(199, 166, 121, 0.3);
+}
+
+.qz-menu-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+/* ========================== bigger than a phone ======================== */
+
+/* One query, and it only makes things roomier — no rule below re-states a
+   rule above with a different value, so what you read at the top is what is
+   actually applied on a phone. */
+@media (min-width: 640px) {
+    .qz-cats { grid-template-columns: 1fr 1fr 1fr; }
+
+    .qz-hero h1 { font-size: 36px; }
+
+    .qz-stage {
+        max-width: 620px;
+        width: 100%;
+        margin: 0 auto;
+        padding: 28px 24px 32px;
+    }
+
+    .qz-question { font-size: 30px; }
+
+    /* The two bars stay full-bleed — a header that stops short of the window
+       edge reads as a floating box rather than a fixed bar — and their
+       CONTENTS are centred on the same 620px column as the question, by
+       padding rather than a max-width. max() keeps the padding from going
+       negative on a window narrower than the column, which would otherwise
+       push the Back button off the left edge. */
+    .qz-top, .qz-bottom {
+        /* 572px, not 620px: the stage is a 620px box with 24px of padding
+           inside it, so its TEXT column is 572px wide. Padding the bars to
+           620 lines them up with the stage's border box and leaves the Next
+           button sitting 24px proud of the question above it. */
+        padding-left: max(12px, calc((100% - 572px) / 2));
+        padding-right: max(12px, calc((100% - 572px) / 2));
+    }
+
+    .qz-sheet {
+        max-width: 560px;
+        margin: 0 auto;
+        border-radius: 18px 18px 0 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+}
