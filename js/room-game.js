@@ -69,6 +69,28 @@
     const DECOY_POINTS = -50;           // sitting on a decoy
     const FINISH_BONUS = 250;           // clearing every seat in a round
 
+    /* THE CLOCK HAS TO BE WORTH POINTS, because the leaderboard ranks on them.
+
+       Everything above is about the ORDER — which seats, in which sequence,
+       without mistakes. None of it is about speed, so two players who played a
+       round identically scored identically whether they finished with thirty
+       seconds in hand or half a second. That was fine while the board ranked
+       on levels-and-time and points were a per-round flourish; the moment
+       points decide the table it would make the game's own enemy — the clock —
+       worth nothing at all.
+
+       Ten a second, paid on a round you CLEAR. Deliberately small beside a
+       seat: a wrong chair costs 75 outright, the streak it was building, and
+       three seconds of this on top, so accuracy stays worth more than hurry,
+       which is the right order for a game about remembering. But when two runs
+       are otherwise equal — and two clean runs of the same levels are exactly
+       equal, every seat and every bonus identical — this is the whole
+       difference between them, which is what makes the table a race again.
+
+       Levels are already in the score and always were: 250 a round, plus the
+       seats you can only reach by getting there. */
+    const TIME_BONUS_PER_S = 10;
+
     const IDLE = "idle";
     const RUNNING = "running";
     const WON = "won";
@@ -87,6 +109,7 @@
             streak: 0,                  // correct seats in a row, for the bonus
             best: 0,                    // the longest streak this round
             lastScore: 0,               // what the last seat was worth, +/-
+            speed: 0,                   // points paid for the clock on a cleared round
             message: "",
             endedBecause: "",
 
@@ -99,6 +122,7 @@
                 this.streak = 0;
                 this.best = 0;
                 this.lastScore = 0;
+                this.speed = 0;
                 this.message = "Watch where they land.";
                 this.endedBecause = "";
                 this.round.tick(now, o.playerTile ? o.playerTile() : null);
@@ -156,10 +180,15 @@
                last piece landing finishes a cleared round just as sitting on
                the last seat does. */
             finish(now) {
-                this.award(FINISH_BONUS);
+                // Whole seconds, so the number on the results screen is the
+                // number the clock was showing.
+                this.speed = Math.max(0, Math.floor(this.secondsLeft(now))) * TIME_BONUS_PER_S;
+                this.award(FINISH_BONUS + this.speed);
                 this.state = WON;
                 this.endedBecause = "complete";
-                this.message = `Every seat, in order. +${FINISH_BONUS}`;
+                this.message = this.speed
+                    ? `Every seat, in order. +${FINISH_BONUS} and +${this.speed} for the clock`
+                    : `Every seat, in order. +${FINISH_BONUS}`;
                 return this;
             },
 
@@ -295,6 +324,7 @@
                     allowed: level.rules.seconds || 0,
                     penalty: this.penalty,
                     points: this.score,
+                    speed: this.speed,
                     streak: this.best
                 };
             },
@@ -375,17 +405,35 @@
                     this.results.push(this.game.summary(now));
                     this.banked += this.game.score;
                     this.index++;
-                    if (this.index >= this.levels.length) { this.finished = true; return "finished"; }
+                    if (this.index >= this.levels.length) {
+                        this.finished = true;
+                        this.game = null;       // see below
+                        return "finished";
+                    }
                     this.startRound(now);
                     return "next";
                 }
                 // A lost round keeps whatever it earned: the seats were still
                 // sat on in the right order, and taking them back at the end
                 // punishes the same mistake twice.
+                /* THE ROUND IN HAND IS LET GO once it has been banked, and both
+                   endings have to do it.
+
+                   `score` and `cleared` both read the finished round ON TOP of
+                   what is banked, because for the whole of a round that is
+                   exactly right — the run's total is the bank plus the round
+                   being played. Once `advance` has folded a round into the
+                   bank it is in there twice unless the pointer is dropped, and
+                   a mid-round win was already dropping it by starting the next
+                   round over the top. The two endings that stop the run were
+                   not, so a completed run reported double its score and one
+                   level more than it had played — which the server then
+                   refused outright as more levels than exist. */
                 if (this.game.state === LOST) {
                     this.results.push(this.game.summary(now));
                     this.banked += this.game.score;
                     this.finished = true;
+                    this.game = null;
                     return "lost";
                 }
                 return null;

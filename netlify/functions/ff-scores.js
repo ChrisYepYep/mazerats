@@ -45,24 +45,63 @@ const json = (statusCode, data) => ({
     body: JSON.stringify(data)
 });
 
+function dropsIn(level) {
+    let drops = 0;
+    for (const z of level.zones || []) {
+        for (const it of z.items || []) drops += Number(it.count) || 0;
+    }
+    return drops;
+}
+
 /* The earliest a level can possibly be completed: the last piece has to have
    landed before it can be sat on. Mirrors the schedule in js/room-drop.js. */
 function floorMsFor(level) {
     const rules = level.rules || {};
     const delay = Number(rules.dropDelayMs) || 0;
     const fall = Number(rules.dropSpeedMs) || 0;
-    let drops = 0;
-    for (const z of level.zones || []) {
-        for (const it of z.items || []) drops += Number(it.count) || 0;
-    }
+    const drops = dropsIn(level);
     if (drops <= 0) return 0;
     return (drops - 1) * delay + fall;
 }
 
+/* ---- THE MOST A LEVEL CAN POSSIBLY BE WORTH.
+
+   Mirrors the point values in js/room-game.js. They are duplicated rather than
+   shared because that file is a browser IIFE with no export, and the same is
+   already true of `floorMsFor` above and the drop schedule it mirrors — if
+   those numbers change, this changes with them.
+
+   DELIBERATELY GENEROUS. Every scheduled drop is assumed to be a sittable
+   sequence seat taken in one unbroken streak, with the whole clock left over.
+   That is not reachable in practice — some of those pieces are obstacles, and
+   nobody clears a round with the full time still showing — but a ceiling that
+   is too low would refuse an honest run, which is a far worse failure than
+   letting an inflated one through. This exists to stop `points: 99999999`,
+   which is the realistic attempt, not to price a round exactly. */
+const SEAT_POINTS = 100;
+const STREAK_STEP = 25;
+const STREAK_MAX = 8;
+const FINISH_BONUS = 250;
+const TIME_BONUS_PER_S = 10;
+
+function maxPointsFor(level) {
+    const seats = dropsIn(level);
+    let total = FINISH_BONUS + (Number((level.rules || {}).seconds) || 0) * TIME_BONUS_PER_S;
+    for (let n = 1; n <= seats; n++) {
+        total += SEAT_POINTS + Math.min(n - 1, STREAK_MAX) * STREAK_STEP;
+    }
+    return total;
+}
+
+/* `points` defaults to 0 so a row written before the board ranked on them
+   reads as a real row with nothing scored rather than as a hole in the
+   table. Those rows sort to the bottom until their owner plays again, which
+   is the honest answer: nobody knows what that run was worth. */
 const clean = (row) => ({
     name: row.name,
     avatar: row.avatar || null,
     habbo: row.habbo || null,
+    points: Number(row.points) || 0,
     levels: row.levels,
     ms: row.ms,
     at: row.at
@@ -79,10 +118,18 @@ exports.handler = async (event) => {
     const player = playerFrom(event);
 
     if (event.httpMethod === "GET") {
-        // Further first, then faster, then whoever got there earliest.
+        /* HIGHEST SCORE FIRST, then faster, then whoever got there earliest.
+
+           It used to be furthest-then-fastest, which said that every clean run
+           of the same levels was the same run — the order you sat in, the
+           streak you held and the chairs you got wrong all counted for nothing
+           once the round was over. Points carry all of that AND the two things
+           the old ranking had: 250 a level plus the seats only reachable by
+           getting there, and ten a second for the clock. The time is still the
+           tie-break, for the rare exact draw. */
         const top = await scores
             .find({}, { projection: { _id: 0 } })
-            .sort({ levels: -1, ms: 1, at: 1 })
+            .sort({ points: -1, ms: 1, at: 1 })
             .limit(TOP)
             .toArray();
 
@@ -108,6 +155,9 @@ exports.handler = async (event) => {
 
     const levels = Math.max(0, Math.round(Number(body.levels) || 0));
     const ms = Math.max(0, Math.round(Number(body.ms) || 0));
+    // Not floored at zero: a round can genuinely be played into the red, and
+    // saying so is the point of letting the score go negative at all.
+    const points = Math.round(Number(body.points) || 0);
     if (!levels) return json(200, { recorded: false, reason: "no-levels-cleared" });
 
     const published = await db.collection(LEVELS)
@@ -124,6 +174,13 @@ exports.handler = async (event) => {
         return json(400, { error: "That run is faster than the furni can fall" });
     }
 
+    /* The same trick as the time floor, from the other end: the levels are
+       served from here, so the most they can be worth is known here. */
+    const ceiling = published.slice(0, levels).reduce((n, lv) => n + maxPointsFor(lv), 0);
+    if (points > ceiling) {
+        return json(400, { error: "That run scores more than those levels can pay" });
+    }
+
     await ensureUniqueIndex(scores, "playerId");
 
     const row = {
@@ -131,14 +188,20 @@ exports.handler = async (event) => {
         name: player.name || player.username || "Someone",
         avatar: player.avatar || null,
         habbo: typeof body.habbo === "string" ? body.habbo.slice(0, 32) : null,
-        levels, ms,
+        points, levels, ms,
         at: new Date().toISOString()
     };
 
+    /* Beaten on points, or matched on points and beaten on the clock — the
+       same order the table is sorted in, so a row can never be one the board
+       would rank below what it replaced. A row from before points existed
+       counts as zero, so the owner's next finished run always takes its
+       place rather than being refused by a total nobody recorded. */
     const previous = await scores.findOne({ playerId: player.id });
+    const previousPoints = previous ? Number(previous.points) || 0 : 0;
     const better = !previous
-        || levels > previous.levels
-        || (levels === previous.levels && ms < previous.ms);
+        || points > previousPoints
+        || (points === previousPoints && ms < previous.ms);
 
     if (better) {
         await scores.updateOne({ playerId: player.id }, { $set: row }, { upsert: true });

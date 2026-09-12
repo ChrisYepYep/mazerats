@@ -929,6 +929,9 @@ body:not(.is-editing) .ff-guides { display: none; }
 
 .ff-board li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ff-board li em { font-style: normal; color: var(--parchment-dim); flex: 0 0 auto; }
+/* The score is the figure the table is ordered by, so it is the figure that
+   reads first; the levels and the clock behind it stay dimmed. */
+.ff-board li em b { font-weight: normal; color: var(--amber-bright); }
 
 /* ---- between rounds
 

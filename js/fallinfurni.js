@@ -2099,8 +2099,15 @@
                nine has to be told they are not on it. */
             for (const row of (data.top || [])) {
                 const li = document.createElement("li");
+                /* The score leads, because the score is what the table is
+                   ordered by — a board sorted on one number and captioned
+                   with another is a board nobody can read. Levels and the
+                   clock stay behind it: they are how the score was made, and
+                   the clock still breaks a tie. */
+                const points = Number(row.points) || 0;
                 li.innerHTML = `<span>${escapeText(row.name)}</span>` +
-                    `<em>${row.levels} ${row.levels === 1 ? "level" : "levels"} · ${asClock(row.ms)}</em>`;
+                    `<em><b>${points.toLocaleString()} pts</b> · ` +
+                    `${row.levels} ${row.levels === 1 ? "level" : "levels"} · ${asClock(row.ms)}</em>`;
                 list.appendChild(li);
             }
             box.hidden = !(data.top || []).length;
@@ -2199,19 +2206,26 @@
 
     /* Send a finished run. Signed out is not an error — the endpoint says so
        and the page stays quiet about it, because nothing was promised. */
+    /* POINTS ARE WHAT THE BOARD RANKS ON, so points are what it is sent.
+
+       Levels and the clock still go with them and still matter — the server
+       checks a claimed time against how fast the furni can physically fall,
+       and a tie on points is broken by whoever was quicker. But the figure
+       that orders the table is the one the player watched climb all run. */
     async function submitRun(levelsCleared) {
         if (!levelsCleared || !runStartedAt) return;
         const ms = Math.round(gameNow() - runStartedAt);
+        const points = run ? run.score() : 0;
         try {
             const res = await fetch("/.netlify/functions/ff-scores", {
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ levels: levelsCleared, ms, habbo: state.name || null })
+                body: JSON.stringify({ levels: levelsCleared, ms, points, habbo: state.name || null })
             });
             const data = await res.json().catch(() => ({}));
             if (data.recorded) {
-                status(`On the board: ${levelsCleared} cleared in ${asClock(ms)}.`, "good");
+                status(`On the board: ${points.toLocaleString()} points, ${levelsCleared} cleared in ${asClock(ms)}.`, "good");
                 refreshBoard();
             } else if (data.reason === "signed-out") {
                 status("Sign in with Discord to save runs to the leaderboard.", "bad");
@@ -2219,7 +2233,7 @@
                 /* A run that did not beat your own said NOTHING, which reads
                    exactly like a leaderboard that failed to save. Say what is
                    still standing instead. */
-                status(`Not your best — ${data.best.levels} cleared in ${asClock(data.best.ms)} still stands.`, "busy");
+                status(`Not your best — ${Number(data.best.points || 0).toLocaleString()} points still stands.`, "busy");
             }
         } catch { /* a leaderboard that will not save is not worth a scene */ }
     }
@@ -2254,13 +2268,16 @@
             ["Time", `${taken.toFixed(1)}s of ${secs}s`]
         ];
         if (game.penalty) rows.push(["Penalties", `+${game.penalty}s`]);
+        // What the clock itself was worth — shown on its own line so a fast
+        // round can be seen to have paid for being fast.
+        if (game.speed) rows.push(["Speed bonus", `+${game.speed.toLocaleString()}`]);
         /* Points, and the streak that earned them. The streak is shown even
            when it is short, because the number a player wants after a bad
            round is the one that tells them what went wrong — "best run: 3"
            after eleven seats says it plainly. */
         rows.push(["Points", (run ? run.score() : game.score).toLocaleString()]);
         if (game.best > 1) rows.push(["Best streak", `${game.best} in a row`]);
-        if (run) rows.push(["Levels cleared", String(run.index + (won ? 1 : 0))]);
+        if (run) rows.push(["Levels cleared", String(run.cleared())]);
 
         const dl = document.getElementById("ff-round-stats");
         dl.innerHTML = "";
