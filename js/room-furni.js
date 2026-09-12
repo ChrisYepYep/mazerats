@@ -832,6 +832,48 @@
         };
     }
 
+    /* IS THIS PIECE MOVING, right now, in the state it is in?
+
+       The room repaints only when something moved — a step, a drop, a sprite
+       arriving — which is right for a room of furniture and wrong the moment
+       any of it animates. A lit lamp asked for its frame from `now` and got
+       the right answer; nothing ever asked again, so the flame held whichever
+       picture the last repaint happened to catch and only moved when the
+       player did. That is what "the animation does not work" looked like.
+
+       So the caller has to be able to ask. True when any of this piece's
+       layers has more than one frame in the state it is in — which is exactly
+       the condition under which `frameOf` returns something that depends on
+       the clock. A lamp that is OFF is not moving and must not answer yes, or
+       every room with a lamp in it repaints sixty times a second for nothing.
+
+       Cached on class and state because it is a pure function of the library,
+       and it is asked once per piece per frame. */
+    const movesCache = new Map();
+
+    function animates(f) {
+        const lib = libraryEntry(f.className);
+        const an = lib && lib.an;
+        if (!an) return false;
+        const state = Math.max(0, Math.min(an.n - 1, f.state || 0));
+        const key = artClass(f.className) + "|" + state;
+        let hit = movesCache.get(key);
+        if (hit === undefined) {
+            hit = false;
+            for (const k of Object.keys(an.l)) {
+                const list = an.l[k];
+                const seq = list[Math.min(state, list.length - 1)];
+                /* `lp` plays through once and holds the last picture, so it
+                   stops moving eventually — but nothing here records when it
+                   started, and the honest answer to "is it moving" for a
+                   sequence we cannot time is yes. 12 classes. */
+                if (seq && seq.f && seq.f.length > 1) { hit = true; break; }
+            }
+            movesCache.set(key, hit);
+        }
+        return hit;
+    }
+
     /* Where each part of a piece goes, and how deep it is. Null when this
        class is not in the library — the caller falls back to one flat sprite. */
     function partsOf(f, now) {
@@ -1063,6 +1105,7 @@
         SPRITE_BASE, make, tilesOf, covers, blockedTiles, seatAt, anyAt,
         fits, depthOf, sorted, draw, drawAll, outline, sprite, onSpriteLoad,
         footprint, rotate, rotationsOf, statesOf, anchor, variantAt, librarySprite,
-        partsOf, drawPart, depthOfPart, tileDepth, DEPTH_PER_TILE, stateName
+        partsOf, drawPart, depthOfPart, tileDepth, DEPTH_PER_TILE, stateName,
+        animates
     };
 })();

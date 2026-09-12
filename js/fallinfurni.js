@@ -813,6 +813,11 @@
         if (state.acceptAt !== null && now - state.acceptAt >= ACCEPT_MS) acceptSeat(now);
 
         if (state.stepFrom) dirty = true;
+        /* A switched-on furni is moving too. The paint gate only knows about
+           things the GAME moves — a step, a drop — so a lamp's flame held
+           still until the player walked. See RoomFurni.animates, which is
+           false for anything switched off so a still room stays still. */
+        if (state.furni.some(f => Furni.animates(f))) dirty = true;
         // The title screen is always moving — furni is falling past the hotel.
         if (Lobby && !Editor && !game) dirty = true;
         if (!dirty) return;
