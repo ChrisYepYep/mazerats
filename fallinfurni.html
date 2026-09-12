@@ -424,6 +424,21 @@
                         <div class="ff-btn-row">
                             <button type="button" id="ff-start-pick">Pick on the room</button>
                         </div>
+                        <!-- Which way the figure looks when the level opens.
+                             Named by where it faces ON SCREEN, because "north
+                             east" in an isometric room means nothing to the
+                             person looking at it. -->
+                        <select id="ff-start-dir" class="ff-select" aria-label="Which way the player faces">
+                            <option value="0">Facing back right</option>
+                            <option value="1">Facing right</option>
+                            <option value="2">Facing front right</option>
+                            <option value="3">Facing front</option>
+                            <option value="4">Facing front left</option>
+                            <option value="5">Facing left</option>
+                            <option value="6">Facing back left</option>
+                            <option value="7">Facing back</option>
+                        </select>
+                        <p class="ff-hint">Both are part of the level — press Save to keep them.</p>
                         <h3>Floor</h3>
                         <select id="ff-floor-pattern" class="ff-select" aria-label="Floor pattern"></select>
                         <div id="ff-floor-colours" class="ff-swatches"></div>

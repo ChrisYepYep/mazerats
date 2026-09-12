@@ -80,6 +80,9 @@ function cleanLevel(body) {
         floor: pick(body.floor || {}, ["pattern", "colour"]),
         wall: pick(body.wall || {}, ["pattern", "colour"]),
         start: pick(body.start || {}, ["x", "y"]),
+        // Which way the player faces when the level opens. Whitelisted like
+        // everything else — a field this list misses is dropped on every save.
+        startDir: Number.isFinite(Number(body.startDir)) ? Number(body.startDir) : 2,
         /* `z` is the decorative height from the editor's Advanced panel and
            `state` the on/off switch; both were authored, sanitised by
            js/room-levels.js and then dropped here, which is the exact failure

@@ -88,6 +88,14 @@
         floor: { pattern: "plain", colour: null },
         wall: { pattern: "plain", colour: null },
         start: { x: 3, y: 6 },              // where the player begins
+        /* AND WHICH WAY THEY ARE LOOKING when they get there. One of Habbo's
+           eight directions, the same numbering the avatar and the furni both
+           use (see DIRS in js/room-path.js), so a level can open with its
+           player facing the door, or the drop zone, or away from both.
+
+           2 is front-right, which is what the figure has always defaulted to
+           and what every level built before this was drawn against. */
+        startDir: 2,
         decor: [],
         zones: [],
         rules: {
@@ -247,6 +255,8 @@
         };
 
         out.start = onFloor(out.start);
+        // Eight directions, wrapped rather than clamped: 8 is 0 round again.
+        out.startDir = ((Math.round(Number(out.startDir) || 0) % 8) + 8) % 8;
 
         out.decor = (out.decor || []).map(d => ({
             className: String(d.className || ""),

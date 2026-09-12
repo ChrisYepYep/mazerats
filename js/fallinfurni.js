@@ -1024,16 +1024,39 @@
        walked out of. */
     let pickingStart = false;
 
+    /* Put the figure where the level says, looking the way it says. Used when
+       the start changes and whenever a level is shown, so the builder is
+       always looking at what a player will actually see. */
+    function showStart(level) {
+        state.pos = { x: level.start.x, y: level.start.y };
+        state.dir = ((Number(level.startDir) || 0) % 8 + 8) % 8;
+        state.path = []; state.goal = null; state.stepFrom = null; state.acceptAt = null;
+    }
+
     function setStartTile(t) {
         if (!Editor || !Editor.state.level) return;
         if (!Iso.has(t.x, t.y)) { status("There is no floor there.", "bad"); return; }
         Editor.state.level.start = { x: t.x, y: t.y };
         Editor.save();
         pickingStart = false;
-        state.pos = { x: t.x, y: t.y };
-        state.path = []; state.goal = null; state.stepFrom = null; state.acceptAt = null;
-        renderEditorPanel();
-        status(`The player starts at ${t.x}, ${t.y}.`, "good");
+        showStart(Editor.state.level);
+        /* syncPickers, NOT renderEditorPanel — the start tile's readout and
+           the button's label are written there, and calling the wrong one left
+           the panel saying "click a tile in the room" after you already had,
+           with the button still offering to cancel. Which is what made a
+           working picker feel broken. */
+        syncPickers();
+        status(`The player starts at ${t.x}, ${t.y} — press Save to keep it.`, "good");
+        dirty = true;
+    }
+
+    function setStartDir(dir) {
+        if (!Editor || !Editor.state.level) return;
+        Editor.state.level.startDir = ((Number(dir) || 0) % 8 + 8) % 8;
+        Editor.save();
+        showStart(Editor.state.level);
+        syncPickers();
+        status("Facing set — press Save to keep it.", "good");
         dirty = true;
     }
 
@@ -2016,6 +2039,10 @@
         }
         const pick = document.getElementById("ff-start-pick");
         if (pick) pick.textContent = pickingStart ? "Cancel" : "Pick on the room";
+        const dirSel = document.getElementById("ff-start-dir");
+        if (dirSel && Editor && Editor.state.level) {
+            dirSel.value = String(((Number(Editor.state.level.startDir) || 0) % 8 + 8) % 8);
+        }
     }
 
     function renderWalkPanel() {
@@ -2140,8 +2167,14 @@
         const py = (ev.clientY - r.top) * (canvas.height / r.height);
         /* Walkable mode reaches the HOLES too — it is the tool that decides
            where they are, and a grid whose empty squares cannot be clicked can
-           only ever be made smaller. Everywhere else a hole is not a tile. */
-        if (Editor && Editor.state.mode === "walk") return Iso.tileAtRaw(px, py);
+           only ever be made smaller.
+
+           So does the start picker, for a different reason: it has something
+           to SAY about a tile with no floor on it. Without this a click
+           outside the walkable area returned nothing at all, so the picker sat
+           there armed and silent and looked broken, when the answer was "not
+           there". Everywhere else a hole is not a tile. */
+        if (Editor && (Editor.state.mode === "walk" || pickingStart)) return Iso.tileAtRaw(px, py);
         return Iso.tileAt(px, py);
     }
 
@@ -2239,8 +2272,8 @@
        decor, and the avatar standing where the level starts. No round, no
        clock, nothing falling. */
     function previewLevel(level) {
-        state.pos = { x: level.start.x, y: level.start.y };
-        state.path = []; state.goal = null; state.stepFrom = null; state.acceptAt = null;
+        // Position AND facing: see showStart.
+        showStart(level);
         Object.assign(state, Levels.toRoomOpts(level));
         applyLayout(state.model);
         state.furni = (level.decor || []).map(d => Furni.make(d.className, d.x, d.y, {
@@ -2875,8 +2908,8 @@
        and over with everything already in memory, and half a second of
        "Loading room" each time is friction rather than atmosphere. */
     function beginLevel(level) {
-        state.pos = { x: level.start.x, y: level.start.y };
-        state.path = []; state.goal = null; state.stepFrom = null; state.acceptAt = null;
+        // Position AND facing: see showStart.
+        showStart(level);
         Object.assign(state, Levels.toRoomOpts(level));
         applyLayout(state.model);
         syncPickers();
@@ -3054,10 +3087,19 @@
         const startBtn = document.getElementById("ff-start-pick");
         if (startBtn) startBtn.addEventListener("click", () => {
             pickingStart = !pickingStart;
-            if (pickingStart) status("Click the tile the player should start on.", "busy");
+            /* Arming this puts the room in one mode for one click, so anything
+               else that was armed is stood down — two armed tools waiting for
+               the same click is how a click does the wrong one. */
+            if (pickingStart) {
+                moving = false;
+                status("Click the tile the player should start on.", "busy");
+            }
             syncPickers();
             dirty = true;
         });
+
+        const dirSel = document.getElementById("ff-start-dir");
+        if (dirSel) dirSel.addEventListener("change", () => setStartDir(dirSel.value));
 
         const walkAdd = document.getElementById("ff-walk-add");
         if (walkAdd) walkAdd.addEventListener("click", () => { walkPaint = !walkPaint; renderWalkPanel(); });
