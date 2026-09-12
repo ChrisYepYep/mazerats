@@ -141,6 +141,14 @@
                 case "insertReplacementText":
                     inserted = (e.dataTransfer && e.dataTransfer.getData("text")) || e.data || "";
                     break;
+                /* Enter. These two are named like insertions but there is
+                   nothing to insert: a single-line field has nowhere to put
+                   a line break, so the browser's only response is to submit
+                   the form. Letting it through untouched is the point —
+                   cancelling it is what stopped the login form submitting. */
+                case "insertLineBreak":
+                case "insertParagraph":
+                    return;
                 case "deleteWordBackward":
                     if (selStart === selEnd) from = wordStart(real, selStart);
                     break;
@@ -156,12 +164,34 @@
                 case "deleteContentForward":
                     if (selStart === selEnd) to = Math.min(real.length, selEnd + 1);
                     break;
-                // deleteContentBackward, deleteByCut, deleteByDrag and
-                // anything else fall through to the default below: remove
-                // the selection, or one character back when there isn't one.
-                default:
-                    if (selStart === selEnd) from = Math.max(0, selStart - 1);
-                    break;
+                /* deleteContentBackward, deleteByCut and deleteByDrag land
+                   here and mean: remove the selection, or one character back
+                   when there isn't one. Everything else is sorted by what its
+                   name starts with, so an input type this switch has never
+                   heard of is still handled as the kind of thing it is. */
+                default: {
+                    const type = e.inputType || "";
+                    if (type.startsWith("insert")) { inserted = e.data || ""; break; }
+                    if (type.startsWith("delete")) {
+                        if (selStart === selEnd) from = Math.max(0, selStart - 1);
+                        break;
+                    }
+
+                    /* Anything else is not an edit to the text, and the old
+                       default — assume a deletion — is what made Enter behave
+                       as Backspace: "insertLineBreak" matched no case, took a
+                       character off the password on its way past, and was
+                       cancelled, so the form never submitted either.
+
+                       So an unrecognised type now changes nothing and is
+                       handed to the browser. Undo and redo are the exception:
+                       replaying a native edit would write mask characters
+                       into the field and leave the real value stranded behind
+                       them. Nothing native ever edits this field, so there is
+                       nothing there to replay. */
+                    if (type.startsWith("history")) e.preventDefault();
+                    return;
+                }
             }
 
             // The browser's own edit would write mask characters into the
