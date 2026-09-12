@@ -29,7 +29,11 @@
 (function () {
     "use strict";
 
-    const { COLS, ROWS } = window.RoomIso;
+    /* NOT DESTRUCTURED. The room's shape is per level now, and pulling COLS
+       and ROWS out here captured the first room for the life of the page —
+       so every later level was routed around an 8x13 rectangle whatever shape
+       was actually on screen. */
+    const Iso = window.RoomIso;
 
     /* Habbo's eight directions. The index IS the facing value handed to the
        avatar renderer, so this table is both the neighbour list and the
@@ -69,7 +73,10 @@
         { dx: -1, dy: -1 }     // 7  N, facing away
     ];
 
-    const inside = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS;
+    /* "Inside" means THERE IS FLOOR HERE, not "within the bounds". Two of the
+       shipped layouts have a bite taken out of them, and a hole is every bit
+       as unwalkable as the wall. */
+    const inside = (x, y) => Iso.has(x, y);
 
     function directionOf(fromX, fromY, toX, toY) {
         const dx = Math.sign(toX - fromX), dy = Math.sign(toY - fromY);
@@ -143,7 +150,7 @@
         if (start.x === goal.x && start.y === goal.y) return [];
         if (!enterGoal && blocked(goal.x, goal.y)) return null;
 
-        const key = (x, y) => y * COLS + x;
+        const key = Iso.key;
         const goalKey = key(goal.x, goal.y);
 
         const g = new Map([[key(start.x, start.y), 0]]);

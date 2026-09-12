@@ -69,8 +69,23 @@
     const HALF_W = TILE_W / 2;
     const HALF_H = TILE_H / 2;
 
-    const COLS = 8;
-    const ROWS = 13;
+    /* THE ROOM'S SHAPE IS NOT FIXED ANY MORE.
+
+       It was 8x13 and nothing else, which is model_a — the Origins room this
+       game was built from. The client ships nineteen models and seven of them
+       are flat and full scale, so the shape is now per level and these move
+       with it. See js/room-layouts.js.
+
+       Two things follow, and the second is the one that bites. A layout has
+       its own WIDTH AND DEPTH, which everything measured from ORIGIN has to be
+       recomputed against; and a layout can have a HOLE in it — `Corner` and
+       `Steps` are rectangles with a bite taken out — so "inside the bounds" is
+       no longer the same question as "is there floor here". Anything deciding
+       where an avatar may stand, where a piece may land or where a wall runs
+       has to ask `has`, not compare against COLS and ROWS. */
+    let layout = null;
+    let COLS = 8;
+    let ROWS = 13;
 
     /* Wall height above the floor line, from the asset: left_wallpart_0_a is
        32x132 with its registration point at y=115, so 115px stands above the
@@ -98,17 +113,57 @@
        and the height follows from the room plus the same margin. Everything
        below is measured from ORIGIN, so the margin only has to be added here
        and the whole room moves with it. */
-    const ROOM_W = (ROWS - 1) * HALF_W + HALF_W + WALL_END + (COLS - 1) * HALF_W + HALF_W + WALL_END;
-    const ROOM_H = WALL_H + WALL_TOP + LINE * 2 +
-        (COLS + ROWS - 2) * HALF_H + TILE_H + FLOOR_EDGE + LINE;
-
     const WIDTH = 720;
     const HEIGHT = 498;
-    const MARGIN_X = Math.floor((WIDTH - ROOM_W) / 2);
-    const MARGIN_Y = Math.floor((HEIGHT - ROOM_H) / 2);
 
-    const ORIGIN_X = (ROWS - 1) * HALF_W + HALF_W + WALL_END + MARGIN_X;
-    const ORIGIN_Y = WALL_H + WALL_TOP + LINE * 2 + MARGIN_Y;
+    /* Recomputed whenever the layout changes, because every one of these
+       depends on the room's width and depth. The stage does NOT change — 720
+       is the width the client draws its hotel view at, and a canvas that
+       resized per level would move the HUD and the loader with it — so a
+       smaller room simply sits in a bigger margin, centred. Every shipped
+       layout fits: the widest comes to 686 against 720. */
+    let ROOM_W = 0, ROOM_H = 0, ORIGIN_X = 0, ORIGIN_Y = 0;
+
+    function measure() {
+        ROOM_W = (ROWS - 1) * HALF_W + HALF_W + WALL_END + (COLS - 1) * HALF_W + HALF_W + WALL_END;
+        ROOM_H = WALL_H + WALL_TOP + LINE * 2 +
+            (COLS + ROWS - 2) * HALF_H + TILE_H + FLOOR_EDGE + LINE;
+        const marginX = Math.floor((WIDTH - ROOM_W) / 2);
+        const marginY = Math.floor((HEIGHT - ROOM_H) / 2);
+        ORIGIN_X = (ROWS - 1) * HALF_W + HALF_W + WALL_END + marginX;
+        ORIGIN_Y = WALL_H + WALL_TOP + LINE * 2 + marginY;
+    }
+
+    /* IS THERE FLOOR HERE? The question everything else should be asking.
+
+       Bounds alone are not enough once a layout can have a hole in it, and the
+       failure is quiet: an avatar walks out over nothing, furni lands in mid
+       air, and the room looks fine because the renderer never drew a tile
+       there to begin with. */
+    function has(x, y) {
+        if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return false;
+        return !layout || layout.mask[y][x] !== "x";
+    }
+
+    /* A tile key with a FIXED stride rather than COLS.
+
+       Rooms are different widths now, so `y * COLS + x` means different things
+       in different rooms — and a set of those keys built for one layout reads
+       as a different set of tiles in the next. The stride is constant and
+       wider than any layout, so a key means one tile for ever. */
+    const KEY_STRIDE = 32;
+    const key = (x, y) => y * KEY_STRIDE + x;
+
+    function setLayout(next) {
+        const L = window.RoomLayouts;
+        layout = next || (L ? L.get(L.DEFAULT) : null);
+        COLS = layout ? layout.cols : 8;
+        ROWS = layout ? layout.rows : 13;
+        measure();
+        return layout;
+    }
+
+    measure();
 
     const STENCIL_DIR = "assets/room/";
     const stencils = new Map();     // src -> HTMLImageElement
@@ -267,7 +322,9 @@
         const fx = (rx / HALF_W + ry / HALF_H) / 2;
         const fy = (ry / HALF_H - rx / HALF_W) / 2;
         const x = Math.round(fx), y = Math.round(fy);
-        if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return null;
+        // A hole is not a tile: clicking one has to mean nothing, rather than
+        // meaning the tile that would have been there.
+        if (!has(x, y)) return null;
         return { x, y };
     }
 
@@ -312,18 +369,88 @@
         ctx.closePath();
     }
 
-    // The whole floor as one path, for clipping and for its outline.
+    /* The whole floor as one path, for clipping and for its outline.
+
+       One diamond per tile rather than the room's four corners. A rectangle
+       could be traced corner to corner and two of the layouts are not
+       rectangles, so the path is built from what is actually there. Abutting
+       diamonds share their edges exactly, so the union fills and clips as one
+       shape with no seam down the middle. */
     function floorPath(ctx) {
-        const n = tileTop(0, 0);
-        const e = tileTop(COLS - 1, 0);
-        const s = tileTop(COLS - 1, ROWS - 1);
-        const w = tileTop(0, ROWS - 1);
         ctx.beginPath();
-        ctx.moveTo(n.sx, n.sy);
-        ctx.lineTo(e.sx + HALF_W, e.sy + HALF_H);
-        ctx.lineTo(s.sx, s.sy + TILE_H);
-        ctx.lineTo(w.sx - HALF_W, w.sy + HALF_H);
-        ctx.closePath();
+        for (let y = 0; y < ROWS; y++) {
+            for (let x = 0; x < COLS; x++) {
+                if (!has(x, y)) continue;
+                const t = tileTop(x, y);
+                ctx.moveTo(t.sx, t.sy);
+                ctx.lineTo(t.sx + HALF_W, t.sy + HALF_H);
+                ctx.lineTo(t.sx, t.sy + TILE_H);
+                ctx.lineTo(t.sx - HALF_W, t.sy + HALF_H);
+                ctx.closePath();
+            }
+        }
+    }
+
+    /* THE FOUR SIDES OF A TILE, and which neighbour each one faces.
+
+       Written down once because every part of the room's shape is some subset
+       of these: a side with no floor beyond it is an EDGE of the room, and
+       which of the four it is decides what gets drawn there.
+
+           ne  faces (x, y-1)   the back right — where a wall stands
+           nw  faces (x-1, y)   the back left  — where a wall stands
+           se  faces (x+1, y)   the front right — the slab's visible thickness
+           sw  faces (x, y+1)   the front left  — the slab's visible thickness
+
+       An inner corner is simply a tile with two of these open at once, which
+       is why nothing here special-cases one. */
+    const SIDES = {
+        ne: { dx: 0, dy: -1, a: (t) => ({ x: t.sx, y: t.sy }), b: (t) => ({ x: t.sx + HALF_W, y: t.sy + HALF_H }) },
+        se: { dx: 1, dy: 0, a: (t) => ({ x: t.sx + HALF_W, y: t.sy + HALF_H }), b: (t) => ({ x: t.sx, y: t.sy + TILE_H }) },
+        sw: { dx: 0, dy: 1, a: (t) => ({ x: t.sx, y: t.sy + TILE_H }), b: (t) => ({ x: t.sx - HALF_W, y: t.sy + HALF_H }) },
+        nw: { dx: -1, dy: 0, a: (t) => ({ x: t.sx - HALF_W, y: t.sy + HALF_H }), b: (t) => ({ x: t.sx, y: t.sy }) }
+    };
+
+    // Every open side of a given kind, as a line segment.
+    function edgesOf(kind) {
+        const s = SIDES[kind];
+        const out = [];
+        for (let y = 0; y < ROWS; y++) {
+            for (let x = 0; x < COLS; x++) {
+                if (!has(x, y) || has(x + s.dx, y + s.dy)) continue;
+                const t = tileTop(x, y);
+                out.push({ x, y, a: s.a(t), b: s.b(t) });
+            }
+        }
+        return out;
+    }
+
+    /* Open sides joined into RUNS along one isometric axis.
+
+       A wall has to be drawn in one go — see wallRun — and the slab's edge
+       reads better the same way. `step` says which way along the room a run
+       continues: the back-right wall runs in +x, the back-left in +y. */
+    function runsOf(kind, stepX, stepY) {
+        const open = new Set(edgesOf(kind).map(e => `${e.x},${e.y}`));
+        const seen = new Set();
+        const runs = [];
+        for (let y = 0; y < ROWS; y++) {
+            for (let x = 0; x < COLS; x++) {
+                const k = `${x},${y}`;
+                if (!open.has(k) || seen.has(k)) continue;
+                // Only start where the previous tile along the run is not open.
+                if (open.has(`${x - stepX},${y - stepY}`)) continue;
+                const tiles = [];
+                let cx = x, cy = y;
+                while (open.has(`${cx},${cy}`)) {
+                    seen.add(`${cx},${cy}`);
+                    tiles.push({ x: cx, y: cy });
+                    cx += stepX; cy += stepY;
+                }
+                runs.push(tiles);
+            }
+        }
+        return runs;
     }
 
     // ---- painting
@@ -384,43 +511,66 @@
 
         fillFloor(ctx, tile);
 
-        // The slab's two viewer-facing sides, in the floor's lighter tone.
+        /* THE SLAB'S VISIBLE THICKNESS, along every front edge there is.
+
+           Two quads used to do it, because a rectangle has exactly two sides
+           facing the viewer. A shaped room has as many as its outline gives
+           it, so each open front side gets its own — same five pixels, same
+           two tones, drawn per edge instead of per room. The right side takes
+           the lighter tone and the left the darker, which is the same rule the
+           two quads encoded and the same one the walls use. */
         const side = shade(lit, 1.0);
         const sideDark = shade(lit, 0.82);
-        const n = tileTop(0, 0);
-        const e = tileTop(COLS - 1, 0);
-        const s = tileTop(COLS - 1, ROWS - 1);
-        const w = tileTop(0, ROWS - 1);
 
-        ctx.beginPath();
-        ctx.moveTo(e.sx + HALF_W, e.sy + HALF_H);
-        ctx.lineTo(s.sx, s.sy + TILE_H);
-        ctx.lineTo(s.sx, s.sy + TILE_H + FLOOR_EDGE);
-        ctx.lineTo(e.sx + HALF_W, e.sy + HALF_H + FLOOR_EDGE);
-        ctx.closePath();
-        ctx.fillStyle = side;
-        ctx.fill();
+        const skirt = (edges, fill) => {
+            if (!edges.length) return;
+            ctx.fillStyle = fill;
+            for (const e of edges) {
+                ctx.beginPath();
+                ctx.moveTo(e.a.x, e.a.y);
+                ctx.lineTo(e.b.x, e.b.y);
+                ctx.lineTo(e.b.x, e.b.y + FLOOR_EDGE);
+                ctx.lineTo(e.a.x, e.a.y + FLOOR_EDGE);
+                ctx.closePath();
+                ctx.fill();
+            }
+        };
+        const seEdges = edgesOf("se"), swEdges = edgesOf("sw");
+        skirt(seEdges, side);
+        skirt(swEdges, sideDark);
 
-        ctx.beginPath();
-        ctx.moveTo(s.sx, s.sy + TILE_H);
-        ctx.lineTo(w.sx - HALF_W, w.sy + HALF_H);
-        ctx.lineTo(w.sx - HALF_W, w.sy + HALF_H + FLOOR_EDGE);
-        ctx.lineTo(s.sx, s.sy + TILE_H + FLOOR_EDGE);
-        ctx.closePath();
-        ctx.fillStyle = sideDark;
-        ctx.fill();
+        /* Hard black around the slab. Drawn after the fills so it covers the
+           antialiasing they leave, and derived from the outline rather than
+           from four corners — an inner corner needs ruling too, and with a
+           rectangle there simply never was one. */
+        for (const e of seEdges.concat(swEdges)) {
+            hardLine(ctx, e.a.x, e.a.y, e.b.x, e.b.y, "#000");
+            hardLine(ctx, e.a.x, e.a.y + FLOOR_EDGE, e.b.x, e.b.y + FLOOR_EDGE, "#000");
+        }
+        /* The drop at each end of the skirt — where the slab's thickness stops
+           and you see its cut face. Only where the run genuinely ends, which
+           is a corner of the room rather than the join between two edges. */
+        const drop = (edges, kind) => {
+            const s = SIDES[kind];
+            for (const e of edges) {
+                // Walk to the neighbour that would continue this run.
+                const nx = e.x - s.dy, ny = e.y - s.dx;      // the perpendicular
+                if (!has(nx, ny) || has(nx + s.dx, ny + s.dy)) {
+                    hardLine(ctx, e.a.x, e.a.y, e.a.x, e.a.y + FLOOR_EDGE, "#000");
+                }
+                const mx = e.x + s.dy, my = e.y + s.dx;
+                if (!has(mx, my) || has(mx + s.dx, my + s.dy)) {
+                    hardLine(ctx, e.b.x, e.b.y, e.b.x, e.b.y + FLOOR_EDGE, "#000");
+                }
+            }
+        };
+        drop(seEdges, "se");
+        drop(swEdges, "sw");
 
-        /* Hard black around the slab: where the floor surface meets its edge,
-           where the edge ends, and up the two back sides of the room. Drawn
-           after the fills so they cover the antialiasing those fills leave. */
-        hardLine(ctx, e.sx + HALF_W, e.sy + HALF_H, s.sx, s.sy + TILE_H, "#000");
-        hardLine(ctx, s.sx, s.sy + TILE_H, w.sx - HALF_W, w.sy + HALF_H, "#000");
-        hardLine(ctx, e.sx + HALF_W, e.sy + HALF_H + FLOOR_EDGE, s.sx, s.sy + TILE_H + FLOOR_EDGE, "#000");
-        hardLine(ctx, s.sx, s.sy + TILE_H + FLOOR_EDGE, w.sx - HALF_W, w.sy + HALF_H + FLOOR_EDGE, "#000");
-        hardLine(ctx, e.sx + HALF_W, e.sy + HALF_H, e.sx + HALF_W, e.sy + HALF_H + FLOOR_EDGE, "#000");
-        hardLine(ctx, w.sx - HALF_W, w.sy + HALF_H, w.sx - HALF_W, w.sy + HALF_H + FLOOR_EDGE, "#000");
-        hardLine(ctx, n.sx, n.sy, e.sx + HALF_W, e.sy + HALF_H, "#000");
-        hardLine(ctx, n.sx, n.sy, w.sx - HALF_W, w.sy + HALF_H, "#000");
+        // And the two back sides, where the floor meets the wall.
+        for (const e of edgesOf("ne").concat(edgesOf("nw"))) {
+            hardLine(ctx, e.a.x, e.a.y, e.b.x, e.b.y, "#000");
+        }
     }
 
     /* One wall, as a single run rather than a quad per tile: per-tile quads
@@ -526,10 +676,6 @@
     const DOOR_DROP = 31;
 
     function drawWalls(ctx, group, colour) {
-        const corner = tileTop(0, 0);
-        const rightEnd = tileTop(COLS - 1, 0);
-        const leftEnd = tileTop(0, ROWS - 1);
-
         const rightHex = hex(scale(colour, ROOM_LIGHT));
         const leftHex = hex(scale(colour, ROOM_LIGHT * LEFT_WALL));
 
@@ -546,14 +692,47 @@
         const doorImg = stencil("door");
         const door = doorImg.complete && doorImg.naturalWidth ? doorImg : null;
 
-        wallRun(ctx, corner,
-            { sx: rightEnd.sx + HALF_W, sy: rightEnd.sy + HALF_H },
-            rightTile, shade(rightHex, 1), null, rightCap);
+        /* A WALL PER RUN OF OPEN BACK EDGE, rather than one along each side.
 
-        wallRun(ctx, corner,
-            { sx: leftEnd.sx - HALF_W, sy: leftEnd.sy + HALF_H },
-            leftTile, shade(leftHex, 1),
-            maskTile ? { at: DOOR_AT, panel: maskTile, door } : null, leftCap);
+           A rectangle has exactly two stretches of wall and they were drawn as
+           two calls with the room's corners hard-coded into them. A shaped
+           room has as many stretches as its outline gives it — `Corner` has
+           two along the back right and two along the back left, meeting at the
+           bite taken out of it — so the runs are read off the mask. A
+           rectangle yields exactly one run per side, which is the old drawing
+           exactly, and that is the point: nothing special-cases a shape.
+
+           Runs are drawn BACK TO FRONT within each side, so where two stretches
+           of the same wall overlap on screen the nearer one wins. */
+        const rightRuns = runsOf("ne", 1, 0);
+        const leftRuns = runsOf("nw", 0, 1);
+
+        for (const tiles of rightRuns) {
+            const first = tileTop(tiles[0].x, tiles[0].y);
+            const last = tileTop(tiles[tiles.length - 1].x, tiles[tiles.length - 1].y);
+            wallRun(ctx, { sx: first.sx, sy: first.sy },
+                { sx: last.sx + HALF_W, sy: last.sy + HALF_H },
+                rightTile, shade(rightHex, 1), null, rightCap);
+        }
+
+        /* THE DOOR GOES ON THE LONGEST STRETCH OF LEFT WALL, at the row the
+           model itself puts it. `layout.door` is a row of the room, so the run
+           holding it is the one to cut, and the opening index is how far along
+           that run the row sits — which is not the row number once a wall
+           starts part way down the room. */
+        const doorRow = layout ? layout.door : DOOR_AT;
+        let doorPlaced = false;
+        for (const tiles of leftRuns) {
+            const first = tileTop(tiles[0].x, tiles[0].y);
+            const last = tileTop(tiles[tiles.length - 1].x, tiles[tiles.length - 1].y);
+            const at = tiles.findIndex(t => t.y === doorRow);
+            // One door, however many stretches of wall share that row.
+            const opening = (maskTile && at >= 0 && !doorPlaced) ? { at, panel: maskTile, door } : null;
+            if (opening) doorPlaced = true;
+            wallRun(ctx, { sx: first.sx, sy: first.sy },
+                { sx: last.sx - HALF_W, sy: last.sy + HALF_H },
+                leftTile, shade(leftHex, 1), opening, leftCap);
+        }
     }
 
     function group(kind, id) {
@@ -611,8 +790,19 @@
         stencil("door");
     }
 
+    /* COLS and ROWS are GETTERS now, and that is not a detail.
+
+       They used to be constants captured into this object once. A caller that
+       destructured them — js/room-path.js did, at load — kept 8 and 13 for the
+       life of the page, so the first level with a different shape routed the
+       avatar around a room that was not there. Reading them through a getter
+       means a caller gets the room that is up now, however it got there. */
     window.RoomIso = {
-        TILE_W, TILE_H, HALF_W, HALF_H, COLS, ROWS,
+        TILE_W, TILE_H, HALF_W, HALF_H,
+        get COLS() { return COLS; },
+        get ROWS() { return ROWS; },
+        get layout() { return layout; },
+        KEY_STRIDE, key, has, setLayout,
         WALL_H, WIDTH, HEIGHT, LINE,
         shade, scale, tileTop, tileCenter, tileAt, diamond, floorPath,
         drawRoom, highlight, depth, preloadStencils, group, colourOf

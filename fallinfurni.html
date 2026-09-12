@@ -409,8 +409,13 @@
 
                 <div class="ff-modebody">
 
-                    <!-- ROOM: the level's own floor and wallpaper. -->
+                    <!-- ROOM: the level's own shape, floor and wallpaper. -->
                     <section class="ff-mode" data-mode="room">
+                        <!-- The SHAPE first: it decides how much room there is
+                             for everything the other two tabs put in it. -->
+                        <h3>Layout</h3>
+                        <select id="ff-layout" class="ff-select" aria-label="Room layout"></select>
+                        <p class="ff-hint" id="ff-layout-note"></p>
                         <h3>Floor</h3>
                         <select id="ff-floor-pattern" class="ff-select" aria-label="Floor pattern"></select>
                         <div id="ff-floor-colours" class="ff-swatches"></div>
@@ -749,6 +754,8 @@
     <script src="js/furni-offsets.js"></script>
     <script src="js/furni-fallback.js"></script>
     <script src="js/avatar-parts.js"></script>
+    <!-- Before room-iso: the renderer sizes itself from a layout on load. -->
+    <script src="js/room-layouts.js"></script>
     <script src="js/room-iso.js"></script>
     <script src="js/room-path.js"></script>
     <script src="js/room-levels.js"></script>

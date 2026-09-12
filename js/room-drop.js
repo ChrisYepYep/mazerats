@@ -50,7 +50,7 @@
         return x >= area.x && x < area.x + area.w && y >= area.y && y < area.y + area.h;
     }
 
-    const key = (x, y) => y * Iso.COLS + x;
+    const key = Iso.key;
 
     /* Would placing `piece` leave `seat` with no walkable neighbour? A seat you
        cannot reach is not a hard round, it is a broken one. */
@@ -107,6 +107,46 @@
             }
         }
         return seen;
+    }
+
+    /* WHERE THE PLAYER CAN GET TO, which is not one region when they are
+       sitting down.
+
+       `reachableFrom` seeds the tile the player is on whether or not it is
+       blocked, because standing on a seat is not being trapped by it. That is
+       right for getting OFF the seat and wrong for everything after: a seat
+       can itself be part of a wall, and flooding through it joins two halves
+       of a room that are not actually joined.
+
+       That is not a corner case; it is how this was caught. A chair landed at
+       (4,2), completing a line of furni that cut the room in two. The player
+       sat on that very chair, and from there the flood saw both halves at
+       once — so a sequence seat was allowed to drop into the far half. The
+       player then stood up on the near side and the wall closed behind them,
+       with a seat they were obliged to reach stranded on the other side.
+
+       So a player on furni gets ONE REGION PER WAY OFF IT. They will step to
+       one side and the sides need not be joined, so what has to hold is that
+       everything owed lies in a single one of them — the chair is a bridge you
+       can cross once and never cross back. A player on open floor has exactly
+       one region and none of this applies. */
+    function regionsFrom(start, blocked) {
+        if (!blocked.has(key(start.x, start.y))) return [reachableFrom(start, blocked)];
+        const here = key(start.x, start.y);
+        const regions = [];
+        for (const d of Path.DIRS) {
+            const nx = start.x + d.dx, ny = start.y + d.dy;
+            if (!Path.inside(nx, ny)) continue;
+            const nk = key(nx, ny);
+            if (blocked.has(nk)) continue;
+            if (d.dx !== 0 && d.dy !== 0
+                && blocked.has(key(nx, start.y)) && blocked.has(key(start.x, ny))) continue;
+            if (regions.some(r => r.has(nk))) continue;      // already covered
+            const r = reachableFrom({ x: nx, y: ny }, blocked);
+            r.add(here);                                     // they are on it now
+            regions.push(r);
+        }
+        return regions.length ? regions : [new Set([here])];
     }
 
     /* Can the player reach this seat AND GET OFF IT AGAIN?
@@ -221,9 +261,9 @@
            piece's fault. The test is whether a placement makes things WORSE,
            so the room is measured once without the candidate and each
            candidate is only asked not to take anything away. */
-        const before = avoid ? reachableFrom(avoid, blocked) : null;
-        const owed = before
-            ? seats.filter(f => canUse(f, before, blocked))
+        const beforeRegions = avoid ? regionsFrom(avoid, blocked) : null;
+        const owed = beforeRegions
+            ? seats.filter(f => beforeRegions.some(r => canUse(f, r, blocked)))
             : seats;
 
         for (let y = entry.area.y; y <= entry.area.y + entry.area.h - h; y++) {
@@ -252,10 +292,11 @@
                 const check = mustReach(candidate) ? owed.concat([candidate]) : owed;
                 let ok = true;
                 if (avoid) {
-                    const reachable = reachableFrom(avoid, blocked);
-                    for (const f of check) {
-                        if (!canUse(f, reachable, blocked)) { ok = false; break; }
-                    }
+                    /* ONE region has to hold all of it. Satisfying half from
+                       one side of a chair and half from the other is exactly
+                       the split that strands a seat. */
+                    ok = regionsFrom(avoid, blocked)
+                        .some(r => check.every(f => canUse(f, r, blocked)));
                 } else {
                     // No player to measure from — the old local test is all
                     // there is, and it is better than nothing.
@@ -377,6 +418,6 @@
 
     window.RoomDrop = {
         FALL_TILES, createRound, spotsFor, sealsIn, distanceFrom,
-        reachableFrom, canUse
+        reachableFrom, regionsFrom, canUse
     };
 })();

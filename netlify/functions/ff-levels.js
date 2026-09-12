@@ -66,6 +66,12 @@ function cleanLevel(body) {
         name: String(body.name || "").trim(),
         order: Number.isFinite(Number(body.order)) ? Number(body.order) : 0,
         published: body.published === true,
+        /* The room's SHAPE, one of the Origins models by its letter — see
+           js/room-layouts.js. Whitelisted like everything else here, and the
+           note below on `zones` is exactly why it has to be added to this list
+           and not just to the schema: a field this pick misses is dropped on
+           every save, silently, and the level comes back in the wrong room. */
+        model: typeof body.model === "string" ? body.model.slice(0, 4) : "a",
         floor: pick(body.floor || {}, ["pattern", "colour"]),
         wall: pick(body.wall || {}, ["pattern", "colour"]),
         start: pick(body.start || {}, ["x", "y"]),

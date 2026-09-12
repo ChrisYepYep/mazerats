@@ -188,7 +188,7 @@
     // ---- level
 
     function setLevel(level) {
-        state.level = Levels.normalise(level || {}, Iso.COLS, Iso.ROWS);
+        state.level = Levels.normalise(level || {});
         rebuild();
     }
 
@@ -396,7 +396,7 @@
         const z = Levels.blankZone(Iso.COLS, Iso.ROWS, area);
         z.name = `Zone ${state.level.zones.length + 1}`;
         state.level.zones.push(z);
-        state.level = Levels.normalise(state.level, Iso.COLS, Iso.ROWS);
+        state.level = Levels.normalise(state.level);
         state.zoneId = state.level.zones[state.level.zones.length - 1].id;
         onChange();
         return zone();
@@ -421,7 +421,7 @@
         const z = (state.level.zones || []).find(x => x.id === id);
         if (!z) return;
         z.area = area;
-        state.level = Levels.normalise(state.level, Iso.COLS, Iso.ROWS);
+        state.level = Levels.normalise(state.level);
         state.zoneId = id;
         onChange();
     }
@@ -440,7 +440,7 @@
         const z = zone();
         if (!z || !playable(className)) return null;
         z.items.push({ ...Levels.ITEM_DEFAULTS, className, role, count });
-        state.level = Levels.normalise(state.level, Iso.COLS, Iso.ROWS);
+        state.level = Levels.normalise(state.level);
         state.zoneId = z.id;
         onChange();
         return true;

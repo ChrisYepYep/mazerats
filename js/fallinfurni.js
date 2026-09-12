@@ -113,6 +113,7 @@
     const STORE_KEY = "mazerats_ff_room_v2";
 
     const state = {
+        model: "a",
         floorPattern: "plain", floorColour: null,
         wallPattern: "plain", wallColour: null,
         figure: DEFAULT_FIGURE,
@@ -275,13 +276,35 @@
 
     // ---- movement
 
+    /* PUT A ROOM SHAPE UP. Everything that measures the room reads it from
+       RoomIso, so this is the one call that changes it — and it has to happen
+       BEFORE anything is placed, clamped or routed against the new room.
+
+       The avatar comes with it: a layout can be smaller than the last one, or
+       have a hole where the figure was standing, and a player left off the
+       floor can neither walk nor be walked to. Landing them on the level's own
+       start tile is what every other caller already means by changing room. */
+    function applyLayout(id) {
+        const L = window.RoomLayouts;
+        if (!L || !Iso.setLayout) return null;
+        const next = L.get(id);
+        Iso.setLayout(next);
+        state.model = next.id;
+        if (!Iso.has(state.pos.x, state.pos.y)) {
+            const t = L.firstTile(next);
+            state.pos = { x: t.x, y: t.y };
+            state.path = []; state.goal = null; state.stepFrom = null; state.acceptAt = null;
+        }
+        return next;
+    }
+
     let blockedTiles = new Set();
     function refreshBlocked() {
         blockedTiles = game && game.state === Game.RUNNING
             ? game.blocked()
             : Furni.blockedTiles(state.furni);
     }
-    function blocked(x, y) { return blockedTiles.has(y * Iso.COLS + x); }
+    function blocked(x, y) { return blockedTiles.has(Iso.key(x, y)); }
 
     /* Which way a seat faces, in the same eight-direction compass the figure
        uses. A furni's rotation resolves to a client DIRECTION (see
@@ -1057,8 +1080,10 @@
 
     function syncEditor() {
         state.furni = Editor.state.placed;
-        refreshBlocked();
+        // The shape first: what counts as blocked depends on which room it is.
         Object.assign(state, Levels.toRoomOpts(Editor.state.level));
+        applyLayout(state.model);
+        refreshBlocked();
         syncPickers();
         dirty = true;
         renderEditorPanel();
@@ -1812,10 +1837,48 @@
     function syncPickers() {
         const f = document.getElementById("ff-floor-pattern");
         const w = document.getElementById("ff-wall-pattern");
+        const l = document.getElementById("ff-layout");
         if (f) f.value = state.floorPattern;
         if (w) w.value = state.wallPattern;
+        if (l) l.value = state.model;
+        const note = document.getElementById("ff-layout-note");
+        if (note && window.RoomLayouts) {
+            const m = window.RoomLayouts.get(state.model);
+            const shaped = m.mask.some(r => r.includes("x"));
+            note.textContent = `${m.cols}×${m.rows}, ${m.tiles} tiles` +
+                (shaped ? " — not a rectangle, so some of the grid is outside the room." : "");
+        }
         if (refreshFloorSwatches) refreshFloorSwatches();
         if (refreshWallSwatches) refreshWallSwatches();
+    }
+
+    /* CHANGING THE SHAPE MOVES EVERYTHING THAT WAS IN IT.
+
+       A level's decor, its drop zones and its start tile were all placed
+       against the old room, and the new one can be smaller or have a hole
+       where they stood. `Levels.normalise` already clamps every one of those
+       to the level's own model — so the honest way to change layout is to set
+       it and put the level back through normalise, rather than to move the
+       walls and leave the contents where they were.
+
+       It is LOSSY on purpose, and says so. Going from the 8x13 room to the 5x7
+       one cannot keep a chair at (7,12); there is nowhere for it to be. The
+       count is reported rather than the change refused, because a builder
+       trying layouts on for size wants to see them, and undo is one more
+       change of the same picker. */
+    function setLayoutFromPicker(id) {
+        if (!Editor || !Editor.state.level) { state.model = id; applyLayout(id); dirty = true; return; }
+        const before = Editor.state.level;
+        const decorBefore = (before.decor || []).length;
+        const next = Levels.normalise({ ...before, model: id });
+        const lost = decorBefore - (next.decor || []).length;
+        Editor.setLevel(next);
+        Editor.save();
+        syncEditor();
+        status(lost
+            ? `Layout: ${Levels && window.RoomLayouts ? window.RoomLayouts.get(id).name : id}. ${lost} piece${lost === 1 ? "" : "s"} of decor had nowhere to go and ${lost === 1 ? "was" : "were"} dropped.`
+            : `Layout: ${window.RoomLayouts ? window.RoomLayouts.get(id).name : id}.`,
+            lost ? "bad" : "good");
     }
 
     /* The room belongs to the LEVEL when there is one, so a picker change goes
@@ -1902,7 +1965,7 @@
 
     function currentLevel() {
         if (Editor && Editor.state.level) return Editor.save();
-        return Levels.normalise({ ...Levels.fromRoomOpts(state) }, Iso.COLS, Iso.ROWS);
+        return Levels.normalise({ ...Levels.fromRoomOpts(state), model: state.model });
     }
 
     /* Resolving a class to its metadata and artwork.
@@ -1995,6 +2058,7 @@
         state.pos = { x: level.start.x, y: level.start.y };
         state.path = []; state.goal = null; state.stepFrom = null; state.acceptAt = null;
         Object.assign(state, Levels.toRoomOpts(level));
+        applyLayout(state.model);
         state.furni = (level.decor || []).map(d => Furni.make(d.className, d.x, d.y, {
             meta: metaFor(d.className), rotation: d.rotation, state: d.state,
             lift: Number(d.z) || 0, role: "decor",
@@ -2630,6 +2694,7 @@
         state.pos = { x: level.start.x, y: level.start.y };
         state.path = []; state.goal = null; state.stepFrom = null; state.acceptAt = null;
         Object.assign(state, Levels.toRoomOpts(level));
+        applyLayout(state.model);
         syncPickers();
         state.furni = game.renderList();
         refreshBlocked();
@@ -2779,6 +2844,21 @@
 
         refreshFloorSwatches = buildPicker("floors", "ff-floor-pattern", "ff-floor-colours", "floorPattern", "floorColour");
         refreshWallSwatches = buildPicker("walls", "ff-wall-pattern", "ff-wall-colours", "wallPattern", "wallColour");
+
+        /* The layout picker. Filled from RoomLayouts rather than from a list
+           written out here, so adding a model to the extractor's SHIP list is
+           the only edit needed to offer it. */
+        const layoutSel = document.getElementById("ff-layout");
+        if (layoutSel && window.RoomLayouts) {
+            for (const m of window.RoomLayouts.MODELS) {
+                const opt = document.createElement("option");
+                opt.value = m.id;
+                opt.textContent = `${m.name} — ${m.cols}×${m.rows}`;
+                layoutSel.appendChild(opt);
+            }
+            layoutSel.value = state.model;
+            layoutSel.addEventListener("change", () => setLayoutFromPicker(layoutSel.value));
+        }
 
         const nameInput = document.getElementById("ff-name");
         if (state.name) nameInput.value = state.name;

@@ -79,6 +79,12 @@
         name: "",
         order: 0,
         published: false,
+        /* THE ROOM'S SHAPE, per level, the same way the floor and the wallpaper
+           are. One of the Origins models — see js/room-layouts.js — by the
+           letter the client calls it. A level saved before layouts existed has
+           no `model` and gets "a", which is the 8x13 room every one of them was
+           built in, so nothing that already exists moves. */
+        model: "a",
         floor: { pattern: "plain", colour: null },
         wall: { pattern: "plain", colour: null },
         start: { x: 3, y: 6 },              // where the player begins
@@ -184,23 +190,61 @@
        Also MIGRATES the old flat `drops` list, where each record carried its
        own copy of an area. Each becomes a zone of one item, which is exactly
        what it was — just said properly. */
+    /* `cols`/`rows` are an override and are almost never wanted. A level knows
+       its own shape — `model` names one of the Origins layouts — and measuring
+       it against whatever room happens to be on screen is how a level saved in
+       the long room came back clamped to the square one. */
     function normalise(level, cols, rows) {
         const out = merge(DEFAULTS, level);
         out.schema = SCHEMA;
 
-        const inRoom = (p) => ({
+        const L = window.RoomLayouts;
+        const model = L ? L.get(out.model) : null;
+        out.model = model ? model.id : "a";
+        cols = cols || (model ? model.cols : 8);
+        rows = rows || (model ? model.rows : 13);
+
+        // Does this layout have floor here? Bounds alone will not do it.
+        const solid = (x, y) => {
+            if (x < 0 || y < 0 || x >= cols || y >= rows) return false;
+            return !model || model.mask[y][x] !== "x";
+        };
+
+        const clamp = (p) => ({
             x: Math.max(0, Math.min(cols - 1, Math.round(p.x || 0))),
             y: Math.max(0, Math.min(rows - 1, Math.round(p.y || 0)))
         });
-        out.start = inRoom(out.start);
+
+        /* CLAMPED INTO THE ROOM, AND THEN ONTO ACTUAL FLOOR.
+
+           Clamping to the bounds is not enough once a layout can have a hole
+           in it: a position saved in one room and reopened in another can land
+           squarely in the bite, and for `start` that means an avatar standing
+           on nothing with nowhere to walk. The nearest real tile is a better
+           answer than refusing to load the level. */
+        const onFloor = (p) => {
+            const c = clamp(p);
+            if (solid(c.x, c.y)) return c;
+            let best = null, bestD = Infinity;
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    if (!solid(x, y)) continue;
+                    const d = Math.max(Math.abs(x - c.x), Math.abs(y - c.y));
+                    if (d < bestD) { bestD = d; best = { x, y }; }
+                }
+            }
+            return best || c;
+        };
+
+        out.start = onFloor(out.start);
 
         out.decor = (out.decor || []).map(d => ({
             className: String(d.className || ""),
             rotation: Number(d.rotation) || 0,
             state: Number(d.state) || 0,
             z: height(d.z),
-            ...inRoom(d)
-        })).filter(d => d.className);
+            ...clamp(d)
+        })).filter(d => d.className && solid(d.x, d.y));
 
         const clampArea = (a) => {
             const area = {
@@ -307,6 +351,9 @@
        adapter here is better than either side bending to the other. */
     function toRoomOpts(level) {
         return {
+            // The shape travels with the surfaces: all three are "what room is
+            // this", and every caller that repaints one repaints the others.
+            model: level.model,
             floorPattern: level.floor.pattern,
             floorColour: level.floor.colour,
             wallPattern: level.wall.pattern,
@@ -316,6 +363,7 @@
 
     function fromRoomOpts(opts) {
         return {
+            model: opts.model,
             floor: { pattern: opts.floorPattern, colour: opts.floorColour },
             wall: { pattern: opts.wallPattern, colour: opts.wallColour }
         };
@@ -353,7 +401,7 @@
             const res = await fetch("/.netlify/functions/ff-levels");
             if (!res.ok) return [];
             const data = await res.json();
-            return (data.levels || []).map(l => normalise(l, 8, 13));
+            return (data.levels || []).map(l => normalise(l));
         } catch {
             return [];
         }

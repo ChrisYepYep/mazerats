@@ -498,7 +498,7 @@
         const blocked = new Set();
         for (const f of list) {
             if (f.stand) continue;
-            for (const t of tilesOf(f)) blocked.add(t.y * Iso.COLS + t.x);
+            for (const t of tilesOf(f)) blocked.add(Iso.key(t.x, t.y));
         }
         return blocked;
     }
@@ -529,7 +529,11 @@
        builder sets them and the only rule enforced here is that two things
        cannot occupy the same tile at the same height. */
     function fits(list, f, ignore, stack) {
-        if (f.x < 0 || f.y < 0 || f.x + f.w > Iso.COLS || f.y + f.h > Iso.ROWS) return false;
+        /* EVERY TILE THE PIECE COVERS HAS TO EXIST, which is not the same as
+           its rectangle being within the room's bounds. A two-seater laid
+           across the bite in `Corner` passes a bounds check with half of it
+           hanging over nothing. */
+        for (const t of tilesOf(f)) if (!Iso.has(t.x, t.y)) return false;
         const lift = f.lift || 0;
         for (const other of list) {
             if (other === ignore) continue;
