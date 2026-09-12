@@ -1,6 +1,7 @@
 /* /.netlify/functions/settings — site-wide settings: which state the
-   welcome page's button is in (enter | coming-soon | maintenance), and the
-   About blurb shown on the console modal's About page. GET is public; PUT
+   welcome page's button is in (enter | coming-soon | maintenance), whether
+   Fallin' Furni is playable or under maintenance, and the About blurb shown
+   on the console modal's About page. GET is public; PUT
    requires an admin session and updates whichever fields are present in
    the request body, leaving the other untouched. Stored as a single
    document with a fixed _id, since there's only ever one. */
@@ -16,6 +17,19 @@ const json = (statusCode, data) => ({
 const VALID_STATES = ["enter", "coming-soon", "maintenance"];
 const DEFAULT_STATE = "enter";
 const DEFAULT_ABOUT_TEXT = "";
+
+/* FALLIN' FURNI'S OWN STATE, separate from the site's.
+
+   The game page is public whatever the rest of the site is doing, so the
+   landing state cannot speak for it — closing the site does not close the
+   game, and closing the game should not close the site. Two values, because a
+   game page has nothing to be "coming soon" about: it is either playable or
+   it is being worked on.
+
+   Defaults to live, so a site that has never touched this setting behaves
+   exactly as it did before the setting existed. */
+const VALID_FF_STATES = ["live", "maintenance"];
+const DEFAULT_FF_STATE = "live";
 
 /* Which furni falls past Fallin' Furni's title screen. A site-wide choice
    rather than a per-level one — the title screen is not a level — so it
@@ -45,7 +59,8 @@ exports.handler = async (event) => {
         return json(200, {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
             aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT,
-            lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : []
+            lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
+            fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE
         });
     }
 
@@ -68,6 +83,12 @@ exports.handler = async (event) => {
                 return json(400, { error: "landingState must be one of: " + VALID_STATES.join(", ") });
             }
             update.landingState = body.landingState;
+        }
+        if (body.fallinFurniState !== undefined) {
+            if (!VALID_FF_STATES.includes(body.fallinFurniState)) {
+                return json(400, { error: "fallinFurniState must be one of: " + VALID_FF_STATES.join(", ") });
+            }
+            update.fallinFurniState = body.fallinFurniState;
         }
         if (body.aboutText !== undefined) {
             update.aboutText = String(body.aboutText);
@@ -103,7 +124,8 @@ exports.handler = async (event) => {
         return json(200, {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
             aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT,
-            lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : []
+            lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
+            fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE
         });
     }
 

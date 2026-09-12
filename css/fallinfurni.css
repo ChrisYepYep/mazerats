@@ -1137,3 +1137,51 @@ body:not(.is-editing) .ff-guides { display: none; }
 @media (prefers-reduced-motion: reduce) {
     .ff-countin-n { animation: none; }
 }
+
+/* ---- CLOSED FOR MAINTENANCE
+
+   The game area swapped for a notice, driven by one attribute the head script
+   sets on <body>. Everything defaults to the game showing: with no attribute —
+   script blocked, request failed, nobody signed in to close it — these rules
+   do not apply and the page is exactly what it was. */
+.ff-closed { display: none; }
+
+body[data-ff-closed] .ff-layout { display: none; }
+body[data-ff-closed] .ff-closed { display: block; }
+
+/* Same window the game sits in, so the page still looks like itself rather
+   than like an error. */
+.ff-closed .chrome-window { width: max-content; max-width: 100%; }
+
+.ff-closed-inner {
+    padding: 22px 26px 24px;
+    max-width: 46ch;
+}
+
+.ff-closed-inner h2 {
+    font-family: "Silkscreen", "Pixelify Sans", monospace;
+    font-size: 18px;
+    letter-spacing: 0.02em;
+    color: var(--amber-bright);
+    margin: 0 0 10px;
+}
+
+.ff-closed-inner p {
+    color: var(--parchment-dim);
+    margin: 0 0 16px;
+    font-size: 13.5px;
+    line-height: 1.55;
+}
+
+.ff-closed-link {
+    display: inline-block;
+    background: var(--wood-mid);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--parchment);
+    padding: 7px 14px;
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.ff-closed-link:hover { background: var(--chrome-highlight); color: var(--amber-bright); }

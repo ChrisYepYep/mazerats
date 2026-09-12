@@ -109,6 +109,23 @@
                         </p>
                         <a class="admin-action-pill" href="/fallinfurni?edit=1"
                            target="_blank" rel="noopener">Open level editor</a>
+
+                        <!-- The GAME's own state, not the site's. Fallin' Furni
+                             is public whatever the landing page is doing, so
+                             closing it is a separate decision and a separate
+                             switch. Hidden until signed in, like the landing
+                             toggle below. -->
+                        <div id="ff-state-toggle" style="display:none;">
+                            <p class="admin-hint">
+                                Maintenance shows players a "back soon" notice instead
+                                of the game. You can still play and edit while signed in.
+                            </p>
+                            <button type="button" class="btn-enter-mini ff-state-btn"
+                                    data-ff-state="maintenance">Maintenance</button>
+                            <button type="button" class="btn-enter-mini ff-state-btn"
+                                    data-ff-state="live">Live</button>
+                            <p class="admin-hint" id="ff-state-status" style="display:none;"></p>
+                        </div>
                     </div>
 
                     <!-- ---------- Landing page state ---------- -->

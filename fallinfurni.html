@@ -7,68 +7,119 @@
      every write goes through in netlify/functions/ff-levels.js. -->
 <html lang="en">
 <head>
-    <!-- ADMIN PILLS, and nothing else.
+    <!-- THE GAME'S OWN MAINTENANCE SWITCH, and the admin pills.
 
-         What used to live here was the site's coming-soon/maintenance gate:
-         it held the document invisible, asked the settings endpoint what
-         state the site was in, and sent anyone without a verified admin
-         token to index.html. That is gone — the game is public.
+         This is NOT the site gate that used to live here. That one held the
+         whole document invisible, and sent anyone without an admin token to
+         index.html; the game is public and stays public. What this does is
+         narrower on every axis:
 
-         What is worth keeping is the other half of what that script did. On
-         a gated site an admin arriving here has nowhere obvious to go next,
-         so it added a "Dev Mode" pill and links to Home and Admin. Those
-         still appear, for an admin, while the rest of the site is closed.
-         Nobody is held up waiting for it: the page is already on screen and
-         the pills arrive when the answer does, or never, which costs a
-         visitor nothing. -->
+           it never hides the document   the page draws, then the game area is
+                                         swapped for a notice if it has to be
+           it FAILS OPEN                 no answer, a failed request, a
+                                         browser with the script blocked —
+                                         all of them show the game. Closing a
+                                         working game because a settings call
+                                         timed out is a worse outcome than
+                                         leaving it open a little too long
+           an admin plays regardless     which is the point of closing it
+
+         It also keeps the other half of the old script: on a gated SITE an
+         admin arriving here has nowhere obvious to go, so a "Dev Mode" pill
+         and links to Home and Admin appear for them. Two different states,
+         read from one request. -->
     <script>
     (function () {
         var TOKEN_KEY = "mazerats_admin_token";
         var LANDING_STATE_KEY = "mazerats_landing_state";   // shared with js/api.js
+        var EDITING = /[?&]edit\b/.test(location.search);
 
-        function addPills() {
-            var header = document.querySelector(".site-header");
-            if (header) header.classList.add("site-header-notice");
-            var brandGroup = document.querySelector(".brand-group");
-            if (!brandGroup) return;
-            var pill = document.createElement("span");
-            pill.className = "header-badge header-state-pill";
-            pill.textContent = "Dev Mode";
-            brandGroup.appendChild(pill);
-            [["Home", "home.html"], ["Admin", "admin.html"]].forEach(function (pair) {
-                var link = document.createElement("a");
-                link.className = "header-badge header-state-pill header-state-link";
-                link.href = pair[1];
-                link.textContent = pair[0];
-                brandGroup.appendChild(link);
-            });
+        function closeGame() {
+            function run() { document.body.setAttribute("data-ff-closed", "1"); }
+            if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
+            else run();
         }
 
-        function whenReady(fn) {
-            if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn);
-            else fn();
+        function addMaintenancePill() {
+            function run() {
+                var brandGroup = document.querySelector(".brand-group");
+                if (!brandGroup) return;
+                var pill = document.createElement("span");
+                pill.className = "header-badge header-state-pill";
+                pill.textContent = "Game in maintenance";
+                brandGroup.appendChild(pill);
+                var header = document.querySelector(".site-header");
+                if (header) header.classList.add("site-header-notice");
+            }
+            if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
+            else run();
+        }
+
+        function addPills() {
+            function run() {
+                var header = document.querySelector(".site-header");
+                if (header) header.classList.add("site-header-notice");
+                var brandGroup = document.querySelector(".brand-group");
+                if (!brandGroup) return;
+                var pill = document.createElement("span");
+                pill.className = "header-badge header-state-pill";
+                pill.textContent = "Dev Mode";
+                brandGroup.appendChild(pill);
+                [["Home", "home.html"], ["Admin", "admin.html"]].forEach(function (pair) {
+                    var link = document.createElement("a");
+                    link.className = "header-badge header-state-pill header-state-link";
+                    link.href = pair[1];
+                    link.textContent = pair[0];
+                    brandGroup.appendChild(link);
+                });
+            }
+            if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
+            else run();
         }
 
         var token = null;
         try { token = localStorage.getItem(TOKEN_KEY); } catch (e) { /* private mode */ }
-        if (!token) return;
 
         fetch("/.netlify/functions/settings")
             .then(function (res) { return res.ok ? res.json() : null; })
             .then(function (settings) {
                 if (!settings) return null;
                 try { localStorage.setItem(LANDING_STATE_KEY, settings.landingState); } catch (e) { /* private mode */ }
-                var gated = settings.landingState === "coming-soon" || settings.landingState === "maintenance";
-                if (!gated) return null;
+
+                var siteGated = settings.landingState === "coming-soon" ||
+                                settings.landingState === "maintenance";
+                var gameClosed = settings.fallinFurniState === "maintenance";
+                if (!siteGated && !gameClosed) return null;
+
+                /* Both questions need the same answer — is this an admin? —
+                   so the token is verified once and both act on it. No token
+                   is a definite no, and for a closed game that is the end of
+                   it: the notice goes up without waiting on a second request.
+
+                   The editor is left alone either way. It has its own owner
+                   check in js/fallinfurni.js and being able to work on the
+                   game is the whole reason for closing it. */
+                if (!token) {
+                    if (gameClosed && !EDITING) closeGame();
+                    return null;
+                }
                 return fetch("/.netlify/functions/auth", {
                     method: "POST",
                     headers: { "Content-Type": "application/json", "x-admin-token": token },
                     body: JSON.stringify({ action: "verify" })
-                });
+                })
+                    .then(function (res) { return res && res.ok ? res.json() : null; })
+                    .then(function (who) {
+                        var isAdmin = !!(who && who.username);
+                        if (gameClosed) {
+                            if (isAdmin) addMaintenancePill();
+                            else if (!EDITING) closeGame();
+                        }
+                        if (siteGated && isAdmin) addPills();
+                        return null;
+                    });
             })
-            .then(function (res) { return res && res.ok ? res.json() : null; })
-            .then(function (who) { if (who && who.username) whenReady(addPills); })
-            .catch(function () { /* no pills, no page broken */ });
+            .catch(function () { /* fail open: the game stays playable */ });
     })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -123,6 +174,25 @@
                 fall which are not seats at all.
             </p>
         </header>
+
+        <!-- Shown INSTEAD of the game when an admin has closed it from the
+             admin page. Written into the markup rather than built by script so
+             that the swap is one attribute on <body> and a CSS rule, with no
+             window in which a half-built notice could be on screen. The game
+             is what shows until something says otherwise. -->
+        <section class="ff-closed" id="ff-closed">
+            <div class="chrome-window">
+                <div class="chrome-titlebar chrome-titlebar-plain"></div>
+                <div class="ff-closed-inner">
+                    <h2>Back shortly</h2>
+                    <p>
+                        Fallin' Furni is having some work done. The rest of the
+                        archive is open as usual.
+                    </p>
+                    <a class="ff-closed-link" href="home.html">Back to Maze Rats</a>
+                </div>
+            </div>
+        </section>
 
         <div class="ff-layout">
             <!-- The room. Rendered at its exact pixel size: this is pixel art,

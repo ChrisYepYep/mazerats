@@ -54,8 +54,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const adminRailEl = document.getElementById("admin-rail");
     const adminSessionUserEl = document.getElementById("admin-session-user");
     const landingToggleEl = document.getElementById("landing-toggle");
-    const landingToggleBtns = document.querySelectorAll(".btn-enter-mini");
+    /* The landing buttons only — NOT every .btn-enter-mini on the page. The
+       Fallin' Furni switch below borrows the same class for the same look, and
+       a bare class selector would have swept it into the landing toggle's
+       "which one is active" bookkeeping and disabled it on every save. */
+    const landingToggleBtns = document.querySelectorAll("#landing-toggle .btn-enter-mini");
     const landingToggleStatus = document.getElementById("landing-toggle-status");
+
+    // Fallin' Furni's own live/maintenance switch, in the game's rail group.
+    const ffToggleEl = document.getElementById("ff-state-toggle");
+    const ffToggleBtns = document.querySelectorAll(".ff-state-btn");
+    const ffToggleStatus = document.getElementById("ff-state-status");
     const floatingActionsEl = document.getElementById("floating-actions");
     const floatingSaveBtn = document.getElementById("floating-save-btn");
     const floatingCancelBtn = document.getElementById("floating-cancel-btn");
@@ -224,6 +233,7 @@ document.addEventListener("DOMContentLoaded", () => {
         adminContent.style.display = "none";
         if (adminRailEl) adminRailEl.style.display = "none";
         landingToggleEl.style.display = "none";
+        if (ffToggleEl) ffToggleEl.style.display = "none";
         loginModal.classList.add("open");
         loginError.textContent = "Session expired — log in again.";
         loginError.style.display = "block";
@@ -245,6 +255,7 @@ document.addEventListener("DOMContentLoaded", () => {
         adminContent.style.display = "none";
         if (adminRailEl) adminRailEl.style.display = "none";
         landingToggleEl.style.display = "none";
+        if (ffToggleEl) ffToggleEl.style.display = "none";
         loginModal.classList.add("open");
         loginError.style.display = "none";
         loginForm.reset();
@@ -531,6 +542,7 @@ document.addEventListener("DOMContentLoaded", () => {
             adminSessionUserEl.title = currentUserRole === "owner" ? "Owner" : "Admin";
         }
         landingToggleEl.style.display = "flex";
+        if (ffToggleEl) ffToggleEl.style.display = "block";
         // Same gate as the sidebar — nothing on this page shows until the
         // login modal is unlocked.
         const glyphPalette = document.getElementById("glyph-palette");
@@ -3733,11 +3745,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function loadLandingState() {
         try {
-            const { landingState } = await Api.getSiteSettings();
+            // One read, both switches: they live in the same settings document.
+            const { landingState, fallinFurniState } = await Api.getSiteSettings();
             landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
             renderDevModeLink(landingState);
+            const ff = fallinFurniState || "live";
+            ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
         } catch (e) {
-            // best-effort — the toggle just won't show anything highlighted
+            // best-effort — the toggles just won't show anything highlighted
         }
     }
 
@@ -3781,6 +3796,43 @@ document.addEventListener("DOMContentLoaded", () => {
             success: "Live mode activated. Website open to visitors."
         }
     };
+
+    /* ---- Fallin' Furni: live or under maintenance
+
+       Deliberately lighter than the landing switch above. That one takes the
+       whole site off the internet and asks twice; this one closes one game
+       page, is reversible in a click, and does not close the site — so it
+       confirms once on the way down and not at all on the way back up. */
+    async function setFallinFurniState(state, clickedBtn) {
+        ffToggleBtns.forEach(b => b.disabled = true);
+        ffToggleStatus.style.display = "none";
+        try {
+            await Api.updateSiteSettings(adminToken, { fallinFurniState: state });
+            ffToggleBtns.forEach(b => b.classList.toggle("active", b === clickedBtn));
+            return true;
+        } catch (err) {
+            ffToggleStatus.textContent = err.message || "Couldn't update Fallin' Furni.";
+            ffToggleStatus.style.display = "block";
+            return false;
+        } finally {
+            ffToggleBtns.forEach(b => b.disabled = false);
+        }
+    }
+
+    ffToggleBtns.forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const state = btn.dataset.ffState;
+            if (state === "maintenance") {
+                const ok = await showConfirmDialog(
+                    "Put Fallin' Furni into maintenance? Players will see a notice instead of the game.");
+                if (!ok) return;
+            }
+            const ok = await setFallinFurniState(state, btn);
+            if (ok && state === "maintenance") {
+                await showInfoDialog("Fallin' Furni is under maintenance. You can still play and edit it while signed in.");
+            }
+        });
+    });
 
     landingToggleBtns.forEach(btn => {
         btn.addEventListener("click", async () => {
