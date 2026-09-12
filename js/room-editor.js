@@ -166,21 +166,50 @@
     /* Only furni this editor can actually place: it needs artwork AND a
        furnidata record, because without the latter there is no footprint and no
        way to know whether it is a seat. */
+    /* EVERY WORD, ANYWHERE — not the whole query as one run of characters.
+
+       The catalogue names a furni for its colourway and the client names it
+       for its family, and neither contains the other: `chair_plasto*105` is
+       published as "Deep Moss Chair". Matched as one substring, the word order
+       decides whether anything comes back at all —
+
+           "chair plasto"   8 results, because the class reads that way round
+           "plasto chair"   NOTHING, though it is the way anyone would say it
+           "plasto"         24 results, of which 18 are TABLES: the cap is
+                            reached walking the catalogue in colourway order,
+                            long before the chairs are through
+
+       — which is how a search for the plasto chairs came back with no chairs
+       in it. Requiring each word separately makes both orders work and matches
+       "plastic chair" against the Plastic Pod Chairs.
+
+       AND THE RESULT IS NOT CAPPED. It was, at 24, which is the other half of
+       the same fault: a cap reached while walking the catalogue in colourway
+       order does not trim the least relevant results, it trims whatever
+       happens to sort last, and gives no sign it has done it. `limit` survives
+       for the callers that genuinely want one row, and the list itself scrolls
+       (.ff-furni-list is 200px with overflow-y: auto), so a long answer costs
+       a scrollbar rather than a wall. */
     function search(query, limit) {
-        const q = (query || "").trim().toLowerCase();
+        const words = (query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
         const out = [];
         for (const [className, row] of state.catalogue) {
             const m = state.meta[className];
             if (!m) continue;
             if (!(row.largeImages || []).length) continue;
             const name = (row.name || "").toLowerCase();
-            const cls = className.toLowerCase().replace(/_/g, " ");
-            if (q && !name.includes(q) && !cls.includes(q)) continue;
+            const raw = className.toLowerCase();
+            /* The class both ways round: spaced, so "plasto chair" reads as
+               words, and raw, so a caller handing over a whole className —
+               the "Holding chair_plasto*14" label does exactly that — finds
+               its row instead of falling back to printing the class name. */
+            const cls = raw.replace(/_/g, " ");
+            if (!words.every(w => name.includes(w) || cls.includes(w) || raw.includes(w))) continue;
             out.push({
                 className, name: row.name || className, icon: row.icon,
                 sit: !!m.sit, w: m.x, h: m.y, rotations: rotationCount(className)
             });
-            if (out.length >= (limit || 40)) break;
+            if (limit && out.length >= limit) break;
         }
         return out;
     }

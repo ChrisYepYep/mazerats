@@ -1310,12 +1310,16 @@
         const query = document.getElementById(queryId);
         if (!list || !query) return;
         list.innerHTML = "";
-        for (const r of Editor.search(query.value, 24)) {
+        /* Everything that matches, not a first handful — see the note on
+           RoomEditor.search. The list scrolls, and `loading="lazy"` keeps an
+           answer of a thousand rows from asking FurniIndex for a thousand
+           icons: only the ones scrolled into view are ever fetched. */
+        for (const r of Editor.search(query.value)) {
             const b = document.createElement("button");
             b.type = "button";
             b.className = "ff-furni" + (current === r.className ? " is-on" : "");
             b.title = `${r.name} — ${r.w}x${r.h}${r.sit ? ", seat" : ""}, ${r.rotations} rotation${r.rotations === 1 ? "" : "s"}`;
-            b.innerHTML = `<img src="${r.icon}" alt=""><span>${r.name}</span>` +
+            b.innerHTML = `<img src="${r.icon}" alt="" loading="lazy" decoding="async"><span>${r.name}</span>` +
                 (r.sit ? '<em class="ff-seat">seat</em>' : "");
             b.addEventListener("click", () => onPick(r.className));
             list.appendChild(b);
