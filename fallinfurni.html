@@ -404,6 +404,7 @@
                     <button type="button" data-mode="decor">Decorate</button>
                     <button type="button" data-mode="zones">Drop zones</button>
                     <button type="button" data-mode="rules">Rules</button>
+                    <button type="button" data-mode="walk" id="ff-mode-walk" hidden>Walkable</button>
                     <button type="button" data-mode="splash">Splash</button>
                 </nav>
 
@@ -416,6 +417,13 @@
                         <h3>Layout</h3>
                         <select id="ff-layout" class="ff-select" aria-label="Room layout"></select>
                         <p class="ff-hint" id="ff-layout-note"></p>
+                        <!-- Where the player begins. One setting, so it is a
+                             button that arms a click rather than a mode. -->
+                        <h3>Start tile</h3>
+                        <p id="ff-start-at" class="ff-sel"></p>
+                        <div class="ff-btn-row">
+                            <button type="button" id="ff-start-pick">Pick on the room</button>
+                        </div>
                         <h3>Floor</h3>
                         <select id="ff-floor-pattern" class="ff-select" aria-label="Floor pattern"></select>
                         <div id="ff-floor-colours" class="ff-swatches"></div>
@@ -578,6 +586,34 @@
                          not part of any level — it is saved to the site's own
                          settings the moment it changes, which is why this tab
                          has no Save of its own. -->
+                    <!-- WALKABLE: paint the pathing grid of a painted room.
+                         Only shown for public rooms — a private room's grid is
+                         its shape, read out of the client, and the walls are
+                         drawn from it. -->
+                    <section class="ff-mode" data-mode="walk" hidden>
+                        <p class="ff-hint">
+                            Which tiles can be walked on. A public room has no
+                            grid in the client — Habbo's server sent it — so
+                            this one was guessed from the artwork. Click a tile
+                            to turn it on or off; drag to paint several.
+                        </p>
+                        <p id="ff-walk-count" class="ff-sel"></p>
+                        <div class="ff-btn-row">
+                            <button type="button" id="ff-walk-add" class="ff-primary">Painting: ON</button>
+                            <button type="button" id="ff-walk-reset">Back to the guess</button>
+                        </div>
+                        <p class="ff-hint">
+                            Nothing here is saved with the level — the grid
+                            belongs to the room. Copy it and it goes in
+                            js/room-masks.js.
+                        </p>
+                        <div class="ff-btn-row">
+                            <button type="button" id="ff-walk-copy" class="ff-primary">Copy the grid</button>
+                            <button type="button" id="ff-walk-check">Check it</button>
+                        </div>
+                        <p id="ff-walk-note" class="ff-hint"></p>
+                    </section>
+
                     <section class="ff-mode" data-mode="splash" hidden>
                         <p class="ff-hint">
                             The furni that drifts down the title screen, behind
@@ -756,6 +792,8 @@
     <script src="js/avatar-parts.js"></script>
     <!-- Before room-iso: the renderer sizes itself from a layout on load. -->
     <script src="js/room-layouts.js"></script>
+    <!-- Hand-painted walkable grids; must load before room-public applies them. -->
+    <script src="js/room-masks.js"></script>
     <script src="js/room-public.js"></script>
     <script src="js/room-iso.js"></script>
     <script src="js/room-path.js"></script>

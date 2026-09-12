@@ -368,6 +368,22 @@
         return { x, y };
     }
 
+    /* THE SAME SUM WITHOUT THE MASK — which tile WOULD be here.
+
+       `tileAt` refuses a hole, and must: clicking through the floor is how an
+       avatar ends up walking on nothing. But the one tool that has to reach a
+       hole is the one that decides where the holes are, and a grid you cannot
+       click the empty squares of can only ever be made smaller. */
+    function tileAtRaw(px, py) {
+        const rx = px - ORIGIN_X;
+        const ry = py - (ORIGIN_Y + HALF_H);
+        const fx = (rx / HALF_W + ry / HALF_H) / 2;
+        const fy = (ry / HALF_H - rx / HALF_W) / 2;
+        const x = Math.round(fx), y = Math.round(fy);
+        if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return null;
+        return { x, y };
+    }
+
     /* A hard 1px line, drawn pixel by pixel.
 
        Canvas antialiases every path it strokes, and on the 2:1 diagonals an
@@ -912,7 +928,7 @@
         get paintY() { return paintY; },
         KEY_STRIDE, key, has, setLayout,
         WALL_H, WIDTH, HEIGHT, LINE,
-        shade, scale, tileTop, tileCenter, tileAt, diamond, floorPath,
+        shade, scale, tileTop, tileCenter, tileAt, tileAtRaw, diamond, floorPath,
         drawRoom, highlight, depth, preloadStencils, group, colourOf
     };
 })();

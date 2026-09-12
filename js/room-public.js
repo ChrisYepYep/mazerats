@@ -25,26 +25,63 @@
             id: "library", name: "Library", painted: true,
             image: "assets/rooms/library/background.png", imageW: 717, imageH: 486,
             tileW: 32, tileH: 16,
-            originX: 418, originY: 76,
-            cols: 16, rows: 17, tiles: 98, door: 0,
+            originX: 290, originY: -20,
+            cols: 26, rows: 26, tiles: 98, door: 0,
             mask: [
-                "xxxx0xxxxxxxxxxx",
-                "xxxx0000xxxxxxxx",
-                "xxxx00000x0xxxxx",
-                "xxxx0000x000xxxx",
-                "xxxx000x00000xxx",
-                "xxx00xx0000xxxxx",
-                "xxx00000000xxxxx",
-                "xx00000xx000xxxx",
-                "00000000x0000xxx",
-                "xx000000xx0xxxxx",
-                "xxx00000xx0xxxxx",
-                "xxxx00xxxx00xxxx",
-                "xxxx0xxxx0000xxx",
-                "xxxxxx0000xx00xx",
-                "xxxxxxx000xxx00x",
-                "xxxxxxxx00xxxx00",
-                "xxxxxxxxx0xxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxx0xxxxxxxxxxx",
+                "xxxxxxxxxxxxxx0000xxxxxxxx",
+                "xxxxxxxxxxxxxx00000x0xxxxx",
+                "xxxxxxxxxxxxxx0000x000xxxx",
+                "xxxxxxxxxxxxxx000x00000xxx",
+                "xxxxxxxxxxxxx00xx0000xxxxx",
+                "xxxxxxxxxxxxx00000000xxxxx",
+                "xxxxxxxxxxxx00000xx000xxxx",
+                "xxxxxxxxxx00000000x0000xxx",
+                "xxxxxxxxxxxx000000xx0xxxxx",
+                "xxxxxxxxxxxxx00000xx0xxxxx",
+                "xxxxxxxxxxxxxx00xxxx00xxxx",
+                "xxxxxxxxxxxxxx0xxxx0000xxx",
+                "xxxxxxxxxxxxxxxx0000xx00xx",
+                "xxxxxxxxxxxxxxxxx000xxx00x",
+                "xxxxxxxxxxxxxxxxxx00xxxx00",
+                "xxxxxxxxxxxxxxxxxxx0xxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+            ],
+            derived: [
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxx0xxxxxxxxxxx",
+                "xxxxxxxxxxxxxx0000xxxxxxxx",
+                "xxxxxxxxxxxxxx00000x0xxxxx",
+                "xxxxxxxxxxxxxx0000x000xxxx",
+                "xxxxxxxxxxxxxx000x00000xxx",
+                "xxxxxxxxxxxxx00xx0000xxxxx",
+                "xxxxxxxxxxxxx00000000xxxxx",
+                "xxxxxxxxxxxx00000xx000xxxx",
+                "xxxxxxxxxx00000000x0000xxx",
+                "xxxxxxxxxxxx000000xx0xxxxx",
+                "xxxxxxxxxxxxx00000xx0xxxxx",
+                "xxxxxxxxxxxxxx00xxxx00xxxx",
+                "xxxxxxxxxxxxxx0xxxx0000xxx",
+                "xxxxxxxxxxxxxxxx0000xx00xx",
+                "xxxxxxxxxxxxxxxxx000xxx00x",
+                "xxxxxxxxxxxxxxxxxx00xxxx00",
+                "xxxxxxxxxxxxxxxxxxx0xxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxx",
             ],
             overlays: [
                 { member: "block_light", x: 272, y: 121, w: 42, h: 43, ink: 8, blend: 100, z: 0 },
@@ -116,6 +153,33 @@
             ]
         },
     ];
+
+    /* HAND CORRECTIONS WIN, and survive this file being regenerated.
+
+       The walkable grid above was DERIVED from the artwork by sampling pixel
+       colours, which is a good guess and only a guess: it cannot tell a patch
+       of floor under a dark arch from the arch, and it has no idea whether the
+       builder wants the carpet walked on. js/room-masks.js is hand-written —
+       painted in the level editor's Walkable mode — and replaces the derived
+       mask outright where it has one.
+
+       Applied here rather than merged into the data above, because this file
+       is regenerated from the client whenever the extractor is re-run and
+       anything written into it is lost. */
+    if (window.RoomMasks) {
+        for (const r of ROOMS) {
+            const over = window.RoomMasks[r.id];
+            if (!Array.isArray(over) || !over.length) continue;
+            if (over.length !== r.rows || over.some(row => row.length !== r.cols)) {
+                console.warn("RoomMasks: \"" + r.id + "\" is " +
+                    over[0].length + "x" + over.length + ", room is " +
+                    r.cols + "x" + r.rows + " — override ignored.");
+                continue;
+            }
+            r.mask = over.slice();
+            r.tiles = over.join("").split("").filter(c => c !== "x").length;
+        }
+    }
 
     const byId = new Map(ROOMS.map(r => [r.id, r]));
     window.RoomPublic = { ROOMS, get: (id) => byId.get(id) || null };

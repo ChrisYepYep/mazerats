@@ -1001,8 +1001,59 @@
     /* What a click on the room means depends on the mode, which is the point of
        having modes: in Decorate it places or selects furni, in Drop zones it
        picks the zone you clicked inside, and elsewhere it does nothing. */
+    /* ---- WHERE THE PLAYER STARTS.
+
+       The level has always carried a `start` tile and nothing has ever been
+       able to set it, so every level began on whatever the schema's default
+       was. It is ARMED rather than a mode of its own: press the button, click
+       a tile, done — one setting does not need a tab.
+
+       Refused on a tile there is no floor on, which in a shaped or painted
+       room is most of the grid. A level that begins off the floor cannot be
+       walked out of. */
+    let pickingStart = false;
+
+    function setStartTile(t) {
+        if (!Editor || !Editor.state.level) return;
+        if (!Iso.has(t.x, t.y)) { status("There is no floor there.", "bad"); return; }
+        Editor.state.level.start = { x: t.x, y: t.y };
+        Editor.save();
+        pickingStart = false;
+        state.pos = { x: t.x, y: t.y };
+        state.path = []; state.goal = null; state.stepFrom = null; state.acceptAt = null;
+        renderEditorPanel();
+        status(`The player starts at ${t.x}, ${t.y}.`, "good");
+        dirty = true;
+    }
+
+    /* ---- THE WALKABLE GRID, painted by hand.
+
+       Held here rather than in the level, because it belongs to the ROOM: two
+       levels in the Library share one pathing grid. `walkPaint` is what a
+       click does — on or off — so dragging across a row does one thing rather
+       than alternating. */
+    let walkPaint = true;
+    let walkDragging = false;
+
+    function paintWalkable(t, on) {
+        const layout = Iso.layout;
+        if (!layout || !layout.painted) return;
+        if (t.x < 0 || t.y < 0 || t.x >= layout.cols || t.y >= layout.rows) return;
+        const row = layout.mask[t.y];
+        const want = on ? "0" : "x";
+        if (row[t.x] === want) return;
+        layout.mask[t.y] = row.slice(0, t.x) + want + row.slice(t.x + 1);
+        layout.tiles = layout.mask.join("").split("").filter(c => c !== "x").length;
+        renderWalkPanel();
+        dirty = true;
+    }
+
     function editorClick(t, ev) {
         const mode = Editor.state.mode;
+
+        if (pickingStart) { setStartTile(t); return; }
+
+        if (mode === "walk") { paintWalkable(t, walkPaint); return; }
 
         if (mode === "zones") {
             const hit = (Editor.state.level.zones || []).find(z =>
@@ -1929,15 +1980,43 @@
 
             /* A PAINTED ROOM HAS NOTHING TO CHOOSE. The Library's floor and
                walls are one bitmap somebody drew in 2005; offering a wallpaper
-               picker beside it promises something the renderer will ignore. */
+               picker beside it promises something the renderer will ignore.
+               The layout and the start tile stay: both are still the level's. */
             const room = document.querySelector('.ff-mode[data-mode="room"]');
+            const keep = new Set(["Layout", "Start tile"]);
             if (room) {
                 room.querySelectorAll("h3, .ff-select, .ff-swatches").forEach(el => {
-                    if (el.id === "ff-layout" || el.textContent === "Layout") return;
+                    if (el.id === "ff-layout" || keep.has(el.textContent)) return;
                     el.hidden = !!m.painted;
                 });
             }
+            // Painting the grid only means anything where it was guessed.
+            const walkBtn = document.getElementById("ff-mode-walk");
+            if (walkBtn) walkBtn.hidden = !m.painted;
+            if (!m.painted && Editor && Editor.state.mode === "walk") setMode("room");
         }
+        renderWalkPanel();
+        const at = document.getElementById("ff-start-at");
+        if (at && Editor && Editor.state.level) {
+            const s = Editor.state.level.start;
+            at.textContent = pickingStart
+                ? "Click a tile in the room…"
+                : `${s.x}, ${s.y}`;
+        }
+        const pick = document.getElementById("ff-start-pick");
+        if (pick) pick.textContent = pickingStart ? "Cancel" : "Pick on the room";
+    }
+
+    function renderWalkPanel() {
+        const layout = Iso.layout;
+        const count = document.getElementById("ff-walk-count");
+        if (count) {
+            count.textContent = (layout && layout.painted)
+                ? `${layout.tiles} walkable of ${layout.cols * layout.rows}`
+                : "";
+        }
+        const add = document.getElementById("ff-walk-add");
+        if (add) add.textContent = walkPaint ? "Painting: ON" : "Painting: OFF";
         if (refreshFloorSwatches) refreshFloorSwatches();
         if (refreshWallSwatches) refreshWallSwatches();
     }
@@ -2048,6 +2127,10 @@
         const r = canvas.getBoundingClientRect();
         const px = (ev.clientX - r.left) * (canvas.width / r.width);
         const py = (ev.clientY - r.top) * (canvas.height / r.height);
+        /* Walkable mode reaches the HOLES too — it is the tool that decides
+           where they are, and a grid whose empty squares cannot be clicked can
+           only ever be made smaller. Everywhere else a hole is not a tile. */
+        if (Editor && Editor.state.mode === "walk") return Iso.tileAtRaw(px, py);
         return Iso.tileAt(px, py);
     }
 
@@ -2904,6 +2987,11 @@
                 (t && state.hover && (t.x !== state.hover.x || t.y !== state.hover.y));
             if (changed) { state.hover = t; dirty = true; }
             if (t && dragFrom) extendDrag(t);
+            // Drag to paint a run of tiles. `walkPaint` is fixed for the whole
+            // drag, so dragging back over a tile does not undo it.
+            if (t && walkDragging && Editor && Editor.state.mode === "walk") {
+                paintWalkable(t, walkPaint);
+            }
             /* NO CURSOR IS SET HERE. This used to write a `pointer` inline
                whenever the mouse was over a tile, which is what a web page
                does over something clickable and is not what a Habbo room
@@ -2917,12 +3005,14 @@
 
         // Dragging draws a zone, and only in zone mode — no modifier to guess.
         canvas.addEventListener("mousedown", (ev) => {
-            if (!Editor || Editor.state.mode !== "zones") return;
+            if (!Editor) return;
             if (game && game.state === Game.RUNNING) return;
+            if (Editor.state.mode === "walk") { walkDragging = true; return; }
+            if (Editor.state.mode !== "zones") return;
             const t = pointerTile(ev);
             if (t) beginDrag(t);
         });
-        window.addEventListener("mouseup", endDrag);
+        window.addEventListener("mouseup", () => { walkDragging = false; endDrag(); });
 
         canvas.addEventListener("click", (ev) => {
             const t = pointerTile(ev);
@@ -2949,6 +3039,77 @@
             layoutSel.value = state.model;
             layoutSel.addEventListener("change", () => setLayoutFromPicker(layoutSel.value));
         }
+
+        const startBtn = document.getElementById("ff-start-pick");
+        if (startBtn) startBtn.addEventListener("click", () => {
+            pickingStart = !pickingStart;
+            if (pickingStart) status("Click the tile the player should start on.", "busy");
+            syncPickers();
+            dirty = true;
+        });
+
+        const walkAdd = document.getElementById("ff-walk-add");
+        if (walkAdd) walkAdd.addEventListener("click", () => { walkPaint = !walkPaint; renderWalkPanel(); });
+
+        const walkReset = document.getElementById("ff-walk-reset");
+        if (walkReset) walkReset.addEventListener("click", () => {
+            const layout = Iso.layout;
+            const src = window.RoomPublic && window.RoomPublic.get(layout && layout.id);
+            if (!src || !src.derived) { status("Nothing to go back to.", "bad"); return; }
+            layout.mask = src.derived.slice();
+            layout.tiles = layout.mask.join("").split("").filter(c => c !== "x").length;
+            renderWalkPanel();
+            refreshBlocked();
+            status("Back to the grid guessed from the artwork.", "good");
+            dirty = true;
+        });
+
+        /* COPIED AS THE FILE IT GOES IN, not as a bare grid. The thing that
+           makes a mask useless is being one row out, so what lands on the
+           clipboard is the whole entry with the room's id on it, ready to drop
+           into js/room-masks.js with nothing to retype. */
+        const walkCopy = document.getElementById("ff-walk-copy");
+        if (walkCopy) walkCopy.addEventListener("click", async () => {
+            const layout = Iso.layout;
+            if (!layout || !layout.painted) return;
+            const text = `        ${layout.id}: [\n` +
+                layout.mask.map(r => `            ${JSON.stringify(r)},`).join("\n") +
+                `\n        ],\n`;
+            const note = document.getElementById("ff-walk-note");
+            try {
+                await navigator.clipboard.writeText(text);
+                status(`Copied — ${layout.tiles} tiles. Paste it into js/room-masks.js.`, "good");
+            } catch {
+                // A clipboard a browser will not give up is not a dead end.
+                if (note) note.textContent = "Could not reach the clipboard — it is in the console instead.";
+                status("Copy blocked; written to the console.", "bad");
+            }
+            console.log("RoomMasks entry for " + layout.id + ":\n" + text);
+        });
+
+        /* WHAT DOES THIS GRID ACTUALLY PLAY LIKE. The two things a painted
+           mask gets wrong are islands nobody can reach and tiles that look
+           walkable and are not, and both are invisible until somebody plays
+           it. This says so before it ships. */
+        const walkCheck = document.getElementById("ff-walk-check");
+        if (walkCheck) walkCheck.addEventListener("click", () => {
+            const layout = Iso.layout;
+            const note = document.getElementById("ff-walk-note");
+            if (!layout || !layout.painted || !note) return;
+            const L = window.RoomLayouts;
+            const tiles = L.tileList(layout);
+            if (!tiles.length) { note.textContent = "No walkable tiles at all."; return; }
+            const start = (Editor && Editor.state.level && Editor.state.level.start) || tiles[0];
+            const from = Iso.has(start.x, start.y) ? start : tiles[0];
+            const seen = window.RoomDrop.reachableFrom(from, new Set());
+            const cut = tiles.filter(t => !seen.has(Iso.key(t.x, t.y)));
+            note.textContent = cut.length
+                ? `${cut.length} of ${tiles.length} tiles cannot be reached from the start ` +
+                  `(${from.x},${from.y}) — e.g. ${cut.slice(0, 4).map(t => t.x + "," + t.y).join("  ")}`
+                : `All ${tiles.length} tiles reachable from the start (${from.x},${from.y}).`;
+            status(cut.length ? "Some tiles are cut off." : "Every tile is reachable.",
+                cut.length ? "bad" : "good");
+        });
 
         const nameInput = document.getElementById("ff-name");
         if (state.name) nameInput.value = state.name;

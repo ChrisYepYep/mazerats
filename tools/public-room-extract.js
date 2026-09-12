@@ -192,17 +192,26 @@ function deriveMask(png, room, ox, oy, tw, th) {
         if (blob.length > best.length) best = blob;
     }
 
-    const xs = best.map(p => p[0]), ys = best.map(p => p[1]);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    /* NOT TRIMMED TO THE WALKABLE AREA, deliberately.
+
+       Trimming to the bounding box gives the tidiest numbers and makes the
+       grid impossible to extend: a builder correcting this by hand can only
+       ever REMOVE tiles, because anything outside the box has no coordinates
+       to paint on. The derived area is a guess from pixel colours, and the
+       corrections that matter most are the ones that add a tile the classifier
+       missed — under the gallery, behind a plant.
+
+       So the whole scanned square is kept, holes and all, and the origin stays
+       the room's own. It costs nothing: a 26x26 grid is 676 cells to iterate
+       and the painted path never walks them. */
     const set = new Set(best.map(p => `${p[0]},${p[1]}`));
     const mask = [];
-    for (let y = minY; y <= maxY; y++) {
+    for (let y = 0; y < N; y++) {
         let row = "";
-        for (let x = minX; x <= maxX; x++) row += set.has(`${x},${y}`) ? "0" : "x";
+        for (let x = 0; x < N; x++) row += set.has(`${x},${y}`) ? "0" : "x";
         mask.push(row);
     }
-    return { mask, minX, minY, cols: maxX - minX + 1, rows: maxY - minY + 1, tiles: best.length };
+    return { mask, minX: 0, minY: 0, cols: N, rows: N, tiles: best.length };
 }
 
 function build(cctPath, roomKey) {
@@ -299,6 +308,11 @@ function emit(rooms) {
         L.push("            mask: [");
         for (const row of r.mask) L.push(`                ${JSON.stringify(row)},`);
         L.push("            ],");
+        /* The guess, kept untouched even when a hand-painted mask replaces it,
+           so the editor's "back to the guess" has something to go back to. */
+        L.push("            derived: [");
+        for (const row of r.mask) L.push(`                ${JSON.stringify(row)},`);
+        L.push("            ],");
         L.push("            overlays: [");
         for (const o of r.overlays) {
             L.push(`                { member: ${JSON.stringify(o.member)}, x: ${o.x}, y: ${o.y}, ` +
@@ -309,6 +323,33 @@ function emit(rooms) {
     }
     L.push("    ];");
     L.push(`
+    /* HAND CORRECTIONS WIN, and survive this file being regenerated.
+
+       The walkable grid above was DERIVED from the artwork by sampling pixel
+       colours, which is a good guess and only a guess: it cannot tell a patch
+       of floor under a dark arch from the arch, and it has no idea whether the
+       builder wants the carpet walked on. js/room-masks.js is hand-written —
+       painted in the level editor's Walkable mode — and replaces the derived
+       mask outright where it has one.
+
+       Applied here rather than merged into the data above, because this file
+       is regenerated from the client whenever the extractor is re-run and
+       anything written into it is lost. */
+    if (window.RoomMasks) {
+        for (const r of ROOMS) {
+            const over = window.RoomMasks[r.id];
+            if (!Array.isArray(over) || !over.length) continue;
+            if (over.length !== r.rows || over.some(row => row.length !== r.cols)) {
+                console.warn("RoomMasks: \\"" + r.id + "\\" is " +
+                    over[0].length + "x" + over.length + ", room is " +
+                    r.cols + "x" + r.rows + " — override ignored.");
+                continue;
+            }
+            r.mask = over.slice();
+            r.tiles = over.join("").split("").filter(c => c !== "x").length;
+        }
+    }
+
     const byId = new Map(ROOMS.map(r => [r.id, r]));
     window.RoomPublic = { ROOMS, get: (id) => byId.get(id) || null };
 

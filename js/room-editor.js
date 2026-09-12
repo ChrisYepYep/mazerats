@@ -629,6 +629,60 @@
             return;
         }
 
+        /* WHERE THE PLAYER STARTS, drawn in every mode.
+
+           It is not something you set often and it is something you want to
+           see while doing everything else — a drop zone that does not reach
+           the start tile is a round nobody can begin. Green, and inset, so it
+           reads as a marker on the floor rather than as another tile cursor. */
+        const s = state.level.start;
+        if (s && Iso.has(s.x, s.y)) {
+            const t = Iso.tileCenter(s.x, s.y);
+            const w = Iso.HALF_W * 0.55, h = Iso.HALF_H * 0.55;
+            ctx.save();
+            ctx.strokeStyle = "#4de08a";
+            ctx.fillStyle = "rgba(77,224,138,0.28)";
+            ctx.beginPath();
+            ctx.moveTo(t.sx, t.sy - h);
+            ctx.lineTo(t.sx + w, t.sy);
+            ctx.lineTo(t.sx, t.sy + h);
+            ctx.lineTo(t.sx - w, t.sy);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        /* WALKABLE: every tile of the room's grid, on or off. The whole grid,
+           including the tiles that are off — painting a tile back on is the
+           correction that matters most, and you cannot click one you cannot
+           see. */
+        if (state.mode === "walk") {
+            const layout = Iso.layout;
+            if (layout && layout.painted) {
+                for (let y = 0; y < layout.rows; y++) {
+                    for (let x = 0; x < layout.cols; x++) {
+                        const on = layout.mask[y][x] !== "x";
+                        const t = Iso.tileTop(x, y);
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.moveTo(t.sx, t.sy);
+                        ctx.lineTo(t.sx + Iso.HALF_W, t.sy + Iso.HALF_H);
+                        ctx.lineTo(t.sx, t.sy + Iso.TILE_H);
+                        ctx.lineTo(t.sx - Iso.HALF_W, t.sy + Iso.HALF_H);
+                        ctx.closePath();
+                        ctx.fillStyle = on ? "rgba(70,210,120,0.34)" : "rgba(220,70,70,0.16)";
+                        ctx.fill();
+                        ctx.strokeStyle = on ? "rgba(90,255,150,0.55)" : "rgba(255,110,110,0.30)";
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }
+            }
+            if (hover) Iso.highlight(ctx, hover.x, hover.y, "#ffff00");
+            return;
+        }
+
         if (state.mode === "zones") {
             for (const z of state.level.zones || []) {
                 const on = z.id === state.zoneId;
