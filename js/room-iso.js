@@ -577,7 +577,7 @@
        antialias against each other and rule the wall with pale seams, and a
        per-segment top strip steps like a battlement. The stencil supplies the
        pattern's own repeat, so nothing is lost by drawing the run in one go. */
-    function wallRun(ctx, from, to, tile, faceTint, opening, endCap) {
+    function wallRun(ctx, from, to, tile, faceTint, opening, endCap, joined) {
         ctx.save();
         ctx.beginPath();
         ctx.moveTo(from.sx, from.sy);
@@ -651,9 +651,35 @@
            It is drawn OUTSIDE the clip, because it is outside the wall. The
            1px black line that used to stand in for it is what the cap's own
            first column draws anyway. */
+        /* NO CAP WHERE TWO WALLS MEET. A cap is the wall's cut face, and an
+           inner corner is not a cut — the run simply carries on around the
+           bend as another run. The client agrees and is explicit about it:
+           model_b and model_f are the client's own descriptions of exactly
+           these two shaped rooms, and each places ONE left_wallend and ONE
+           right_wallend, at the far end of each side, with nothing at all at
+           the corner. Capping every run put two caps on the same point there,
+           which is what made the corner look wrong. */
+        if (joined) return;
+
         const capX = to.sx > from.sx ? to.sx : to.sx - WALL_END;
-        if (endCap) ctx.drawImage(endCap, Math.round(capX), Math.round(to.sy - WALL_H));
-        else hardLine(ctx, to.sx, to.sy, to.sx, to.sy - WALL_H, "#000");
+        if (endCap) {
+            /* CLIPPED TO THE WALL'S OWN BAND. The cap bitmap is 122 tall
+               against a 115 wall, so seven pixels of it hang below the floor
+               line — and unlike the panels, which the floor is drawn over, the
+               cap stands outside the floor with nothing to cover it. That
+               overhang is the stray foot under each corner. The extra rows are
+               the piece's own tuck-in, meant to be buried; clipping is what
+               buries it. */
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(Math.round(capX) - 1, Math.round(to.sy - WALL_H) - 1,
+                WALL_END + 2, WALL_H + 1);
+            ctx.clip();
+            ctx.drawImage(endCap, Math.round(capX), Math.round(to.sy - WALL_H));
+            ctx.restore();
+        } else {
+            hardLine(ctx, to.sx, to.sy, to.sx, to.sy - WALL_H, "#000");
+        }
     }
 
     /* THE DOORWAY, and it is a hole rather than a decal.
@@ -707,12 +733,37 @@
         const rightRuns = runsOf("ne", 1, 0);
         const leftRuns = runsOf("nw", 0, 1);
 
+        /* WHERE DOES A WALL ACTUALLY END? Not at the end of every run.
+
+           Each run has two endpoints on screen, and a room's corners are
+           simply points where two of them coincide — the back corner of a
+           plain room is where the left and right walls both begin, and an
+           inner corner is where one run ends and the next begins. So the
+           endpoints are counted, and a cap is drawn only at a point used
+           ONCE, which is a wall stopping in open air and nothing else.
+
+           For a rectangle that gives exactly the two caps it always had. For
+           `Corner` it gives two as well, at the far end of each side, which is
+           what the client's own model_b places. */
+        const ends = (tiles, side) => {
+            const a = tileTop(tiles[0].x, tiles[0].y);
+            const l = tileTop(tiles[tiles.length - 1].x, tiles[tiles.length - 1].y);
+            return side === "right"
+                ? [{ sx: a.sx, sy: a.sy }, { sx: l.sx + HALF_W, sy: l.sy + HALF_H }]
+                : [{ sx: a.sx, sy: a.sy }, { sx: l.sx - HALF_W, sy: l.sy + HALF_H }];
+        };
+        const tally = new Map();
+        const bump = (p) => {
+            const k = `${Math.round(p.sx)},${Math.round(p.sy)}`;
+            tally.set(k, (tally.get(k) || 0) + 1);
+        };
+        for (const t of rightRuns) ends(t, "right").forEach(bump);
+        for (const t of leftRuns) ends(t, "left").forEach(bump);
+        const shared = (p) => (tally.get(`${Math.round(p.sx)},${Math.round(p.sy)}`) || 0) > 1;
+
         for (const tiles of rightRuns) {
-            const first = tileTop(tiles[0].x, tiles[0].y);
-            const last = tileTop(tiles[tiles.length - 1].x, tiles[tiles.length - 1].y);
-            wallRun(ctx, { sx: first.sx, sy: first.sy },
-                { sx: last.sx + HALF_W, sy: last.sy + HALF_H },
-                rightTile, shade(rightHex, 1), null, rightCap);
+            const [from, to] = ends(tiles, "right");
+            wallRun(ctx, from, to, rightTile, shade(rightHex, 1), null, rightCap, shared(to));
         }
 
         /* THE DOOR GOES ON THE LONGEST STRETCH OF LEFT WALL, at the row the
@@ -723,15 +774,12 @@
         const doorRow = layout ? layout.door : DOOR_AT;
         let doorPlaced = false;
         for (const tiles of leftRuns) {
-            const first = tileTop(tiles[0].x, tiles[0].y);
-            const last = tileTop(tiles[tiles.length - 1].x, tiles[tiles.length - 1].y);
+            const [from, to] = ends(tiles, "left");
             const at = tiles.findIndex(t => t.y === doorRow);
             // One door, however many stretches of wall share that row.
             const opening = (maskTile && at >= 0 && !doorPlaced) ? { at, panel: maskTile, door } : null;
             if (opening) doorPlaced = true;
-            wallRun(ctx, { sx: first.sx, sy: first.sy },
-                { sx: last.sx - HALF_W, sy: last.sy + HALF_H },
-                leftTile, shade(leftHex, 1), opening, leftCap);
+            wallRun(ctx, from, to, leftTile, shade(leftHex, 1), opening, leftCap, shared(to));
         }
     }
 
