@@ -86,8 +86,6 @@
             overlays: [
                 { member: "block_light", x: 272, y: 121, w: 42, h: 43, ink: 8, blend: 100, z: 0 },
                 { member: "libtable_sd", x: 279, y: 443, w: 64, h: 33, ink: 36, blend: 30, z: 0 },
-                { member: "adframe_library_left", x: 222, y: 283, w: 162, h: 142, ink: 8, blend: 0, z: 0 },
-                { member: "hiliter_pub", x: 359, y: 261, w: 34, h: 17, ink: 36, blend: 100, z: 0 },
                 { member: "statue_mask2", x: 510, y: 83, w: 49, h: 92, ink: 8, blend: 100, z: 23000 },
                 { member: "counter7", x: 264, y: 155, w: 27, h: 23, ink: 36, blend: 100, z: 24000 },
                 { member: "comp", x: 268, y: 149, w: 21, h: 28, ink: 36, blend: 100, z: 24010 },

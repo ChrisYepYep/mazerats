@@ -341,12 +341,37 @@
 
        An empty list means the client has no artwork for this class and the
        caller should ask the catalogue instead. */
+    /* THE STATES SOMEBODY CAN CHOOSE, which is not the same as the states the
+       artwork has.
+
+       The bitmaps are numbered per FRAME, so a hearth has eleven of them and a
+       builder offered that list is being offered the individual pictures of a
+       fire. `<class>.data` says how many states there really are — two, for
+       almost everything that has any — and that is what this returns when the
+       class has one. A class with no `.data` has no animation either, so its
+       bitmap states ARE its states and the old answer is the right one. */
     function statesOf(className) {
+        const lib = libraryEntry(className);
+        if (lib && lib.an && lib.an.n > 0) {
+            return Array.from({ length: lib.an.n }, (_, i) => i);
+        }
         const table = offsetTable(className);
         if (!table) return [];
         return Object.keys(table)
             .map(Number).filter(Number.isFinite)
             .sort((a, b) => a - b);
+    }
+
+    /* What to call a state in the editor. The client names them when it
+       bothers — "off" and "on" — and a number is the honest answer when it
+       does not. */
+    function stateName(className, state) {
+        const lib = libraryEntry(className);
+        const names = lib && lib.an && lib.an.names;
+        if (names && names[state]) return names[state];
+        const n = statesOf(className).length;
+        if (n === 2) return state ? "on" : "off";
+        return `state ${state}`;
     }
 
     /* Where this piece's sprite goes, and whether it is drawn mirrored.
@@ -660,9 +685,125 @@
        which keeps the old far-corner sort. */
     const depthOfPart = (f) => tileDepth(f.x + f.w - 1, f.y + f.h - 1);
 
+    /* ---- ANIMATION.
+
+       THE NUMBERS ON A FURNI'S BITMAPS ARE FRAMES, NOT STATES, and treating
+       them as states is what produced an editor that cycled a candle through
+       the individual pictures of its own flame. The client keeps the real
+       answer in `<class>.data`, which the extractor now carries as `an`:
+
+           an.n       how many states there really are — usually two
+           an.names   ["off", "on"], when the class bothered to say
+           an.l[k]    for part `k`, one entry per state:
+                        { f: [frames], d: hold, r: random, lp: play once }
+
+       So `state` on a piece means off or on, and what is DRAWN is the frame
+       that part is up to. The frame numbers are the bitmap states the sprite
+       files are already named by, so nothing needs translating.
+
+       ONE TICK IS ONE FRAME OF THE ROOM. The delays are written in Director
+       ticks and the room paints at the same tempo, so a delay of 2 holds a
+       picture for two paints. `now` comes from the caller because a piece has
+       no clock of its own and every one of them has to agree. */
+    const ANIM_TICK_MS = 1000 / 24;
+
+    /* A FIRE FLICKERS, it does not march. `random:1` says pick the next frame
+       rather than take the next one, and it is on exactly the things you would
+       expect: hearths, candles, torches. Marching through a flame's frames in
+       order reads as a rotating object, which is what was wrong with it.
+
+       Rolled from the tile and the step rather than from Math.random, so two
+       candles side by side flicker differently and one candle draws the same
+       in every repaint of the same step — a re-roll per paint is a strobe. */
+    function flicker(seed, step, n) {
+        let h = (seed * 374761393 + step * 668265263) | 0;
+        h = (h ^ (h >>> 13)) * 1274126177 | 0;
+        return Math.abs(h ^ (h >>> 16)) % n;
+    }
+
+    /* Which bitmap state part `k` is showing right now. Null when this part
+       takes no part in this state — a lamp's glow does not exist when it is
+       off, and drawing frame 0 of it would put an unlit cone on the room. */
+    function frameOf(lib, f, k, now) {
+        const an = lib && lib.an;
+        if (!an || !an.l[k]) return null;
+        const state = Math.max(0, Math.min(an.n - 1, f.state || 0));
+        /* A LAYER WITH FEWER ENTRIES THAN THERE ARE STATES IS THE SAME IN ALL
+           OF THEM, and reading past the end has to mean that rather than
+           "absent". A hearth writes `a:[ [frames:[0]] ]` for its stonework
+           against two states, and taking the missing second entry as nothing
+           to draw left the fire burning in mid-air with no fireplace round it.
+           The last entry stands for every state after it. */
+        const list = an.l[k];
+        const seq = list[Math.min(state, list.length - 1)];
+        if (!seq || !seq.f.length) return null;
+        if (seq.f.length === 1) return seq.f[0];
+
+        const step = Math.floor((now || 0) / (ANIM_TICK_MS * (seq.d || 1)));
+        if (seq.r) return seq.f[flicker((f.x + 1) * 31 + (f.y + 1) * 7, step, seq.f.length)];
+        // `lp` plays through once and holds the last picture.
+        const i = seq.lp ? Math.min(step, seq.f.length - 1) : step % seq.f.length;
+        return seq.f[i];
+    }
+
     /* Where each part of a piece goes, and how deep it is. Null when this
        class is not in the library — the caller falls back to one flat sprite. */
-    function partsOf(f) {
+    function partsOf(f, now) {
+        const libA = libraryEntry(f.className);
+        if (libA && libA.an) {
+            const out = animatedParts(f, libA, now || 0);
+            if (out) return out;
+        }
+        return staticParts(f);
+    }
+
+    /* A piece whose parts are on different frames at once — which is the
+       normal case for anything animated: a lamp's post sits on frame 0 while
+       its glow runs 1,2,3,4. Each part is therefore resolved against its OWN
+       frame's box, not the piece's, and the box's anchor is what makes that
+       safe: `ax`/`ay` measure from the box to the tile, so a part's place on
+       screen comes out the same whichever frame's box it was measured in. */
+    function animatedParts(f, lib, now) {
+        const v = variantAt(f.className, 0, f.rotation || 0);
+        if (!v) return null;
+        const dir = v.dir;
+
+        const lift = (f.lift || 0) * Iso.TILE_H;
+        const home = Iso.tileCenter(f.x, f.y);
+        const base = artClass(f.className);
+        const depth = tileDepth(f.x, f.y) + Math.round((f.lift || 0) * DEPTH_PER_HEIGHT);
+
+        const out = [];
+        for (const k of Object.keys(lib.an.l)) {
+            const frame = frameOf(lib, f, k, now);
+            if (frame === null) continue;
+            /* A frame that has no artwork for this direction is skipped, not
+               approximated. Borrowing another direction's picture puts a lamp
+               facing the wrong way for one frame of its cycle, which reads as
+               a glitch rather than as a missing part. */
+            const byDir = lib.s && lib.s[frame];
+            const box = byDir && byDir[dir];
+            if (!box || !box.p) continue;
+            const p = box.p.find(q => q.k === k);
+            if (!p) continue;
+
+            const baseX = Math.round(home.sx - Iso.HALF_W - box.ax);
+            const baseY = Math.round(home.sy - box.ay - lift);
+            out.push({
+                url: `assets/furni/${base}_${p.f || `${frame}_${dir}`}_${p.k}.png`,
+                colour: f.colours ? f.colours[p.k.charCodeAt(0) - 97] || null : null,
+                add: !!(lib.add && lib.add[p.k]),
+                blend: (lib.bl && lib.bl[p.k]) || 0,
+                x: v.mirror ? baseX + box.w - p.ox - p.w : baseX + p.ox,
+                y: baseY + p.oy,
+                flip: v.mirror,
+                depth: depth + zshiftOf(f, p.k, v.facing)
+            });
+        }
+        return out.length ? out : null;
+    }
+
+    function staticParts(f) {
         const lib = libraryEntry(f.className);
         const a = anchor(f);
         if (!a || !a.box || !a.box.p || !a.box.p.length) return null;
@@ -832,6 +973,6 @@
         SPRITE_BASE, make, tilesOf, covers, blockedTiles, seatAt, anyAt,
         fits, depthOf, sorted, draw, drawAll, outline, sprite, onSpriteLoad,
         footprint, rotate, rotationsOf, statesOf, anchor, variantAt, librarySprite,
-        partsOf, drawPart, depthOfPart, tileDepth, DEPTH_PER_TILE
+        partsOf, drawPart, depthOfPart, tileDepth, DEPTH_PER_TILE, stateName
     };
 })();

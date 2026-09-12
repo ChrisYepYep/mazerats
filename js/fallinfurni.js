@@ -583,7 +583,7 @@
         }
 
         for (const f of state.furni) {
-            const parts = Furni.partsOf(f);
+            const parts = Furni.partsOf(f, now);
             if (parts) {
                 for (const p of parts) {
                     pieces.push({ key: p.depth * 1000 + (order++), draw: () => Furni.drawPart(ctx2, p) });
@@ -889,19 +889,30 @@
 
        Null means one state, and the button is hidden rather than disabled —
        a dead control on nine furni out of ten is just clutter. */
+    /* THE BUTTON SWITCHES IT ON, it does not step through pictures.
+
+       It used to read "State 4/11" on a hearth, because the states it was
+       counting were the eleven frames of the fire. RoomFurni.statesOf answers
+       with the states the CLIENT declares now — two, for everything that has a
+       `.data` — so the same button becomes the on/off switch it was always
+       meant to be, and the animation runs itself. Anything genuinely
+       multi-state still says which one it is on. */
     function stateLabel(className, at) {
         if (!Editor || !className) return null;
         const list = Editor.stateList(className);
         if (!list || list.length < 2) return null;
         const i = Math.max(0, list.indexOf(Number(at) || 0));
-        if (list.length === 2) return i === 0 ? "Switch on" : "Switch off";
+        if (list.length === 2) {
+            const next = Furni.stateName(className, i === 0 ? 1 : 0);
+            return `Switch ${next}`;
+        }
         return `State ${i + 1}/${list.length}`;
     }
 
     function describeState(f) {
         const list = Editor.stateList(f.className);
         const i = Math.max(0, list.indexOf(Number(f.state) || 0));
-        if (list.length === 2) return i === 0 ? "off" : "on";
+        if (list.length === 2) return Furni.stateName(f.className, i);
         return `state ${i + 1} of ${list.length}`;
     }
 
@@ -2822,7 +2833,7 @@
     function spriteUrlsInRoom() {
         const urls = [];
         for (const f of state.furni) {
-            const parts = Furni.partsOf(f);
+            const parts = Furni.partsOf(f, now);
             if (parts) for (const p of parts) urls.push(p.url);
             else if (f.url) urls.push(f.url);
         }
@@ -2836,7 +2847,7 @@
            arrived. */
         const urls = [];
         for (const f of state.furni) {
-            const parts = Furni.partsOf(f);
+            const parts = Furni.partsOf(f, now);
             if (parts) for (const p of parts) urls.push(p.url);
             else if (f.url) urls.push(f.url);
         }

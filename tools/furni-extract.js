@@ -101,6 +101,100 @@ function parseName(name) {
 
    Only 33 and 34 change how the browser has to composite, so only they and
    #blend are carried into the library. */
+/* ---- WHAT A FURNI DOES WHEN IT IS ON, out of `<class>.data`.
+
+   586 classes carry one of these and 225 of them animate. It is the answer to
+   a question this repo previously got wrong in a way worth writing down: the
+   `state` numbers on a furni's bitmaps are not states a player chooses, they
+   are ANIMATION FRAMES, and offering them as a list to cycle through is
+   offering somebody the individual frames of a flame.
+
+   The real thing is small:
+
+       [ states:[1, 2],
+         statestrings:[ "off", "on" ],
+         layers:[
+           a:[ [ frames:[0] ] ],
+           c:[ [ frames:[0] ],
+               [ loop:0, random:1, delay:2, frames:[1,2,3,4,5,6,7,8,9,10] ] ] ] ]
+
+   `states` are the states — usually two, and `statestrings` says so in words.
+   Each LAYER (a part letter) then gets one entry per state, and that entry is
+   a frame list: which of the class's bitmap states that part shows. One frame
+   is a still picture. Several is an animation.
+
+     delay    how many ticks to hold each frame. Absent means every tick.
+     loop     0 keeps going, 1 plays through once.
+     random   pick the next frame at random rather than in order — which is
+              exactly how a fire flickers instead of marching, and is why a
+              hearth drawn frame-by-frame in order never looked right.
+
+   The frame numbers ARE the bitmap state in the member names this tool
+   already splits on, so a frame needs no translation: frame 7 of part c is
+   the picture already written as <class>_7_<dir>_c.png. */
+function readAnim(cast, byName, className) {
+    const entry = byName.get(className + ".data");
+    if (entry === undefined) return null;
+    const sid = cast.childOf.get(entry + ":STXT");
+    if (sid === undefined) return null;
+    let text;
+    try {
+        const buf = cast.chunk(cast.byId.get(sid));
+        if (buf.length < 12) return null;
+        const off = buf.readUInt32BE(0), len = buf.readUInt32BE(4);
+        if (off + len > buf.length) return null;
+        text = buf.toString("latin1", off, off + len).replace(/\r/g, "\n");
+    } catch { return null; }
+
+    const st = /states:\s*\[([^\]]*)\]/.exec(text);
+    const states = st ? st[1].split(",").map(s => +s.trim()).filter(Number.isFinite) : [];
+    if (!states.length) return null;
+
+    const names = [];
+    const ss = /statestrings:\s*\[([^\]]*)\]/.exec(text);
+    if (ss) for (const m of ss[1].matchAll(/"([^"]*)"/g)) names.push(m[1]);
+
+    const li = text.indexOf("layers:");
+    if (li < 0) return null;
+    const body = text.slice(li);
+
+    /* Sliced on the layer letters, the same way readProps is and for the same
+       reason: a bracket-matching regex runs straight through the nested frame
+       list. A layer is "<letter>:[" up to the next one. */
+    const keys = [...body.matchAll(/\b([a-z]):\s*\[/g)];
+    const layers = {};
+    for (let i = 0; i < keys.length; i++) {
+        const letter = keys[i][1];
+        const from = keys[i].index;
+        const to = i + 1 < keys.length ? keys[i + 1].index : body.length;
+        const chunk = body.slice(from, to);
+
+        /* One entry per state, in order. Each is a bracketed group holding a
+           frames list and optionally delay/loop/random, so the groups are
+           found by their frames and the modifiers read from the same slice. */
+        const groups = [...chunk.matchAll(/\[([^[\]]*frames:\s*\[[^\]]*\][^[\]]*)\]/g)];
+        const perState = groups.map(g => {
+            const inner = g[1];
+            const frames = (/frames:\s*\[([^\]]*)\]/.exec(inner) || [, ""])[1]
+                .split(",").map(s => +s.trim()).filter(Number.isFinite);
+            const out = { f: frames };
+            const d = /delay:\s*(\d+)/.exec(inner);
+            const r = /random:\s*(\d+)/.exec(inner);
+            const lp = /loop:\s*(\d+)/.exec(inner);
+            if (d && +d[1] > 1) out.d = +d[1];
+            if (r && +r[1]) out.r = 1;
+            if (lp && +lp[1]) out.lp = 1;          // 1 = play once; 0 = loop
+            return out;
+        }).filter(g => g.f.length);
+        if (perState.length) layers[letter] = perState;
+    }
+    if (!Object.keys(layers).length) return null;
+
+    const out = { n: states.length, l: layers };
+    if (names.length === states.length) out.names = names;
+    return out;
+}
+
 function readProps(cast, byName, className) {
     const entry = byName.get(className + ".props");
     if (!entry) return null;
@@ -250,7 +344,12 @@ function main() {
         for (const e of cast.res.filter(x => x.tag === "CASt")) {
             const m = readMember(cast.chunk(e));
             if (!m || !m.name) continue;
-            if (m.name.endsWith(".props")) { propNames.set(m.name, e.id); continue; }
+            // `.data` rides in the same index: both are per-class text fields
+            // looked up by name a few lines below.
+            if (m.name.endsWith(".props") || m.name.endsWith(".data")) {
+                propNames.set(m.name, e.id);
+                continue;
+            }
             if (!m.bitmap) continue;
             const p = parseName(m.name);
             if (!p) { skipped++; continue; }
@@ -601,6 +700,9 @@ function main() {
                     if (props.ink) rec.add = props.ink;      // parts drawn additively
                     if (props.blend) rec.bl = props.blend;   // parts drawn part-transparent
                 }
+                // What it does when it is switched on — see readAnim.
+                const anim = readAnim(cast, propNames, className);
+                if (anim) rec.an = anim;
             }
             const st = rec.s[state] || (rec.s[state] = {});
             st[dir] = { w: W, h: H, ax: -minX, ay: -minY, p: placed };

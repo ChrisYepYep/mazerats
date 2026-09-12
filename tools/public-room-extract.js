@@ -244,8 +244,22 @@ function build(cctPath, roomKey) {
        own depth key; anything without one is part of the backdrop and sits
        behind everything. Kept so a later pass can draw them over the avatar
        and put it behind a bookcase, which is what the masks are for. */
+    /* AN ELEMENT WITH AN `#id` IS MACHINERY, NOT SCENERY, and the client says
+       so itself. The Library's list carries four:
+
+           #id: "floor"            the background bitmap, handled above
+           #id: "hiliter"          the TILE CURSOR — a white diamond the client
+                                   moves under the pointer
+           #id: "billboard_bg"     the advertising frame, blend 0
+           #id: "billboard_img"    the advert itself, a 1x1 placeholder
+           #id: "command: GOAWAY"  the exit hotspot, a #shape with no bitmap
+
+       Drawn as though they were furniture, the hiliter is a white square
+       sitting on the floor for ever — which is exactly what it looked like.
+       Filtering on the presence of an id rather than on a list of names means
+       the next public room's machinery is excluded without being named. */
     const overlays = parsed.els
-        .filter(e => e.member !== room.background && e.member !== "ad_pixel")
+        .filter(e => e.member !== room.background && !e.id)
         .map(e => {
             const r = regs.get(e.member);
             return {

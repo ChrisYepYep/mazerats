@@ -132,7 +132,23 @@ function openCast(file) {
         if (!e) return Buffer.alloc(0);
         if (e.off < 0) return inline.get(e.id) || Buffer.alloc(0);
         const raw = b.subarray(dataStart + e.off, dataStart + e.off + e.comp);
-        if (e.comp === e.decomp) return raw;
+        /* THE TABLE LIES ABOUT SOME CHUNKS, and the lie is quiet.
+
+           Equal compressed and decompressed lengths is meant to mean "stored
+           as-is", and for nearly everything it does. A set of the small text
+           members — the per-class `.props` and `.data` fields — say comp ===
+           decomp and are deflated anyway, so returning them raw hands back
+           zlib's own header and a caller reading the first eight bytes as an
+           offset and a length gets nonsense: 2027578208 and 1625317728 for
+           skullcandle.props, which is 51 bytes long.
+
+           Nothing threw. `readProps` simply found no text and moved on, so
+           every class whose ink lived in one of these had it silently dropped.
+           A zlib stream begins 0x78, which no Director chunk header does, so
+           the giveaway is cheap to check and the inflate is tried whatever the
+           table claims. */
+        const deflated = raw.length > 1 && raw[0] === 0x78;
+        if (e.comp === e.decomp && !deflated) return raw;
         try { return zlib.inflateSync(raw); } catch { return raw; }
     };
 

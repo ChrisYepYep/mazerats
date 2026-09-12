@@ -34,8 +34,38 @@
     "use strict";
 
     window.RoomMasks = {
-        /* Nothing overridden yet — the Library is running on the grid guessed
-           from its artwork. Paint one in the editor (Walkable) and paste it
-           here. */
+        /* Painted by hand in the editor. Bigger and more honest than the
+           guess it replaces: the derived grid found 98 tiles of obvious grey
+           stone and missed the gallery landing, the carpet runs and the strip
+           down to the lower floor, none of which read as plain floor to a
+           colour test. */
+        library: [
+            "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "xxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "xxxxxxxxxxxxx0000xxxxxx000",
+            "xxxxxxxxxxxxx00000xx0xx000",
+            "xxxxxxxxxxxxx0000000000000",
+            "xxxxxxxxxxxxx0000000000000",
+            "xxxxxxxxxxxxx00000000000xx",
+            "xxxxxxxxxxxxx00000000000xx",
+            "xxxxxxxxxxxxx00000000000xx",
+            "xxxxxxxxxxxx000000000000xx",
+            "xxxxxxxxxx00000000000000xx",
+            "xxxxxxxxxxxx000000000000xx",
+            "xxxxxxxxxxxxx000000000xxxx",
+            "xxxxxxxxxxxxxx000000000xxx",
+            "xxxxxxxxxxxxxx0000000000xx",
+            "xxxxxxxxxxxxxx00000000000x",
+            "xxxxxxxxxxxxxx0000000x000x",
+            "xxxxxxxx0x00000000000xx000",
+            "xxxxxxxxx0000000xxx00xxxxx",
+            "xxxxxxxxxx000000xxx00xxxxx",
+            "xxxxxxxxxxxxxxxxxxx00xxxxx",
+            "xxxxxxxxxxxxxxxxxxx00xxxxx",
+            "xxxxxxxxxxxxxxxxxxx00xxxxx",
+            "xxxxxxxxxxxxxxxxxxx00xxxxx",
+            "xxxxxxxxxxxxxxxxxxx00xxxxx",
+            "xxxxxxxxxxxxxxxxxxx00xxxxx",
+        ]
     };
 })();
