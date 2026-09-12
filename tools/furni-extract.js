@@ -387,6 +387,18 @@ function readProps(cast, byName, className) {
    Habbo throne and could not be anything else; through the grey ramp it was
    being dropped entirely. If hh_room_private is not there, the caller gets
    null and behaves exactly as it did before. */
+/* Director's built-in greyscale, which is what a palette member of -2 names.
+   White at 0 down to black at 255 — see the note in `paletteFor` for how that
+   was established and measured. */
+let greyCache;
+function greyscalePalette() {
+    if (!greyCache) {
+        greyCache = new Array(256);
+        for (let i = 0; i < 256; i++) greyCache[i] = [255 - i, 255 - i, 255 - i];
+    }
+    return greyCache;
+}
+
 let macCache;
 function macPalette() {
     if (macCache !== undefined) return macCache;
@@ -459,7 +471,45 @@ function main() {
         const shadowMembers = [];   // the class's _sd members in this cast
 
         const paletteFor = (memberNum) => {
-            if (memberNum === null || memberNum === undefined || memberNum < 0) return null;
+            if (memberNum === null || memberNum === undefined) return null;
+            /* PALETTE -2 IS A GREYSCALE, and it is the single biggest hole in
+               this tool: 548 layers across 126 classes name it, and every one
+               of them was thrown away. The .cct files do not carry it because
+               it is one of Director's BUILT-IN palettes — the member field is
+               negative and the castLib beside it is -1, "this movie", on all
+               951 members that ask for it.
+
+               WHAT IT IS: 256 greys, white at index 0 descending to black at
+               255. colour(i) = (255-i, 255-i, 255-i).
+
+               WHY THAT IS NOT A GUESS. A furni drawn against it is drawn in
+               GREY and gets its colour the way every other recolour does —
+               the client multiplies each part by its partcolor, which
+               js/room-furni.js already reproduces. So what FurniIndex publish
+               can be PREDICTED from the client's indices alone:
+
+                   predicted = grey(255 - index) * partcolor / 255
+
+               Measured against their renders, aligned pixel for pixel:
+
+                 summer_chair    8 colourways — aqua, black, green, pink, red,
+                                 white, yellow and plain — 98.2% to 99.5% of
+                                 pixels within 3 levels, mean error 0.6 to 2.8.
+                                 Eight different tints over one grey source,
+                                 all agreeing, is the whole argument.
+                 wood_tv         untinted, so the palette bare: 100.0% within
+                                 3 levels, mean error 0.0.
+
+               18 of 24 published renders came out at 90% or better. The six
+               that did not are a fireplace and a television matched against
+               the wrong ANIMATION FRAME, plus the fire itself, which is drawn
+               with a blend ink and so is not the palette colour on screen at
+               all — the same reason tiki_waterfall cannot be read this way.
+
+               Recovered by tools/palette-recover.js, which is kept so the
+               measurement can be re-run rather than taken on trust. */
+            if (memberNum === -2) return greyscalePalette();
+            if (memberNum < 0) return null;
             /* PALETTE MEMBER 0 IS THE MOVIE'S OWN, which is the Mac system
                palette — see `macPalette` below. 241 sprites were being thrown
                away for "an unresolvable palette" because of this one case, and
