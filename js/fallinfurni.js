@@ -616,16 +616,29 @@
     let pausedFor = 0, hiddenAt = 0;
     const gameNow = () => performance.now() - pausedFor;
 
+    /* TIME IS ONLY EVER PAUSED ONCE, however many reasons there are to pause
+       it. The loader freeze and the hidden-tab freeze overlap — hide the tab
+       while the room is loading or the count-in is running and both wanted to
+       add the same interval — which pushed `pausedFor` past the wall clock and
+       ran `gameNow` BACKWARDS. The round then opened with more than its
+       allotted seconds, and its breakdown reported a time of 0.0s.
+
+       So a pause is a span, and a span already inside an open one is not a
+       second pause. `loading` is the other holder; while it is up the
+       visibility handler has nothing to add, because `loadRoom` is already
+       counting that whole stretch. */
+    function pauseSpanEnd(from) {
+        pausedFor += Math.max(0, performance.now() - from);
+    }
+
     function watchVisibility() {
         document.addEventListener("visibilitychange", () => {
             if (document.hidden) {
-                hiddenAt = performance.now();
+                if (!loading) hiddenAt = performance.now();
                 return;
             }
-            if (hiddenAt) {
-                pausedFor += performance.now() - hiddenAt;
-                hiddenAt = 0;
-            }
+            if (hiddenAt && !loading) pauseSpanEnd(hiddenAt);
+            hiddenAt = 0;
             lastPaint = 0;      // paint the first frame back immediately
             dirty = true;
         });
@@ -871,7 +884,16 @@
     function resetHud() {
         if (hudEls.seq) hudEls.seq.innerHTML = "";
         hudEls.pips = [];
-        hudLast = { clock: "", total: -1, done: -1, msg: "", round: null, hidden: null };
+        /* The pending delta timer is CANCELLED, not just forgotten. Rebuilding
+           `hudLast` without it left the old timeout running, so a score change
+           from the last round could blank the new one's delta a second and a
+           half in. Every field the declaration has is restored too — dropping
+           `score` and `stamp` left them undefined, which happened to work only
+           because the first comparison against undefined is always unequal. */
+        clearTimeout(hudLast.deltaTimer);
+        if (hudEls.delta) hudEls.delta.textContent = "";
+        hudLast = { clock: "", total: -1, done: -1, msg: "", round: null, hidden: null,
+                    score: -1, stamp: "", deltaTimer: 0 };
     }
 
     // ---- editor glue
@@ -1361,9 +1383,16 @@
         (current.items || []).forEach((it, i) => {
             const row = document.createElement("div");
             row.className = "ff-item";
-            const label = (Editor.metaFor(it.className) || {}).n || it.className;
+            const meta = Editor.metaFor(it.className) || {};
+            const label = meta.n || it.className;
+            /* A seat role on a furni that cannot be sat on. It will land and
+               block like any obstacle and never join the sequence, so say so
+               here rather than leaving it to be discovered in play. */
+            const miscast = Levels.needsSeat(it.role) && !meta.sit;
+            if (miscast) row.classList.add("is-miscast");
             row.innerHTML = `<span>${it.count}× ${label}</span>` +
-                `<em>${Levels.ROLE_LABELS[it.role] || it.role}</em>`;
+                `<em>${Levels.ROLE_LABELS[it.role] || it.role}</em>` +
+                (miscast ? '<strong class="ff-item-warn" title="Habbo\'s furnidata says this furni cannot be sat on, so it can never be part of the sequence. It will behave as an obstacle.">not a seat</strong>' : "");
             const x = document.createElement("button");
             x.type = "button"; x.textContent = "×"; x.title = "Remove";
             x.addEventListener("click", () => Editor.removeItem(i));
@@ -2186,6 +2215,11 @@
                 refreshBoard();
             } else if (data.reason === "signed-out") {
                 status("Sign in with Discord to save runs to the leaderboard.", "bad");
+            } else if (data.reason === "not-your-best" && data.best) {
+                /* A run that did not beat your own said NOTHING, which reads
+                   exactly like a leaderboard that failed to save. Say what is
+                   still standing instead. */
+                status(`Not your best — ${data.best.levels} cleared in ${asClock(data.best.ms)} still stands.`, "busy");
             }
         } catch { /* a leaderboard that will not save is not worth a scene */ }
     }
@@ -2348,7 +2382,7 @@
             beginLevel(run.level());
             status(run.progressLabel(), "good");
         } else {
-            const cleared = run.index;
+            const cleared = run.cleared();
             if (what === "finished") status("Every round cleared.", "good");
             else status("Run over.", "bad");
             submitRun(cleared);
@@ -2414,6 +2448,10 @@
 
     async function loadRoom() {
         const started = performance.now();
+        /* A tab already hidden when this begins: close that span here so the
+           two pauses MEET rather than overlap. From this line the freeze is
+           the loader's, and it runs to the bottom of this function. */
+        if (hiddenAt) { pauseSpanEnd(hiddenAt); hiddenAt = 0; }
         loading = true;
         roomLoader(true, 0);
 
@@ -2457,7 +2495,11 @@
         await countIn();
 
         loading = false;
-        pausedFor += performance.now() - started;
+        pauseSpanEnd(started);
+        /* Still hidden — the player switched away while it loaded. Open a
+           fresh span from here so the tab's own freeze carries on, rather
+           than leaving the round running unwatched. */
+        hiddenAt = document.hidden ? performance.now() : 0;
         lastPaint = 0;
         dirty = true;
     }
@@ -2581,7 +2623,16 @@
             game = Game.createGame(level, gameOpts());
             game.start(gameNow());
             beginLevel(level);
-            status("Round started.", "good");
+            /* Worth saying before the round rather than after it: these pieces
+               will fall and block and never be part of the sequence, which
+               looks like the game losing track of them. */
+            const miscast = Levels.miscastItems(level, metaFor);
+            if (miscast.length) {
+                const n = miscast.reduce((sum, m) => sum + m.item.count, 0);
+                status(`Round started — but ${n} falling ${n === 1 ? "piece has" : "pieces have"} a seat role and cannot be sat on. ${n === 1 ? "It" : "They"} will behave as obstacles.`, "bad");
+            } else {
+                status("Round started.", "good");
+            }
             return;
         }
 
@@ -2721,8 +2772,9 @@
             startRound().catch(e => status(`Could not start: ${e.message}`, "bad"));
         });
         document.getElementById("ff-round-quit").addEventListener("click", () => {
-            // Abandoning a run still records how far it got.
-            if (run) submitRun(run.index);
+            // Abandoning a run still records how far it got — including the
+            // round just won, which `run.index` has not counted yet.
+            if (run) submitRun(run.cleared());
             hideRoundEnd();
             stopRound();
         });

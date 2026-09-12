@@ -50,17 +50,105 @@
         return x >= area.x && x < area.x + area.w && y >= area.y && y < area.y + area.h;
     }
 
+    const key = (x, y) => y * Iso.COLS + x;
+
     /* Would placing `piece` leave `seat` with no walkable neighbour? A seat you
        cannot reach is not a hard round, it is a broken one. */
-    function sealsIn(list, seat) {
-        const blocked = Furni.blockedTiles(list);
+    function sealedWith(blocked, seat) {
         for (const t of Furni.tilesOf(seat)) {
             for (const d of Path.DIRS) {
                 const nx = t.x + d.dx, ny = t.y + d.dy;
                 if (!Path.inside(nx, ny)) continue;
                 if (Furni.covers(seat, nx, ny)) continue;
-                if (!blocked.has(ny * Iso.COLS + nx)) return false;
+                if (!blocked.has(key(nx, ny))) return false;
             }
+        }
+        return true;
+    }
+
+    const sealsIn = (list, seat) => sealedWith(Furni.blockedTiles(list), seat);
+
+    /* EVERY TILE THE PLAYER CAN STILL WALK TO, which is a different question
+       from whether a seat has a free tile beside it — and the difference is
+       what made rounds unwinnable.
+
+       A free neighbour is a LOCAL test. It says the seat is not bricked up; it
+       says nothing about whether the player can get to the tile that neighbour
+       sits in. Seats block, so a room holding a dozen pieces can cut itself in
+       two, and a seat alone on the far side passed the old test with room to
+       spare while being completely unreachable. Sequence seats must be taken
+       in order, so one of those ends the round on the spot: measured at 16% of
+       Level 3 rounds and 11% of Level 2's, for a player walking a perfect
+       route.
+
+       So the question is asked from where the player actually is. A flood fill
+       over walkable tiles, with the same corner rule findPath uses — two furni
+       corner to corner seal the gap between them — gives the region the player
+       is in, and a seat outside it is not a hard seat but an impossible one.
+
+       The player's own tile seeds the fill whether or not it is blocked: they
+       may be sitting on a seat, and standing on one is not being trapped by
+       it. findPath treats its start tile the same way. */
+    function reachableFrom(start, blocked) {
+        const seen = new Set([key(start.x, start.y)]);
+        const stack = [{ x: start.x, y: start.y }];
+        while (stack.length) {
+            const cur = stack.pop();
+            for (const d of Path.DIRS) {
+                const nx = cur.x + d.dx, ny = cur.y + d.dy;
+                if (!Path.inside(nx, ny)) continue;
+                const nk = key(nx, ny);
+                if (seen.has(nk) || blocked.has(nk)) continue;
+                if (d.dx !== 0 && d.dy !== 0
+                    && blocked.has(key(cur.x + d.dx, cur.y))
+                    && blocked.has(key(cur.x, cur.y + d.dy))) continue;
+                seen.add(nk);
+                stack.push({ x: nx, y: ny });
+            }
+        }
+        return seen;
+    }
+
+    /* Can the player reach this seat AND GET OFF IT AGAIN?
+
+       Getting off is the half that is easy to forget, and forgetting it leaves
+       a trap that reads exactly like a broken game. A seat is entered from a
+       neighbouring tile, and the seat's own tile is blocked, so a seat ringed
+       by other seats can be perfectly enterable and a dead end once you are
+       in it. Seats must be taken in order, so the round ends there.
+
+       That is not theoretical: the case this was written for is a 2x1 bench
+       whose far half sat in a corner with a chair above it, a chair beside it
+       and the wall behind. The player walked in from the chair they were
+       already sitting on — seat to seat, which findPath allows, since it never
+       tests the tile it starts from — and then could not move at all. Both
+       diagonals out were sealed by the corner rule, which is precisely the
+       rule that makes two furni corner to corner a wall.
+
+       So the test is per TILE, not per seat: a two-seater is two places to sit
+       and the player picks one, so BOTH halves have to be places you can stand
+       up from. And a step out has to land on free floor the player's own
+       region contains — anywhere else is not somewhere they can go.
+
+       Entry comes free with it. The corner rule is symmetric, so a tile with a
+       legal step out to a reachable tile has a legal step in by the same
+       route. */
+    function canUse(seat, reachable, blocked) {
+        for (const t of Furni.tilesOf(seat)) {
+            let wayOut = false;
+            for (const d of Path.DIRS) {
+                const nx = t.x + d.dx, ny = t.y + d.dy;
+                if (!Path.inside(nx, ny)) continue;
+                const nk = key(nx, ny);
+                if (blocked.has(nk)) continue;          // has to be floor
+                if (!reachable.has(nk)) continue;       // and floor they can be on
+                if (d.dx !== 0 && d.dy !== 0
+                    && blocked.has(key(nx, t.y))
+                    && blocked.has(key(t.x, ny))) continue;
+                wayOut = true;
+                break;
+            }
+            if (!wayOut) return false;
         }
         return true;
     }
@@ -105,6 +193,39 @@
         const h = fp.h;
         const reach = Math.max(0, minDistance || 0);
 
+        /* WORKED OUT ONCE FOR THE WHOLE SCAN, not per candidate.
+
+           This used to rebuild the room's blocked set inside the innermost
+           loop — once for every seat, for every tile a piece might land on —
+           which is the same set every time bar the one piece being tried. On a
+           full room that is hundreds of thousands of tile operations for a
+           single drop, all of it on the frame a piece starts falling. The set
+           is built here instead and the candidate's own tiles are added and
+           taken away around each test. */
+        const blocked = Furni.blockedTiles(list);
+
+        /* ONLY THE SEATS THE ROUND ACTUALLY REQUIRES.
+
+           Sequence seats must be sat on, in order, so one of them out of reach
+           ends the round. Nothing else is owed: a decoy or a poi is a seat you
+           are never obliged to take, and the builder's decor chairs are
+           scenery. Holding those to the same rule made every placement illegal
+           the moment one decorative chair stood somewhere awkward — a seat
+           tucked behind a table is unreachable in the level AS AUTHORED, no
+           candidate position could change that, and so every piece was refused
+           a spot and the round dropped nothing at all. */
+        const mustReach = (f) => f.sit && f.role === "sequence";
+        const seats = list.filter(mustReach);
+
+        /* WHAT WAS ALREADY OUT OF REACH STAYS OUT OF REACH, and is not this
+           piece's fault. The test is whether a placement makes things WORSE,
+           so the room is measured once without the candidate and each
+           candidate is only asked not to take anything away. */
+        const before = avoid ? reachableFrom(avoid, blocked) : null;
+        const owed = before
+            ? seats.filter(f => canUse(f, before, blocked))
+            : seats;
+
         for (let y = entry.area.y; y <= entry.area.y + entry.area.h - h; y++) {
             for (let x = entry.area.x; x <= entry.area.x + entry.area.w - w; x++) {
                 const probe = { x, y, w, h };
@@ -113,15 +234,37 @@
                 // Not on top of the player.
                 if (avoid && Furni.covers(probe, avoid.x, avoid.y)) continue;
 
-                // Not somewhere that walls an existing seat in, and — if this
-                // piece is itself a seat — not somewhere it lands walled in.
-                const candidate = Furni.make(entry.className, x, y, { meta, rotation: entry.rotation });
-                const after = list.concat([candidate]);
-                let ok = true;
-                for (const f of after) {
-                    if (!f.sit) continue;
-                    if (sealsIn(after, f)) { ok = false; break; }
+                /* Not somewhere that puts a seat out of the player's reach,
+                   and — if this piece is itself a seat — not somewhere it
+                   lands out of reach. */
+                const candidate = Furni.make(entry.className, x, y,
+                    { meta, rotation: entry.rotation, state: entry.state, role: entry.role });
+
+                const added = [];
+                if (!candidate.stand) {
+                    for (const t of Furni.tilesOf(candidate)) {
+                        const k = key(t.x, t.y);
+                        if (!blocked.has(k)) { blocked.add(k); added.push(k); }
+                    }
                 }
+
+                // Everything already owed, plus this piece if it is itself one.
+                const check = mustReach(candidate) ? owed.concat([candidate]) : owed;
+                let ok = true;
+                if (avoid) {
+                    const reachable = reachableFrom(avoid, blocked);
+                    for (const f of check) {
+                        if (!canUse(f, reachable, blocked)) { ok = false; break; }
+                    }
+                } else {
+                    // No player to measure from — the old local test is all
+                    // there is, and it is better than nothing.
+                    for (const f of check) {
+                        if (sealedWith(blocked, f)) { ok = false; break; }
+                    }
+                }
+
+                for (const k of added) blocked.delete(k);
                 if (!ok) continue;
                 if (avoid && reach && distanceFrom(probe, avoid) < reach) near.push({ x, y });
                 else spots.push({ x, y });
@@ -152,7 +295,14 @@
             falling: [],                // in the air right now
             placed: decor.slice(),      // everything on the floor, decor included
             landed: [],                 // dropped pieces, in landing order
-            started: 0,
+            /* null, not 0, because a round can legitimately begin at timestamp
+               zero — and `!this.started` is then true forever, re-stamping the
+               start and the next drop on EVERY tick, so the clock never
+               advances and pieces rain one per frame. The page's clock is
+               built on performance.now() and never lands exactly on zero,
+               which is the only reason this has not bitten in play; a harness
+               starting at t=0 hits it immediately. */
+            started: null,
             nextAt: 0,
             done: false,
 
@@ -161,7 +311,7 @@
                repainting. */
             tick(now, playerTile) {
                 let changed = false;
-                if (!this.started) { this.started = now; this.nextAt = now; }
+                if (this.started === null) { this.started = now; this.nextAt = now; }
 
                 // Land anything whose fall has finished.
                 for (let i = this.falling.length - 1; i >= 0; i--) {
@@ -219,11 +369,14 @@
             },
 
             secondsLeft(now) {
-                if (!this.started) return level.rules.seconds;
+                if (this.started === null) return level.rules.seconds;
                 return Math.max(0, level.rules.seconds - (now - this.started) / 1000);
             }
         };
     }
 
-    window.RoomDrop = { FALL_TILES, createRound, spotsFor, sealsIn, distanceFrom };
+    window.RoomDrop = {
+        FALL_TILES, createRound, spotsFor, sealsIn, distanceFrom,
+        reachableFrom, canUse
+    };
 })();

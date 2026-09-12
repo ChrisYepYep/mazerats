@@ -100,6 +100,37 @@
     };
 
     const ROLES = ["sequence", "decoy", "poi", "obstacle"];
+
+    /* THREE OF THE FOUR ROLES ONLY MEAN ANYTHING ON A SEAT, and nothing used
+       to say so.
+
+       A role is chosen in the editor; whether a furni can be sat on comes from
+       Habbo's own furnidata and cannot be chosen at all. Put them together
+       wrongly — `cabin_divider_arm1` set to Sequence seat, which is what
+       Level 3 shipped with — and the piece lands, blocks its tiles, and never
+       joins the sequence, because `RoomDrop.sequence` asks for `f.sit`. It is
+       an obstacle wearing a seat's label, silently, with nothing anywhere
+       objecting.
+
+       That is a level-building mistake rather than a crash, so this does not
+       refuse it: `obstacle` is a perfectly good thing to want, and the piece
+       already behaves as one. It gives the editor something to point at. */
+    const SEAT_ROLES = ["sequence", "decoy", "poi"];
+    const needsSeat = (role) => SEAT_ROLES.includes(role);
+
+    /* Every zone item whose role wants a seat and whose furni is not one.
+       `metaFor` resolves a className to its furnidata record. */
+    function miscastItems(level, metaFor) {
+        const out = [];
+        for (const z of level.zones || []) {
+            for (const it of z.items || []) {
+                if (!needsSeat(it.role)) continue;
+                if ((metaFor(it.className) || {}).sit) continue;
+                out.push({ zone: z, item: it });
+            }
+        }
+        return out;
+    }
     const ROLE_LABELS = {
         sequence: "Sequence seat",
         decoy: "Decoy seat",
@@ -330,6 +361,7 @@
 
     window.RoomLevels = {
         SCHEMA, DEFAULTS, ITEM_DEFAULTS, ROLES, ROLE_LABELS,
+        SEAT_ROLES, needsSeat, miscastItems,
         HEIGHT_STEP, MAX_HEIGHT, height,
         normalise, blankZone, furniUsed, totalDrops, schedule,
         toRoomOpts, fromRoomOpts, curve, fetchPublished

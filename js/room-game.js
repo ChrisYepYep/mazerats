@@ -127,10 +127,51 @@
 
             nextSeat() { return this.remaining()[0] || null; },
 
+            /* IS THERE ANYTHING LEFT TO DO? Nothing more can fall, and every
+               sequence seat that landed has been sat on.
+
+               Asked from two places on purpose — see `finish`. */
+            complete() {
+                if (!this.round || this.round.started === null) return false;
+                if (this.round.queue.length || this.round.falling.length) return false;
+                return !this.remaining().length;
+            },
+
+            /* THE ROUND IS WON WHEREVER IT IS FINISHED, and it used to be
+               noticed in only one of the two places it can happen.
+
+               The check lived inside `arrivedAt` alone, so a round was won
+               only by the ACT of sitting. Sit on the last sequence seat while
+               anything is still queued or falling — which is most of a round
+               whenever the shuffle puts an obstacle, a decoy, or a
+               sequence-role piece that cannot be sat on near the back — and
+               the test failed on `queue.length`, and then never ran again.
+               The queue drained, nothing was left to fall, every seat had been
+               taken in the right order, and the round sat there until it timed
+               out. A measured 26% of Level 2 rounds for a player quick enough
+               to keep up, and nothing at all for a slow one: it punished
+               exactly the speed the game is asking for.
+
+               So the same question is now asked on every tick as well. The
+               last piece landing finishes a cleared round just as sitting on
+               the last seat does. */
+            finish(now) {
+                this.award(FINISH_BONUS);
+                this.state = WON;
+                this.endedBecause = "complete";
+                this.message = `Every seat, in order. +${FINISH_BONUS}`;
+                return this;
+            },
+
             // Advance the drops and the clock.
             tick(now, playerTile) {
                 if (this.state !== RUNNING) return false;
                 let changed = this.round.tick(now, playerTile);
+
+                /* BEFORE the clock, so that a round finishing on the same tick
+                   its time runs out is a win. The player did everything asked;
+                   the last piece simply landed late. */
+                if (this.complete()) { this.finish(now); return true; }
 
                 if (this.secondsLeft(now) <= 0) {
                     this.state = LOST;
@@ -197,13 +238,7 @@
                 const bonus = Math.min(this.streak - 1, STREAK_MAX) * STREAK_STEP;
                 this.award(SEAT_POINTS + bonus);
 
-                if (!this.remaining().length && !this.round.queue.length && !this.round.falling.length) {
-                    this.award(FINISH_BONUS);
-                    this.state = WON;
-                    this.endedBecause = "complete";
-                    this.message = `Every seat, in order. +${FINISH_BONUS}`;
-                    return "won";
-                }
+                if (this.complete()) { this.finish(now); return "won"; }
                 this.message = bonus
                     ? `${this.sat.length} down. +${SEAT_POINTS + bonus} (${this.streak} in a row)`
                     : `${this.sat.length} down. +${SEAT_POINTS}`;
@@ -298,6 +333,24 @@
             results: [],
 
             level() { return this.levels[this.index] || null; },
+
+            /* HOW MANY LEVELS THIS RUN HAS ACTUALLY CLEARED, which is not
+               `index` — and the leaderboard was reading `index`.
+
+               `index` only moves in `advance`, and `advance` only runs when
+               the player presses Next. Quit from the round-end screen after
+               WINNING and the round just won had never been counted: clearing
+               level two and quitting recorded one, and clearing level one and
+               quitting recorded zero, which `submitRun` then discarded
+               entirely as "no levels cleared". A win the player chose not to
+               continue from is still a win.
+
+               Counted off the frozen summaries instead, plus the round in hand
+               if it has been won and not yet advanced past. */
+            cleared() {
+                return this.results.filter(r => r.won).length
+                    + (this.game && this.game.state === WON ? 1 : 0);
+            },
 
             /* The run's score: what earlier rounds banked, plus whatever the
                round in play is worth right now. One number the whole way

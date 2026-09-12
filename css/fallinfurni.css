@@ -806,6 +806,22 @@ body:not(.is-editing) .ff-guides { display: none; }
 .ff-item { cursor: default; }
 .ff-item em { font-style: normal; color: var(--amber); }
 
+/* A seat role on a furni that cannot be sat on — it will land, block, and
+   never join the sequence. Flagged on the row rather than refused, because
+   the fix is to change the role and only the builder knows which one. */
+.ff-item.is-miscast { border-color: var(--danger); }
+.ff-item-warn {
+    font-weight: normal;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    padding: 1px 4px;
+    white-space: nowrap;
+    cursor: help;
+}
+
 .ff-zone button, .ff-item button {
     background: transparent;
     border: none;
@@ -1098,14 +1114,32 @@ body:not(.is-editing) .ff-guides { display: none; }
    Over the room with no scrim: the board is already laid out and the point of
    the count is to give you a moment to read it. Dimming the thing you are
    meant to be looking at would defeat it. */
+/* DIMMED BEHIND THE COUNT, the way the title screen dims behind its own text.
+
+   72px of amber over a lit room with furni in it is not reliably readable —
+   the number lands wherever the room happens to be busiest. A scrim in the
+   same near-black the rest of the page dims with fixes that.
+
+   Lighter than the title screen's 0.82 on purpose. The count-in exists to let
+   you read the room before the first piece falls, and at 0.82 there is no room
+   left to read; this is heavy enough to carry the number and light enough to
+   keep the board legible under it. It also picks up exactly where the loader's
+   0.45 left off, so the scrim looks continuous from loading into counting
+   rather than flashing between two weights. Raise it here to go darker. */
 .ff-countin {
     position: absolute;
     inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+    background: rgba(10, 7, 4, 0.55);
     pointer-events: none;
     z-index: 4;
+    animation: ff-countin-dim 180ms ease-out;
+}
+
+@keyframes ff-countin-dim {
+    from { background-color: rgba(10, 7, 4, 0); }
 }
 
 .ff-countin[hidden] { display: none; }
@@ -1136,6 +1170,8 @@ body:not(.is-editing) .ff-guides { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
     .ff-countin-n { animation: none; }
+    /* The scrim stays — it is there to be readable, not to move. */
+    .ff-countin { animation: none; }
 }
 
 /* ---- CLOSED FOR MAINTENANCE
