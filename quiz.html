@@ -44,8 +44,7 @@
     <div class="qz-wrap">
 
         <header class="qz-hero">
-            <p class="qz-eyebrow">Maze Rats</p>
-            <h1>Quiz Night</h1>
+            <h1>Quiz</h1>
             <p class="qz-hero-sub">
                 You read them out. The answer sits right underneath, for your
                 eyes only. Tap whoever got it and the scores keep themselves.
@@ -87,7 +86,13 @@
         <section class="qz-card">
             <div class="qz-card-head">
                 <h2>Categories</h2>
-                <button type="button" class="qz-mini" id="qz-cat-all">All</button>
+                <div class="qz-head-btns">
+                    <!-- Only shown once this device has actually asked
+                         something, so a first-time host never sees a control
+                         for undoing a thing that has not happened. -->
+                    <button type="button" class="qz-mini qz-mini-warn" id="qz-cat-reset" hidden>Reset asked</button>
+                    <button type="button" class="qz-mini" id="qz-cat-all">All</button>
+                </div>
             </div>
             <div class="qz-cats" id="qz-cats"></div>
             <p class="qz-note" id="qz-cat-note"></p>
@@ -221,7 +226,16 @@
     </div>
 </section>
 
+<!-- Order matters only for the first line: quiz-questions.js declares the
+     categories and creates the object the banks assign into. The banks
+     themselves are independent and could be listed in any order. -->
 <script src="js/quiz-questions.js"></script>
+<script src="js/quiz-bank-pop.js"></script>
+<script src="js/quiz-bank-screen.js"></script>
+<script src="js/quiz-bank-music.js"></script>
+<script src="js/quiz-bank-world.js"></script>
+<script src="js/quiz-bank-life.js"></script>
+<script src="js/quiz-bank-general.js"></script>
 <script src="js/quiz.js"></script>
 </body>
 </html>

@@ -29,7 +29,11 @@
     'use strict';
 
     var STORE_KEY = 'mazerats.quiz.v1';
-    var STATE_VERSION = 1;
+    /* 2, not 1: `order` used to hold "cat:index" keys and now holds text
+       hashes, so a quiz saved by the previous version points at nothing. It is
+       discarded rather than migrated — the indices it holds cannot be mapped
+       to the new ids now the bank has been rewritten around them. */
+    var STATE_VERSION = 2;
 
     /* ---------------------------------------------------------------- dom */
 
@@ -54,6 +58,7 @@
 
         cats: $('qz-cats'),
         catAll: $('qz-cat-all'),
+        catReset: $('qz-cat-reset'),
         catNote: $('qz-cat-note'),
 
         length: $('qz-length'),
@@ -114,7 +119,7 @@
             phase: 'play',
             players: [],
             cats: [],
-            order: [],          /* ["music:12", …] in the order they're asked */
+            order: [],          /* question ids, in the order they're asked  */
             idx: 0,
             awards: {},         /* question index -> [playerId, …]            */
             seen: {},           /* question index -> true, for hidden mode    */
@@ -192,15 +197,103 @@
         return id;
     }
 
+    /* A question's identity is a hash of its TEXT, not its position in the
+       bank. That is the whole reason the never-repeat history works: the bank
+       is edited constantly — questions added, reordered, moved between
+       categories — and an index-based id would silently come to mean a
+       different question, so a host would be told they had already had
+       something they had never seen, and shown again something they had.
+       Hashing the text makes the id travel with the question.
+
+       FNV-1a, 32-bit, base36. Not a cryptographic hash and does not need to
+       be; it needs to be stable, short enough to store a few thousand of, and
+       collision-free over this bank — which tools/quiz-check.js verifies on
+       every run, using a copy of this exact function. Change one, change the
+       other. */
+    function qid(text) {
+        var s = String(text).toLowerCase().replace(/[^a-z0-9]+/g, '');
+        var h = 0x811c9dc5;
+        for (var i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+        }
+        return h.toString(36);
+    }
+
+    /* id -> { cat, q, a }, built once. Everything downstream looks a question
+       up by id, so a saved quiz survives the bank being rewritten underneath
+       it as long as the questions in it still exist. */
+    var INDEX = {};
+    var BY_CAT = {};
+
+    function buildIndex() {
+        CATS.forEach(function (c) {
+            var rows = BANK[c.id] || [];
+            var ids = [];
+            rows.forEach(function (row) {
+                if (!row || row.length !== 2) { return; }
+                var id = qid(row[0]);
+                /* First writer wins. A collision would mean one question
+                   becomes unaskable; the check tool exists so this never
+                   reaches production, and silently overwriting would hide it. */
+                if (!INDEX[id]) {
+                    INDEX[id] = { cat: c.id, q: row[0], a: row[1] };
+                    ids.push(id);
+                }
+            });
+            BY_CAT[c.id] = ids;
+        });
+    }
+
     function questionAt(i) {
-        var key = state.order[i];
-        if (!key) { return null; }
-        var split = key.lastIndexOf(':');
-        var cat = key.slice(0, split);
-        var n = parseInt(key.slice(split + 1), 10);
-        var row = (BANK[cat] || [])[n];
-        if (!row) { return null; }
-        return { cat: cat, q: row[0], a: row[1] };
+        var id = state.order[i];
+        return id ? (INDEX[id] || null) : null;
+    }
+
+    /* ----------------------------------------------------- asked history */
+
+    /* Kept in its own localStorage key, NOT in the quiz state, because it has
+       to outlive the quiz. Abandoning a quiz, finishing one, starting a new
+       one with different players — none of those should make a question the
+       host has already read out eligible again. */
+    var ASKED_KEY = 'mazerats.quiz.asked.v1';
+    var asked = Object.create(null);
+
+    function loadAsked() {
+        asked = Object.create(null);
+        var raw;
+        try { raw = localStorage.getItem(ASKED_KEY); } catch (err) { return; }
+        if (!raw) { return; }
+        try {
+            var list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+                list.forEach(function (id) { asked[id] = 1; });
+            }
+        } catch (err) { /* unreadable; treat as nothing seen */ }
+    }
+
+    function saveAsked() {
+        try {
+            localStorage.setItem(ASKED_KEY, JSON.stringify(Object.keys(asked)));
+        } catch (err) { /* out of space or blocked; the round still works */ }
+    }
+
+    function markAsked(id) {
+        if (!id || asked[id]) { return; }
+        asked[id] = 1;
+        saveAsked();
+    }
+
+    function freshCount(cats) {
+        var n = 0;
+        cats.forEach(function (c) {
+            (BY_CAT[c] || []).forEach(function (id) { if (!asked[id]) { n++; } });
+        });
+        return n;
+    }
+
+    function totalCount(cats) {
+        return cats.reduce(function (n, c) { return n + (BY_CAT[c] || []).length; }, 0);
     }
 
     /* Draws `want` questions spread evenly over the chosen categories rather
@@ -208,13 +301,17 @@
        where one category happens to be bigger gives that category more of the
        round, which is not what "include these categories" means to a host.
        Round-robin first, then shuffle the result so the categories still
-       arrive in a jumbled order. */
+       arrive in a jumbled order.
+
+       Questions already asked are excluded outright. If that leaves fewer
+       than were asked for, the round is simply shorter — it does NOT quietly
+       top up with repeats, because a never-repeat rule that gives up when
+       inconvenient is not a rule. The caller reports the shortfall. */
     function drawQuestions(cats, want) {
         var pools = [];
         cats.forEach(function (id) {
-            var rows = BANK[id] || [];
-            var keys = rows.map(function (_, i) { return id + ':' + i; });
-            if (keys.length) { pools.push(shuffle(keys)); }
+            var ids = (BY_CAT[id] || []).filter(function (q) { return !asked[q]; });
+            if (ids.length) { pools.push(shuffle(ids)); }
         });
         if (!pools.length) { return []; }
 
@@ -329,20 +426,34 @@
         refreshCatNote();
     }
 
-    function availableCount() {
-        return draft.cats.reduce(function (n, id) {
-            return n + ((BANK[id] || []).length);
-        }, 0);
-    }
-
+    /* Says how many questions are left that this device has never asked, not
+       how many exist. That is the number which decides whether the round the
+       host is about to start is the length they picked, and it is the only
+       place the never-repeat rule is visible until it bites. */
     function refreshCatNote() {
-        var total = availableCount();
         if (!draft.cats.length) {
             el.catNote.textContent = 'Pick at least one category.';
-        } else {
-            el.catNote.textContent = total + ' questions available in ' +
-                draft.cats.length + (draft.cats.length === 1 ? ' category.' : ' categories.');
+            el.catReset.hidden = true;
+            el.catAll.textContent = 'All';
+            return;
         }
+
+        var fresh = freshCount(draft.cats);
+        var total = totalCount(draft.cats);
+        var used = total - fresh;
+
+        var msg = fresh.toLocaleString() + ' unasked question' + (fresh === 1 ? '' : 's') +
+            ' in ' + draft.cats.length + (draft.cats.length === 1 ? ' category' : ' categories') + '.';
+        if (used > 0) {
+            msg += ' ' + used.toLocaleString() + ' already used.';
+        }
+        if (!fresh) {
+            msg = 'Every question in these categories has been asked. Reset to use them again.';
+        }
+        el.catNote.textContent = msg;
+
+        /* The reset only appears once there is something to reset. */
+        el.catReset.hidden = used === 0;
         el.catAll.textContent = draft.cats.length === CATS.length ? 'None' : 'All';
     }
 
@@ -373,6 +484,24 @@
         el.addName.focus();
     });
 
+    /* Forgets what this device has asked. Deliberately a confirm and not a
+       quiet toggle: it is the one control that can make a question repeat,
+       which is the behaviour the host asked to be rid of. Scoped to ALL
+       categories rather than the selected ones — a per-category reset sounds
+       tidier but means the host has to reason about which subset they last
+       cleared, and the history is one list. */
+    el.catReset.addEventListener('click', function () {
+        var used = totalCount(CATS.map(function (c) { return c.id; })) -
+                   freshCount(CATS.map(function (c) { return c.id; }));
+        if (!used) { return; }
+        if (!window.confirm('Forget the ' + used.toLocaleString() +
+            ' question' + (used === 1 ? '' : 's') +
+            ' already asked on this device?\n\nThey will start coming up again.')) { return; }
+        asked = Object.create(null);
+        saveAsked();
+        refreshCatNote();
+    });
+
     el.catAll.addEventListener('click', function () {
         draft.cats = draft.cats.length === CATS.length
             ? []
@@ -398,16 +527,30 @@
        ============================================================== */
 
     function startQuiz(players, cats, length) {
+        var order = drawQuestions(cats, length);
+
+        /* Nothing left that has not been asked. Say so plainly and offer the
+           one thing that fixes it, rather than starting an empty quiz or
+           silently repeating. */
+        if (!order.length) {
+            window.alert('Every question in these categories has already been asked on this device.\n\nPick more categories, or use "Reset asked" to make them available again.');
+            return;
+        }
+
+        /* Short of what was asked for. Better to say so up front than to have
+           the host discover it when "Question 12 of 12" appears mid-round. */
+        if (length && order.length < length) {
+            var go = window.confirm('Only ' + order.length + ' unasked question' +
+                (order.length === 1 ? '' : 's') + ' left in these categories, not ' +
+                length + '.\n\nStart a shorter round of ' + order.length + '?');
+            if (!go) { return; }
+        }
+
         state = blankState();
         state.players = players;
         state.cats = cats;
         state.length = length;
-        state.order = drawQuestions(cats, length);
-
-        if (!state.order.length) {
-            state = null;
-            return;
-        }
+        state.order = order;
 
         save();
         showPlay();
@@ -447,6 +590,12 @@
         el.catPill.textContent = catLabel(item.cat);
         el.question.textContent = item.q;
         el.answerText.textContent = item.a;
+
+        /* Marked as asked when it is PUT IN FRONT OF THE HOST, not when the
+           round was drawn. A host who sets up a 40-question round, asks three
+           and abandons it has burned three questions, not forty. Going back
+           and forward over the same question is harmless — it is a set. */
+        markAsked(state.order[i]);
 
         var hide = state.hideAnswers && !state.seen[i];
         el.answer.classList.toggle('is-hidden', hide);
@@ -595,6 +744,10 @@
         releaseWakeLock();
         closeSheets();
         el.resume.hidden = true;
+        /* The setup card was last drawn before this quiz ran, so its unasked
+           count and its reset button are both stale by however many questions
+           were just read out. Redraw before showing it again. */
+        refreshCatNote();
         showScreen('setup');
     }
 
@@ -775,6 +928,10 @@
     }
 
     function boot() {
+        /* Index first: renderCats and refreshCatNote both read BY_CAT. */
+        buildIndex();
+        loadAsked();
+
         renderPlayers();
         renderCats();
 

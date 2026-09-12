@@ -348,6 +348,21 @@ input, button { font-family: inherit; }
 
 .qz-mini:active { background: var(--wood-mid); }
 
+.qz-head-btns {
+    display: flex;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+/* The reset is the one control that can bring a question back, so it reads
+   as a caution rather than a peer of "All". */
+.qz-mini-warn {
+    color: #d08a76;
+    border-color: rgba(161, 70, 47, 0.5);
+}
+
+.qz-mini-warn[hidden] { display: none !important; }
+
 /* =========================== segmented control ========================= */
 
 .qz-seg {
