@@ -76,6 +76,28 @@
 
        Still live-tunable under ?debug=1 via FallinFurni.setWalkMs(n). */
     let WALK_MS = 500;
+
+    /* SITTING DOWN TAKES A MOMENT, and the seat counts when you are in it.
+
+       There was no such moment. `stepFrom` clearing did three things on one
+       frame: the figure reached the tile, the pose flipped from mid-stride to
+       seated, and the seat scored. Nothing ever showed a figure sitting DOWN,
+       so the reward read as landing on the tile rather than taking the chair
+       — which is what it was.
+
+       So there is now a beat. The figure arrives, stands on the seat facing
+       the way it walked in, and a fifth of a second later turns to the way
+       the chair faces and sits. The score goes with the sit, not the arrival.
+
+       COMMITTED ON ARRIVAL, shown on the beat. Cancelling an unfinished sit
+       when the player clicks away would punish exactly the speed this game is
+       asking for — a quick player would lose seats for being quick. Arriving
+       is what earns it; the beat only decides when you see it.
+
+       The client's own is a server tick, near enough half a second. That is
+       too much to spend eight times in a round against a clock, and this is
+       the one place the game deliberately undercuts it. */
+    let SIT_MS = 200;
     const WALK_FRAMES = 4;          // the walk cycle, as animation.xml defines it
     /* 84ms a frame, measured off the running client: the stride opens every
        168ms and a four-frame cycle opens twice. Nothing to do with WALK_MS —
@@ -110,6 +132,9 @@
         goal: null,
         stepFrom: null,
         stepAt: 0,
+        /* When the figure arrived on a seat and began sitting down, or null.
+           See SIT_MS — the beat between landing on a chair and being in it. */
+        sitAt: null,
         furni: [],                  // what is standing in the room
         hover: null
     };
@@ -271,14 +296,17 @@
         if (!state.stepFrom) {
             const c = Iso.tileCenter(state.pos.x, state.pos.y);
             const seat = game && Furni.seatAt(state.furni, state.pos.x, state.pos.y);
+            // Standing ON the chair, not yet in it: the SIT_MS beat.
+            const seated = seat && state.sitAt === null;
             /* Sitting DOWN turns you to face the way the chair faces — you do
                not perch on a sofa still looking wherever you walked in from.
                Falls back to the walking direction for furni the library has no
-               entry for. */
-            const facing = seat ? seatFacing(seat) : null;
+               entry for, and to it for the beat as well, so the turn happens
+               with the sit rather than before it. */
+            const facing = seated ? seatFacing(seat) : null;
             return {
                 sx: c.sx, sy: c.sy,
-                action: seat ? "sit" : "std",
+                action: seated ? "sit" : "std",
                 frame: 0,
                 dir: facing === null ? state.dir : facing
             };
@@ -311,7 +339,24 @@
         };
     }
 
+    /* The beat is over: the figure is in the chair, and that is what the round
+       reacts to. Also the flush — anything that would let a later arrival be
+       processed before this one calls it first, so the order the game sees is
+       always the order the player walked, whatever the timings do.
+
+       In practice a seat is at least one step away and a step is more than
+       twice the beat, so the two cannot overlap; the flush is there so that
+       staying true does not depend on those two numbers keeping their present
+       relationship. */
+    function sitDown(now) {
+        state.sitAt = null;
+        if (!game || game.state !== Game.RUNNING) return;
+        const what = game.arrivedAt(state.pos, now);
+        if (what) { renderHud(now); dirty = true; }
+    }
+
     function beginStep(now) {
+        if (state.sitAt !== null) sitDown(now);
         const next = state.path.shift();
         state.stepFrom = { x: state.pos.x, y: state.pos.y };
         state.pos = { x: next.x, y: next.y };
@@ -638,12 +683,20 @@
                 state.pos.x === state.goal.x && state.pos.y === state.goal.y;
             if (game && game.state === Game.RUNNING && !state.path.length && atGoal) {
                 state.goal = null;
-                const what = game.arrivedAt(state.pos, now);
-                if (what) { renderHud(now); dirty = true; }
+                if (Furni.seatAt(state.furni, state.pos.x, state.pos.y)) {
+                    // A chair. Stand on it for a beat, then sit — and score.
+                    state.sitAt = now;
+                    dirty = true;
+                } else {
+                    sitDown(now);          // nothing here; settles immediately
+                }
             }
             if (state.path.length) beginStep(now);
             dirty = true;
         }
+        // Being IN the chair is what scores it; see SIT_MS.
+        if (state.sitAt !== null && now - state.sitAt >= SIT_MS) sitDown(now);
+
         if (state.stepFrom) dirty = true;
         // The title screen is always moving — furni is falling past the hotel.
         if (Lobby && !Editor && !game) dirty = true;
@@ -1889,7 +1942,7 @@
        clock, nothing falling. */
     function previewLevel(level) {
         state.pos = { x: level.start.x, y: level.start.y };
-        state.path = []; state.goal = null; state.stepFrom = null;
+        state.path = []; state.goal = null; state.stepFrom = null; state.sitAt = null;
         Object.assign(state, Levels.toRoomOpts(level));
         state.furni = (level.decor || []).map(d => Furni.make(d.className, d.x, d.y, {
             meta: metaFor(d.className), rotation: d.rotation, state: d.state,
@@ -2493,7 +2546,7 @@
        "Loading room" each time is friction rather than atmosphere. */
     function beginLevel(level) {
         state.pos = { x: level.start.x, y: level.start.y };
-        state.path = []; state.goal = null; state.stepFrom = null;
+        state.path = []; state.goal = null; state.stepFrom = null; state.sitAt = null;
         Object.assign(state, Levels.toRoomOpts(level));
         syncPickers();
         state.furni = game.renderList();
@@ -2695,6 +2748,15 @@
                    the cycle is one stride per tile. Tell me the number that
                    matches Habbo and it becomes the default. */
                 get walkMs() { return WALK_MS; },
+                /* The beat between landing on a chair and being in it. Same
+                   reason as walkMs: the right number is the one that looks
+                   right, and that is found by trying them. */
+                get sitMs() { return SIT_MS; },
+                setSitMs(ms) {
+                    const n = Number(ms);
+                    if (Number.isFinite(n) && n >= 0 && n <= 1500) SIT_MS = n;
+                    return SIT_MS;
+                },
                 get walkFrameMs() { return WALK_FRAME_MS; },
                 /* Whether the room loader has the paint loop frozen. Exposed
                    because a stuck `loading` looks exactly like a dead game —
