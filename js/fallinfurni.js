@@ -1968,6 +1968,26 @@
        title, so pressing Play reveals a room rather than building one. */
     let published = null;
 
+    /* THE FURNIDATA HAS TO BE IN BEFORE A ROUND STARTS, and having the LEVELS
+       is not the same thing as having it.
+
+       `prepare` sets `published` and only then fetches the furni records, so
+       between those two there is a window where the levels are loaded and
+       every furni in them is still an unknown. A piece built in that window
+       gets `{}` for its meta, which means `sit: false` and a 1x1 footprint —
+       so a chair lands as a 1x1 obstacle, never joins the sequence, and blocks
+       a tile for the rest of the round. Silently: nothing is missing on
+       screen, the seat simply is not one. Caught with a round that scored
+       "7 of 7" on a level that drops eight chairs.
+
+       `startRound` guarded on `published` alone, which is exactly the wrong
+       half. The Play button is disabled while the title says "loading" and
+       that hid it, but a disabled button is a courtesy, not a lock — anything
+       that submits the form another way walks straight past it. This is the
+       lock: the promise for the furni, awaited before a round is built,
+       whoever asked for it and however. */
+    let furniLoaded = null;
+
     /* The first level, dressed but not running: its floor, its wallpaper, its
        decor, and the avatar standing where the level starts. No round, no
        clock, nothing falling. */
@@ -2038,7 +2058,8 @@
             return;
         }
         titleState("loading", "Loading the furni…");
-        await loadLevelFurni(published);
+        furniLoaded = loadLevelFurni(published);
+        await furniLoaded;
 
         /* No room is built here any more. The title screen is the hotel view,
            so what has to be ready is the hotel view and the seats falling past
@@ -2659,8 +2680,12 @@
         if (!published) {
             status("Loading levels…", "busy");
             published = await Levels.fetchPublished();
-            if (published.length) await loadLevelFurni(published);
+            if (published.length) furniLoaded = loadLevelFurni(published);
         }
+        // See `furniLoaded`: the levels being in says nothing about the
+        // furnidata, and a round built without it drops chairs that are not
+        // seats. Costs nothing once it has settled.
+        if (furniLoaded) await furniLoaded;
         if (!published.length) {
             status("No levels have been published yet.", "bad");
             showTitle();

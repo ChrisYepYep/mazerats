@@ -78,11 +78,11 @@ function floorMsFor(level) {
    is too low would refuse an honest run, which is a far worse failure than
    letting an inflated one through. This exists to stop `points: 99999999`,
    which is the realistic attempt, not to price a round exactly. */
-const SEAT_POINTS = 100;
-const STREAK_STEP = 25;
+const SEAT_POINTS = 10;
+const STREAK_STEP = 2;
 const STREAK_MAX = 8;
-const FINISH_BONUS = 250;
-const TIME_BONUS_PER_S = 10;
+const FINISH_BONUS = 25;
+const TIME_BONUS_PER_S = 1;
 
 function maxPointsFor(level) {
     const seats = dropsIn(level);

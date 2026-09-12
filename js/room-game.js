@@ -61,13 +61,30 @@
        game.
 
        The numbers are round on purpose: a player should be able to see a
-       score go up and know why without being told the formula. */
-    const SEAT_POINTS = 100;            // a correct seat, on its own
-    const STREAK_STEP = 25;             // and this much more per seat in a row
+       score go up and know why without being told the formula.
+
+       ----------------------------------------------------------------------
+       AND THEY ARE SMALL ON PURPOSE.
+
+       They were ten times this, which put a cleared three-level run near
+       seven thousand. A number that size promises a game far longer than
+       three rounds — it is arcade-cabinet scale, the kind earned over an
+       hour — and reading it after four minutes makes the score feel handed
+       out rather than won. Ten a seat puts the same run in the low hundreds,
+       which is a figure you can hold in your head and say out loud.
+
+       The BALANCE is untouched; only the scale moved. Every value kept its
+       ratio to a seat, so the streak is still the biggest thing in a round
+       and the clock is still the smallest. The one number that did not just
+       divide is the wrong-seat penalty, which was three quarters of a seat
+       and is now exactly one: "a wrong chair costs you a right one" is a
+       rule a player can hold, and 7.5 is not a number this scale can say. */
+    const SEAT_POINTS = 10;             // a correct seat, on its own
+    const STREAK_STEP = 2;              // and this much more per seat in a row
     const STREAK_MAX = 8;               // after which the bonus stops growing
-    const WRONG_SEAT_POINTS = -75;      // sitting out of order
-    const DECOY_POINTS = -50;           // sitting on a decoy
-    const FINISH_BONUS = 250;           // clearing every seat in a round
+    const WRONG_SEAT_POINTS = -10;      // sitting out of order
+    const DECOY_POINTS = -5;            // sitting on a decoy
+    const FINISH_BONUS = 25;            // clearing every seat in a round
 
     /* THE CLOCK HAS TO BE WORTH POINTS, because the leaderboard ranks on them.
 
@@ -79,17 +96,18 @@
        points decide the table it would make the game's own enemy — the clock —
        worth nothing at all.
 
-       Ten a second, paid on a round you CLEAR. Deliberately small beside a
-       seat: a wrong chair costs 75 outright, the streak it was building, and
-       three seconds of this on top, so accuracy stays worth more than hurry,
-       which is the right order for a game about remembering. But when two runs
-       are otherwise equal — and two clean runs of the same levels are exactly
-       equal, every seat and every bonus identical — this is the whole
-       difference between them, which is what makes the table a race again.
+       One a second, paid on a round you CLEAR. Deliberately the smallest
+       thing on the board: a wrong chair costs a whole seat outright, the
+       streak it was building, and three seconds of this on top, so accuracy
+       stays worth more than hurry — which is the right order for a game about
+       remembering. But when two runs are otherwise equal, and two clean runs
+       of the same levels are exactly equal with every seat and bonus
+       identical, this is the whole difference between them, which is what
+       makes the table a race again.
 
-       Levels are already in the score and always were: 250 a round, plus the
+       Levels are already in the score and always were: 25 a round, plus the
        seats you can only reach by getting there. */
-    const TIME_BONUS_PER_S = 10;
+    const TIME_BONUS_PER_S = 1;
 
     const IDLE = "idle";
     const RUNNING = "running";
@@ -125,7 +143,20 @@
                 this.speed = 0;
                 this.message = "Watch where they land.";
                 this.endedBecause = "";
-                this.round.tick(now, o.playerTile ? o.playerTile() : null);
+                /* NOTHING FALLS YET, and nothing starts timing yet.
+
+                   This used to tick the round once, right here, which drops
+                   the first piece on the spot — and a round is built before
+                   the room loader and the three-two-one, both of which paint
+                   the room. So the count-in ran with a piece already hanging
+                   at the top of the room, which gives away where it is going
+                   to land and is the one thing the count is for NOT doing.
+
+                   The round is left untouched instead: `started` stays null,
+                   so the clock has not begun either, and the first tick after
+                   the freeze lifts both starts the timer and drops the first
+                   piece. That is the same instant play begins, which is where
+                   both belong. */
                 return this;
             },
 
