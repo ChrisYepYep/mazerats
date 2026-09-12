@@ -98,6 +98,16 @@
         pos: { x: 3, y: 6 },
         dir: 2,
         path: [],
+        /* WHERE THE WALK IS GOING, and what it was when you asked for it.
+
+           Kept because furni lands mid-walk and the route has to be
+           reconsidered against a room that has changed — and reconsidering it
+           needs to know what you meant, not just where you were pointed.
+           `seat` is whether the tile you clicked already had a seat on it:
+           you were going there to sit. A seat that lands on a tile you picked
+           because it was EMPTY is not one you chose, and walking into it is
+           not something to be scored for. */
+        goal: null,
         stepFrom: null,
         stepAt: 0,
         furni: [],                  // what is standing in the room
@@ -323,8 +333,67 @@
         const seat = Furni.seatAt(state.furni, x, y);
         const route = Path.findPath(state.pos, { x, y }, blocked, !!seat);
         if (!route || !route.length) return;
+        state.goal = { x, y, seat: !!seat };
         state.path = route;
         if (!state.stepFrom) beginStep(gameNow());
+    }
+
+    /* THE ROOM CHANGED WHILE YOU WERE WALKING.
+
+       A route is worked out once, at the click, and furni goes on falling
+       after that. Nothing re-checked it, so a piece that landed on a tile
+       further down the route was simply walked through — and if that piece
+       was a seat, walking through it counted as sitting on the wrong one:
+       minus seventy-five and the streak gone, for a collision the player
+       neither caused nor could have seen coming. That is the bug testers kept
+       hitting.
+
+       So every landing re-asks the question the click asked, from where the
+       figure is standing now. Three outcomes:
+
+         still clear      nothing to do; the walk carries on uninterrupted
+         blocked en route a way round exists, and the figure takes it
+         no way round     the walk stops where it is
+
+       The goal keeps the intent it was given. If you were walking to a seat
+       you can still walk into it; if you picked an empty tile and something
+       has since landed on it, you stop short rather than sitting on a chair
+       you never chose. */
+    function repathIfBlocked() {
+        if (!state.goal) return;
+
+        /* THE GOAL FIRST, and before the "is there anything left to walk"
+           check, because on the LAST step there is not. beginStep shifts the
+           final tile off the path and animates into it, so for most of a
+           second the figure is still travelling with an empty path — and a
+           seat landing on the destination in that window is the narrowest
+           and nastiest version of this bug. Dropping the goal here is what
+           stops it being scored. */
+        if (blocked(state.goal.x, state.goal.y) && !state.goal.seat) {
+            state.path = [];
+            state.goal = null;
+            dirty = true;
+            return;
+        }
+
+        if (!state.path.length) return;
+        if (!state.path.some(s => blocked(s.x, s.y))) return;
+
+        /* `state.pos` is already the tile being walked INTO — beginStep moves
+           it there and animates across afterwards — so it is where the figure
+           will be standing whether or not a step is in flight, and that is
+           where any new route starts. A step already under way is committed
+           either way; it cannot be redirected mid-tile. */
+        const route = Path.findPath(
+            state.pos, { x: state.goal.x, y: state.goal.y }, blocked, state.goal.seat);
+
+        if (route && route.length) {
+            state.path = route;
+        } else {
+            state.path = [];
+            state.goal = null;
+        }
+        dirty = true;
     }
 
     // ---- painting
@@ -533,6 +602,9 @@
             if (game.tick(now, state.pos)) {
                 state.furni = game.renderList();
                 refreshBlocked();
+                // Something landed. The route was worked out against a room
+                // that no longer exists.
+                repathIfBlocked();
                 dirty = true;
             }
             renderHud(now);
@@ -551,8 +623,21 @@
 
         if (state.stepFrom && now - state.stepAt >= WALK_MS) {
             state.stepFrom = null;
-            // Arriving somewhere is what the game reacts to.
-            if (game && game.state === Game.RUNNING) {
+
+            /* ARRIVING AT THE TILE YOU ASKED FOR is what the game reacts to —
+               not every tile crossed on the way to it.
+
+               Seats block, so a route can only ever END on one; it can never
+               legitimately pass over one. Anything underfoot mid-route is
+               therefore something that arrived after you set off, and being
+               scored for it is being scored for someone else's timing. The
+               same goes for a step already in flight when a seat lands on the
+               tile it was heading into: repathIfBlocked drops the goal in that
+               case, and with no goal there is nothing to score. */
+            const atGoal = state.goal &&
+                state.pos.x === state.goal.x && state.pos.y === state.goal.y;
+            if (game && game.state === Game.RUNNING && !state.path.length && atGoal) {
+                state.goal = null;
                 const what = game.arrivedAt(state.pos, now);
                 if (what) { renderHud(now); dirty = true; }
             }
@@ -1804,7 +1889,7 @@
        clock, nothing falling. */
     function previewLevel(level) {
         state.pos = { x: level.start.x, y: level.start.y };
-        state.path = []; state.stepFrom = null;
+        state.path = []; state.goal = null; state.stepFrom = null;
         Object.assign(state, Levels.toRoomOpts(level));
         state.furni = (level.decor || []).map(d => Furni.make(d.className, d.x, d.y, {
             meta: metaFor(d.className), rotation: d.rotation, state: d.state,
@@ -2408,7 +2493,7 @@
        "Loading room" each time is friction rather than atmosphere. */
     function beginLevel(level) {
         state.pos = { x: level.start.x, y: level.start.y };
-        state.path = []; state.stepFrom = null;
+        state.path = []; state.goal = null; state.stepFrom = null;
         Object.assign(state, Levels.toRoomOpts(level));
         syncPickers();
         state.furni = game.renderList();
