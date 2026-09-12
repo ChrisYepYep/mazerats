@@ -200,6 +200,16 @@
 
         const L = window.RoomLayouts;
         const model = L ? L.get(out.model) : null;
+        /* AN UNKNOWN LAYOUT FALLS BACK, AND SAYS SO.
+
+           Falling back to the classic room is right — a level saved against a
+           layout that later went away is still a playable level. Doing it
+           SILENTLY is what let a truncated id ("libr" for "library", cut by a
+           four-character cap on the server) look like the editor spontaneously
+           changing room on save. The fallback stays; the silence does not. */
+        if (L && out.model && model && model.id !== out.model) {
+            console.warn(`RoomLevels: no layout "${out.model}" — falling back to "${model.id}".`);
+        }
         out.model = model ? model.id : "a";
         cols = cols || (model ? model.cols : 8);
         rows = rows || (model ? model.rows : 13);

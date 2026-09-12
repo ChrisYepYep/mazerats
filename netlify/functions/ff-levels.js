@@ -71,7 +71,12 @@ function cleanLevel(body) {
            note below on `zones` is exactly why it has to be added to this list
            and not just to the schema: a field this pick misses is dropped on
            every save, silently, and the level comes back in the wrong room. */
-        model: typeof body.model === "string" ? body.model.slice(0, 4) : "a",
+        /* THIRTY-TWO, not four. The cap was written when every layout was a
+           single letter out of the Origins models — a..s, with slack — and a
+           public room's id is a word. "library" saved as "libr", which matches
+           no layout, so every save of a Library level came back as the plain
+           8x13 room and the editor's view snapped to it. */
+        model: typeof body.model === "string" ? body.model.slice(0, 32) : "a",
         floor: pick(body.floor || {}, ["pattern", "colour"]),
         wall: pick(body.wall || {}, ["pattern", "colour"]),
         start: pick(body.start || {}, ["x", "y"]),
