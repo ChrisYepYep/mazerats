@@ -64,10 +64,18 @@
 (function () {
     "use strict";
 
-    const TILE_W = 64;
-    const TILE_H = 32;
-    const HALF_W = TILE_W / 2;
-    const HALF_H = TILE_H / 2;
+    /* TILE SIZE IS PER LAYOUT TOO, because half-scale rooms exist.
+
+       A private room is 64x32 to a tile. The client drew its BIG rooms at
+       32x16 instead — they do not fit the stage otherwise — and ships a second
+       set of art to match. The Library is one of those, so these are read off
+       the layout rather than fixed. Everything below is written in terms of
+       HALF_W and HALF_H, so a room at either scale goes through the same
+       arithmetic. */
+    let TILE_W = 64;
+    let TILE_H = 32;
+    let HALF_W = TILE_W / 2;
+    let HALF_H = TILE_H / 2;
 
     /* THE ROOM'S SHAPE IS NOT FIXED ANY MORE.
 
@@ -124,7 +132,23 @@
        layout fits: the widest comes to 686 against 720. */
     let ROOM_W = 0, ROOM_H = 0, ORIGIN_X = 0, ORIGIN_Y = 0;
 
+    /* A PAINTED room is placed by its picture, not by its walls.
+
+       There is nothing to measure: the room IS the bitmap, and the grid's
+       origin is a point inside it that the extractor already worked out. So
+       the picture is centred on the stage and the origin moves with it. */
+    let paintX = 0, paintY = 0;
+
     function measure() {
+        if (layout && layout.painted) {
+            ROOM_W = layout.imageW;
+            ROOM_H = layout.imageH;
+            paintX = Math.floor((WIDTH - ROOM_W) / 2);
+            paintY = Math.floor((HEIGHT - ROOM_H) / 2);
+            ORIGIN_X = paintX + layout.originX;
+            ORIGIN_Y = paintY + layout.originY;
+            return;
+        }
         ROOM_W = (ROWS - 1) * HALF_W + HALF_W + WALL_END + (COLS - 1) * HALF_W + HALF_W + WALL_END;
         ROOM_H = WALL_H + WALL_TOP + LINE * 2 +
             (COLS + ROWS - 2) * HALF_H + TILE_H + FLOOR_EDGE + LINE;
@@ -154,11 +178,27 @@
     const KEY_STRIDE = 32;
     const key = (x, y) => y * KEY_STRIDE + x;
 
+    let painting = null;            // the background image, once it is in
+
     function setLayout(next) {
         const L = window.RoomLayouts;
         layout = next || (L ? L.get(L.DEFAULT) : null);
         COLS = layout ? layout.cols : 8;
         ROWS = layout ? layout.rows : 13;
+        TILE_W = (layout && layout.tileW) || 64;
+        TILE_H = (layout && layout.tileH) || 32;
+        HALF_W = TILE_W / 2;
+        HALF_H = TILE_H / 2;
+        painting = null;
+        if (layout && layout.painted) {
+            painting = stencils.get(layout.image);
+            if (!painting) {
+                painting = new Image();
+                painting.onload = () => { if (onReady) onReady(); };
+                painting.src = layout.image;
+                stencils.set(layout.image, painting);
+            }
+        }
         measure();
         return layout;
     }
@@ -801,6 +841,17 @@
 
         ctx.clearRect(0, 0, WIDTH, HEIGHT);
         ctx.imageSmoothingEnabled = false;
+
+        /* A PAINTED ROOM IS ALREADY DRAWN. No floor to lay, no walls to raise,
+           and no floor or wallpaper pickers either — the artwork is the room,
+           and a public room's look is not something a player chose. */
+        if (layout && layout.painted) {
+            if (painting && painting.complete && painting.naturalWidth) {
+                ctx.drawImage(painting, paintX, paintY);
+            }
+            return;
+        }
+
         drawWalls(ctx, wg, wc);
         drawFloor(ctx, fg, fc);
     }
@@ -846,7 +897,12 @@
        avatar around a room that was not there. Reading them through a getter
        means a caller gets the room that is up now, however it got there. */
     window.RoomIso = {
-        TILE_W, TILE_H, HALF_W, HALF_H,
+        // Getters for the same reason COLS and ROWS are: a half-scale room
+        // changes these, and a caller that took a copy would keep 64x32.
+        get TILE_W() { return TILE_W; },
+        get TILE_H() { return TILE_H; },
+        get HALF_W() { return HALF_W; },
+        get HALF_H() { return HALF_H; },
         get COLS() { return COLS; },
         get ROWS() { return ROWS; },
         get layout() { return layout; },
