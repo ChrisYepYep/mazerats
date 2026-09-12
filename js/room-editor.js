@@ -37,6 +37,7 @@
         placed: [],             // RoomFurni pieces, mirroring level.decor
         catalogue: new Map(),   // className -> catalogue row (with sprite grids)
         meta: {},               // className -> furnidata record
+        icons: new Set(),       // which furni we ship a thumbnail for — see iconFor
         brush: null,            // the furni about to be placed
         selected: null,         // the placed piece under edit
         mode: "room",           // room | decor | zones | rules
@@ -152,15 +153,51 @@
 
     function metaFor(className) { return state.meta[className] || {}; }
 
+    /* ---- ICONS, OUT OF THE CLIENT RATHER THAN OFF ANOTHER SITE.
+
+       The picker used to point every row's <img> at FurniIndex. With the
+       result cap gone the panel's resting state matches 1,101 furni, so each
+       redraw asked them for a thousand pictures — not on, and not theirs to
+       serve.
+
+       The client has the same pictures: `<class>_small`, the thumbnail its own
+       catalogue showed. tools/furni-icons-extract.js writes them to
+       assets/furni-icons, 1,260 of them at about 390 bytes each, and lists
+       what it wrote in index.json.
+
+       The index is why this is a lookup and not a guess. A row wants its own
+       colourway's thumbnail where the client ships one (684 rows), the base
+       class's otherwise (395), and FurniIndex only where there is neither
+       (22). Probing that chain with `onerror` would 404 on 417 rows every
+       redraw; reading a 19KB list once costs one request, and only the
+       builder ever makes it. */
+    const iconStem = (className) => String(className).replace(/\*/g, "-");
+
+    function iconFor(className, row) {
+        const own = iconStem(className);
+        if (state.icons.has(own)) return `assets/furni-icons/${own}.png`;
+        const b = iconStem(className.replace(/\*\d+$/, ""));
+        if (state.icons.has(b)) return `assets/furni-icons/${b}.png`;
+        return row.icon;                    // FurniIndex, for the last 2%
+    }
+
     async function load() {
-        const [cat, meta] = await Promise.all([
+        const [cat, meta, icons] = await Promise.all([
             fetch("/.netlify/functions/furni-catalogue?sprites=1").then(r => r.json()),
-            fetch("/.netlify/functions/furni-meta").then(r => r.json())
+            fetch("/.netlify/functions/furni-meta").then(r => r.json()),
+            /* Missing is survivable: every row falls back to FurniIndex, which
+               is what it did before this existed. */
+            fetch("assets/furni-icons/index.json").then(r => r.ok ? r.json() : []).catch(() => [])
         ]);
         state.catalogue = new Map((cat.items || []).map(i => [i.className, i]));
         state.meta = meta.items || {};
+        state.icons = new Set(Array.isArray(icons) ? icons : []);
         state.ready = true;
-        return { catalogue: state.catalogue.size, meta: Object.keys(state.meta).length };
+        return {
+            catalogue: state.catalogue.size,
+            meta: Object.keys(state.meta).length,
+            icons: state.icons.size
+        };
     }
 
     /* Only furni this editor can actually place: it needs artwork AND a
@@ -206,7 +243,7 @@
             const cls = raw.replace(/_/g, " ");
             if (!words.every(w => name.includes(w) || cls.includes(w) || raw.includes(w))) continue;
             out.push({
-                className, name: row.name || className, icon: row.icon,
+                className, name: row.name || className, icon: iconFor(className, row),
                 sit: !!m.sit, w: m.x, h: m.y, rotations: rotationCount(className)
             });
             if (limit && out.length >= limit) break;

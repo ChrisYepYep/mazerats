@@ -1080,4 +1080,9 @@ function main() {
     console.log(`  index ${(js.length / 1024).toFixed(0)} KB -> ${jsPath}`);
 }
 
+/* The two palettes the .cct files do not carry, shared with
+   tools/furni-icons-extract.js so there is one definition of each rather than
+   a copy that can drift. */
+module.exports = { macPalette, greyscalePalette, CLIENT };
+
 if (require.main === module) main();
