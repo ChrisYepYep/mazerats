@@ -906,6 +906,10 @@
         get COLS() { return COLS; },
         get ROWS() { return ROWS; },
         get layout() { return layout; },
+        // Where a painted room's picture sits on the stage, so its overlays
+        // can be placed in the same frame the background was.
+        get paintX() { return paintX; },
+        get paintY() { return paintY; },
         KEY_STRIDE, key, has, setLayout,
         WALL_H, WIDTH, HEIGHT, LINE,
         shade, scale, tileTop, tileCenter, tileAt, diamond, floorPath,

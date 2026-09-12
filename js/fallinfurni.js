@@ -109,6 +109,26 @@
     const SPRITE_SCALE = 0.5;
     const FOOT_PAD = 11;            // feet above the sprite's own bottom edge
 
+    /* THE FIGURE COMES AT THE ROOM'S SCALE, and it is ASKED for small rather
+       than shrunk.
+
+       The imaging service renders three sizes, measured rather than assumed:
+       l is 128x220, m is 64x110 and s is 33x56. A 64x32 room wants the figure
+       at 64x110, which is l halved — that is where SPRITE_SCALE comes from. A
+       32x16 room wants half of that again, and the honest way to get it is to
+       ask for `s`, which is drawn small. Halving `m` in the browser is a
+       DOWNSCALE of pixel art: every hard edge becomes two soft ones, which is
+       the one thing this game is careful never to do.
+
+       FOOT_PAD halves with it. Eleven pixels above the sprite's own bottom
+       edge at full size is five and a half at half, and six is the rounding
+       that keeps the feet on the tile rather than a pixel under it. */
+    function avatarSizing() {
+        return (Iso.TILE_W && Iso.TILE_W < 64)
+            ? { size: "s", scale: 1, footPad: 6 }
+            : { size: "l", scale: SPRITE_SCALE, footPad: FOOT_PAD };
+    }
+
     const DEFAULT_FIGURE = "hd-180-1.ch-210-66.lg-270-82.sh-290-80.hr-100-61";
     const STORE_KEY = "mazerats_ff_room_v2";
 
@@ -246,7 +266,7 @@
         const walking = action === "wlk";
         const url = "https://www.habbo.com/habbo-imaging/avatarimage?" +
             new URLSearchParams({
-                figure, size: "l",
+                figure, size: avatarSizing().size,
                 direction: String(dir),
                 head_direction: String(dir),
                 action: walking ? "wlk" : (action === "sit" ? "sit" : "std"),
@@ -290,12 +310,32 @@
         const next = L.get(id);
         Iso.setLayout(next);
         state.model = next.id;
+        // A different scale means a different set of figure sprites — see
+        // avatarSizing. Cheap, and cached per URL, so a room revisited pays
+        // nothing.
+        preload(state.figure);
         if (!Iso.has(state.pos.x, state.pos.y)) {
             const t = L.firstTile(next);
             state.pos = { x: t.x, y: t.y };
             state.path = []; state.goal = null; state.stepFrom = null; state.acceptAt = null;
         }
         return next;
+    }
+
+    /* One Image per overlay, kept for the life of the page. A painted room has
+       sixty-odd of them and they never change. */
+    const overlayImgs = new Map();
+
+    function roomOverlay(layout, ov) {
+        const src = `assets/rooms/${layout.id}/${ov.member}.png`;
+        let img = overlayImgs.get(src);
+        if (!img) {
+            img = new Image();
+            img.onload = () => { dirty = true; };
+            img.src = src;
+            overlayImgs.set(src, img);
+        }
+        return img;
     }
 
     let blockedTiles = new Set();
@@ -558,6 +598,42 @@
             }
         }
 
+        /* A PAINTED ROOM'S SCENERY SORTS WITH EVERYTHING ELSE.
+
+           The Library is one background bitmap plus sixty-six overlays —
+           bookcases, a statue, a chandelier, lamps — and the masks among them
+           exist for exactly one purpose: to be drawn OVER an avatar so the
+           figure reads as standing behind the furniture. Painted after the
+           scene they would hide everyone; painted before it they would do
+           nothing. They belong in the sort.
+
+           And they can be, because Director's own depth numbers are in the
+           same units ours are. `locZ` on these elements runs 23000, 24000,
+           25000 — a thousand per step of x+y — which is exactly
+           RoomFurni.DEPTH_PER_TILE. So an overlay's z IS a tile depth and
+           needs no conversion, only the same outer multiply every other piece
+           here gets. The handful at 880000 and above are the artists' way of
+           saying "always in front": the chandelier, the top of the room, the
+           near bookshelves. They sort there naturally. */
+        const painted = Iso.layout && Iso.layout.painted ? Iso.layout : null;
+        if (painted && painted.overlays) {
+            for (const ov of painted.overlays) {
+                const img = roomOverlay(painted, ov);
+                pieces.push({
+                    key: ov.z * 1000 + (order++),
+                    draw: () => {
+                        if (!img.complete || !img.naturalWidth) return;
+                        ctx2.save();
+                        // ink 33 is Director's addPin — light, not paint.
+                        if (ov.ink === 33) ctx2.globalCompositeOperation = "lighter";
+                        if (ov.blend !== null && ov.blend < 100) ctx2.globalAlpha = ov.blend / 100;
+                        ctx2.drawImage(img, Iso.paintX + ov.x, Iso.paintY + ov.y);
+                        ctx2.restore();
+                    }
+                });
+            }
+        }
+
         const tile = state.pos;
         pieces.push({
             key: Furni.tileDepth(tile.x, tile.y) * 1000 + 500,
@@ -565,9 +641,10 @@
                 const sprite = avatarSprite(state.figure, at.dir, at.action, at.frame);
                 if (!sprite.ready) return;
                 const img = sprite.img;
-                const w = Math.round(img.naturalWidth * SPRITE_SCALE);
-                const h = Math.round(img.naturalHeight * SPRITE_SCALE);
-                const dx = Math.round(at.sx - w / 2), dy = Math.round(at.sy - h + FOOT_PAD);
+                const sz = avatarSizing();
+                const w = Math.round(img.naturalWidth * sz.scale);
+                const h = Math.round(img.naturalHeight * sz.scale);
+                const dx = Math.round(at.sx - w / 2), dy = Math.round(at.sy - h + sz.footPad);
                 ctx2.drawImage(img, dx, dy, w, h);
                 drawEyeAccessory(ctx2, state.figure, at.dir, dx, dy, w / FIGURE_W);
             }
@@ -1845,8 +1922,21 @@
         if (note && window.RoomLayouts) {
             const m = window.RoomLayouts.get(state.model);
             const shaped = m.mask.some(r => r.includes("x"));
-            note.textContent = `${m.cols}×${m.rows}, ${m.tiles} tiles` +
-                (shaped ? " — not a rectangle, so some of the grid is outside the room." : "");
+            note.textContent = m.painted
+                ? `${m.cols}×${m.rows}, ${m.tiles} walkable tiles. A public room — its floor and walls are painted, so there is nothing to pick.`
+                : `${m.cols}×${m.rows}, ${m.tiles} tiles` +
+                  (shaped ? " — not a rectangle, so some of the grid is outside the room." : "");
+
+            /* A PAINTED ROOM HAS NOTHING TO CHOOSE. The Library's floor and
+               walls are one bitmap somebody drew in 2005; offering a wallpaper
+               picker beside it promises something the renderer will ignore. */
+            const room = document.querySelector('.ff-mode[data-mode="room"]');
+            if (room) {
+                room.querySelectorAll("h3, .ff-select, .ff-swatches").forEach(el => {
+                    if (el.id === "ff-layout" || el.textContent === "Layout") return;
+                    el.hidden = !!m.painted;
+                });
+            }
         }
         if (refreshFloorSwatches) refreshFloorSwatches();
         if (refreshWallSwatches) refreshWallSwatches();

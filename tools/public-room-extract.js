@@ -311,6 +311,27 @@ function emit(rooms) {
     L.push(`
     const byId = new Map(ROOMS.map(r => [r.id, r]));
     window.RoomPublic = { ROOMS, get: (id) => byId.get(id) || null };
+
+    /* A PUBLIC ROOM IS A LAYOUT LIKE ANY OTHER as far as the rest of the game
+       is concerned: it has a size, a mask and a door, which is everything a
+       level needs to be normalised, walked and played against. So it joins the
+       same list the private rooms are in, and the editor's picker, the level
+       record and RoomIso.setLayout all take it without knowing the difference.
+
+       Appended here rather than written into room-layouts.js because both
+       files are generated from different casts by different tools, and neither
+       should have to know when the other is re-run. Load order does the rest —
+       this file comes after room-layouts.js. */
+    if (window.RoomLayouts && Array.isArray(window.RoomLayouts.MODELS)) {
+        for (const r of ROOMS) {
+            if (!window.RoomLayouts.MODELS.some(m => m.id === r.id)) {
+                window.RoomLayouts.MODELS.push(r);
+            }
+        }
+        if (typeof window.RoomLayouts.register === "function") {
+            ROOMS.forEach(window.RoomLayouts.register);
+        }
+    }
 })();
 `);
     return L.join("\n");

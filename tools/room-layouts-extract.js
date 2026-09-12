@@ -274,7 +274,12 @@ function emit(models) {
         return { x: 0, y: 0 };
     }
 
-    window.RoomLayouts = { MODELS, DEFAULT: MODELS[0].id, get, has, tileList, firstTile };
+    /* Public rooms add themselves here — see tools/public-room-extract.js.
+       They are layouts in every way this file cares about: a size, a mask and
+       a door. */
+    function register(layout) { if (layout && layout.id) byId.set(layout.id, layout); }
+
+    window.RoomLayouts = { MODELS, DEFAULT: MODELS[0].id, get, has, tileList, firstTile, register };
 })();
 `);
     return lines.join("\n");

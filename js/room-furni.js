@@ -186,10 +186,35 @@
        palette the .cct files do not contain — and they keep the old path,
        FurniIndex art against js/furni-offsets.js. Imperfect, but no worse than
        it was, and confined to those. */
+    /* WHICH ARTWORK FOR THIS ROOM'S SCALE.
+
+       The client draws its big rooms at 32x16 to a tile rather than 64x32, and
+       ships a whole second set of furni art for them — the same classes under
+       an `s_` prefix, drawn at half the size rather than scaled down, because
+       scaling pixel art down is not the same thing as drawing it small.
+
+       A level never says which it wants. It names `bench_armas`, and the ROOM
+       decides: a half-scale layout resolves that to `s_bench_armas` if the
+       artwork exists. That keeps the levels, the editor and furnidata entirely
+       out of it — a level moved from a private room to the Library redraws
+       itself at the right size with nothing stored about scale.
+
+       Falling back to the full-size art when there is no half-scale version is
+       deliberate and visibly wrong, which is the point: an oversized chair
+       says "this class has no small art" far better than a silent gap would,
+       and 1,006 classes do have it. */
+    function artClass(className) {
+        const base = baseClass(className);
+        if (!Iso.TILE_W || Iso.TILE_W >= 64) return base;
+        const lib = window.FurniLibrary;
+        const small = "s_" + base;
+        return (lib && lib[small]) ? small : base;
+    }
+
     function libraryEntry(className) {
         const lib = window.FurniLibrary;
         if (!lib) return null;
-        return lib[className] || lib[baseClass(className)] || null;
+        return lib[artClass(className)] || lib[className] || lib[baseClass(className)] || null;
     }
 
     function offsetTable(className) {
@@ -216,7 +241,7 @@
            that only need one representative image, and for the "does this
            furni have artwork at all" check in the editor. */
         return {
-            url: `assets/furni/${baseClass(className)}_${box.p[0].f || `${v.stateKey}_${v.dir}`}_${box.p[0].k}.png`,
+            url: `assets/furni/${artClass(className)}_${box.p[0].f || `${v.stateKey}_${v.dir}`}_${box.p[0].k}.png`,
             flip: v.mirror
         };
     }
@@ -354,7 +379,11 @@
         const box = v.byState[pick.dir];
         if (!box) return null;
         if (!pick.mirror) return { ax: box.ax, ay: box.ay, mirror: false, box };
-        return { ax: box.w - box.ax - 64, ay: box.ay, mirror: true, box };
+        /* 64 is A TILE WIDE, not a magic number, and the room is not always
+           64 wide any more — a half-scale room is 32. The reflection is about
+           the piece's own tile either way, so it reads the room's tile rather
+           than assuming the private-room one. */
+        return { ax: box.w - box.ax - Iso.TILE_W, ay: box.ay, mirror: true, box };
     }
 
     /* ROTATION SWAPS THE FOOTPRINT — but not simply on odd rotations.
@@ -644,7 +673,7 @@
         const home = Iso.tileCenter(f.x, f.y);
         const baseX = Math.round(home.sx - Iso.HALF_W - a.ax);
         const baseY = Math.round(home.sy - a.ay - lift);
-        const base = baseClass(f.className);
+        const base = artClass(f.className);
         const depth = tileDepth(f.x, f.y) + Math.round((f.lift || 0) * DEPTH_PER_HEIGHT);
 
         return a.box.p.map((p) => ({
@@ -770,9 +799,12 @@
            arithmetic against the footprint's bottom corner, plus the three
            pixels of clearance the artwork is typically drawn with (median 3,
            mean 5). */
+        /* 32 and 16 here are HALF A TILE across and down, and a half-scale
+           room halves both — so they are read from the room rather than
+           written in. At 64x32 this is the formula above, unchanged. */
         const home = Iso.tileCenter(f.x, f.y);
-        const ax = img.naturalWidth / 2 + 16 * (f.h - f.w) - 32;
-        const ay = img.naturalHeight + 16 - 16 * (f.w + f.h) + BASE_GAP;
+        const ax = img.naturalWidth / 2 + Iso.HALF_H * (f.h - f.w) - Iso.HALF_W;
+        const ay = img.naturalHeight + Iso.HALF_H - Iso.HALF_H * (f.w + f.h) + BASE_GAP;
         const x = Math.round(home.sx - Iso.HALF_W - ax);
         const y = Math.round(home.sy - ay - lift);
         if (!f.flip) ctx.drawImage(img, x, y);

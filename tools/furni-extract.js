@@ -189,9 +189,25 @@ function main() {
 
     fs.mkdirSync(OUT, { recursive: true });
 
+    /* THE `_50` CASTS ARE IN NOW, and they are not duplicates.
+
+       They were excluded as redundant, which they looked to be — every class
+       in them already had artwork. They are the HALF-SCALE set: the client
+       draws its big rooms at 32x16 to a tile rather than 64x32 and ships a
+       second set of art to match, named with an `s_` prefix. Nothing collides,
+       because `s_bench_armas` is its own class name as far as this tool is
+       concerned; the game pairs the two up at draw time by prefix.
+
+       hh_furni_s_assets_1..5 were coming through all along — they do not end
+       in `_50` — which is why 504 `s_` classes were already on disk and the
+       gap was invisible until something needed a particular one.
+
+       `_small` stays out. Despite the name it is not the half-scale room art:
+       it is catalogue thumbnails, named `bed_armas_two_small` rather than in
+       parts, and nothing in a room ever draws one. */
     const files = fs.readdirSync(CLIENT)
         .filter(f => /^hh_furni.*\.cct$/i.test(f))
-        .filter(f => !/_50\.cct$/i.test(f) && !/_small\.cct$/i.test(f));
+        .filter(f => !/_small\.cct$/i.test(f));
 
     const library = {};
     const written = new Map();      // class|part|sha1 -> the "<state>_<dir>" it was written under
