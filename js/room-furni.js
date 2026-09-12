@@ -746,15 +746,105 @@
         return seq.f[i];
     }
 
+    /* ---- THE DROP SHADOW, the patch of floor a piece darkens.
+
+       Every furni that casts one ships a `<class>_sd_<facing>` member, and
+       until now the game drew none of them, so everything stood on the floor
+       rather than on anything. tools/furni-extract.js has the archaeology —
+       what the members are, how the client picks one, and why the number on
+       them really is the facing. Three things matter here:
+
+       TWENTY PER CENT. `solveMembers` asks the class's .props for part "sd"
+       and, finding nothing — no class has an "sd" key — takes solveBlend's
+       default of 100 and then overrides it to 20. So the mask is drawn at a
+       fifth opacity, which `blend` already does for parts.
+
+       BY FACING, AND NEVER MIRRORED. Habbo draws half its rotations by
+       reflecting one sprite; it does not reflect the shadow, it ships a second
+       member. So this asks for the facing the piece ends up in, not the
+       direction its artwork came from, and takes the picture as it is. A
+       facing with no member and no undirected fallback gets no shadow, which
+       is the client's answer too.
+
+       AND THAT LEAVES GAPS, which are Habbo's and not ours. 765 of the
+       library's 2,029 classes ship a shadow at all, and between them they
+       cover 1,322 of the 5,614 rotations the game offers — 330 classes on
+       every rotation and 435 on only some. A chair whose shadow appears at one
+       rotation and not the next looks like a bug, so both ways out were tried
+       and both were measured to be worse:
+
+         the same axis   0 and 4 are one axis, and their shadows are usually
+                         the same picture — so facing 4 could borrow facing
+                         0's. Worth 3.6 points of coverage, at a median 5
+                         pixels out, and it still leaves 435 classes partial.
+         its only one    15 classes draw one direction and ship one shadow
+                         under another direction's number. Pairing them looks
+                         obvious and is wrong: where the two numbers AGREE the
+                         shadow sits within a median 4 pixels of its sprite,
+                         and where they disagree, 32. `bench_armas` would be
+                         58 pixels out. That shadow is unreachable in the
+                         client too.
+
+       So: the client's lookup, and no shadow where the client has none.
+
+       IN A LAYER OF ITS OWN, under everything. The client gives shadows their
+       own manager rather than a place in the room's depth order, and that is
+       not a detail — a shadow is 20% black laid over whatever was drawn before
+       it, so anything it is drawn AFTER gets tinted.
+
+       Sorting them into their own tile's band looked right and was not: a
+       shadow reaches about half a tile back, so a chair's shadow would fall
+       across the feet of whoever was standing on the tile behind it and dim
+       them. Below everything, a shadow can only ever darken the floor, which
+       is the only thing a shadow should darken.
+
+       The tile still sets the order AMONG shadows, so two overlapping ones
+       stack front-to-back like everything else. The cost is that a rug — whose
+       parts carry a zshift of -32,000 precisely so they stay under all the
+       furni — now covers the shadow of anything standing on it. That is the
+       client's layering too, and it loses nothing that was there before. */
+    const SHADOW_BLEND = 20;
+    /* Far below the deepest real part. The library's most negative zshift is
+       -37,000 and a room is at most a few dozen tiles across, so nothing
+       genuinely in the room can reach this. */
+    const SHADOW_LAYER = -1000000;
+
+    function shadowPart(f) {
+        const lib = libraryEntry(f.className);
+        if (!lib || !lib.sd) return null;
+        const v = variantAt(f.className, f.state || 0, f.rotation || 0);
+        if (!v) return null;
+        const box = lib.sd[v.facing] || lib.sd.all;
+        if (!box) return null;
+
+        const lift = (f.lift || 0) * Iso.TILE_H;
+        const home = Iso.tileCenter(f.x, f.y);
+        return {
+            url: `assets/furni/${artClass(f.className)}_sd${box.f || ""}.png`,
+            colour: null,
+            add: false,
+            blend: SHADOW_BLEND,
+            x: Math.round(home.sx - Iso.HALF_W - box.ax),
+            y: Math.round(home.sy - box.ay - lift),
+            flip: false,
+            depth: SHADOW_LAYER + tileDepth(f.x, f.y)
+                + Math.round((f.lift || 0) * DEPTH_PER_HEIGHT)
+        };
+    }
+
     /* Where each part of a piece goes, and how deep it is. Null when this
        class is not in the library — the caller falls back to one flat sprite. */
     function partsOf(f, now) {
         const libA = libraryEntry(f.className);
-        if (libA && libA.an) {
-            const out = animatedParts(f, libA, now || 0);
-            if (out) return out;
-        }
-        return staticParts(f);
+        let parts = null;
+        if (libA && libA.an) parts = animatedParts(f, libA, now || 0);
+        if (!parts) parts = staticParts(f);
+        if (!parts) return null;
+        /* First in the list as well as lowest in depth: every caller that
+           sorts uses `depth`, and the one that does not — room-lobby's
+           title-screen furni — draws them in order. */
+        const shade = shadowPart(f);
+        return shade ? [shade].concat(parts) : parts;
     }
 
     /* A piece whose parts are on different frames at once — which is the

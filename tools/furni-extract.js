@@ -36,9 +36,12 @@
    ----------------------------------------------------------------------
    WHAT IS DELIBERATELY LEFT OUT
 
-   `_sd` members are drop shadows the client composites separately, and
-   one-pixel members are placeholders for states that draw nothing — they
+   One-pixel members are placeholders for states that draw nothing — they
    carry no picture but would drag the union box across the room.
+
+   `_sd` members were left out too, and are now IN — see SHADOW below. They
+   are still kept out of the union box and off the part list, because a drop
+   shadow is not a layer of the sprite; it is a mask on the floor underneath.
 
    COLOUR VARIANTS ("chair_polyfon*2") share one set of bitmaps and are not
    generated here EITHER, and that is now the right answer rather than a gap:
@@ -62,6 +65,56 @@ const CLIENT = process.env.HABBO_CLIENT ||
     "C:\\Users\\cjboy\\AppData\\Roaming\\Habbo Launcher\\downloads\\shockwave\\350";
 
 const MEMBER = /^(.+)_([a-z])_(\d+)_(\d+)_(\d+)_(\d+)_(\d+)$/;
+
+/* ---- DROP SHADOWS, the soft patch of floor under every piece.
+
+   `<class>_sd_<direction>`, or `<class>_sd` for a piece whose shadow is the
+   same whichever way it faces. 1,099 members across the furni casts, covering
+   765 of this library's classes. They were left out of this tool from the
+   start, so every furni in the game sits on the floor rather than on anything,
+   which is the 33-pixel difference against FurniIndex's chair and 610 on their
+   bed.
+
+   WHAT THEY ARE: a silhouette, not a picture. Every one of them is a hard
+   black-or-clear mask — checked across both formats, 8-bit ones are palette
+   index 0 and index 255 (black) and nothing else, 32-bit ones are 0,0,0 at
+   alpha 0 or 255 and nothing else. No grey, no soft edge. So they are written
+   as black with the mask's own alpha, and never need a palette resolving,
+   which is why a shadow survives for classes whose ARTWORK does not.
+
+   HOW THE CLIENT DRAWS THEM, out of `solveMembers` in hh_furni_classes.cct:
+
+       tShadowName = tClass & "_sd"
+       if listp(pDirection) then tShadowName = tShadowName & "_" & pDirection[1]
+       tShadowNum = getmemnum(tShadowName)
+       if (not tShadowNum) and listp(pDirection) then
+           tShadowNum = getmemnum(tClass & "_sd")
+       ...
+       tSpr.ink   = me.solveInk("sd")        -- 8, matte, the default
+       tSpr.blend = me.solveBlend("sd")      -- 100, the default, because
+       if tSpr.blend = 100 then              -- no class's .props has an "sd"
+           tSpr.blend = 20                   -- key. Checked: none of 1,426 do.
+
+   So: TWENTY PER CENT BLACK, looked up by the direction the piece is FACING,
+   falling back to the undirected member, and no shadow at all when neither
+   exists. js/room-furni.js owns the drawing half.
+
+   BY FACING, NOT BY THE DIRECTION THE ARTWORK CAME FROM. Habbo draws half its
+   rotations by mirroring one sprite, but it does NOT mirror the shadow — it
+   ships a separate member for the mirrored facing. `sofa_dpolyfon` draws
+   directions 0 and 2 and carries FOUR shadows, 0, 2, 4 and 6; its `_sd_6` is
+   `_sd_0` reflected, same size and same 2,428 drawn pixels, with its own
+   registration point. 68 classes ship a shadow for a direction their artwork
+   never draws, and that is why.
+
+   AND THE NUMBER REALLY IS THE DIRECTION. Measured rather than assumed: a
+   shadow lies under the piece, so its left and right edges in the furni's own
+   space should match that direction's sprite. Over the 292 shadows belonging
+   to classes drawn more than one way, 194 fit their own label best and the
+   other 98 tie with their label's MIRROR, which has the same extent and is
+   what a tie there means. None fits a direction off the other axis: reusing
+   `lc_desk`'s `_sd_0` at facing 2 would be 68 pixels wrong. */
+const SHADOW = /^(.+)_sd(?:_(\d+))?$/;
 
 function parseName(name) {
     const m = MEMBER.exec(name);
@@ -390,6 +443,8 @@ function main() {
        has members in three — and gathered BEFORE the borrowing below, since a
        borrowed part is one this state does not have. See inferAnim. */
     const owned = new Map();
+    const shadows = {};             // class -> facing|"all" -> { w, h, ax, ay, f }
+    let sdWritten = 0, sdSkipped = 0, sdBlank = 0, bytes2 = 0;
     let sprites = 0, stubs = 0, skipped = 0, bytes = 0, trueColour = 0, alphaLayers = 0, noPalette = 0, unreadable = [];
 
     for (const file of files) {
@@ -401,6 +456,7 @@ function main() {
         const groups = new Map();   // class|state|dir -> [{part, ...}]
         const propNames = new Map();   // "<class>.props" -> cast member id
         const clutCache = new Map();
+        const shadowMembers = [];   // the class's _sd members in this cast
 
         const paletteFor = (memberNum) => {
             if (memberNum === null || memberNum === undefined || memberNum < 0) return null;
@@ -436,7 +492,14 @@ function main() {
             }
             if (!m.bitmap) continue;
             const p = parseName(m.name);
-            if (!p) { skipped++; continue; }
+            if (!p) {
+                // Tried only after the part pattern has failed, so a class
+                // that happens to end in _sd cannot swallow its own parts.
+                const s = SHADOW.exec(m.name);
+                if (s) shadowMembers.push({ id: e.id, className: s[1], facing: s[2], bmp: m.bitmap });
+                else skipped++;
+                continue;
+            }
             /* A ONE-PIXEL MEMBER IS A PART SAYING "NOT FROM THIS ANGLE", and
                it has to be kept rather than dropped.
 
@@ -799,6 +862,77 @@ function main() {
             const st = rec.s[state] || (rec.s[state] = {});
             st[dir] = { w: W, h: H, ax: -minX, ay: -minY, p: placed };
         }
+
+        /* ---- the shadows in this cast. See SHADOW at the top of the file.
+
+           Kept apart from the composition above because a shadow is not a part
+           of the sprite: it is not in the union box, it does not take a part
+           letter, it is never mirrored, and it is drawn under the piece rather
+           than in it. Held in `shadows` rather than written into `library`
+           here, because a class's shadow and its artwork are often in
+           different casts and either may come first. */
+        for (const sm of shadowMembers) {
+            const { pitch, w, h, bitDepth, regX, regY } = sm.bmp;
+            if (w <= 0 || h <= 0 || w > 1200 || h > 1200) { sdSkipped++; continue; }
+            const bitdId = cast.childOf.get(`${sm.id}:BITD`);
+            if (bitdId === undefined) { sdSkipped++; continue; }
+            let bytes;
+            try {
+                const raw = cast.chunk(cast.byId.get(bitdId));
+                bytes = raw.length === pitch * h ? raw : unpackBits(raw, pitch * h);
+            } catch { sdSkipped++; continue; }
+            if (!bytes || bytes.length < pitch * h) { sdSkipped++; continue; }
+
+            /* A MASK, so there is one question per pixel: is this floor in
+               shadow or not. 8-bit and below are palette indices with 0 clear;
+               32-bit is the same four-plane layout the parts use, and only its
+               alpha plane is read. No palette is resolved either way — see the
+               note at the top on why every one of these is black. */
+            const rgba = Buffer.alloc(w * h * 4);
+            let drawn = 0;
+            for (let y = 0; y < h; y++) {
+                const row = y * pitch;
+                for (let x = 0; x < w; x++) {
+                    let on;
+                    if (bitDepth === 32) on = bytes[row + x] >= 8;
+                    else if (bitDepth === 8) on = bytes[row + x] !== 0;
+                    else {
+                        // 1, 2 and 4-bit rows pack several pixels per byte,
+                        // highest bits first. 58 members, all of them small.
+                        const per = 8 / bitDepth;
+                        const b = bytes[row + Math.floor(x / per)];
+                        const shift = (per - 1 - (x % per)) * bitDepth;
+                        on = ((b >> shift) & ((1 << bitDepth) - 1)) !== 0;
+                    }
+                    if (!on) continue;
+                    rgba[(y * w + x) * 4 + 3] = 255;      // black, by leaving rgb at 0
+                    drawn++;
+                }
+            }
+            /* A shadow with no pixels in it is a placeholder, the same idea as
+               the one-pixel parts above: the member exists so the class has
+               one, and it says this piece casts nothing. All 65 of them
+               decode cleanly and are empty on purpose. */
+            if (!drawn) { sdBlank++; continue; }
+
+            const png = encodePng(w, h, rgba);
+            const digest = crypto.createHash("sha1").update(png).digest("hex");
+            const key = sm.facing === undefined ? "all" : sm.facing;
+            const suffix = sm.facing === undefined ? "" : `_${sm.facing}`;
+            const seen = written.get(`${sm.className}|sd|${digest}`);
+            if (seen === undefined) {
+                written.set(`${sm.className}|sd|${digest}`, suffix);
+                fs.writeFileSync(path.join(OUT, `${sm.className}_sd${suffix}.png`), png);
+                bytes2 += png.length;
+            }
+            /* ax,ay reads exactly as it does for a part: where the furni's
+               origin sits inside this picture. A member's top-left is
+               (-regX, -regY) in the furni's own space, so the origin is at
+               (regX, regY) inside the member. */
+            const into = shadows[sm.className] || (shadows[sm.className] = {});
+            into[key] = { w, h, ax: regX, ay: regY, f: seen === undefined ? suffix : seen };
+            sdWritten++;
+        }
     }
 
     /* A class the client never described gets the switch its artwork implies.
@@ -808,6 +942,16 @@ function main() {
         if (rec.an) continue;
         const an = inferAnim(owned.get(className));
         if (an) { rec.an = an; inferred++; }
+    }
+
+    /* A shadow for a class with no artwork is a file nothing can ask for, so
+       only the ones that pair up are carried. */
+    let sdClasses = 0, sdOrphans = 0;
+    for (const [className, table] of Object.entries(shadows)) {
+        const rec = library[className];
+        if (!rec) { sdOrphans++; continue; }
+        rec.sd = table;
+        sdClasses++;
     }
 
     const classes = Object.keys(library).length;
@@ -843,6 +987,11 @@ function main() {
                  i      1 if this entry was INFERRED from the artwork rather
                         than read from the class's .data — see inferAnim in
                         tools/furni-extract.js for the rule and what it rejects
+        sd     the DROP SHADOW, the patch of floor the piece darkens:
+                 { facing: { w, h, ax, ay, f } }, plus the key "all" for a
+                 piece whose shadow is the same whichever way it faces.
+                 Looked up by FACING, never mirrored, drawn at 20% black.
+                 The picture is assets/furni/<class>_sd<f>.png.
      }
 
    ax,ay is where the furni's origin sits INSIDE its sprite. The origin is the
@@ -869,12 +1018,15 @@ function main() {
     console.log(`  ${trueColour} layers were 32-bit true colour (${alphaLayers} with a real alpha plane), the rest palette-indexed`);
     console.log(`  ${stubs} one-pixel placeholders and ${skipped} unusable members skipped`);
     console.log(`  ${inferred} classes given an off/on switch inferred from their artwork`);
+    console.log(`  ${sdWritten} drop shadows across ${sdClasses} classes` +
+        ` (${sdBlank} deliberately empty, ${sdSkipped} unreadable,` +
+        ` ${sdOrphans} for classes with no artwork)`);
     console.log(`  ${noPalette} sprites dropped for an unresolvable palette (the game keeps its old art for those)`);
     if (unreadable.length) {
         console.log(`  could not open ${unreadable.length} cast file(s):`);
         for (const u of unreadable) console.log(`    ${u}`);
     }
-    console.log(`  artwork ${(bytes / 1048576).toFixed(1)} MB -> ${OUT}`);
+    console.log(`  artwork ${(bytes / 1048576).toFixed(1)} MB + ${(bytes2 / 1024).toFixed(0)} KB of shadows -> ${OUT}`);
     console.log(`  index ${(js.length / 1024).toFixed(0)} KB -> ${jsPath}`);
 }
 
