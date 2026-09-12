@@ -2866,7 +2866,7 @@
     function spriteUrlsInRoom() {
         const urls = [];
         for (const f of state.furni) {
-            const parts = Furni.partsOf(f, now);
+            const parts = Furni.partsOf(f, gameNow());
             if (parts) for (const p of parts) urls.push(p.url);
             else if (f.url) urls.push(f.url);
         }
@@ -2880,7 +2880,7 @@
            arrived. */
         const urls = [];
         for (const f of state.furni) {
-            const parts = Furni.partsOf(f, now);
+            const parts = Furni.partsOf(f, gameNow());
             if (parts) for (const p of parts) urls.push(p.url);
             else if (f.url) urls.push(f.url);
         }
@@ -2916,7 +2916,26 @@
         state.furni = game.renderList();
         refreshBlocked();
         dirty = true;
-        if (!Editor) loadRoom();
+        /* NOT AWAITED, so a throw inside it becomes an unhandled rejection
+           and the freeze it set is never lifted: `loading` stays true, the
+           tick returns before drawing anything, and the game sits on "Loading
+           room" for ever with nothing in the console. That is exactly what a
+           stray `now` in spriteUrlsInRoom did, and the fault was invisible
+           because the only symptom was a loader that never went away.
+
+           A room that failed to preload is still a playable room — the
+           sprites arrive as they arrive — so this unfreezes and says so
+           rather than leaving the game bricked. */
+        if (!Editor) {
+            loadRoom().catch((e) => {
+                console.error("Fallin' Furni: the room loader failed", e);
+                loading = false;
+                roomLoader(false, 1);
+                lastPaint = 0;
+                dirty = true;
+                status("The room did not finish loading — playing anyway.", "bad");
+            });
+        }
     }
 
 
