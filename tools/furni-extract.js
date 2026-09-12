@@ -195,6 +195,85 @@ function readAnim(cast, byName, className) {
     return out;
 }
 
+/* ---- WHAT A FURNI DOES WHEN IT IS ON, for the 129 classes that never say.
+
+   `readAnim` above is the client's own answer and is always preferred. But
+   129 classes ship more than two bitmap states and no `.data` at all, and the
+   oil lamp — `lamp2_armas` — is one of them. Its members are
+
+       a  state 0        the lamp
+       b  states 1,2,3,4 the flame, four pictures of it
+       c  state 1        the glow, drawn additively (its .props says #ink: 33)
+
+   With nothing to say otherwise, the game offered those five bitmap states as
+   five states to cycle through, so the lamp had a "State 3/5" button and never
+   animated. That is the same mistake `.data` was brought in to fix, one rung
+   down: these are FRAMES, and the class has two states like everything else.
+
+   WHEN A CLASS IS A SWITCH. Turning something on makes something APPEAR — so:
+
+     * some part must ship a picture at state 0, so there is a lamp to see
+       while it is off, and
+     * some part must ship a picture above state 0 and none AT state 0, so
+       there is something that exists only while it is on.
+
+   Both halves are load-bearing, and each is what rejects a whole family:
+
+     no part above 0 alone     a dice's six faces (`edice`), a television's
+                               channels (`red_tv`), a present opening
+                               (`s_anniv_present_gen1`), a roller's belt
+                               (`queue_tile1`) — every state draws the same
+                               parts, so none of them is "off"
+     no part at 0              `blossom_apple4` draws nothing until state 3.
+                               Those are a tree's growth stages, and calling
+                               stage 0 "off" would mean an invisible tree
+
+   Over the 129 the rule takes 50 and leaves 79, and the 50 read as exactly
+   what you would expect a switch to be: the lamps, the candles, the two
+   fireplaces, the menorah, the televisions, the fan, the fountain, the globe,
+   the hot tub, the beehive, the cake.
+
+   THEN THE LAYERS FOLLOW WITHOUT A CHOICE. Off is each part's state-0 picture,
+   or nothing where it has none. On is each part's pictures above state 0 in
+   order — or its state-0 picture held, for the parts that do not change. A
+   part absent from a state is written as `null`, which `frameOf` in
+   js/room-furni.js already reads as "takes no part in this state".
+
+   THE ONE NUMBER THAT IS NOT IN THE CLIENT is how long to hold a frame, so it
+   is taken from the nearest thing that is: the delay on comparable furni that
+   DO ship a `.data`. Every short flame in this client runs at 1 or 2 —
+   `grunge_candle` 4 frames at 2, `hc_wall_lamp` 4 at 1, `jp_lantern` 4 at 1,
+   `tiki_torch` 5 at 2, `tiki_statue` 5 at 2, `fireplace_dpolyfon` 10 at 2 —
+   so 2 it is, which is twelve pictures a second.
+
+   Marked `i: 1` so the library says which entries were inferred rather than
+   read. Nothing uses that yet; it is there so the next person can tell. */
+const INFERRED_DELAY = 2;
+
+function inferAnim(own) {
+    if (!own) return null;
+
+    const states = new Set();
+    for (const s of own.values()) for (const v of s) states.add(v);
+    // Two or fewer bitmap states already behave as a switch, and one is a
+    // still. Only the classes offering a cycle are in question here.
+    if (states.size <= 2) return null;
+
+    const parts = [...own.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    const lit = parts.filter(([, s]) => s.size && !s.has(0));
+    if (!parts.some(([, s]) => s.has(0)) || !lit.length) return null;
+
+    const l = {};
+    for (const [part, s] of parts) {
+        if (!s.size) continue;              // blank in every state: not a layer
+        const above = [...s].filter(v => v > 0).sort((a, b) => a - b);
+        const on = { f: above.length ? above : [0] };
+        if (on.f.length > 1) on.d = INFERRED_DELAY;
+        l[part] = [s.has(0) ? { f: [0] } : null, on];
+    }
+    return Object.keys(l).length ? { n: 2, l, i: 1 } : null;
+}
+
 function readProps(cast, byName, className) {
     const entry = byName.get(className + ".props");
     if (!entry) return null;
@@ -306,6 +385,11 @@ function main() {
     const library = {};
     const written = new Map();      // class|part|sha1 -> the "<state>_<dir>" it was written under
     const glows = {};               // class -> part -> 1, for layers that are light rather than paint
+    /* class -> part -> the states it genuinely ships a picture for. Collected
+       across every cast, because a class is split between them — `lamp2_armas`
+       has members in three — and gathered BEFORE the borrowing below, since a
+       borrowed part is one this state does not have. See inferAnim. */
+    const owned = new Map();
     let sprites = 0, stubs = 0, skipped = 0, bytes = 0, trueColour = 0, alphaLayers = 0, noPalette = 0, unreadable = [];
 
     for (const file of files) {
@@ -371,6 +455,14 @@ function main() {
             const { w, h } = m.bitmap;
             const blank = (w <= 1 && h <= 1) || w <= 0 || h <= 0;
             if (blank) stubs++;
+
+            if (!blank) {
+                let own = owned.get(p.className);
+                if (!own) owned.set(p.className, own = new Map());
+                let seen = own.get(p.part);
+                if (!seen) own.set(p.part, seen = new Set());
+                seen.add(p.state);
+            }
 
             const key = `${p.className}|${p.state}|${p.direction}`;
             if (!groups.has(key)) groups.set(key, []);
@@ -709,6 +801,15 @@ function main() {
         }
     }
 
+    /* A class the client never described gets the switch its artwork implies.
+       Last, and only where `.data` said nothing — see inferAnim. */
+    let inferred = 0;
+    for (const [className, rec] of Object.entries(library)) {
+        if (rec.an) continue;
+        const an = inferAnim(owned.get(className));
+        if (an) { rec.an = an; inferred++; }
+    }
+
     const classes = Object.keys(library).length;
     for (const [cls, parts] of Object.entries(glows)) {
         const rec = library[cls];
@@ -732,6 +833,16 @@ function main() {
                    w, h, ax, ay,          the whole piece's box and anchor
                    p: [ { k, ox, oy, w, h } ]   its parts, in draw order
                } } }
+        an     what it does when it is switched ON:
+                 n      how many states it really has — two, for almost
+                        everything. The bitmap states above are FRAMES.
+                 names  ["off", "on"], where the client bothered to say
+                 l[k]   part k, one entry per state: { f: [frames], d: hold,
+                        r: flicker, lp: play once }, or null where that part
+                        takes no part in that state
+                 i      1 if this entry was INFERRED from the artwork rather
+                        than read from the class's .data — see inferAnim in
+                        tools/furni-extract.js for the rule and what it rejects
      }
 
    ax,ay is where the furni's origin sits INSIDE its sprite. The origin is the
@@ -757,6 +868,7 @@ function main() {
     console.log(`composed ${sprites} sprites across ${classes} classes`);
     console.log(`  ${trueColour} layers were 32-bit true colour (${alphaLayers} with a real alpha plane), the rest palette-indexed`);
     console.log(`  ${stubs} one-pixel placeholders and ${skipped} unusable members skipped`);
+    console.log(`  ${inferred} classes given an off/on switch inferred from their artwork`);
     console.log(`  ${noPalette} sprites dropped for an unresolvable palette (the game keeps its old art for those)`);
     if (unreadable.length) {
         console.log(`  could not open ${unreadable.length} cast file(s):`);
