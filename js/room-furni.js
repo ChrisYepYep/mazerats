@@ -321,7 +321,20 @@
         const byState = table[stateKey];
         if (!byState) return null;
 
-        const key = baseClass(className) + "|" + (state || 0);
+        /* KEYED ON THE ART CLASS, NOT THE FURNI CLASS.
+
+           `offsetTable` above resolves through artClass, so what this returns
+           depends on the scale the room is being drawn at: `throne` at 64 to a
+           tile, `s_throne` at 32. Keying the cache on the furni's own name
+           meant the first room to ask for a class fixed its answer for every
+           room after it — and the Library, being level 50, always asked
+           second.
+
+           What that looked like: half-scale PICTURES drawn against full-scale
+           ANCHORS. Every piece sat 31px too high, and each part was offset
+           from the next by twice what it should have been, so a throne came
+           apart into its own back and seat. */
+        const key = artClass(className) + "|" + (state || 0);
         const hit = variantCache.get(key);
         if (hit) return hit;
 
