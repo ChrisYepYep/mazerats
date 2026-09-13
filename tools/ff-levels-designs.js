@@ -150,6 +150,13 @@ const rightRun = (className, x, y, n, step = 1, extra = {}) =>
     Array.from({ length: n }, (_, i) => at(className, x, y + i * step, facing(className, RIGHT), extra));
 /* A queue of rollers running in +x. A roller has a direction of travel and has
    to point the way the queue goes, which is facing 6. */
+/* And a queue running DOWN the room, in +y, which is what levels 12 and 14
+   were rebuilt to use: the long axis makes a far longer queue and leaves the
+   bulk of the room as floor. The roller still points the way it is laid, so
+   travelling in +y is facing BACK — rotation 1, which is what those two
+   levels have in them. */
+const queueY = (x, y, n) =>
+    Array.from({ length: n }, (_, i) => at("queue_tile1*5", x, y + i, facing("queue_tile1*5", BACK)));
 const queueX = (x, y, n) =>
     Array.from({ length: n }, (_, i) => at("queue_tile1*5", x + i, y, facing("queue_tile1*5", LEFT)));
 
@@ -324,7 +331,7 @@ function dropsOf(T) {
 module.exports = function designs(meta) {
     const { THEMES, NEUTRAL } = require("./ff-levels-themes.js");
     const shells = require("./ff-levels-shells.js")(
-        { at, backRun, leftRun, rightRun, queueX, facing, FRONT, LEFT, BACK, RIGHT },
+        { at, backRun, leftRun, rightRun, queueX, queueY, facing, FRONT, LEFT, BACK, RIGHT },
         meta || {}
     );
 

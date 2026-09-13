@@ -130,6 +130,10 @@ const SITE = (() => {
 
 /* ---- THE CURVE. t runs 0 at level 1 to 1 at level 49. */
 const LAST = 49;
+/* Levels at or below this are the user's own, hand-tuned after generation,
+   and --write will not touch them. --retune leaves their rooms alone too;
+   it only ever sets `rules`. */
+const LOCKED = 14;
 const lerp = (a, b, t) => a + (b - a) * t;
 
 function rulesFor(level) {
@@ -188,10 +192,17 @@ function validate(level, meta) {
     for (const d of level.decor || []) {
         const m = meta[d.className];
         if (!m) { problems.push(`decor ${d.className} is not in furnidata`); continue; }
+        /* STACKED FURNI IS NOT OVERLAPPING FURNI. Levels 7 and 10 put a
+           carpet under the candelabra and a duck on top of the table, and
+           that is how a Habbo room is dressed — `z` is the height it sits
+           at, so two things on one tile at different heights are a pile and
+           not a mistake. Only same-height collisions are wrong. */
+        const height = Number(d.z) || 0;
         for (const [x, y] of tilesOf(d, meta)) {
             if (!floor(x, y)) problems.push(`decor ${d.className} at ${x},${y} is off the floor`);
-            if (taken.has(key(x, y))) problems.push(`decor ${d.className} overlaps ${taken.get(key(x, y))} at ${x},${y}`);
-            taken.set(key(x, y), d.className);
+            const here = taken.get(key(x, y));
+            if (here && here.z === height) problems.push(`decor ${d.className} overlaps ${here.className} at ${x},${y}`);
+            if (!here || height >= here.z) taken.set(key(x, y), { className: d.className, z: height });
             if (!m.stand) blocked.add(key(x, y));       // the game's rule: a piece blocks unless you can stand on it
         }
     }
@@ -362,18 +373,29 @@ function buildLevel(design, n) {
     const db = await getDb();
     const col = db.collection("ff_levels");
     const now = new Date().toISOString();
+    let wrote = 0, skipped = 0;
     for (const level of built) {
+        /* HANDS OFF 1 TO 14. Those rooms have been gone over by hand since
+           this tool generated them — the queue taken wall to wall, the gate
+           moved into the corner, carpets and ducks layered into the booths —
+           and a re-run of the generator would quietly undo all of it. The
+           generator's output for them is still built and checked above, so
+           it can be diffed, but it is never written. */
+        if (level.order <= LOCKED) { skipped++; console.log(`  skipped ${level.id} — hand-built, not mine to write`); continue; }
         const existing = await col.findOne({ id: level.id });
         await col.updateOne(
             { id: level.id },
             { $set: { ...level, updatedAt: now }, $setOnInsert: { createdAt: now } },
             { upsert: true });
+        wrote++;
         console.log(`  ${existing ? "updated" : "created"} ${level.id}`);
     }
     for (const r of retuned) {
         await col.updateOne({ id: r.id }, { $set: { rules: r.rules, updatedAt: now } });
         console.log(`  retuned ${r.id}`);
     }
-    console.log(`${built.length} levels written${retuned.length ? `, ${retuned.length} retuned` : ""}`);
+    console.log(`${wrote} levels written` +
+        (skipped ? `, ${skipped} left alone as hand-built` : "") +
+        (retuned.length ? `, ${retuned.length} retuned` : ""));
     process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });

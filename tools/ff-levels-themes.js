@@ -30,8 +30,8 @@
 const NEUTRAL = {
     screen: "divider_silo2",        // Screen, 2x1
     gate: "divider_silo3",          // Gate (lockable), 1x1
-    corner: "divider_arm1",         // Corner plinth, 1x1
-    narrow: "divider_arm1",
+    corner: "divider_silo1",        // Corner Shelf, 1x1 — same line as the Screen
+    narrow: "divider_silo1",
     lamp: "lamp_armas",
     plant: "plant_yukka",
     tall: null,
@@ -97,7 +97,7 @@ const THEMES = [
 
     /* ---- asian gothic, the same silhouette in lacquer */
     {
-        level: 15, name: "Lacquer Room",
+        level: 15, name: "Night Lotus Hall",
         seats: ["asian_gothic_sofa*1", "asian_gothic_chair*1", "gothic_stool*3"],
         decoy: "asian_gothic_chair*2", obstacle: "plant_bonsai",
         screen: "cabin_divider_arm2", gate: "cabin_divider_arm3", corner: "cabin_divider_arm1", narrow: "cabin_divider_arm1",
@@ -105,7 +105,7 @@ const THEMES = [
         floor: { pattern: "tiles2", colour: 405 }, wall: { pattern: "ornament1", colour: 2501 }
     },
     {
-        level: 16, name: "Vermilion Room",
+        level: 16, name: "Lotus Hall",
         seats: ["asian_gothic_sofa*2", "asian_gothic_chair*2", "gothic_stool*4"],
         decoy: "asian_gothic_chair*1", obstacle: "plant_bonsai",
         screen: "cabin_divider_arm2", gate: "cabin_divider_arm3", corner: "cabin_divider_arm1", narrow: "cabin_divider_arm1",
@@ -116,32 +116,32 @@ const THEMES = [
     /* ---- funky polyfon, four colourways, each with the plain chair mixed in
        so the sequence is never three of a kind */
     {
-        level: 17, name: "Funky Lounge Red",
+        level: 17, name: "Marrs Green Lounge",
         seats: ["funky_sofa_polyfon*1", "funky_sofachair_polyfon*1", "chair_polyfon"],
         decoy: "funky_sofachair_polyfon*6", obstacle: "plant_small_cactus",
         tall: "shelves_polyfon", lamp: "lamp_armas",
-        floor: { pattern: "wood", colour: 301 }, wall: { pattern: "stripes", colour: 501 }
+        floor: { pattern: "wood", colour: 301 }, wall: { pattern: "half1", colour: 605 }
     },
     {
-        level: 18, name: "Funky Lounge Blue",
+        level: 18, name: "Sunshine Lounge",
         seats: ["funky_sofa_polyfon*6", "funky_sofachair_polyfon*6", "sofachair_polyfon"],
         decoy: "funky_sofachair_polyfon*8", obstacle: "plant_small_cactus",
         tall: "shelves_polyfon", lamp: "lamp2_armas",
-        floor: { pattern: "wood", colour: 305 }, wall: { pattern: "stripes", colour: 504 }
+        floor: { pattern: "wood", colour: 305 }, wall: { pattern: "stripes", colour: 506 }
     },
     {
-        level: 19, name: "Funky Lounge Green",
+        level: 19, name: "Mint Lounge",
         seats: ["funky_sofa_polyfon*8", "funky_sofachair_polyfon*8", "chair_polyfon"],
         decoy: "funky_sofachair_polyfon*10", obstacle: "plant_big_cactus",
         tall: "shelves_polyfon", lamp: "lamp_armas",
-        floor: { pattern: "wood", colour: 304 }, wall: { pattern: "stripes", colour: 506 }
+        floor: { pattern: "wood", colour: 304 }, wall: { pattern: "stripes", colour: 507 }
     },
     {
-        level: 20, name: "Funky Lounge Violet",
+        level: 20, name: "Magenta Lounge",
         seats: ["funky_sofa_polyfon*10", "funky_sofachair_polyfon*10", "sofachair_polyfon"],
         decoy: "funky_sofachair_polyfon*1", obstacle: "plant_small_cactus",
         tall: "shelves_polyfon", lamp: "lamp2_armas",
-        floor: { pattern: "wood", colour: 306 }, wall: { pattern: "stripes", colour: 508 }
+        floor: { pattern: "wood", colour: 306 }, wall: { pattern: "stripes", colour: 502 }
     },
 
     /* ---- polyfon and dark polyfon, the flats people actually lived in */
@@ -160,14 +160,14 @@ const THEMES = [
         floor: { pattern: "wood", colour: 303 }, wall: { pattern: "half1", colour: 603 }
     },
     {
-        level: 23, name: "Dark Polyfon Loft",
+        level: 23, name: "The Anniversary Suite",
         seats: ["sofa_dpolyfon*2", "sofachair_dpolyfon*2", "sofachair_polyfon"],
         decoy: "sofachair_dpolyfon*11", obstacle: "bar_dpolyfon*1",
         tall: "shelves_dpolyfon*1", lamp: "lamp_armas",
         floor: { pattern: "wood", colour: 302 }, wall: { pattern: "half1", colour: 607 }
     },
     {
-        level: 24, name: "Dark Polyfon Suite",
+        level: 24, name: "Black Polyfon Loft",
         seats: ["sofa_dpolyfon*11", "sofachair_dpolyfon*11", "chair_polyfon"],
         decoy: "sofachair_dpolyfon*1", obstacle: "plant_yukka",
         tall: "shelves_dpolyfon*1", lamp: "lamp2_armas",
@@ -177,32 +177,32 @@ const THEMES = [
     /* ---- plasto and plasty: one shape, a great many colours, so the
        sequence is colour and the mixture has to come from elsewhere */
     {
-        level: 25, name: "Plasto Primaries",
-        seats: ["bench_autumn", "chair_plasto*101", "chair_plasto*105"],
-        decoy: "chair_plasto*102", obstacle: "plant_small_cactus",
+        level: 25, name: "Plasto Citrus",
+        seats: ["bench_autumn", "chair_plasto*101", "chair_plasto*102"],
+        decoy: "chair_plasto*103", obstacle: "plant_small_cactus",
         tall: "shelves_polyfon", lamp: "lamp_armas", plant: "plant_pineapple",
         floor: { pattern: "plain", colour: 107 }, wall: { pattern: "lively", colour: 101 }
     },
     {
-        level: 26, name: "Plasto Pastels",
-        seats: ["bench_autumn", "chair_plasto*104", "chair_plasto*117"],
-        decoy: "chair_plasto*14", obstacle: "plant_small_cactus",
+        level: 26, name: "Plasto Forest",
+        seats: ["bench_autumn", "chair_plasto*104", "chair_plasto*109"],
+        decoy: "chair_plasto*117", obstacle: "plant_small_cactus",
         tall: "shelves_polyfon", lamp: "lamp2_armas", plant: "giftflowers",
-        floor: { pattern: "plain", colour: 106 }, wall: { pattern: "lively", colour: 105 }
+        floor: { pattern: "plain", colour: 111 }, wall: { pattern: "lively", colour: 107 }
     },
     {
-        level: 27, name: "Plasty Brights",
+        level: 27, name: "Pod Room Gold",
         seats: ["sofa_silo2*5", "chair_plasty*101", "chair_plasty*103"],
         decoy: "chair_plasty*102", obstacle: "plant_big_cactus",
         tall: "shelves_silo", lamp: "lamp_armas", plant: "plant_small_cactus",
-        floor: { pattern: "plain", colour: 103 }, wall: { pattern: "lively", colour: 109 }
+        floor: { pattern: "plain", colour: 101 }, wall: { pattern: "lively", colour: 102 }
     },
     {
-        level: 28, name: "Plasty Deep",
+        level: 28, name: "Pod Room Moss",
         seats: ["sofa_silo2*5", "chair_plasty*105", "chair_plasty*109"],
         decoy: "chair_plasty*117", obstacle: "plant_big_cactus",
         tall: "shelves_silo", lamp: "lamp2_armas", plant: "plant_small_cactus",
-        floor: { pattern: "plain", colour: 104 }, wall: { pattern: "lively", colour: 113 }
+        floor: { pattern: "plain", colour: 102 }, wall: { pattern: "plain", colour: 216 }
     },
 
     /* ---- summer, which is the one range that comes with its own spectacle */
