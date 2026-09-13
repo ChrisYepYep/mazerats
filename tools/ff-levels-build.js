@@ -94,7 +94,31 @@ const RETUNE = argv.includes("--retune");
    definition of where the floor is and where the door stands. */
 global.window = {};
 require(path.join(__dirname, "..", "js", "room-layouts.js"));
+eval(fs.readFileSync(path.join(__dirname, "..", "js", "furni-library.js"), "utf8"));
 const LAYOUTS = global.window.RoomLayouts;
+const LIB = global.window.FurniLibrary;
+const baseClass = (c) => String(c).replace(/\*\d+$/, "");
+
+/* WHICH WAY A ROTATION ACTUALLY FACES, and therefore whether the footprint
+   turns with it. Rotation is an INDEX, not a direction: the game resolves it
+   against the directions a class actually ships — drawn ones ascending, then
+   the same ones back down mirrored — and the footprint turns only when the
+   piece ends up facing 2 or 6, because those are the room's other axis.
+
+   Guessing this from `rotation % 2` is wrong and was wrong here: gothic_chair
+   rotation 1 faces 4, which does NOT turn the footprint, while divider_arm2
+   rotation 1 faces 6, which does. A 2x1 screen laid down the side of a room is
+   1x2, and nothing catches that if the rule is parity. */
+const MIRROR_OF = (d) => (6 - d + 8) % 8;
+function facingOf(className, rotation) {
+    const rec = LIB[baseClass(className)];
+    if (!rec || !rec.s) return null;
+    const byState = rec.s[0] || rec.s[Object.keys(rec.s)[0]];
+    const drawn = Object.keys(byState).map(Number).sort((a, b) => a - b);
+    if (!drawn.length) return null;
+    const list = drawn.concat(drawn.slice().reverse().map(MIRROR_OF));
+    return list[(Number(rotation) || 0) % list.length];
+}
 
 const MODEL = { classic: "a", wide: "e", corner: "b", steps: "f" };
 
@@ -143,8 +167,8 @@ const key = (x, y) => `${x},${y}`;
 function tilesOf(f, meta) {
     const m = meta[f.className] || {};
     const w = Math.max(1, Number(m.x) || 1), h = Math.max(1, Number(m.y) || 1);
-    // rotation 1 and 3 turn the footprint; 0 and 2 leave it alone
-    const swap = (Number(f.rotation) || 0) % 2 === 1;
+    const facing = facingOf(f.className, f.rotation);
+    const swap = facing === 2 || facing === 6;      // the game's own rule
     const fw = swap ? h : w, fh = swap ? w : h;
     const out = [];
     for (let dy = 0; dy < fh; dy++) for (let dx = 0; dx < fw; dx++) out.push([f.x + dx, f.y + dy]);

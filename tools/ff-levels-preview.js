@@ -18,6 +18,11 @@
      node tools/ff-levels-preview.js --only 6,7,8       just those
      node tools/ff-levels-preview.js --out preview.png
      node tools/ff-levels-preview.js --scale 2
+     node tools/ff-levels-preview.js --from levels.json   draw a file instead of
+                                                          the database, so a
+                                                          design can be looked
+                                                          at before it is
+                                                          written
 */
 
 const fs = require("fs");
@@ -40,6 +45,19 @@ const LAYOUTS = global.window.RoomLayouts;
 const PATTERNS = global.window.RoomPatterns;
 const LIB = global.window.FurniLibrary;
 const baseClass = (c) => String(c).replace(/\*\d+$/, "");
+
+/* See the note in ff-levels-build.js: a footprint turns with the FACING a
+   rotation resolves to, not with the parity of the rotation index. */
+const MIRROR_OF = (d) => (6 - d + 8) % 8;
+function facingOf(className, rotation) {
+    const rec = LIB[baseClass(className)];
+    if (!rec || !rec.s) return null;
+    const byState = rec.s[0] || rec.s[Object.keys(rec.s)[0]];
+    const drawn = Object.keys(byState).map(Number).sort((a, b) => a - b);
+    if (!drawn.length) return null;
+    const list = drawn.concat(drawn.slice().reverse().map(MIRROR_OF));
+    return list[(Number(rotation) || 0) % list.length];
+}
 
 const TW = 64, TH = 32, HW = 32, HH = 16, WALL = 96;
 
@@ -107,7 +125,7 @@ function render(level, meta) {
     for (const d of level.decor || []) {
         const m = meta[d.className] || {};
         if (m.stand) continue;
-        const swap = (Number(d.rotation) || 0) % 2 === 1;
+        const swap = facingOf(d.className, d.rotation) === 2 || facingOf(d.className, d.rotation) === 6;
         const fw = swap ? (m.y || 1) : (m.x || 1), fh = swap ? (m.x || 1) : (m.y || 1);
         for (let dy = 0; dy < fh; dy++) for (let dx = 0; dx < fw; dx++) blocked.add(`${d.x + dx},${d.y + dy}`);
     }
@@ -197,7 +215,9 @@ function render(level, meta) {
 
 (async () => {
     const meta = (await fetch(`${SITE}/.netlify/functions/furni-meta`).then(r => r.json())).items || {};
-    const res = await fetch(`${SITE}/.netlify/functions/ff-levels`).then(r => r.json());
+    const FROM = opt("from");
+    const res = FROM ? JSON.parse(fs.readFileSync(FROM, "utf8"))
+        : await fetch(`${SITE}/.netlify/functions/ff-levels`).then(r => r.json());
     const levels = (res.levels || res).filter(l => !ONLY || ONLY.has(l.order)).sort((a, b) => a.order - b.order);
     if (!levels.length) { console.log("no levels"); return; }
 
