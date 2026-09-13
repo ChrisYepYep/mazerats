@@ -333,6 +333,20 @@
         return {
             level,
             queue,                      // still to fall
+            /* HOW MANY SEATS THIS ROUND WILL ASK FOR, fixed at the start.
+
+               `sequence()` grows as they land, which is the right answer to
+               "how many are in play" and the wrong one for a progress row: a
+               row that gains a box every time a chair lands makes the HUD
+               wider under the player's eye while they are trying to read the
+               clock in it. The row is drawn at full length from the first
+               frame and fills in.
+
+               Counted with the same test `sequence()` uses — role AND
+               sittable — so the row can never be longer than the sequence
+               that will actually be asked for. */
+            plannedSeats: queue.filter(e =>
+                e.role === "sequence" && (metaFor(e.className) || {}).sit).length,
             falling: [],                // in the air right now
             placed: decor.slice(),      // everything on the floor, decor included
             landed: [],                 // dropped pieces, in landing order

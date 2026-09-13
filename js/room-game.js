@@ -86,6 +86,33 @@
     const DECOY_POINTS = -5;            // sitting on a decoy
     const FINISH_BONUS = 25;            // clearing every seat in a round
 
+    /* ---- LIVES.
+
+       A run is three attempts long rather than one. Failing a round spends a
+       life and puts the SAME level back up; running out of lives is what ends
+       the run. That is a deliberate change of shape — it used to end on the
+       first loss — and it is what makes forty-nine levels a thing a person
+       might finish.
+
+       One earned back per five levels cleared, uncapped. A run that is going
+       well builds a cushion before the levels get fast, and a run that is not
+       does not: losing them faster than one per five IS the difficulty curve,
+       so the ramp needs no second lever to express itself.
+
+       A RETRIED ROUND BANKS NOTHING. Its seats are put back and played again,
+       so keeping what the failed attempt earned pays twice for the same
+       chairs — fail level seven half way, retry, clear it, and the level is
+       worth half as much again as it should be. The LAST loss is different:
+       there is no retry to pay twice for, so it keeps its points the way it
+       always has.
+
+       And lives still in hand at the end are worth points, because a player
+       who never needed them should not finish level for level with one who
+       needed every one. */
+    const STARTING_LIVES = 3;
+    const LIFE_EVERY = 5;               // levels cleared per life earned back
+    const LIFE_BONUS = 100;             // per life still in hand at the end
+
     /* THE CLOCK HAS TO BE WORTH POINTS, because the leaderboard ranks on them.
 
        Everything above is about the ORDER — which seats, in which sequence,
@@ -262,7 +289,7 @@
                     this.penalty += DECOY_PENALTY_S;
                     this.award(DECOY_POINTS);
                     this.streak = 0;
-                    this.message = `A decoy — that one was never in the sequence. ${DECOY_POINTS}`;
+                    this.message = `A decoy - that one was never in the sequence. ${DECOY_POINTS}`;
                     return "decoy";
                 }
 
@@ -288,7 +315,7 @@
                     this.penalty += WRONG_SEAT_PENALTY_S;
                     this.award(WRONG_SEAT_POINTS);
                     this.streak = 0;
-                    this.message = `Out of order — ${WRONG_SEAT_POINTS} and the streak is gone.`;
+                    this.message = `Out of order - ${WRONG_SEAT_POINTS} and the streak is gone.`;
                     return "wrong";
                 }
 
@@ -363,9 +390,14 @@
             /* How the run reads at a glance: one mark per sequence seat that
                has landed, filled if it has been sat on. */
             progress() {
-                if (!this.round) return { done: 0, total: 0 };
+                if (!this.round) return { done: 0, total: 0, planned: 0 };
                 const seq = this.round.sequence();
-                return { done: this.sat.filter(s => s.role === "sequence").length, total: seq.length };
+                return {
+                    done: this.sat.filter(s => s.role === "sequence").length,
+                    total: seq.length,
+                    // what the round will ask for in the end - see plannedSeats
+                    planned: this.round.plannedSeats || seq.length
+                };
             }
         };
     }
@@ -387,6 +419,10 @@
             game: null,
             finished: false,
             banked: 0,                  // points from the rounds already played
+            lives: STARTING_LIVES,
+            livesSpent: 0,              // how many failures the run absorbed
+            livesWon: 0,                // and how many it earned back
+            bonus: 0,                   // the life bonus, once the run has ended
             /* One frozen summary per round PLAYED, in order — what the
                finishing screen reads. A lost round is in here too: the run
                ended on it, and "you got to level four and ran out of time with
@@ -417,7 +453,7 @@
                round in play is worth right now. One number the whole way
                through, so a player watches it climb rather than being handed a
                total at the end. */
-            score() { return this.banked + (this.game ? this.game.score : 0); },
+            score() { return this.banked + (this.game ? this.game.score : 0) + this.bonus; },
 
             startRound(now) {
                 const lv = this.level();
@@ -436,8 +472,16 @@
                     this.results.push(this.game.summary(now));
                     this.banked += this.game.score;
                     this.index++;
+                    /* A life back per five cleared, counted off the RECORD and
+                       not off `index` — index also moves for a level that was
+                       failed and retried, and that must not pay a life. */
+                    if (this.results.filter(r => r.won).length % LIFE_EVERY === 0) {
+                        this.lives++;
+                        this.livesWon++;
+                    }
                     if (this.index >= this.levels.length) {
                         this.finished = true;
+                        this.bonus = this.lives * LIFE_BONUS;
                         this.game = null;       // see below
                         return "finished";
                     }
@@ -461,6 +505,16 @@
                    level more than it had played — which the server then
                    refused outright as more levels than exist. */
                 if (this.game.state === LOST) {
+                    this.lives--;
+                    this.livesSpent++;
+                    if (this.lives > 0) {
+                        /* Recorded so the end screen can say where the lives
+                           went, and NOT banked: the same level is about to be
+                           played again and its seats paid for again. */
+                        this.results.push({ ...this.game.summary(now), retried: true });
+                        this.startRound(now);
+                        return "retry";
+                    }
                     this.results.push(this.game.summary(now));
                     this.banked += this.game.score;
                     this.finished = true;
@@ -479,6 +533,7 @@
     window.RoomGame = {
         createGame, createRun,
         IDLE, RUNNING, WON, LOST, WRONG_SEAT_PENALTY_S, DECOY_PENALTY_S,
-        SEAT_POINTS, STREAK_STEP, STREAK_MAX, WRONG_SEAT_POINTS, DECOY_POINTS, FINISH_BONUS
+        SEAT_POINTS, STREAK_STEP, STREAK_MAX, WRONG_SEAT_POINTS, DECOY_POINTS, FINISH_BONUS,
+        STARTING_LIVES, LIFE_EVERY, LIFE_BONUS
     };
 })();

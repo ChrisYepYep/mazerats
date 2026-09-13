@@ -148,7 +148,7 @@
     const ROLE_LABELS = {
         sequence: "Sequence seat",
         decoy: "Decoy seat",
-        poi: "Poi — instant fail",
+        poi: "Poi - instant fail",
         obstacle: "Obstacle"
     };
 
@@ -216,7 +216,7 @@
            four-character cap on the server) look like the editor spontaneously
            changing room on save. The fallback stays; the silence does not. */
         if (L && out.model && model && model.id !== out.model) {
-            console.warn(`RoomLevels: no layout "${out.model}" — falling back to "${model.id}".`);
+            console.warn(`RoomLevels: no layout "${out.model}" - falling back to "${model.id}".`);
         }
         out.model = model ? model.id : "a";
         cols = cols || (model ? model.cols : 8);

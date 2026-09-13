@@ -84,6 +84,18 @@ const STREAK_MAX = 8;
 const FINISH_BONUS = 25;
 const TIME_BONUS_PER_S = 1;
 
+/* AND THE LIVES, which are worth points at the end of a run and would
+   otherwise push an honest run through the ceiling. A player starts with
+   three and earns one per five levels cleared, so at `levels` cleared the
+   most they can be holding is 3 + floor(levels / 5) — the same arithmetic as
+   js/room-game.js, duplicated here for the same reason everything else on
+   this page is. Generous like the rest of the ceiling: it assumes none were
+   ever spent. */
+const STARTING_LIVES = 3;
+const LIFE_EVERY = 5;
+const LIFE_BONUS = 100;
+const maxLifeBonus = (levels) => (STARTING_LIVES + Math.floor(levels / LIFE_EVERY)) * LIFE_BONUS;
+
 function maxPointsFor(level) {
     const seats = dropsIn(level);
     let total = FINISH_BONUS + (Number((level.rules || {}).seconds) || 0) * TIME_BONUS_PER_S;
@@ -176,7 +188,8 @@ exports.handler = async (event) => {
 
     /* The same trick as the time floor, from the other end: the levels are
        served from here, so the most they can be worth is known here. */
-    const ceiling = published.slice(0, levels).reduce((n, lv) => n + maxPointsFor(lv), 0);
+    const ceiling = published.slice(0, levels).reduce((n, lv) => n + maxPointsFor(lv), 0)
+        + maxLifeBonus(levels);
     if (points > ceiling) {
         return json(400, { error: "That run scores more than those levels can pay" });
     }

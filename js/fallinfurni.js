@@ -929,6 +929,7 @@
             hudEls.msg = document.getElementById("ff-msg");
             hudEls.round = document.getElementById("ff-round-of");
             hudEls.score = document.getElementById("ff-score");
+            hudEls.lives = document.getElementById("ff-lives");
             hudEls.delta = document.getElementById("ff-score-delta");
             hudEls.pips = [];
         }
@@ -942,21 +943,28 @@
         const clock = `${m}:${String(s).padStart(2, "0")}`;
         if (clock !== hudLast.clock) { hudEls.clock.textContent = clock; hudLast.clock = clock; }
 
+        /* THE WHOLE ROW AT ONCE, EMPTY, and then it fills in.
+
+           It used to grow a box per seat as the seats landed, which widened
+           the HUD while the player was reading the clock inside it. The round
+           knows how many it will ask for before any of them fall
+           (RoomDrop.plannedSeats), so the row is drawn at full length from the
+           first frame and nothing about this box moves for the rest of it. */
         const p = game.progress();
-        // Grow the row only when a seat lands; never rebuild it.
-        while (hudEls.pips.length < p.total) {
+        const want = Math.max(p.planned || 0, p.total);
+        while (hudEls.pips.length < want) {
             const d = document.createElement("i");
             d.className = "ff-pip";
             hudEls.seq.appendChild(d);
             hudEls.pips.push(d);
         }
-        if (p.done !== hudLast.done || p.total !== hudLast.total) {
+        if (p.done !== hudLast.done || want !== hudLast.total) {
             hudEls.pips.forEach((d, i) => {
                 const on = i < p.done;
                 if (d.classList.contains("is-on") !== on) d.classList.toggle("is-on", on);
-                d.hidden = i >= p.total;
+                d.hidden = i >= want;
             });
-            hudLast.done = p.done; hudLast.total = p.total;
+            hudLast.done = p.done; hudLast.total = want;
         }
 
         /* Which round of the run, beside the clock. Only a RUN has rounds —
@@ -964,6 +972,19 @@
            than "Round 1 of 1" there. */
         const round = run ? run.progressLabel() : "";
         if (hudEls.round && round !== hudLast.round) { hudEls.round.textContent = round; hudLast.round = round; }
+
+        /* LIVES, and only for a run — the builder testing one level has none
+           to spend. Hearts up to five and then a count, because a good run
+           reaches double figures and a row of twelve hearts is a wall. */
+        const lives = run ? run.lives : -1;
+        if (hudEls.lives && lives !== hudLast.lives) {
+            hudEls.lives.hidden = lives < 0;
+            hudEls.lives.textContent = lives < 0 ? ""
+                : lives <= 5 ? "♥".repeat(lives)
+                    : "♥×" + lives;
+            hudEls.lives.classList.toggle("is-last", lives === 1);
+            hudLast.lives = lives;
+        }
 
         /* THE SCORE. A run's score is what earlier rounds banked plus the one
            in play, so the number never resets between levels — a builder
@@ -992,7 +1013,7 @@
             hudLast.deltaTimer = setTimeout(() => { hudEls.delta.textContent = ""; }, 1600);
         }
 
-        const msg = game.state === Game.WON ? "Every seat, in order — round complete." : game.message;
+        const msg = game.state === Game.WON ? "Every seat, in order - round complete." : game.message;
         if (msg !== hudLast.msg) { hudEls.msg.textContent = msg; hudLast.msg = msg; }
     }
 
@@ -1051,7 +1072,7 @@
            with the button still offering to cancel. Which is what made a
            working picker feel broken. */
         syncPickers();
-        status(`The player starts at ${t.x}, ${t.y} — press Save to keep it.`, "good");
+        status(`The player starts at ${t.x}, ${t.y} - press Save to keep it.`, "good");
         dirty = true;
     }
 
@@ -1061,7 +1082,7 @@
         Editor.save();
         showStart(Editor.state.level);
         syncPickers();
-        status("Facing set — press Save to keep it.", "good");
+        status("Facing set - press Save to keep it.", "good");
         dirty = true;
     }
 
@@ -1113,7 +1134,7 @@
                 status("Moved.", "good");
                 setHint(Editor.state.mode);
             } else {
-                status("That does not fit there — try another tile.", "bad");
+                status("That does not fit there - try another tile.", "bad");
             }
             renderEditorPanel();
             return;
@@ -1200,7 +1221,7 @@
         const f = Editor.state.selected;
         if (!f) return "Nothing selected.";
         if (v.x < 0 || v.y < 0 || v.x + f.w > Iso.COLS || v.y + f.h > Iso.ROWS) {
-            return `Outside the room — X 0 to ${Iso.COLS - f.w}, Y 0 to ${Iso.ROWS - f.h}.`;
+            return `Outside the room - X 0 to ${Iso.COLS - f.w}, Y 0 to ${Iso.ROWS - f.h}.`;
         }
         if (v.z < 0 || v.z > Levels.MAX_HEIGHT) return `Height is 0 to ${Levels.MAX_HEIGHT}.`;
         return "Something is already there at that height.";
@@ -1294,8 +1315,8 @@
         const last = (drops - 1) * gap + L.rules.dropSpeedMs / 1000;
         const tooFast = gap < 0.15 && drops > 1;
         el.textContent = tooFast
-            ? `${drops} pieces, one every ${gap.toFixed(2)}s — they will all land at once.`
-            : `${drops} pieces, one every ${gap.toFixed(2)}s — the last lands after ${last.toFixed(1)}s of ${L.rules.seconds}s.`;
+            ? `${drops} pieces, one every ${gap.toFixed(2)}s - they will all land at once.`
+            : `${drops} pieces, one every ${gap.toFixed(2)}s - the last lands after ${last.toFixed(1)}s of ${L.rules.seconds}s.`;
         el.classList.toggle("is-warn", tooFast || last > L.rules.seconds);
         if (!tooFast && last > L.rules.seconds) {
             el.textContent += " The clock runs out before it lands.";
@@ -1399,7 +1420,7 @@
         if (!listEl || !countEl) return;
 
         const max = (Lobby && Lobby.MAX_FURNI) || 10;
-        countEl.textContent = `${splashFurni.length} of ${max} — ${splashFurni.length ? "" : "the game's own default is falling."}`.trim();
+        countEl.textContent = `${splashFurni.length} of ${max} - ${splashFurni.length ? "" : "the game's own default is falling."}`.trim();
 
         listEl.innerHTML = "";
         for (const className of splashFurni) {
@@ -1454,8 +1475,8 @@
         if (held) {
             const row = (Editor.search(held, 1) || [])[0];
             heldEl.textContent = `Holding ${row ? row.name : held}` +
-                (heldRots > 1 ? ` · facing ${Editor.brush.rotation + 1}/${heldRots}` : " · does not turn") +
-                " — click a tile to put it down.";
+                (heldRots > 1 ? ` - facing ${Editor.brush.rotation + 1}/${heldRots}` : " - does not turn") +
+                " - click a tile to put it down.";
             document.getElementById("ff-brush-rotate").disabled = heldRots < 2;
             const heldState = stateLabel(held, Editor.brush.state);
             const heldStateBtn = document.getElementById("ff-brush-state");
@@ -1464,10 +1485,10 @@
         }
 
         document.getElementById("ff-sel").textContent = sel
-            ? `${sel.name} — ${sel.w}x${sel.h} at ${sel.x},${sel.y}` +
-            (sel.lift ? ` · height ${fmtHeight(sel.lift)}` : "") +
-            (rots > 1 ? ` · rotation ${sel.rotation + 1}/${rots}` : " · does not turn") +
-            (stateLabel(sel.className, sel.state) ? ` · ${describeState(sel)}` : "")
+            ? `${sel.name} - ${sel.w}x${sel.h} at ${sel.x},${sel.y}` +
+            (sel.lift ? ` - height ${fmtHeight(sel.lift)}` : "") +
+            (rots > 1 ? ` - rotation ${sel.rotation + 1}/${rots}` : " - does not turn") +
+            (stateLabel(sel.className, sel.state) ? ` - ${describeState(sel)}` : "")
             : "Nothing selected.";
         if (!sel) { moving = false; closePrecise(); }   // nothing to move
         const moveBtn = document.getElementById("ff-move");
@@ -1560,7 +1581,7 @@
             row.className = "ff-zone" + (current && z.id === current.id ? " is-on" : "");
             const drops = (z.items || []).reduce((n, i) => n + i.count, 0);
             row.innerHTML = `<span>${z.name || "Zone"}</span>` +
-                `<small>${z.area.w}×${z.area.h} · ${drops} drop${drops === 1 ? "" : "s"}</small>`;
+                `<small>${z.area.w}×${z.area.h} - ${drops} drop${drops === 1 ? "" : "s"}</small>`;
             row.addEventListener("click", () => Editor.selectZone(z.id));
             const x = document.createElement("button");
             x.type = "button"; x.textContent = "×"; x.title = "Delete zone";
@@ -1569,7 +1590,7 @@
             list.appendChild(row);
         }
         if (!(L.zones || []).length) {
-            list.innerHTML = '<p class="ff-hint">No zones yet — drag across the room to draw one.</p>';
+            list.innerHTML = '<p class="ff-hint">No zones yet - drag across the room to draw one.</p>';
         }
 
         const detail = document.getElementById("ff-zone-detail");
@@ -1578,7 +1599,7 @@
 
         document.getElementById("ff-zone-area").textContent =
             `${current.area.w}×${current.area.h} tiles at ${current.area.x},${current.area.y}` +
-            " — drag on the room to redraw";
+            " - drag on the room to redraw";
         const nameEl = document.getElementById("ff-zone-name");
         if (document.activeElement !== nameEl) nameEl.value = current.name || "";
 
@@ -1761,7 +1782,7 @@
             if (splashFurni.includes(splashPick)) { status("That is already on the splash screen.", "bad"); return; }
             if (splashFurni.length >= max) { status(`Ten is the limit.`, "bad"); return; }
             if (!splashDrawable(splashPick)) {
-                status("The title screen has no artwork for that one — it would not appear.", "bad");
+                status("The title screen has no artwork for that one - it would not appear.", "bad");
                 return;
             }
             splashFurni.push(splashPick);
@@ -1777,7 +1798,7 @@
         // Zones: the area is its own thing, its contents are another.
         document.getElementById("ff-zone-add").addEventListener("click", () => {
             Editor.addZone();
-            status("Zone added — drag on the room to shape it.", "good");
+            status("Zone added - drag on the room to shape it.", "good");
         });
         document.getElementById("ff-zone-delete").addEventListener("click", () => {
             const z = Editor.zone();
@@ -1798,7 +1819,7 @@
             if (!Editor.playable(cls)) {
                 status(Editor.spriteUrl(cls, 0, 0)
                     ? "Nothing records that furni's size, so the room cannot place it."
-                    : "That furni has no artwork — it would be invisible in the room.", "bad");
+                    : "That furni has no artwork - it would be invisible in the room.", "bad");
                 return;
             }
             Editor.addItem(cls,
@@ -1847,7 +1868,7 @@
                    act on. The one cause worth naming is the common one: the
                    admin session has lapsed, and signing in again fixes it. */
                 const why = /unauthor/i.test(e.message || "")
-                    ? "Not signed in as admin — sign in on the admin page, then Save again."
+                    ? "Not signed in as admin - sign in on the admin page, then Save again."
                     : (e.message || "Could not reach the server.");
                 status(`${why} Your work is safe in this browser meanwhile.`, "bad");
             }
@@ -1858,7 +1879,7 @@
         document.getElementById("ff-level-new").addEventListener("click", () => {
             Editor.setLevel({ name: "New level", order: (Editor.state.level.order || 0) + 1 });
             setMode("room");
-            status("New level — name it, then Save.", "good");
+            status("New level - name it, then Save.", "good");
         });
 
         // Choosing from the list IS loading it; a separate Load button was a
@@ -1905,7 +1926,7 @@
         document.getElementById("ff-level-delete").addEventListener("click", async () => {
             const L = Editor.state.level;
             if (!L.id) {
-                status("This level was never saved — use Discard changes to scrap it.", "bad");
+                status("This level was never saved - use Discard changes to scrap it.", "bad");
                 return;
             }
             if (!confirm(`Delete “${L.name || L.id}” from the site for good? This cannot be undone.`)) return;
@@ -1930,7 +1951,7 @@
             Editor.restore();
             syncEditor();
             setMode("room");
-            status(`Editor ready — ${counts.catalogue} furni with artwork.`, "good");
+            status(`Editor ready - ${counts.catalogue} furni with artwork.`, "good");
             refreshLevelList();
         }).catch(() => status("Could not load the furni catalogue.", "bad"));
     }
@@ -1963,7 +1984,7 @@
         if (dragArea.w === 1 && dragArea.h === 1) { dragFrom = null; dragArea = null; return; }
         const z = Editor && Editor.zone();
         if (z) { Editor.setZoneArea(z.id, dragArea); status("Zone reshaped.", "good"); }
-        else if (Editor) { Editor.addZone(dragArea); status("Zone drawn — now add what falls into it.", "good"); }
+        else if (Editor) { Editor.addZone(dragArea); status("Zone drawn - now add what falls into it.", "good"); }
         dragFrom = null; dragArea = null;
         dirty = true;
     }
@@ -2030,9 +2051,9 @@
             const m = window.RoomLayouts.get(state.model);
             const shaped = m.mask.some(r => r.includes("x"));
             note.textContent = m.painted
-                ? `${m.cols}×${m.rows}, ${m.tiles} walkable tiles. A public room — its floor and walls are painted, so there is nothing to pick.`
+                ? `${m.cols}×${m.rows}, ${m.tiles} walkable tiles. A public room - its floor and walls are painted, so there is nothing to pick.`
                 : `${m.cols}×${m.rows}, ${m.tiles} tiles` +
-                  (shaped ? " — not a rectangle, so some of the grid is outside the room." : "");
+                  (shaped ? " - not a rectangle, so some of the grid is outside the room." : "");
 
             /* A PAINTED ROOM HAS NOTHING TO CHOOSE. The Library's floor and
                walls are one bitmap somebody drew in 2005; offering a wallpaper
@@ -2386,7 +2407,7 @@
         const me = acct && acct.current;
         el.innerHTML = "";
         if (me) {
-            el.append(`On the board as ${me.name} · `);
+            el.append(`On the board as ${me.name} - `);
             const out = document.createElement("button");
             out.type = "button";
             out.className = "ff-linkish";
@@ -2431,8 +2452,8 @@
                    the clock still breaks a tie. */
                 const points = Number(row.points) || 0;
                 li.innerHTML = `<span>${escapeText(row.name)}</span>` +
-                    `<em><b>${points.toLocaleString()} pts</b> · ` +
-                    `${row.levels} ${row.levels === 1 ? "level" : "levels"} · ${asClock(row.ms)}</em>`;
+                    `<em><b>${points.toLocaleString()} pts</b> - ` +
+                    `${row.levels} ${row.levels === 1 ? "level" : "levels"} - ${asClock(row.ms)}</em>`;
                 list.appendChild(li);
             }
             box.hidden = !(data.top || []).length;
@@ -2454,7 +2475,7 @@
        pausing at each end.
 
        IT GIVES WAY IMMEDIATELY. Any pointer move, key, wheel or touch anywhere
-       on the page stops it where it is and starts the twenty seconds again —
+       on the page stops it where it is and starts the twenty seconds again -
        including a scroll of the list itself, which is the one that matters: a
        reader dragging the list must not be fighting it.
 
@@ -2537,8 +2558,36 @@
        checks a claimed time against how fast the furni can physically fall,
        and a tie on points is broken by whoever was quicker. But the figure
        that orders the table is the one the player watched climb all run. */
+    /* Says what became of the run, on the run-end panel. A run that ends is a
+       run the player wants ON the board, and the one line that answers that
+       was going into the status bar UNDERNEATH the panel covering it. */
+    function boardSays(text, offerSignIn) {
+        const el = document.getElementById("ff-runend-board");
+        if (!el) return;
+        el.innerHTML = "";
+        if (offerSignIn) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "ff-linkish";
+            btn.textContent = "Sign in with Discord";
+            btn.addEventListener("click", () => window.Account && window.Account.signIn());
+            el.appendChild(btn);
+            el.append(" " + text);
+        } else {
+            el.textContent = text;
+        }
+    }
+
     async function submitRun(levelsCleared) {
-        if (!levelsCleared || !runStartedAt) return;
+        if (!runStartedAt) return;
+        /* A run that cleared nothing still ENDED, and the player is owed the
+           same sentence as anyone else. The board will not take it — it ranks
+           runs, and this one got nowhere — so say that rather than nothing,
+           which reads exactly like a leaderboard that broke. */
+        if (!levelsCleared) {
+            boardSays("No levels cleared, so there is nothing to put on the board yet.", false);
+            return;
+        }
         const ms = Math.round(gameNow() - runStartedAt);
         const points = run ? run.score() : 0;
         try {
@@ -2550,15 +2599,19 @@
             });
             const data = await res.json().catch(() => ({}));
             if (data.recorded) {
-                status(`On the board: ${points.toLocaleString()} points, ${levelsCleared} cleared in ${asClock(ms)}.`, "good");
+                const line = `On the board: ${points.toLocaleString()} points, ${levelsCleared} cleared in ${asClock(ms)}.`;
+                status(line, "good");
+                boardSays(line, false);
                 refreshBoard();
             } else if (data.reason === "signed-out") {
                 status("Sign in with Discord to save runs to the leaderboard.", "bad");
+                boardSays(`to put this run - ${points.toLocaleString()} points - on the leaderboard.`, true);
             } else if (data.reason === "not-your-best" && data.best) {
+                boardSays(`${points.toLocaleString()} points. Your best, ${Number(data.best.points || 0).toLocaleString()}, still stands.`, false);
                 /* A run that did not beat your own said NOTHING, which reads
                    exactly like a leaderboard that failed to save. Say what is
                    still standing instead. */
-                status(`Not your best — ${Number(data.best.points || 0).toLocaleString()} points still stands.`, "busy");
+                status(`Not your best - ${Number(data.best.points || 0).toLocaleString()} points still stands.`, "busy");
             }
         } catch { /* a leaderboard that will not save is not worth a scene */ }
     }
@@ -2588,7 +2641,7 @@
            otherwise it silently inflates that time with no explanation. */
         const taken = Math.max(0, secs - left - game.penalty);
         const rows = [
-            ["Level", (level && level.name) || "—"],
+            ["Level", (level && level.name) || "-"],
             ["Seats", `${prog.done} of ${prog.total}`],
             ["Time", `${taken.toFixed(1)}s of ${secs}s`]
         ];
@@ -2603,6 +2656,18 @@
         rows.push(["Points", (run ? run.score() : game.score).toLocaleString()]);
         if (game.best > 1) rows.push(["Best streak", `${game.best} in a row`]);
         if (run) rows.push(["Levels cleared", String(run.cleared())]);
+        /* LIVES, on a losing round, because the count shown here is the one
+           BEFORE the loss is taken — advance() spends it, and advance does not
+           run until the button is pressed. Saying "2 left" over a screen that
+           still reads 3 would be a lie for as long as the screen is up, so it
+           says what is about to happen instead. */
+        if (run) {
+            rows.push(["Lives", won
+                ? String(run.lives)
+                : run.lives > 1
+                    ? `${run.lives} - this costs one`
+                    : "your last one"]);
+        }
 
         const dl = document.getElementById("ff-round-stats");
         dl.innerHTML = "";
@@ -2613,9 +2678,14 @@
         }
 
         const go = document.getElementById("ff-round-go");
+        // A loss the run can absorb is not the end of it: the button puts the
+        // same level back up, and should say so.
+        const retrying = Boolean(run && !won && run.lives > 1);
         go.textContent = hasNext ? "Next level"
             : won ? (run ? "Finish the run" : "Play again")
-                : (run ? "See how you did" : "Try again");
+                : retrying ? "Try again"
+                    : (run ? "See how you did" : "Try again");
+        if (retrying) document.getElementById("ff-round-title").textContent = "Round lost";
         box.dataset.outcome = won ? "won" : "lost";
         box.hidden = false;
     }
@@ -2640,6 +2710,9 @@
     function showRunEnd(theRun, cleared) {
         const box = document.getElementById("ff-runend");
         if (!box || !theRun) return;
+        // submitRun fills this in when it answers; until then it says nothing
+        // rather than whatever the last run's verdict was.
+        boardSays("", false);
         const rows = theRun.results || [];
 
         document.getElementById("ff-runend-title").textContent =
@@ -2647,10 +2720,17 @@
         box.dataset.outcome = cleared ? "won" : "lost";
 
         const last = rows[rows.length - 1];
+        /* `rows.length` counts attempts, and a retried level is two of them.
+           "All 11 levels cleared" after a ten-level run is the kind of wrong
+           that makes a player distrust the rest of the table. */
+        const won = theRun.results.filter(r => r.won).length;
+        const spent = theRun.livesSpent || 0;
         document.getElementById("ff-runend-why").textContent = cleared
-            ? `All ${rows.length} ${rows.length === 1 ? "level" : "levels"} cleared.`
+            ? `All ${won} ${won === 1 ? "level" : "levels"} cleared` +
+              (spent ? `, and ${spent === 1 ? "a life" : spent + " lives"} spent getting there.` : ".")
             : last
-                ? `${last.name} — ${last.why === "poi" ? "the wrong chair entirely" : "out of time"}.`
+                ? `${last.name} - ${last.why === "poi" ? "the wrong chair entirely" : "out of time"}, ` +
+                  "and no lives left."
                 : "";
 
         const tbody = document.getElementById("ff-runend-rows");
@@ -2658,20 +2738,30 @@
         let seats = 0, seatsOf = 0, seconds = 0, points = 0, streak = 0;
 
         for (const r of rows) {
-            seats += r.seats; seatsOf += r.seatsOf;
-            seconds += r.seconds; points += r.points;
-            if (r.streak > streak) streak = r.streak;
+            /* A RETRIED ROUND IS IN THE TABLE BUT NOT IN THE TOTALS. It was
+               never banked — the level was played again and paid for again —
+               so adding its points here would report a score the player was
+               never given, and the seats and seconds belong to an attempt
+               that was overwritten. It stays as a row because "this is where
+               a life went" is exactly what this screen is for. */
+            if (!r.retried) {
+                seats += r.seats; seatsOf += r.seatsOf;
+                seconds += r.seconds; points += r.points;
+                if (r.streak > streak) streak = r.streak;
+            }
 
             const tr = document.createElement("tr");
-            if (!r.won) tr.className = "is-lost";
+            if (!r.won) tr.className = r.retried ? "is-lost is-retried" : "is-lost";
             const cells = [
                 r.name,
                 `${r.seats}/${r.seatsOf}`,
                 // The penalty is inside the clock either way; saying so is the
                 // difference between "I was slow" and "I sat on the wrong one".
                 r.penalty ? `${r.seconds.toFixed(1)}s +${r.penalty}s` : `${r.seconds.toFixed(1)}s`,
-                r.streak > 1 ? String(r.streak) : "—",
-                r.points.toLocaleString()
+                r.streak > 1 ? String(r.streak) : "-",
+                // Struck through rather than blank: a player should see what
+                // the attempt was worth AND that it was not kept.
+                r.retried ? "-" : r.points.toLocaleString()
             ];
             cells.forEach((text, i) => {
                 const cell = document.createElement(i === 0 ? "th" : "td");
@@ -2684,8 +2774,21 @@
 
         document.getElementById("ff-runend-seats").textContent = `${seats}/${seatsOf}`;
         document.getElementById("ff-runend-time").textContent = `${seconds.toFixed(1)}s`;
-        document.getElementById("ff-runend-streak").textContent = streak > 1 ? String(streak) : "—";
-        document.getElementById("ff-runend-points").textContent = points.toLocaleString();
+        document.getElementById("ff-runend-streak").textContent = streak > 1 ? String(streak) : "-";
+        /* THE LIFE BONUS. `points` above is the sum of the banked rounds, and
+           run.score() is that same sum plus this — so it is added here rather
+           than recomputed, and the two figures cannot drift apart. */
+        const bonus = theRun.bonus || 0;
+        const bonusRow = document.getElementById("ff-runend-bonus-row");
+        if (bonusRow) {
+            bonusRow.hidden = !bonus;
+            if (bonus) {
+                document.getElementById("ff-runend-bonus-label").textContent =
+                    `${theRun.lives} ${theRun.lives === 1 ? "life" : "lives"} left`;
+                document.getElementById("ff-runend-bonus").textContent = "+" + bonus.toLocaleString();
+            }
+        }
+        document.getElementById("ff-runend-points").textContent = (points + bonus).toLocaleString();
 
         box.hidden = false;
     }
@@ -2719,19 +2822,35 @@
         }
 
         const what = run.advance(now);
-        if (what === "next") {
+        /* "retry" is a LOST round the run absorbed with a life. The same level
+           is put back up, so this is the "next" path with a different sentence
+           — the one thing the player needs told is what it cost. */
+        if (what === "next" || what === "retry") {
             game = run.game;
             beginLevel(run.level());
-            status(run.progressLabel(), "good");
+            if (what === "retry") {
+                status(`A life gone - ${run.lives} left. ${run.level().name} again.`, "bad");
+            } else {
+                const earned = run.livesWon && run.cleared() % Game.LIFE_EVERY === 0;
+                status(earned
+                    ? `${run.progressLabel()} - an extra life for five cleared.`
+                    : run.progressLabel(), "good");
+            }
         } else {
             const cleared = run.cleared();
             if (what === "finished") status("Every round cleared.", "good");
             else status("Run over.", "bad");
-            submitRun(cleared);
-            /* The breakdown is shown BEFORE the run is thrown away — it is the
+            /* THE PANEL GOES UP FIRST, then the verdict fills into it.
+               submitRun answers the board, and showRunEnd blanks that line so
+               a new run does not show the last one's — so calling them the
+               other way round wiped the answer a hundredth of a second after
+               writing it, and a run that cleared nothing said nothing at all.
+
+               The breakdown is shown BEFORE the run is thrown away — it is the
                only thing holding the per-round summaries. The title screen
                comes back when the player closes it. */
             showRunEnd(run, what === "finished");
+            submitRun(cleared);
             game = null; run = null;
         }
         renderHud(now);
@@ -2956,7 +3075,7 @@
                 roomLoader(false, 1);
                 lastPaint = 0;
                 dirty = true;
-                status("The room did not finish loading — playing anyway.", "bad");
+                status("The room did not finish loading - playing anyway.", "bad");
             });
         }
     }
@@ -2977,7 +3096,7 @@
                reading a property that no longer existed, so Play threw inside
                an async handler and looked simply dead. */
             if (!Levels.totalDrops(level)) {
-                status("Nothing falls yet — draw a drop zone and add some furni to it.", "bad");
+                status("Nothing falls yet - draw a drop zone and add some furni to it.", "bad");
                 setMode("zones");
                 return;
             }
@@ -2991,7 +3110,7 @@
             const miscast = Levels.miscastItems(level, metaFor);
             if (miscast.length) {
                 const n = miscast.reduce((sum, m) => sum + m.item.count, 0);
-                status(`Round started — but ${n} falling ${n === 1 ? "piece has" : "pieces have"} a seat role and cannot be sat on. ${n === 1 ? "It" : "They"} will behave as obstacles.`, "bad");
+                status(`Round started - but ${n} falling ${n === 1 ? "piece has" : "pieces have"} a seat role and cannot be sat on. ${n === 1 ? "It" : "They"} will behave as obstacles.`, "bad");
             } else {
                 status("Round started.", "good");
             }
@@ -3119,7 +3238,7 @@
             for (const m of window.RoomLayouts.MODELS) {
                 const opt = document.createElement("option");
                 opt.value = m.id;
-                opt.textContent = `${m.name} — ${m.cols}×${m.rows}`;
+                opt.textContent = `${m.name} - ${m.cols}×${m.rows}`;
                 layoutSel.appendChild(opt);
             }
             layoutSel.value = state.model;
@@ -3173,10 +3292,10 @@
             const note = document.getElementById("ff-walk-note");
             try {
                 await navigator.clipboard.writeText(text);
-                status(`Copied — ${layout.tiles} tiles. Paste it into js/room-masks.js.`, "good");
+                status(`Copied - ${layout.tiles} tiles. Paste it into js/room-masks.js.`, "good");
             } catch {
                 // A clipboard a browser will not give up is not a dead end.
-                if (note) note.textContent = "Could not reach the clipboard — it is in the console instead.";
+                if (note) note.textContent = "Could not reach the clipboard - it is in the console instead.";
                 status("Copy blocked; written to the console.", "bad");
             }
             console.log("RoomMasks entry for " + layout.id + ":\n" + text);
@@ -3200,7 +3319,7 @@
             const cut = tiles.filter(t => !seen.has(Iso.key(t.x, t.y)));
             note.textContent = cut.length
                 ? `${cut.length} of ${tiles.length} tiles cannot be reached from the start ` +
-                  `(${from.x},${from.y}) — e.g. ${cut.slice(0, 4).map(t => t.x + "," + t.y).join("  ")}`
+                  `(${from.x},${from.y}) - e.g. ${cut.slice(0, 4).map(t => t.x + "," + t.y).join("  ")}`
                 : `All ${tiles.length} tiles reachable from the start (${from.x},${from.y}).`;
             status(cut.length ? "Some tiles are cut off." : "Every tile is reachable.",
                 cut.length ? "bad" : "good");

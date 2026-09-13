@@ -778,7 +778,7 @@
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             if (res.status === 409) {
-                throw new Error(`A level called “${level.name}” already exists — give this one a different name.`);
+                throw new Error(`A level called “${level.name}” already exists - give this one a different name.`);
             }
             throw new Error(err.error || "Could not save the level.");
         }

@@ -276,6 +276,28 @@ body.is-editing #ff-canvas { cursor: pointer; }
 
    NOT the builder's panel: that is a tool docked beside the game, and a
    nine-pixel face across a form full of numbers is a worse tool. */
+/* ---- AND WHAT IT DOES TO PUNCTUATION, which is not a joke.
+
+   Volter Goldfish is Habbo's own interface font, and Habbo put CHAT EMOJI at
+   several ordinary punctuation code points. Everything in this window is set
+   in it, so everything in this window is subject to it:
+
+     U+2014 EM DASH      draws a MUSIC NOTE
+     U+00B7 MIDDLE DOT   draws NOTHING AT ALL
+     U+2022 BULLET       draws a curl rather than a dot
+
+   Both of the first two shipped. The run-over screen read "Level 3 (note)
+   out of time", and the leaderboard's separators had been invisible for as
+   long as the board has existed, because middle dots were what separated
+   them.
+
+   SAFE, checked by rendering each one: the hyphen, the en dash, the
+   multiplication sign, the heart, the ellipsis and the arrows. When in doubt
+   use ASCII - the font is from an era that had nothing else.
+
+   This is about the FONT and not about the text: the same em dash reads
+   perfectly in the page's body type, and the prose in this repo is full of
+   them. It is only wrong where Volter draws it, which is here. */
 .ff-window,
 .ff-window input,
 .ff-window button,
@@ -313,14 +335,27 @@ body.is-editing #ff-canvas { cursor: pointer; }
 
    Under the round-end screen and the room loader (z-index 3 and 4) so a
    finished round is not read through a clock, and under the bevel at 5. */
+/* ONE SIZE, AND IT DOES NOT MOVE.
+
+   This box sat over the room and resized under the player's eye: the clock's
+   digits are not the same width as each other, the round label grows from
+   "Round 1 of 49" to "Round 49 of 49", the message under it is a different
+   length every time it changes, and the sequence row used to gain a box every
+   time a chair landed. A readout that reflows while you are reading it is
+   worse than one that is slightly too big.
+
+   So the width is fixed and every row inside reserves its own height. The
+   contents change; the box does not. */
 .ff-hud {
     position: absolute;
     top: 8px;
     left: 8px;
     z-index: 1;
+    width: 192px;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 5px;
     background: rgba(10, 7, 4, 0.72);
     border: 1px solid var(--border);
@@ -341,11 +376,38 @@ body.is-editing #ff-canvas { cursor: pointer; }
 
 .ff-hud-clock {
     color: var(--amber-bright);
+    /* "0:00" is four characters and none of them are the same width twice.
+       Reserved rather than measured, so 1:05 and 0:44 sit identically. */
+    min-width: 30px;
 }
 
 .ff-hud-round {
     color: var(--parchment-dim);
     white-space: nowrap;
+    flex: 1 1 auto;          /* the slack lives here, not in the box's width */
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* LIVES, beside the round. Red because the count going down is the only
+   thing on this HUD that is bad news, and the last one pulses so a player
+   about to end their run is told before it happens rather than after. */
+.ff-hud-lives {
+    color: #ff6b6b;
+    letter-spacing: 1px;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.ff-hud-lives.is-last { animation: ff-life-last 1.1s ease-in-out infinite; }
+
+@keyframes ff-life-last {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ff-hud-lives.is-last { animation: none; }
 }
 
 /* THE SCORE, and the figure that appears beside it.
@@ -383,7 +445,19 @@ body.is-editing #ff-canvas { cursor: pointer; }
 /* Capped so a long round cannot run the panel across the room: past that it
    wraps into a second row of pips, which grows downward into the black
    margin rather than sideways over the floor. */
-.ff-hud-seq { display: flex; gap: 3px; flex-wrap: wrap; max-width: 168px; }
+/* Two rows of boxes, reserved. The longest level asks for sixteen seats and
+   twelve fit across, so the row wraps once at worst - and holding both rows
+   from the start means the wrap does not lengthen the box when the thirteenth
+   chair lands. align-content keeps a single row at the top of the reserved
+   space rather than centred in it. */
+.ff-hud-seq {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    max-width: 100%;
+    min-height: 25px;        /* 2 x 11px box + 3px gap */
+}
 
 .ff-pip {
     width: 9px; height: 9px;
@@ -397,12 +471,16 @@ body.is-editing #ff-canvas { cursor: pointer; }
 
 /* Left-aligned and capped, because it is a column now rather than the right
    end of a bar. */
+/* Two lines of message, reserved whether there is one or not. Hiding it when
+   empty is what made the box jump every time a message cleared. */
 .ff-hud-msg {
     color: var(--parchment-dim);
-    max-width: 190px;
+    max-width: 100%;
+    min-height: 23px;
+    overflow: hidden;
 }
 
-.ff-hud-msg:empty { display: none; }
+.ff-hud-msg:empty { display: block; }
 
 .ff-playbar {
     display: flex;
@@ -1244,3 +1322,34 @@ body[data-ff-closed] .ff-closed { display: block; }
 }
 
 .ff-closed-link:hover { background: var(--chrome-highlight); color: var(--amber-bright); }
+
+
+/* ---- lives, on the run-end table
+
+   A retried round is a row about where a life went, not a row that scored.
+   Dimmed so it reads as history rather than as part of the total it is
+   deliberately excluded from. */
+.ff-runend-table tr.is-retried { opacity: 0.55; }
+
+.ff-runend-table tr.is-retried th[scope="row"]::after {
+    content: " (life lost)";
+    color: #ff6b6b;
+    font-size: 0.85em;
+}
+
+/* The lives-left row in the table foot: the same weight as the total it sits
+   above, since it is part of the same sum. */
+#ff-runend-bonus-row { color: var(--parchment-dim); }
+#ff-runend-bonus { color: var(--amber-bright); }
+
+/* What the leaderboard did with the run, under the table and above the
+   buttons — the one line a player is looking for when a run ends. */
+.ff-runend-board {
+    margin: 10px 0 0;
+    text-align: center;
+    color: var(--parchment-dim);
+    font-size: 12.5px;
+    min-height: 1.4em;           /* holds its place while the POST is in flight */
+}
+
+.ff-runend-board:empty { min-height: 0; }

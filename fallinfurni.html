@@ -261,6 +261,15 @@
                                     </thead>
                                     <tbody id="ff-runend-rows"></tbody>
                                     <tfoot>
+                                        <!-- Lives left over, and what they were
+                                             worth. Hidden on a run that ended
+                                             because they ran out: a row saying
+                                             "+0" is worse than no row. -->
+                                        <tr id="ff-runend-bonus-row" hidden>
+                                            <th scope="row" id="ff-runend-bonus-label">Lives left</th>
+                                            <td colspan="3"></td>
+                                            <td id="ff-runend-bonus"></td>
+                                        </tr>
                                         <tr>
                                             <th scope="row">Total</th>
                                             <td id="ff-runend-seats"></td>
@@ -271,6 +280,13 @@
                                     </tfoot>
                                 </table>
                             </div>
+                            <!-- WHAT THE LEADERBOARD DID WITH IT, said on the
+                                 screen the player is actually reading. The
+                                 status line under the room says it too, but a
+                                 run ends with this panel over the top of that.
+                                 Signed out, it is an offer rather than a
+                                 notice: the button signs you in. -->
+                            <p class="ff-runend-board" id="ff-runend-board"></p>
                             <div class="ff-round-buttons">
                                 <button type="button" id="ff-runend-again" class="ff-primary">Play again</button>
                                 <button type="button" id="ff-runend-close">Back to title</button>
@@ -329,6 +345,10 @@
                             <!-- Which round of the run. A player needs to know
                                  where they are in one. -->
                             <div class="ff-hud-round" id="ff-round-of"></div>
+                            <!-- Lives. A run is three attempts long, and the
+                                 count has to be visible while you are playing
+                                 rather than only once one is gone. -->
+                            <div class="ff-hud-lives" id="ff-lives" hidden></div>
                         </div>
                         <!-- The run's points, and what the last seat was worth.
                              The second half is the part that teaches the rule:
