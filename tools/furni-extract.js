@@ -440,12 +440,28 @@ function main() {
        in `_50` — which is why 504 `s_` classes were already on disk and the
        gap was invisible until something needed a particular one.
 
-       `_small` stays out. Despite the name it is not the half-scale room art:
-       it is catalogue thumbnails, named `bed_armas_two_small` rather than in
-       parts, and nothing in a room ever draws one. */
+       ONE CAST STAYS OUT, BY NAME, AND IT USED TO BE A PATTERN. The rule was
+       "anything ending `_small.cct`", on the grounds that `_small` means
+       catalogue thumbnails — members called `bed_armas_two_small`, not in
+       parts, and nothing in a room draws one. That is true of
+       hh_furni_small.cct, which holds 774 thumbnails and NOT ONE room part.
+
+       It is false of hh_furni_2025_small.cct, which the same pattern was also
+       throwing away. Despite the name that one is the 2025 set's HALF-SCALE
+       ROOM ART: 904 part members across 142 classes, plus 51 drop shadows,
+       against 8 thumbnails. 74 of those classes were in no other cast, so they
+       did not exist in this game at all, and the seven the levels use —
+       sofa_dpolyfon, sofachair_dpolyfon, bar_dpolyfon, duck_scuba and the
+       three darkmode_* — drew at full size in the half-scale Library, which is
+       what that looked like from the outside.
+
+       So the exclusion names the one cast it means. A pattern over filenames
+       was guessing at contents; two casts share a suffix and hold opposite
+       things. tools/furni-icons-extract.js reads them all, because thumbnails
+       are exactly what IT wants. */
     const files = fs.readdirSync(CLIENT)
         .filter(f => /^hh_furni.*\.cct$/i.test(f))
-        .filter(f => !/_small\.cct$/i.test(f));
+        .filter(f => !/^hh_furni_small\.cct$/i.test(f));
 
     const library = {};
     const written = new Map();      // class|part|sha1 -> the "<state>_<dir>" it was written under
