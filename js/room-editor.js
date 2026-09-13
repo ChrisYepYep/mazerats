@@ -587,11 +587,23 @@
 
     // ---- drop zones
 
-    /* Whether a class can actually be used: it needs a furnidata record (for
-       its footprint and whether it is a seat) AND artwork. Both, or it lands
-       in the room as a red marker — see drawMissing in room-furni.js. */
+    /* Whether a class can actually be used in a zone: it needs a FOOTPRINT and
+       it needs ARTWORK, or it lands in the room as a red marker — see
+       drawMissing in room-furni.js.
+
+       The footprint does NOT have to come from furnidata. 119 classes the
+       client ships have no record there at all and the cast carries their
+       size, so this asks metaFor, which is the same answer the room itself
+       will use when it draws the piece. Asking `state.meta` directly refused
+       `shelves_silo_single` — a bookcase with perfectly good artwork — and
+       said it had none, which was both wrong and unhelpful.
+
+       Whether it can be SAT on is a separate question and belongs to the
+       role: an obstacle never needs to be a seat, and Levels.miscastItems is
+       what flags one that does. */
     function playable(className) {
-        return !!state.meta[className] && !!spriteUrl(className, 0, 0);
+        const m = metaFor(className);
+        return !!(m && m.x) && !!spriteUrl(className, 0, 0);
     }
 
     /* ---- zones

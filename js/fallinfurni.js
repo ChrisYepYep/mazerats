@@ -1792,8 +1792,13 @@
             if (!z) { status("Select a zone first.", "bad"); return; }
             const cls = dropBrush;
             if (!cls) { status("Choose a furni to drop first.", "bad"); return; }
+            /* Two different faults, and saying "no artwork" for both of them
+               sent me looking at the pictures for a piece whose pictures were
+               fine. Name the one that actually applies. */
             if (!Editor.playable(cls)) {
-                status("That furni has no artwork — it would be invisible in the room.", "bad");
+                status(Editor.spriteUrl(cls, 0, 0)
+                    ? "Nothing records that furni's size, so the room cannot place it."
+                    : "That furni has no artwork — it would be invisible in the room.", "bad");
                 return;
             }
             Editor.addItem(cls,
