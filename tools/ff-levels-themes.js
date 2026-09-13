@@ -30,8 +30,18 @@
 const NEUTRAL = {
     screen: "divider_silo2",        // Screen, 2x1
     gate: "divider_silo3",          // Gate (lockable), 1x1
-    corner: "divider_silo1",        // Corner Shelf, 1x1 — same line as the Screen
-    narrow: "divider_silo1",
+    /* WHAT CAPS A RUN. Levels 17 to 20 took the Corner Shelf out of every
+       wall and put a plant there instead, so null means "use this theme's
+       plant" — the cabin rooms, which have a real Corner Post, say so. */
+    corner: null,
+    narrow: null,
+    /* What caps a run when the line has no post of its own. A big plant,
+       which is what levels 17 and 18 use — NOT the room's decorative
+       plant, or a cactus theme ends up with a hedge of cacti for
+       gateposts. */
+    post: "plant_yukka",
+    mat: "doormat_plain*205",       // the queue ends on a mat at the gate
+    roller: "queue_tile1*5",
     lamp: "lamp_armas",
     plant: "plant_yukka",
     tall: null,
@@ -116,30 +126,34 @@ const THEMES = [
     /* ---- funky polyfon, four colourways, each with the plain chair mixed in
        so the sequence is never three of a kind */
     {
-        level: 17, name: "Marrs Green Lounge",
+        level: 17, name: "Marrs Green Lounge", mat: "doormat_plain*242", roller: "queue_tile1*5",
         seats: ["funky_sofa_polyfon*1", "funky_sofachair_polyfon*1", "chair_polyfon"],
         decoy: "funky_sofachair_polyfon*6", obstacle: "plant_small_cactus",
+        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_polyfon", lamp: "lamp_armas",
         floor: { pattern: "wood", colour: 301 }, wall: { pattern: "half1", colour: 605 }
     },
     {
-        level: 18, name: "Sunshine Lounge",
+        level: 18, name: "Sunshine Lounge", mat: "doormat_plain*247", roller: "queue_tile1*4",
         seats: ["funky_sofa_polyfon*6", "funky_sofachair_polyfon*6", "sofachair_polyfon"],
         decoy: "funky_sofachair_polyfon*8", obstacle: "plant_small_cactus",
+        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_polyfon", lamp: "lamp2_armas",
         floor: { pattern: "wood", colour: 305 }, wall: { pattern: "stripes", colour: 506 }
     },
     {
-        level: 19, name: "Mint Lounge",
+        level: 19, name: "Mint Lounge", mat: "doormat_plain*220", roller: "queue_tile1*3",
         seats: ["funky_sofa_polyfon*8", "funky_sofachair_polyfon*8", "chair_polyfon"],
         decoy: "funky_sofachair_polyfon*10", obstacle: "plant_big_cactus",
+        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_polyfon", lamp: "lamp_armas",
         floor: { pattern: "wood", colour: 304 }, wall: { pattern: "stripes", colour: 507 }
     },
     {
-        level: 20, name: "Magenta Lounge",
+        level: 20, name: "Magenta Lounge", mat: "doormat_plain*238", roller: "queue_tile1*1006", plant: "plant_bonsai_p",
         seats: ["funky_sofa_polyfon*10", "funky_sofachair_polyfon*10", "sofachair_polyfon"],
         decoy: "funky_sofachair_polyfon*1", obstacle: "plant_small_cactus",
+        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_polyfon", lamp: "lamp2_armas",
         floor: { pattern: "wood", colour: 306 }, wall: { pattern: "stripes", colour: 502 }
     },
@@ -149,6 +163,7 @@ const THEMES = [
         level: 21, name: "Pura Bedsit",
         seats: ["sofa_polyfon_girl", "sofachair_polyfon_girl", "chair_polyfon"],
         decoy: "sofachair_polyfon", obstacle: "plant_yukka",
+        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_polyfon", lamp: "lamp_armas",
         floor: { pattern: "wood", colour: 307 }, wall: { pattern: "half2", colour: 704 }
     },
@@ -156,6 +171,7 @@ const THEMES = [
         level: 22, name: "Dark Polyfon Studio",
         seats: ["sofa_dpolyfon*1", "sofachair_dpolyfon*1", "chair_polyfon"],
         decoy: "sofachair_dpolyfon*2", obstacle: "bar_dpolyfon*1",
+        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_dpolyfon*1", lamp: "lamp2_armas",
         floor: { pattern: "wood", colour: 303 }, wall: { pattern: "half1", colour: 603 }
     },
@@ -163,6 +179,7 @@ const THEMES = [
         level: 23, name: "The Anniversary Suite",
         seats: ["sofa_dpolyfon*2", "sofachair_dpolyfon*2", "sofachair_polyfon"],
         decoy: "sofachair_dpolyfon*11", obstacle: "bar_dpolyfon*1",
+        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_dpolyfon*1", lamp: "lamp_armas",
         floor: { pattern: "wood", colour: 302 }, wall: { pattern: "half1", colour: 607 }
     },
@@ -170,6 +187,7 @@ const THEMES = [
         level: 24, name: "Black Polyfon Loft",
         seats: ["sofa_dpolyfon*11", "sofachair_dpolyfon*11", "chair_polyfon"],
         decoy: "sofachair_dpolyfon*1", obstacle: "plant_yukka",
+        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_dpolyfon*1", lamp: "lamp2_armas",
         floor: { pattern: "tiles5", colour: 603 }, wall: { pattern: "half3", colour: 805 }
     },

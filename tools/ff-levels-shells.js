@@ -39,12 +39,12 @@
 "use strict";
 
 module.exports = function makeShells(H, meta) {
-    const { at, leftRun, queueX, queueY, facing, LEFT, BACK, RIGHT } = H;
+    const { at, leftRun, queueX, queueY, facing, FRONT, LEFT, BACK, RIGHT } = H;
 
     /* How wide a piece is laid across a room, in tiles. */
     const wide = (cls) => Math.max(1, Number((meta[cls] || {}).x) || 1);
 
-    const post = (T, x, y) => at(T.corner, x, y, facing(T.corner, RIGHT));
+    const post = (T, x, y) => at(T.corner, x, y, facing(T.corner, FRONT));
 
     /* A BARRIER ACROSS THE ROOM, x0 to x1 inclusive: a corner post, screens
        filling the middle, and either the gate or another post at the far end.
@@ -53,14 +53,24 @@ module.exports = function makeShells(H, meta) {
        level 7 was rebuilt — with no special case for it. */
     function wall(T, x0, x1, y, gate) {
         const cap = (x, isGate) => (isGate
-            ? at(T.gate, x, y, facing(T.gate, BACK))
+            ? at(T.gate, x, y, facing(T.gate, FRONT))
             : post(T, x, y));
         const out = [cap(x0, gate === "low")];
         const w = wide(T.screen);
-        for (let x = x0 + 1; x <= x1 - 1;) {
-            if (x1 - 1 - x + 1 >= w) { out.push(at(T.screen, x, y, facing(T.screen, BACK))); x += w; }
-            else { out.push(post(T, x, y)); x += 1; }
+        const inner = x1 - x0 - 1;                 // tiles between the two caps
+        const screens = Math.floor(inner / w);
+        /* Where the spare tile goes when the screens do not divide the run.
+           At the END it lands beside the closing cap and you get two posts
+           touching; halfway along it reads as a pilaster, which is what
+           level 9's wall does. */
+        const spareAfter = inner % w ? Math.ceil(screens / 2) : -1;
+        let x = x0 + 1;
+        for (let i = 0; i < screens; i++) {
+            if (i === spareAfter) { out.push(post(T, x, y)); x += 1; }
+            out.push(at(T.screen, x, y, facing(T.screen, FRONT)));
+            x += w;
         }
+        while (x <= x1 - 1) { out.push(post(T, x, y)); x += 1; }
         out.push(cap(x1, gate === "high"));
         return out;
     }
@@ -136,27 +146,31 @@ module.exports = function makeShells(H, meta) {
                 ...d.booth([0, 1, 2], 5, 8, 0),
                 ...d.plant(9, 0),
                 ...wall(T, 0, 9, 1, null),
-                ...queueX(0, 2, 10),
+                ...queueX(T, 0, 2, 10),
                 ...wall(T, 0, 9, 3, "high"),
                 ...d.lamp(0, 7)
             ]
         };
     }
 
-    /* The same room the other way round: the way in at the left-hand end. */
+    /* The same room with the booth at the other end. The GATE does not move:
+       the door is at (0,2) and the queue runs away from it, so a gate at the
+       left-hand end would have the line walking backwards to reach it — which
+       is what this shell did until level 21 was drawn and the mistake was
+       obvious. Only the furniture swaps ends. */
     function wideRoomMirror(T) {
         const d = dresser(T);
         return {
             zoneName: "The floor", zone: { x: 0, y: 4, w: 10, h: 4 },
-            start: { x: 0, y: 4 }, startDir: 2,
+            start: { x: 9, y: 4 }, startDir: 3,
             decor: [
-                ...d.booth([0, 1, 2], 1, 4, 0),
-                ...d.lamp(5, 0),
-                ...d.tallRow(6, 9, 0),
+                ...d.booth([0, 1, 2], 0, 3, 0),
+                ...d.lamp(4, 0),
+                ...d.tallRow(5, 9, 0),
                 ...wall(T, 0, 9, 1, null),
-                ...queueX(0, 2, 10),
-                ...wall(T, 0, 9, 3, "low"),
-                ...d.lamp(9, 7)
+                ...queueX(T, 0, 2, 10),
+                ...wall(T, 0, 9, 3, "high"),
+                ...d.lamp(0, 7)
             ]
         };
     }
@@ -171,14 +185,19 @@ module.exports = function makeShells(H, meta) {
             zoneName: "The floor", zone: { x: 0, y: 6, w: 8, h: 7 },
             start: { x: 7, y: 6 }, startDir: 3,
             decor: [
-                ...d.tallRow(0, 3, 0),
-                ...d.lamp(4, 0),
+                /* The bookcase is TURNED and stands against the left-hand
+                   wall, which is how level 18 was rebuilt: Classic is only
+                   eight wide, and a bookcase laid across the back eats half
+                   the seating the booth has room for. */
+                ...d.tallLeft(0, 0),
+                ...d.plant(1, 0),
+                ...d.booth([0, 1, 2], 2, 6, 0),
                 ...d.plant(7, 0),
-                ...d.booth([0, 1, 2], 1, 6, 1),
+                ...d.lamp(1, 1),
+                ...d.lamp(7, 1),
                 ...wall(T, 0, 7, 3, null),
-                ...queueX(0, 4, 8),
-                ...wall(T, 0, 7, 5, "high"),
-                ...d.lamp(0, 12)
+                ...queueX(T, 0, 4, 8),
+                ...wall(T, 0, 7, 5, "high")
             ]
         };
     }
@@ -195,8 +214,12 @@ module.exports = function makeShells(H, meta) {
                 ...d.tallRow(4, 5, 0),
                 ...d.booth([0, 1, 2], 6, 9, 0),
                 ...d.lamp(10, 0),
-                ...wall(T, 4, 10, 1, null),
-                ...queueX(0, 4, 11),
+                // a runner of mats down the booth, the way level 19 has it
+                ...Array.from({ length: 7 }, (_, i) => at(T.mat, 4 + i, 1, 0)),
+                /* and the booth's front wall at row 3, not row 1 — which
+                   gives the hosts a room to stand in rather than a ledge. */
+                ...wall(T, 4, 10, 3, null),
+                ...queueX(T, 0, 4, 11),
                 ...wall(T, 0, 10, 5, "high"),
                 ...d.lamp(0, 6),
                 ...d.plant(0, 9)
@@ -211,18 +234,23 @@ module.exports = function makeShells(H, meta) {
     function stepsRoom(T) {
         const d = dresser(T);
         return {
-            zoneName: "The floor", zone: { x: 0, y: 6, w: 10, h: 4 },
-            start: { x: 9, y: 6 }, startDir: 3,
+            /* x0 and x1 have no floor on rows 4 and 5 — the Steps mask cuts
+               them away — so the zone starts at x2 and is a rectangle that is
+               entirely floor. 48 tiles, against the 32 it used to be. */
+            zoneName: "The floor", zone: { x: 2, y: 4, w: 8, h: 6 },
+            start: { x: 9, y: 4 }, startDir: 3,
             decor: [
-                ...d.booth([0], 6, 8, 0),
-                ...d.lamp(9, 0),
+                ...d.plant(6, 0),
+                ...d.booth([0], 7, 9, 0),
                 ...wall(T, 6, 9, 1, null),
-                ...queueX(2, 2, 8),
-                ...d.plant(2, 3),
-                ...d.booth([1, 2], 3, 6, 3),
-                ...wall(T, 2, 9, 5, "high"),
+                ...queueX(T, 2, 2, 8),
+                /* The wall comes up to row 3, so the middle terrace is floor
+                   too and the arena is six rows rather than four — level 20's
+                   zone, which is half again the size of what was here. */
+                ...wall(T, 2, 9, 3, "high"),
                 ...d.tallLeft(0, 6),
-                ...d.plant(0, 9)
+                ...d.lamp(1, 6),
+                ...d.plant(1, 7)
             ]
         };
     }
@@ -242,7 +270,7 @@ module.exports = function makeShells(H, meta) {
                 ...d.booth([0, 1, 2], 4, 6, 0),
                 ...d.lamp(7, 0),
                 ...wall(T, 2, 7, 1, null),
-                ...queueY(0, 0, 13),
+                ...queueY(T, 0, 0, 13),
                 ...wallDown(T, 1, 0, 12, "high"),
                 ...d.plant(7, 2)
             ]
@@ -262,7 +290,7 @@ module.exports = function makeShells(H, meta) {
                 ...d.booth([0, 1, 2], 6, 8, 0),
                 ...d.lamp(9, 0),
                 ...wall(T, 6, 9, 1, null),
-                ...queueY(2, 2, 8),
+                ...queueY(T, 2, 2, 8),
                 ...wallDown(T, 3, 2, 9, "high"),
                 ...d.lamp(4, 2),
                 ...d.tallLeft(0, 6),
@@ -286,7 +314,7 @@ module.exports = function makeShells(H, meta) {
                 ...d.tallRow(4, 7, 0),
                 ...d.lamp(8, 0),
                 ...d.plant(10, 0),
-                ...queueX(0, 4, 3),
+                ...queueX(T, 0, 4, 3),
                 at(T.gate, 3, 4, facing(T.gate, LEFT)),
                 ...wall(T, 0, 3, 5, null),
                 ...wallDown(T, 3, 6, 9, null),

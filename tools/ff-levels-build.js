@@ -130,10 +130,13 @@ const SITE = (() => {
 
 /* ---- THE CURVE. t runs 0 at level 1 to 1 at level 49. */
 const LAST = 49;
-/* Levels at or below this are the user's own, hand-tuned after generation,
-   and --write will not touch them. --retune leaves their rooms alone too;
-   it only ever sets `rules`. */
-const LOCKED = 14;
+/* Levels at or below this have been gone over by hand since the generator
+   made them, and --write will not touch them. Raise it each time another
+   batch is tuned — the diff against what this tool WOULD have built is the
+   brief for the shells, so the generated version is still built and checked,
+   just never written. --retune leaves their rooms alone too; it only ever
+   sets `rules`. */
+const LOCKED = 20;
 const lerp = (a, b, t) => a + (b - a) * t;
 
 function rulesFor(level) {

@@ -155,10 +155,18 @@ const rightRun = (className, x, y, n, step = 1, extra = {}) =>
    bulk of the room as floor. The roller still points the way it is laid, so
    travelling in +y is facing BACK — rotation 1, which is what those two
    levels have in them. */
-const queueY = (x, y, n) =>
-    Array.from({ length: n }, (_, i) => at("queue_tile1*5", x, y + i, facing("queue_tile1*5", BACK)));
-const queueX = (x, y, n) =>
-    Array.from({ length: n }, (_, i) => at("queue_tile1*5", x + i, y, facing("queue_tile1*5", LEFT)));
+/* The LAST tile of a queue is a doormat and not a roller — the mat marks
+   where the line ends, right at the gate, and levels 19 and 20 both do it.
+   Both are walkable, so neither blocks the way through. */
+const NEUTRAL_Q = { roller: "queue_tile1*5", mat: "doormat_plain*205" };
+const queueY = (T, x, y, n) =>
+    Array.from({ length: n }, (_, i) => (i === n - 1
+        ? at(T.mat, x, y + i, 0)
+        : at(T.roller, x, y + i, facing(T.roller, BACK))));
+const queueX = (T, x, y, n) =>
+    Array.from({ length: n }, (_, i) => (i === n - 1
+        ? at(T.mat, x + i, y, 0)
+        : at(T.roller, x + i, y, facing(T.roller, LEFT))));
 
 /* Levels 6, 7 and 8, drawn tile by tile. They were the samples the rules were
    argued out on, so they stay written out in full — the shells below are what
@@ -191,7 +199,7 @@ const HAND = [
             // the counter, which is what shuts the hosts off from the queue
             ...backRun("bardesk_polyfon", 0, 1, 2, 2),
             // the queue: from the tile in front of the door, ending over the gate
-            ...queueX(1, 2, 8),
+            ...queueX(NEUTRAL_Q, 1, 2, 8),
             // the wall onto the floor, and the gate at the far end of it
             // between the last screen and the corner plinth
             ...backRun("divider_silo2", 0, 3, 4, 2),
@@ -234,7 +242,7 @@ const HAND = [
             ...backRun("divider_silo2", 4, 1, 3, 2),
             at("divider_arm1", 10, 1),
             // the queue: from the tile in front of the door, ending over the gate
-            ...queueX(1, 4, 8),
+            ...queueX(NEUTRAL_Q, 1, 4, 8),
             /* the wall onto the hall. A plinth where it meets the left wall,
                screens along it, then the gate at the far end with the corner
                plinth beyond it at the room's edge. */
@@ -282,7 +290,7 @@ const HAND = [
             ...backRun("sheji_divider2", 7, 1, 1, 2),
             at("sheji_divider", 9, 1),
             // the queue: from the tile in front of the door at (2,2)
-            ...queueX(3, 2, 6),
+            ...queueX(NEUTRAL_Q, 3, 2, 6),
             // the middle terrace: a tea table's worth of seating off to one side
             at("plant_yukka", 2, 3),
             ...backRun("sheji_cnchair", 4, 3, 2),
@@ -337,6 +345,12 @@ module.exports = function designs(meta) {
 
     const generated = THEMES.map((theme, i) => {
         const T = Object.assign({}, NEUTRAL, theme);
+        /* A run with nothing on its ends reads as a fence that fell over,
+           and the Corner Shelf that used to go there was taken out of every
+           one of levels 17 to 20 by hand and replaced with a plant. So a
+           theme that has no post of its own caps its runs with its plant. */
+        if (!T.corner) T.corner = T.post || T.plant || "plant_yukka";
+        if (!T.narrow) T.narrow = T.corner;
         const shell = shells[i % shells.length];
         const room = shell.build(T);
         return {
