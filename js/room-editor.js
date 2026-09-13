@@ -18,7 +18,8 @@
    WHAT THE PICKER LISTS is everything EITHER of those two can draw — 2,727
    items. Most carry a furnidata record; 119 do not carry one anywhere, and
    for those the client's own cast supplies the footprint (see
-   RoomFurni.libraryMeta) and the class name is all there is to call them.
+   RoomFurni.libraryMeta) and the name is borrowed from a colourway or from
+   the piece they are a variant of.
 
    It used to walk the catalogue instead, which listed 1,129: furnidata joined
    to a FurniIndex sprite, and nothing else. That quietly hid 1,454 pieces the
@@ -201,6 +202,8 @@
        redraw; reading a 19KB list once costs one request, and only the
        builder ever makes it. */
     const iconStem = (className) => String(className).replace(/\*/g, "-");
+    // "chair_plasto*105" -> "chair_plasto": the colourway suffix stripped
+    const bareClass = (className) => String(className).replace(/\*\d+$/, "");
 
     function iconFor(className, row) {
         const own = iconStem(className);
@@ -275,18 +278,58 @@
            draws them (RoomFurni.libraryMeta). Nothing knows whether they are
            seats, so they are not offered as one, and the class name is all
            there is to call them. */
+        /* A NAME FOR SOMETHING HABBO NEVER PUBLISHED. Listing these by class
+           was no better than hiding them: `shelves_silo_single` is a bookcase,
+           and a search for "bookcase" did not find it, so the only way to
+           reach it was to already know the class — which is the problem it was
+           supposed to solve.
+
+           Both places to look hold the same object under another name:
+
+             its own COLOURWAYS.  `pillow` has no record; `pillow*1` does.
+             what it is a VARIANT OF. `shelves_silo_single` has no record;
+             `shelves_silo` does, and it is the same bookcase one tile
+             narrower.
+
+           93 of the 120 find a name that way. The rest keep their class. */
+        const byBase = new Map();
+        for (const c of Object.keys(state.meta)) {
+            const b = bareClass(c);
+            if (!byBase.has(b)) byBase.set(b, state.meta[c]);
+        }
+        // the suffixes Habbo uses for "the same thing, another size or revision"
+        const TRIM = [/_single2$/, /_single$/, /_small$/, /_med$/, /_one$/, /_z$/, /2$/];
+        function inherited(className) {
+            if (byBase.has(className)) return byBase.get(className);
+            let s = className;
+            for (let i = 0; i < 4; i++) {
+                let cut = null;
+                for (const re of TRIM) if (re.test(s)) { cut = s.replace(re, ""); break; }
+                if (!cut || cut === s) break;
+                s = cut;
+                if (byBase.has(s)) return byBase.get(s);
+            }
+            return null;
+        }
+
         const LIBRARY = window.FurniLibrary || {};
         for (const className of Object.keys(LIBRARY)) {
             if (state.meta[className]) continue;            // already above
             if (/^s_/i.test(className)) continue;           // the shadow set
             const m = Furni.libraryMeta(className);
             if (!m || !Furni.rotationsOf(className)) continue;
+            const borrowed = inherited(className);
             const raw = className.toLowerCase();
             out.push({
-                className, name: className, icon: iconFor(className, state.catalogue.get(className)),
+                className, name: (borrowed && borrowed.n) || className,
+                icon: iconFor(className, state.catalogue.get(className)),
+                /* Borrowed or not, nothing says THIS piece is a seat — only
+                   that its cousin is. It is never offered as one. */
                 sit: false, w: m.x, h: m.y, rotations: rotationCount(className),
                 fromClient: true, noMeta: true,
-                hay: [raw, raw.replace(/_/g, " ")]
+                hay: [raw, raw.replace(/_/g, " "),
+                    ((borrowed && borrowed.n) || "").toLowerCase(),
+                    ((borrowed && borrowed.c) || "").toLowerCase()]
             });
         }
 
@@ -298,7 +341,10 @@
            their class as well. */
         const seen = new Map();
         for (const r of out) seen.set(r.name, (seen.get(r.name) || 0) + 1);
-        for (const r of out) r.ambiguous = seen.get(r.name) > 1;
+        /* A borrowed name is ambiguous by construction: the base grand_piano
+           gets called "Amber Grand Piano" because that is the colourway that
+           answered for it. Those rows always show their class. */
+        for (const r of out) r.ambiguous = seen.get(r.name) > 1 || !!r.noMeta;
 
         /* Client artwork first. It is the same picture the room will draw, it
            carries the anchors and the shadow, and it is the half that was
