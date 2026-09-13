@@ -31,6 +31,14 @@
                           drawn.
      A CORNER PIECE GOES  `divider_arm1` is a Corner plinth. It belongs where
      IN A CORNER.         two runs meet and nowhere else.
+     THE HOST SITS        Their chairs go behind a screen or a divider run that
+     BEHIND A SCREEN.     locks the booth off from the queue and the floor. A
+                          host seat loose against a wall is just a chair.
+     NOTHING TALL AT THE  A bookcase on the front or right wall is drawn in
+     FRONT.               front of the gameplay area and hides it. Tall things
+                          — shelves, bookcases — go along the BACK wall (y=0)
+                          and the LEFT wall (x=0) only, which draw behind the
+                          floor. Screens are low enough to go anywhere.
      PLANTING IS TRIM.    A pair at a corner, not a hedge. An earlier draft put
                           eleven bonsais in a cathedral.
 
@@ -74,23 +82,34 @@ function facings(className) {
 }
 const turns = (f) => f === 2 || f === 6;        // does this facing swap the footprint
 
-/* WHAT EACH FACING ACTUALLY LOOKS LIKE, settled by standing one bookcase and
-   one sofa at each of the four room corners and looking at the result:
+/* WHAT EACH FACING ACTUALLY LOOKS LIKE.
 
-     facing 0   front toward +y, down-left    footprint as given   BACK wall
-     facing 2   front toward -x, up-left      footprint SWAPPED    right wall
-     facing 4   front toward -y, up-right     footprint as given   front wall
-     facing 6   front toward +x, down-right   footprint SWAPPED    LEFT wall
+   Not reasoned about this time, and not eyeballed either — READ OFF THE FIVE
+   LEVELS THAT WERE BUILT BY HAND, where the rotations were chosen in the
+   editor by someone who could see the result:
 
-   The footprint turns on the two facings pointing along x, because a piece two
-   tiles long facing that way is two tiles deep in y. A 2x1 bookcase at facing 0
-   covers (x,y) and (x+1,y) and opens down-left — a bookcase against the back
-   wall, which is the thing you want.
+     bench_armas      (2,0) and (4,0)   y=0, the BACK wall   facing 4
+     sofa_silo        (7,0)             y=0, the BACK wall   facing 4
+     sofa_silo        (0,7)             x=0, the LEFT wall   facing 2
+     sofa_dpolyfon*11 (0,9)             x=0, the LEFT wall   facing 2
 
-   The draft before this had the whole model rotated a quarter turn: it seated
-   chairs at facing 2, which points them up-left INTO the wall behind them and
-   swaps their footprint at the same time. */
-const BACK = 0, RIGHT = 2, FRONT = 4, LEFT = 6;
+   Two independent levels agree on each wall, so:
+
+     facing 0   front toward -y, up-right     footprint as given   front wall
+     facing 2   front toward +x, down-right   footprint SWAPPED    LEFT wall
+     facing 4   front toward +y, down-left    footprint as given   BACK wall
+     facing 6   front toward -x, up-left      footprint SWAPPED    right wall
+
+   The footprint turns on the two facings pointing along x, which checks out
+   against the same evidence: `sofa_silo` at (0,7) facing 2 is a 2x1 that
+   covers (0,7) and (0,8), one tile wide and two deep, which is a sofa laid
+   down the left-hand wall.
+
+   I had this a HALF TURN out — seating chairs at 0 and 6, which points them
+   into the wall they are standing against. Guessing it from the pictures got
+   the axis right and the sign wrong twice running; the hand-built levels
+   settled it in one go. */
+const FRONT = 0, LEFT = 2, BACK = 4, RIGHT = 6;
 
 /* The rotation index that points a class a given way. Not every class can do
    every facing — `sheji_shelves` ships only direction 2, so it can face up-left
@@ -139,10 +158,11 @@ module.exports = [
     /* ---------------------------------------------------------------
        6. PURA LOUNGE — Wide, 10x8, door (0,2)
 
-       A four-tile bar and a four-tile bookcase run right across the back with
-       the hosts sitting behind the counter, the queue runs the full width from
-       the door, and the floor is walled on all four sides with one way in at
-       (4,3). Two palms at the far corner and nothing else growing. */
+       The hosts sit against the back wall with the bookcases, and the counter
+       along row 1 runs the full width of the room so their booth is shut off
+       from the queue below it. The queue runs the full width from the door and
+       the floor is walled on all four sides, the way in at (8,3). One palm in
+       the corner and nothing else growing. */
     {
         level: 6, id: "level-6", name: "Pura Lounge", model: "e",
         floor: { pattern: "wood", colour: 301 },
@@ -151,24 +171,22 @@ module.exports = [
         zoneName: "Lounge floor",
         zone: { x: 1, y: 4, w: 8, h: 4 },
         decor: [
-            // the back wall: bar, bookcases, a pair of palms in the corner
-            ...backRun("bardesk_polyfon", 0, 0, 2, 2),
-            ...backRun("shelves_polyfon", 4, 0, 2, 2),
-            ...backRun("plant_yukka", 8, 0, 2),
-            // the hosts behind their counter, looking out at the queue
-            ...backRun("sofachair_polyfon", 0, 1, 2),
-            at("lamp_armas", 2, 1, 0, { state: 1 }),
-            ...backRun("divider_silo2", 3, 1, 3, 2),
+            /* the back wall, the only wall a bookcase can stand against
+               without hiding the floor: the hosts' seats, a lamp, the
+               bar-back shelving, one palm in the corner. */
+            ...backRun("sofachair_polyfon", 0, 0, 2),
+            at("lamp_armas", 3, 0, 0, { state: 1 }),
+            ...backRun("shelves_polyfon", 5, 0, 2, 2),
+            at("plant_yukka", 9, 0),
+            // the counter, which is what shuts the hosts off from the queue
+            ...backRun("bardesk_polyfon", 0, 1, 2, 2),
             // the queue: from the tile in front of the door, ending over the gate
             ...queueX(1, 2, 8),
-            // the wall onto the floor: screens the length of it, then the gate
-            // at the far end between the last screen and the corner plinth
+            // the wall onto the floor, and the gate at the far end of it
+            // between the last screen and the corner plinth
             ...backRun("divider_silo2", 0, 3, 4, 2),
             at("divider_silo3", 8, 3),              // the gate
-            at("divider_arm1", 9, 3),               // the corner, where it turns
-            // and down both sides
-            ...leftRun("divider_silo2", 0, 4, 2, 2),
-            ...rightRun("divider_silo2", 9, 4, 2, 2)
+            at("divider_arm1", 9, 3)                // the corner, where it turns
         ],
         drops: [
             { className: "sofa_polyfon", role: "sequence", w: 2 },
@@ -181,31 +199,30 @@ module.exports = [
     /* ---------------------------------------------------------------
        7. GOTHIC HALL — Corner, 11x10, door (0,4)
 
-       Corner's cut-away quarter gives an arm and a hall. The arm is a gallery:
-       three gothic sofas nose to tail along the back, chairs looking out of it,
-       candles punctuating the row. The hall below is the floor and the queue
-       along row 4 is the seam between them. Candles at the four corners and no
-       planting at all — the draft before this had eleven bonsais in a
-       cathedral. */
+       Corner's cut-away quarter gives an arm and a hall. The arm holds the
+       gallery — a sofa, two chairs, a candle at each end, shut behind a screen
+       run along row 1 — and the hall below is the floor. The queue along row 4
+       is the seam. Two candles light the hall and nothing else stands in it:
+       an empty floor is the point of the room, and the draft before this had
+       eleven bonsais in a cathedral. */
     {
         level: 7, id: "level-7", name: "Gothic Hall", model: "b",
         floor: { pattern: "tiles3", colour: 502 },
         wall: { pattern: "gothic", colour: 3104 },
-        start: { x: 8, y: 6 }, startDir: 2,      // inside the hall, under the gate
+        start: { x: 9, y: 6 }, startDir: 2,      // inside the hall, under the gate
         zoneName: "The hall",
-        zone: { x: 1, y: 6, w: 8, h: 4 },
+        zone: { x: 1, y: 6, w: 9, h: 4 },
         decor: [
-            // the gallery along the back of the arm
-            ...backRun("gothic_sofa*2", 4, 0, 3, 2),
-            at("gothiccandelabra", 10, 0, 0, { state: 1 }),
-            // chairs looking out of it, candles punctuating the row
-            ...backRun("gothic_chair*4", 4, 1, 2),
-            at("gothiccandelabra", 6, 1, 0, { state: 1 }),
-            ...backRun("gothic_chair*4", 7, 1, 2),
-            at("gothiccandelabra", 9, 1, 0, { state: 1 }),
-            // screens and stools closing the gallery off
-            ...backRun("divider_silo2", 6, 2, 2, 2),
-            ...backRun("gothic_stool*1", 6, 3, 2),
+            // the gallery along the back of the arm, candles at either end
+            at("gothiccandelabra", 4, 0, 0, { state: 1 }),
+            ...backRun("gothic_sofa*2", 5, 0, 1, 2),
+            ...backRun("gothic_chair*4", 7, 0, 2),
+            at("gothiccandelabra", 9, 0, 0, { state: 1 }),
+            /* row 1 shuts the gallery off. It has to run the width of the arm
+               and turn into the right wall on a plinth, or the hosts are
+               simply sitting beside the queue. */
+            ...backRun("divider_silo2", 4, 1, 3, 2),
+            at("divider_arm1", 10, 1),
             // the queue: from the tile in front of the door, ending over the gate
             ...queueX(1, 4, 8),
             /* the wall onto the hall. A plinth where it meets the left wall,
@@ -215,13 +232,12 @@ module.exports = [
             ...backRun("divider_silo2", 1, 5, 4, 2),
             at("divider_silo3", 9, 5),              // the gate
             at("divider_arm1", 10, 5),              // the corner, where it turns
-            // candlelit corners, screens between them
+            // two candles lighting the hall, and nothing else in it
             at("gothiccandelabra", 0, 6, 0, { state: 1 }),
-            ...leftRun("divider_silo2", 0, 7, 1, 2),
-            at("gothiccandelabra", 0, 9, 0, { state: 1 }),
-            at("gothiccandelabra", 10, 6, 0, { state: 1 }),
-            ...rightRun("divider_silo2", 10, 7, 1, 2),
-            at("gothiccandelabra", 10, 9, 0, { state: 1 })
+            /* down the left wall, not the front corner. x+y is the draw order,
+               so (10,9) is the very front of the room and a lit candelabra
+               there stands between the camera and the game. */
+            at("gothiccandelabra", 0, 9, 0, { state: 1 })
         ],
         drops: [
             { className: "gothic_sofa*2", role: "sequence", w: 2 },
@@ -238,9 +254,10 @@ module.exports = [
        left, then full width at row 6. Three terraces, and you come down through
        them by the gaps at (4,3) and (4,5).
 
-       sheji_shelves ships only direction 2, so it cannot face a back wall at
-       all — it goes down the sides, where up-left is exactly right, and the
-       back wall is the grand sofa and dividers instead. */
+       sheji_shelves ships only direction 2, which is LEFT, so it goes down the
+       left-hand wall and nowhere else — which is where a bookcase belongs
+       anyway, since that wall draws behind the floor. The back of the room is
+       the grand sofa with its screens. */
     {
         level: 8, id: "level-8", name: "Sheji Tearoom", model: "f",
         floor: { pattern: "tiles2", colour: 407 },
@@ -249,31 +266,26 @@ module.exports = [
         zoneName: "Tearoom floor",
         zone: { x: 1, y: 6, w: 8, h: 4 },
         decor: [
-            // the host's nub: the grand sofa across the back
-            ...backRun("sheji_cnsofa", 6, 0, 1, 3),
-            at("hc_lmp", 9, 0, 0, { state: 1 }),
-            ...backRun("sheji_divider", 6, 1, 4),
+            // the host's nub in the top step: the grand sofa and its screens
+            at("hc_lmp", 6, 0, 0, { state: 1 }),
+            ...backRun("sheji_cnsofa", 7, 0, 1, 3),
+            ...backRun("sheji_divider2", 7, 1, 1, 2),
+            at("sheji_divider", 9, 1),
             // the queue: from the tile in front of the door at (2,2)
             ...queueX(3, 2, 6),
-            at("sheji_divider", 9, 2),
-            // down to the middle terrace
-            ...backRun("sheji_divider", 2, 3, 7),
-            // the middle terrace, chairs either side of the walkway
-            ...backRun("sheji_cnchair", 2, 4, 2),
-            ...backRun("sheji_sofachair", 5, 4, 2),
-            at("plant_yukka", 7, 4),
-            // shelving down the sides, where this bookcase can actually face
-            ...rightRun("sheji_shelves", 9, 3, 1, 2),
-            ...rightRun("sheji_shelves", 9, 7, 1, 2),
+            // the middle terrace: a tea table's worth of seating off to one side
+            at("plant_yukka", 2, 3),
+            ...backRun("sheji_cnchair", 4, 3, 2),
+            at("sheji_sofachair", 6, 3, facing("sheji_sofachair", FRONT)),
             // the wall onto the tearoom floor, the gate at the far end
-            ...backRun("sheji_divider", 2, 5, 6),
-            at("divider_silo3", 8, 5),              // the gate
+            ...backRun("sheji_divider2", 2, 5, 3, 2),
+            at("sheji_divider3", 8, 5),             // the gate
             at("hc_lmp", 9, 5, 0, { state: 1 }),
-            // lamps at the corners, screens between
-            at("hc_lmp", 0, 6, 0, { state: 1 }),
-            ...leftRun("sheji_divider", 0, 7, 2),
-            at("plant_yukka", 0, 9),
-            at("hc_lmp", 9, 6, 0, { state: 1 })
+            /* shelving down the LEFT wall. It is the one direction this
+               bookcase ships, and a bookcase on the right or the front of the
+               room is drawn over the floor and hides half the game. */
+            ...leftRun("sheji_shelves", 0, 6, 1, 2),
+            at("plant_yukka", 0, 9)
         ],
         drops: [
             { className: "sheji_cnsofa", role: "sequence", w: 1 },
