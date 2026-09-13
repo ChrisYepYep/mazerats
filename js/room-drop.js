@@ -206,6 +206,18 @@
         return best;
     }
 
+    /* The rotations a class has, in a random order. Shuffled rather than
+       picked at random and retried, so every facing is tried at most once and
+       the loop that uses this always terminates. */
+    function turns(n, rng) {
+        const list = Array.from({ length: Math.max(1, n | 0) }, (_, i) => i);
+        for (let i = list.length - 1; i > 0; i--) {
+            const j = Math.floor(rng() * (i + 1));
+            [list[i], list[j]] = [list[j], list[i]];
+        }
+        return list;
+    }
+
     /* Every legal landing spot for a piece, in the entry's area.
 
        `minDistance` is the round's reach — how far from the player a piece
@@ -322,6 +334,11 @@
         const rng = o.rand || Math.random;
         const metaFor = o.metaFor || (() => ({}));
         const urlFor = o.urlFor || (() => ({ url: null, flip: false }));
+        /* HOW MANY WAYS A CLASS TURNS. The client's own artwork answers for
+           everything it ships; the caller passes this in because the pieces
+           it does NOT ship are counted off FurniIndex's sprite grid instead,
+           and only the page holds that. One rotation means it cannot turn. */
+        const rotationsOf = o.rotationsOf || ((c) => Furni.rotationsOf(c) || 1);
 
         const queue = window.RoomLevels.schedule(level, rng);
         const decor = (level.decor || []).map(d => Furni.make(d.className, d.x, d.y, {
@@ -389,18 +406,41 @@
                 if (this.queue.length && now >= this.nextAt) {
                     const entry = this.queue[0];
                     const meta = metaFor(entry.className);
-                    /* The reach is measured against where the player is NOW,
-                       not where they started — so parking in a corner sends
+                    const others = this.placed.concat(this.falling.map(p => p.furni));
+
+                    /* WHICH WAY IT LANDS IS RANDOM, and it is decided HERE
+                       rather than when the round was scheduled, because a
+                       facing has to FIT. A three-tile bench turned ninety
+                       degrees occupies 1x3, and there may be nowhere left in
+                       the zone that takes it; chosen up front, that piece
+                       would simply never fall, and a sequence seat that never
+                       falls is a round nobody can finish.
+
+                       So the facings are tried in a random order and the
+                       first one with somewhere to land is the one used. A
+                       piece that fits only one way still falls, and the round
+                       is never short of a seat because the dice said sideways.
+
+                       The reach is measured against where the player is NOW,
+                       not where they started - so parking in a corner sends
                        the next piece to the far side rather than earning an
                        easy round. */
-                    const spots = spotsFor(this.placed.concat(this.falling.map(p => p.furni)),
-                        entry, meta, playerTile, level.rules.minDropDistance);
+                    let spot = null;
+                    let rotation = entry.rotation || 0;
+                    for (const r of turns(rotationsOf(entry.className), rng)) {
+                        const spots = spotsFor(others, { ...entry, rotation: r },
+                            meta, playerTile, level.rules.minDropDistance);
+                        if (!spots.length) continue;
+                        spot = spots[Math.floor(rng() * spots.length)];
+                        rotation = r;
+                        break;
+                    }
+
                     this.queue.shift();
-                    if (spots.length) {
-                        const spot = spots[Math.floor(rng() * spots.length)];
+                    if (spot) {
                         const furni = Furni.make(entry.className, spot.x, spot.y, {
-                            meta, rotation: entry.rotation, role: entry.role,
-                            ...urlFor(entry.className, 0, entry.rotation)
+                            meta, rotation, role: entry.role,
+                            ...urlFor(entry.className, 0, rotation)
                         });
                         furni.lift = FALL_TILES;
                         this.falling.push({ furni, at: now });

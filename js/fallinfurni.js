@@ -2282,7 +2282,19 @@
         for (const c of wanted) if (meta.items && meta.items[c]) playerMeta.set(c, meta.items[c]);
     }
 
-    const gameOpts = () => ({ metaFor, urlFor, playerTile: () => state.pos });
+    /* How many ways a class turns, for the random facing a drop lands at.
+       The client's artwork answers for everything it ships; for the quarter it
+       does not, the count is the width of FurniIndex's sprite grid, and only
+       this page is holding that. */
+    function rotationsOf(c) {
+        if (Editor) return Editor.rotationCount(c);
+        const own = Furni.rotationsOf(c);
+        if (own) return own;
+        const grid = playerSprites.get(c);
+        return (grid && grid[0] && grid[0].length) || 1;
+    }
+
+    const gameOpts = () => ({ metaFor, urlFor, rotationsOf, playerTile: () => state.pos });
 
     /* ---- the title screen, and what is behind it
 
