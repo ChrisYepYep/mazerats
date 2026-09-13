@@ -20,22 +20,39 @@
    ever draws one. They are exactly right for a list of things to choose from.
 
    ----------------------------------------------------------------------
-   MOSTLY ONE ICON PER CLASS, NOT PER COLOURWAY
+   A RECOLOUR'S THUMBNAIL IS GREY UNTIL YOU TINT IT
 
-   The catalogue sells `chair_plasto` in eight colours and the client ships
-   ONE thumbnail for it, so all eight rows share an icon. That is a real
-   difference from FurniIndex, whose icons are per colourway, and it cannot be
-   fixed by tinting: partcolors apply one colour PER PART, and a thumbnail is
-   already flattened, so there is no way to tell which pixels are part `a`.
-   Tinting the lot with the first colour would be wrong for anything with more
-   than one part.
+   The client ships ONE thumbnail per class and it is the same grey source art
+   the room sprites are — drawn against Director's greyscale, meant to be
+   multiplied by a colour. Shipped as-is, 203 of the catalogue's 393 recoloured
+   rows came out white or grey, which is what an amber sofa looked like in the
+   picker.
 
-   The colour is in the name — "Deep Moss Chair", "Forest Green Chair" — so
-   the row still says which one it is.
+   Tinting a flattened picture looks impossible at first, because partcolors
+   apply one colour PER PART and a thumbnail has no parts left in it. The
+   client does not try: `getSmallsColor` in hh_furni_classes.cct asks
+   `getLastColor` for ONE colour and multiplies the whole small by it.
 
-   Some classes DO carry a thumbnail per colourway, named with the catalogue's
-   star: `waterbowl*5_small`. Those are kept, and the picker prefers an exact
-   match over the base class, so those rows get their own picture.
+       getLastColor(list):
+           tColor = "ffffff"
+           repeat with i = 1 to count(list)
+               if list[i] <> "ffffff" and list[i] <> "0" and list[i] <> "null"
+                   then tColor = list[i]
+           return tColor
+
+   The LAST entry that is not white, "0" or "null" — so a list that keeps its
+   early parts and tints its late ones resolves to the tint, which is the case
+   that matters: `sofachair_dpolyfon*2` is [#ffffff, #ffffff, #ffc000,
+   #ffc000] and comes out amber. 285 of the 393 are that shape, and the one
+   row with two different tints, carpet_polar*1, takes the later one, which is
+   what "last" means.
+
+   So a recolour gets its OWN icon under its own name — `chair_plasto-14.png`
+   — and the picker prefers that over the base class's. That also answers the
+   other half of it: eight plasto chairs no longer share one picture.
+
+   Some classes ship a thumbnail per colourway already, named with the
+   catalogue's star: `waterbowl*5_small`. Those are kept as they are.
 
    A STAR IS NOT A FILENAME on Windows, so it is written as `-`. Habbo class
    names are letters, digits and underscores, so nothing collides; anything
@@ -56,6 +73,10 @@
    definition of each.
 
    usage: node tools/furni-icons-extract.js [--out assets/furni-icons]
+                                           [--site http://localhost:8888]
+          The site is asked for furnidata, which is where partcolors live. If
+          it is not up the base icons are still written and the recolours are
+          skipped with a warning, rather than the run failing.
 */
 
 const fs = require("fs");
@@ -67,14 +88,27 @@ const { macPalette, greyscalePalette, CLIENT } = require("./furni-extract.js");
 
 const argv = process.argv.slice(2);
 const outArg = argv.indexOf("--out");
+const siteArg = argv.indexOf("--site");
+const SITE = siteArg > -1 ? argv[siteArg + 1] : "http://localhost:8888";
 const OUT = outArg > -1 ? argv[outArg + 1] : path.join(__dirname, "..", "assets", "furni-icons");
 
-function main() {
+async function main() {
     fs.mkdirSync(OUT, { recursive: true });
+
+    /* furnidata, for partcolors. Optional: without it the base icons are
+       still right and only the recolours go untinted. */
+    let meta = null;
+    try {
+        meta = (await fetch(`${SITE}/.netlify/functions/furni-meta`).then(r => r.json())).items || null;
+    } catch {
+        console.log(`  ! ${SITE} is not answering — recolours will not be tinted`);
+    }
 
     const files = fs.readdirSync(CLIENT).filter(f => /^hh_furni.*\.cct$/i.test(f));
     let written = 0, skipped = 0, noPalette = 0, bytes = 0, blank = 0, unnameable = 0;
     const seen = new Set();
+    const pixels = new Map();       // className -> the decoded thumbnail, for tinting
+    const stems = new Set();        // the FILENAMES written, which is what the index lists
 
     /* The catalogue's star becomes a dash; js/fallinfurni.js matches this. */
     const fileFor = (className) => {
@@ -187,8 +221,60 @@ function main() {
 
             const png = encodePng(w, h, rgba);
             fs.writeFileSync(path.join(OUT, `${stem}.png`), png);
-            seen.add(className);
+            seen.add(className); stems.add(stem);
+            // kept so a recolour can be multiplied out of it below
+            pixels.set(className, { w, h, rgba });
             written++; bytes += png.length;
+        }
+    }
+
+    /* ---- THE RECOLOURS, multiplied by the client's own choice of colour.
+       See getLastColor at the top: the last entry that is not white, "0" or
+       "null". */
+    const lastColour = (pc) => {
+        let out = null;
+        for (const v of pc || []) {
+            const s = String(v || "").trim().toLowerCase();
+            if (!/^#?[0-9a-f]{6}$/.test(s)) continue;
+            const hex = s.replace(/^#/, "");
+            if (hex === "ffffff") continue;
+            out = [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)];
+        }
+        return out;
+    };
+    const baseClass = (c) => String(c || "").replace(/\*\d+$/, "");
+
+    let tinted = 0, noSource = 0;
+    const ownThumb = new Set(seen);     // classes the client drew a small FOR
+    if (meta) {
+        for (const [className, m] of Object.entries(meta)) {
+            const tint = lastColour(m && m.pc);
+            if (!tint) continue;                              // nothing to apply
+            /* A CLASS WITH NO STAR CAN STILL BE TINTED. `rare_fountain` has no
+               colourways and a partcolor of #FF6666 all the same, so its one
+               icon has to be multiplied like any other — skipping the
+               unstarred names left 17 furni grey that should not have been.
+               What is left alone is a colourway the artists drew a small for
+               themselves: tinting that would tint it twice. */
+            if (ownThumb.has(className) && /\*/.test(className)) continue;
+            const src = pixels.get(baseClass(className));
+            if (!src) { noSource++; continue; }
+            const stem = fileFor(className);
+            if (!stem) continue;
+
+            const out = Buffer.alloc(src.w * src.h * 4);
+            for (let i = 0; i < src.w * src.h; i++) {
+                const a = src.rgba[i * 4 + 3];
+                if (!a) continue;
+                out[i * 4] = Math.round(src.rgba[i * 4] * tint[0] / 255);
+                out[i * 4 + 1] = Math.round(src.rgba[i * 4 + 1] * tint[1] / 255);
+                out[i * 4 + 2] = Math.round(src.rgba[i * 4 + 2] * tint[2] / 255);
+                out[i * 4 + 3] = a;
+            }
+            const png = encodePng(src.w, src.h, out);
+            fs.writeFileSync(path.join(OUT, `${stem}.png`), png);
+            seen.add(className); stems.add(stem);
+            tinted++; bytes += png.length;
         }
     }
 
@@ -201,12 +287,13 @@ function main() {
        1,260 names; the builder fetches it once and knows.
 
        Read by RoomEditor.load, and only there — a player never asks for it. */
-    fs.writeFileSync(path.join(OUT, "index.json"), JSON.stringify([...seen].sort()));
+    fs.writeFileSync(path.join(OUT, "index.json"), JSON.stringify([...stems].sort()));
 
-    console.log(`${written} icons -> ${OUT}`);
+    console.log(`${written} icons + ${tinted} recoloured -> ${OUT}`);
+    if (noSource) console.log(`  ${noSource} recolours had no base thumbnail to tint`);
     console.log(`  ${(bytes / 1024).toFixed(0)} KB, ${(bytes / written).toFixed(0)} bytes each on average`);
     console.log(`  ${skipped} unusable, ${noPalette} with an unresolvable palette, ${blank} that drew nothing`);
     if (unnameable) console.log(`  ${unnameable} skipped for a class name that is not a filename`);
 }
 
-if (require.main === module) main();
+if (require.main === module) main().catch(e => { console.error(e.message); process.exit(1); });
