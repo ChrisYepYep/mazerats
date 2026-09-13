@@ -1319,7 +1319,12 @@
             b.type = "button";
             b.className = "ff-furni" + (current === r.className ? " is-on" : "");
             b.title = `${r.name} — ${r.w}x${r.h}${r.sit ? ", seat" : ""}, ${r.rotations} rotation${r.rotations === 1 ? "" : "s"}`;
-            b.innerHTML = `<img src="${r.icon}" alt="" loading="lazy" decoding="async"><span>${r.name}</span>` +
+            /* Four furni out of 2,607 have no thumbnail anywhere — a grid
+               test and three unreleased pieces. An <img> with no src draws a
+               broken-image glyph, so those get the gap instead and are still
+               perfectly placeable by name. */
+            b.innerHTML = (r.icon ? `<img src="${r.icon}" alt="" loading="lazy" decoding="async">` : '<i class="ff-noicon"></i>') +
+                `<span>${r.name}</span>` +
                 (r.sit ? '<em class="ff-seat">seat</em>' : "");
             b.addEventListener("click", () => onPick(r.className));
             list.appendChild(b);

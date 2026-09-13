@@ -761,12 +761,17 @@ body:not(.is-editing) .ff-guides { display: none; }
     min-width: 0;
 }
 
-.ff-furni img {
+.ff-furni img,
+.ff-furni .ff-noicon {
     width: 22px; height: 22px;
     object-fit: contain;
     image-rendering: pixelated;
     flex: 0 0 auto;
 }
+
+/* The handful of furni with no thumbnail anywhere: hold the space so the
+   names stay in a column, and say nothing. */
+.ff-furni .ff-noicon { display: block; }
 
 .ff-furni span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ff-furni:hover { border-color: var(--amber); }

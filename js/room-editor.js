@@ -9,11 +9,25 @@
    ----------------------------------------------------------------------
    Two sources, joined here
 
-   Artwork comes from FurniIndex (`furni-catalogue`, with ?sprites=1 for the
-   [state][rotation] grids). Footprint and whether a thing is a seat come from
-   Habbo's furnidata (`furni-meta`). They join on className. Roughly 1,100 of
-   the catalogue's 1,283 items match; the rest are wall items, which this game
-   does not place on the floor.
+   Footprint, name, category and whether a thing is a seat come from Habbo's
+   furnidata (`furni-meta`) — 15,152 floor items. Artwork comes from either of
+   two places: the Origins client's own casts (js/furni-library.js), or
+   FurniIndex (`furni-catalogue`, with ?sprites=1 for the [state][rotation]
+   grids) for the quarter of the hotel this client build does not ship.
+
+   WHAT THE PICKER LISTS is everything furnidata knows about that EITHER of
+   those two can draw — 2,583 items.
+
+   It used to walk the catalogue instead, which listed 1,129: furnidata joined
+   to a FurniIndex sprite, and nothing else. That quietly hid 1,454 pieces the
+   room draws perfectly well from the client's own artwork — 322 chairs, 71
+   lights, 63 rugs, 62 dividers, 62 gates, 21 rollers — because FurniIndex
+   happens not to carry them. The catalogue is a shop's stock list; it was
+   never the right answer to "what can this room draw".
+
+   Thumbnails were already there for 1,450 of the 1,454: tools/furni-icons-
+   extract.js pulled them out of the client months before anything could
+   search for them.
 
    ----------------------------------------------------------------------
    Rotation
@@ -38,6 +52,7 @@
         catalogue: new Map(),   // className -> catalogue row (with sprite grids)
         meta: {},               // className -> furnidata record
         icons: new Set(),       // which furni we ship a thumbnail for — see iconFor
+        placeable: [],          // every furni something can draw — see index()
         brush: null,            // the furni about to be placed
         selected: null,         // the placed piece under edit
         mode: "room",           // room | decor | zones | rules
@@ -178,7 +193,7 @@
         if (state.icons.has(own)) return `assets/furni-icons/${own}.png`;
         const b = iconStem(className.replace(/\*\d+$/, ""));
         if (state.icons.has(b)) return `assets/furni-icons/${b}.png`;
-        return row.icon;                    // FurniIndex, for the last 2%
+        return (row && row.icon) || null;   // FurniIndex, for the last 2%
     }
 
     async function load() {
@@ -192,17 +207,57 @@
         state.catalogue = new Map((cat.items || []).map(i => [i.className, i]));
         state.meta = meta.items || {};
         state.icons = new Set(Array.isArray(icons) ? icons : []);
+        state.placeable = index();
         state.ready = true;
         return {
             catalogue: state.catalogue.size,
             meta: Object.keys(state.meta).length,
-            icons: state.icons.size
+            icons: state.icons.size,
+            placeable: state.placeable.length
         };
     }
 
-    /* Only furni this editor can actually place: it needs artwork AND a
-       furnidata record, because without the latter there is no footprint and no
-       way to know whether it is a seat. */
+    /* EVERY FURNI SOMETHING CAN DRAW, worked out once at load.
+
+       The test is "can either source draw it", not "is it in the catalogue".
+       `Furni.rotationsOf` returns 0 for a class the client does not ship, so
+       it doubles as the client-art test; a FurniIndex sprite grid is the
+       other half.
+
+       Built once because it walks 15,152 furnidata records and calls
+       rotationCount and iconFor on every survivor, and doing that per
+       keystroke would be silly. Searching then filters an array of 2,583. */
+    function index() {
+        const out = [];
+        for (const className of Object.keys(state.meta)) {
+            const m = state.meta[className];
+            const row = state.catalogue.get(className);
+            const rotations = rotationCount(className);
+            const fromClient = Furni.rotationsOf(className) > 0;
+            const fromIndex = !!(row && (row.largeImages || []).length);
+            if (!fromClient && !fromIndex) continue;
+            /* The catalogue names a furni for its COLOURWAY — "Deep Moss
+               Chair" — and furnidata for its family — "Chair". The colourway
+               is the more useful of the two when it exists. */
+            const name = (row && row.name) || m.n || className;
+            const raw = className.toLowerCase();
+            out.push({
+                className, name, icon: iconFor(className, row),
+                sit: !!m.sit, w: m.x, h: m.y, rotations, fromClient,
+                /* matched against: the name, the class raw, the class with
+                   its underscores opened out, and furnidata's own category so
+                   that "lighting" or "rug" finds the whole group. */
+                hay: [name.toLowerCase(), raw, raw.replace(/_/g, " "), (m.c || "").toLowerCase()]
+            });
+        }
+        /* Client artwork first. It is the same picture the room will draw, it
+           carries the anchors and the shadow, and it is the half that was
+           missing — so when a search matches both, the one that renders
+           natively is the one worth seeing at the top. */
+        out.sort((a, b) => (b.fromClient - a.fromClient) || a.name.localeCompare(b.name));
+        return out;
+    }
+
     /* EVERY WORD, ANYWHERE — not the whole query as one run of characters.
 
        The catalogue names a furni for its colourway and the client names it
@@ -212,40 +267,24 @@
 
            "chair plasto"   8 results, because the class reads that way round
            "plasto chair"   NOTHING, though it is the way anyone would say it
-           "plasto"         24 results, of which 18 are TABLES: the cap is
-                            reached walking the catalogue in colourway order,
-                            long before the chairs are through
 
        — which is how a search for the plasto chairs came back with no chairs
        in it. Requiring each word separately makes both orders work and matches
        "plastic chair" against the Plastic Pod Chairs.
 
-       AND THE RESULT IS NOT CAPPED. It was, at 24, which is the other half of
-       the same fault: a cap reached while walking the catalogue in colourway
-       order does not trim the least relevant results, it trims whatever
-       happens to sort last, and gives no sign it has done it. `limit` survives
-       for the callers that genuinely want one row, and the list itself scrolls
-       (.ff-furni-list is 200px with overflow-y: auto), so a long answer costs
-       a scrollbar rather than a wall. */
+       AND THE RESULT IS NOT CAPPED. It was, at 24, and a cap reached while
+       walking the catalogue in colourway order does not trim the least
+       relevant results — it trims whatever happens to sort last, and gives no
+       sign it has done it. `limit` survives for the callers that genuinely
+       want one row, and the list itself scrolls (.ff-furni-list is 200px with
+       overflow-y: auto), so a long answer costs a scrollbar rather than a
+       wall. */
     function search(query, limit) {
         const words = (query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
         const out = [];
-        for (const [className, row] of state.catalogue) {
-            const m = state.meta[className];
-            if (!m) continue;
-            if (!(row.largeImages || []).length) continue;
-            const name = (row.name || "").toLowerCase();
-            const raw = className.toLowerCase();
-            /* The class both ways round: spaced, so "plasto chair" reads as
-               words, and raw, so a caller handing over a whole className —
-               the "Holding chair_plasto*14" label does exactly that — finds
-               its row instead of falling back to printing the class name. */
-            const cls = raw.replace(/_/g, " ");
-            if (!words.every(w => name.includes(w) || cls.includes(w) || raw.includes(w))) continue;
-            out.push({
-                className, name: row.name || className, icon: iconFor(className, row),
-                sit: !!m.sit, w: m.x, h: m.y, rotations: rotationCount(className)
-            });
+        for (const row of state.placeable) {
+            if (!words.every(w => row.hay.some(h => h.includes(w)))) continue;
+            out.push(row);
             if (limit && out.length >= limit) break;
         }
         return out;
