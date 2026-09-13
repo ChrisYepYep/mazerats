@@ -15,8 +15,10 @@
    FurniIndex (`furni-catalogue`, with ?sprites=1 for the [state][rotation]
    grids) for the quarter of the hotel this client build does not ship.
 
-   WHAT THE PICKER LISTS is everything furnidata knows about that EITHER of
-   those two can draw — 2,583 items.
+   WHAT THE PICKER LISTS is everything EITHER of those two can draw — 2,727
+   items. Most carry a furnidata record; 119 do not carry one anywhere, and
+   for those the client's own cast supplies the footprint (see
+   RoomFurni.libraryMeta) and the class name is all there is to call them.
 
    It used to walk the catalogue instead, which listed 1,129: furnidata joined
    to a FurniIndex sprite, and nothing else. That quietly hid 1,454 pieces the
@@ -28,6 +30,12 @@
    Thumbnails were already there for 1,450 of the 1,454: tools/furni-icons-
    extract.js pulled them out of the client months before anything could
    search for them.
+
+   The 119 with no record at all were a third hidden set, found by trying to
+   look up a screenshot of a bookcase: shelves_silo_single, a one-tile
+   bookcase full of books that Habbo's furnidata has never heard of. The
+   prizetrophy set, a grand piano, a sci-fi door and the uncoloured base of
+   several colourway families are in there with it.
 
    ----------------------------------------------------------------------
    Rotation
@@ -166,7 +174,13 @@
         return Math.max(1, (grid[0] || []).length);
     }
 
-    function metaFor(className) { return state.meta[className] || {}; }
+    /* Furnidata first; for the 119 classes it has never heard of, the size
+       the client's own cast records — see RoomFurni.libraryMeta. Both the
+       editor and the game go through the same function, so a piece is the
+       same size in both. */
+    function metaFor(className) {
+        return state.meta[className] || Furni.libraryMeta(className) || {};
+    }
 
     /* ---- ICONS, OUT OF THE CLIENT RATHER THAN OFF ANOTHER SITE.
 
@@ -250,6 +264,32 @@
                 hay: [name.toLowerCase(), raw, raw.replace(/_/g, " "), (m.c || "").toLowerCase()]
             });
         }
+        /* AND THE ORPHANS: 119 classes the client ships that NEITHER source
+           has a record of. No furnidata entry, nothing at FurniIndex, so they
+           were invisible even after the picker stopped walking the catalogue
+           — `shelves_silo_single`, the whole prizetrophy set, the grand
+           piano, a sci-fi door, the uncoloured base of half a dozen colourway
+           families. 109 of them already have a thumbnail extracted.
+
+           The library knows their footprint because that is how the client
+           draws them (RoomFurni.libraryMeta). Nothing knows whether they are
+           seats, so they are not offered as one, and the class name is all
+           there is to call them. */
+        const LIBRARY = window.FurniLibrary || {};
+        for (const className of Object.keys(LIBRARY)) {
+            if (state.meta[className]) continue;            // already above
+            if (/^s_/i.test(className)) continue;           // the shadow set
+            const m = Furni.libraryMeta(className);
+            if (!m || !Furni.rotationsOf(className)) continue;
+            const raw = className.toLowerCase();
+            out.push({
+                className, name: className, icon: iconFor(className, state.catalogue.get(className)),
+                sit: false, w: m.x, h: m.y, rotations: rotationCount(className),
+                fromClient: true, noMeta: true,
+                hay: [raw, raw.replace(/_/g, " ")]
+            });
+        }
+
         /* WHICH "Bookcase" IS THIS ONE. Furnidata names a furni for its
            FAMILY, so the pieces that have no catalogue colourway name share
            one between them: six things called Bookcase, sixteen called Chair,

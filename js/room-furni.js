@@ -217,6 +217,27 @@
         return lib[artClass(className)] || lib[className] || lib[baseClass(className)] || null;
     }
 
+    /* THE FOOTPRINT THE CLIENT ITSELF RECORDS.
+
+       119 classes the Origins client ships have no entry in Habbo's furnidata
+       and none at FurniIndex either — `shelves_silo_single`, the whole
+       prizetrophy set, the grand piano, the uncoloured base of half a dozen
+       colourway families. The cast carries their size, because that is how
+       the client draws them, so that is where the footprint comes from when
+       nothing else has one.
+
+       What no source carries is whether they can be SAT on, and the safe
+       answer is no: a piece wrongly called a seat joins the drop sequence and
+       then cannot be sat on, which is a round nobody can finish.
+
+       Both the editor and the game resolve through here, so a piece placed as
+       2x2 in the builder is 2x2 when it is played. */
+    function libraryMeta(className) {
+        const rec = libraryEntry(className);
+        if (!rec) return null;
+        return { x: Math.max(1, Number(rec.x) || 1), y: Math.max(1, Number(rec.y) || 1), sit: 0, stand: 0 };
+    }
+
     function offsetTable(className) {
         const entry = libraryEntry(className);
         if (entry && entry.s) return entry.s;
@@ -1104,7 +1125,7 @@
     window.RoomFurni = {
         SPRITE_BASE, make, tilesOf, covers, blockedTiles, seatAt, anyAt,
         fits, depthOf, sorted, draw, drawAll, outline, sprite, onSpriteLoad,
-        footprint, rotate, rotationsOf, statesOf, anchor, variantAt, librarySprite,
+        footprint, rotate, rotationsOf, statesOf, anchor, variantAt, librarySprite, libraryMeta,
         partsOf, drawPart, depthOfPart, tileDepth, DEPTH_PER_TILE, stateName,
         animates
     };

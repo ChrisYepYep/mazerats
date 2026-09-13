@@ -2212,7 +2212,8 @@
     const playerSprites = new Map();     // className -> [state][rotation]
 
     function metaFor(c) {
-        return Editor ? Editor.metaFor(c) : (playerMeta.get(c) || {});
+        if (Editor) return Editor.metaFor(c);
+        return playerMeta.get(c) || Furni.libraryMeta(c) || {};
     }
     /* { url, flip } — see RoomEditor.spriteFor. A player resolves the same
        question against the handful of sprite grids their levels pulled in, by
