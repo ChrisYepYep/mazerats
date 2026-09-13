@@ -171,6 +171,32 @@ const makeDesigns = require("./ff-levels-designs.js");
 
 const key = (x, y) => `${x},${y}`;
 
+/* HOW FAR A PIECE STANDS ABOVE ITS TILE, in pixels, taken from the client's
+   own artwork: `ay` is where the tile's origin sits inside the sprite, so it
+   is exactly how much of the piece is drawn above the floor.
+
+   This is worth having as a number because "low screen" and "wall" look the
+   same in a class list and nothing else separates them. The barriers the
+   hand-built levels use measure 41 to 51. The Sand Castle Wall is 101 and
+   the Rose Quartz Screen 92, and both were picked here as room dividers on
+   the strength of their names; laid seven times across a room they hid the
+   host booth completely. */
+function standsAbove(className) {
+    const rec = LIB[baseClass(className)];
+    if (!rec || !rec.s) return 0;
+    const byState = rec.s[0] || rec.s[Object.keys(rec.s)[0]];
+    let tallest = 0;
+    for (const d of Object.keys(byState)) {
+        const f = byState[d];
+        if (f && f.ay > tallest) tallest = f.ay;
+    }
+    return tallest;
+}
+/* The hand-built levels' barriers all measure 41 to 51; the pieces that
+   went wrong here were 92, 101 and 122. 70 separates them cleanly. */
+const RUN_MAX_HEIGHT = 70;
+const RUN_LENGTH = 3;           // three in a line is a run
+
 function tilesOf(f, meta) {
     const m = meta[f.className] || {};
     const w = Math.max(1, Number(m.x) || 1), h = Math.max(1, Number(m.y) || 1);
@@ -243,6 +269,29 @@ function validate(level, meta) {
         }
     }
     if (seats > cells) problems.push(`${seats} tiles of furni fall into a zone with only ${cells} free`);
+
+    /* A PIECE LAID IN A RUN HAS TO BE LOW. One tall gate is an archway and
+       reads as the way in — level 7 has a 104px one standing in front of most
+       of its floor and it looks right. The same height repeated four times
+       across the room is a wall, and everything behind it is gone. */
+    const lines = new Map();        // className -> {"y3": n, "x0": n, ...}
+    for (const d of level.decor || []) {
+        if (/^queue_tile|^doormat/.test(d.className)) continue;     // flat, walkable
+        if (!lines.has(d.className)) lines.set(d.className, new Map());
+        const m = lines.get(d.className);
+        for (const k of ["y" + d.y, "x" + d.x]) m.set(k, (m.get(k) || 0) + 1);
+    }
+    for (const [className, m] of lines) {
+        /* COLLINEAR is what makes it a run. Level 7 has four candelabra in
+           it, one to a corner, and they are punctuation — repetition alone
+           is not the test, four of them down one row would be. */
+        const longest = Math.max(...m.values());
+        if (longest < RUN_LENGTH) continue;
+        const h = standsAbove(className);
+        if (h > RUN_MAX_HEIGHT) {
+            problems.push(`${className} stands ${h}px above the floor and is laid ${longest} in a line — that is a wall, not a divider`);
+        }
+    }
 
     // reachability: can the player walk from start to every free tile of the zone?
     const seen = new Set([key(s.x, s.y)]);

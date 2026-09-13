@@ -35,11 +35,21 @@ const NEUTRAL = {
        plant" — the cabin rooms, which have a real Corner Post, say so. */
     corner: null,
     narrow: null,
-    /* What caps a run when the line has no post of its own. A big plant,
-       which is what levels 17 and 18 use — NOT the room's decorative
-       plant, or a cactus theme ends up with a hedge of cacti for
-       gateposts. */
-    post: "plant_yukka",
+    /* WHAT CAPS A RUN, and it should be FURNITURE. Capping with a plant is
+       what levels 17 and 18 do, but they are polyfon rooms where the right
+       answer is the Corner Cabinet and nobody had noticed it existed. Doing
+       it everywhere put six plants in the average generated room against the
+       hand-tuned average of under two — which is the same "too many plants"
+       this has been pulled up on twice. Nearly every line ships a corner
+       piece; the ones that do not are the outdoor rooms, where a plant is
+       right anyway. null means no cap at all: the screens run to the wall,
+       the way levels 19 and 20 do it. */
+    post: "divider_silo1",           // Corner Shelf — same line as the Screen
+    /* Something standing ON the counter. Only the rooms whose barrier is
+       an actual bar get one — levels 7 and 10 put ducks on their tables and
+       it is what makes a booth look worked in rather than laid out, but a
+       bottle balanced on a fence rail would just read as a bug. */
+    trinket: null,
     mat: "doormat_plain*205",       // the queue ends on a mat at the gate
     roller: "queue_tile1*5",
     lamp: "lamp_armas",
@@ -129,7 +139,7 @@ const THEMES = [
         level: 17, name: "Marrs Green Lounge", mat: "doormat_plain*242", roller: "queue_tile1*5",
         seats: ["funky_sofa_polyfon*1", "funky_sofachair_polyfon*1", "chair_polyfon"],
         decoy: "funky_sofachair_polyfon*6", obstacle: "plant_small_cactus",
-        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
+        trinket: "exe_drinks", post: "bardeskcorner_polyfon", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_polyfon", lamp: "lamp_armas",
         floor: { pattern: "wood", colour: 301 }, wall: { pattern: "half1", colour: 605 }
     },
@@ -137,7 +147,7 @@ const THEMES = [
         level: 18, name: "Sunshine Lounge", mat: "doormat_plain*247", roller: "queue_tile1*4",
         seats: ["funky_sofa_polyfon*6", "funky_sofachair_polyfon*6", "sofachair_polyfon"],
         decoy: "funky_sofachair_polyfon*8", obstacle: "plant_small_cactus",
-        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
+        trinket: "exe_drinks", post: "bardeskcorner_polyfon", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_polyfon", lamp: "lamp2_armas",
         floor: { pattern: "wood", colour: 305 }, wall: { pattern: "stripes", colour: 506 }
     },
@@ -145,7 +155,7 @@ const THEMES = [
         level: 19, name: "Mint Lounge", mat: "doormat_plain*220", roller: "queue_tile1*3",
         seats: ["funky_sofa_polyfon*8", "funky_sofachair_polyfon*8", "chair_polyfon"],
         decoy: "funky_sofachair_polyfon*10", obstacle: "plant_big_cactus",
-        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
+        trinket: "exe_drinks", post: "bardeskcorner_polyfon", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_polyfon", lamp: "lamp_armas",
         floor: { pattern: "wood", colour: 304 }, wall: { pattern: "stripes", colour: 507 }
     },
@@ -153,7 +163,7 @@ const THEMES = [
         level: 20, name: "Magenta Lounge", mat: "doormat_plain*238", roller: "queue_tile1*1006", plant: "plant_bonsai_p",
         seats: ["funky_sofa_polyfon*10", "funky_sofachair_polyfon*10", "sofachair_polyfon"],
         decoy: "funky_sofachair_polyfon*1", obstacle: "plant_small_cactus",
-        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
+        trinket: "exe_drinks", post: "bardeskcorner_polyfon", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_polyfon", lamp: "lamp2_armas",
         floor: { pattern: "wood", colour: 306 }, wall: { pattern: "stripes", colour: 502 }
     },
@@ -163,15 +173,15 @@ const THEMES = [
         level: 21, name: "Pura Bedsit",
         seats: ["sofa_polyfon_girl", "sofachair_polyfon_girl", "chair_polyfon"],
         decoy: "sofachair_polyfon", obstacle: "plant_yukka",
-        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
+        trinket: "exe_drinks", post: "bardeskcorner_polyfon", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_polyfon", lamp: "lamp_armas",
-        floor: { pattern: "wood", colour: 307 }, wall: { pattern: "half2", colour: 704 }
+        floor: { pattern: "wood", colour: 307 }, wall: { pattern: "half2", colour: 707 }
     },
     {
         level: 22, name: "Dark Polyfon Studio",
         seats: ["sofa_dpolyfon*1", "sofachair_dpolyfon*1", "chair_polyfon"],
         decoy: "sofachair_dpolyfon*2", obstacle: "bar_dpolyfon*1",
-        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
+        trinket: "exe_drinks", post: "bardeskcorner_polyfon", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_dpolyfon*1", lamp: "lamp2_armas",
         floor: { pattern: "wood", colour: 303 }, wall: { pattern: "half1", colour: 603 }
     },
@@ -179,7 +189,7 @@ const THEMES = [
         level: 23, name: "The Anniversary Suite",
         seats: ["sofa_dpolyfon*2", "sofachair_dpolyfon*2", "sofachair_polyfon"],
         decoy: "sofachair_dpolyfon*11", obstacle: "bar_dpolyfon*1",
-        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
+        trinket: "exe_drinks", post: "bardeskcorner_polyfon", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_dpolyfon*1", lamp: "lamp_armas",
         floor: { pattern: "wood", colour: 302 }, wall: { pattern: "half1", colour: 607 }
     },
@@ -187,9 +197,9 @@ const THEMES = [
         level: 24, name: "Black Polyfon Loft",
         seats: ["sofa_dpolyfon*11", "sofachair_dpolyfon*11", "chair_polyfon"],
         decoy: "sofachair_dpolyfon*1", obstacle: "plant_yukka",
-        post: "plant_pineapple", screen: "bardesk_polyfon", gate: "divider_poly3",
+        trinket: "exe_drinks", post: "bardeskcorner_polyfon", screen: "bardesk_polyfon", gate: "divider_poly3",
         tall: "shelves_dpolyfon*1", lamp: "lamp2_armas",
-        floor: { pattern: "tiles5", colour: 603 }, wall: { pattern: "half3", colour: 805 }
+        floor: { pattern: "tiles5", colour: 603 }, wall: { pattern: "half3", colour: 807 }
     },
 
     /* ---- plasto and plasty: one shape, a great many colours, so the
@@ -198,28 +208,28 @@ const THEMES = [
         level: 25, name: "Plasto Citrus",
         seats: ["bench_autumn", "chair_plasto*101", "chair_plasto*102"],
         decoy: "chair_plasto*103", obstacle: "plant_small_cactus",
-        tall: "shelves_polyfon", lamp: "lamp_armas", plant: "plant_pineapple",
-        floor: { pattern: "plain", colour: 107 }, wall: { pattern: "lively", colour: 101 }
+        screen: "divider_arm2", post: "divider_arm1", gate: "divider_arm3", tall: "shelves_polyfon", lamp: "lamp_armas", plant: "plant_pineapple",
+        floor: { pattern: "plain", colour: 110 }, wall: { pattern: "lively", colour: 101 }
     },
     {
         level: 26, name: "Plasto Forest",
         seats: ["bench_autumn", "chair_plasto*104", "chair_plasto*109"],
         decoy: "chair_plasto*117", obstacle: "plant_small_cactus",
-        tall: "shelves_polyfon", lamp: "lamp2_armas", plant: "giftflowers",
+        screen: "divider_arm2", post: "divider_arm1", gate: "divider_arm3", tall: "shelves_polyfon", lamp: "lamp2_armas", plant: "giftflowers",
         floor: { pattern: "plain", colour: 111 }, wall: { pattern: "lively", colour: 107 }
     },
     {
         level: 27, name: "Pod Room Gold",
         seats: ["sofa_silo2*5", "chair_plasty*101", "chair_plasty*103"],
         decoy: "chair_plasty*102", obstacle: "plant_big_cactus",
-        tall: "shelves_silo", lamp: "lamp_armas", plant: "plant_small_cactus",
+        screen: "divider_silo2", post: "divider_silo12*5", gate: "divider_silo32*5", tall: "shelves_silo", lamp: "lamp_armas", plant: "plant_small_cactus",
         floor: { pattern: "plain", colour: 101 }, wall: { pattern: "lively", colour: 102 }
     },
     {
         level: 28, name: "Pod Room Moss",
         seats: ["sofa_silo2*5", "chair_plasty*105", "chair_plasty*109"],
         decoy: "chair_plasty*117", obstacle: "plant_big_cactus",
-        tall: "shelves_silo", lamp: "lamp2_armas", plant: "plant_small_cactus",
+        screen: "divider_silo2", post: "divider_silo12*5", gate: "divider_silo32*5", tall: "shelves_silo", lamp: "lamp2_armas", plant: "plant_small_cactus",
         floor: { pattern: "plain", colour: 102 }, wall: { pattern: "plain", colour: 216 }
     },
 
@@ -228,14 +238,14 @@ const THEMES = [
         level: 29, name: "Summer Barbecue",
         seats: ["bench_armas", "summer_chair*1", "summer_chair*3"],
         decoy: "summer_chair*2", obstacle: "summer_grill*1", poi: "summer_chair*8",
-        tall: null, lamp: "lamp_armas", plant: "plant_pineapple",
+        post: "country_corner", screen: "country_fnc2", gate: "divider_arm3", tall: null, lamp: "lamp_armas", plant: "plant_pineapple",
         floor: { pattern: "fuzzy", colour: 201 }, wall: { pattern: "bubbles1", colour: 2801 }
     },
     {
         level: 30, name: "Summer Poolside",
         seats: ["bench_armas", "summer_chair*6", "summer_chair*7"],
         decoy: "summer_chair*9", obstacle: "summer_blaster", poi: "summer_chair*4",
-        tall: null, lamp: "lamp2_armas", plant: "plant_pineapple",
+        post: "country_corner", screen: "divider_arm2", gate: "divider_arm3", tall: null, lamp: "lamp2_armas", plant: "plant_pineapple",
         floor: { pattern: "fuzzy", colour: 202 }, wall: { pattern: "bubbles2", colour: 2903 }
     },
 
@@ -244,7 +254,7 @@ const THEMES = [
         level: 31, name: "Armas Bar",
         seats: ["bench_armas", "bar_chair_armas", "small_chair_armas"],
         decoy: "cabin_bar_chair_armas", obstacle: "bar_armas", poi: "cabin_bench_armas",
-        tall: "shelves_armas", lamp: "lamp_armas",
+        screen: "cabin_divider_arm2", post: "cabin_divider_arm1", gate: "cabin_divider_arm3", tall: "shelves_armas", lamp: "lamp_armas",
         floor: { pattern: "wood", colour: 302 }, wall: { pattern: "half1", colour: 605 }
     },
     {
@@ -269,14 +279,14 @@ const THEMES = [
         seats: ["sofa_silo2*5", "sofachair_silo2*5", "chair_silo2*5"],
         decoy: "barchair_silo2*5", obstacle: "safe_silo2*5",
         corner: "divider_silo12*5", gate: "divider_silo32*5",
-        tall: "shelves_silo", lamp: "lamp2_armas", plant: "giftflowers",
+        post: "divider_silo12*5", screen: "divider_silo2", gate: "divider_silo32*5", tall: "shelves_silo", lamp: "lamp2_armas", plant: "giftflowers",
         floor: { pattern: "tiles5", colour: 604 }, wall: { pattern: "plain", colour: 204 }
     },
     {
         level: 35, name: "Executive Suite",
         seats: ["exe_sofa", "exe_chair", "exe_chair2"],
         decoy: "chair_silo", obstacle: "exe_drinks", poi: "exe_bath",
-        tall: "shelves_armas", lamp: "lamp2_armas", plant: "exe_yukka",
+        trinket: "exe_drinks", post: "exe_corner", screen: "lc_desk", gate: "divider_arm3", tall: "shelves_armas", lamp: "lamp2_armas", plant: "exe_yukka",
         floor: { pattern: "tiles2", colour: 401 }, wall: { pattern: "plain", colour: 204 }
     },
 
@@ -285,14 +295,14 @@ const THEMES = [
         level: 36, name: "Arabian Nights",
         seats: ["hcsohva", "hc_arab_chair", "hc_arab_pllw"],
         decoy: "arabian_chair", obstacle: "hc_arab_snake", poi: "hc_chr",
-        tall: null, lamp: "hc_lmp", plant: "plant_bonsai",
+        post: "pillar*0", tall: null, lamp: "hc_lmp", plant: "plant_bonsai",
         floor: { pattern: "tiles2", colour: 408 }, wall: { pattern: "ornament3", colour: 2701 }
     },
     {
         level: 37, name: "Grunge Basement",
         seats: ["grunge_bench", "grunge_chair", "pillow*0"],
         decoy: "chair_plasto*14", obstacle: "grunge_barrel", poi: "grunge_mattress",
-        tall: "grunge_shelf", lamp: "grunge_candle", plant: null,
+        screen: "deepgrove_divider", post: "deepgrove_bound_pillar", gate: "divider_arm3", tall: "grunge_shelf", lamp: "grunge_candle", plant: null,
         floor: { pattern: "plain", colour: 111 }, wall: { pattern: "color_brick1", colour: 1801 }
     },
     {
@@ -300,7 +310,7 @@ const THEMES = [
         seats: ["romantique_divan*1", "romantique_chair*1", "romantique_pianochair*1"],
         decoy: "chair_frostframe", obstacle: "romantique_smalltabl*1",
         screen: "romantique_divider*1",
-        lamp: "lamp_armas", plant: "giftflowers",
+        screen: "divider_arm2", post: "divider_arm1", gate: "divider_arm3", lamp: "lamp_armas", plant: "giftflowers",
         floor: { pattern: "wood", colour: 307 }, wall: { pattern: "ornament1", colour: 2503 }
     },
 
@@ -309,21 +319,21 @@ const THEMES = [
         level: 39, name: "Cushion Den",
         seats: ["heartsofa", "pillow*1", "pillow*5"],
         decoy: "pillow*9", obstacle: "plant_bonsai",
-        tall: null, lamp: "hc_lmp", plant: "plant_bonsai",
-        floor: { pattern: "fuzzy", colour: 206 }, wall: { pattern: "half3", colour: 803 }
+        post: "divider_silo1", screen: "divider_silo2", gate: "divider_silo3", tall: null, lamp: "hc_lmp", plant: "plant_bonsai",
+        floor: { pattern: "fuzzy", colour: 206 }, wall: { pattern: "half3", colour: 810 }
     },
     {
         level: 40, name: "Damaged Goods",
         seats: ["heartsofa3", "dmg_pillow*2", "dmg_pillow*8"],
         decoy: "dmg_pillow*5", obstacle: "grunge_barrel",
-        tall: "grunge_shelf", lamp: "grunge_candle", plant: null,
+        screen: "deepgrove_divider", post: "deepgrove_bound_pillar", gate: "divider_arm3", tall: "grunge_shelf", lamp: "grunge_candle", plant: null,
         floor: { pattern: "plain", colour: 102 }, wall: { pattern: "color_brick2", colour: 1902 }
     },
     {
         level: 41, name: "Picnic Lawn",
         seats: ["country_log", "picnic_pillow", "picnic_pillow_blu"],
         decoy: "picnic_pillow_yel", obstacle: "plant_pineapple", poi: "tiki_bench",
-        tall: null, lamp: "lamp_armas", plant: "plant_yukka",
+        post: "country_corner", screen: "country_fnc2", gate: "divider_arm3", tall: null, lamp: "lamp_armas", plant: "plant_yukka",
         floor: { pattern: "fuzzy", colour: 201 }, wall: { pattern: "lively", colour: 106 }
     },
 
@@ -332,14 +342,14 @@ const THEMES = [
         level: 42, name: "Urban Yard",
         seats: ["urban_carsofa", "rclr_chair", "chair_plasto*109"],
         decoy: "chair_plasty*109", obstacle: "grunge_barrel",
-        tall: "grunge_shelf", lamp: "hockey_light", plant: "plant_big_cactus",
+        screen: "country_fnc2", post: "country_corner", gate: "divider_arm3", tall: "grunge_shelf", lamp: "hockey_light", plant: "plant_big_cactus",
         floor: { pattern: "plain", colour: 102 }, wall: { pattern: "color_stripes1", colour: 1501 }
     },
     {
         level: 43, name: "Retro Colour",
         seats: ["rclr_sofa", "rclr_chair", "lc_chair"],
         decoy: "lc_stool", obstacle: "plant_small_cactus",
-        tall: "shelves_silo", lamp: "lamp2_armas", plant: "giftflowers",
+        trinket: "exe_drinks", post: "lc_corner", screen: "lc_desk", gate: "divider_arm3", tall: "shelves_silo", lamp: "lamp2_armas", plant: "giftflowers",
         floor: { pattern: "plain", colour: 108 }, wall: { pattern: "color_stripes3", colour: 1701 }
     },
     {
@@ -354,37 +364,37 @@ const THEMES = [
         level: 45, name: "Autumn Terrace",
         seats: ["bench_autumn", "stool_autumn", "chair_frostframe"],
         decoy: "chair_china", obstacle: "plant_yukka",
-        screen: "cabin_divider_arm2", gate: "cabin_divider_arm3", corner: "cabin_divider_arm1", narrow: "cabin_divider_arm1",
-        tall: "cabin_shelves_armas", lamp: "lamp_armas", plant: "plant_bonsai",
-        floor: { pattern: "tiles3", colour: 501 }, wall: { pattern: "half2", colour: 708 }
+        screen: "divider_autumn", gate: "cabin_divider_arm3", corner: "cabin_divider_arm1", narrow: "cabin_divider_arm1",
+        post: "cabin_divider_arm1", tall: "cabin_shelves_armas", lamp: "lamp_armas", plant: "plant_bonsai",
+        floor: { pattern: "tiles3", colour: 501 }, wall: { pattern: "half2", colour: 710 }
     },
     {
         level: 46, name: "Valentine Lounge",
         seats: ["heartsofa1", "pillow*1014", "pillow*1019"],
         decoy: "pillow*1021", obstacle: "giftflowers", poi: "heartsofaR",
-        screen: "valentinescreen",
-        tall: null, lamp: "lamp_armas", plant: "giftflowers",
+        trinket: "exe_drinks", post: "lc_corner", screen: "valentinescreen",
+        screen: "lc_desk", gate: "divider_arm3", tall: null, lamp: "lamp_armas", plant: "giftflowers",
         floor: { pattern: "fuzzy", colour: 206 }, wall: { pattern: "plain", colour: 203 }
     },
     {
         level: 47, name: "The Studio Lot",
         seats: ["heartsofa5", "habbowood_chair", "wrapped_chair"],
         decoy: "c25_easter_chair", obstacle: "plant_big_cactus",
-        tall: "shelves_armas", lamp: "hockey_light", plant: "plant_yukka",
-        floor: { pattern: "tiles2", colour: 409 }, wall: { pattern: "color_stripes2", colour: 1601 }
+        screen: "divider_arm2", post: "divider_arm1", gate: "divider_arm3", tall: "shelves_armas", lamp: "hockey_light", plant: "plant_yukka",
+        floor: { pattern: "tiles2", colour: 401 }, wall: { pattern: "color_stripes2", colour: 1601 }
     },
     {
         level: 48, name: "The Sports Bar",
         seats: ["fball_bench", "bar_chair_armas", "sandseat"],
         decoy: "small_chair_armas", obstacle: "bar_armas", poi: "cabin_bar_chair_armas",
-        tall: "shelves_armas", lamp: "hockey_light",
+        trinket: "exe_drinks", screen: "lc_desk", post: "lc_corner", gate: "divider_arm3", tall: "shelves_armas", lamp: "hockey_light",
         floor: { pattern: "fuzzy", colour: 201 }, wall: { pattern: "color_invaders", colour: 2301 }
     },
     {
         level: 49, name: "The Club Floor",
         seats: ["hcsohva", "hc_chr", "throne"],
         decoy: "chair_silo", obstacle: "hc_arab_snake", poi: "hc_arab_chair",
-        tall: "shelves_silo", lamp: "hc_lmp", plant: "plant_bonsai",
+        trinket: "exe_drinks", post: "pillar*0", screen: "lc_desk", gate: "divider_arm3", tall: "shelves_silo", lamp: "hc_lmp", plant: "plant_bonsai",
         floor: { pattern: "tiles5", colour: 610 }, wall: { pattern: "half3", colour: 801 }
     }
 ];

@@ -44,6 +44,30 @@ module.exports = function makeShells(H, meta) {
     /* How wide a piece is laid across a room, in tiles. */
     const wide = (cls) => Math.max(1, Number((meta[cls] || {}).x) || 1);
 
+    /* Screens laid end to end from x0 to x1, with any tile they cannot pair
+       up placed HALFWAY along rather than at the end — at the end it lands
+       beside the closing cap and you get two posts touching; halfway it reads
+       as a pilaster, which is what level 9's wall does. */
+    function fill(T, x0, x1, y) {
+        const out = [];
+        const w = wide(T.screen);
+        const span = x1 - x0 + 1;
+        const screens = Math.floor(span / w);
+        const spareAfter = span % w ? Math.ceil(screens / 2) : -1;
+        let x = x0;
+        for (let i = 0; i < screens; i++) {
+            if (i === spareAfter) { out.push(odd(T, x, y)); x += 1; }
+            out.push(at(T.screen, x, y, facing(T.screen, FRONT)));
+            x += w;
+        }
+        while (x <= x1) { out.push(odd(T, x, y)); x += 1; }
+        return out;
+    }
+    /* What goes on a tile too narrow for a screen: the line's post if it has
+       one, otherwise its gate piece, which is the same width and the same
+       set. */
+    const odd = (T, x, y) => at(T.corner || T.gate, x, y, facing(T.corner || T.gate, FRONT));
+
     const post = (T, x, y) => at(T.corner, x, y, facing(T.corner, FRONT));
 
     /* A BARRIER ACROSS THE ROOM, x0 to x1 inclusive: a corner post, screens
@@ -52,25 +76,24 @@ module.exports = function makeShells(H, meta) {
        eleven-wide room comes out as post, four screens, post, gate — the way
        level 7 was rebuilt — with no special case for it. */
     function wall(T, x0, x1, y, gate) {
+        /* With no post the run simply reaches the wall at both ends, which is
+           how levels 19 and 20 are built. The caps are decoration, not
+           structure, and inventing one out of a plant is what put a hedge in
+           every room. */
+        if (!T.corner) {
+            const out = [];
+            const lo = gate === "low" ? x0 + 1 : x0;
+            const hi = gate === "high" ? x1 - 1 : x1;
+            if (gate === "low") out.push(at(T.gate, x0, y, facing(T.gate, FRONT)));
+            out.push(...fill(T, lo, hi, y));
+            if (gate === "high") out.push(at(T.gate, x1, y, facing(T.gate, FRONT)));
+            return out;
+        }
         const cap = (x, isGate) => (isGate
             ? at(T.gate, x, y, facing(T.gate, FRONT))
             : post(T, x, y));
         const out = [cap(x0, gate === "low")];
-        const w = wide(T.screen);
-        const inner = x1 - x0 - 1;                 // tiles between the two caps
-        const screens = Math.floor(inner / w);
-        /* Where the spare tile goes when the screens do not divide the run.
-           At the END it lands beside the closing cap and you get two posts
-           touching; halfway along it reads as a pilaster, which is what
-           level 9's wall does. */
-        const spareAfter = inner % w ? Math.ceil(screens / 2) : -1;
-        let x = x0 + 1;
-        for (let i = 0; i < screens; i++) {
-            if (i === spareAfter) { out.push(post(T, x, y)); x += 1; }
-            out.push(at(T.screen, x, y, facing(T.screen, FRONT)));
-            x += w;
-        }
-        while (x <= x1 - 1) { out.push(post(T, x, y)); x += 1; }
+        out.push(...fill(T, x0 + 1, x1 - 1, y));
         out.push(cap(x1, gate === "high"));
         return out;
     }
@@ -109,7 +132,13 @@ module.exports = function makeShells(H, meta) {
                 out.push(at(c, x, y, facing(c, BACK)));
                 x += w;
             }
-            for (; x <= x1; x++) out.push(...plant(x, y));
+            /* Whatever is left of that stretch of wall gets the line's corner
+               piece, not a plant. A palm is 141px and three of them along a
+               back wall is a hedge — which is the note this has been given
+               twice, and filling leftovers was where it kept creeping back
+               in. The corner pieces are all short and all belong to the set
+               the room is dressed from. */
+            for (; x <= x1; x++) out.push(at(T.corner, x, y, facing(T.corner, FRONT)));
             return out;
         }
 
@@ -118,17 +147,22 @@ module.exports = function makeShells(H, meta) {
         function tallRow(x0, x1, y) {
             if (T.tall) {
                 const out = []; const w = wide(T.tall);
-                for (let x = x0; x + w - 1 <= x1; x += w) out.push(at(T.tall, x, y, facing(T.tall, BACK)));
+                let x = x0;
+                for (; x + w - 1 <= x1; x += w) out.push(at(T.tall, x, y, facing(T.tall, BACK)));
+                // and whatever the bookcases cannot divide, so the wall is full
+                for (; x <= x1; x++) out.push(at(T.corner, x, y, facing(T.corner, FRONT)));
                 return out;
             }
-            const out = [];
-            for (let x = x1; x >= x0; x--) out.push(...plant(x, y));
-            return out;
+            return plant(x1, y);        // one, at the corner — not a hedge
         }
 
         const tallLeft = (x, y) => (T.tall ? leftRun(T.tall, x, y, 1, 2) : lamp(x, y));
 
-        return { lamp, plant, booth, tallRow, tallLeft };
+        /* z is the height it sits at, so 1 puts it on top of whatever the
+           tile already holds rather than colliding with it. */
+        const trinket = (x, y) => (T.trinket ? [at(T.trinket, x, y, 0, { z: 1 })] : []);
+
+        return { lamp, plant, booth, tallRow, tallLeft, trinket };
     }
 
     /* ---------------------------------------------------------------
@@ -145,6 +179,7 @@ module.exports = function makeShells(H, meta) {
                 ...d.lamp(4, 0),
                 ...d.booth([0, 1, 2], 5, 8, 0),
                 ...d.plant(9, 0),
+                ...d.trinket(1, 1),
                 ...wall(T, 0, 9, 1, null),
                 ...queueX(T, 0, 2, 10),
                 ...wall(T, 0, 9, 3, "high"),
@@ -167,6 +202,7 @@ module.exports = function makeShells(H, meta) {
                 ...d.booth([0, 1, 2], 0, 3, 0),
                 ...d.lamp(4, 0),
                 ...d.tallRow(5, 9, 0),
+                ...d.trinket(1, 1),
                 ...wall(T, 0, 9, 1, null),
                 ...queueX(T, 0, 2, 10),
                 ...wall(T, 0, 9, 3, "high"),
@@ -195,6 +231,7 @@ module.exports = function makeShells(H, meta) {
                 ...d.plant(7, 0),
                 ...d.lamp(1, 1),
                 ...d.lamp(7, 1),
+                ...d.trinket(1, 3),
                 ...wall(T, 0, 7, 3, null),
                 ...queueX(T, 0, 4, 8),
                 ...wall(T, 0, 7, 5, "high")
@@ -218,6 +255,7 @@ module.exports = function makeShells(H, meta) {
                 ...Array.from({ length: 7 }, (_, i) => at(T.mat, 4 + i, 1, 0)),
                 /* and the booth's front wall at row 3, not row 1 — which
                    gives the hosts a room to stand in rather than a ledge. */
+                ...d.trinket(5, 3),
                 ...wall(T, 4, 10, 3, null),
                 ...queueX(T, 0, 4, 11),
                 ...wall(T, 0, 10, 5, "high"),
@@ -242,6 +280,7 @@ module.exports = function makeShells(H, meta) {
             decor: [
                 ...d.plant(6, 0),
                 ...d.booth([0], 7, 9, 0),
+                ...d.trinket(7, 1),
                 ...wall(T, 6, 9, 1, null),
                 ...queueX(T, 2, 2, 8),
                 /* The wall comes up to row 3, so the middle terrace is floor
@@ -263,16 +302,26 @@ module.exports = function makeShells(H, meta) {
     function classicLong(T) {
         const d = dresser(T);
         return {
-            zoneName: "The floor", zone: { x: 2, y: 2, w: 6, h: 11 },
+            /* Level 14's plan. The queue starts BELOW the booth rather than
+               beside it, which frees the whole eight-tile back wall for
+               seating — the version this replaced gave the booth three tiles
+               and left the room looking unfurnished next to sixty-six tiles
+               of floor. */
+            zoneName: "The floor", zone: { x: 2, y: 3, w: 6, h: 10 },
             start: { x: 2, y: 12 }, startDir: 2,
             decor: [
-                ...d.tallRow(2, 3, 0),
-                ...d.booth([0, 1, 2], 4, 6, 0),
+                ...d.tallLeft(0, 0),
+                ...d.booth([0, 1, 2], 1, 6, 0),
                 ...d.lamp(7, 0),
-                ...wall(T, 2, 7, 1, null),
-                ...queueY(T, 0, 0, 13),
-                ...wallDown(T, 1, 0, 12, "high"),
-                ...d.plant(7, 2)
+                ...d.trinket(1, 2),
+                ...wall(T, 0, 7, 2, null),
+                ...queueY(T, 0, 3, 10),
+                ...wallDown(T, 1, 3, 12, "high"),
+                /* Both of these go at the BACK of the floor. (7,12) is the
+                   frontmost tile in a Classic room and a 141px palm standing
+                   there is drawn over the entire game. */
+                ...d.lamp(7, 3),
+                ...d.plant(2, 3)
             ]
         };
     }
@@ -289,6 +338,7 @@ module.exports = function makeShells(H, meta) {
             decor: [
                 ...d.booth([0, 1, 2], 6, 8, 0),
                 ...d.lamp(9, 0),
+                ...d.trinket(7, 1),
                 ...wall(T, 6, 9, 1, null),
                 ...queueY(T, 2, 2, 8),
                 ...wallDown(T, 3, 2, 9, "high"),
@@ -311,14 +361,20 @@ module.exports = function makeShells(H, meta) {
             zoneName: "The floor", zone: { x: 4, y: 0, w: 7, h: 10 },
             start: { x: 4, y: 4 }, startDir: 2,
             decor: [
-                ...d.tallRow(4, 7, 0),
-                ...d.lamp(8, 0),
+                /* The arm is floor, so its back wall is the only place in
+                   that half of the room anything can stand. Leaving it to two
+                   bookcases left twenty-one tiles of void between the hosts'
+                   pocket and the rest of the room; the big seat goes here. */
+                ...d.tallRow(4, 5, 0),
+                ...d.booth([0], 6, 8, 0),
+                ...d.lamp(9, 0),
                 ...d.plant(10, 0),
                 ...queueX(T, 0, 4, 3),
                 at(T.gate, 3, 4, facing(T.gate, LEFT)),
+                ...d.trinket(1, 5),
                 ...wall(T, 0, 3, 5, null),
                 ...wallDown(T, 3, 6, 9, null),
-                ...d.lamp(0, 6),
+                ...d.lamp(10, 3),
                 at(T.seats[1], 0, 7, facing(T.seats[1], LEFT)),
                 at(T.seats[2], 0, 8, facing(T.seats[2], LEFT)),
                 ...d.plant(0, 9)
