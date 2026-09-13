@@ -106,8 +106,28 @@
        A name resolves one of two ways, and the order matters: the client's
        own artwork out of js/furni-library.js if it is there, and otherwise
        one of the flat picture sets below. `club_sofa` has no library entry
-       at all — this client ships only its 30x26 catalogue icon — so the
-       pictures are the only way it can appear. */
+       at all, so the pictures are the only way it can appear.
+
+       AND IT IS NOT THAT HABBO NEVER DREW IT. Searched on 13 Sep 2026, every
+       cast in this build carries exactly one thing called club_sofa: a 30x26
+       catalogue thumbnail, green with yellow cushions, matching FurniIndex's
+       published render exactly. The ROOM art is in none of them — not by name,
+       not by silhouette against that render (the nearest is `hcsohva`, an
+       orange chaise longue, at 76%), not by colour.
+
+       It is DOWNLOADED ON DEMAND. hh_dynamic_downloader.cct sets
+
+           dynamic.download.url            "dynamic_content/"
+           dynamic.download.name.template  "hh_furni_xx_%typeid%.cct"
+
+       so a furni the client does not ship is fetched per type id when a room
+       first needs it — club_sofa is type 240, i.e. hh_furni_xx_240.cct. 134
+       classes in this build have a thumbnail and no room art for that reason.
+       Nothing has ever been downloaded onto this machine, and the base those
+       relative paths hang off comes from the server at runtime rather than
+       from any cast, so it cannot be read out of the files. The way to get it
+       is to open a room containing one in the real client and take the cast
+       it pulls down. */
     const DEFAULT_FURNI = ["throne", "club_sofa"];
 
     const IMAGE_ONLY = {
