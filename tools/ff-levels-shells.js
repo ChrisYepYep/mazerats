@@ -231,6 +231,8 @@ module.exports = function makeShells(H, meta) {
                 ...d.plant(7, 0),
                 ...d.lamp(1, 1),
                 ...d.lamp(7, 1),
+                // a runner of mats down the booth, the way level 19 has it
+                ...Array.from({ length: 5 }, (_, i) => at(T.mat, 2 + i, 1, 0)),
                 ...d.trinket(1, 3),
                 ...wall(T, 0, 7, 3, null),
                 ...queueX(T, 0, 4, 8),
@@ -314,6 +316,8 @@ module.exports = function makeShells(H, meta) {
                 ...d.booth([0, 1, 2], 1, 6, 0),
                 ...d.lamp(7, 0),
                 ...d.trinket(1, 2),
+                // a runner of mats down the booth, the way level 19 has it
+                ...Array.from({ length: 6 }, (_, i) => at(T.mat, 1 + i, 1, 0)),
                 ...wall(T, 0, 7, 2, null),
                 ...queueY(T, 0, 3, 10),
                 ...wallDown(T, 1, 3, 12, "high"),
