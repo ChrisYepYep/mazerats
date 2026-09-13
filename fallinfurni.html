@@ -180,19 +180,6 @@
              that the swap is one attribute on <body> and a CSS rule, with no
              window in which a half-built notice could be on screen. The game
              is what shows until something says otherwise. -->
-        <section class="ff-closed" id="ff-closed">
-            <div class="chrome-window">
-                <div class="chrome-titlebar chrome-titlebar-plain"></div>
-                <div class="ff-closed-inner">
-                    <h2>Back shortly</h2>
-                    <p>
-                        Fallin' Furni is having some work done. The rest of the
-                        archive is open as usual.
-                    </p>
-                    <a class="ff-closed-link" href="home.html">Back to Maze Rats</a>
-                </div>
-            </div>
-        </section>
 
         <div class="ff-layout">
             <!-- The room. Rendered at its exact pixel size: this is pixel art,
@@ -304,6 +291,10 @@
                     <div class="ff-title ff-play-only" id="ff-title" data-state="loading">
                         <div class="ff-title-inner">
                             <h2>Fallin' Furni</h2>
+                            <!-- Shown only while the game is closed. The room
+                                 behind the title still loads and still draws;
+                                 what is taken away is the way in. -->
+                            <p class="ff-title-maint" id="ff-title-maint">Maintenance, back soon!</p>
                             <p class="ff-title-sub">Sit on every seat in the order it lands, before the clock runs out!</p>
 
                             <form id="ff-name-form" class="ff-title-form" autocomplete="off">

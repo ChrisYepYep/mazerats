@@ -1281,47 +1281,39 @@ body:not(.is-editing) .ff-guides { display: none; }
    sets on <body>. Everything defaults to the game showing: with no attribute —
    script blocked, request failed, nobody signed in to close it — these rules
    do not apply and the page is exactly what it was. */
-.ff-closed { display: none; }
+/* THE GAME STAYS UP WHILE IT IS CLOSED.
 
-body[data-ff-closed] .ff-layout { display: none; }
-body[data-ff-closed] .ff-closed { display: block; }
+   It used to swap the whole game area for a separate notice panel, which
+   meant a visitor arriving during maintenance saw a box of text and no
+   game at all. The room behind the title loads and draws either way -- it
+   is the nicest thing on the page -- so the game is left exactly where it
+   is and only the way IN is taken away.
 
-/* Same window the game sits in, so the page still looks like itself rather
-   than like an error. */
-.ff-closed .chrome-window { width: max-content; max-width: 100%; }
+   Everything here defaults to the game being open: with no attribute on
+   <body> -- script blocked, request failed, nobody signed in to close it --
+   none of these rules apply and the page is what it always was. */
+.ff-title-maint { display: none; }
 
-.ff-closed-inner {
-    padding: 22px 26px 24px;
-    max-width: 46ch;
-}
-
-.ff-closed-inner h2 {
+/* The title's own face and colour, a size down, so it reads as the second
+   line of the title rather than as a message bolted underneath one. */
+body[data-ff-closed] .ff-title-maint {
+    display: block;
     font-family: "Silkscreen", "Pixelify Sans", monospace;
-    font-size: 18px;
-    letter-spacing: 0.02em;
     color: var(--amber-bright);
-    margin: 0 0 10px;
+    font-size: 17px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+    margin: 0 0 14px;
 }
 
-.ff-closed-inner p {
-    color: var(--parchment-dim);
-    margin: 0 0 16px;
-    font-size: 13.5px;
-    line-height: 1.55;
-}
-
-.ff-closed-link {
-    display: inline-block;
-    background: var(--wood-mid);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--parchment);
-    padding: 7px 14px;
-    text-decoration: none;
-    font-size: 13px;
-}
-
-.ff-closed-link:hover { background: var(--chrome-highlight); color: var(--amber-bright); }
+/* What is taken away: the way in, the board, and the instruction for a game
+   nobody can start. The title, the notice and the room stay. */
+body[data-ff-closed] .ff-title-sub,
+body[data-ff-closed] .ff-title-form,
+body[data-ff-closed] .ff-title-who,
+body[data-ff-closed] #ff-play-status,
+body[data-ff-closed] .ff-board { display: none; }
 
 
 /* ---- lives, on the run-end table

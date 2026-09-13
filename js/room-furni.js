@@ -844,6 +844,13 @@
     const SHADOW_LAYER = -1000000;
 
     function shadowPart(f) {
+        /* A DROP SHADOW NEEDS A FLOOR TO FALL ON. The title screen's furni
+           drift down over a photograph of the hotel with no room under them,
+           and a shadow there is a dark smear hanging in the sky beside the
+           piece - which is what it looked like: the throne has shadow artwork
+           for facing 2 and none for the other three, so one rotation in four
+           came down smudged and the rest were clean. */
+        if (f.noShadow) return null;
         const lib = libraryEntry(f.className);
         if (!lib || !lib.sd) return null;
         const v = variantAt(f.className, f.state || 0, f.rotation || 0);

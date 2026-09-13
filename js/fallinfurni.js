@@ -2361,6 +2361,12 @@
         } catch { /* the default pair keeps falling */ }
     }
 
+    /* The game is closed for maintenance. Set on <body> by the head script
+       AFTER its settings request answers, which is usually after this file has
+       already drawn the title - so it is read at the moment it matters rather
+       than cached at startup. */
+    const gameClosed = () => document.body.hasAttribute("data-ff-closed");
+
     function titleState(name, note) {
         const el = document.getElementById("ff-title");
         if (!el) return;
@@ -2368,7 +2374,7 @@
         const load = document.getElementById("ff-title-load");
         if (load && note !== undefined) load.textContent = note || "";
         const play = document.getElementById("ff-title-play");
-        if (play) play.disabled = name === "loading";
+        if (play) play.disabled = name === "loading" || gameClosed();
     }
 
     const hideTitle = () => titleState("playing");
@@ -3345,6 +3351,10 @@
            default figure rather than refusing. */
         document.getElementById("ff-name-form").addEventListener("submit", async (ev) => {
             ev.preventDefault();
+            /* CSS hides the form while the game is closed, so this is the
+               backstop: a form can still be submitted with the keyboard, and
+               the attribute may land after the page has settled. */
+            if (gameClosed()) return;
             const play = document.getElementById("ff-title-play");
             if (play) play.disabled = true;
             try {

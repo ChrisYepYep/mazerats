@@ -268,6 +268,8 @@
                 state: 0, role: "decor"
             });
             piece.url = null;
+            /* Nothing here is standing on anything - see shadowPart. */
+            piece.noShadow = true;
             /* Where the artwork sits relative to the tile: room-furni draws a
                piece's box from home.sx - HALF_W - ax, and a mirrored rotation
                reflects INSIDE that same box, so this holds either way. */
@@ -486,7 +488,7 @@
         for (const className of classes()) {
             const piece = Furni.make(className, 0, 0, { meta: {}, rotation: 0, state: 0 });
             for (let r = 0; r < Math.max(1, Furni.rotationsOf(className) || 1); r++) {
-                const turned = { ...piece, rotation: r };
+                const turned = { ...piece, rotation: r, noShadow: true };
                 const parts = Furni.partsOf(turned);
                 if (parts) for (const part of parts) Furni.sprite(part.url);
             }
