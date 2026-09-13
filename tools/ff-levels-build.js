@@ -196,10 +196,20 @@ function validate(level, meta) {
         }
     }
 
-    // start tile
+    /* THE START TILE IS INSIDE THE GAMEPLAY AREA.
+
+       The wall between the queue and the floor is SEALED — the gate in it is
+       a real gate and furnidata calls it cannotstandon — because the avatar
+       never walks in through it. It begins on the floor and stays there. So a
+       start tile outside the zone is not a layout choice, it is a level the
+       player cannot play. */
     const s = level.start || {};
     if (!floor(s.x, s.y)) problems.push(`start ${s.x},${s.y} is off the floor`);
     if (blocked.has(key(s.x, s.y))) problems.push(`start ${s.x},${s.y} is blocked by decor`);
+    const z0 = (level.zones || [])[0] && (level.zones || [])[0].area;
+    if (z0 && !(s.x >= z0.x && s.y >= z0.y && s.x < z0.x + z0.w && s.y < z0.y + z0.h)) {
+        problems.push(`start ${s.x},${s.y} is outside the gameplay area`);
+    }
 
     // zones
     let seats = 0, cells = 0;

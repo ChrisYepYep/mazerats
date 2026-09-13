@@ -17,10 +17,18 @@
                           is a walkway or a game area, never a leftover.
      RHYTHM.              A piece repeats at an interval and decoration
                           punctuates it — a candle every few tiles.
-     CORRIDORS ARE TWO    A queue is two divider runs with rollers between
-     WALLS.               them, and the way through is a GAP. `divider_arm3` is
-                          a gate and furnidata says cannotstandon: it would
-                          seal the room shut.
+     THE QUEUE STARTS AT  Rollers begin on the tile in FRONT of the door and
+     THE DOOR AND ENDS    run away from it, pointing the way they are laid, and
+     AT A GATE.           they end at the gate into the gameplay area.
+     THE GATE IS TO ONE   Not in the middle of the wall. The screens run the
+     SIDE.                length of it and the gate sits at the far end,
+                          between the last screen and the corner plinth.
+     AND THE WALL IS      Which is fine: the avatar never walks in through it.
+     SEALED.              It starts inside the gameplay area and stays there,
+                          so a gate that furnidata calls cannotstandon is a
+                          gate rather than a problem, and the themed ones
+                          (`divider_silo3`, `divider_arm3`) can be used as
+                          drawn.
      A CORNER PIECE GOES  `divider_arm1` is a Corner plinth. It belongs where
      IN A CORNER.         two runs meet and nowhere else.
      PLANTING IS TRIM.    A pair at a corner, not a hedge. An earlier draft put
@@ -139,7 +147,7 @@ module.exports = [
         level: 6, id: "level-6", name: "Pura Lounge", model: "e",
         floor: { pattern: "wood", colour: 301 },
         wall: { pattern: "half1", colour: 610 },
-        start: { x: 4, y: 3 }, startDir: 2,
+        start: { x: 8, y: 4 }, startDir: 2,      // inside the floor, under the gate
         zoneName: "Lounge floor",
         zone: { x: 1, y: 4, w: 8, h: 4 },
         decor: [
@@ -151,11 +159,12 @@ module.exports = [
             ...backRun("sofachair_polyfon", 0, 1, 2),
             at("lamp_armas", 2, 1, 0, { state: 1 }),
             ...backRun("divider_silo2", 3, 1, 3, 2),
-            // the queue, the full width of the room from the door at (0,2)
-            ...queueX(1, 2, 7),
-            // the wall onto the floor, the way through at (4,3)
-            ...backRun("divider_silo2", 0, 3, 2, 2),
-            ...backRun("divider_silo2", 5, 3, 2, 2),
+            // the queue: from the tile in front of the door, ending over the gate
+            ...queueX(1, 2, 8),
+            // the wall onto the floor: screens the length of it, then the gate
+            // at the far end between the last screen and the corner plinth
+            ...backRun("divider_silo2", 0, 3, 4, 2),
+            at("divider_silo3", 8, 3),              // the gate
             at("divider_arm1", 9, 3),               // the corner, where it turns
             // and down both sides
             ...leftRun("divider_silo2", 0, 4, 2, 2),
@@ -182,7 +191,7 @@ module.exports = [
         level: 7, id: "level-7", name: "Gothic Hall", model: "b",
         floor: { pattern: "tiles3", colour: 502 },
         wall: { pattern: "gothic", colour: 3104 },
-        start: { x: 4, y: 5 }, startDir: 2,
+        start: { x: 8, y: 6 }, startDir: 2,      // inside the hall, under the gate
         zoneName: "The hall",
         zone: { x: 1, y: 6, w: 8, h: 4 },
         decor: [
@@ -197,12 +206,15 @@ module.exports = [
             // screens and stools closing the gallery off
             ...backRun("divider_silo2", 6, 2, 2, 2),
             ...backRun("gothic_stool*1", 6, 3, 2),
-            // the queue, the width of the hall from the door at (0,4)
-            ...queueX(1, 4, 7),
-            // the wall onto the hall, the way through at (4,5)
-            ...backRun("divider_silo2", 0, 5, 2, 2),
-            ...backRun("divider_silo2", 5, 5, 2, 2),
-            at("divider_arm1", 9, 5),               // the corner, where it turns
+            // the queue: from the tile in front of the door, ending over the gate
+            ...queueX(1, 4, 8),
+            /* the wall onto the hall. A plinth where it meets the left wall,
+               screens along it, then the gate at the far end with the corner
+               plinth beyond it at the room's edge. */
+            at("divider_arm1", 0, 5),
+            ...backRun("divider_silo2", 1, 5, 4, 2),
+            at("divider_silo3", 9, 5),              // the gate
+            at("divider_arm1", 10, 5),              // the corner, where it turns
             // candlelit corners, screens between them
             at("gothiccandelabra", 0, 6, 0, { state: 1 }),
             ...leftRun("divider_silo2", 0, 7, 1, 2),
@@ -233,7 +245,7 @@ module.exports = [
         level: 8, id: "level-8", name: "Sheji Tearoom", model: "f",
         floor: { pattern: "tiles2", colour: 407 },
         wall: { pattern: "plain", colour: 206 },
-        start: { x: 4, y: 5 }, startDir: 2,
+        start: { x: 8, y: 6 }, startDir: 2,      // inside the floor, under the gate
         zoneName: "Tearoom floor",
         zone: { x: 1, y: 6, w: 8, h: 4 },
         decor: [
@@ -241,12 +253,11 @@ module.exports = [
             ...backRun("sheji_cnsofa", 6, 0, 1, 3),
             at("hc_lmp", 9, 0, 0, { state: 1 }),
             ...backRun("sheji_divider", 6, 1, 4),
-            // the queue, in from the door at (2,2)
-            ...queueX(3, 2, 5),
-            ...backRun("sheji_divider", 8, 2, 2),
-            // down to the middle terrace, the way through at (4,3)
-            ...backRun("sheji_divider", 2, 3, 2),
-            ...backRun("sheji_divider", 5, 3, 4),
+            // the queue: from the tile in front of the door at (2,2)
+            ...queueX(3, 2, 6),
+            at("sheji_divider", 9, 2),
+            // down to the middle terrace
+            ...backRun("sheji_divider", 2, 3, 7),
             // the middle terrace, chairs either side of the walkway
             ...backRun("sheji_cnchair", 2, 4, 2),
             ...backRun("sheji_sofachair", 5, 4, 2),
@@ -254,9 +265,10 @@ module.exports = [
             // shelving down the sides, where this bookcase can actually face
             ...rightRun("sheji_shelves", 9, 3, 1, 2),
             ...rightRun("sheji_shelves", 9, 7, 1, 2),
-            // the wall onto the tearoom floor, the way through at (4,5)
-            ...backRun("sheji_divider", 5, 5, 2),
-            at("hc_lmp", 8, 5, 0, { state: 1 }),
+            // the wall onto the tearoom floor, the gate at the far end
+            ...backRun("sheji_divider", 2, 5, 6),
+            at("divider_silo3", 8, 5),              // the gate
+            at("hc_lmp", 9, 5, 0, { state: 1 }),
             // lamps at the corners, screens between
             at("hc_lmp", 0, 6, 0, { state: 1 }),
             ...leftRun("sheji_divider", 0, 7, 2),
