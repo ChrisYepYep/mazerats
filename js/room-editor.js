@@ -315,7 +315,15 @@
         const LIBRARY = window.FurniLibrary || {};
         for (const className of Object.keys(LIBRARY)) {
             if (state.meta[className]) continue;            // already above
-            if (/^s_/i.test(className)) continue;           // the shadow set
+            /* `s_` IS NOT A FURNI. It is the client's HALF-SCALE artwork for
+               the class of the same name — 1,128 of them, drawn small rather
+               than scaled down, for the layouts that run at 32x16 to a tile
+               instead of 64x32. Nothing places one: a level names
+               `shelves_silo_single` and the ROOM picks `s_shelves_silo_single`
+               when it is drawing small (RoomFurni.artClass). Listing them here
+               would offer a builder a way to put half-size furniture in a
+               full-size room. */
+            if (/^s_/i.test(className)) continue;
             const m = Furni.libraryMeta(className);
             if (!m || !Furni.rotationsOf(className)) continue;
             const borrowed = inherited(className);
