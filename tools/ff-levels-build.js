@@ -158,7 +158,7 @@ function budgetFor(level) {
    room; `drops` names the seats and obstacles that fall, and the counts are
    scaled to the budget above so one design can sit anywhere on the curve. */
 
-const DESIGNS = require("./ff-levels-designs.js");
+const makeDesigns = require("./ff-levels-designs.js");
 
 /* ------------------------------------------------------------------ */
 
@@ -312,6 +312,8 @@ function buildLevel(design, n) {
 (async () => {
     const meta = (await fetch(`${SITE}/.netlify/functions/furni-meta`).then(r => r.json())).items || {};
     console.log(`furnidata: ${Object.keys(meta).length} records\n`);
+
+    const DESIGNS = makeDesigns(meta);
 
     const built = [];
     let bad = 0;

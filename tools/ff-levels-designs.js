@@ -153,7 +153,10 @@ const rightRun = (className, x, y, n, step = 1, extra = {}) =>
 const queueX = (x, y, n) =>
     Array.from({ length: n }, (_, i) => at("queue_tile1*5", x + i, y, facing("queue_tile1*5", LEFT)));
 
-module.exports = [
+/* Levels 6, 7 and 8, drawn tile by tile. They were the samples the rules were
+   argued out on, so they stay written out in full — the shells below are what
+   those arguments turned into. */
+const HAND = [
 
     /* ---------------------------------------------------------------
        6. PURA LOUNGE — Wide, 10x8, door (0,2)
@@ -295,3 +298,55 @@ module.exports = [
         ]
     }
 ];
+
+/* ------------------------------------------------------------------ */
+/* 9 to 49: a shell for the shape, a theme for the furniture.
+
+   The counts here are WEIGHTS and not amounts. The big seat falls less often
+   than the two small ones because a two-tile sofa takes up twice the floor,
+   and the build scales the lot to wherever the level sits on the curve. */
+
+function dropsOf(T) {
+    const d = [
+        { className: T.seats[0], role: "sequence", w: 2 },
+        { className: T.seats[1], role: "sequence", w: 3 },
+        { className: T.seats[2], role: "sequence", w: 3 }
+    ];
+    if (T.decoy) d.push({ className: T.decoy, role: "decoy" });
+    if (T.poi) d.push({ className: T.poi, role: "poi" });
+    if (T.obstacle) d.push({ className: T.obstacle, role: "obstacle" });
+    return d;
+}
+
+/* The module is a FUNCTION of furnidata, because a shell cannot lay a run
+   along a wall without knowing how wide its screen is, and that is a fact
+   about the furni rather than about the room. */
+module.exports = function designs(meta) {
+    const { THEMES, NEUTRAL } = require("./ff-levels-themes.js");
+    const shells = require("./ff-levels-shells.js")(
+        { at, backRun, leftRun, rightRun, queueX, facing, FRONT, LEFT, BACK, RIGHT },
+        meta || {}
+    );
+
+    const generated = THEMES.map((theme, i) => {
+        const T = Object.assign({}, NEUTRAL, theme);
+        const shell = shells[i % shells.length];
+        const room = shell.build(T);
+        return {
+            level: theme.level,
+            id: `level-${theme.level}`,
+            name: theme.name,
+            model: shell.model,
+            floor: theme.floor,
+            wall: theme.wall,
+            start: room.start,
+            startDir: room.startDir,
+            zoneName: room.zoneName,
+            zone: room.zone,
+            decor: room.decor,
+            drops: dropsOf(T)
+        };
+    });
+
+    return HAND.concat(generated);
+};
