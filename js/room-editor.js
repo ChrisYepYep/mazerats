@@ -250,6 +250,16 @@
                 hay: [name.toLowerCase(), raw, raw.replace(/_/g, " "), (m.c || "").toLowerCase()]
             });
         }
+        /* WHICH "Bookcase" IS THIS ONE. Furnidata names a furni for its
+           FAMILY, so the pieces that have no catalogue colourway name share
+           one between them: six things called Bookcase, sixteen called Chair,
+           twenty called Square Dining Table. 333 rows are ambiguous that way,
+           and an icon 22px across is not enough to pick by. Those rows carry
+           their class as well. */
+        const seen = new Map();
+        for (const r of out) seen.set(r.name, (seen.get(r.name) || 0) + 1);
+        for (const r of out) r.ambiguous = seen.get(r.name) > 1;
+
         /* Client artwork first. It is the same picture the room will draw, it
            carries the anchors and the shadow, and it is the half that was
            missing — so when a search matches both, the one that renders

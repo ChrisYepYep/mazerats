@@ -774,6 +774,21 @@ body:not(.is-editing) .ff-guides { display: none; }
 .ff-furni .ff-noicon { display: block; }
 
 .ff-furni span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The class, shown only where the name is shared with another furni — see
+   the note on `ambiguous` in room-editor.js. Dim, and the first thing to be
+   squeezed out when the row is narrow. */
+.ff-furni .ff-cls {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-style: normal;
+    font-size: 9px;
+    opacity: 0.55;
+}
+
 .ff-furni:hover { border-color: var(--amber); }
 .ff-furni.is-on { border-color: var(--amber-bright); background: var(--wood-mid); }
 
