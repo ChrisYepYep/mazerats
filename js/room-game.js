@@ -253,7 +253,10 @@
             // Advance the drops and the clock.
             tick(now, playerTile) {
                 if (this.state !== RUNNING) return false;
-                let changed = this.round.tick(now, playerTile);
+                /* `this.sat` goes with it: a seat already taken is not a seat
+                   the next piece has to leave a route to, and the drop rules
+                   have no way of knowing which those are. */
+                let changed = this.round.tick(now, playerTile, this.sat);
 
                 /* BEFORE the clock, so that a round finishing on the same tick
                    its time runs out is a win. The player did everything asked;

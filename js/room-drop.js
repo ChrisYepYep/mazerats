@@ -21,13 +21,22 @@
 
      - the tile the player is standing on, because a piece landing on top of
        somebody is not a thing that happens in the original;
-     - a spot that would seal a seat off entirely. An obstacle is meant to make
-       the route longer, not to make the round unwinnable, and a seat with no
-       walkable neighbour is unwinnable rather than hard.
+     - a spot that would CUT THE FLOOR IN TWO. An obstacle is meant to make the
+       route longer, not to make the round unwinnable, and the way a round
+       becomes unwinnable is not a seat with nothing beside it — it is a seat
+       with a wall between it and the player. Seats block, so the pieces that
+       build that wall are mostly other seats, and the player is usually
+       already walking when the last one lands.
 
-   If no spot passes, the piece is skipped rather than forced. A round one
-   piece short is a worse round; a round with an unreachable seat is a broken
-   one.
+   That rule is in `spotsFor` and it is the strictest thing in this file:
+   whatever the floor the player can currently walk on breaks into once this
+   piece is on it, every part of it has to be able to finish the round. Half
+   the notes below are about cases that got past weaker versions of it.
+
+   If no spot passes, the piece is skipped rather than forced, and the next
+   one is tried on the same tick rather than waiting out a drop delay for
+   something that never fell. A round one piece short is a worse round; a
+   round with an unreachable seat is a broken one.
 
    ----------------------------------------------------------------------
    The fall
@@ -125,11 +134,17 @@
        player then stood up on the near side and the wall closed behind them,
        with a seat they were obliged to reach stranded on the other side.
 
-       So a player on furni gets ONE REGION PER WAY OFF IT. They will step to
-       one side and the sides need not be joined, so what has to hold is that
-       everything owed lies in a single one of them — the chair is a bridge you
-       can cross once and never cross back. A player on open floor has exactly
-       one region and none of this applies. */
+       So a player on furni gets ONE REGION PER WAY OFF IT. A player on open
+       floor has exactly one region and none of this applies.
+
+       WHAT HAS TO HOLD IN EVERY ONE OF THEM — see `spotsFor`. An earlier
+       version asked only that SOME region held everything owed, on the
+       reasoning that the chair is a bridge you cross once and never cross
+       back, so the player would take the side their remaining seats were on.
+       They do not get that choice. They are usually already walking when the
+       piece lands: the route was planned two seconds ago, they are a step or
+       two off the chair by the time the thing hits the floor, and the side
+       they are on was decided before the wall existed. */
     function regionsFrom(start, blocked) {
         if (!blocked.has(key(start.x, start.y))) return [reachableFrom(start, blocked)];
         const here = key(start.x, start.y);
@@ -147,6 +162,53 @@
             regions.push(r);
         }
         return regions.length ? regions : [new Set([here])];
+    }
+
+    /* WHERE THE PLAYER COULD BE BY THE TIME A PIECE LANDS: every tile they can
+       walk to from where they are, the ways off a seat included.
+
+       IT IS THE WHOLE FLOOR AND NOT A RADIUS, and the reason is not the one
+       you would guess. A piece is given its tile when it starts falling and
+       lands half a second later, which is one step — so "anywhere they might
+       be" is arguably the two or three tiles around them, and checking only
+       those is a far weaker rule to satisfy. It was tried at one, two and
+       three steps, and it dropped FEWER seats rather than more: between a
+       third and a half of rounds came up a seat short, against a seventh for
+       the whole floor.
+
+       Because the rule that refuses to cut the room up is what keeps the room
+       worth landing in. Allow the pieces that carve a corner off and the floor
+       spends the round fragmenting, until the seats that matter have nowhere
+       legal left to go; refuse them and the zone stays open, and everything
+       after finds somewhere. The strict rule is EASIER to satisfy than the lax
+       one by the end of a level, which is exactly backwards from how it reads,
+       and is why this was measured rather than reasoned about.
+
+       Returned as tiles rather than keys because each one may need a flood
+       fill of its own. The player's own tile is in it only if it is floor:
+       somebody sitting down is on a blocked tile, and the step off it is the
+       first ring of this rather than the seed. */
+    function standingRoom(start, blocked) {
+        const here = key(start.x, start.y);
+        const out = blocked.has(here) ? [] : [{ x: start.x, y: start.y }];
+        const seen = new Set([here]);
+        const stack = [{ x: start.x, y: start.y }];
+        while (stack.length) {
+            const cur = stack.pop();
+            for (const d of Path.DIRS) {
+                const nx = cur.x + d.dx, ny = cur.y + d.dy;
+                if (!Path.inside(nx, ny)) continue;
+                const nk = key(nx, ny);
+                if (seen.has(nk) || blocked.has(nk)) continue;
+                if (d.dx !== 0 && d.dy !== 0
+                    && blocked.has(key(cur.x + d.dx, cur.y))
+                    && blocked.has(key(cur.x, cur.y + d.dy))) continue;
+                seen.add(nk);
+                out.push({ x: nx, y: ny });
+                stack.push({ x: nx, y: ny });
+            }
+        }
+        return out;
     }
 
     /* Can the player reach this seat AND GET OFF IT AGAIN?
@@ -181,7 +243,9 @@
                 if (!Path.inside(nx, ny)) continue;
                 const nk = key(nx, ny);
                 if (blocked.has(nk)) continue;          // has to be floor
-                if (!reachable.has(nk)) continue;       // and floor they can be on
+                // A null `reachable` asks only whether the seat is open at
+                // all, with no opinion about who can get to it.
+                if (reachable && !reachable.has(nk)) continue;
                 if (d.dx !== 0 && d.dy !== 0
                     && blocked.has(key(nx, t.y))
                     && blocked.has(key(t.x, ny))) continue;
@@ -225,9 +289,10 @@
        the area is far enough, the distance requirement is dropped rather than
        the piece. A round short of a seat is a broken round; a round with one
        seat closer than intended is merely an easier one. */
-    function spotsFor(list, entry, meta, avoid, minDistance) {
+    function spotsFor(list, entry, meta, avoid, minDistance, sat) {
         const spots = [];
         const near = [];
+        const taken = sat instanceof Set ? sat : new Set(sat || []);
 
         /* THE FOOTPRINT HAS TO BE THE ROTATED ONE.
 
@@ -265,18 +330,45 @@
            the moment one decorative chair stood somewhere awkward — a seat
            tucked behind a table is unreachable in the level AS AUTHORED, no
            candidate position could change that, and so every piece was refused
-           a spot and the round dropped nothing at all. */
-        const mustReach = (f) => f.sit && f.role === "sequence";
+           a spot and the round dropped nothing at all.
+
+           AND ONLY THE ONES STILL TO SIT ON. A seat keeps its role for the
+           whole round, so a chair taken twenty seconds ago went on being
+           protected — and by the back half of a long level that is a dozen
+           of them the room has to stay open around, every one for nothing. It
+           refused good spots and left the seats that still matter nowhere
+           careful to land. `sat` is the game's own list of what has been
+           taken; a seat on it is furniture now. */
+        const mustReach = (f) => f.sit && f.role === "sequence" && !taken.has(f);
         const seats = list.filter(mustReach);
 
         /* WHAT WAS ALREADY OUT OF REACH STAYS OUT OF REACH, and is not this
            piece's fault. The test is whether a placement makes things WORSE,
            so the room is measured once without the candidate and each
-           candidate is only asked not to take anything away. */
-        const beforeRegions = avoid ? regionsFrom(avoid, blocked) : null;
-        const owed = beforeRegions
-            ? seats.filter(f => beforeRegions.some(r => canUse(f, r, blocked)))
-            : seats;
+           candidate is only asked not to take anything away.
+
+           AND IT IS ASKED OF THE SEAT, NOT OF THE PLAYER. This used to keep
+           the seats reachable from where the player was standing, which reads
+           as the same question and is not, because the player moves through
+           places with no view of the room. Walking between two chairs puts
+           them for half a second on a tile whose only floor neighbours are
+           the gap they came in by — so measured from there, nearly every seat
+           in the room is "already out of reach", `owed` empties out, and the
+           piece falling at that moment is free to land anywhere at all.
+
+           Level 44, seed 130: the player crossed (9,7), a one-tile nook
+           between a barrel and a chair, on the way to a stool. A sequence
+           seat dropped into (9,8) during that half second — legal, since from
+           inside the nook it was the only reachable thing in the world — and
+           the nook was the only way to it. Nothing afterwards could reopen
+           it.
+
+           A seat is owed, then, unless it is SEALED: no way off it for
+           anybody, from anywhere. That is the case the escape hatch was
+           written for — a chair the level itself bricked in — and it does not
+           move about with the player. */
+        const owed = avoid ? seats.filter(f => canUse(f, null, blocked)) : seats;
+        const room = avoid ? standingRoom(avoid, blocked) : null;
 
         for (let y = entry.area.y; y <= entry.area.y + entry.area.h - h; y++) {
             for (let x = entry.area.x; x <= entry.area.x + entry.area.w - w; x++) {
@@ -304,11 +396,61 @@
                 const check = mustReach(candidate) ? owed.concat([candidate]) : owed;
                 let ok = true;
                 if (avoid) {
-                    /* ONE region has to hold all of it. Satisfying half from
-                       one side of a chair and half from the other is exactly
-                       the split that strands a seat. */
-                    ok = regionsFrom(avoid, blocked)
-                        .some(r => check.every(f => canUse(f, r, blocked)));
+                    /* NOT "can the player reach it FROM WHERE THEY ARE", but
+                       "can they reach it from anywhere they might BE" — and
+                       the difference is a round nobody can finish.
+
+                       The player is not standing still. A piece is given its
+                       landing tile when it starts falling and arrives half a
+                       second later, by which time they are a step or two into
+                       a route they planned before the piece existed. Asking
+                       only about the tile they were on when the dice were
+                       rolled approves walls that close behind them.
+
+                       Level 10, seed 28, is the case. The player sat on the
+                       stool at (0,8) and set off for a sofa at (4,11). A
+                       five-tile table was handed the whole of column 2, which
+                       passed the old test — the far side of the stool still
+                       saw every seat owed — and landed while they were a step
+                       and a half down the other way. They spent the next
+                       thirty seconds in a seven-tile pocket with three seats
+                       owed and no route to any of them.
+
+                       So the question is asked of every tile they could be
+                       standing on when it arrives — `standingRoom`, which is
+                       the floor within a step or two. Whatever that breaks
+                       into once this piece is down, every part of it has to be
+                       able to finish the round, because they may be in any of
+                       them and they do not get to choose which.
+
+                       It costs one flood fill: each part is filled once and
+                       the tiles it covers struck off, so the whole check is a
+                       single pass over the room however many parts there are.
+
+                       AND THE TILE THEY ARE ON IS NOT FLOOR, which is the one
+                       thing walking the floor cannot see. A player sitting
+                       down is standing on a blocked tile, so they are in none
+                       of those parts; land a piece on their last free
+                       neighbour and the floor is still perfectly connected and
+                       perfectly fine, and they are bricked into a chair. Level
+                       43, seed 0: a stool dropped on (3,9), the only way off
+                       the chair at (2,9), with four seats still owed. So they
+                       are asked about separately, from where they actually
+                       are — which for somebody on open floor is the part of
+                       the floor they are standing in, already checked, and
+                       costs nothing to ask twice. */
+                    const seenHere = new Set();
+                    for (const t of room) {
+                        const tk = key(t.x, t.y);
+                        if (blocked.has(tk) || seenHere.has(tk)) continue;
+                        const r = reachableFrom(t, blocked);
+                        for (const rk of r) seenHere.add(rk);
+                        if (!check.every(f => canUse(f, r, blocked))) { ok = false; break; }
+                    }
+                    if (ok) {
+                        ok = regionsFrom(avoid, blocked)
+                            .every(r => check.every(f => canUse(f, r, blocked)));
+                    }
                 } else {
                     // No player to measure from — the old local test is all
                     // there is, and it is better than nothing.
@@ -350,7 +492,9 @@
         return {
             level,
             queue,                      // still to fall
-            /* HOW MANY SEATS THIS ROUND WILL ASK FOR, fixed at the start.
+            /* HOW MANY SEATS THIS ROUND WILL ASK FOR. Set at the start, and
+               reduced only when a seat turns out to have nowhere it can
+               safely land — see the drop below.
 
                `sequence()` grows as they land, which is the right answer to
                "how many are in play" and the wrong one for a progress row: a
@@ -379,9 +523,11 @@
             done: false,
 
             /* Advance the round. `now` is a timestamp, `playerTile` where the
-               player is. Returns true if anything changed and the room needs
-               repainting. */
-            tick(now, playerTile) {
+               player is, and `sat` the seats already taken — which the round
+               does not track itself, because what counts as taken is the
+               scoring's business and this file has none. Returns true if
+               anything changed and the room needs repainting. */
+            tick(now, playerTile, sat) {
                 let changed = false;
                 if (this.started === null) { this.started = now; this.nextAt = now; }
 
@@ -402,8 +548,18 @@
                     }
                 }
 
-                // Start the next one when its turn comes.
-                if (this.queue.length && now >= this.nextAt) {
+                /* Start the next one when its turn comes — and if it has
+                   nowhere to go, the one after it, on the same tick.
+
+                   `dropDelayMs` is the time between things LANDING, which is
+                   what a player feels and what the difficulty curve is written
+                   in. Charging it to a piece that never falls spends it on
+                   nothing: the room goes quiet for two and a half seconds, and
+                   on a full level where the last few pieces all have nowhere
+                   safe to land it goes quiet for ten. Skipping costs nothing
+                   instead, and the rhythm between landings stays exactly what
+                   the level asked for. */
+                while (this.queue.length && now >= this.nextAt) {
                     const entry = this.queue[0];
                     const meta = metaFor(entry.className);
                     const others = this.placed.concat(this.falling.map(p => p.furni));
@@ -429,7 +585,7 @@
                     let rotation = entry.rotation || 0;
                     for (const r of turns(rotationsOf(entry.className), rng)) {
                         const spots = spotsFor(others, { ...entry, rotation: r },
-                            meta, playerTile, level.rules.minDropDistance);
+                            meta, playerTile, level.rules.minDropDistance, sat);
                         if (!spots.length) continue;
                         spot = spots[Math.floor(rng() * spots.length)];
                         rotation = r;
@@ -444,9 +600,28 @@
                         });
                         furni.lift = FALL_TILES;
                         this.falling.push({ furni, at: now });
+                        this.nextAt = now + level.rules.dropDelayMs;
+                        changed = true;
+                        break;
+                    }
+                    if (entry.role === "sequence" && (meta || {}).sit) {
+                        /* A SEAT WITH NOWHERE SAFE TO LAND COMES OFF THE PLAN.
+
+                           `plannedSeats` is what the progress row is drawn
+                           from, so a seat counted at the start and never
+                           dropped is a box that stays dark for the whole
+                           round — including a round the player cleared
+                           perfectly, which then looks like they missed one.
+
+                           This is not rare. A room fills up as the round goes
+                           on and the last pieces are the ones with nowhere
+                           left that keeps every seat reachable; a seventh of
+                           rounds lose a seat this way, and the fuller layouts
+                           lose one more often than not. The round is fine —
+                           it is the promise that was wrong. */
+                        this.plannedSeats = Math.max(0, this.plannedSeats - 1);
                         changed = true;
                     }
-                    this.nextAt = now + level.rules.dropDelayMs;
                 }
 
                 if (!this.queue.length && !this.falling.length) this.done = true;
