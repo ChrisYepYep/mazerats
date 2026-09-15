@@ -2666,6 +2666,25 @@ body[data-page="home"] .hero { padding-top: 18px; }
     margin-top: 0;
 }
 
+/* AND THE TWO TOP BORDERS BECOME ONE.
+
+   .featured-frame draws a 1px black border, and so does the .chrome-frame
+   nested directly inside it — so with the header gone from between them they
+   land one on top of the other and read as a single 2px line, twice the
+   weight of every other edge in the window.
+
+   The inner frame comes up by exactly its own border width, so its top edge
+   sits ON the outer one rather than under it. Pulling .featured-frame itself
+   up would move both together and change nothing: they are nested, not
+   siblings, and it is the 1px of outer border BETWEEN them that has to be
+   closed.
+
+   Overriding margin-top only — the `.featured-frame .chrome-frame` rule
+   above zeroes all four, and the other three are still what that rule wants. */
+.featured-frame.is-events > .chrome-frame {
+    margin-top: -1px;
+}
+
 /* Minimising now slides the whole frame straight down (see
    js/home.js's setFeaturedPanelState) rather than shrinking its
    max-height — .chrome-frame keeps its real, full flex: 1 size the entire
