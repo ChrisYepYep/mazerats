@@ -843,6 +843,20 @@
             <p class="ff-rotate-say" id="ff-rotate-say">Turn your phone sideways</p>
             <p class="ff-rotate-sub" id="ff-rotate-sub">Fallin' Furni needs the long edge of your screen.</p>
         </div>
+
+        <!-- THE WAY OUT.
+
+             The gate covers the whole screen and the page behind it does not
+             scroll, so without this a player who does not want to turn their
+             phone has nothing to press: the site's own header is underneath
+             it, and the only exit is the browser's back gesture.
+
+             An <a> rather than a button running history.back(), because there
+             may be no history to go back to — this page is shared as a link,
+             and landing on it directly is the normal way in. A real href
+             always has somewhere to go, and it is the same address the
+             header's own Home badge uses. -->
+        <a class="ff-rotate-back" href="home.html">&#9664;&nbsp; Back to Maze Rats</a>
     </div>
 
     <!-- The shared chrome's own dependencies, in home.html's order: site.js

@@ -1439,6 +1439,45 @@ body.ff-rotate-shut { overflow: hidden; }
     margin: 0;
 }
 
+/* The way off the gate, along the bottom edge.
+
+   Positioned rather than placed in the flow, so the message above stays
+   optically centred in the screen — put in the flow it would push the phone
+   and its two lines upward by its own height, and the thing the screen is
+   for would no longer be in the middle of it.
+
+   The bottom offset clears the home indicator on a phone that has one, the
+   same env() the gate's own padding uses. 44px min-height because this is
+   the one control on a screen that exists to be pressed by a thumb.
+
+   Borrowed from .ff-round-buttons: the same wood fill, border and hover the
+   game's own round-end buttons use, so it reads as part of the game rather
+   than as browser furniture. */
+.ff-rotate-back {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: max(24px, env(safe-area-inset-bottom));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 8px 20px;
+    background: var(--wood-mid, #3a2a18);
+    border: 1px solid var(--border, #000);
+    border-radius: 8px;
+    color: var(--parchment, #f4e4c1);
+    font-size: 13px;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.ff-rotate-back:hover,
+.ff-rotate-back:focus-visible {
+    background: var(--chrome-highlight, #4a3a24);
+    color: var(--amber-bright, #f0b040);
+}
+
 /* The phone that turns. Two boxes and a transform rather than an SVG or a
    GIF: it is the only illustration on this page that is not furni, and a
    drawn asset would be one more thing to load on the connection least able
