@@ -273,29 +273,6 @@
                  paint under everything with a negative z-index — which it did
                  at first, and which put it behind .container, where nothing
                  could be hovered or clicked. -->
-            <!-- ---------- the day's games, on a phone ----------
-
-                 Shown only where a pointer is coarse, and it exists because
-                 of what the spine on the right becomes on a phone: a 30x26px
-                 tab against the window's edge, which measured out as the
-                 smallest control on the page and was the ONLY way to reach
-                 any of the three daily games. A game that is new every
-                 morning is the reason somebody comes back, and it was behind
-                 the hardest thing on the screen to press.
-
-                 So the games are offered directly here instead, above the
-                 archive, as three full-width rows carrying the same live
-                 state the menu shows — which is the point of the menu, and
-                 the reason a bare link would be worse. Filled by
-                 renderDailyStrip in js/home.js from the same
-                 sideMenuEntries() the panel is built from, so the two can
-                 never disagree about whether today has been played.
-
-                 The spine stays exactly where it is. This is a second way
-                 in, not a replacement: What's New, Your Progress and Alt
-                 Codes still live behind it. -->
-            <section class="daily-strip" id="daily-strip" aria-label="Today's games" hidden></section>
-
             <div class="archive-stack">
                 <!-- One handle, one panel, at every width.
 
@@ -326,15 +303,37 @@
                      because every row carries a live count. -->
                 <div class="side-drawer" id="side-drawer">
                     <div class="side-menu" id="side-menu" role="group" aria-label="Ways into the archive"></div>
-                    <button type="button" class="side-spine" id="side-spine"
+                    <button type="button" class="side-spine side-spine--menu" id="side-spine"
                             aria-expanded="false" aria-controls="side-menu"
-                            aria-label="More ways into the archive">
+                            aria-label="Menu: more ways into the archive">
                         <span class="side-spine-label" aria-hidden="true">Menu</span>
-                        <!-- Points right when closed — out, the way the tab
-                             is about to travel — and the 180 turn in the CSS
-                             lands it pointing left when open, back at the
-                             window it will slide home into. -->
+                        <!-- Two marks, one shown at a time, chosen by width.
+
+                             On a desktop the tab is a labelled spine: it says
+                             MENU down its side, so the arrow is the right
+                             mark beside it — it describes the motion, which
+                             is the only thing left to say once the word has
+                             said what it is.
+
+                             On a phone the word is gone (sideways text in a
+                             44px square is unreadable), and a lone arrow
+                             against the window's edge says "something slides
+                             out" without saying what. There the burger goes
+                             instead: the shape every phone has trained people
+                             to find, on the one control that is the only way
+                             to the games.
+
+                             The burger is one empty span — the middle bar IS
+                             the span and its ::before and ::after are the
+                             other two — which is what lets it fold into a
+                             cross when the menu opens, so the control says
+                             how to close itself in the same shape it used to
+                             say how to open.
+
+                             The modal's own Actions tab keeps the arrow at
+                             every width: it is a disclosure, not a menu. -->
                         <span class="side-spine-arrow" aria-hidden="true">&#9654;</span>
+                        <span class="side-spine-burger" aria-hidden="true"></span>
                     </button>
                 </div>
 

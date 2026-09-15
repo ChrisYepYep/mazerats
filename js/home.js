@@ -393,7 +393,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             }
         }
-        n._haystack = parts.filter(Boolean).join("   ").toLowerCase();
+        n._haystack = parts.filter(Boolean).join(" \u0000 ").toLowerCase();
         return n._haystack;
     }
 
@@ -5536,61 +5536,17 @@ document.addEventListener("DOMContentLoaded", () => {
            untouched and still answers to its own address. */
     }
 
-    /* ---------- the day's games, offered directly ----------
+    /* The three daily games were briefly offered a second time, as a row of
+       buttons above the archive on a phone, on the reasoning that the spine
+       holding them was too small to find.
 
-       The three daily rows out of the side menu, put above the archive where
-       a thumb can reach them. See the note in home.html for why: on a phone
-       the spine that holds them is the smallest control on the page, and it
-       is the only way in.
-
-       Built from sideMenuEntries() rather than from a list of its own, so a
-       fourth game means one more entry in that array and nothing here — and
-       so the state each row shows ("2 of 5 rooms done", "Done — 300 points")
-       is the same state the menu shows, read at the same moment.
-
-       Rendered at every width and hidden by the stylesheet on a fine
-       pointer, rather than being built only when a media query matches:
-       matchMedia here would need a listener to survive a phone being turned
-       on its side, and the markup costs three rows. */
-    const dailyStrip = document.getElementById("daily-strip");
-
-    function renderDailyStrip() {
-        if (!dailyStrip) return;
-        const entries = sideMenuEntries();
-        // Everything under the "Daily" heading, and nothing after the next
-        // one — so the strip follows the menu's own grouping rather than
-        // naming the three games a second time.
-        const start = entries.findIndex(e => e.heading === "Daily");
-        if (start === -1) { dailyStrip.hidden = true; return; }
-        const games = [];
-        for (let i = start + 1; i < entries.length; i++) {
-            if (entries[i].heading) break;
-            games.push({ entry: entries[i], i });
-        }
-        if (!games.length) { dailyStrip.hidden = true; return; }
-
-        dailyStrip.hidden = false;
-        dailyStrip.innerHTML = `
-            <p class="daily-strip-head">Today's games</p>
-            ${games.map(({ entry, i }) => `
-                <button type="button" class="daily-strip-item" data-i="${i}">
-                    <span class="daily-strip-name">
-                        <span>${escapeHtml(entry.name)}</span>
-                        ${entry.badge ? `<span class="side-menu-badge">${escapeHtml(entry.badge)}</span>` : ""}
-                    </span>
-                    <span class="daily-strip-state">${escapeHtml(entry.state)}</span>
-                </button>`).join("")}`;
-
-        dailyStrip.querySelectorAll(".daily-strip-item").forEach(btn => {
-            btn.addEventListener("click", () => {
-                // Re-read at the moment of the press, exactly as the menu
-                // does — the strip may have been drawn before the games
-                // published their hooks.
-                const entry = sideMenuEntries()[Number(btn.dataset.i)];
-                if (entry && entry.run) entry.run();
-            });
-        });
-    }
+       That solved the wrong half of it. The archive is the centrepiece of
+       this page, and a stack of game buttons sitting above it pushed the
+       window it exists for below the fold — so the first thing a phone
+       showed was three ways to leave. The handle was the thing that needed
+       fixing, and it has been: it is a proper burger now, at a size a thumb
+       can find. The games are behind it, once, where the rest of the menu
+       already lives. */
 
     (function wireSideMenu() {
         const spine = document.getElementById("side-spine");
@@ -5670,19 +5626,6 @@ document.addEventListener("DOMContentLoaded", () => {
             spine.focus({ preventScroll: true });
         });
 
-        /* The strip is drawn with the menu, and redrawn whenever a game
-           window closes.
-
-           A daily game changes its own state and then hands the page back —
-           finish Ratrospect and the strip behind it still says "Not played
-           today" until something asks again. The overlays all clear
-           .modal-open from <body> on their way out, so that is the one
-           signal common to all three, and watching the attribute costs
-           nothing and needs no cooperation from the games themselves. */
-        renderDailyStrip();
-        new MutationObserver(() => {
-            if (!document.body.classList.contains("modal-open")) renderDailyStrip();
-        }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
     })();
 
     // Switches straight to that category, keeping whichever sub-filter was
