@@ -2648,6 +2648,24 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: none;
 }
 
+/* AND THE NEGATIVE TOP MARGIN COMES OFF WITH THEM.
+
+   .featured-frame is pulled up 15px so the Featured Mazes header sits tight
+   against the search controls above it, with no seam between the two bands.
+   That is right while the header is the frame's first child — and wrong the
+   moment it isn't: with the header gone, the same -15px drags the RESULTS up
+   instead, tucking the first event row under the controls with a single
+   pixel between them.
+
+   Zeroed here rather than lowered everywhere, so the Mazes tab keeps the
+   flush join it was written for. The list then sits on .chrome-list's own
+   14px padding, which is the same space it already keeps below its last row
+   and between its rows — so the gap above the first event is the list's own
+   rhythm rather than a number picked to look right. */
+.featured-frame.is-events {
+    margin-top: 0;
+}
+
 /* Minimising now slides the whole frame straight down (see
    js/home.js's setFeaturedPanelState) rather than shrinking its
    max-height — .chrome-frame keeps its real, full flex: 1 size the entire
