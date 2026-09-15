@@ -36,6 +36,27 @@
     align-items: flex-start;
 }
 
+/* ---- THE GAME SITS IN THE MIDDLE WHEN NOTHING IS BESIDE IT.
+
+   This row was written for the builder: the room on the left, the editor's
+   panel on the right. But the editor is display:none for everybody who is not
+   editing, which is everybody playing — so the row had one item in it and the
+   room hugged the left edge of an 1080px page with three hundred pixels of
+   nothing to the right of it. The archive window on every other page of the
+   site is centred, so the game was the one thing that looked dropped rather
+   than placed.
+
+   Only while NOT editing. With the panel open the two belong side by side
+   starting at the left, which is where the editor expects its column to be.
+
+   And only in the row layout. Below 1010px the same flex container turns to
+   `column` (see the media query at the end of this file), where
+   justify-content would be centring the vertical axis instead — a different
+   property doing a different thing to the one this is for. */
+@media (min-width: 1011px) {
+    body:not(.is-editing) .ff-layout { justify-content: center; }
+}
+
 .ff-left { flex: 0 0 auto; }
 
 /* ---- the game in the archive's own window
