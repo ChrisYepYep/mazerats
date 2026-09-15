@@ -2630,6 +2630,24 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-bottom-width: 0;
 }
 
+/* ---- THE EVENTS TAB TAKES THE FEATURED CONTROLS AWAY, NOT THE FRAME.
+
+   Featured Mazes is about mazes and has nothing to offer the Events tab, so
+   its header, its Refresh button and the panel they open all go. What must
+   NOT go is .featured-frame itself: as the comment above says, .chrome-frame
+   lives inside it now, and .chrome-frame is where the results are. Hiding the
+   frame hid every event row along with the header — the list rendered fine
+   into a grid that was inside a `hidden` ancestor.
+
+   `display: none` rather than `visibility` or opacity, so the three take
+   their space with them and the list closes up against the window's top edge
+   with no empty band where the header used to be. */
+.featured-frame.is-events > .chrome-nav-btn-recommended,
+.featured-frame.is-events > .featured-refresh-btn,
+.featured-frame.is-events > .featured-frame-body {
+    display: none;
+}
+
 /* Minimising now slides the whole frame straight down (see
    js/home.js's setFeaturedPanelState) rather than shrinking its
    max-height — .chrome-frame keeps its real, full flex: 1 size the entire

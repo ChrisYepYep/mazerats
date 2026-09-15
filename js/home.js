@@ -719,11 +719,24 @@ document.addEventListener("DOMContentLoaded", () => {
            topNavBtns handler — but the frame around it stayed, so browsing
            events came with a "Featured Mazes" header and a "Refresh
            recommendations" button sitting above the events list, offering to
-           do something to a set of things that were not on screen. The whole
-           frame goes, rather than just the button, or the events list would
-           be left with an empty 41px band above it where the header used to
-           be. Same thought as the difficulty sort options below. */
-        if (featuredFrame) featuredFrame.hidden = isEvents;
+           do something to a set of things that were not on screen.
+
+           THIS USED TO HIDE THE WHOLE FRAME, and that took the events with
+           it. `.featured-frame` is not a wrapper around the Featured Mazes
+           header — it is the wrapper around EVERYTHING, the results list
+           included: `.chrome-frame` > `.chrome-body` > `.home-results` >
+           `#featured-grid` all sit inside it (see home.html). So `hidden`
+           here emptied the window on every Events tab — Upcoming, Past and
+           Archive alike — while the rows themselves rendered correctly into
+           a grid nobody could see. The header ticker kept showing the next
+           event throughout, which is what made it look like a display bug
+           rather than a missing list.
+
+           The three featured-only children go instead, by class, so the
+           results stay exactly where they are. `display: none` on them takes
+           their space with them, so there is no empty band above the list —
+           which is the thing hiding the frame was reaching for. */
+        if (featuredFrame) featuredFrame.classList.toggle("is-events", isEvents);
 
         // Explains the auto-archiving rule (see eventStatus) at the point it
         // actually matters — sitting in the Archive listing itself, rather
