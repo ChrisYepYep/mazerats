@@ -33,10 +33,11 @@ const path = require("path");
 const { spawn } = require("child_process");
 const { getDb } = require("./_db.js");
 const { isOwner, isAuthorized, UNAUTHORIZED, forbidden } = require("./_auth.js");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify(data)
 });
 

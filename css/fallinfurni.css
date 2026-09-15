@@ -945,7 +945,26 @@ body:not(.is-editing) .ff-guides { display: none; }
     .ff-layout { flex-direction: column; }
     .ff-editor { width: 688px; max-width: 100%; }
     .ff-left { max-width: 100%; overflow-x: auto; }
+    /* The window keeps its true width so .ff-left above has something wider
+       than itself to scroll. Without this it shrinks to the viewport, and
+       since .ff-stage clips, the room is CROPPED rather than scrolled — the
+       right-hand third of it simply gone with no way to reach it. */
+    .ff-window { width: 750px; max-width: none; }
 }
+
+/* AND THE REASON THAT SCROLL NEVER ACTUALLY HAPPENED.
+
+   `body` is a column flex container, so `main` is a flex item sized by
+   `fit-content` on the cross axis — which resolves to its MIN-content width,
+   and that is pinned at 750px by the fixed-size canvas inside. So `main` was
+   750px wide inside a 375px body, `.ff-left`'s `max-width: 100%` measured
+   itself against that same 750, and the overflow sailed past every container
+   that was meant to catch it and out to the document: 407px of sideways drag
+   on a phone, with the Play button off the screen.
+
+   Stated as a width rather than `align-self: stretch`, which does not help —
+   the item is already stretched; it is the fit-content SIZE that is wrong. */
+main.ff-page { width: 100%; }
 
 /* ---- title screen: who you are, and the board */
 
@@ -1345,3 +1364,167 @@ body[data-ff-closed] .ff-board { display: none; }
 }
 
 .ff-runend-board:empty { min-height: 0; }
+
+/* ---- HANDHELD: ROTATE TO PLAY, THEN TAKE THE WHOLE SCREEN.
+
+   Two states, both set from fallinfurni.js because neither can be decided by
+   a media query alone — `pointer: coarse` says a finger, but it says nothing
+   about whether the screen is big enough, and a 1024px tablet in landscape
+   wants the ordinary page rather than either of these.
+
+     body.ff-rotate-shut  the phone is upright. The gate is up, and the round
+                          underneath it is frozen (see gateShut in the js).
+     body.ff-immersive    the phone is sideways. Everything that is not the
+                          room is gone and the room is scaled to fill it.
+
+   Neither class exists on a desktop, so nothing below this line can change
+   what a desktop sees. */
+
+.ff-rotate {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9000;              /* over the console modal, which is 8000 */
+    background: var(--bg-black, #1a1008);
+    color: var(--parchment, #f4e4c1);
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    /* The gate is the whole screen on a device that has a notch and a home
+       bar, so it keeps clear of both rather than tucking its text under
+       them. Falls back to the plain padding above where env() is unknown. */
+    padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+             max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+}
+
+body.ff-rotate-shut .ff-rotate { display: flex; }
+
+/* The page behind the gate is not scrolled, read or tabbed into while it is
+   up — it is unusable at this orientation, which is the entire point. */
+body.ff-rotate-shut { overflow: hidden; }
+
+.ff-rotate-inner { max-width: 22em; }
+
+.ff-rotate-say {
+    font-size: 19px;
+    font-weight: 700;
+    margin: 18px 0 6px;
+}
+
+.ff-rotate-sub {
+    font-size: 13px;
+    color: var(--parchment-dim, #b9a88a);
+    margin: 0;
+}
+
+/* The phone that turns. Two boxes and a transform rather than an SVG or a
+   GIF: it is the only illustration on this page that is not furni, and a
+   drawn asset would be one more thing to load on the connection least able
+   to afford it.
+
+   The outline stands upright, waits, turns a quarter turn, waits, and comes
+   back — the gesture being asked for, at the speed somebody would do it. */
+.ff-rotate-phone {
+    display: block;
+    width: 54px;
+    height: 88px;
+    margin: 0 auto;
+    position: relative;
+    animation: ff-rotate-turn 3s ease-in-out infinite;
+}
+
+.ff-rotate-body {
+    position: absolute;
+    inset: 0;
+    border: 3px solid var(--amber-bright, #f0b040);
+    border-radius: 9px;
+    /* The speaker slot and the home bar, in one gradient rather than two more
+       elements. */
+    background:
+        linear-gradient(var(--amber-bright, #f0b040), var(--amber-bright, #f0b040)) center 8px / 18px 3px no-repeat,
+        linear-gradient(var(--amber-bright, #f0b040), var(--amber-bright, #f0b040)) center calc(100% - 8px) / 22px 3px no-repeat;
+    opacity: 0.9;
+}
+
+/* The curved arrow sweeping round the phone, fading with the turn. */
+.ff-rotate-arrow {
+    position: absolute;
+    inset: -20px;
+    border: 3px solid transparent;
+    border-top-color: var(--parchment-dim, #b9a88a);
+    border-right-color: var(--parchment-dim, #b9a88a);
+    border-radius: 50%;
+    opacity: 0.55;
+}
+
+@keyframes ff-rotate-turn {
+    0%, 28%   { transform: rotate(0deg); }
+    45%, 78%  { transform: rotate(-90deg); }
+    95%, 100% { transform: rotate(0deg); }
+}
+
+/* The site already respects this everywhere else on the page; a looping
+   animation on a gate somebody is stuck behind is exactly the kind it is
+   asking about. The phone still reads as a phone standing still. */
+@media (prefers-reduced-motion: reduce) {
+    .ff-rotate-phone { animation: none; }
+}
+
+/* ---- SIDEWAYS: THE ROOM AND NOTHING ELSE.
+
+   Everything that is not the game goes — the site header, the page's own
+   title and blurb, the fansite footer — because on a 375px-tall landscape
+   phone any one of them is a third of the screen. What is left is centred
+   and scaled by --ff-fit, which fallinfurni.js recomputes on every resize
+   and orientation change.
+
+   SCALED WITH A TRANSFORM, not by resizing the canvas. The comment at the
+   top of this file is still true — the canvas is 720x498 or it is soft — and
+   a transform resamples the finished bitmap once at composite time instead
+   of making the renderer draw at a fraction of a pixel. `image-rendering:
+   pixelated` on the canvas carries through it, so the scale stays blocky and
+   deliberate rather than blurry.
+
+   The click handler in fallinfurni.js already divides by the rendered width
+   (`canvas.width / r.width`), so a scaled room takes taps in the right place
+   with nothing further to do. */
+body.ff-immersive {
+    overflow: hidden;
+    background: var(--bg-black, #1a1008);
+}
+
+body.ff-immersive .site-header,
+body.ff-immersive .site-footer,
+body.ff-immersive .fellow-fansites,
+body.ff-immersive .ff-head,
+body.ff-immersive .ff-right { display: none !important; }
+
+body.ff-immersive .ff-page {
+    max-width: none;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+}
+
+body.ff-immersive .ff-layout { display: block; }
+
+/* overflow back to visible: the scroll this element exists to provide is
+   what the scale has just made unnecessary, and leaving it on clips the
+   scaled window to the unscaled box. */
+body.ff-immersive .ff-left {
+    max-width: none;
+    overflow: visible;
+}
+
+body.ff-immersive .ff-window {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 750px;
+    max-width: none;
+    margin: 0;
+    transform: translate(-50%, -50%) scale(var(--ff-fit, 1));
+    transform-origin: center center;
+    z-index: 40;
+}

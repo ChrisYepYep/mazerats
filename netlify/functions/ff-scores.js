@@ -34,6 +34,7 @@
 
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom } = require("./_player");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const COLLECTION = "ff_scores";
 const LEVELS = "ff_levels";
@@ -41,27 +42,57 @@ const TOP = 25;
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
     body: JSON.stringify(data)
 });
 
-function dropsIn(level) {
+function dropsIn(level, role) {
     let drops = 0;
     for (const z of level.zones || []) {
-        for (const it of z.items || []) drops += Number(it.count) || 0;
+        for (const it of z.items || []) {
+            if (role && it.role !== role) continue;
+            drops += Number(it.count) || 0;
+        }
     }
     return drops;
 }
 
-/* The earliest a level can possibly be completed: the last piece has to have
-   landed before it can be sat on. Mirrors the schedule in js/room-drop.js. */
+/* ---- HOW MUCH OF A LEVEL CAN BE SKIPPED, and why the floor has to allow it.
+
+   The floor used to be `(every scheduled drop - 1) * delay + fall`, on the
+   reasoning that each piece costs a delay. That is not what room-drop.js
+   does. A piece with nowhere safe to land is shifted off the queue WITHOUT
+   advancing `nextAt` — skipped on the same tick, costing nothing — and the
+   comment there is explicit that this happens on full levels, where the last
+   few pieces all have nowhere to go. Sequence seats are not exempt: one that
+   cannot land "comes off the plan" and the round is winnable without it.
+
+   So the real minimum is always lower than the schedule suggests, by an
+   amount the server cannot know: it depends on where the player was standing
+   at each drop. Charging the full schedule made the floor an over-estimate,
+   and an over-estimating floor REJECTS HONEST RUNS — which is a far worse
+   failure than letting an inflated one through, the same trade the ceiling
+   below is written around.
+
+   Two changes, then. Only sequence seats are counted, because those are the
+   ones a player must actually wait for and sit on — obstacles can all be
+   skipped without affecting whether the round can be finished. And half of
+   even those are assumed to have come off the plan.
+
+   What is left still does the job it was written for. It refuses `ms: 1`,
+   which is the realistic attempt; it just no longer refuses somebody playing
+   well on a level that dropped fewer pieces than it planned to. */
+const SKIP_ALLOWANCE = 0.5;
+
 function floorMsFor(level) {
     const rules = level.rules || {};
     const delay = Number(rules.dropDelayMs) || 0;
     const fall = Number(rules.dropSpeedMs) || 0;
-    const drops = dropsIn(level);
-    if (drops <= 0) return 0;
-    return (drops - 1) * delay + fall;
+    const seats = dropsIn(level, "sequence");
+    if (seats <= 0) return 0;
+    // At least one piece falls, however much is assumed skipped.
+    const landed = Math.max(1, Math.ceil(seats * (1 - SKIP_ALLOWANCE)));
+    return (landed - 1) * delay + fall;
 }
 
 /* ---- THE MOST A LEVEL CAN POSSIBLY BE WORTH.
@@ -71,13 +102,22 @@ function floorMsFor(level) {
    already true of `floorMsFor` above and the drop schedule it mirrors — if
    those numbers change, this changes with them.
 
-   DELIBERATELY GENEROUS. Every scheduled drop is assumed to be a sittable
-   sequence seat taken in one unbroken streak, with the whole clock left over.
-   That is not reachable in practice — some of those pieces are obstacles, and
-   nobody clears a round with the full time still showing — but a ceiling that
-   is too low would refuse an honest run, which is a far worse failure than
-   letting an inflated one through. This exists to stop `points: 99999999`,
-   which is the realistic attempt, not to price a round exactly. */
+   STILL GENEROUS, but no longer absurd. It assumes every SEQUENCE seat is
+   taken in one unbroken streak with the whole clock left over — not reachable
+   in practice, since nobody clears a round with the full time showing, but
+   the right side to err on: a ceiling that is too low refuses an honest run,
+   which is worse than letting an inflated one through.
+
+   WHAT CHANGED: it used to count every scheduled drop as a scoring seat.
+   Two thirds of the pieces in the published levels are sequence seats and the
+   rest cannot pay anything at all — an obstacle is never sat on, a decoy is
+   -5, and a poi ENDS THE ROUND (see the seat branches in js/room-game.js).
+   Counting them as ten points plus a streak step put the ceiling at nearly
+   twice what the board's best real run had scored, which is enough room for a
+   crafted request to take first place and look ordinary doing it.
+
+   Counting only what can actually pay closes most of that gap without moving
+   the ceiling below any run a person could really have. */
 const SEAT_POINTS = 10;
 const STREAK_STEP = 2;
 const STREAK_MAX = 8;
@@ -97,7 +137,8 @@ const LIFE_BONUS = 100;
 const maxLifeBonus = (levels) => (STARTING_LIVES + Math.floor(levels / LIFE_EVERY)) * LIFE_BONUS;
 
 function maxPointsFor(level) {
-    const seats = dropsIn(level);
+    // Sequence only. Nothing else in a level can add a point to a run.
+    const seats = dropsIn(level, "sequence");
     let total = FINISH_BONUS + (Number((level.rules || {}).seconds) || 0) * TIME_BONUS_PER_S;
     for (let n = 1; n <= seats; n++) {
         total += SEAT_POINTS + Math.min(n - 1, STREAK_MAX) * STREAK_STEP;
@@ -109,10 +150,19 @@ function maxPointsFor(level) {
    reads as a real row with nothing scored rather than as a hole in the
    table. Those rows sort to the bottom until their owner plays again, which
    is the honest answer: nobody knows what that run was worth. */
+/* `habbo` is NOT in here, and is no longer stored either.
+
+   It was written from whatever the client put in the field and handed back to
+   every caller by this function, while nothing on the page has ever rendered
+   it — so it was an arbitrary attacker-chosen string travelling to every
+   visitor's browser and waiting for the first piece of code that decided to
+   display it. A stored cross-site scripting hole with the scripting part not
+   written yet. Removed rather than escaped: an unused field cannot be escaped
+   wrongly later. The name on the board is the Discord one, which comes from
+   the signed session and not from the request body. */
 const clean = (row) => ({
     name: row.name,
     avatar: row.avatar || null,
-    habbo: row.habbo || null,
     points: Number(row.points) || 0,
     levels: row.levels,
     ms: row.ms,
@@ -200,7 +250,6 @@ exports.handler = async (event) => {
         playerId: player.id,
         name: player.name || player.username || "Someone",
         avatar: player.avatar || null,
-        habbo: typeof body.habbo === "string" ? body.habbo.slice(0, 32) : null,
         points, levels, ms,
         at: new Date().toISOString()
     };

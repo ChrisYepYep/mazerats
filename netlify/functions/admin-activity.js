@@ -22,10 +22,11 @@ const { getDb } = require("./_db");
 const { isAuthorized, isOwner, UNAUTHORIZED, forbidden } = require("./_auth");
 const { COLLECTION, KEEP_DAYS } = require("./_audit");
 const { COLLECTION: SITE_EVENTS, KEEP_DAYS: SITE_KEEP_DAYS } = require("./track");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
     body: JSON.stringify(data),
 });
 

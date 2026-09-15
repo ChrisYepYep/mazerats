@@ -6,6 +6,7 @@
 const jwt = require("jsonwebtoken");
 const { getDb } = require("./_db.js");
 const { recordWrite } = require("./_audit.js");
+const { SECURITY_HEADERS } = require("./_headers");
 
 function isAuthorized(event) {
     return Boolean(usernameFromToken(event));
@@ -15,7 +16,12 @@ function tokenPayload(event) {
     const token = event.headers["x-admin-token"] || "";
     if (!token || !process.env.SESSION_SECRET) return null;
     try {
-        return jwt.verify(token, process.env.SESSION_SECRET);
+        /* The algorithm is named rather than inferred. jsonwebtoken 9 already
+           refuses to verify an asymmetric token against a string secret, so
+           this is not today's bug — it is the one where a future version, or
+           a swap to a key object, quietly widens what counts as a valid
+           signature. A token that is not HS256 is not ours. */
+        return jwt.verify(token, process.env.SESSION_SECRET, { algorithms: ["HS256"] });
     } catch (e) {
         return null;
     }
@@ -141,7 +147,7 @@ async function canWrite(event, scope = "site") {
 
 const UNAUTHORIZED = {
     statusCode: 401,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify({ error: "Unauthorized" })
 };
 
@@ -151,7 +157,7 @@ const UNAUTHORIZED = {
 // would log a working session out.
 const forbidden = (message) => ({
     statusCode: 403,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify({ error: message })
 });
 

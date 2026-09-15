@@ -27,6 +27,7 @@
 
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, isOwner, UNAUTHORIZED, forbidden } = require("./_auth");
+const { SECURITY_HEADERS } = require("./_headers");
 
 /* Levels are OWNER-ONLY, which is stricter than the rest of the archive.
    Everywhere else an "admin" may write; here they may not. The level editor
@@ -41,7 +42,7 @@ const NOT_OWNER = forbidden("Only an owner account can change Fallin' Furni leve
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify(data)
 });
 

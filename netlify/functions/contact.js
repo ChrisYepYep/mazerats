@@ -6,12 +6,27 @@ const crypto = require("crypto");
 const { getDb } = require("./_db");
 const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { playerFrom } = require("./_player");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify(data)
 });
+
+/* Anything off the wire is text or it is nothing. `(body.x || "").trim()`
+   throws on an object or an array, and this endpoint takes an unauthenticated
+   POST from anyone — so `{"message":{}}` was a one-line 500 with a stack
+   trace in the body. Worse, it threw ABOVE the rate limit and the ban check
+   below, so the cheapest way to hammer this function was also the one route
+   that no throttle was watching.
+
+   Anything that is not a string becomes EMPTY rather than being stringified.
+   `String({})` is "[object Object]" — fifteen perfectly valid characters that
+   sail through the length checks below and land in the database as somebody's
+   message. A field that arrived as the wrong type has no text in it, so it is
+   refused by the emptiness check the same way a blank form would be. */
+const text = (v) => (typeof v === "string" ? v : "");
 
 const MESSAGE_MAX = 2000;
 const USERNAME_MAX = 60;
@@ -96,13 +111,13 @@ exports.handler = async (event) => {
         // does fill it is almost certainly a bot. Reply with a normal-
         // looking success instead of an error so it doesn't learn to work
         // around this — just skip the DB write and email entirely.
-        if ((body.website || "").trim()) {
+        if (text(body.website).trim()) {
             return json(201, { id: crypto.randomUUID(), username: "", discord: "", message: "", createdAt: new Date().toISOString() });
         }
 
-        const message = (body.message || "").trim();
-        const username = (body.username || "").trim();
-        const discord = (body.discord || "").trim();
+        const message = text(body.message).trim();
+        const username = text(body.username).trim();
+        const discord = text(body.discord).trim();
         if (!message) return json(400, { error: "Message can't be empty" });
         if (message.length > MESSAGE_MAX) return json(400, { error: `Message is too long — keep it under ${MESSAGE_MAX} characters` });
         if (username.length > USERNAME_MAX) return json(400, { error: `Username is too long — keep it under ${USERNAME_MAX} characters` });

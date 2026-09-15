@@ -163,10 +163,29 @@ a{color:#e6b866}
 </html>`;
 }
 
+/* This one serves a real HTML document rather than JSON, so it cannot take
+   the shared `default-src 'none'` — the page carries an inline redirect
+   script and an Open Graph image, and that policy would block both. It gets
+   a policy naming exactly what it uses instead, plus the same nosniff and
+   framing protection every other response now carries.
+
+   `frame-ancestors 'none'` matters more here than anywhere else on the site:
+   this is the page link previews fetch, so it is the one an attacker would
+   most like to put in an iframe. */
+const SHARE_HEADERS = {
+    "Content-Type": "text/html; charset=utf-8",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Content-Security-Policy":
+        "default-src 'none'; img-src 'self' https:; style-src 'unsafe-inline'; " +
+        "script-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+};
+
 function notFound(origin) {
     return {
         statusCode: 404,
-        headers: { "Content-Type": "text/html; charset=utf-8" },
+        headers: SHARE_HEADERS,
         body: page({
             title: "Not in the archive",
             description: "That maze or event isn’t in the Maze Rats archive — it may have been renamed since the link was made.",
@@ -212,10 +231,7 @@ exports.handler = async (event) => {
 
     return {
         statusCode: 200,
-        headers: {
-            "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": CACHE
-        },
+        headers: { ...SHARE_HEADERS, "Cache-Control": CACHE },
         body: page({
             title,
             description: describe(record, isEvent),

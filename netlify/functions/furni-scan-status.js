@@ -11,10 +11,11 @@
 
 const { getDb } = require("./_db.js");
 const { isAuthorized, UNAUTHORIZED } = require("./_auth.js");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
     body: JSON.stringify(data)
 });
 

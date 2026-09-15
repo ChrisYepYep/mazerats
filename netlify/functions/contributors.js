@@ -2,10 +2,11 @@
    Contributors page. Mirrors rooms.js/events.js. */
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify(data)
 });
 

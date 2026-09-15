@@ -8,14 +8,20 @@
 const crypto = require("crypto");
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify(data)
 });
 
 const REASON_MAX = 200;
+
+// Anything off the wire is text or it is nothing: `(body.x || "").trim()`
+// throws outright on an object, turning a crafted request into an unhandled
+// 500. Coerced first, then refused by the ordinary checks below.
+const text = (v) => (typeof v === "string" ? v : "");
 
 exports.handler = async (event) => {
     let db;
@@ -48,8 +54,8 @@ exports.handler = async (event) => {
             return json(400, { error: "Invalid request body" });
         }
 
-        const ip = (body.ip || "").trim();
-        const reason = (body.reason || "").trim();
+        const ip = text(body.ip).trim();
+        const reason = text(body.reason).trim();
         if (!ip) return json(400, { error: "A ban needs an IP address" });
         if (reason.length > REASON_MAX) {
             return json(400, { error: `Reason is too long — keep it under ${REASON_MAX} characters` });

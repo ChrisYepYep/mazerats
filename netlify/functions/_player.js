@@ -57,7 +57,9 @@ function playerFrom(event) {
     const token = parseCookies(cookieHeader(event))[COOKIE];
     if (!token) return null;
     try {
-        const claims = jwt.verify(token, process.env.SESSION_SECRET, { audience: AUDIENCE });
+        // algorithms named for the same reason _auth.js names them: what
+        // counts as a valid signature should not be inferred from the key.
+        const claims = jwt.verify(token, process.env.SESSION_SECRET, { audience: AUDIENCE, algorithms: ["HS256"] });
         if (!claims || !claims.sub) return null;
         return { id: String(claims.sub), name: claims.name || "Someone", avatar: claims.avatar || null };
     } catch (e) {

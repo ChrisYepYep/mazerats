@@ -11,6 +11,7 @@
    exists for — leaving them out would index only the part of the site that
    is already easy to find. */
 const { getDb } = require("./_db");
+const { headersFor } = require("./_headers");
 
 const CACHE = "public, s-maxage=3600, stale-while-revalidate=86400";
 
@@ -73,10 +74,7 @@ exports.handler = async (event) => {
 
     return {
         statusCode: 200,
-        headers: {
-            "Content-Type": "application/xml; charset=utf-8",
-            "Cache-Control": CACHE
-        },
+        headers: headersFor("application/xml; charset=utf-8", { "Cache-Control": CACHE }),
         body: '<?xml version="1.0" encoding="UTF-8"?>\n' +
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
             entries.join("\n") + "\n</urlset>\n"

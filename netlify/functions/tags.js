@@ -5,14 +5,20 @@
    edit/delete here — only adding new tags was asked for. */
 const { getDb } = require("./_db");
 const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify(data)
 });
 
 const DEFAULT_TAGS = ["FURNI MAZE", "ILLUSION", "FLOATING", "FUNCTIONAL", "LONG-FORM"];
+
+// Anything off the wire is text or it is nothing: `(body.x || "").trim()`
+// throws outright on an object, turning a crafted request into an unhandled
+// 500. Coerced first, then refused by the ordinary checks below.
+const text = (v) => (typeof v === "string" ? v : "");
 
 exports.handler = async (event) => {
     let db;
@@ -52,7 +58,7 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
-        const label = (body.label || "").trim();
+        const label = text(body.label).trim();
         if (!label) return json(400, { error: "A tag needs a label" });
 
         const all = await tags.find({}, { projection: { _id: 0 } }).toArray();

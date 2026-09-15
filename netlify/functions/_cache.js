@@ -18,6 +18,7 @@
    asking for ?full=1, which is never cached. */
 
 const zlib = require("zlib");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const CDN_CACHE = "public, s-maxage=60, stale-while-revalidate=86400";
 // max-age=0 rather than no-store: the browser keeps the copy and revalidates,
@@ -41,8 +42,12 @@ function acceptsGzip(event) {
    including `netlify dev` locally, which does not compress at all. */
 function cachedJson(event, data, { cache = true } = {}) {
     const body = JSON.stringify(data);
+    /* SECURITY_HEADERS first, then this function's own on top. Every cached
+       read on the site returns through here — rooms, events, contributors —
+       so a response built from scratch in this helper was the one path that
+       still went out bare after every handler had been given them. */
     const headers = {
-        "Content-Type": "application/json",
+        ...SECURITY_HEADERS,
         "Cache-Control": cache ? BROWSER_CACHE : "no-store",
         // Compressed and uncompressed copies of the same URL must not be
         // served to each other's clients.

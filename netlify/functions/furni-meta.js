@@ -30,6 +30,7 @@
    in — see js/room-levels.js. */
 
 const { blobStore } = require("./_blobs.js");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const ENDPOINT = "https://origins.habbo.com/gamedata/furnidata_xml/1";
 const CACHE_KEY = "furnidata.json";
@@ -41,7 +42,7 @@ const USER_AGENT = "Mozilla/5.0 (compatible; MazeRats/1.0; +https://mazerats.net
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=3600" },
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "public, max-age=3600" },
     body: JSON.stringify(data)
 });
 

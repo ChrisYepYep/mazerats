@@ -35,6 +35,7 @@
 const { getDb } = require("./_db");
 const { isAuthorized, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { playerFrom } = require("./_player");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const SCORES = "guess_scores";
 const RESETS = "daily_resets";
@@ -68,7 +69,7 @@ const isGame = key => GAMES.some(g => g.key === key);
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
     body: JSON.stringify(data)
 });
 

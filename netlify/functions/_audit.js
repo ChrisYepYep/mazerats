@@ -30,6 +30,12 @@ async function ensureIndexes(db) {
     // log prunes itself and nobody has to remember to.
     await col.createIndex({ at: 1 }, { expireAfterSeconds: KEEP_DAYS * 24 * 60 * 60 }).catch(() => {});
     await col.createIndex({ username: 1, at: -1 }).catch(() => {});
+    /* The two the login throttle counts on (see loginThrottle in auth.js).
+       Both carry `type` first because it only ever asks about one kind of
+       record — the failures — and there is no reason to walk a login's worth
+       of successes and heartbeats to find them. */
+    await col.createIndex({ type: 1, ip: 1, at: -1 }).catch(() => {});
+    await col.createIndex({ type: 1, username: 1, at: -1 }).catch(() => {});
     ensured = true;
 }
 

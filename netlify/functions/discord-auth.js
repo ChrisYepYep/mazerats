@@ -33,6 +33,7 @@ const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { signPlayer, playerFrom, setCookie, clearCookie, parseCookies } = require("./_player");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const STATE_COOKIE = "mr_oauth";
 const STATE_TTL = 10 * 60;                 // ten minutes to finish a login
@@ -40,7 +41,7 @@ const DISCORD_API = "https://discord.com/api/v10";
 
 const json = (statusCode, data, extra) => ({
     statusCode,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...(extra || {}) },
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store", ...(extra || {}) },
     body: JSON.stringify(data)
 });
 

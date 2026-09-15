@@ -13,6 +13,7 @@
 */
 
 const { blobStore } = require("./_blobs.js");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const ENDPOINT = "https://furniindex.com/api/mazerats/all";
 const PAGE_SIZE = 100;          // their cap; anything larger is ignored
@@ -21,7 +22,7 @@ const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify(data)
 });
 

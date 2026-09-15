@@ -28,11 +28,12 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { getDb } = require("./_db");
 const { isAuthorized, canWrite, refuseWrite, usernameFromToken, sessionOf, UNAUTHORIZED, READ_ONLY, ROLES, resolveRole } = require("./_auth");
-const { record } = require("./_audit");
+const { record, COLLECTION: ACTIVITY } = require("./_audit");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify(data)
 });
 
@@ -42,6 +43,91 @@ function signToken(username) {
 
 function validPassword(password) {
     return typeof password === "string" && password.length >= 8;
+}
+
+/* Anything off the wire is text or it is nothing. `(body.x || "").trim()`
+   throws outright on an object or an array, which turned a one-line crafted
+   request into an unhandled 500 with a stack trace in the body — and on a
+   handler that anyone on the internet can reach without signing in. Coerced
+   first, so a non-string arrives here as the nonsense it is and gets refused
+   by the ordinary checks below rather than taking the function down.
+
+   Not stringified — emptied. `String({})` is "[object Object]", which is a
+   perfectly usable username as far as every length check here is concerned,
+   and there is no reason to let a malformed request invent one. A field of
+   the wrong type is a field with nothing in it. */
+const text = (v) => (typeof v === "string" ? v : "");
+
+/* ---- HOW MANY TIMES YOU MAY GET IT WRONG.
+
+   Every failure is already written to admin_activity by _audit.js, with the
+   IP and the time on it, so the counter this needs is a query rather than a
+   new store — which matters on Netlify, where nothing in memory survives
+   between invocations and there is no shared cache to lean on. Same shape as
+   the per-IP cap contact.js has always had.
+
+   Counted per IP AND per username, whichever trips first. The IP cap stops
+   one host working through a password list; the username cap stops the same
+   account being worked on from a botnet, which the IP cap alone would miss
+   entirely.
+
+   bcrypt is the reason this matters twice over. A cost-10 hash is ~45ms of
+   CPU that an anonymous caller can ask for as often as they like, so an
+   unthrottled login is not only a guessing game left running, it is a way to
+   spend the site's compute budget from outside. The check below happens
+   BEFORE any hashing, so a refused attempt costs one indexed count. */
+const LOGIN_MAX_PER_IP = 10;
+const LOGIN_MAX_PER_USER = 15;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+function clientIp(event) {
+    /* Only the value Netlify computes. x-forwarded-for is client-settable,
+       so honouring it would let an attacker rotate the header and walk
+       straight past the cap. Same reasoning, and the same single source, as
+       contact.js. */
+    return (event.headers || {})["x-nf-client-connection-ip"] || null;
+}
+
+/* Null when the request is under the cap; otherwise the 429 to return.
+
+   A missing IP skips only the IP half — the username half still applies, so
+   an unidentifiable caller is throttled per account rather than not at all.
+   Failing open on the whole check would make the header its own bypass. */
+async function loginThrottle(db, event, username) {
+    const since = new Date(Date.now() - LOGIN_WINDOW_MS);
+    const ip = clientIp(event);
+    const activity = db.collection(ACTIVITY);
+
+    const [byIp, byUser] = await Promise.all([
+        ip ? activity.countDocuments({ type: "login-failed", ip, at: { $gte: since } },
+            { limit: LOGIN_MAX_PER_IP }) : Promise.resolve(0),
+        activity.countDocuments({ type: "login-failed", username, at: { $gte: since } },
+            { limit: LOGIN_MAX_PER_USER })
+    ]);
+
+    if (byIp < LOGIN_MAX_PER_IP && byUser < LOGIN_MAX_PER_USER) return null;
+    return {
+        statusCode: 429,
+        headers: { ...SECURITY_HEADERS, "Retry-After": String(Math.ceil(LOGIN_WINDOW_MS / 1000)) },
+        body: JSON.stringify({ error: "Too many sign-in attempts. Try again in a few minutes." })
+    };
+}
+
+/* A bcrypt hash of nothing in particular, compared against when the account
+   does not exist.
+
+   Without it the two outcomes take visibly different times — measured on
+   this site, 80ms for a real username against 35ms for one that has never
+   existed, because only the real one reaches bcrypt. That gap is a free
+   directory of valid admin names, which is exactly the thing the identical
+   "Invalid username or password" wording above is trying not to give away.
+   So the miss does the same work the hit does and throws the answer away. */
+const DUMMY_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+
+async function passwordMatches(password, admin) {
+    const hash = (admin && admin.passwordHash) || DUMMY_HASH;
+    const ok = await bcrypt.compare(password, hash);
+    return Boolean(admin) && ok;
 }
 
 exports.handler = async (event) => {
@@ -66,14 +152,26 @@ exports.handler = async (event) => {
         }
 
         if (body.action === "login") {
-            const username = (body.username || "").trim();
-            const password = body.password || "";
+            const username = text(body.username).trim();
+            const password = text(body.password);
             if (!username || !password) return json(400, { error: "Username and password are required" });
+
+            /* Before the database is asked anything and before bcrypt runs,
+               so a throttled attempt is the cheapest response this function
+               has rather than its most expensive one. */
+            const throttled = await loginThrottle(db, event, username);
+            if (throttled) return throttled;
 
             const count = await admins.countDocuments();
             if (count === 0) {
                 if (!process.env.ADMIN_PASSWORD || password !== process.env.ADMIN_PASSWORD) {
-                    record(event, "login-failed", { username, reason: "bootstrap password" });
+                    /* AWAITED, unlike every other call to record(). The audit
+                       log is fire-and-forget everywhere else because nothing
+                       should be able to hold up a save — but here the record
+                       IS the counter loginThrottle reads, and a burst fired
+                       faster than the writes land would count nothing and be
+                       throttled at nothing. Paid only on a failure. */
+                    await record(event, "login-failed", { username, reason: "bootstrap password" });
                     return json(401, { error: "Invalid username or password" });
                 }
                 const passwordHash = await bcrypt.hash(password, 10);
@@ -84,11 +182,15 @@ exports.handler = async (event) => {
             }
 
             const admin = await admins.findOne({ username });
-            if (!admin || !(await bcrypt.compare(password, admin.passwordHash))) {
+            // Runs a hash either way — see DUMMY_HASH above for why.
+            if (!(await passwordMatches(password, admin))) {
                 /* Logged with the username that was TRIED, which is the point:
                    a run of failures against a real account is the thing worth
-                   noticing. The password itself is never recorded. */
-                record(event, "login-failed", { username, reason: admin ? "wrong password" : "no such account" });
+                   noticing. The password itself is never recorded.
+
+                   Awaited for the same reason the bootstrap failure above is:
+                   this row is what the next attempt will be counted against. */
+                await record(event, "login-failed", { username, reason: admin ? "wrong password" : "no such account" });
                 return json(401, { error: "Invalid username or password" });
             }
             const token = signToken(username);
@@ -110,8 +212,8 @@ exports.handler = async (event) => {
         if (body.action === "create") {
             if (!isAuthorized(event)) return UNAUTHORIZED;
             if (!(await canWrite(event))) return READ_ONLY;
-            const username = (body.username || "").trim();
-            const password = body.password || "";
+            const username = text(body.username).trim();
+            const password = text(body.password);
             // Anything unrecognised lands on "admin" rather than being taken
             // at face value, so a bad value can't create an account whose
             // powers nothing has defined.
@@ -148,8 +250,8 @@ exports.handler = async (event) => {
         } catch (e) {
             return json(400, { error: "Invalid request body" });
         }
-        const username = (body.username || "").trim();
-        const password = body.password || "";
+        const username = text(body.username).trim();
+        const password = text(body.password);
         if (!username || !validPassword(password)) {
             return json(400, { error: "Username and an 8+ character password are required" });
         }

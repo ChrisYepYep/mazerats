@@ -11,10 +11,11 @@
    everywhere: any problem returns "no profile" and the maze modal falls
    back to the plain creator line it always showed. */
 const { getDb } = require("./_db");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify(data)
 });
 

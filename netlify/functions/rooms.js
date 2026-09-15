@@ -6,10 +6,11 @@ const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { packRecords } = require("./_furni-payload");
 const { cachedJson } = require("./_cache");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json" },
+    headers: SECURITY_HEADERS,
     body: JSON.stringify(data)
 });
 

@@ -349,7 +349,19 @@
                             <span id="ff-score">0</span><em id="ff-score-delta"></em>
                         </div>
                         <div class="ff-hud-seq" id="ff-seq"></div>
-                        <div class="ff-hud-msg" id="ff-msg"></div>
+                        <!-- THE ONE LINE THE GAME TALKS TO YOU WITH, and the
+                             only feedback for a wrong chair that is not purely
+                             visual: "Out of order - 10 and the streak is gone"
+                             is how the rule is taught. Without a live region a
+                             screen reader never reads it, so the game silently
+                             takes points off and never says why.
+
+                             polite, not assertive: it should be read at the
+                             next natural pause rather than interrupting, since
+                             several of these can land in quick succession.
+                             atomic, because the whole sentence changes at once
+                             and reading only the changed words is nonsense. -->
+                        <div class="ff-hud-msg" id="ff-msg" role="status" aria-live="polite" aria-atomic="true"></div>
                     </div>
                 </div>
 
@@ -800,6 +812,38 @@
         <p>Origins Maze Rats is independent and not affiliated with, sponsored, supported, or endorsed by Sulake Oy or its affiliates. Any Habbo trademarks or intellectual property used here are done so in accordance with the Habbo Fan Site Policy.</p>
         <p>&copy; 2026 Origins Maze Rats. All rights reserved.</p>
     </footer>
+
+    <!-- ROTATE TO PLAY.
+
+         The room is 720px of fixed-size pixel art and shrinking it is what
+         made it blurry, so a phone held upright cannot show the game at all —
+         it used to drag the whole page 400px sideways and leave the Play
+         button off the screen entirely. Turned sideways there is room for it,
+         and the game takes the whole display.
+
+         In the markup rather than built by script, for the same reason the
+         closed-game notice above is: the gate has to be able to be on screen
+         before any of the game's own code has run. It is display:none until
+         fallinfurni.js says otherwise, so a desktop never sees it and a
+         handheld never sees a flash of the unusable layout behind it.
+
+         aria-hidden tracks the same state from script — while the gate is up
+         it is the only thing on the page, and while it is down it is not on
+         the page at all. -->
+    <!-- id is ff-rotate-GATE, not ff-rotate: the level editor's own rotate
+         button already owns that one, and getElementById was handing this
+         element's aria state to a button in the builder. -->
+    <div class="ff-rotate" id="ff-rotate-gate" role="alertdialog" aria-hidden="true"
+         aria-labelledby="ff-rotate-say" aria-describedby="ff-rotate-sub">
+        <div class="ff-rotate-inner">
+            <div class="ff-rotate-phone" aria-hidden="true">
+                <i class="ff-rotate-body"></i>
+                <i class="ff-rotate-arrow"></i>
+            </div>
+            <p class="ff-rotate-say" id="ff-rotate-say">Turn your phone sideways</p>
+            <p class="ff-rotate-sub" id="ff-rotate-sub">Fallin' Furni needs the long edge of your screen.</p>
+        </div>
+    </div>
 
     <!-- The shared chrome's own dependencies, in home.html's order: site.js
          reads EventStatus for the header's ticker and Api for everything, and

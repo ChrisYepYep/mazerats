@@ -731,17 +731,174 @@
         pausedFor += Math.max(0, performance.now() - from);
     }
 
+    /* A PHONE HELD UPRIGHT COUNTS AS A HIDDEN TAB.
+
+       The rotate gate covers the screen, so the room behind it is exactly as
+       unwatched as it is on a tab in the background — and a clock that kept
+       running behind it would spend a player's round while they were being
+       told they could not play yet.
+
+       It goes through the same single-span mechanism rather than a second
+       one, because the two overlap constantly on a phone: turning the device
+       upright and switching apps are the same gesture half the time, and two
+       independent spans both adding the same interval is the bug the comment
+       above `pauseSpanEnd` is about. One reason or four, the freeze is one
+       span, opened by whichever arrives first and closed by the last to go. */
+    let gateShut = false;
+    const frozen = () => document.hidden || gateShut;
+
+    function freezeChanged() {
+        if (frozen()) {
+            // `hiddenAt` guards re-entry: a span already open is not reopened
+            // by a second reason arriving, which would lose the first's start.
+            if (!loading && !hiddenAt) hiddenAt = performance.now();
+            return;
+        }
+        if (hiddenAt && !loading) pauseSpanEnd(hiddenAt);
+        hiddenAt = 0;
+        lastPaint = 0;      // paint the first frame back immediately
+        dirty = true;
+    }
+
     function watchVisibility() {
-        document.addEventListener("visibilitychange", () => {
-            if (document.hidden) {
-                if (!loading) hiddenAt = performance.now();
-                return;
-            }
-            if (hiddenAt && !loading) pauseSpanEnd(hiddenAt);
-            hiddenAt = 0;
-            lastPaint = 0;      // paint the first frame back immediately
-            dirty = true;
-        });
+        document.addEventListener("visibilitychange", freezeChanged);
+    }
+
+    /* ---- ROTATE TO PLAY.
+
+       The room is 720x498 of fixed-size pixel art, and the file that draws it
+       says plainly that scaling it is what made it blurry. That is a fine
+       rule on a desktop and an impossible one on a phone held upright: 375px
+       of screen cannot show 750px of window, and what it did instead was drag
+       the whole document 400px sideways with the Play button off the edge of
+       it.
+
+       So a handheld gets one of two things and never the ordinary page:
+       upright, a gate asking for the other orientation; sideways, the room
+       scaled to fill the display with everything else taken away.
+
+       WHY THE SCALE IS ALLOWED HERE and nowhere else: it is a transform on
+       the finished canvas rather than a smaller drawing surface, so the
+       renderer still works at exactly 720x498 and `image-rendering: pixelated`
+       carries through the composite. The room gets bigger or smaller in whole
+       pixels; it does not go soft. */
+
+    /* A finger AND a screen too small to hold the room. Both halves matter:
+       `pointer: coarse` alone catches a 1280px touchscreen laptop that has
+       no trouble showing the game, and a size test alone catches a desktop
+       window somebody has narrowed, which should get the ordinary scrolling
+       layout rather than be told to rotate a monitor.
+
+       Measured off `screen` rather than the viewport because the viewport is
+       the thing that changes when the device turns — asking the window how
+       wide it is would make "is this a phone" flip every time the phone
+       moved. */
+    function isHandheld() {
+        if (!window.matchMedia) return false;
+        if (!window.matchMedia("(pointer: coarse)").matches) return false;
+        const shortEdge = Math.min(screen.width || 0, screen.height || 0);
+        return shortEdge > 0 && shortEdge < 820;
+    }
+
+    const isPortrait = () => window.matchMedia
+        ? window.matchMedia("(orientation: portrait)").matches
+        : window.innerHeight > window.innerWidth;
+
+    /* How much of the display the room can take without leaving it. Capped at
+       1 so a tablet in landscape does not blow a 720px room up to 1600px and
+       show every seam in the art; there is no lower cap, because whatever the
+       screen is, the whole room has to be on it.
+
+       MEASURED, not calculated from constants. It was written as 720+24 for
+       the canvas and its titlebar, and the window is actually 550 tall — the
+       frame's border-image and the stage's own border are worth another 28px
+       that nothing in this file knew about. The result was a scale ~5% too
+       generous, which hung the room ten pixels off the top and bottom of the
+       screen: close enough to look deliberate and wrong enough to clip the
+       clock. Asking the element is the only version that cannot drift from
+       the CSS.
+
+       offsetWidth/offsetHeight are the pre-transform layout size, so this
+       reads the same numbers whether or not a scale is already applied and
+       can be re-run on every resize without compounding. */
+    function fitImmersive() {
+        const win = document.getElementById("ff-window");
+        if (!win) return;
+        const w = win.offsetWidth, h = win.offsetHeight;
+        if (!w || !h) return;
+        const scale = Math.min(window.innerWidth / w, window.innerHeight / h, 1);
+        document.documentElement.style.setProperty("--ff-fit", String(scale));
+    }
+
+    /* Fullscreen is asked for, never relied on.
+
+       It needs a user gesture in every browser that has it, so this is bound
+       to the first tap after the phone turns rather than to the turn itself —
+       an orientationchange is not a gesture and the request would be refused.
+       And iOS Safari has no Element.requestFullscreen at all, so on an iPhone
+       this does nothing and the immersive layout above is the whole of the
+       effect. That is why the layout does the filling and fullscreen only
+       removes the browser's own chrome on top of it: the game is playable
+       either way, and better where it is allowed.
+
+       Orientation lock is best-effort in the same way — it only resolves
+       inside fullscreen, and only on Android in practice. */
+    function goFullscreen() {
+        const el = document.documentElement;
+        const req = el.requestFullscreen || el.webkitRequestFullscreen;
+        if (!req || document.fullscreenElement) return;
+        Promise.resolve(req.call(el)).then(() => {
+            const lock = screen.orientation && screen.orientation.lock;
+            if (lock) Promise.resolve(lock.call(screen.orientation, "landscape")).catch(() => {});
+        }).catch(() => {});
+    }
+
+    function applyOrientation() {
+        const body = document.body;
+        const handheld = isHandheld();
+        const shut = handheld && isPortrait();
+
+        body.classList.toggle("ff-handheld", handheld);
+        body.classList.toggle("ff-rotate-shut", shut);
+        body.classList.toggle("ff-immersive", handheld && !shut);
+
+        // ff-rotate-GATE. The editor's rotate button is #ff-rotate.
+        const gate = document.getElementById("ff-rotate-gate");
+        if (gate) gate.setAttribute("aria-hidden", shut ? "false" : "true");
+
+        if (handheld && !shut) fitImmersive();
+
+        /* Last, and only on a real change: freezeChanged closes a pause span
+           and the round starts moving again the moment it returns, so the
+           layout it is about to be drawn into should already be right. */
+        if (shut !== gateShut) {
+            gateShut = shut;
+            freezeChanged();
+        }
+    }
+
+    function watchOrientation() {
+        applyOrientation();
+
+        /* `resize` covers the orientation change on every browser — including
+           the ones where `orientationchange` fires before the viewport has
+           actually changed size, which would measure the old one. The
+           matchMedia listener is what catches a device turning while the tab
+           is in the background, where no resize is dispatched until it comes
+           back. */
+        window.addEventListener("resize", applyOrientation);
+        if (window.matchMedia) {
+            const mq = window.matchMedia("(orientation: portrait)");
+            // Safari before 14 has only the deprecated form.
+            if (mq.addEventListener) mq.addEventListener("change", applyOrientation);
+            else if (mq.addListener) mq.addListener(applyOrientation);
+        }
+
+        /* The gesture that buys fullscreen. Bound while sideways, spent once,
+           and rebound if the player leaves fullscreen and turns again. */
+        document.addEventListener("pointerdown", () => {
+            if (document.body.classList.contains("ff-immersive")) goFullscreen();
+        }, { passive: true });
     }
 
     function tick() {
@@ -749,7 +906,7 @@
         /* Hidden means frozen. Returning before anything is read keeps a
            stray frame — some browsers still fire one occasionally — from
            advancing a round nobody is watching. */
-        if (document.hidden || loading) return;
+        if (frozen() || loading) return;
 
         const now = gameNow();
         // Before the paint gate: the board's crawl wants every frame, and it
@@ -1344,8 +1501,8 @@
                test and three unreleased pieces. An <img> with no src draws a
                broken-image glyph, so those get the gap instead and are still
                perfectly placeable by name. */
-            b.innerHTML = (r.icon ? `<img src="${r.icon}" alt="" loading="lazy" decoding="async">` : '<i class="ff-noicon"></i>') +
-                `<span>${r.name}</span>` +
+            b.innerHTML = (r.icon ? `<img src="${escapeText(r.icon)}" alt="" loading="lazy" decoding="async">` : '<i class="ff-noicon"></i>') +
+                `<span>${escapeText(r.name)}</span>` +
                 /* Six different furni are called "Bookcase". Where the name
                    does not identify the row, the class does. */
                 (r.ambiguous ? `<em class="ff-cls">${r.className}</em>` : "") +
@@ -1580,7 +1737,9 @@
             const row = document.createElement("div");
             row.className = "ff-zone" + (current && z.id === current.id ? " is-on" : "");
             const drops = (z.items || []).reduce((n, i) => n + i.count, 0);
-            row.innerHTML = `<span>${z.name || "Zone"}</span>` +
+            // Escaped: a zone name is typed into the builder and stored, so
+            // it is the one string in this list that a person chose.
+            row.innerHTML = `<span>${escapeText(z.name || "Zone")}</span>` +
                 `<small>${z.area.w}×${z.area.h} - ${drops} drop${drops === 1 ? "" : "s"}</small>`;
             row.addEventListener("click", () => Editor.selectZone(z.id));
             const x = document.createElement("button");
@@ -1615,7 +1774,7 @@
                here rather than leaving it to be discovered in play. */
             const miscast = Levels.needsSeat(it.role) && !meta.sit;
             if (miscast) row.classList.add("is-miscast");
-            row.innerHTML = `<span>${it.count}× ${label}</span>` +
+            row.innerHTML = `<span>${it.count}× ${escapeText(label)}</span>` +
                 `<em>${Levels.ROLE_LABELS[it.role] || it.role}</em>` +
                 (miscast ? '<strong class="ff-item-warn" title="Habbo\'s furnidata says this furni cannot be sat on, so it can never be part of the sequence. It will behave as an obstacle.">not a seat</strong>' : "");
             const x = document.createElement("button");
@@ -2613,7 +2772,10 @@
                 method: "POST",
                 credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ levels: levelsCleared, ms, points, habbo: state.name || null })
+                // No `habbo`: the server stopped storing it (it was never
+                // rendered anywhere, and it was the one field on this request
+                // whose contents came from the page rather than the session).
+                body: JSON.stringify({ levels: levelsCleared, ms, points })
             });
             const data = await res.json().catch(() => ({}));
             if (data.recorded) {
@@ -3446,6 +3608,7 @@
         if (state.name) lookup(state.name);
         watchBoardActivity();
         watchVisibility();
+        watchOrientation();
         requestAnimationFrame(tick);
 
         /* A player's room is built now, not when they press Play. Deliberately

@@ -37,6 +37,7 @@
 const { getDb } = require("./_db");
 const { playerFrom } = require("./_player");
 const { today, seedFrom, shuffle } = require("./_daily");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const COLLECTION = "daily_scores";
 const BOARD_SIZE = 10;
@@ -48,9 +49,7 @@ const GAMES = ["ratrospect", "odd"];
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": statusCode === 200 ? "public, max-age=30" : "no-store"
+    headers: { ...SECURITY_HEADERS, "Cache-Control": statusCode === 200 ? "public, max-age=30" : "no-store"
     },
     body: JSON.stringify(data)
 });

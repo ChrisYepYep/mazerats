@@ -31,6 +31,7 @@
    with a better story cannot improve it. */
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom } = require("./_player");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const COLLECTION = "guess_scores";
 const ROUNDS = 5;
@@ -46,9 +47,7 @@ const BOARD_SIZE = 10;
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: {
-        "Content-Type": "application/json",
-        // A board that changes as people finish their day, cached briefly so
+    headers: { ...SECURITY_HEADERS, // A board that changes as people finish their day, cached briefly so
         // a burst of results does not become a burst of aggregations.
         "Cache-Control": statusCode === 200 ? "public, max-age=30" : "no-store"
     },

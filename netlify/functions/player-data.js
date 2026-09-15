@@ -26,6 +26,7 @@
    question never arises. */
 const { getDb } = require("./_db");
 const { playerFrom } = require("./_player");
+const { SECURITY_HEADERS } = require("./_headers");
 
 const COLLECTION = "player_state";
 const SCORES = "guess_scores";
@@ -38,7 +39,7 @@ const MAX_ID = 80;
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
     body: JSON.stringify(data)
 });
 
@@ -208,9 +209,47 @@ exports.handler = async (event) => {
                their ticks, and re-sending the same list changes nothing. */
             const update = { $set: set };
             const add = {};
-            if (addWalked) add.walked = { $each: addWalked };
-            if (addSaved) add.saved = { $each: addSaved };
-            if (Object.keys(add).length) update.$addToSet = add;
+            /* $slice caps the array ITSELF, not just this request.
+
+               MAX_WALKED limited one payload, which is what the comment on it
+               claims — but $addToSet unions across calls, so nothing stopped
+               five thousand fresh ids arriving again and again until the
+               document reached Mongo's 16MB ceiling and every further save
+               for that player failed permanently. A per-request cap on an
+               accumulating field is not a cap.
+
+               $each with $slice needs $push rather than $addToSet, so the
+               de-duplication $addToSet was here for has to be done by hand —
+               which is what mergeSet below does, against the list already
+               stored. Positive $slice keeps the FIRST n, so the ticks a
+               player has had longest are the ones that survive; silently
+               dropping their oldest history instead would be the worse half
+               to lose. */
+            if (addWalked) add.walked = { $each: addWalked, $slice: MAX_WALKED };
+            if (addSaved) add.saved = { $each: addSaved, $slice: MAX_WALKED };
+            if (Object.keys(add).length) update.$push = add;
+
+            /* Read-then-merge, because $push cannot de-duplicate. A second
+               device re-sending its whole list is the normal case, not the
+               exception, so without this every sync would append the same ids
+               again and fill the cap with copies. */
+            if (Object.keys(add).length) {
+                const current = await col.findOne(
+                    { playerId: player.id },
+                    { projection: { _id: 0, walked: 1, saved: 1 } }
+                ) || {};
+                const only = (incoming, held) => {
+                    const have = new Set(held || []);
+                    return incoming.filter(id => !have.has(id));
+                };
+                if (addWalked) add.walked.$each = only(addWalked, current.walked);
+                if (addSaved) add.saved.$each = only(addSaved, current.saved);
+                // Nothing new on either side is a no-op rather than a write.
+                if (!add.walked?.$each.length) delete add.walked;
+                if (!add.saved?.$each.length) delete add.saved;
+                if (!Object.keys(add).length) delete update.$push;
+            }
+
             await col.updateOne({ playerId: player.id }, update, { upsert: true });
 
             const [doc, stats] = await Promise.all([

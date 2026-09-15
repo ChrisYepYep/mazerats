@@ -1,3 +1,4 @@
+const { SECURITY_HEADERS } = require("./_headers");
 /* One Origins habbo's figure string, for the room game to wear.
 
    WHY THIS IS NOT habbo.js. That function answers the same question for the
@@ -48,9 +49,7 @@ const hits = new Map();                     // address -> timestamps
 
 const json = (statusCode, data) => ({
     statusCode,
-    headers: {
-        "Content-Type": "application/json",
-        // The browser may cache a figure for a few minutes; nothing here is
+    headers: { ...SECURITY_HEADERS, // The browser may cache a figure for a few minutes; nothing here is
         // per-visitor, so a shared cache is welcome to it too.
         "Cache-Control": "public, max-age=300"
     },
