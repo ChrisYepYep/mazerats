@@ -1759,7 +1759,20 @@ body[data-page="home"] .hero { padding-top: 18px; }
        bridging the seam. */
     top: calc(100% - 14px);
     height: 18px;
-    background: #d6bb96;
+    /* EXACTLY what the filter above produces, not a value near it.
+
+       This was #d6bb96, found by sampling a canvas and accepted once it was
+       "within 2 units on every channel". It was two units out on green, and
+       two units is not nothing when the whole job of this rectangle is to be
+       invisible against the thing beside it: the seam it exists to hide was
+       still faintly there, in every theme, since the day it was written.
+
+       The real answer is #d6b996. Checked by drawing btn_active.png into a
+       canvas with ctx.filter set to the same saturate/brightness/hue-rotate
+       chain this rule's sibling uses and reading the middle pixel back —
+       which is the browser's own filter implementation rather than a
+       reimplementation of it, so there is nothing left to be off by. */
+    background: #d6b996;
     z-index: 2;
 }
 
@@ -8201,85 +8214,6 @@ body[data-page="admin"] .container {
     width: 100%;
 }
 
-/* ---------- left rail ---------- */
-
-/* Fixed width, full height, and its own column layout: the session block and
-   the tabs stay put while .admin-rail-scroll takes the overflow. Shown by
-   js/admin.js on login (display:flex), so the layout below assumes flex. */
-.admin-rail {
-    flex: 0 0 232px;
-    width: 232px;
-    min-height: 0;
-    flex-direction: column;
-    gap: 12px;
-    padding: 16px 14px;
-    background: var(--chrome-fill);
-    border-right: 1px solid var(--chrome-border);
-    box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.35);
-}
-
-.admin-rail-session {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.35);
-}
-
-.admin-rail-session-label {
-    margin: 0;
-    font-size: 0.6rem;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    color: var(--parchment-dim);
-}
-
-.admin-rail-session-user {
-    margin: 0 0 4px;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.9rem;
-    color: var(--amber-bright);
-    overflow-wrap: anywhere;
-}
-
-/* The six panel tabs as a vertical list. .chrome-nav-btn keeps all of its
-   own painting — the border-image plate, the active-state artwork, the
-   Silkscreen face — and only its flow changes: stacked, left-aligned, and
-   no longer sharing a row's width six ways. */
-.admin-rail-nav {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin: 0;
-}
-
-.admin-rail-nav .chrome-nav-btn {
-    flex: 0 0 auto;
-    text-align: left;
-    padding: 10px 12px;
-    font-size: 0.6rem;
-}
-
-/* Everything under the tabs scrolls together when the window is short,
-   rather than the rail growing past the bottom of the screen. */
-.admin-rail-scroll {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding-right: 2px;
-}
-
-.admin-rail-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.admin-rail-group .admin-hint { margin: 0; }
-
 /* ---------- working area ---------- */
 
 /* The only scrolling region on the page. position: relative so the Save bar
@@ -8513,19 +8447,6 @@ body[data-page="admin"] .site-footer p {
     body[data-page="admin"] main { display: block; }
     body[data-page="admin"] .container { display: block; }
     .admin-shell { flex-direction: column; }
-    .admin-rail {
-        flex: 0 0 auto;
-        width: 100%;
-        border-right: 0;
-        border-bottom: 1px solid var(--chrome-border);
-    }
-    .admin-rail-nav {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 2px;
-    }
-    .admin-rail-nav .chrome-nav-btn { text-align: center; }
-    .admin-rail-scroll { overflow: visible; }
     .admin-stage {
         overflow: visible;
         --admin-stage-pad-b: 20px;
@@ -12166,6 +12087,475 @@ body[data-page="admin"] #activity-sessions {
     .updatelog-entry { transition: none; }
 }
 
+/* ===================================================================
+   ADMIN: THE BAR
+
+   Navigation and site-wide controls used to live in a 232px column down the
+   left, open all the time. Neither is anything you look at while editing a
+   maze, so between them they held a fifth of the window for glances. They
+   are now two tabs hanging from under the site's top bar, each opening on
+   hover, and the working area has the whole width.
+
+   The shell keeps its single flex row and simply wraps: the bar is given a
+   100% basis so it takes a line of its own, and the stage and glyph palette
+   share the next one. No wrapper element, and nothing about how the stage
+   sizes itself changes. */
+/* The shell is a plain row again — just the working area. The tab strip
+   used to be a wrapped line inside it, which is what let align-content share
+   spare vertical space with the strip and inflate it to 300px on any short
+   panel. Outside the flow, that cannot happen. */
+.admin-shell > .admin-stage { flex: 1 1 auto; }
+
+/* The admin page's <main> stacks instead of running across.
+
+   <main> is a flex ROW everywhere on the site, which was right while the
+   admin was one .admin-shell filling it. With the tab strip added as a second
+   child, the two became side-by-side columns — the strip 958px tall next to
+   the working area rather than a row of tabs above it.
+
+   Scoped by :has so nothing else on the site is touched: this matches only a
+   <main> that actually contains the admin tab strip. */
+main:has(> .admin-tabs) {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+main:has(> .admin-tabs) > .admin-tabs { flex: 0 0 auto; }
+main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
+
+/* Not a bar: a row of tabs hanging under the site's top bar, with nothing
+   behind them. A strip with tabs in it is two surfaces where one will do, and
+   it was the strip — not the tabs — that kept growing. */
+.admin-tabs {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 0 14px;
+    position: relative;
+    z-index: 30;
+}
+
+/* ---- a tab, and the panel that hangs off it */
+
+.admin-tab { position: relative; }
+
+/* Same shape as the archive's MENU and ACTIONS spines: the tab IS the word,
+   rounded on its outer edge only so the inner edge reads as continuing under
+   the bar above it, with the same inset highlight and hard drop. */
+.admin-tab-btn {
+    display: block;
+    padding: 5px 14px 6px;
+    border: 1px solid var(--chrome-border);
+    border-top: none;
+    border-radius: 0 0 5px 5px;
+    background: var(--chrome-highlight);
+    box-shadow:
+        inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+        2px 2px 0 rgba(0, 0, 0, 0.35);
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
+    cursor: var(--cursor-pointer);
+    transition: color 0.14s, background-color 0.14s;
+}
+
+/* The tab lights up with its own panel, so the thing you are pointing at and
+   the thing that opened are visibly one control. */
+.admin-tab:hover .admin-tab-btn,
+.admin-tab:focus-within .admin-tab-btn,
+.admin-tab.is-open .admin-tab-btn {
+    color: var(--parchment);
+    background: var(--chrome-fill);
+    /* Square at the bottom while open, so the tab and its panel read as one
+       piece rather than a button sitting on a box. */
+    border-radius: 0;
+    box-shadow: inset 0 -1px 0 var(--chrome-fill), 2px 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+.admin-drop {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 31;
+    padding: 12px;
+    background: var(--chrome-fill);
+    border: 1px solid var(--chrome-border);
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+    /* Closed. visibility rather than display, so the panel can fade and so
+       its contents stay measurable — the segmented tracks size themselves
+       from their own width and a display:none parent measures zero. */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    /* Opening is immediate; CLOSING waits 180ms. Without that delay the
+       panel vanishes the instant the pointer crosses the gap between the
+       tab and the panel's own edge, which is exactly the path you take to
+       use it. */
+    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.18s;
+}
+
+.admin-tab:hover .admin-drop,
+.admin-tab:focus-within .admin-drop,
+.admin-tab.is-open .admin-drop {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s;
+}
+
+/* ---- NAV: the sections, as a grid rather than a column of slabs. */
+/* ---- the user tab, and the glyph tab. */
+
+/* Left-most and set apart from the rest: it answers "whose page is this",
+   which is a different question from "what can I do here". */
+.admin-tab-user { margin-right: 14px; }
+
+.admin-drop-user {
+    min-width: 230px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ctl-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 30px;
+    box-sizing: border-box;
+    padding: 0 10px;
+    border: 1.5px solid var(--chrome-highlight);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--parchment);
+    font-family: inherit;
+    font-size: 0.65rem;
+}
+.ctl-input:focus { outline: none; border-color: var(--amber); }
+
+/* The palette swatches. A dot of the hue each button switches to —
+   "Witching Hour" says nothing about what the site is about to look like, and
+   five names in a row is a list to read rather than a choice to make. */
+.theme-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 6px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.55);
+    flex: 0 0 auto;
+}
+
+/* Five segments of different word-lengths, so they size to their labels
+   rather than splitting the track evenly — "Purple" given the same width as
+   "Witching Hour" wastes half of it. */
+.ctl-seg-themes .btn-enter-mini { flex: 0 0 auto; }
+
+.ctl-status.is-bad { color: var(--danger); }
+
+/* The palette is a panel now, so it is capped and scrolls rather than running
+   off the bottom of the window the way a full-height column never could. */
+.admin-drop-glyphs { width: 300px; }
+.admin-drop-glyphs .glyph-palette-list {
+    max-height: 340px;
+    overflow-y: auto;
+}
+
+.admin-drop-nav { min-width: 260px; }
+
+.admin-nav-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(78px, 1fr));
+    gap: 4px;
+}
+
+.admin-nav-grid .chrome-nav-btn {
+    padding: 7px 8px;
+    font-size: 0.6rem;
+    min-height: 0;
+    white-space: nowrap;
+}
+
+/* ---- CONTROL: one row of cards, all the same shape.
+
+   Wide enough that the four narrow cards sit on ONE line — at 560px they
+   wrapped three-then-one-then-one and the panel read as a paragraph of
+   controls rather than a row of them. The scan card is the only one that
+   takes a line of its own, because it is the only one that is a set of
+   three actions plus a progress bar.
+
+   max-width keeps it inside the window on a laptop; it is anchored to the
+   left edge of its tab, which is the second tab in, so there is plenty of
+   room to the right. */
+/* Anchored to the BAR, not to its own tab, and sized by its content.
+
+   Two problems solved together. It is the second tab along, so hanging the
+   panel off the tab put its left edge 83px in and its right edge past the
+   window on anything narrower than a laptop. And MIN-WIDTH BEATS MAX-WIDTH
+   when the two conflict — that is the rule, not a quirk — so the clamp that
+   was meant to keep it inside the window never applied at all, and the page
+   scrolled sideways at 768px.
+
+   Making the control tab position: static hands positioning to .admin-bar,
+   which is full width. width: max-content then lets the four narrow cards
+   sit on one line where there is room and wrap where there is not, with no
+   fixed number to go stale. */
+.admin-tab[data-menu="control"] { position: static; }
+
+.admin-drop-control {
+    left: 12px;
+    width: max-content;
+    max-width: calc(100% - 24px);
+}
+
+.ctl-grid {
+    display: flex;
+    flex-wrap: wrap;
+    /* stretch, not flex-start: every card's control then sits on the same
+       baseline whatever is in it, which is what stops the row looking
+       ragged when one card holds a button and the next holds a track. */
+    align-items: stretch;
+    gap: 12px;
+}
+
+/* Two controls on one line inside a single card. */
+.ctl-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* A card is a LABEL and then its control. The label sits outside the
+   bordered box on purpose: a heading inside the thing it names reads as part
+   of the control, and made the old rail look like a form with captions
+   printed inside its fields. */
+.ctl-card {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+    /* Separated by a rule rather than by more space — at this size gaps
+       alone stopped reading as groups. */
+    padding-right: 10px;
+    border-right: 1px solid rgba(0, 0, 0, 0.35);
+}
+.ctl-card:last-child { padding-right: 0; border-right: none; }
+.ctl-card-wide { flex: 1 1 100%; padding-right: 0; border-right: none; }
+
+.ctl-label {
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
+    white-space: nowrap;
+}
+
+/* Actions: separate pills, because each does a different thing. */
+.ctl-actions { display: flex; gap: 5px; }
+
+/* Buttons and tracks are given the SAME height explicitly rather than each
+   landing wherever its own padding puts it. A pill came out 28px and a
+   segmented track 31px, and three pixels is enough to see when they sit side
+   by side — every control in this panel is now 30px tall. */
+.ctl-btn, .ctl-seg { height: 30px; box-sizing: border-box; }
+
+.ctl-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 11px;
+    border: 1.5px solid var(--chrome-highlight);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.22);
+    color: var(--parchment-dim);
+    font-family: inherit;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: var(--cursor-pointer);
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+.ctl-btn:hover {
+    color: var(--parchment);
+    border-color: var(--amber);
+    background: rgba(0, 0, 0, 0.4);
+}
+
+/* A choice: ONE track, the current answer filled. Shape alone tells it apart
+   from the actions above — you cannot press two of these. */
+.ctl-seg {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    padding: 2px;
+    border: 1.5px solid var(--chrome-highlight);
+    border-radius: 13px;
+    background: rgba(0, 0, 0, 0.22);
+}
+
+.ctl-seg .btn-enter-mini {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    padding: 0 10px;
+    border: none;
+    border-image: none;
+    border-radius: 10px;
+    background-image: none;
+    background-color: transparent;
+    font-family: inherit;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
+    text-shadow: none;
+    image-rendering: auto;
+    box-shadow: none;
+    white-space: nowrap;
+    cursor: var(--cursor-pointer);
+    transition: color 0.15s, background-color 0.15s;
+}
+.ctl-seg .btn-enter-mini:hover { color: var(--parchment); background-color: rgba(0, 0, 0, 0.3); }
+.ctl-seg .btn-enter-mini.active { background-color: var(--chrome-highlight); color: var(--parchment); }
+
+.ctl-status {
+    margin: 0;
+    font-size: 0.6rem;
+    color: var(--parchment-dim);
+}
+.ctl-status-note { max-width: 46ch; line-height: 1.5; }
+
+/* The signed-in block is a tab of its own now — see .admin-tab-user. */
+
+/* The furni progress bar spans the wide card rather than a 200px column. */
+#furni-sidebar .furni-progress { width: 100%; max-width: 420px; }
+
+/* ===================================================================
+   ADMIN: ONE VISUAL LANGUAGE
+
+   Placed here, ahead of the narrow-layout blocks below, so the mobile
+   rules that restate these selectors still win at small widths.
+
+   The admin page had grown THREE unrelated button families, two of them
+   stacked in the same rail one above the other:
+
+     .admin-action-pill   a flat modern pill — round, thin border, no
+                          texture. Used for actions: Add Maze, Rescan.
+     .btn-enter-mini      a Habbo window: a 5px border-image sliced out of
+                          window_frame.png, a tiled title_pattern.png
+                          background, Silkscreen, pixelated rendering.
+                          Used for the state toggles.
+     .btn                 the public site's 2px amber pill, used for the
+                          Edit/Scan/Delete on every row.
+
+   The DISTINCTION was sound — actions, state toggles, row controls are
+   three different jobs — but nothing tied them together, so the rail read
+   as three pieces of unrelated software sharing a column. What follows
+   keeps the three roles and gives them one family: same face, same
+   uppercase, same border weight, same radius, differing only where the
+   difference means something.
+
+   btn-enter-mini is restyled rather than replaced because it appears
+   nowhere except admin.html — checked before touching it, since a shared
+   class would have taken the welcome page with it. */
+
+/* The rail these styled is gone — navigation and the site-wide controls now
+   live in the bar at the top of the page (see ADMIN: THE BAR above), and the
+   rules that dressed it are gone with it rather than left to match nothing.
+
+   They outlived the rail by one rebuild: this note already said they had been
+   removed while thirteen of them were still sitting above, inert, and being
+   mirrored into all four generated palettes at five times their own size.
+
+   .admin-sidebar-title survives because the glyph palette still uses it. */
+/* ---- rail headings: one treatment, not one per section. */
+.admin-sidebar-title {
+    margin: 0 0 2px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
+}
+
+/* ---- row controls: along the row, not down it.
+
+   Edit / Scan / Delete were a vertical stack, which set the height of every
+   row in the archive to three buttons whatever else was in it — so a maze
+   with a one-line description was as tall as one with four. Along the row
+   they cost one line, and the list becomes scannable. */
+.admin-row-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.admin-row-actions .btn {
+    padding: 6px 12px;
+    font-size: 0.6rem;
+    border-width: 1.5px;
+    box-shadow: none;
+}
+
+/* ---- row density.
+
+   Measured before changing anything: a row was 98px tall and only SEVEN of
+   595 mazes fitted on a 1057px screen. The height was not coming from the
+   text — the info column is 66px — it was the 76px thumbnail setting the
+   floor for every row whatever else was in it.
+
+   56px is still big enough to recognise a room by, and takes the row to
+   about 76px: nine or ten on screen instead of seven. Scoped to .admin-row
+   so the public archive's own rows, where the picture is the point, keep the
+   size they have. */
+.admin-row .row-thumb {
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+}
+
+.admin-row { padding: 8px 10px; gap: 12px; }
+
+/* A long description was pushing rows past even the thumbnail — the
+   Christmas Maze ran to three lines while its neighbours ran to one, so the
+   list had no rhythm to scan down. Two lines, then ellipsis; the full text
+   is one click away in the editor and this is an index, not a reader. */
+.admin-row .row-info p {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* ---- the glyph palette folds away.
+
+   It is a specialist tool — the Volter picture glyphs, for typing a ★ into a
+   maze description — and it was holding 178px, 14% of the window, open at
+   all times against a working area that wanted the room. Collapsed it keeps
+   a 30px spine so it is still obviously there and one click from back.
+
+   The same side-tab language the archive already uses for MENU and ACTIONS,
+   rather than a new idea: a labelled edge you press to bring a panel back. */
+/* The glyph palette's fold-away spine is gone with the docked column — it is
+   a tab like the others now, so there is no second way to open it. */
+
 @media (max-width: 700px) {
     /* The verb drops to its own line above the name rather than shrinking
        the name to nothing — which of the two happened is the point of the
@@ -13139,6 +13529,135 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.76rem;
     color: var(--parchment-dim);
 }
+
+/* ---------------------------------------- ADMIN: THE FALLIN' FURNI RUN LOG
+
+   Two tables and a list of runs. No new colours and no new type sizes: the
+   panel borrows --bg-panel, --parchment-dim and the two state colours the
+   rest of the admin already uses, so a palette change carries it along
+   without anyone having to remember it exists.
+
+   Placed here, ABOVE the narrow-layout blocks at the end of this file, for
+   the reason the note at the top of them gives: those blocks restate earlier
+   rules and win on source order, so anything added after them would quietly
+   beat rules it was never meant to. */
+
+/* The wrapper scrolls, not the table. A table told to scroll collapses its
+   own column widths to whatever fits, which on a narrow window turns "Median
+   time" into four lines of one character. */
+.ff-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    background: var(--bg-panel);
+}
+
+.ff-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.72rem;
+    color: var(--parchment);
+}
+
+.ff-table th {
+    position: sticky;
+    top: 0;
+    padding: 7px 10px;
+    text-align: left;
+    white-space: nowrap;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.56rem;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
+    background: var(--chrome-fill);
+    border-bottom: 1px solid var(--chrome-border);
+}
+
+.ff-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.25);
+    vertical-align: top;
+}
+
+.ff-table tr:last-child td { border-bottom: 0; }
+.ff-table tbody tr:hover td { background: rgba(0, 0, 0, 0.18); }
+
+/* Figures right-aligned and tabular so a column of them lines up on the
+   digit rather than on the glyph — percentages and clock times are read by
+   comparing them down the column, which proportional figures make harder
+   than it needs to be. */
+.ff-num {
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.ff-good { color: var(--ok); }
+.ff-bad { color: var(--danger); }
+
+/* ---- one run, folded away */
+
+.ff-run {
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    background: var(--bg-panel);
+    margin-bottom: 6px;
+}
+
+.ff-run > summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.74rem;
+    /* The default triangle is replaced by the row's own hover state: a
+       disclosure marker at this size renders as a smudge and the whole row
+       is already the target. */
+    list-style: none;
+}
+
+.ff-run > summary::-webkit-details-marker { display: none; }
+.ff-run > summary:hover { background: rgba(0, 0, 0, 0.18); }
+.ff-run[open] > summary { border-bottom: 1px solid var(--chrome-border); }
+
+.ff-run-who {
+    font-weight: 700;
+    color: var(--amber-bright);
+    /* Takes the leftover width so the meta columns end up in roughly the
+       same place down the list even though names differ in length. */
+    flex: 1 1 8em;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.ff-run-meta {
+    color: var(--parchment-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ff-run-tag {
+    padding: 1px 7px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.52rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.ff-run-tag.ff-won { color: var(--ok); }
+.ff-run-tag.ff-lost { color: var(--danger); }
+.ff-run-tag.ff-abandoned { color: var(--parchment-dim); }
+
+.ff-run-body { padding: 10px 12px 12px; }
+.ff-run-body .admin-hint { margin: 0 0 8px; }
 
 @media (max-width: 900px) {
     .admin-daily { grid-template-columns: 1fr; }

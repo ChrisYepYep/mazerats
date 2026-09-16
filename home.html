@@ -120,6 +120,39 @@
         getSettings()
             .then(function (settings) {
                 rememberState(settings.landingState);
+                /* The palette, from the settings this gate has already
+                   fetched — no second request for it.
+
+                   The <head> script above has by now applied the cached
+                   answer from the last visit; this is what corrects it, and
+                   it happens while the page is still visibility:hidden, so a
+                   theme that changed since the last visit is never seen
+                   changing.
+
+                   The name is checked against a pattern before it is put in a
+                   path, the same as in js/api.js: it comes from the endpoint,
+                   which only answers with its own VALID_THEMES, but a value
+                   about to be interpolated into a URL is worth confirming
+                   wherever it arrived from. Anything else means classic. */
+                try {
+                    var wanted = /^[a-z]+$/.test(String(settings.theme || "")) ? settings.theme : "classic";
+                    var link = document.getElementById("theme-css");
+                    if (wanted === "classic") {
+                        document.documentElement.removeAttribute("data-theme");
+                        if (link) link.remove();
+                    } else {
+                        document.documentElement.setAttribute("data-theme", wanted);
+                        if (!link) {
+                            link = document.createElement("link");
+                            link.id = "theme-css";
+                            link.rel = "stylesheet";
+                            document.head.appendChild(link);
+                        }
+                        var href = "css/theme-" + wanted + ".css";
+                        if (link.getAttribute("href") !== href) link.href = href;
+                    }
+                    localStorage.setItem("mazerats_theme", wanted);
+                } catch (e) { /* private mode, or no theme in an old payload */ }
                 return settings.landingState;
             })
             .catch(function () {
@@ -185,6 +218,19 @@
     <meta name="theme-color" content="#120c07">
     <title>Maze Rats — A Habbo Hotel Maze Room Archive</title>
     <meta name="description" content="Maze Rats is a fan-run archive preserving the history of maze rooms across Habbo Hotel.">
+    <!-- This page answers to four addresses, not one. /guess, /ratrospect and
+         /odd are rewrites to this same file (see netlify.toml) so that a link
+         pasted into a channel keeps the address it was pasted as — the game
+         is opened afterwards, in script, off the path. That means all four
+         serve BYTE-IDENTICAL markup, and a crawler has no way to tell they
+         are one page: it indexes four duplicates, picks whichever it likes as
+         the real one, and splits the credit for inbound links between them.
+         robots.txt deliberately invites crawling of /guess, so this is not
+         hypothetical. Naming the canonical here costs a visitor nothing —
+         every address still works exactly as before — and pools all four onto
+         one. index.html carries its own, pointing at "/". -->
+    <link rel="canonical" href="https://mazerats.net/home.html">
+    <meta property="og:url" content="https://mazerats.net/home.html">
     <meta property="og:title" content="Maze Rats">
     <meta property="og:description" content="An archive preserving the history of maze rooms across Habbo Hotel: Origins.">
     <meta property="og:type" content="website">
@@ -194,6 +240,20 @@
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
+    <!-- The palette, before the stylesheets rather than after, so <html> already
+         carries data-theme when the CSS is applied and there is no brown frame
+         on screen for a moment first.
+
+         Read from localStorage because the real answer lives in the database and
+         arrives later: js/site.js fetches the site settings, applies whatever they
+         say and writes it here for next time. The cached value is therefore the
+         PREVIOUS visit's answer, which is right almost always and self-corrects
+         within one page load when it is not. A first-ever visitor has nothing
+         cached and gets classic, which is the default anyway.
+
+         Wrapped in try/catch: localStorage throws outright in some privacy modes,
+         and a colour scheme is not worth a blank page. -->
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);var l=document.createElement("link");l.id="theme-css";l.rel="stylesheet";l.href="css/theme-"+t+".css";document.head.appendChild(l);}catch(e){}})();</script>
     <link rel="stylesheet" href="css/style.css?v=2">
     <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
 </head>
@@ -921,7 +981,11 @@
                         <div class="modal-thumb modal-thumb-full" id="modal-thumb">
                             <div class="modal-thumb-frame" id="modal-thumb-frame">
                                 <div class="gallery-viewport" id="gallery-viewport">
-                                    <img class="modal-gallery-img" id="modal-gallery-img" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="display:none;">
+                                    <!-- fetchpriority="high": this is the one picture the
+                                         visitor is actually waiting for, and it is asked for
+                                         in the same breath as a tray of thumbnails that would
+                                         otherwise compete with it for the connection. -->
+                                    <img class="modal-gallery-img" id="modal-gallery-img" alt="" fetchpriority="high" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" style="display:none;">
                                     <span class="gallery-missing-pill" id="gallery-missing-pill" style="display:none;">Awaiting Room Image</span>
                                     <!-- An older version of this same room, slid up over the
                                          current image from the viewport's own bottom edge.

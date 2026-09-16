@@ -65,6 +65,131 @@ document.addEventListener("DOMContentLoaded", () => {
     const ffToggleEl = document.getElementById("ff-state-toggle");
     const ffToggleBtns = document.querySelectorAll(".ff-state-btn");
     const ffToggleStatus = document.getElementById("ff-state-status");
+    // The site-wide palette switch, beneath the landing one.
+    const themeToggleEl = document.getElementById("theme-toggle");
+    const themeToggleBtns = document.querySelectorAll(".theme-btn");
+    const themeToggleStatus = document.getElementById("theme-toggle-status");
+
+    /* ---- the Nav and Control tabs.
+
+       They open on hover, which is a CSS job and stays one — see .admin-tab
+       in style.css. This is only what hover cannot do:
+
+         · TOUCH has no hover. A tap toggles the panel open and locked, so
+           the bar works on a tablet at all.
+         · A tap or click anywhere else closes it again, which is what
+           every menu on every platform does and what a finger expects.
+         · Escape closes it and puts focus back on the tab, so a keyboard
+           user is never left inside a panel they cannot leave.
+
+       Choosing a section closes the Nav panel too: the whole point of
+       pressing Mazes is to look at the mazes, not at the menu in front of
+       them. The Control panel deliberately does NOT close on use — setting
+       the palette and then the landing state is one visit, not two. */
+    const adminTabs = Array.from(document.querySelectorAll(".admin-tab"));
+
+    function closeAdminTabs(except) {
+        adminTabs.forEach(tab => {
+            if (tab === except) return;
+            tab.classList.remove("is-open");
+            const btn = tab.querySelector(".admin-tab-btn");
+            if (btn) btn.setAttribute("aria-expanded", "false");
+        });
+    }
+
+    adminTabs.forEach(tab => {
+        const btn = tab.querySelector(".admin-tab-btn");
+        if (!btn) return;
+        btn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const open = !tab.classList.contains("is-open");
+            closeAdminTabs(tab);
+            tab.classList.toggle("is-open", open);
+            btn.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+        // Leaving with the pointer drops the lock as well, so a tab opened by
+        // tapping does not stay stuck open for a mouse user afterwards.
+        tab.addEventListener("mouseleave", () => {
+            tab.classList.remove("is-open");
+            btn.setAttribute("aria-expanded", "false");
+        });
+    });
+
+    /* Looked up here rather than reusing adminNavEl, which is declared with
+       const several thousand lines below this — reading it from up here is a
+       temporal dead zone crash at load, and one that `node --check` cannot
+       see because the syntax is perfectly valid. */
+    const navForTabs = document.getElementById("admin-nav");
+    if (navForTabs) navForTabs.addEventListener("click", () => closeAdminTabs(null));
+
+    document.addEventListener("click", (e) => {
+        if (!e.target.closest(".admin-tab")) closeAdminTabs(null);
+    });
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape") return;
+        const open = document.querySelector(".admin-tab.is-open");
+        if (!open) return;
+        closeAdminTabs(null);
+        const btn = open.querySelector(".admin-tab-btn");
+        if (btn) btn.focus();
+    });
+
+    /* ---- your own account.
+
+       Log out, and change your own password. Both are about the PERSON using
+       the page rather than about the site, which is why they live behind the
+       username rather than among the controls.
+
+       Changing your own password needs no special powers: the endpoint reads
+       a PUT whose username matches the caller's as the "self" scope, so even
+       a view-only account can do it (see netlify/functions/auth.js). That is
+       also why the field is not in the Admins tab — that tab is for resetting
+       OTHER people's, which is a different permission entirely. */
+    const selfPasswordInput = document.getElementById("self-password");
+    const selfPasswordBtn = document.getElementById("self-password-btn");
+    const selfPasswordStatus = document.getElementById("self-password-status");
+
+    function sayPassword(message, ok) {
+        if (!selfPasswordStatus) return;
+        selfPasswordStatus.textContent = message;
+        selfPasswordStatus.style.display = message ? "block" : "none";
+        selfPasswordStatus.classList.toggle("is-bad", !ok);
+    }
+
+    async function saveOwnPassword() {
+        if (!selfPasswordInput) return;
+        const next = selfPasswordInput.value;
+        // Checked here only to save a round trip and give a faster answer;
+        // the endpoint enforces its own rules regardless of what this says.
+        if (next.length < 8) { sayPassword("At least 8 characters.", false); return; }
+        selfPasswordBtn.disabled = true;
+        sayPassword("Saving…", true);
+        try {
+            await Api.resetAdminPassword(adminToken, currentUsername, next);
+            // Cleared on success, so a new password is never left sitting in
+            // a field on an unattended screen.
+            selfPasswordInput.value = "";
+            sayPassword("Password changed.", true);
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            sayPassword(err.message || "Couldn't change it.", false);
+        } finally {
+            selfPasswordBtn.disabled = false;
+        }
+    }
+
+    if (selfPasswordBtn) selfPasswordBtn.addEventListener("click", saveOwnPassword);
+    if (selfPasswordInput) {
+        // Enter saves, and must not reach anything else — see the furni
+        // search for the same trap, though there is no form around this one.
+        selfPasswordInput.addEventListener("keydown", (e) => {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            saveOwnPassword();
+        });
+    }
+
     const floatingActionsEl = document.getElementById("floating-actions");
     const floatingSaveBtn = document.getElementById("floating-save-btn");
     const floatingCancelBtn = document.getElementById("floating-cancel-btn");
@@ -234,6 +359,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (adminRailEl) adminRailEl.style.display = "none";
         landingToggleEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
+        if (themeToggleEl) themeToggleEl.style.display = "none";
         loginModal.classList.add("open");
         loginError.textContent = "Session expired — log in again.";
         loginError.style.display = "block";
@@ -256,6 +382,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (adminRailEl) adminRailEl.style.display = "none";
         landingToggleEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
+        if (themeToggleEl) themeToggleEl.style.display = "none";
         loginModal.classList.add("open");
         loginError.style.display = "none";
         loginForm.reset();
@@ -424,6 +551,228 @@ document.addEventListener("DOMContentLoaded", () => {
     if (activityRefreshBtn) activityRefreshBtn.addEventListener("click", loadActivity);
     if (activityRangeEl) activityRangeEl.addEventListener("change", loadActivity);
 
+    /* ---------- Fallin' Furni: the run log ----------
+
+       Everything on this panel comes from ff-runs.js in one request, already
+       aggregated. The page formats; it does not calculate. That split is on
+       purpose — a percentage worked out here and again in the endpoint is a
+       percentage that will eventually disagree with itself.
+
+       Loaded when the panel is first opened rather than on sign-in: it is the
+       heaviest read on the page and most visits to the admin never look at
+       it. */
+    const ffRangeEl = document.getElementById("ff-range");
+    const ffRefreshBtn = document.getElementById("ff-refresh-btn");
+    const ffSummaryEl = document.getElementById("ff-summary");
+    const ffChartsEl = document.getElementById("ff-charts");
+    const ffLevelsEl = document.getElementById("ff-levels-table");
+    const ffPlayersEl = document.getElementById("ff-players-table");
+    const ffRunsEl = document.getElementById("ff-runs");
+    const ffKeepEl = document.getElementById("ff-keep-days");
+
+    // mm:ss, and h:mm:ss only once there is an hour to show.
+    function ffClock(ms) {
+        const total = Math.max(0, Math.round((ms || 0) / 1000));
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        const pad = n => String(n).padStart(2, "0");
+        return h ? h + ":" + pad(m) + ":" + pad(s) : m + ":" + pad(s);
+    }
+
+    function ffDate(iso) {
+        const d = new Date(iso);
+        if (isNaN(d)) return "—";
+        return d.toLocaleString(undefined, {
+            day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"
+        });
+    }
+
+    /* The game's own words for how a round ended, said in English. An
+       unrecognised token is shown as-is rather than hidden: a new ending
+       added to the game should appear here as something odd to look up, not
+       vanish into a blank cell. */
+    const FF_WHY = {
+        seated: "All seats taken",
+        timeout: "Ran out of time",
+        wrong: "Sat in the wrong seat",
+        decoy: "Sat on a decoy",
+        quit: "Walked away"
+    };
+    const ffWhy = w => FF_WHY[w] || w || "—";
+
+    // "Anonymous" is a real row, not a missing one: how many runs were NOT
+    // signed in is the first thing anybody asks of a leaderboard game.
+    const ffName = n => n || "Anonymous";
+
+    function ffStat(n, one, many, warn) {
+        return '<span class="admin-activity-stat' + (warn && n ? " is-warn" : "") + '">' +
+            '<strong>' + n + '</strong> ' + (n === 1 ? one : many) + '</span>';
+    }
+
+    function ffRenderSummary(d) {
+        const t = d.totals;
+        const pct = t.finished ? Math.round((t.won / t.finished) * 100) : 0;
+        ffSummaryEl.innerHTML =
+            ffStat(t.runs, "run", "runs") +
+            ffStat(t.players, "named player", "named players") +
+            ffStat(t.levelsPlayed, "round played", "rounds played") +
+            '<span class="admin-activity-stat"><strong>' + pct + '%</strong> of finished runs won</span>' +
+            '<span class="admin-activity-stat"><strong>' + t.medianCleared + '</strong> levels cleared, typically</span>' +
+            '<span class="admin-activity-stat"><strong>' + ffClock(t.medianMs) + '</strong> median run</span>' +
+            '<span class="admin-activity-stat"><strong>' + t.bestCleared + '</strong> best run</span>' +
+            ffStat(t.touch, "run on a touchscreen", "runs on a touchscreen") +
+            (d.truncated ? '<span class="admin-activity-stat is-warn"><strong>!</strong> only the newest runs are shown</span>' : "");
+    }
+
+    function ffRenderCharts(d) {
+        const t = d.totals;
+        const signedOut = t.runs - t.signedIn;
+        /* Wrapped in .admin-visitor-grid, which is what makes the four of
+           them sit side by side — the class on the container is only a
+           margin. Without it they stack, and a month of daily bars pushes
+           everything else off the bottom of the panel. */
+        ffChartsEl.innerHTML = '<div class="admin-visitor-grid">' +
+            '<div><h4 class="admin-visitor-head">Runs per day</h4>' +
+                activityBars(d.byDay, "Nothing played yet.") + '</div>' +
+            '<div><h4 class="admin-visitor-head">How runs ended</h4>' +
+                activityBars(d.byOutcome.map(r => ({ label: ffOutcome(r.label), n: r.n })), "Nothing yet.") + '</div>' +
+            '<div><h4 class="admin-visitor-head">Why rounds were lost</h4>' +
+                activityBars(d.byWhy.map(r => ({ label: ffWhy(r.label), n: r.n })), "No rounds lost yet.") + '</div>' +
+            '<div><h4 class="admin-visitor-head">Signed in?</h4>' +
+                activityBars([
+                    { label: "Signed in", n: t.signedIn },
+                    { label: "Anonymous", n: signedOut }
+                ], "Nothing yet.") + '</div>' +
+            '</div>';
+    }
+
+    const FF_OUTCOME = { won: "Cleared every level", lost: "Out of lives", abandoned: "Walked away" };
+    const ffOutcome = o => FF_OUTCOME[o] || o;
+
+    function ffRenderLevels(d) {
+        const body = ffLevelsEl.querySelector("tbody");
+        if (!d.byLevel.length) {
+            body.innerHTML = '<tr><td colspan="7" class="admin-empty">No rounds played yet.</td></tr>';
+            return;
+        }
+        body.innerHTML = d.byLevel.map(l => {
+            /* The clear rate is the number this table exists for, so it is
+               also the one thing coloured: under half is a level most people
+               do not get past. */
+            const cls = l.clearPct < 50 ? " ff-bad" : (l.clearPct > 90 ? " ff-good" : "");
+            return '<tr>' +
+                /* The id under the name, quietly. Two rows can legitimately
+                   show the same name now — a level renamed to something a
+                   deleted one used to be called — and without the id there
+                   would be no way to tell which was which. */
+                '<td>' + escapeHtml(l.name) +
+                    (l.id ? '<br><span class="admin-hint">' + escapeHtml(l.id) + '</span>' : "") + '</td>' +
+                '<td class="ff-num">' + l.plays + '</td>' +
+                '<td class="ff-num' + cls + '">' + l.clearPct + '%</td>' +
+                '<td class="ff-num">' + ffClock(l.medianSeconds * 1000) + '</td>' +
+                '<td class="ff-num">' + l.seatPct + '%</td>' +
+                '<td class="ff-num">' + l.retries + '</td>' +
+                '<td>' + (l.why.length
+                    ? l.why.map(w => escapeHtml(ffWhy(w.label)) + " \u00d7" + w.n).join(", ")
+                    : '<span class="admin-hint">Never lost</span>') + '</td>' +
+            '</tr>';
+        }).join("");
+    }
+
+    function ffRenderPlayers(d) {
+        const body = ffPlayersEl.querySelector("tbody");
+        if (!d.byPlayer.length) {
+            body.innerHTML = '<tr><td colspan="7" class="admin-empty">Nobody has played yet.</td></tr>';
+            return;
+        }
+        body.innerHTML = d.byPlayer.map(p => '<tr>' +
+            '<td>' + escapeHtml(ffName(p.name)) + (p.name ? "" : ' <span class="admin-hint">(all of them together)</span>') + '</td>' +
+            '<td class="ff-num">' + p.runs + '</td>' +
+            '<td class="ff-num">' + p.best + '</td>' +
+            '<td class="ff-num">' + Number(p.bestPoints || 0).toLocaleString() + '</td>' +
+            '<td class="ff-num">' + ffClock(p.totalMs) + '</td>' +
+            '<td>' + escapeHtml(ffDate(p.first)) + '</td>' +
+            '<td>' + escapeHtml(ffDate(p.last)) + '</td>' +
+        '</tr>').join("");
+    }
+
+    /* One run, with its rounds folded away inside a <details>. Everything is
+       in the markup from the start rather than fetched when it opens: the
+       rounds came down with the run, and sixty collapsed lists cost less than
+       sixty requests would. */
+    function ffRenderRuns(d) {
+        if (!d.recent.length) {
+            ffRunsEl.innerHTML = '<p class="admin-empty">No runs in this range.</p>';
+            return;
+        }
+        ffRunsEl.innerHTML = d.recent.map(r => {
+            const rounds = (r.levels || []).map((lv, i) =>
+                '<tr>' +
+                    '<td class="ff-num">' + (i + 1) + '</td>' +
+                    '<td>' + escapeHtml(lv.name) + (lv.retried ? ' <span class="admin-hint">(retry)</span>' : "") + '</td>' +
+                    '<td>' + (lv.won ? '<span class="ff-good">Cleared</span>' : '<span class="ff-bad">' + escapeHtml(ffWhy(lv.why)) + '</span>') + '</td>' +
+                    '<td class="ff-num">' + lv.seats + '/' + lv.seatsOf + '</td>' +
+                    '<td class="ff-num">' + lv.seconds + 's of ' + lv.allowed + 's</td>' +
+                    '<td class="ff-num">' + (lv.penalty ? "+" + lv.penalty + "s" : "—") + '</td>' +
+                    '<td class="ff-num">' + Number(lv.points || 0).toLocaleString() + '</td>' +
+                '</tr>').join("");
+
+            return '<details class="ff-run">' +
+                '<summary>' +
+                    '<span class="ff-run-who">' + escapeHtml(ffName(r.player)) + '</span>' +
+                    '<span class="ff-run-tag ff-' + escapeHtml(r.outcome) + '">' + escapeHtml(ffOutcome(r.outcome)) + '</span>' +
+                    '<span class="ff-run-meta">' + r.cleared + ' cleared</span>' +
+                    '<span class="ff-run-meta">' + Number(r.points || 0).toLocaleString() + ' pts</span>' +
+                    '<span class="ff-run-meta">' + ffClock(r.ms) + '</span>' +
+                    '<span class="ff-run-meta">' + escapeHtml(ffDate(r.at)) + '</span>' +
+                '</summary>' +
+                '<div class="ff-run-body">' +
+                    '<p class="admin-hint">' +
+                        'Lives: ' + (r.lives ? r.lives.spent : 0) + ' spent, ' +
+                        (r.lives ? r.lives.won : 0) + ' earned, ' +
+                        (r.lives ? r.lives.left : 0) + ' left. ' +
+                        (r.client && r.client.w ? r.client.w + "\u00d7" + r.client.h + " window" : "Window size not recorded") +
+                        (r.client && r.client.touch ? ", touchscreen." : ".") +
+                    '</p>' +
+                    '<div class="ff-table-wrap"><table class="ff-table">' +
+                        '<thead><tr><th class="ff-num">#</th><th>Level</th><th>How it ended</th>' +
+                        '<th class="ff-num">Seats</th><th class="ff-num">Time</th>' +
+                        '<th class="ff-num">Penalty</th><th class="ff-num">Points</th></tr></thead>' +
+                        '<tbody>' + rounds + '</tbody>' +
+                    '</table></div>' +
+                '</div>' +
+            '</details>';
+        }).join("");
+    }
+
+    function ffRender(d) {
+        if (ffKeepEl) ffKeepEl.textContent = String(d.keepDays || 180);
+        ffRenderSummary(d);
+        ffRenderCharts(d);
+        ffRenderLevels(d);
+        ffRenderPlayers(d);
+        ffRenderRuns(d);
+    }
+
+    let ffLoaded = false;
+
+    async function loadFallinFurni() {
+        if (!adminToken) return;
+        ffSummaryEl.innerHTML = '<span class="admin-hint">Loading…</span>';
+        try {
+            ffRender(await Api.getFallinFurniRuns(adminToken, ffRangeEl && ffRangeEl.value));
+            ffLoaded = true;
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            ffSummaryEl.innerHTML = '<span class="admin-hint">' +
+                escapeHtml(err.message || "Couldn't load the run log.") + '</span>';
+        }
+    }
+
+    if (ffRefreshBtn) ffRefreshBtn.addEventListener("click", loadFallinFurni);
+    if (ffRangeEl) ffRangeEl.addEventListener("change", loadFallinFurni);
+
     /* Running a furni scan is owner-only — see the handler in
        netlify/functions/furni-scan-local.js, which is where the rule
        actually lives. Everything here is presentation: a standard admin
@@ -543,10 +892,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         landingToggleEl.style.display = "flex";
         if (ffToggleEl) ffToggleEl.style.display = "block";
-        // Same gate as the sidebar — nothing on this page shows until the
-        // login modal is unlocked.
-        const glyphPalette = document.getElementById("glyph-palette");
-        if (glyphPalette) glyphPalette.style.display = "flex";
+        if (themeToggleEl) themeToggleEl.style.display = "flex";
+        /* The glyph palette used to be shown here, when it was a docked
+           column of its own. It is a tab panel now: the strip is what login
+           reveals (#admin-rail above) and the panel opens with its tab. */
         // The full records, not the packed public ones — the furni editor
         // works on coverage, hidden flags and the rest, none of which the
         // site's own payload carries.
@@ -1292,7 +1641,13 @@ document.addEventListener("DOMContentLoaded", () => {
                         : '';
                     return '' +
                     '<button type="button" class="admin-furni-result' + (isAdded ? " is-added" : "") + '" data-index="' + i + '"' + (isAdded ? " disabled" : "") + '>' +
-                        '<img src="' + escapeHtml(f.icon || "") + '" alt="">' +
+                        /* Lazy, because the result list is no longer capped —
+                           a broad search draws three hundred rows, and every
+                           icon is a request to furniindex.com. The pane is a
+                           220px scroller (.admin-furni-results), so all but
+                           the first handful are genuinely off screen and the
+                           rest arrive as they are scrolled to. */
+                        '<img src="' + escapeHtml(f.icon || "") + '" alt="" loading="lazy" decoding="async">' +
                         '<span class="admin-furni-result-name">' + escapeHtml(f.name || "") + line + '</span>' +
                         '<span class="admin-hint">' + (isAdded ? "added" : escapeHtml((f.releaseDate || "").slice(0, 4))) + '</span>' +
                     '</button>';
@@ -1310,6 +1665,24 @@ document.addEventListener("DOMContentLoaded", () => {
             // still there after adding one of them.
             if (pickerResults.length) drawResults(pickerResults);
 
+            /* The request itself, lifted out of the debounce so that Enter
+               below can run it immediately instead of duplicating it. */
+            async function runSearch(q) {
+                const mine = ++seq;
+                status.textContent = "Searching…";
+                try {
+                    const data = await Api.getFurniCatalogue(q);
+                    if (mine !== seq) return;
+                    pickerResults = data.items || [];
+                    drawResults(pickerResults);
+                } catch (err) {
+                    if (mine !== seq) return;
+                    pickerResults = [];
+                    results.innerHTML = "";
+                    status.textContent = err.message || "Couldn't reach the furni catalogue.";
+                }
+            }
+
             input.addEventListener("input", () => {
                 const q = input.value.trim();
                 pickerQuery = input.value;
@@ -1322,21 +1695,31 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 // Waits for a pause in typing: the catalogue is proxied and
                 // cached, but it is still a request per keystroke otherwise.
-                timer = setTimeout(async () => {
-                    const mine = ++seq;
-                    status.textContent = "Searching…";
-                    try {
-                        const data = await Api.getFurniCatalogue(q);
-                        if (mine !== seq) return;
-                        pickerResults = data.items || [];
-                        drawResults(pickerResults);
-                    } catch (err) {
-                        if (mine !== seq) return;
-                        pickerResults = [];
-                        results.innerHTML = "";
-                        status.textContent = err.message || "Couldn't reach the furni catalogue.";
-                    }
-                }, 250);
+                timer = setTimeout(() => runSearch(q), 250);
+            });
+
+            /* Enter searches, and must never reach the form.
+
+               This input is rendered inside #rooms-form, and a form with a
+               submit button in it submits when Enter is pressed in any text
+               field. So typing a furni name and pressing Enter — the most
+               natural thing there is to do in a search box — saved the maze
+               and closed the editor, before the search had even run.
+
+               preventDefault stops that. Running the search on the spot is
+               what the keypress plainly meant, and it skips the 250ms
+               debounce rather than swallowing the key and doing nothing,
+               which would look just as broken from the outside. */
+            input.addEventListener("keydown", e => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                const q = input.value.trim();
+                clearTimeout(timer);
+                if (q.length < 2) {
+                    status.textContent = "Type at least two letters.";
+                    return;
+                }
+                runSearch(q);
             });
         }
 
@@ -1839,6 +2222,21 @@ document.addEventListener("DOMContentLoaded", () => {
         const addBtn = formEl.querySelector(".admin-gallery-add-btn");
         const status = formEl.querySelector(".admin-gallery-status");
         wireDropzone(fileInput);
+
+        /* Enter on the new room's label adds the room, and does not submit.
+
+           The same trap as the furni search above it: this sits inside
+           #rooms-form, so Enter here used to save the maze and shut the
+           editor rather than add the row being typed. It goes to the Add
+           button because that is what the key means next to a field with an
+           Add button beside it — and that handler already copes with there
+           being no file chosen, which for a room is a normal way to add
+           one (label now, screenshot later). */
+        labelInput.addEventListener("keydown", e => {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            addBtn.click();
+        });
 
         // Which rows currently have their older-versions sub-panel open,
         // keyed by room index — persisted on the form element (not a local
@@ -3143,6 +3541,51 @@ document.addEventListener("DOMContentLoaded", () => {
         const finishImage = (data.finishImage || "").trim();
         payload.finish = finishImage ? { image: finishImage, label: (data.finishLabel || "").trim() || "Finish", oldVersions: form._finishOldVersions || [] } : null;
 
+        /* Drop furni belonging to pictures this maze no longer has.
+
+           room.furni is keyed by the image it was scanned from, and nothing
+           was removing a key when its picture was taken out of the gallery —
+           so the record simply stayed, for good. Found three in the live
+           archive, one of them carrying 19 pieces against an Illusion Maze
+           screenshot that is not in the maze any more. Invisible on the site,
+           because the modal only ever looks furni up by a picture it is
+           actually showing, but it rides along in every copy of the archive
+           the homepage downloads — and furni is already 58% of that payload,
+           so this is the part that must not be allowed to silently accrete.
+
+           Built AFTER entrance and finish are decided just above, so it uses
+           what is about to be saved rather than what was loaded. Old versions
+           count as kept: a furni record against one is not something this
+           screen created and not something it should quietly discard.
+
+           Conservative on purpose — it only ever removes a key that matches
+           no picture at all. An existing orphan is cleared the next time its
+           maze is saved, so this cleans up behind itself without a migration
+           and without touching the database directly. */
+        if (payload.furni) {
+            const keep = new Set();
+            const note = img => { if (img) keep.add(img); };
+            const withOld = entry => {
+                if (!entry) return;
+                note(entry.image);
+                (entry.oldVersions || []).forEach(v => note(v && v.image));
+            };
+            withOld(payload.entrance);
+            withOld(payload.finish);
+            (payload.gallery || []).forEach(withOld);
+
+            const pruned = {};
+            let dropped = 0;
+            for (const [image, record] of Object.entries(payload.furni)) {
+                if (keep.has(image)) pruned[image] = record;
+                else dropped++;
+            }
+            if (dropped) {
+                console.info(`Dropped ${dropped} furni record${dropped === 1 ? "" : "s"} with no matching picture.`);
+                payload.furni = pruned;
+            }
+        }
+
         const submitBtn = form.querySelector("button[type=submit]");
         const errorEl = form.querySelector(".admin-form-error");
 
@@ -3745,12 +4188,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function loadLandingState() {
         try {
-            // One read, both switches: they live in the same settings document.
-            const { landingState, fallinFurniState } = await Api.getSiteSettings();
+            // One read, every switch: they all live in the same settings document.
+            const { landingState, fallinFurniState, theme } = await Api.getSiteSettings();
             landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
             renderDevModeLink(landingState);
             const ff = fallinFurniState || "live";
             ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
+            // getSiteSettings has already applied the palette to this page —
+            // this only lights the button that matches what is stored.
+            const palette = theme === "purple" ? "purple" : "classic";
+            themeToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.themeState === palette));
         } catch (e) {
             // best-effort — the toggles just won't show anything highlighted
         }
@@ -3818,6 +4265,39 @@ document.addEventListener("DOMContentLoaded", () => {
             ffToggleBtns.forEach(b => b.disabled = false);
         }
     }
+
+    /* ---- The site's palette: classic brown or deep purple.
+
+       Lighter again than the Fallin' Furni switch above, and deliberately so.
+       That one closes a page; this one changes a colour. Nothing goes
+       offline, nothing becomes unreachable, and the way back is the button
+       next to it — so there is no confirmation at all.
+
+       Applied to THIS page the moment it saves, rather than only on the next
+       load, because the person pressing it is the one person who needs to see
+       what they just chose. Everyone else picks it up on their next page
+       load, which is when every page reads the palette in its <head>. */
+    async function setTheme(theme, clickedBtn) {
+        themeToggleBtns.forEach(b => b.disabled = true);
+        themeToggleStatus.style.display = "none";
+        try {
+            await Api.updateSiteSettings(adminToken, { theme });
+            themeToggleBtns.forEach(b => b.classList.toggle("active", b === clickedBtn));
+            Api.applyTheme(theme);
+            return true;
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return false; }
+            themeToggleStatus.textContent = err.message || "Couldn't change the palette.";
+            themeToggleStatus.style.display = "block";
+            return false;
+        } finally {
+            themeToggleBtns.forEach(b => b.disabled = false);
+        }
+    }
+
+    themeToggleBtns.forEach(btn => {
+        btn.addEventListener("click", () => setTheme(btn.dataset.themeState, btn));
+    });
 
     ffToggleBtns.forEach(btn => {
         btn.addEventListener("click", async () => {
@@ -4204,6 +4684,10 @@ document.addEventListener("DOMContentLoaded", () => {
            correct once it is actually on screen. Every other panel here is
            a list and does not care. */
         if (name === "wizard" && typeof AdminWizard !== "undefined") AdminWizard.onShown();
+        /* The run log is the heaviest read on this page and most visits to
+           the admin never open it, so it is fetched when the panel is first
+           shown rather than on sign-in. Refresh re-reads it after that. */
+        if (name === "ffdata" && !ffLoaded) loadFallinFurni();
         /* Remembered, so a reload comes back to what you were doing.
            Editing the map is a long job done over many sittings, and being
            put back on the maze list every time the page reloads — which it

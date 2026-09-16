@@ -208,9 +208,28 @@ const Api = {
        its own), so a query keeps the response small enough to ask for
        sprites with it — the room-scale art the site prefers over the little
        catalogue icon. Without a query that same flag would drag the whole
-       ~557KB library down, so don't. */
-    async getFurniCatalogue(q, limit = 24) {
-        const params = new URLSearchParams({ q: q || "", limit: String(limit) });
+       ~557KB library down, so don't.
+
+       A search returns EVERY match. It used to keep the first 24, which is
+       a number nothing on screen explained: the results pane scrolls, so
+       there was no layout reason for it, and a search for "re" found 326
+       pieces and showed 24 of them with nothing to say the other 302
+       existed. That is the one failure a picker must not have — looking
+       like it has answered when it has not.
+
+       The cost is real but bounded and lands on an admin page only. The
+       widest two-letter searches measured 85KB to 227KB with sprites
+       attached, against 14KB to 22KB capped; the picker will not search
+       under two letters, so the whole-library cases ("a", "e", ~815KB)
+       cannot be reached from it. The input is debounced at 250ms and the
+       function's answer is cached in a blob, so this is one transfer per
+       pause in typing, not one per keystroke.
+
+       Pass a positive limit to cap it anyway; the function reads anything
+       else as "no limit" (see furni-catalogue.js). */
+    async getFurniCatalogue(q, limit = 0) {
+        const params = new URLSearchParams({ q: q || "" });
+        if (limit > 0) params.set("limit", String(limit));
         if (q) params.set("sprites", "1");
         const res = await fetch("/.netlify/functions/furni-catalogue?" + params);
         const data = await res.json().catch(() => ({}));
@@ -291,6 +310,59 @@ const Api = {
         try { return localStorage.getItem("mazerats_landing_state"); } catch (e) { return null; }
     },
 
+    /* WHICH PALETTE THE SITE IS WEARING.
+
+       Cached in localStorage for the same reason the landing state is: the
+       real answer is in the database and arrives after the page has painted,
+       so every page's <head> applies the PREVIOUS visit's answer
+       synchronously and this corrects it once the settings land. A theme
+       change therefore reaches a visitor on their next page load rather than
+       repainting the page under them, which is the right moment for a site to
+       change colour anyway.
+
+       This is not a per-visitor preference — nobody browsing gets to choose
+       it. The cache exists only so there is an answer available before the
+       fetch finishes.
+
+       Only "purple" is ever written as an attribute. Classic is the ABSENCE
+       of one, so the default costs nothing, cannot be half-applied, and a
+       corrupted or unrecognised value falls back to the site as it has always
+       looked rather than to something undefined. */
+    /* Only ONE theme stylesheet is ever loaded, and it is swapped rather than
+       stacked. There are four alternatives now and each is about 9KB gzipped;
+       linking them all would cost every visitor four palettes they are not
+       looking at, to save a request the one who IS gets anyway.
+
+       The name is sanitised before it reaches a URL. It arrives from the
+       settings endpoint, which only ever answers with a name from its own
+       VALID_THEMES — but it also arrives from localStorage, which is the
+       visitor's to edit, and it is about to be interpolated into a path. */
+    applyTheme(theme) {
+        const name = /^[a-z]+$/.test(String(theme || "")) ? theme : "classic";
+        try { localStorage.setItem("mazerats_theme", name); } catch (e) { /* private mode */ }
+
+        const root = document.documentElement;
+        if (name === "classic") root.removeAttribute("data-theme");
+        else root.setAttribute("data-theme", name);
+
+        // Classic is the absence of a theme sheet, so switching back to it
+        // takes the link away rather than pointing it at an empty file.
+        let link = document.getElementById("theme-css");
+        if (name === "classic") { if (link) link.remove(); return; }
+        if (!link) {
+            link = document.createElement("link");
+            link.id = "theme-css";
+            link.rel = "stylesheet";
+            document.head.appendChild(link);
+        }
+        const href = "css/theme-" + name + ".css";
+        // Compared before assigning: setting href to what it already is makes
+        // the browser re-fetch and re-apply, which flashes.
+        if (!link.getAttribute("href") || link.getAttribute("href").split("?")[0] !== href) {
+            link.href = href;
+        }
+    },
+
     // The welcome button ships disabled and only this call can enable it —
     // relies on _getWithFallback's timeout so a hung (not just failing)
     // request can't leave visitors stuck on the disabled button forever.
@@ -298,6 +370,10 @@ const Api = {
         const settings = await this._getWithFallback("/.netlify/functions/settings", "site settings",
             () => ({ landingState: this.lastKnownLandingState() || "coming-soon", aboutText: "", fromCache: true }));
         if (!settings.fromCache && settings.landingState) this.rememberLandingState(settings.landingState);
+        // Only from a real answer: the fallback object has no theme in it, and
+        // treating "absent" as classic would flip a purple site back to brown
+        // every time the archive was briefly unreachable.
+        if (!settings.fromCache && settings.theme) this.applyTheme(settings.theme);
         return settings;
     },
     // updates is a partial object — { landingState } and/or { aboutText } —
@@ -344,6 +420,14 @@ const Api = {
     getAdminActivity(token, range) {
         const q = range ? "?range=" + encodeURIComponent(range) : "";
         return this._write("/.netlify/functions/admin-activity" + q, "GET", token);
+    },
+
+    /* Fallin' Furni's run log. Any admin can read this one, where the
+       activity log is owner-only: that file is a record of what ADMINS did
+       and this is a record of how the game is playing. */
+    getFallinFurniRuns(token, range) {
+        const q = range ? "?range=" + encodeURIComponent(range) : "";
+        return this._write("/.netlify/functions/ff-runs" + q, "GET", token);
     },
 
     /* ---------- the atlas at /wizard ----------

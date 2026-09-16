@@ -11,6 +11,20 @@
     <meta name="description" content="How Maze Rats handles the information you give it: what is collected, what it is used for, how long it is kept, and how to have it removed.">
     <link rel="canonical" href="https://mazerats.net/privacy">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
+    <!-- The palette, before the stylesheets rather than after, so <html> already
+         carries data-theme when the CSS is applied and there is no brown frame
+         on screen for a moment first.
+
+         Read from localStorage because the real answer lives in the database and
+         arrives later: js/site.js fetches the site settings, applies whatever they
+         say and writes it here for next time. The cached value is therefore the
+         PREVIOUS visit's answer, which is right almost always and self-corrects
+         within one page load when it is not. A first-ever visitor has nothing
+         cached and gets classic, which is the default anyway.
+
+         Wrapped in try/catch: localStorage throws outright in some privacy modes,
+         and a colour scheme is not worth a blank page. -->
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);var l=document.createElement("link");l.id="theme-css";l.rel="stylesheet";l.href="css/theme-"+t+".css";document.head.appendChild(l);}catch(e){}})();</script>
     <link rel="stylesheet" href="css/style.css?v=2">
     <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
 </head>

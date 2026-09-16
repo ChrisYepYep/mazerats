@@ -32,6 +32,28 @@ const DEFAULT_ABOUT_TEXT = "";
 const VALID_FF_STATES = ["live", "maintenance"];
 const DEFAULT_FF_STATE = "live";
 
+/* WHICH PALETTE THE SITE WEARS.
+
+   "classic" is the brown the archive has always been, and is what everyone
+   gets unless this is deliberately changed. Every other name is a palette in
+   css/theme-<name>.css, generated from that same stylesheet and the same
+   pixel art by tools/themes.js — purple, and the three Halloween ones.
+
+   This list is the gate: a name that is not on it is refused, so a typo or a
+   stale bookmark cannot put the site into a theme whose stylesheet does not
+   exist. Adding a palette means adding it here, in THEMES in tools/themes.js,
+   and as a button in admin.html.
+
+   Site-wide and stored here, rather than a per-visitor preference kept in
+   the browser, because it is a decision about how the archive LOOKS to
+   everybody — the same kind of setting as the landing state. A visitor
+   cannot choose it and nothing is remembered about them for it.
+
+   Defaults to classic, so a database that has never heard of this setting
+   renders exactly the site it rendered before it existed. */
+const VALID_THEMES = ["classic", "purple", "pumpkin", "witch", "crimson"];
+const DEFAULT_THEME = "classic";
+
 /* Which furni falls past Fallin' Furni's title screen. A site-wide choice
    rather than a per-level one — the title screen is not a level — so it
    lives here with the other two settings rather than in a level document.
@@ -61,7 +83,8 @@ exports.handler = async (event) => {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
             aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT,
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
-            fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE
+            fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
+            theme: (doc && doc.theme) || DEFAULT_THEME
         });
     }
 
@@ -90,6 +113,12 @@ exports.handler = async (event) => {
                 return json(400, { error: "fallinFurniState must be one of: " + VALID_FF_STATES.join(", ") });
             }
             update.fallinFurniState = body.fallinFurniState;
+        }
+        if (body.theme !== undefined) {
+            if (!VALID_THEMES.includes(body.theme)) {
+                return json(400, { error: "theme must be one of: " + VALID_THEMES.join(", ") });
+            }
+            update.theme = body.theme;
         }
         if (body.aboutText !== undefined) {
             update.aboutText = String(body.aboutText);
@@ -126,7 +155,8 @@ exports.handler = async (event) => {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
             aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT,
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
-            fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE
+            fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
+            theme: (doc && doc.theme) || DEFAULT_THEME
         });
     }
 

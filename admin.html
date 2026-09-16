@@ -15,6 +15,20 @@
     <meta name="robots" content="noindex, nofollow">
     <title>Admin — Maze Rats</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
+    <!-- The palette, before the stylesheets rather than after, so <html> already
+         carries data-theme when the CSS is applied and there is no brown frame
+         on screen for a moment first.
+
+         Read from localStorage because the real answer lives in the database and
+         arrives later: js/site.js fetches the site settings, applies whatever they
+         say and writes it here for next time. The cached value is therefore the
+         PREVIOUS visit's answer, which is right almost always and self-corrects
+         within one page load when it is not. A first-ever visitor has nothing
+         cached and gets classic, which is the default anyway.
+
+         Wrapped in try/catch: localStorage throws outright in some privacy modes,
+         and a colour scheme is not worth a blank page. -->
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);var l=document.createElement("link");l.id="theme-css";l.rel="stylesheet";l.href="css/theme-"+t+".css";document.head.appendChild(l);}catch(e){}})();</script>
     <link rel="stylesheet" href="css/style.css?v=2">
     <!-- The atlas panel's map, and the editor around it. Shared with
          wizard.html rather than duplicated, so the editor's parchment and
@@ -45,139 +59,235 @@
 
     <main>
         <!-- The admin is an application, not a page of prose, so it fills the
-             window: a fixed rail of navigation and global controls on the
-             left, the working area taking whatever is left, and the glyph
-             palette docked on the right where it stays reachable while a form
-             is being typed into. Only the working area scrolls, so the rail,
-             the tabs and the Save bar never scroll away from you.
+             window. Four tabs hang under the site's top bar and the working
+             area takes everything else — there is no rail and no docked
+             column any more, so the whole window is the thing you are editing.
 
-             Every id below is unchanged — js/admin.js addresses all of them
-             by id, and none of its queries care how they are nested. What
-             moved is only where things sit. -->
-        <div class="admin-shell">
+             The tabs sit OUTSIDE .admin-shell deliberately. While they were
+             inside it, the shell was a wrapping flex row and the tab strip was
+             one of its lines; align-content then shared spare vertical space
+             between the lines, so on any short panel — Messages, Daily, Bans,
+             Admins — the strip inflated to 300px of empty background. Taking
+             it out of the flow removes the whole class of problem rather than
+             pinning a height on it.
 
-            <!-- ---------- Left rail: who you are, where you are, and the
-                 controls that apply to the whole site rather than to one
-                 record. Hidden until the login modal is unlocked. ---------- -->
-            <div class="admin-rail" id="admin-rail" style="display:none;">
+             Every id below is unchanged — js/admin.js addresses all of them by
+             id, and none of its queries care how they are nested. -->
 
-                <div class="admin-rail-session">
-                    <p class="admin-rail-session-label">Signed in as</p>
-                    <p class="admin-rail-session-user" id="admin-session-user">&nbsp;</p>
-                    <button class="admin-action-pill" id="logout-btn" type="button">Log Out</button>
-                </div>
+            <!-- ---------- The admin bar ----------
 
-                <!-- The six panels, as a vertical list rather than two cramped
-                     rows of three. #admin-nav still wraps them and js/admin.js
-                     still delegates one click handler from it, so the shape of
-                     the list is this file's business alone. -->
-                <nav class="admin-rail-nav" id="admin-nav" role="tablist" aria-label="Admin sections">
-                    <button type="button" class="chrome-nav-btn active" data-panel="rooms" role="tab" aria-selected="true"><span class="chrome-nav-btn-label">Mazes</span></button>
-                    <button type="button" class="chrome-nav-btn" data-panel="events" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Events</span></button>
-                    <button type="button" class="chrome-nav-btn" data-panel="console" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Console</span></button>
-                    <button type="button" class="chrome-nav-btn" data-panel="messages" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Messages</span></button>
-                    <button type="button" class="chrome-nav-btn" data-panel="wizard" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Atlas</span></button>
-                    <button type="button" class="chrome-nav-btn" data-panel="daily" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Daily</span></button>
-                    <button type="button" class="chrome-nav-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
-                    <button type="button" class="chrome-nav-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
-                    <button type="button" class="chrome-nav-btn" data-panel="activity" id="activity-nav-btn" role="tab" aria-selected="false" hidden><span class="chrome-nav-btn-label">Activity</span></button>
-                </nav>
+                 Two tabs hanging from under the site's top bar, each opening
+                 a panel on hover: NAV for the sections, CONTROL for the
+                 settings that apply to the whole site rather than to one
+                 record. This replaced a 232px left column that held both at
+                 once, all the time — nine section buttons and five groups of
+                 controls, none of which you look at while actually editing a
+                 maze. The working area now has the whole window.
 
-                <!-- The rail's own scrolling part. The session block and the
-                     tabs above stay pinned; everything below them can run
-                     past the bottom of a short window and scroll instead. -->
-                <div class="admin-rail-scroll">
+                 Still #admin-rail, and still #admin-nav around the section
+                 buttons: js/admin.js hides the first on logout and delegates
+                 one click handler from the second, and neither cares where
+                 they sit or how they are nested. Every other id below is
+                 unchanged for the same reason. -->
+        <!-- ---------- The admin tabs ----------
+             Four tabs hanging from under the site's top bar, in the same
+             language as the archive's own MENU and ACTIONS spines: the tab IS
+             the word, rounded on its outer edge, and the panel drops from it.
+             There is no strip behind them any more — a bar with tabs in it is
+             two things where one will do. -->
+        <div class="admin-tabs" id="admin-rail" style="display:none;">
 
-                    <div class="admin-rail-group">
-                        <h3 class="admin-sidebar-title">Quick add</h3>
-                        <button type="button" class="admin-action-pill" id="sidebar-add-room-btn">+ Add Maze</button>
-                        <button type="button" class="admin-action-pill" id="sidebar-add-event-btn">+ Add Event</button>
+            <!-- Who you are, and the two things that are about YOU rather
+                 than about the site. Left-most, because it is the answer to
+                 "whose admin page is this" and that comes before anything you
+                 might do on it. -->
+            <div class="admin-tab admin-tab-user" data-menu="user">
+                <button type="button" class="admin-tab-btn" id="admin-session-user"
+                        aria-haspopup="true" aria-expanded="false">&nbsp;</button>
+                <div class="admin-drop admin-drop-user">
+                    <span class="ctl-label">Your account</span>
+                    <div class="ctl-actions">
+                        <button class="ctl-btn" id="logout-btn" type="button">Log out</button>
                     </div>
-
-                    <!-- Fallin' Furni levels are built in the game itself, not
-                         here. The editor needs the room canvas — an 8x13
-                         isometric floor you place furni on by clicking tiles —
-                         so it lives on the game page and this is the way in.
-                         The levels themselves are stored server-side through
-                         /.netlify/functions/ff-levels, with the same admin
-                         session as everything else on this page, so publishing
-                         from there is publishing from here. -->
-                    <div class="admin-rail-group">
-                        <h3 class="admin-sidebar-title">Fallin' Furni</h3>
-                        <p class="admin-hint">
-                            Levels are built on the game's own room. Opens in a new tab.
-                        </p>
-                        <a class="admin-action-pill" href="/fallinfurni?edit=1"
-                           target="_blank" rel="noopener">Open level editor</a>
-
-                        <!-- The GAME's own state, not the site's. Fallin' Furni
-                             is public whatever the landing page is doing, so
-                             closing it is a separate decision and a separate
-                             switch. Hidden until signed in, like the landing
-                             toggle below. -->
-                        <div id="ff-state-toggle" style="display:none;">
-                            <p class="admin-hint">
-                                Maintenance shows players a "back soon" notice instead
-                                of the game. You can still play and edit while signed in.
-                            </p>
-                            <button type="button" class="btn-enter-mini ff-state-btn"
-                                    data-ff-state="maintenance">Maintenance</button>
-                            <button type="button" class="btn-enter-mini ff-state-btn"
-                                    data-ff-state="live">Live</button>
-                            <p class="admin-hint" id="ff-state-status" style="display:none;"></p>
-                        </div>
+                    <span class="ctl-label">Change password</span>
+                    <!-- Not a <form>: this sits inside the tab strip, and a
+                         form here would submit on Enter in the field below.
+                         The button does the work; Enter is wired to it in
+                         js/admin.js the same way. -->
+                    <div class="ctl-row">
+                        <input type="password" id="self-password" class="ctl-input"
+                               autocomplete="new-password" placeholder="New password">
+                        <button type="button" class="ctl-btn" id="self-password-btn">Save</button>
                     </div>
-
-                    <!-- ---------- Landing page state ---------- -->
-                    <div class="admin-rail-group" id="landing-toggle" style="display:none;">
-                        <h3 class="admin-sidebar-title">Landing Page</h3>
-                        <p class="admin-hint">Controls what the "Enter" button on mazerats.net does.</p>
-                        <button type="button" class="btn-enter-mini" data-state="coming-soon">Coming Soon</button>
-                        <button type="button" class="btn-enter-mini" data-state="maintenance">Maintenance</button>
-                        <button type="button" class="btn-enter-mini" data-state="enter">Enter (Live)</button>
-                        <p class="admin-hint" id="landing-toggle-status" style="display:none;"></p>
-                    </div>
-
-                    <!-- Furni scanning. Runs on the owner's OWN MACHINE, as a
-                         separate process started by
-                         netlify/functions/furni-scan-local.js — which only
-                         works when this page is being served by `netlify dev`
-                         at localhost. The hosted scan it replaced was capped
-                         at fifteen minutes, could not finish the archive in
-                         one go, and billed for every minute of trying.
-
-                         So the buttons are shown only on localhost (see
-                         updateFurniLocality in js/admin.js); everywhere else
-                         the note below explains where to run them instead.
-
-                         Owner-only on top of that, and hidden outright for a
-                         standard admin (see applyRoleVisibility). The real
-                         checks are server-side in the function itself — this
-                         just keeps buttons nobody can use off the page. -->
-                    <div class="admin-rail-group" id="furni-sidebar" hidden>
-                        <h3 class="admin-sidebar-title">Furni</h3>
-                        <p class="admin-hint">Scans every room image for furni and records what it finds. Runs on your PC, across every core — the whole archive takes about 15 minutes.</p>
-                        <div class="furni-scan-actions" id="furni-scan-local">
-                            <button type="button" class="admin-action-pill" id="furni-scan-all-btn">Full Rescan</button>
-                            <button type="button" class="admin-action-pill" id="furni-scan-add-btn">Find New Furni</button>
-                            <button type="button" class="admin-action-pill" id="furni-scan-new-btn">Unscanned Images Only</button>
-                        </div>
-                        <p class="admin-hint" id="furni-scan-remote" hidden>
-                            Scans run on your own PC, not on the server. Open the
-                            <strong>Maze Rats Dev Server</strong> shortcut on your Desktop, then use this
-                            page at <strong>localhost:8888/admin.html</strong> to run one.
-                        </p>
-                        <div class="furni-progress" id="furni-progress" hidden>
-                            <div class="furni-progress-track"><div class="furni-progress-fill" id="furni-progress-fill"></div></div>
-                            <p class="admin-hint furni-progress-label" id="furni-progress-label"></p>
-                        </div>
-                        <p class="admin-hint" id="furni-scan-status" style="display:none;"></p>
-                    </div>
-
+                    <p class="ctl-status" id="self-password-status" style="display:none;"></p>
                 </div>
             </div>
 
+                <!-- ---------- NAV ---------- -->
+                <div class="admin-tab" data-menu="nav">
+                    <button type="button" class="admin-tab-btn" aria-haspopup="true" aria-expanded="false">Nav</button>
+                    <div class="admin-drop admin-drop-nav">
+                        <nav class="admin-nav-grid" id="admin-nav" role="tablist" aria-label="Admin sections">
+                            <button type="button" class="chrome-nav-btn active" data-panel="rooms" role="tab" aria-selected="true"><span class="chrome-nav-btn-label">Mazes</span></button>
+                            <button type="button" class="chrome-nav-btn" data-panel="events" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Events</span></button>
+                            <button type="button" class="chrome-nav-btn" data-panel="console" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Console</span></button>
+                            <button type="button" class="chrome-nav-btn" data-panel="messages" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Messages</span></button>
+                            <button type="button" class="chrome-nav-btn" data-panel="wizard" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Atlas</span></button>
+                            <button type="button" class="chrome-nav-btn" data-panel="daily" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Daily</span></button>
+                            <button type="button" class="chrome-nav-btn" data-panel="ffdata" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Fallin&#39; Furni</span></button>
+                            <button type="button" class="chrome-nav-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
+                            <button type="button" class="chrome-nav-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
+                            <button type="button" class="chrome-nav-btn" data-panel="activity" id="activity-nav-btn" role="tab" aria-selected="false" hidden><span class="chrome-nav-btn-label">Activity</span></button>
+                        </nav>
+                    </div>
+                </div>
+
+                <!-- ---------- CONTROL ----------
+
+                     One row of cards, each the same shape: a LABEL, then the
+                     control under it. The label is deliberately outside the
+                     bordered box — a heading inside the thing it names reads
+                     as part of the control, and made the old rail look like a
+                     form with captions in the fields.
+
+                     Every card is either a set of actions or a segmented
+                     choice, and the two are told apart by shape alone: actions
+                     are separate pills, a choice is one track with the current
+                     answer filled in. -->
+                <div class="admin-tab" data-menu="control">
+                    <button type="button" class="admin-tab-btn" aria-haspopup="true" aria-expanded="false">Control</button>
+                    <div class="admin-drop admin-drop-control">
+                        <div class="ctl-grid">
+
+                            <div class="ctl-card">
+                                <span class="ctl-label">Quick add</span>
+                                <div class="ctl-actions">
+                                    <button type="button" class="ctl-btn" id="sidebar-add-room-btn">+ Maze</button>
+                                    <button type="button" class="ctl-btn" id="sidebar-add-event-btn">+ Event</button>
+                                </div>
+                            </div>
+
+                            <!-- Fallin' Furni levels are built in the game itself:
+                                 the editor needs the room canvas, so it lives on
+                                 the game page and this is the way in. The levels
+                                 are stored through /.netlify/functions/ff-levels
+                                 under this same admin session, so publishing from
+                                 there is publishing from here. -->
+                            <div class="ctl-card">
+                                <span class="ctl-label">Fallin' Furni</span>
+                                <!-- Its two controls sit side by side rather than
+                                     stacked. Stacked, this was the only card two rows
+                                     deep, which set the height of the whole panel and
+                                     left every other label hanging above a gap. -->
+                                <div class="ctl-row">
+                                    <a class="ctl-btn" href="/fallinfurni?edit=1" target="_blank" rel="noopener">Level editor</a>
+                                <!-- The GAME's own state, not the site's — it is
+                                     public whatever the landing page is doing, so
+                                     closing it is a separate decision. -->
+                                <div id="ff-state-toggle" style="display:none;"
+                                     title="Maintenance shows players a &quot;back soon&quot; notice. You can still play and edit while signed in.">
+                                    <div class="ctl-seg">
+                                        <button type="button" class="btn-enter-mini ff-state-btn" data-ff-state="maintenance">Maint.</button>
+                                        <button type="button" class="btn-enter-mini ff-state-btn" data-ff-state="live">Live</button>
+                                    </div>
+                                </div>
+                                </div>
+                                <p class="ctl-status" id="ff-state-status" style="display:none;"></p>
+                            </div>
+
+                            <div class="ctl-card" id="landing-toggle" style="display:none;"
+                                 title="What the Enter button on mazerats.net does.">
+                                <span class="ctl-label">Landing page</span>
+                                <div class="ctl-seg">
+                                    <button type="button" class="btn-enter-mini" data-state="coming-soon">Soon</button>
+                                    <button type="button" class="btn-enter-mini" data-state="maintenance">Maint.</button>
+                                    <button type="button" class="btn-enter-mini" data-state="enter">Live</button>
+                                </div>
+                                <p class="ctl-status" id="landing-toggle-status" style="display:none;"></p>
+                            </div>
+
+                            <!-- Classic is the brown the archive has always been;
+                                 Purple is the violet built from that same palette
+                                 and the same pixel art by tools/themes.js.
+                                 Nothing goes offline either way, so unlike the
+                                 landing switch this one does not confirm — the way
+                                 back is the other button. -->
+                            <!-- Five palettes now, so this card takes a line of
+                                 its own like the furni scan. Each button wears
+                                 a swatch of the hue it switches to, because
+                                 "Witching Hour" tells you nothing about what
+                                 you are about to do to the site. The swatches
+                                 are the themes' own accents, written here
+                                 rather than generated: they are the only part
+                                 of a theme that has to exist before it is
+                                 switched on. -->
+                            <div class="ctl-card ctl-card-wide" id="theme-toggle" style="display:none;"
+                                 title="The colour scheme every visitor sees. Reaches them on their next page load.">
+                                <span class="ctl-label">Palette</span>
+                                <div class="ctl-seg ctl-seg-themes">
+                                    <button type="button" class="btn-enter-mini theme-btn" data-theme-state="classic"><i class="theme-dot" style="background:#c7a679"></i>Classic</button>
+                                    <button type="button" class="btn-enter-mini theme-btn" data-theme-state="purple"><i class="theme-dot" style="background:linear-gradient(135deg,#501584 0%,#c48bff 100%)"></i>Purple</button>
+                                    <button type="button" class="btn-enter-mini theme-btn" data-theme-state="pumpkin"><i class="theme-dot" style="background:linear-gradient(135deg,#7b3314 0%,#ff962c 100%)"></i>Pumpkin</button>
+                                    <button type="button" class="btn-enter-mini theme-btn" data-theme-state="witch"><i class="theme-dot" style="background:linear-gradient(135deg,#5b1584 0%,#92ff5c 100%)"></i>Witching Hour</button>
+                                    <button type="button" class="btn-enter-mini theme-btn" data-theme-state="crimson"><i class="theme-dot" style="background:linear-gradient(135deg,#3c4249 0%,#ff5c60 100%)"></i>Crimson</button>
+                                </div>
+                                <p class="ctl-status" id="theme-toggle-status" style="display:none;"></p>
+                            </div>
+
+                            <!-- Furni scanning runs on the owner's OWN MACHINE, as
+                                 a separate process started by
+                                 netlify/functions/furni-scan-local.js, which only
+                                 works under `netlify dev` at localhost. So the
+                                 buttons show only there (updateFurniLocality in
+                                 js/admin.js) and the note replaces them elsewhere.
+                                 Owner-only on top of that; the real check is
+                                 server-side in the function itself. -->
+                            <div class="ctl-card ctl-card-wide" id="furni-sidebar" hidden
+                                 title="Scans room images for furni. Runs on your PC across every core — the whole archive takes about 15 minutes.">
+                                <span class="ctl-label">Furni scan</span>
+                                <div class="ctl-actions" id="furni-scan-local">
+                                    <button type="button" class="ctl-btn" id="furni-scan-all-btn">Full rescan</button>
+                                    <button type="button" class="ctl-btn" id="furni-scan-add-btn">Find new</button>
+                                    <button type="button" class="ctl-btn" id="furni-scan-new-btn">Unscanned</button>
+                                </div>
+                                <!-- Visible text rather than a tooltip, because it
+                                     is not describing a control — it is what to do
+                                     when the controls above are NOT there, and it
+                                     only appears off localhost. -->
+                                <p class="ctl-status ctl-status-note" id="furni-scan-remote" hidden>
+                                    Scans run on your own PC. Open the
+                                    <strong>Maze Rats Dev Server</strong> shortcut, then use this page at
+                                    <strong>localhost:8888/admin.html</strong>.
+                                </p>
+                                <div class="furni-progress" id="furni-progress" hidden>
+                                    <div class="furni-progress-track"><div class="furni-progress-fill" id="furni-progress-fill"></div></div>
+                                    <p class="ctl-status furni-progress-label" id="furni-progress-label"></p>
+                                </div>
+                                <p class="ctl-status" id="furni-scan-status" style="display:none;"></p>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ---------- GLYPHS ----------
+                     The Volter picture glyphs. A tab rather than a docked
+                     column: it is a tool for one job — typing a star into a
+                     description — and as a column it held 14% of the window
+                     open for it at all times, for everyone, always. -->
+                <div class="admin-tab" data-menu="glyphs">
+                    <button type="button" class="admin-tab-btn" aria-haspopup="true" aria-expanded="false">Glyphs</button>
+                    <div class="admin-drop admin-drop-glyphs">
+                        <span class="ctl-label">Click one to type it at your cursor</span>
+                        <div class="glyph-palette-list" id="glyph-palette-list"></div>
+                        <p class="ctl-status glyph-palette-status" id="glyph-palette-status" aria-live="polite"></p>
+                    </div>
+                </div>
+
+            </div>
+
             <!-- ---------- The working area ---------- -->
+        <div class="admin-shell">
             <div id="admin-content" class="admin-stage" style="display:none;">
 
                 <div class="chrome-window admin-window">
@@ -563,6 +673,75 @@
                                 <div class="chrome-list" id="activity-events"></div>
                             </section>
 
+                            <!-- ---------- Fallin' Furni ---------- -->
+                            <section class="admin-panel" data-panel="ffdata" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Fallin' Furni</h3>
+                                        <p class="admin-hint">Every run that was played, including the ones that went badly &mdash; those are the ones that say which level is too long. Signed-in players are named; everyone else is counted as anonymous. Kept for <span id="ff-keep-days">180</span> days.</p>
+                                    </div>
+                                    <div class="admin-activity-controls">
+                                        <div class="sort-box">
+                                            <select id="ff-range" aria-label="Time range">
+                                                <option value="24h">Past 24 hours</option>
+                                                <option value="today">Today</option>
+                                                <option value="7d">Past 7 days</option>
+                                                <option value="30d" selected>Past 30 days</option>
+                                                <option value="90d">Past 90 days</option>
+                                                <option value="all">Everything kept</option>
+                                            </select>
+                                        </div>
+                                        <button class="admin-action-pill" id="ff-refresh-btn" type="button">Refresh</button>
+                                    </div>
+                                </header>
+
+                                <div class="admin-activity-summary" id="ff-summary"></div>
+
+                                <div class="admin-visitors" id="ff-charts"></div>
+
+                                <h3 class="admin-subheading admin-subheading-spaced">Level by level</h3>
+                                <p class="admin-hint">Sorted by how often each one was reached. A low clear rate with a lot of time-outs means the level is too long; a lot of wrong seats means it is too confusing.</p>
+                                <div class="ff-table-wrap">
+                                    <table class="ff-table" id="ff-levels-table">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Level</th>
+                                                <th scope="col" class="ff-num">Played</th>
+                                                <th scope="col" class="ff-num">Cleared</th>
+                                                <th scope="col" class="ff-num">Median time</th>
+                                                <th scope="col" class="ff-num">Seats taken</th>
+                                                <th scope="col" class="ff-num">Retries</th>
+                                                <th scope="col">When it went wrong</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+
+                                <h3 class="admin-subheading admin-subheading-spaced">Players</h3>
+                                <p class="admin-hint">One row per signed-in player, plus a single line for everyone who played without signing in.</p>
+                                <div class="ff-table-wrap">
+                                    <table class="ff-table" id="ff-players-table">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Player</th>
+                                                <th scope="col" class="ff-num">Runs</th>
+                                                <th scope="col" class="ff-num">Best</th>
+                                                <th scope="col" class="ff-num">Best points</th>
+                                                <th scope="col" class="ff-num">Time played</th>
+                                                <th scope="col">First seen</th>
+                                                <th scope="col">Last seen</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+
+                                <h3 class="admin-subheading admin-subheading-spaced">Runs, newest first</h3>
+                                <p class="admin-hint">Open one to see every round inside it, in the order they were played.</p>
+                                <div class="chrome-list" id="ff-runs"></div>
+                            </section>
+
                             <!-- ---------- Admins ---------- -->
                             <section class="admin-panel" data-panel="admins" hidden>
                                 <header class="admin-panel-head">
@@ -595,13 +774,6 @@
             <!-- Volter Goldfish picture glyphs, docked on the right so they
                  stay to hand while a form is being filled in. See
                  js/glyph-palette.js. -->
-            <aside class="glyph-palette" id="glyph-palette" style="display:none;">
-                <h3 class="admin-sidebar-title">Glyphs</h3>
-                <p class="admin-hint">Click to type at your cursor.</p>
-                <div class="glyph-palette-list" id="glyph-palette-list"></div>
-                <p class="glyph-palette-status" id="glyph-palette-status" aria-live="polite"></p>
-            </aside>
-
         </div>
     </main>
 

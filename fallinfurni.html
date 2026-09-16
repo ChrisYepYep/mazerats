@@ -132,6 +132,20 @@
     <meta name="theme-color" content="#120c07">
     <meta name="robots" content="noindex, nofollow">
     <title>Fallin' Furni — Maze Rats</title>
+    <!-- The palette, before the stylesheets rather than after, so <html> already
+         carries data-theme when the CSS is applied and there is no brown frame
+         on screen for a moment first.
+
+         Read from localStorage because the real answer lives in the database and
+         arrives later: js/site.js fetches the site settings, applies whatever they
+         say and writes it here for next time. The cached value is therefore the
+         PREVIOUS visit's answer, which is right almost always and self-corrects
+         within one page load when it is not. A first-ever visitor has nothing
+         cached and gets classic, which is the default anyway.
+
+         Wrapped in try/catch: localStorage throws outright in some privacy modes,
+         and a colour scheme is not worth a blank page. -->
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);var l=document.createElement("link");l.id="theme-css";l.rel="stylesheet";l.href="css/theme-"+t+".css";document.head.appendChild(l);}catch(e){}})();</script>
     <link rel="stylesheet" href="css/style.css?v=2">
     <link rel="stylesheet" href="css/fallinfurni.css">
 </head>
