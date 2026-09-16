@@ -1,5 +1,41 @@
+# build-minify strips comments out of the CSS and JS as they go to the CDN.
+# It rewrites files in place, which is safe here and only here: Netlify builds
+# from a throwaway clone and publishes this directory, so nothing it touches
+# is anybody's working copy. The script refuses to run anywhere else — see its
+# own header for why that guard matters and why it uses real parsers rather
+# than a regular expression.
+#
+# Measured on everything home.html loads: 309KB gzipped -> 94KB, a 70% cut,
+# with style.css alone going 133KB -> 27KB. Nothing about how the code is
+# written or read changes; the comments simply stop being downloaded by people
+# who are here to look at mazes.
+# themes.js runs BEFORE build-minify, and the order is not arbitrary: it
+# reads css/style.css to build every palette override, and by the time minify
+# has been through, that file has had its comments stripped and its rules
+# rewritten. Generating from the minified copy would still work, but the
+# output would be unreadable and would churn on every deploy.
+#
+# Running it here at all is what stops the theme going stale. The generated
+# files are committed so local dev needs no build step, and a committed copy
+# silently keeps the OLD colours the moment anyone edits style.css. Building
+# it every deploy means the two cannot disagree on the live site.
+#
+# terser and clean-css are ordinary dependencies rather than dev ones, which
+# looks wrong for build-only tools and is not. `npm install` skips
+# devDependencies whenever NODE_ENV is production, and the minify step is not
+# guarded — one environment variable set for an unrelated reason and the build
+# command fails outright instead of just shipping bigger files. Nothing
+# requires them at runtime, so listing them here costs nothing and removes
+# that.
+#
+# The minify step deliberately has NO `|| true`: terser failing usually means
+# a real syntax error in a source file, which is a signal worth stopping for.
+#
+# `|| true` because this is a colour scheme. If it ever fails, the committed
+# files are still there and the deploy should carry on with them rather than
+# taking the archive down over a palette.
 [build]
-  command = "npm install"
+  command = "npm install && (node tools/themes.js || true) && node tools/build-minify.js"
   publish = "."
 
 [functions]
@@ -267,6 +303,48 @@
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# Resized images are kept in the DURABLE cache, not just at the edge.
+#
+# This is the same opt-in the data endpoints needed (see _cache.js). The
+# Image CDN already answers with max-age=31536000, immutable, which reads
+# like the strongest possible caching and is not: that header governs the
+# BROWSER. The edge keeps its own copy under its own rules, and without the
+# "durable" directive that copy is short-lived and per-node.
+#
+# Measured against production before the change — four identical requests
+# for one transform, back to back:
+#
+#   fwd=miss  fwd=stale  fwd=miss  fwd=stale   (Age: 0, 0, 0, 1)
+#
+# Every one of them went forward and re-transformed the original, at 400ms
+# to 1.1s each. A maze modal asks for a large image plus a tray of
+# thumbnails, so that cost was being paid ten or more times over, by every
+# visitor, on every open — and it is why the pictures arrived one at a time
+# instead of all at once.
+#
+# A transform is a pure function of (source image, query string), and the
+# query string is part of the cache key (see the Netlify-Vary the endpoint
+# answers with), so asking for a different size or quality is a different
+# URL and cannot be served the old answer. A year is safe because neither
+# kind of source image is ever rewritten in place:
+#
+#   · uploads are keyed <timestamp>-<slug>.<ext> in upload.js, so replacing
+#     a room's picture mints a new key and therefore a new transform URL;
+#   · repo assets under /assets/* are ALREADY served immutable for a year
+#     by the rule above, on the stated understanding that they change by
+#     getting a new filename. This inherits that promise rather than making
+#     a new one — if it is ever broken, both rules break together.
+#
+# Not verifiable with `netlify dev`: the local server applies no custom
+# headers to /.netlify/images at all, not even the site-wide ones it does
+# apply in production. Confirm after deploying with
+#   curl -sD- -o/dev/null 'https://mazerats.net/.netlify/images?url=assets/…&w=110&q=55'
+# and look for Cache-Status: ...; hit on the second request.
+[[headers]]
+  for = "/.netlify/images*"
+  [headers.values]
+    Netlify-CDN-Cache-Control = "public, durable, s-maxage=31536000, immutable"
 
 # The stylesheet and scripts are REVALIDATED rather than cached for a day,
 # which is a correctness rule and not a performance one.
