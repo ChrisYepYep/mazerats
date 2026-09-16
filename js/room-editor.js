@@ -446,15 +446,34 @@
         return piece;
     }
 
+    /* Is the thing in your hand a piece LIFTED off the floor, rather than one
+       taken from the palette? The two look identical while they are in the
+       air and must not behave the same when they land.
+
+       A palette brush is a stamp: you keep holding it and place as many as
+       you like. A lifted piece is the one and only copy of itself, so putting
+       it down has to END the move — otherwise a single alt-click turns into a
+       chair dispenser, and the next absent-minded click drops a duplicate the
+       builder did not ask for and may not notice.
+
+       Owned here rather than in the page, because the page would have to
+       reset it at every setBrush call site and there are four; the fifth,
+       added later, is the one that would be missed. */
+    let carrying = false;
+
     function place(x, y) {
         const piece = ghost(x, y);
         if (!piece || !piece.ok) return null;
         delete piece.ok;
         state.placed.push(piece);
         state.selected = piece;
+        // Put down what was picked up: the move is over, the hand is empty.
+        if (carrying) { state.brush = null; carrying = false; }
         commit();
         return piece;
     }
+
+    const isCarrying = () => carrying;
 
     // Turn what is in your hand, before it is put down.
     function rotateBrush() {
@@ -476,6 +495,9 @@
        Habbo does the same — a run of chairs all face the way you last turned
        one, but picking a different item starts it square. */
     function setBrush(className) {
+        // Whatever was in your hand is gone, so it is no longer a move in
+        // progress — this covers Escape, the palette, and dropping it.
+        carrying = false;
         state.brush = className || null;
         brush.rotation = 0;
         brush.state = 0;
@@ -498,6 +520,40 @@
         f.x = x; f.y = y;
         commit();
         return true;
+    }
+
+    /* Lift a placed piece back into your hand, which is how moving works in
+       the client: the furni leaves the floor, follows the pointer as a ghost,
+       and the next click puts it down again.
+
+       Different from moveSelected, which teleports a piece to a tile chosen
+       up front and is what the Move button and the precise dialog use. This
+       one has no destination yet — that is the whole point. It also means the
+       tile you lifted from is immediately free, so a piece can be nudged one
+       square into space its own footprint was occupying, which moveSelected
+       cannot do: Furni.fits is given the original to ignore, but only for a
+       move it has already been handed coordinates for.
+
+       Rotation, state and height come with it. Putting a lifted sofa back
+       down facing north because setBrush resets rotation would be a move that
+       quietly edited the thing it moved — so this sets the brush directly
+       rather than going through setBrush.
+
+       Returns the piece, so the caller can say what it picked up. */
+    function pickUpAt(x, y) {
+        const f = Furni.anyAt(state.placed, x, y);
+        if (!f) return null;
+        const i = state.placed.indexOf(f);
+        if (i === -1) return null;
+        state.placed.splice(i, 1);
+        state.selected = null;
+        state.brush = f.className;
+        brush.rotation = f.rotation || 0;
+        brush.state = f.state || 0;
+        brush.lift = f.lift || 0;
+        carrying = true;
+        commit();
+        return f;
     }
 
     /* ---- PRECISE MOVE, which is Habbo's own "Advanced" furni tool.
@@ -956,7 +1012,7 @@
         place, ghost, setBrush, rotateBrush, setBrushLift, brush,
         stateList, cycleBrushState, cycleSelectedState,
         beginPrecise, previewPrecise, cancelPrecise, savePrecise,
-        selectAt, moveSelected, rotateSelected, deleteSelected,
+        selectAt, moveSelected, pickUpAt, isCarrying, rotateSelected, deleteSelected,
         addZone, removeZone, selectZone, setZoneArea, renameZone, zone,
         addItem, removeItem, setRoom, save, restore, discardDraft,
         drawOverlay, drawDragArea, spriteUrl, spriteFor, rotationCount, metaFor, playable,

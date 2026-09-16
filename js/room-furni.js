@@ -1018,21 +1018,101 @@
         }));
     }
 
+    /* ---------------------------------------------- LIGHT NEEDS A SURFACE
+
+       An additive part is a sprite on an OPAQUE BLACK field: black adds
+       nothing, so in the client the field is invisible and only the light
+       shows. spotlight's cone is 281x233 and 74% of it is that black, with
+       not one transparent pixel in the file.
+
+       Canvas's "lighter" adds the ALPHA as well as the colour — Ar = As + Ad
+       — so over a part of the canvas that has nothing on it, black-at-alpha-1
+       plus nothing-at-alpha-0 comes out as opaque black. Inside the room that
+       is invisible, exactly as intended, because there is already paint
+       underneath. Past the room's edge there is not, and a lamp standing near
+       the wall hung a 281x233 black rectangle out over the void.
+
+       So an added part is masked to the pixels the canvas has ALREADY
+       painted, which is the room and everything drawn behind this piece.
+       Light falls on what is there and stops where the room does.
+
+       Filling the canvas with the void colour first was the other way to do
+       it, and it is one line — black added to brown is brown, so the
+       rectangle would vanish. It was not taken because it only hides the
+       BLACK. The lit part of the cone is not black and would still have been
+       there, a soft wedge of lamplight hanging in the space beside the room,
+       which is a stranger thing to see than the box was.
+
+       destination-in multiplies by the destination's alpha rather than
+       thresholding it, so a part-transparent pixel takes a part-strength
+       glow, and the mask costs one scratch canvas reused across every part
+       and every frame. */
+    let glowPad = null;
+
+    function pad(w, h) {
+        if (!glowPad) glowPad = document.createElement("canvas");
+        if (glowPad.width < w || glowPad.height < h) {
+            glowPad.width = Math.max(glowPad.width, w);
+            glowPad.height = Math.max(glowPad.height, h);
+        }
+        const g = glowPad.getContext("2d");
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.globalCompositeOperation = "source-over";
+        g.globalAlpha = 1;
+        g.imageSmoothingEnabled = false;
+        g.clearRect(0, 0, w, h);
+        return g;
+    }
+
+    /* Draws `img` at x,y with "lighter", clipped to what the canvas already
+       has. Exported, because the painted rooms' own ink-33 overlays reach the
+       canvas by a different route and have the same problem. */
+    function drawAdded(ctx, img, x, y, alpha, flip) {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        if (!w || !h) return;
+
+        const g = pad(w, h);
+        if (!flip) {
+            g.drawImage(img, 0, 0);
+        } else {
+            g.save();
+            g.scale(-1, 1);
+            g.drawImage(img, -w, 0);
+            g.restore();
+        }
+        // Keep the light only where there is something for it to land on.
+        g.globalCompositeOperation = "destination-in";
+        g.drawImage(ctx.canvas, x, y, w, h, 0, 0, w, h);
+
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        if (alpha !== undefined && alpha !== null && alpha < 1) ctx.globalAlpha = alpha;
+        ctx.drawImage(glowPad, 0, 0, w, h, x, y, w, h);
+        ctx.restore();
+    }
+
     function drawPart(ctx, part) {
         const entry = sprite(part.url);
         if (!entry.ready || entry.failed) return false;
         const img = part.colour ? tinted(entry.img, part.colour) : entry.img;
         const w = entry.img.naturalWidth;
 
-        /* "lighter" is canvas's add, which is Director's ink 33. save/restore
-           rather than setting it back by hand: every other part of every other
-           piece in the frame has to draw normally, and one missed reset turns
-           the whole room into a light show. */
-        const special = part.add || part.blend;
-        if (special) {
+        /* "lighter" is canvas's add, which is Director's ink 33. It goes
+           through drawAdded so the light is masked to the room — see the note
+           on it above. */
+        if (part.add) {
+            drawAdded(ctx, img, part.x, part.y,
+                      part.blend ? part.blend / 100 : 1, part.flip);
+            return true;
+        }
+
+        /* save/restore rather than setting the alpha back by hand: every
+           other part of every other piece in the frame has to draw normally,
+           and one missed reset turns the whole room into a light show. */
+        if (part.blend) {
             ctx.save();
-            if (part.add) ctx.globalCompositeOperation = "lighter";
-            if (part.blend) ctx.globalAlpha = part.blend / 100;
+            ctx.globalAlpha = part.blend / 100;
         }
         if (!part.flip) {
             ctx.drawImage(img, part.x, part.y);
@@ -1042,7 +1122,7 @@
             ctx.drawImage(img, -part.x - w, part.y);
             ctx.restore();
         }
-        if (special) ctx.restore();
+        if (part.blend) ctx.restore();
         return true;
     }
 
@@ -1146,7 +1226,7 @@
         SPRITE_BASE, make, tilesOf, covers, blockedTiles, seatAt, anyAt,
         fits, depthOf, sorted, draw, drawAll, outline, sprite, onSpriteLoad,
         footprint, rotate, rotationsOf, statesOf, anchor, variantAt, librarySprite, libraryMeta,
-        partsOf, drawPart, depthOfPart, tileDepth, DEPTH_PER_TILE, stateName,
+        partsOf, drawPart, drawAdded, depthOfPart, tileDepth, DEPTH_PER_TILE, stateName,
         animates
     };
 })();
