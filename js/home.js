@@ -6025,7 +6025,27 @@ document.addEventListener("DOMContentLoaded", () => {
     function showDegradedNotice() {
         if (!Api._degraded || !Api._degraded.size) return;
         if (document.getElementById("data-degraded-notice")) return;
-        const host = document.getElementById("browse-window") || document.querySelector(".chrome-window");
+        /* ABOVE .archive-stack, NOT INSIDE IT.
+
+           This used to insert itself directly before #browse-window, which put
+           it inside .archive-stack — and that stack is load-bearing in two
+           ways this notice quietly broke.
+
+           The menu tab hangs off it: .side-drawer is absolutely positioned at
+           `top: var(--spine-top)` (92px), measured from the stack, on the
+           understanding that the stack begins at the window. Put a 130px
+           notice in front of the window and the window moves down while the
+           spine does not — measured at 39px adrift, the tab floating in the
+           gap above the window instead of attached to its edge.
+
+           And the stack is `width: fit-content`, so a notice wider than the
+           window stretched it, moving the window off the centre it shares
+           with everything else on the page.
+
+           Sitting above the stack, the notice is just a block in the column
+           and the archive window keeps its own geometry entirely. */
+        const stack = document.querySelector(".archive-stack");
+        const host = stack || document.getElementById("browse-window") || document.querySelector(".chrome-window");
         if (!host || !host.parentNode) return;
 
         /* WHAT THIS SAYS, AND WHY IT IS WORDED THIS WAY.
