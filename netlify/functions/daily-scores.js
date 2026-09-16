@@ -36,7 +36,7 @@
    to defend. */
 const { getDb } = require("./_db");
 const { playerFrom } = require("./_player");
-const { today, seedFrom, shuffle } = require("./_daily");
+const { today, dayIsOpen, seedFrom, shuffle } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const COLLECTION = "daily_scores";
@@ -424,9 +424,10 @@ exports.handler = async (event) => {
 
         const day = String(body.day || "").slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json(400, { error: "Bad day" });
-        // Only today. Yesterday's board is finished, and a day that has not
-        // happened cannot have been played.
-        if (day !== today()) return json(400, { error: "That day is not open" });
+        // Today, or the day that ended in the last few minutes — see
+        // dayIsOpen in _daily.js for why the grace period exists. A day that
+        // has not happened cannot have been played.
+        if (!dayIsOpen(day)) return json(400, { error: "That day is not open" });
 
         const moves = Array.isArray(body.moves) ? body.moves.slice(0, ROUNDS) : null;
         if (!moves || !moves.length) return json(400, { error: "Bad moves" });

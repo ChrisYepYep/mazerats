@@ -182,7 +182,14 @@ exports.handler = async (event) => {
         // error is worth retrying depends on what we already tried.
         let claims = null;
         if (q.state) {
-            try { claims = jwt.verify(q.state, process.env.SESSION_SECRET); } catch (e) { claims = null; }
+            // algorithms named, for the same reason _auth.js and _player.js
+            // name theirs: what counts as a valid signature should not be
+            // inferred from the key. This was the one verify on the site that
+            // did not say so — not a bug today, since jsonwebtoken 9 already
+            // refuses "none" and will not check an asymmetric token against a
+            // string secret, but the whole point of pinning it is to not
+            // depend on that staying true.
+            try { claims = jwt.verify(q.state, process.env.SESSION_SECRET, { algorithms: ["HS256"] }); } catch (e) { claims = null; }
         }
 
         if (q.error) {

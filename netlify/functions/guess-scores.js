@@ -32,6 +32,11 @@
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
+/* Only dayIsOpen. This game keeps its own todayIso, seededRandom and scoring
+   — it was written before _daily.js existed and its day is dealt from its own
+   POINTS array — but "is this day still accepting scores" is a rule about the
+   clock rather than about the game, and both games want the same answer. */
+const { dayIsOpen } = require("./_daily");
 
 const COLLECTION = "guess_scores";
 const ROUNDS = 5;
@@ -301,9 +306,10 @@ exports.handler = async (event) => {
 
         const day = String(body.day || "").slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json(400, { error: "Bad day" });
-        // Only today. Yesterday's board is finished, and a day that has not
-        // happened cannot have been played.
-        if (day !== todayIso()) return json(400, { error: "That day is not open" });
+        // Today, or the day that ended in the last few minutes — see
+        // dayIsOpen in _daily.js for why the grace period exists. A day that
+        // has not happened cannot have been played.
+        if (!dayIsOpen(day)) return json(400, { error: "That day is not open" });
         if (!Array.isArray(body.rounds) || body.rounds.length !== ROUNDS) {
             return json(400, { error: "Bad rounds" });
         }

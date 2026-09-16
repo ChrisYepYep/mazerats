@@ -15,6 +15,37 @@
 // UTC, so a player and the server never disagree about which day it is.
 const today = () => new Date().toISOString().slice(0, 10);
 
+/* May a score still be filed against this day?
+
+   Today, plus a few minutes' grace for the day that has just ended.
+
+   Both sides agree about the calendar — they are both on UTC — but they read
+   it at different moments, and the gap between them is the whole game. A
+   player who starts the last puzzle at 23:58 and finishes at 00:01 sends a
+   day the server has by then stopped calling today, and the answer was "That
+   day is not open": a score genuinely earned, refused, with a message that
+   is not true of anything the player did. Nobody would ever report it —
+   it happens to one person, once, at midnight — which is exactly why it
+   would have stayed there.
+
+   Five minutes is sized to a slow finish and a slow request, not to a second
+   attempt. It does widen the window in which yesterday's puzzle can be
+   STARTED and filed, but only by those five minutes, and the puzzle was
+   freely playable a moment earlier anyway — the one-row-per-player-per-day
+   index is what actually stops anything compounding. Refusing real scores to
+   save five minutes of an already-open door is the worse trade.
+
+   The row is still filed against the day it was PLAYED, not the day it
+   arrived, so yesterday's board gets the score it earned. */
+const GRACE_MS = 5 * 60 * 1000;
+
+function dayIsOpen(day) {
+    const now = Date.now();
+    if (day === new Date(now).toISOString().slice(0, 10)) return true;
+    const justEnded = new Date(now - GRACE_MS).toISOString().slice(0, 10);
+    return day === justEnded;
+}
+
 // mulberry32, exactly as the page runs it.
 function seededRandom(seed) {
     let a = seed >>> 0;
@@ -50,4 +81,4 @@ function shuffle(list, seed) {
         .map(o => o.item);
 }
 
-module.exports = { today, seededRandom, seedFrom, shuffle };
+module.exports = { today, dayIsOpen, seededRandom, seedFrom, shuffle };

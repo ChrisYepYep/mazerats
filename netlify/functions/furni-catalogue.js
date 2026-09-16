@@ -134,10 +134,13 @@ exports.handler = async (event) => {
                natural thing to try, and it would otherwise match nothing.
 
                Name matches are listed first. A className-only hit is a
-               correct but less direct answer, and the picker shows a capped
-               24, so the ones the person most likely meant have to be at the
-               top rather than wherever the catalogue happened to order
-               them. */
+               correct but less direct answer, so the ones the person most
+               likely meant have to be at the top rather than wherever the
+               catalogue happened to order them. This ordering used to matter
+               because the picker kept only the first 24; it now shows every
+               match, which makes the order matter MORE, not less — a broad
+               search can run to three hundred rows and the useful ones have
+               to be the rows you land on. */
             const named = [];
             const themed = [];
             for (const i of items) {
