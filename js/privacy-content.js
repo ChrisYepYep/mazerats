@@ -24,6 +24,10 @@ const PRIVACY_SECTIONS = [
         body: "Signing in is entirely optional. Everything on this site - the archive, the daily game, marking a maze as completed - works without an account, and nothing is hidden behind one. If you do sign in, we ask Discord for one permission only: \"identify\", which returns your Discord user ID, your display name and your avatar picture. We do not ask for your email address, your servers, your friends, or anything else, and we cannot see them. We keep your ID, display name and avatar URL, and the dates you first signed in and were last seen. The access token Discord issues during sign-in is used once to read that profile and is then discarded, never stored - so nothing here can act on your behalf on Discord, and there is no credential of yours for anyone to steal from us."
     },
     {
+        heading: "Playing Fallin' Furni.",
+        body: "Every round of Fallin' Furni is recorded so the game can be tuned - which levels people clear, which they run out of time on, and where a run ends. A record holds what happened in the game and nothing else: the levels played, how long each took, how many seats were taken, how the round ended, the points scored, the size of the browser window, and whether the screen was a touchscreen. If you are signed in it carries your Discord display name and ID, the same identity the leaderboard already shows. If you are not signed in it is stored as an anonymous run - there is no identifier on it of any kind, so those runs cannot be grouped together, connected to a later visit, or traced back to you. No IP address is recorded either way. These records are never shown publicly and are only ever read by an administrator looking at how the game is playing; they are deleted automatically after 180 days."
+    },
+    {
         heading: "What your account holds.",
         body: "Signed in, the things this site would otherwise remember only in your browser are kept against your account instead, so they follow you between your phone and your computer: which mazes you have marked as completed, which you have saved to complete later, your progress in the current day of the daily game, and your finished daily scores. Your display name, avatar, score and result grid - the five coloured squares saying how each room went, which name no maze and give nothing away - are shown publicly on the daily game's leaderboards. That is the entire purpose of signing in, and it is the only place your account is visible to anyone else. Which mazes you have completed, and which you have saved to complete later, are never shown to anybody but you."
     },
@@ -45,7 +49,7 @@ const PRIVACY_SECTIONS = [
     },
     {
         heading: "Data Rights & Contact.",
-        body: "Signing out clears your session immediately, and you can withdraw this site's access at any time from Discord's own Authorised Apps settings without asking us. To have the account itself deleted - your profile, your scores, your leaderboard entries and your completed mazes, permanently and in full - or to review or remove any stored contact data, send a message through the Contact Us form and your request will be processed promptly."
+        body: "Signing out clears your session immediately, and you can withdraw this site's access at any time from Discord's own Authorised Apps settings without asking us. To have the account itself deleted - your profile, your scores, your leaderboard entries, your Fallin' Furni run records and your completed mazes, permanently and in full - or to review or remove any stored contact data, send a message through the Contact Us form and your request will be processed promptly."
     }
 ];
 

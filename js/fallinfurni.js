@@ -623,10 +623,18 @@
                     key: ov.z * 1000 + (order++),
                     draw: () => {
                         if (!img.complete || !img.naturalWidth) return;
+                        const a = (ov.blend !== null && ov.blend < 100) ? ov.blend / 100 : 1;
+                        /* ink 33 is Director's addPin — light, not paint. It
+                           goes through the same masked draw the furni use, so
+                           a chandelier near the edge of a painted room cannot
+                           hang its black field out past the artwork. */
+                        if (ov.ink === 33) {
+                            Furni.drawAdded(ctx2, img,
+                                Iso.paintX + ov.x, Iso.paintY + ov.y, a, false);
+                            return;
+                        }
                         ctx2.save();
-                        // ink 33 is Director's addPin — light, not paint.
-                        if (ov.ink === 33) ctx2.globalCompositeOperation = "lighter";
-                        if (ov.blend !== null && ov.blend < 100) ctx2.globalAlpha = ov.blend / 100;
+                        ctx2.globalAlpha = a;
                         ctx2.drawImage(img, Iso.paintX + ov.x, Iso.paintY + ov.y);
                         ctx2.restore();
                     }
@@ -1019,7 +1027,7 @@
         if (!Editor) { el.textContent = "Click a tile to walk there."; return; }
         el.textContent = {
             room: "Pick a floor and wallpaper for this level.",
-            decor: "Click a furni, then a tile to place it. R turns, Del removes.",
+            decor: "Click a furni, then a tile to place it. Alt-click moves, shift-click turns, ctrl-click removes.",
             zones: "Drag across the room to draw a drop zone.",
             rules: "Set the clock and how hard this round should be.",
             splash: "Pick what falls past the title screen. Saves as you change it."
@@ -1282,9 +1290,82 @@
 
         if (mode !== "decor") return;
 
+        /* ---- MODIFIER CLICKS
+
+           Alt picks up, Shift turns, Ctrl removes — each meaning the same
+           thing whether the furni is on the floor or already in your hand, so
+           the key says WHAT to do and the context decides what it acts on.
+           That is the hand-before-floor order R and F already use on the
+           keyboard.
+
+           Checked before the armed Move below, and using one cancels it:
+           having pressed Move and then ctrl-clicked something, you meant to
+           delete that piece, not to move the armed one onto it.
+
+           Shift used to move the selected piece — an undocumented leftover
+           from before the Move button existed. It is replaced rather than
+           kept alongside the new meaning, because one key cannot both turn
+           and move.
+
+           metaKey as well as ctrlKey, because ctrl-click IS right-click on a
+           Mac: cmd-click is what a Mac user would actually reach for, and the
+           contextmenu handler on the canvas keeps the menu out of the way for
+           anyone who uses ctrl anyway. */
+        if (ev.altKey || ev.shiftKey || ev.ctrlKey || ev.metaKey) {
+            if (moving) { moving = false; setHint(Editor.state.mode); }
+
+            // SHIFT — turn what is in your hand, else what is on that tile.
+            if (ev.shiftKey) {
+                if (Editor.state.brush) {
+                    Editor.rotateBrush();
+                    renderEditorPanel();
+                    dirty = true;
+                    return;
+                }
+                if (!Editor.selectAt(t.x, t.y)) { status("Nothing there to turn.", "bad"); return; }
+                if (!Editor.rotateSelected()) status("It will not turn there.", "bad");
+                else status("", "");
+                renderEditorPanel();
+                return;
+            }
+
+            // ALT — lift the piece off the floor and carry it.
+            if (ev.altKey) {
+                /* Already carrying one? Then alt is how you put it back down.
+                   A pick-up you did not mean costs one more click rather than
+                   a hunt for the key that cancels it. */
+                if (Editor.state.brush) {
+                    if (!putDown(t)) status("That does not fit there.", "bad");
+                    renderEditorPanel();
+                    return;
+                }
+                if (!Editor.pickUpAt(t.x, t.y)) { status("Nothing there to move.", "bad"); return; }
+                status("Carrying it - click to put it down.", "good");
+                setHint(Editor.state.mode, "Click a tile to put it down. Shift-click turns it, Esc drops it.");
+                renderEditorPanel();
+                dirty = true;
+                return;
+            }
+
+            /* CTRL / CMD — remove it. A piece in the hand is already off the
+               floor, so there is nothing there to delete: throw it away. */
+            if (Editor.state.brush) {
+                Editor.setBrush(null);
+                status("Dropped it.", "good");
+                setHint(Editor.state.mode);
+                renderEditorPanel();
+                dirty = true;
+                return;
+            }
+            if (!Editor.selectAt(t.x, t.y)) { status("Nothing there to remove.", "bad"); return; }
+            Editor.deleteSelected();
+            status("Removed.", "good");
+            renderEditorPanel();
+            return;
+        }
+
         /* Move is ARMED, not held: press the button, then click the
-           destination. Shift-click still works for anyone who knows it, but a
-           modifier nobody is told about is not a feature — the button is. */
+           destination. Alt-click above is the quicker way at the same thing. */
         if (moving && Editor.state.selected) {
             if (Editor.moveSelected(t.x, t.y)) {
                 moving = false;
@@ -1296,15 +1377,29 @@
             renderEditorPanel();
             return;
         }
-        if (ev.shiftKey && Editor.state.selected) {
-            if (!Editor.moveSelected(t.x, t.y)) status("That does not fit there.", "bad");
-            return;
-        }
         if (Editor.state.brush) {
-            if (!Editor.place(t.x, t.y)) status("That does not fit there.", "bad");
+            if (!putDown(t)) status("That does not fit there.", "bad");
             return;
         }
         Editor.selectAt(t.x, t.y);
+    }
+
+    /* Place what is in your hand, and tidy up after a MOVE if that is what it
+       was. The editor empties the hand itself when the piece was lifted off
+       the floor (see `carrying` in room-editor.js) — this is the part that
+       has to be said out loud: the hint goes back to the normal one and the
+       status says the move finished rather than leaving "Carrying it" up
+       against a room where nothing is being carried. */
+    function putDown(t) {
+        const wasCarrying = Editor.isCarrying();
+        if (!Editor.place(t.x, t.y)) return false;
+        if (wasCarrying) {
+            status("Moved.", "good");
+            setHint(Editor.state.mode);
+            renderEditorPanel();
+            dirty = true;
+        }
+        return true;
     }
 
     /* ---- PRECISE MOVE, wired to Habbo's Advanced tool field for field.
@@ -2755,6 +2850,70 @@
         }
     }
 
+    /* ------------------------------------------------------- THE RUN LOG
+
+       Separate from submitRun, and sent whatever happened. submitRun is the
+       leaderboard: it only speaks for signed-in players, refuses a run that
+       cleared nothing, and keeps only somebody's best. This goes to
+       ff-runs.js, which keeps all of them — because the runs that did NOT go
+       well are the ones that say which level is too long and which seat is
+       too confusing, and those are exactly the runs the board throws away.
+
+       runRecorded is a guard, not an optimisation. A run can reach here twice:
+       once when it ends, and again from the pagehide handler if the player
+       then closes the tab on the end screen. Two rows for one run would
+       quietly double every number in the panel. */
+    let runRecorded = false;
+
+    function recordRun(theRun, outcome) {
+        if (!theRun || runRecorded || !runStartedAt) return;
+        runRecorded = true;
+
+        /* results holds one entry per level that ENDED. A run abandoned in
+           the middle of a round has that round missing from it, which is the
+           one level anybody would most want to see — the player walked out of
+           it. So it is taken from the live game and marked as a quit. */
+        const levels = (theRun.results || []).slice();
+        if (outcome === "abandoned" && theRun.game) {
+            try {
+                levels.push({ ...theRun.game.summary(gameNow()), won: false, why: "quit" });
+            } catch (e) { /* mid-teardown; the finished rounds are enough */ }
+        }
+
+        const body = JSON.stringify({
+            outcome,
+            cleared: theRun.cleared(),
+            points: theRun.score(),
+            ms: Math.round(gameNow() - runStartedAt),
+            livesSpent: theRun.livesSpent || 0,
+            livesWon: theRun.livesWon || 0,
+            livesLeft: theRun.lives || 0,
+            levels,
+            w: window.innerWidth,
+            h: window.innerHeight,
+            touch: navigator.maxTouchPoints > 0
+        });
+
+        /* sendBeacon, so a run that ends because the tab is closing still
+           arrives — a fetch is cancelled when the page goes away, which is
+           the exact moment an abandoned run needs reporting. There is no
+           failure path worth handling: the browser either queues it or it
+           does not, and a missing row in a statistics panel is not worth
+           saying anything to the player about. */
+        try {
+            const blob = new Blob([body], { type: "application/json" });
+            if (!navigator.sendBeacon || !navigator.sendBeacon("/.netlify/functions/ff-runs", blob)) {
+                fetch("/.netlify/functions/ff-runs", {
+                    method: "POST", credentials: "same-origin", keepalive: true,
+                    headers: { "Content-Type": "application/json" }, body
+                }).catch(() => {});
+            }
+        } catch (e) { /* private mode, a blocked beacon, no network */ }
+    }
+
+    // The tab closing mid-round is an abandoned run like any other.
+    window.addEventListener("pagehide", () => { if (run) recordRun(run, "abandoned"); });
+
     async function submitRun(levelsCleared) {
         if (!runStartedAt) return;
         /* A run that cleared nothing still ENDED, and the player is owed the
@@ -3030,6 +3189,7 @@
                only thing holding the per-round summaries. The title screen
                comes back when the player closes it. */
             showRunEnd(run, what === "finished");
+            recordRun(run, what === "finished" ? "won" : "lost");
             submitRun(cleared);
             game = null; run = null;
         }
@@ -3316,6 +3476,9 @@
         }
         hideTitle();
         runStartedAt = gameNow();
+        // A new run is a new row: whatever the last one did, this one is
+        // unreported until it ends.
+        runRecorded = false;
         run = Game.createRun(published, gameOpts());
         game = run.startRound(gameNow());
         beginLevel(run.level());
@@ -3398,6 +3561,17 @@
             if (t) beginDrag(t);
         });
         window.addEventListener("mouseup", () => { walkDragging = false; endDrag(); });
+
+        /* Ctrl-click deletes a furni, and on a Mac ctrl-click is also how you
+           open a context menu — so without this the menu covers the room at
+           the exact moment the piece disappears. Suppressed only while the
+           decorate tab is actually open: right-clicking the room at any other
+           time is nothing to do with us, and taking the browser's menu away
+           from someone who wanted it is its own small rudeness. */
+        canvas.addEventListener("contextmenu", (ev) => {
+            const playing = game && game.state === Game.RUNNING;
+            if (Editor && !playing && Editor.state.mode === "decor") ev.preventDefault();
+        });
 
         canvas.addEventListener("click", (ev) => {
             const t = pointerTile(ev);
@@ -3545,7 +3719,7 @@
         document.getElementById("ff-round-quit").addEventListener("click", () => {
             // Abandoning a run still records how far it got — including the
             // round just won, which `run.index` has not counted yet.
-            if (run) submitRun(run.cleared());
+            if (run) { recordRun(run, "abandoned"); submitRun(run.cleared()); }
             hideRoundEnd();
             stopRound();
         });

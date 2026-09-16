@@ -373,6 +373,12 @@
                 const p = this.progress();
                 const left = this.secondsLeft(now);
                 return {
+                    /* The level's own id as well as its name, because the run
+                       log groups on it: an id is a slug fixed when the level
+                       was created and a name is whatever it is called today,
+                       so keying on the name would split a level's history in
+                       two the first time somebody renamed it. */
+                    id: (level && level.id) || "",
                     name: (level && level.name) || "Level",
                     won: this.state === WON,
                     why: this.endedBecause,
