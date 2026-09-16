@@ -790,6 +790,77 @@ document.addEventListener("DOMContentLoaded", () => {
     // interactive element needs by hand. Shared by both the main grid and
     // .featured-frame's own list (see renderFeaturedList) since they render
     // the exact same row markup.
+    /* ---- WARMING A MAZE'S PICTURES BEFORE IT IS OPENED.
+
+       The loading screen preloads every row's THUMBNAIL, so the archive list
+       arrives all at once — but a maze's own pictures were never part of
+       that, and could not be: there are 538 of them across 39 mazes, and
+       fetching the lot up front would be several megabytes to show a grid.
+       So opening a maze fetched its gallery from cold and the strip filled in
+       one picture at a time.
+
+       Fetched on INTENT instead. Hovering a row, or tabbing onto it, is a
+       reliable signal that it is about to be opened, and by the time the
+       click lands the browser has them in cache and the strip is simply
+       there. The median maze has nine pictures; this costs nothing for a
+       maze nobody opens.
+
+       AFTER A PAUSE, not on the first pixel of hover. Running the mouse down
+       the list crosses every row in it, and warming each in turn would fire
+       hundreds of requests to show one maze. A short dwell is the difference
+       between "moving past this" and "looking at this".
+
+       Only the first few thumbnails: the strip shows about eight at a time
+       and scrolls, so the rest can arrive lazily as they always did. The
+       large image is warmed too — it is the one the modal shows immediately,
+       and at 900px it is the slowest single thing in there. */
+    const WARM_THUMBS = 12;
+    const WARM_DWELL_MS = 120;
+    const warmedGalleries = new Set();
+
+    /* How many strip thumbnails are loaded eagerly when a modal opens.
+       Declared here beside WARM_THUMBS so the two stay in step — what is
+       warmed on hover should cover what is asked for on open. */
+    const STRIP_EAGER = 10;
+
+    /* Fetch one image and, if the browser will, decode it too.
+
+       .src alone gets the bytes into the HTTP cache, which is most of the
+       win but not all of it: the picture still has to be turned into a
+       bitmap, and for a 900px screenshot that is real work on the main
+       thread at exactly the moment the modal is trying to animate open.
+       decode() moves it off that moment. Everything is optional — the
+       promise rejects if the image is replaced or the format is refused,
+       and a warm that fails is simply a warm that did not happen, so it is
+       swallowed rather than surfaced. */
+    function warmImage(url) {
+        const img = new Image();
+        img.decoding = "async";
+        img.src = url;
+        if (img.decode) img.decode().catch(() => {});
+    }
+
+    function warmGallery(n) {
+        if (!n || !imgCdn) return;
+        const key = n.id || n.name;
+        if (!key || warmedGalleries.has(key)) return;
+        warmedGalleries.add(key);
+
+        // The same order, and the same three sources, openModal builds its
+        // combinedGallery from — so these are the exact URLs it will ask for.
+        const images = [
+            ...(n.entrance && n.entrance.image ? [n.entrance.image] : []),
+            ...((n.gallery || []).map(g => g && g.image).filter(Boolean)),
+            ...(n.finish && n.finish.image ? [n.finish.image] : [])
+        ];
+        if (!images.length) return;
+
+        warmImage(imgCdn(images[0], 900, null, 78));
+        images.slice(0, WARM_THUMBS).forEach(src => {
+            warmImage(imgCdn(src, 110, 110, 55));
+        });
+    }
+
     function wireRowActivation(container, items) {
         container.querySelectorAll(".chrome-list-row").forEach((row, i) => {
             row.addEventListener("click", () => openModal(items[i]));
@@ -798,6 +869,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 e.preventDefault(); // stops Space from also scrolling the page
                 openModal(items[i]);
             });
+
+            let dwell = 0;
+            const startWarm = () => {
+                clearTimeout(dwell);
+                dwell = setTimeout(() => warmGallery(items[i]), WARM_DWELL_MS);
+            };
+            const stopWarm = () => clearTimeout(dwell);
+
+            row.addEventListener("pointerenter", startWarm, { passive: true });
+            row.addEventListener("pointerleave", stopWarm, { passive: true });
+            // Keyboard and touch get it without the dwell: arriving on a row
+            // by either is already a deliberate act, not a mouse passing over.
+            row.addEventListener("focus", () => warmGallery(items[i]));
+            row.addEventListener("touchstart", () => warmGallery(items[i]), { passive: true });
         });
     }
 
@@ -5089,12 +5174,30 @@ document.addEventListener("DOMContentLoaded", () => {
             galleryNext.style.display = "flex";
             galleryCounter.style.display = "inline-flex";
             galleryStrip.style.display = "flex";
-            // A room added without a screenshot yet gets a small "?"
-            // placeholder here instead of a broken <img> — see
-            // .gallery-strip-missing and showGalleryImage's own handling of
-            // the same case for the large image.
+            /* A room added without a screenshot yet gets a small "?"
+               placeholder here instead of a broken <img> — see
+               .gallery-strip-missing and showGalleryImage's own handling of
+               the same case for the large image.
+
+               The thumbnails you can actually SEE are loaded eagerly; only
+               the ones off the end of the tray are left lazy.
+
+               Every one of them used to be lazy, which quietly meant none of
+               them could start at all. This markup is written while the
+               overlay is still display:none (".open" goes on at the bottom
+               of openModal), and an element with no layout box is never
+               "near the viewport" — so a lazy image inside one does not
+               begin to load until the modal is up and laid out, and then
+               loads a few at a time as the browser notices them. Measured on
+               a 24-picture maze: 3 requests in the first 1.5 seconds, for
+               the 9 thumbnails on screen. That cascade is the pop-in.
+
+               STRIP_EAGER is 10 against the 9 that fit in the tray at its
+               usual width, so the count survives a slightly wider window
+               without going back to loading the whole hundred of The Little
+               Maze up front. */
             galleryStrip.innerHTML = activeGallery.map((g, i) => g.image
-                ? `<img src="${imgCdn(g.image, 110, 110, 55)}" loading="lazy" alt="${escapeHtml(displayLabel(g))}" data-index="${i}">`
+                ? `<img src="${imgCdn(g.image, 110, 110, 55)}" ${i < STRIP_EAGER ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"'} decoding="async" alt="${escapeHtml(displayLabel(g))}" data-index="${i}">`
                 : `<div class="gallery-strip-missing" data-index="${i}" title="${escapeHtml(displayLabel(g))}">?</div>`
             ).join("");
             galleryStrip.querySelectorAll("img, .gallery-strip-missing").forEach(thumb => {
