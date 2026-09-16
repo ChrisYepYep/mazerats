@@ -1032,11 +1032,52 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-align: center;
 }
 
-.data-degraded-notice p {
-    margin: 0;
-    color: var(--parchment);
-    font-size: 0.85rem;
+/* ---- THE OFFLINE NOTICE.
+
+   Dressed as a panel rather than a loose line of text, because it is standing
+   in front of the archive window explaining why what is behind it is nearly
+   empty — and a bare sentence floating above a full-width window reads as a
+   glitch rather than as a message.
+
+   Amber rather than red. It is not an error the visitor caused or can fix,
+   and the palette already uses amber for "pay attention to this" everywhere
+   else; red would make a brief cache miss look like a catastrophe. */
+.data-degraded-notice {
+    border: 1px solid var(--amber);
+    border-left-width: 3px;
+    border-radius: 8px;
+    background: rgba(18, 12, 7, 0.72);
+    /* Left, not centred. Two sentences centred under a heading make a ragged
+       diamond of text; a visitor reading an explanation wants an edge to come
+       back to. */
+    text-align: left;
+    justify-content: space-between;
+    padding: 14px 16px;
 }
+
+.data-degraded-body { flex: 1 1 22em; min-width: 0; }
+
+.data-degraded-head {
+    margin: 0 0 4px;
+    font-family: 'Silkscreen', 'Pixelify Sans', monospace;
+    font-size: 0.82rem;
+    letter-spacing: 0.04em;
+    color: var(--amber-bright);
+}
+
+.data-degraded-say {
+    margin: 0;
+    color: var(--parchment-dim);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    max-width: 62ch;
+}
+
+/* Does not stretch to the panel's full width on a wide screen, and does not
+   sit flush against the prose on a narrow one where the two have stacked. */
+.data-degraded-retry { flex: 0 0 auto; }
+
+.data-degraded-retry[disabled] { opacity: 0.6; cursor: default; }
 
 /* ---------- welcome / splash screen ---------- */
 

@@ -19,13 +19,22 @@ const Api = {
        the page. */
     _degraded: new Set(),
 
-    /* Two attempts before giving up. The first keeps its short leash so a
-       genuinely dead endpoint can't hold the page; the second is generous,
-       because by far the likeliest cause is a cold function on a slow
-       connection rather than an outage, and one 6s window was easy to miss
-       by a fraction. */
+    /* Two attempts before giving up. The first is the ordinary case; the
+       second is generous, because by far the likeliest cause is a cold
+       function rather than an outage.
+
+       THE FIRST WAS 6000 AND THAT WAS TOO TIGHT. A cold start on /rooms
+       measured 5.3s against it — inside the window by seven hundred
+       milliseconds, which is not a margin, it is a coin toss. Every toss lost
+       showed somebody the one-maze offline copy of a thirty-seven maze
+       archive while the site was working perfectly well.
+
+       10s and 15s instead. The cold starts this is sized around should also
+       be far rarer now that the durable cache is actually in use (see
+       CDN_CACHE in netlify/functions/_cache.js), so the long leash should be
+       reached less often as well as mattering less when it is. */
     async _getWithFallback(url, label, fallbackFn) {
-        const attempts = [6000, 12000];
+        const attempts = [10000, 15000];
         for (let i = 0; i < attempts.length; i++) {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), attempts[i]);

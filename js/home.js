@@ -5912,9 +5912,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const loaderFill = document.getElementById("site-loader-fill");
     const loaderLabel = document.getElementById("site-loader-label");
     const LOADER_BLOCK = 8;   // px per drawn block, matching the CSS gradient
-    // A stalled thumbnail must never hold the page hostage. Whatever has
-    // arrived by now is shown regardless.
+
+    /* A stalled THUMBNAIL must never hold the page hostage. Whatever has
+       arrived by then is shown regardless.
+
+       IT IS COUNTED FROM WHEN THE DATA LANDS, not from page load, and that
+       distinction is the whole of a bug worth describing. Started at page
+       load it was a flat 8s cap on everything — while the archive request
+       itself is allowed two attempts totalling up to 25s. So on exactly the
+       slow load where a visitor most needs to see something happening, the
+       loading bar removed itself at eight seconds and left them looking at a
+       bare page for another seventeen, with no way to tell a slow site from a
+       broken one. The requests cannot hang forever on their own account —
+       _getWithFallback always resolves, on its own timeout if nothing else —
+       so letting them keep the bar up is safe.
+
+       And a word after ten seconds, because a progress bar that has not moved
+       is only reassuring for so long. */
     const LOADER_MAX_WAIT = 8000;
+    const LOADER_SLOW_AFTER = 10000;
 
     /* Weighted rather than one step per task, because the tasks are nothing
        like equal: the maze list is a single 2.4MB response that accounts for
@@ -5929,13 +5945,19 @@ document.addEventListener("DOMContentLoaded", () => {
     let loadDone = 0;
     const loadTotal = 100;
 
+    // Set once the load has gone on long enough to be worth remarking on, so
+    // drawLoader keeps saying so on every subsequent repaint.
+    let loaderSlow = false;
+
     function drawLoader() {
         if (!loaderEl) return;
         const pct = loadTotal ? Math.min(1, loadDone / loadTotal) : 1;
         const track = loaderFill.parentElement.clientWidth;
         // Snapped down to whole blocks so none is ever drawn half-width.
         loaderFill.style.width = (Math.floor((pct * track) / LOADER_BLOCK) * LOADER_BLOCK) + "px";
-        loaderLabel.textContent = "LOADING " + Math.round(pct * 100) + "%";
+        loaderLabel.textContent = loaderSlow
+            ? "STILL LOADING " + Math.round(pct * 100) + "%"
+            : "LOADING " + Math.round(pct * 100) + "%";
     }
 
     function hideLoader() {
@@ -5976,7 +5998,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     drawLoader();
-    setTimeout(hideLoader, LOADER_MAX_WAIT);
+
+    /* No blanket cap from here — see LOADER_MAX_WAIT. The bar stays up for as
+       long as the archive is genuinely still being fetched, and the cap is
+       armed below once that has finished, to cover the thumbnails it was
+       written for. */
+    const slowTimer = setTimeout(() => {
+        loaderSlow = true;
+        drawLoader();
+    }, LOADER_SLOW_AFTER);
 
     // Counted separately rather than through Promise.all, so the bar moves
     // when the first of the two lands instead of waiting for both.
@@ -5998,23 +6028,68 @@ document.addEventListener("DOMContentLoaded", () => {
         const host = document.getElementById("browse-window") || document.querySelector(".chrome-window");
         if (!host || !host.parentNode) return;
 
+        /* WHAT THIS SAYS, AND WHY IT IS WORDED THIS WAY.
+
+           The first version was one apologetic sentence — "Couldn't load the
+           live room data. Showing a small offline copy — most of the archive
+           is missing." — which is accurate and reads like a broken page. It
+           put the shortfall first, gave no sense of whether this was the
+           visitor's problem or ours, and offered no reason to think trying
+           again would help.
+
+           Three parts instead. A heading that names the state plainly, a line
+           that says it is temporary and on our side, and the retry. Somebody
+           who lands mid-outage should come away knowing the archive exists
+           and is coming back — not that the site is broken.
+
+           A heading rather than a shout: the tone of the rest of the site is
+           quiet, and an outage notice in red capitals would be the loudest
+           thing on a page about maze rooms. */
         const notice = document.createElement("div");
         notice.id = "data-degraded-notice";
         notice.className = "callout data-degraded-notice";
-        notice.setAttribute("role", "status");
+        // alert, not status: this changes what the page in front of them IS,
+        // and a screen reader should be told without waiting for a pause.
+        notice.setAttribute("role", "alert");
+
         const what = [...Api._degraded].join(" and ");
         notice.innerHTML =
-            "<p>Couldn’t load the live " + escapeHtml(what) + ". Showing a small offline copy — " +
-            "most of the archive is missing.</p>" +
-            '<button type="button" class="btn" id="data-degraded-retry">Try again</button>';
+            '<div class="data-degraded-body">' +
+                '<p class="data-degraded-head">The archive is offline</p>' +
+                "<p class=\"data-degraded-say\">We can’t reach the live " + escapeHtml(what) +
+                " right now, so you’re seeing a small offline copy — most of the archive isn’t here. " +
+                "This is usually brief; the full archive should be back shortly.</p>" +
+            "</div>" +
+            '<button type="button" class="btn data-degraded-retry" id="data-degraded-retry">Try again</button>';
+
         host.parentNode.insertBefore(notice, host);
+
+        /* Reloading is the honest retry: the fallback data is already in
+           memory and every request this page makes happens at start-up, so
+           there is nothing to re-run in place. Says what it is doing while it
+           happens, because a button that looks inert is a button people press
+           four times. */
         const retry = notice.querySelector("#data-degraded-retry");
-        if (retry) retry.addEventListener("click", () => location.reload());
+        if (retry) {
+            retry.addEventListener("click", () => {
+                retry.disabled = true;
+                retry.textContent = "Reconnecting…";
+                location.reload();
+            });
+        }
     }
 
     Promise.all([roomsReq, eventsReq]).then(async ([rooms, events]) => {
         ROOMS = rooms;
         EVENTS = events;
+
+        /* The archive is in. From here the only thing left to wait for is
+           thumbnails, which is what the cap was always for — so arm it now
+           rather than at page load, where it was cutting the loader off
+           mid-request. */
+        clearTimeout(slowTimer);
+        setTimeout(hideLoader, LOADER_MAX_WAIT);
+
         showDegradedNotice();
 
         // Exactly the images the cards will ask for, deduplicated — normalize

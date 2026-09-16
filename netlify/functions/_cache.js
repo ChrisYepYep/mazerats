@@ -20,7 +20,21 @@
 const zlib = require("zlib");
 const { SECURITY_HEADERS } = require("./_headers");
 
-const CDN_CACHE = "public, s-maxage=60, stale-while-revalidate=86400";
+/* `durable` is not decoration — without it the durable cache is never used.
+
+   Netlify has two layers: a per-node edge cache, and a durable cache shared
+   across nodes. The edge one needs nothing but an s-maxage, and it was
+   working; the durable one is opt-in and bypasses unless this directive asks
+   for it by name. Measured on production before the change: five rapid
+   requests to /rooms returned `"Netlify Durable"; fwd=bypass` four times, so
+   four of five visitors landed on a node with a cold edge cache and paid for
+   a full function run and a MongoDB round trip to fetch data that had just
+   been fetched for somebody else.
+
+   That is also what was putting the archive behind the offline fallback — a
+   cold start measured 5.3s against a 6s client timeout (see api.js), and the
+   reason those cold starts were so common is right here. */
+const CDN_CACHE = "public, durable, s-maxage=60, stale-while-revalidate=86400";
 // max-age=0 rather than no-store: the browser keeps the copy and revalidates,
 // so an unchanged archive comes back as a 304 with no body at all.
 const BROWSER_CACHE = "public, max-age=0, must-revalidate";
