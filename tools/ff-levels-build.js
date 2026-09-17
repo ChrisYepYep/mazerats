@@ -64,9 +64,13 @@
                       was a trek.
      dropSpeedMs      560 -> 380. How long a piece takes to fall, which is how
                       much warning you get about where it is going.
-     seconds          50 -> 70. RISES, because the later levels drop more
-                      pieces more slowly and a shorter clock would make them
-                      impossible rather than hard.
+     seconds          NOT A CURVE IN THE LEVEL NUMBER, and the one place this
+                      note used to be wrong: it said 50 -> 70, RISING, on the
+                      reasoning that a harder level needs longer. Measured,
+                      the later levels are the SHORTER ones and were being
+                      handed the longest clocks. It is now read off what each
+                      round actually asks for, with the curve in the margin —
+                      see THE CLOCK by `clockFor` below.
 
    Where that lands: the backlog now runs 1.4 at level 1 to 4.6 at level 49,
    against 1.9 to 6.8 before. Level 22 — the one that prompted this — goes
@@ -105,16 +109,33 @@
                                                    is: the ones built by hand
                                                    keep their rooms exactly as
                                                    they were drawn.
+     node tools/ff-levels-build.js --rules         the curve and ONLY the
+                                                   curve: every level in the
+                                                   database gets its `rules`
+                                                   rewritten and no room is
+                                                   written at all, not even
+                                                   one this tool generated.
+                                                   Implies --retune. This is
+                                                   what to use now that all
+                                                   fifty designs are finished.
 
    To JUDGE a change to the curve rather than just make it, dump the whole run
    and play it:
 
-     node tools/ff-levels-build.js --retune --json out.json
+     node tools/ff-levels-build.js --rules --json out.json
      node tools/ff-sim.js --levels out.json --rounds 200
+     node tools/ff-sim.js --levels out.json --rounds 200 --react 1100
 
    The dump is the live set with this run laid over it, so out.json is all
    fifty levels as they would be — which is the only thing a curve can be read
-   off. Nothing has been written at that point.
+   off. Nothing has been written at that point. The second run is somebody
+   playing badly: the clock is set for a player who is not the simulator, and
+   a level that only survives at 300ms is a level set too tight.
+
+   And to set the clock at all, first measure what the levels ask for with the
+   clock taken off:
+
+     node tools/ff-sim.js --levels out.json --rounds 120 --uncapped
 */
 
 const fs = require("fs");
@@ -126,7 +147,12 @@ const onlyAt = argv.indexOf("--only");
 const ONLY = onlyAt > -1 ? new Set(argv[onlyAt + 1].split(",").map(Number)) : null;
 const jsonAt = argv.indexOf("--json");
 const JSON_OUT = jsonAt > -1 ? argv[jsonAt + 1] : null;
-const RETUNE = argv.includes("--retune");
+/* Write `rules` and NOTHING else, to every level in the database. The rooms
+   are finished; a change to the curve has no business touching one. Implies
+   --retune, because the levels this tool would otherwise rewrite whole are
+   exactly the ones it now has to retune instead. */
+const RULES_ONLY = argv.includes("--rules");
+const RETUNE = RULES_ONLY || argv.includes("--retune");
 
 /* ---- the room models, read from the game's own file so there is one
    definition of where the floor is and where the door stands. */
@@ -177,14 +203,156 @@ const LAST = 49;
 const LOCKED = 20;
 const lerp = (a, b, t) => a + (b - a) * t;
 
-function rulesFor(level) {
+/* THE RATE LEVERS, which are a curve in the level number and nothing else.
+   These are what the backlog is made of; see THE DIFFICULTY CURVE above. */
+function ratesFor(level) {
     const t = Math.max(0, Math.min(1, (level - 1) / (LAST - 1)));
     return {
-        seconds: Math.round(lerp(50, 70, t)),
         dropDelayMs: Math.round(lerp(2600, 1250, t) / 50) * 50,
         dropSpeedMs: Math.round(lerp(560, 380, t) / 10) * 10,
         minDropDistance: Math.round(lerp(1, 4, t))
     };
+}
+
+/* ---- THE CLOCK, which is NOT a curve in the level number.
+
+   It used to be: 50 seconds at level 1 rising to 70 at level 49, on the
+   reasoning that later levels are harder and so need longer. Measured, that
+   was wrong twice over.
+
+   A round's length is not set by how hard it is. It is set by how long the
+   SCHEDULE runs — the last piece cannot be sat on before it lands — and the
+   schedule gets SHORTER as the run goes on, because `dropDelayMs` is falling
+   faster than the drop count is rising. Level 3 drops fifteen pieces 2.55s
+   apart and takes 36 seconds to play out; level 49 drops thirteen 1.25s apart
+   and is over in 15. So the old curve handed the longest clock to the
+   shortest rounds. `ff-sim --uncapped` puts numbers on it: what a level asks
+   for runs 22s to 41s with no trend at all across the run, against an
+   allowance climbing 50 -> 70. Level 1 asks for 22 and was given 50.
+
+   Two things were wrong with that beyond the arithmetic. A clock with thirty
+   seconds spare is not a clock — it never enters the player's head, and the
+   round has no shape to it. And the leaderboard pays a point per second left
+   over, so the levels that asked least paid most, which is the scoring
+   exactly backwards.
+
+   So the clock is set from what the ROUND asks for, per level, and the curve
+   lives in the MARGIN on top:
+
+       demand      what a good player needs, estimated from the level's own
+                   schedule and seat count — see demandFor.
+       margin      1.75 at level 1 down to 1.35 at level 49. Generous while
+                   somebody is learning the game, close while they are being
+                   asked to remember eleven chairs.
+
+   The margin is multiplicative because slack is really about MISTAKES, and a
+   long round offers more of them: a wrong seat costs three seconds and a
+   fifteen-seat round has fifteen chances to buy one. A floor of ten seconds
+   keeps the shortest rounds forgiving enough for three of them.
+
+   AND IT IS ONLY PAID ON THE PART OF THE ROUND THE PLAYER IS RACING.
+
+   An early level drops fifteen pieces two and a half seconds apart at a
+   player who needs about two and a half seconds a chair: they spend a good
+   part of that round standing still, waiting on the ceiling, because nothing
+   can be sat on before it lands. That waiting is already forgiving — it is
+   where a beginner catches up — and paying a 1.75 margin on top of it is
+   paying twice. Level 3 came out at 70 seconds that way, the longest clock in
+   the game, on the third round of it.
+
+   So the idle part passes through at its own length and the margin applies to
+   the WORK: the walking, the last approach, and the obstacles in the way.
+   Level 3 lands on 62 instead of 70, level 4 on 41 instead of 53, and nothing
+   walk-bound moves at all, because those rounds have no idle in them.
+
+   THE CLOCK IS STILL A BACKSTOP, not the difficulty. The backlog is the
+   difficulty and the rate levers above are what set it; none of them move
+   here. This only stops the backstop being thirty seconds behind the play. */
+const CLOCK_MARGIN = [1.75, 1.35];
+const CLOCK_FLOOR_S = 10;
+
+/* HOW LONG A ROUND TAKES A PLAYER WHO DOES NOT WASTE A STEP.
+
+   Two lower bounds, and a round is over when the slower of them is done:
+
+     the SCHEDULE   nothing can be sat on before it has landed, and the last
+                    piece lands (drops - 1) delays after the first. An early
+                    level is this: the player is waiting on the ceiling.
+     the WALK       seats have to be visited in the order they landed, and a
+                    seat is about two and a half seconds away once the walk,
+                    the reach and noticing it are counted. A late level is
+                    this: the player is behind the ceiling and catching up.
+
+   Plus one last walk, to the seat that has only just landed, and a little
+   for every piece that is NOT a seat. An obstacle is furniture that lands in
+   the middle of the floor and stays there, so it lengthens every route taken
+   after it — the two levels this estimate was worst on, 46 and 47, are the
+   two carrying eight obstacles apiece.
+
+   Checked against tools/ff-sim.js playing 120 rounds of every level with the
+   clock off: mean error 1.7s, never more than 3.2s short, and the largest
+   errors are all on the generous side. A margin of 1.35 upwards swallows that
+   several times over. It is still an estimate, so a change to it gets played
+   before it is written — dump the run with --json and hand it to ff-sim, as
+   under VALIDATION below. The last time round that was 150 rounds of every
+   level at three reaction speeds up to 1100ms, and every level stayed
+   winnable with 11 to 22 seconds spare, against 28 to 46 before. */
+const WALK_PER_SEAT_S = 2.5;
+const LAST_WALK_S = 2.5;
+const PER_OBSTACLE_S = 0.35;
+
+function demandFor(zones, rates, meta) {
+    let drops = 0, seats = 0;
+    for (const z of zones || []) {
+        for (const it of z.items || []) {
+            const n = Number(it.count) || 1;
+            drops += n;
+            /* SEQUENCE SEATS ONLY, and only the ones that really are seats.
+               A `sequence` role on a furni furnidata says cannot be sat on is
+               an obstacle wearing a seat's label — it still costs schedule
+               time, which `drops` has already counted, but nobody ever walks
+               to it. See SEAT_ROLES in js/room-levels.js. */
+            /* The EXACT class first. furnidata keys a colourway separately —
+               `pillow*0` is a record and `pillow` is not — so stripping the
+               variant before the lookup quietly finds nothing, and a level
+               built out of pillows and bar stools reports no seats at all and
+               gets a clock set on the schedule alone. The base class is only
+               the fallback, for a class that has no variants. */
+            const m = meta[it.className] || meta[baseClass(it.className)] || {};
+            if (it.role === "sequence" && m.sit) seats += n;
+        }
+    }
+    if (!drops) return null;
+    const schedule = ((drops - 1) * rates.dropDelayMs + rates.dropSpeedMs) / 1000;
+    const walk = seats * WALK_PER_SEAT_S;
+    /* `work` is the racing half — what the player does. `total - work` is
+       what is left over once it is taken out, which is the time they spend
+       waiting on a ceiling that is slower than they are. */
+    const work = walk + LAST_WALK_S + (drops - seats) * PER_OBSTACLE_S;
+    return { total: Math.max(schedule, walk) - walk + work, work };
+}
+
+function clockFor(level, d) {
+    const t = Math.max(0, Math.min(1, (level - 1) / (LAST - 1)));
+    const margin = lerp(CLOCK_MARGIN[0], CLOCK_MARGIN[1], t);
+    const idle = d.total - d.work;
+    return Math.max(Math.round(idle + d.work * margin), Math.round(d.total) + CLOCK_FLOOR_S);
+}
+
+/* Every rule a level plays by. `zones` is what falls, which the clock needs
+   and the rate levers do not — a level with no zones yet gets the default
+   clock rather than a nonsense one. */
+function rulesFor(level, zones, meta) {
+    const rates = ratesFor(level);
+    const demand = demandFor(zones, rates, meta || {});
+    return { seconds: demand ? clockFor(level, demand) : 45, ...rates };
+}
+
+/* What the estimate thinks each level asks for, in seconds, for reading
+   against tools/ff-sim.js --uncapped. */
+function demandSecondsFor(level, zones, meta) {
+    const d = demandFor(zones, ratesFor(level), meta || {});
+    return d ? d.total : 0;
 }
 
 /* How many of each kind of thing falls, at this point in the run. */
@@ -507,6 +675,11 @@ function dropsFor(design, level, meta) {
 }
 
 function buildLevel(design, n, meta) {
+    // Built before the rules, because the clock is read off what falls.
+    const zones = [{
+        id: `z${design.id}`, name: design.zoneName || "Drop zone",
+        area: design.zone, items: dropsFor(design, n, meta)
+    }];
     return {
         schema: 2,
         id: design.id,
@@ -519,8 +692,8 @@ function buildLevel(design, n, meta) {
         start: design.start,
         startDir: design.startDir,
         decor: design.decor,
-        zones: [{ id: `z${design.id}`, name: design.zoneName || "Drop zone", area: design.zone, items: dropsFor(design, n, meta) }],
-        rules: rulesFor(n)
+        zones,
+        rules: rulesFor(n, zones, meta)
     };
 }
 
@@ -563,16 +736,30 @@ function buildLevel(design, n, meta) {
         ? await fetch(`${SITE}/.netlify/functions/ff-levels`).then(r => r.json()).then(j => j.levels || j)
         : [];
     if (RETUNE) {
-        const willWrite = new Set(built.filter(l => l.order > LOCKED).map(l => l.id));
+        /* --rules RETUNES EVERY LEVEL AND REBUILDS NONE OF THEM, which is
+           what a change to the curve alone wants. Without it, levels past
+           LOCKED are retuned by being rewritten whole — right when the
+           generator's idea of the room is also the current one, and wrong
+           once somebody has drawn in them. All fifty designs are finished;
+           the only thing that should still move is `rules`. */
+        const willWrite = RULES_ONLY
+            ? new Set()
+            : new Set(built.filter(l => l.order > LOCKED).map(l => l.id));
         console.log("");
         for (const l of live) {
             if (willWrite.has(l.id) || l.order > LAST) continue;
             const was = l.rules || {};
-            const now = rulesFor(l.order);
-            const fix = repairFor(l, meta);
+            // Not under --rules: refilling a zone is a change to the room,
+            // and that flag exists precisely to promise it makes none.
+            const fix = RULES_ONLY ? null : repairFor(l, meta);
+            // Its OWN zones, so the clock is set from the round as it is
+            // actually built rather than from the one the generator would
+            // have built. Every hand-tuned level is here.
+            const now = rulesFor(l.order, fix || l.zones, meta);
             retuned.push({ id: l.id, order: l.order, rules: now, zones: fix });
+            const asks = demandSecondsFor(l.order, fix || l.zones, meta);
             console.log(`${String(l.order).padStart(2)}. ${String(l.name).padEnd(24)} retune` +
-                `  ${was.seconds}s->${now.seconds}s  drop ${was.dropDelayMs}->${now.dropDelayMs}` +
+                `  asks ${asks.toFixed(0).padStart(2)}s  ${was.seconds}s->${now.seconds}s  drop ${was.dropDelayMs}->${now.dropDelayMs}` +
                 `  fall ${was.dropSpeedMs}->${now.dropSpeedMs}  reach ${was.minDropDistance}->${now.minDropDistance}` +
                 (fix ? "   ** ZONE REFILLED **" : ""));
         }
@@ -588,7 +775,11 @@ function buildLevel(design, n, meta) {
        rules, so the file is the live set with this run laid over it. */
     if (JSON_OUT) {
         const all = new Map(live.map(l => [l.id, l]));
-        for (const l of built) if (l.order > LOCKED) all.set(l.id, l);
+        /* Not under --rules, which writes no rooms and so must DUMP none
+           either: the file is what a --write would leave in the database, and
+           a dump that quietly swaps the live rooms for the generator's is a
+           sim run against levels nobody is going to play. */
+        if (!RULES_ONLY) for (const l of built) if (l.order > LOCKED) all.set(l.id, l);
         for (const r of retuned) {
             const l = all.get(r.id);
             if (l) all.set(r.id, { ...l, rules: r.rules, ...(r.zones ? { zones: r.zones } : {}) });
@@ -609,6 +800,8 @@ function buildLevel(design, n, meta) {
     const now = new Date().toISOString();
     let wrote = 0, skipped = 0;
     for (const level of built) {
+        // --rules writes no rooms at all, only the rules loop below.
+        if (RULES_ONLY) { skipped++; continue; }
         /* HANDS OFF 1 TO 14. Those rooms have been gone over by hand since
            this tool generated them — the queue taken wall to wall, the gate
            moved into the corner, carpets and ducks layered into the booths —
@@ -631,7 +824,7 @@ function buildLevel(design, n, meta) {
         console.log(`  retuned ${r.id}${r.zones ? " and refilled its zone" : ""}`);
     }
     console.log(`${wrote} levels written` +
-        (skipped ? `, ${skipped} left alone as hand-built` : "") +
+        (skipped ? `, ${skipped} left alone as ${RULES_ONLY ? "--rules writes no rooms" : "hand-built"}` : "") +
         (retuned.length ? `, ${retuned.length} retuned` : ""));
     process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });

@@ -43,6 +43,12 @@
                                                  which is how a curve is tried
                                                  before it is written
      node tools/ff-sim.js --site https://...     where to read levels from
+     node tools/ff-sim.js --uncapped             ignore the clock, so `used`
+                                                 is what the round ASKS for
+                                                 instead of what fitted
+     node tools/ff-sim.js --out demand.json      write the measurements out —
+                                                 what ff-levels-build.js reads
+                                                 to set the clock
 */
 
 const fs = require("fs");
@@ -72,6 +78,19 @@ const META_FILE = opt("meta", null);
 const onlyArg = opt("only", null);
 const ONLY = onlyArg ? new Set(onlyArg.split(",").map(Number)) : null;
 const VERBOSE = argv.includes("--verbose");
+const OUT = opt("out", null);
+
+/* MEASURING HOW LONG A ROUND TAKES, rather than whether it fits the clock.
+
+   `used` is averaged over rounds that were WON, so a level whose clock is too
+   short reports the time of the rounds that beat it and says nothing about
+   the ones that did not — the tighter the clock, the faster the level looks.
+   That is fine for reading a curve and useless for setting one.
+
+   --uncapped gives every level ten minutes, so every round plays to its
+   natural end and `used` becomes what the round actually asks for. That is
+   the number a clock is set from; see tools/ff-levels-build.js. */
+const UNCAPPED = argv.includes("--uncapped");
 
 /* ---- enough of a browser to load the room's own files. None of them draw
    anything on the paths this uses; they only reach for a canvas when asked
@@ -248,13 +267,14 @@ function nearestTile(seat, from) {
 
     const list = (levels.levels || levels).slice().sort((a, b) => a.order - b.order);
     console.log(`${list.length} levels, ${ROUNDS} rounds each, ${WALK_MS}ms a step, ${REACT_MS}ms to notice\n`);
-    console.log("  #  name                     won   stranded  seats  backlog  short  spare  used");
-    console.log("  -- ------------------------ ----- --------- ------ -------- ------ ------ -----");
+    console.log("  #  name                     won   stranded  seats  backlog  short  spare  used   p90");
+    console.log("  -- ------------------------ ----- --------- ------ -------- ------ ------ ----- -----");
 
     const rows = [];
     for (const raw of list) {
         if (ONLY && !ONLY.has(raw.order)) continue;
         const level = Levels.normalise(raw);
+        if (UNCAPPED) level.rules = { ...level.rules, seconds: 600 };
         /* THE PUBLIC ROOMS ARE NOT IN HERE. js/room-public.js registers them
            on the page, off data this has no way to fetch, so `get` quietly
            hands back the 8x13 default — and a level played in the wrong room
@@ -274,9 +294,10 @@ function nearestTile(seat, from) {
         Iso.setLayout(layout);
         let won = 0, stranded = 0, seats = 0, short = 0, spare = 0, used = 0, hung = 0;
         let backlog = 0, worstBacklog = 0;
+        const times = [];               // seconds used, per round won
         for (let i = 0; i < ROUNDS; i++) {
             const r = playRound(level, meta, (raw.order * 7919) + i);
-            if (r.won) { won++; spare += r.spare; used += r.usedMs; }
+            if (r.won) { won++; spare += r.spare; used += r.usedMs; times.push(r.usedMs / 1000); }
             if (r.stranded) stranded++;
             seats += r.seats;
             backlog += r.peakBacklog;
@@ -288,9 +309,21 @@ function nearestTile(seat, from) {
             }
         }
         const pct = (n) => `${Math.round((n / ROUNDS) * 100)}%`;
+        /* THE SLOWEST ROUND, near enough, and not the average one.
+
+           The same level plays differently every time — the zone rolls a near
+           corner or a far one, the shuffle puts the last seat behind an
+           obstacle — and the clock has to fit the unlucky round, not the
+           typical one. A clock set on the mean fails one round in two. p90 is
+           the round that goes badly without going wrong. */
+        times.sort((a, b) => a - b);
+        const at = (q) => times.length ? times[Math.min(times.length - 1, Math.floor(q * times.length))] : 0;
         rows.push({
-            order: raw.order, name: raw.name, won: won / ROUNDS,
-            stranded: stranded / ROUNDS, backlog: backlog / ROUNDS, seats: seats / ROUNDS
+            order: raw.order, id: raw.id, name: raw.name, won: won / ROUNDS,
+            stranded: stranded / ROUNDS, backlog: backlog / ROUNDS, seats: seats / ROUNDS,
+            allowed: level.rules.seconds,
+            p50: at(0.5), p90: at(0.9), worst: times.length ? times[times.length - 1] : 0,
+            spare: won ? spare / won : 0
         });
         console.log(`  ${String(raw.order).padStart(2)} ${String(raw.name).slice(0, 24).padEnd(24)}` +
             ` ${pct(won).padStart(5)} ${pct(stranded).padStart(9)}` +
@@ -299,6 +332,7 @@ function nearestTile(seat, from) {
             ` ${pct(short).padStart(6)}` +
             ` ${won ? (spare / won).toFixed(1) : "-"}`.padStart(7) +
             ` ${won ? Math.round(used / won / 1000) + "s" : "-"}`.padStart(6) +
+            ` ${won ? at(0.9).toFixed(0) + "s" : "-"}`.padStart(6) +
             (hung ? `  ${hung} hung` : ""));
     }
 
@@ -316,5 +350,17 @@ function nearestTile(seat, from) {
     if (crowded.length) console.log(`MORE SEATS THAN ANYONE CAN HOLD: ${crowded.map(r => `${r.order} (${r.backlog.toFixed(1)})`).join(", ")}`);
     if (!bad.length && !hard.length && !crowded.length && !empty.length) {
         console.log("every level winnable, every seat reachable, nothing over seven deep");
+    }
+
+    /* WHAT EACH ROUND ASKS FOR, in a file, so the clock can be set from it
+       rather than from a guess. Pair it with --uncapped, which is the only
+       way these times mean anything; tools/ff-levels-build.js --demand reads
+       exactly this. */
+    if (OUT) {
+        fs.writeFileSync(OUT, JSON.stringify({
+            rounds: ROUNDS, reactMs: REACT_MS, walkMs: WALK_MS, uncapped: UNCAPPED,
+            levels: rows
+        }, null, 1));
+        console.log(`-> ${OUT} (${rows.length} levels)`);
     }
 })().catch(e => { console.error(e); process.exit(1); });
