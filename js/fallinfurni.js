@@ -2526,25 +2526,68 @@
         }
     }
 
+    /* WHICH LOOKUP IS THE CURRENT ONE. Two of them can be in the air at once
+       and the answers do not have to come back in the order they were asked.
+
+       The page opens one on load, unawaited, for the name it remembered from
+       last time — and the box is pre-filled with that same name, so typing
+       over it and pressing Play starts a SECOND lookup while the first is
+       still out. Whichever HTTP response landed last won, and the figure that
+       got drawn was whoever that happened to be: type your own name into a
+       browser that remembers somebody else, and you play the round wearing
+       their avatar, with the status line cheerfully naming them.
+
+       Nothing about the request was wrong — room-figure.js keys its cache on
+       the name and returns the right person every time. It is purely that
+       nothing here said which answer was still wanted.
+
+       So each call takes a ticket and a late one is dropped on the floor. */
+    let lookupSeq = 0;
+
     async function lookup(name) {
         const clean = name.trim();
         if (!clean) return;
+        const mine = ++lookupSeq;
         status("Looking up " + clean + "…", "busy");
+
+        const wear = (figure, who) => {
+            state.figure = figure;
+            state.name = who;
+            sprites.clear();
+            preload(figure);
+            dirty = true;
+        };
+
         try {
             const res = await fetch("/.netlify/functions/room-figure?name=" + encodeURIComponent(clean));
             const data = await res.json().catch(() => ({}));
+            if (mine !== lookupSeq) return;         // somebody asked again since
             if (!res.ok || !data.figureString) {
+                /* A REFUSED NAME TAKES THE OLD AVATAR OFF, and that is the
+                   other half of the same complaint. The only way to be wearing
+                   somebody is to have looked them up, so keeping them after
+                   the player has asked to be someone else and been told no
+                   leaves them playing as a stranger they never chose. Being
+                   nobody in particular is the honest answer to "I do not know
+                   who that is".
+
+                   Only for an answer that really means the name is wrong: 404
+                   no such habbo, 400 not a habbo name at all, or an ok reply
+                   with no figure in it. A 502 is Habbo being unreachable and a
+                   429 is our own rate limit — neither says anything about the
+                   player, and neither is a reason to undress them. */
+                if (res.status === 404 || res.status === 400 || res.ok) {
+                    wear(DEFAULT_FIGURE, "");
+                    persist();
+                }
                 status(data.error || "No Origins habbo by that name.", "bad");
                 return;
             }
-            state.figure = data.figureString;
-            state.name = data.name || clean;
-            sprites.clear();
-            preload(state.figure);
-            dirty = true;
+            wear(data.figureString, data.name || clean);
             status("Playing as " + state.name + ".", "good");
             persist();
         } catch {
+            if (mine !== lookupSeq) return;
             status("Could not reach the lookup just now.", "bad");
         }
     }
