@@ -51,7 +51,12 @@ exports.handler = async (event) => {
     // The pages themselves, which exist whether or not the database answers.
     const entries = [
         url(`${origin}/`, "", "1.0"),
-        url(`${origin}/home.html`, "", "0.9")
+        url(`${origin}/home.html`, "", "0.9"),
+        /* The game, at its pretty address — the one it names as canonical and
+           the one people actually paste. It was noindex while it was being
+           built and so had no business here; all fifty rooms are finished now.
+           Below home because the archive is what the site is for. */
+        url(`${origin}/fallinfurni`, "", "0.7")
     ];
 
     try {

@@ -130,8 +130,55 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
-    <meta name="robots" content="noindex, nofollow">
     <title>Fallin' Furni — Maze Rats</title>
+
+    <!-- ---------- WHAT THIS PAGE LOOKS LIKE SOMEWHERE ELSE.
+
+         This is the one page on the site people paste on its own. Nobody
+         shares the archive by linking a maze; they share a game by linking
+         the game, and until now that link unfurled as a bare title on a grey
+         card, because the whole set below was missing.
+
+         The address is /fallinfurni and not /fallinfurni.html: netlify.toml
+         rewrites the pretty one with status 200, so BOTH serve this document
+         and the address bar keeps whichever was typed. The pretty one is what
+         gets pasted, so it is the one named as canonical — otherwise the two
+         compete and the shared link is not the one that gets the credit. -->
+    <meta name="description" content="Look up before you sit down. Furni drops from the ceiling of a Habbo Origins room and you sit on every seat in the order it landed, before the clock runs out. Fifty rooms, three lives, one run.">
+    <link rel="canonical" href="https://mazerats.net/fallinfurni">
+
+    <meta property="og:url" content="https://mazerats.net/fallinfurni">
+    <meta property="og:site_name" content="Maze Rats">
+    <meta property="og:title" content="Fallin' Furni">
+    <meta property="og:description" content="Look up before you sit down. Furni drops from the ceiling and you sit on every seat in the order it landed — fifty rooms, three lives, one run.">
+    <meta property="og:type" content="website">
+    <!-- An absolute URL, because the crawler reading this is not on our
+         origin and a relative one resolves against nothing it can fetch.
+         Dimensions given so the card reserves the right shape before the
+         image has downloaded, rather than reflowing as it lands. -->
+    <meta property="og:image" content="https://mazerats.net/assets/img/og-fallinfurni.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="An isometric Habbo room full of benches and stools, floating in a bright blue sky beside the words Fallin' Furni and Look up before you sit down.">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Fallin' Furni">
+    <meta name="twitter:description" content="Look up before you sit down. Furni drops from the ceiling and you sit on every seat in the order it landed.">
+    <meta name="twitter:image" content="https://mazerats.net/assets/img/og-fallinfurni.png">
+    <meta name="twitter:image:alt" content="An isometric Habbo room full of benches and stools, floating in a bright blue sky beside the words Fallin' Furni and Look up before you sit down.">
+
+    <!-- The tab icon, inline as a data URI and built exactly like the
+         archive's "MZ": the same black square, the same Georgia, the same two
+         letters. Only the colour differs — #84cce8, the sky out of the hotel
+         view this game opens on (assets/img/hotel/uk-back.png) — so the two
+         tabs are a matched pair rather than two different ideas. -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='30' font-weight='700' fill='%2384cce8' text-anchor='middle'%3EFF%3C/text%3E%3C/svg%3E">
+
+    <!-- iOS will not take an SVG here, and without a real PNG "Add to Home
+         Screen" saves a blurred screenshot of the page instead. Same mark as
+         the tab icon, drawn once at 180px. -->
+    <link rel="apple-touch-icon" href="assets/img/fallinfurni-icon.png">
     <!-- The palette, before the stylesheets rather than after, so <html> already
          carries data-theme when the CSS is applied and there is no brown frame
          on screen for a moment first.
@@ -153,9 +200,15 @@
 
     <header class="site-header">
         <div class="brand-group">
+            <!-- THE GAME'S NAME, not the site's. This is the one page people
+                 arrive at directly from a pasted link rather than by walking
+                 in through the archive, so the bar says what they came for.
+                 Every other page still reads MAZE RATS / Every maze. One
+                 place.; the markup is per-page, so this is the only one that
+                 changes. -->
             <div class="brand">
-                <span class="brand-text">MAZE RATS</span>
-                <span class="brand-tagline">Every maze. One place.</span>
+                <span class="brand-text">FALLIN' FURNI</span>
+                <span class="brand-tagline">Look up before you sit down.</span>
             </div>
             <button type="button" class="header-console-btn" id="header-console-btn" aria-label="Console"><img src="assets/img/console-icon.png" alt="" aria-hidden="true"></button>
             <a class="header-badge" href="https://discord.gg/Fw4daP4KBg" target="_blank" rel="noopener">Discord</a>
@@ -181,8 +234,15 @@
 
     <main class="ff-page">
         <header class="ff-head">
-            <h1>Fallin' Furni</h1>
-            <p>
+            <!-- Same shape as the archive's own hero on home.html: the name
+                 and its line on the left, the blurb as the flexible half
+                 beside it. See .ff-head, which also pins the whole block to
+                 the width of the game window below it. -->
+            <div class="ff-head-title">
+                <h1>Fallin' Furni</h1>
+                <p class="ff-strap">Look up before you sit down.</p>
+            </div>
+            <p class="ff-blurb">
                 Furni drops from the ceiling. Sit on every seat in the order it
                 landed, before the clock runs out — and mind the things that
                 fall which are not seats at all.
@@ -309,7 +369,12 @@
                                  behind the title still loads and still draws;
                                  what is taken away is the way in. -->
                             <p class="ff-title-maint" id="ff-title-maint">Maintenance, back soon!</p>
-                            <p class="ff-title-sub">Sit on every seat in the order it lands, before the clock runs out!</p>
+                            <!-- The game's line. What the round actually asks
+                                 of you is explained in the page header above
+                                 the window and again by the readout once a
+                                 round starts; the title screen gets the
+                                 tagline. -->
+                            <p class="ff-title-sub">Look up before you sit down.</p>
 
                             <form id="ff-name-form" class="ff-title-form" autocomplete="off">
                                 <label for="ff-name">Your Habbo Origins name</label>

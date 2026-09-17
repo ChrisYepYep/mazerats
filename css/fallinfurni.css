@@ -7,13 +7,115 @@
    places — which is precisely what it looked like when the stage was a
    percentage width. 720x498 or nothing. */
 
+/* ---- the top bar, on this page only
+
+   THE TWO BLUES ARE THE CLIENT'S OWN. assets/img/hotel/uk-back.png is the sky
+   behind the hotel view this game opens on, and it is two flat panels rather
+   than a gradient: #84cce8 on the left and #6faeca on the right. Sampled, not
+   guessed — see tools/hotel-view-extract.js for where the file comes from.
+
+   SKY AT THE TOP, GRASS AT THE BOTTOM — the two halves of the hotel view the
+   game opens on, in the order the picture puts them. The blue is
+   assets/img/hotel/uk-back.png (#6faeca) and the green is the lawn in
+   uk-front.png (#669900); both sampled from the files rather than guessed.
+
+   DARKENED BY HUE, not by mixing. The obvious way to do this is to lay those
+   two over the site's near-black at a low alpha, and it does not work: mixing
+   a pale colour into something that dark takes the saturation out with it,
+   and #84cce8 at 0.18 over #120c07 lands on #2f2f30 — a cool grey. The bar
+   read as "slightly lighter", not as blue.
+
+   So each stop keeps its own hue and saturation and only loses lightness:
+   197° for the sky and 80° for the grass, at the darkness a top bar needs.
+   The parchment type and the amber pills sit on both ends unchanged.
+
+   The line underneath is deliberately NOT touched. Every page on the site
+   ends its top bar with the same black rule over a brown shadow, and that
+   edge is part of the site's frame rather than part of this page — see
+   .site-header in style.css, which still supplies both.
+
+   Scoped to body[data-page="fallinfurni"] so the archive's bar is untouched;
+   the attribute is already on <body> for exactly this sort of thing. */
+body[data-page="fallinfurni"] .site-header {
+    background: linear-gradient(180deg, rgba(23, 50, 63, 0.97), rgba(40, 58, 10, 0.94));
+}
+
+/* The maintenance bar keeps its amber. An admin needs to see at a glance that
+   the game is closed, and that reading must not be softened by the page's own
+   colour — so this restates the notice rule at the same specificity rather
+   than letting the wash above win on source order. */
+body[data-page="fallinfurni"] .site-header.site-header-notice {
+    background: linear-gradient(180deg, rgba(94, 51, 12, 0.92), rgba(74, 40, 10, 0.88));
+    border-bottom-color: rgba(230, 144, 36, 0.55);
+}
+
 .ff-page {
     max-width: 1080px;
     margin: 0 auto;
     padding: 20px 16px 48px;
 }
 
-.ff-head { margin-bottom: 14px; }
+/* ---- the page's header, lined up with the game
+
+   IT WAS NEITHER THE RIGHT WIDTH NOR IN THE RIGHT PLACE. `.ff-head` inherited
+   the full 1080px page, so the title began at x=16 while the window below it
+   began at x=139 and ran 750 wide: the words sat a hundred and twenty pixels
+   left of the thing they introduce, and ran three hundred past its right
+   edge. Measured, not eyeballed.
+
+   So it takes the window's own width — max-content on .ff-window resolves to
+   750, the 722px stage plus the 14px chrome frame either side — and centres
+   on the same condition the row does. Change one and the other has to move.
+
+   The SHAPE is the archive's hero from home.html: name and line on the left
+   at their natural width, blurb as the flexible half beside it, both left
+   aligned, 24px between. Two pages, one idea. */
+.ff-head {
+    width: 750px;
+    max-width: 100%;
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    text-align: left;
+}
+
+/* Centred only when the game is, and never while the editor's column is
+   open — the same test, and the same breakpoint, as the rule on .ff-layout
+   above. Below 1010px the row stacks and both go back to the left edge. */
+@media (min-width: 1011px) {
+    body:not(.is-editing) .ff-head { margin-left: auto; margin-right: auto; }
+}
+
+/* Never squeezed, exactly as .hero-title is not: the name is the one thing
+   here that must not wrap to make room for the paragraph. */
+.ff-head-title { flex: 0 0 auto; }
+
+/* The game's line, under the name the way the tagline sits under the brand
+   in the top bar — and in the same colour as the blurb beside it. It was the
+   sky blue for a while and that was one accent too many: the h1 is already
+   amber, so a third colour in a block of three lines made the header read as
+   a set of unrelated labels rather than one thing. */
+.ff-strap {
+    font-family: "Silkscreen", "Pixelify Sans", monospace;
+    color: var(--parchment-dim);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    margin: 0;
+}
+
+/* Matched to .hero p.tagline: a caption beside a title, not the only text on
+   the page. */
+.ff-blurb {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--parchment-dim);
+}
+
+@media (max-width: 700px) {
+    .ff-head { flex-direction: column; align-items: flex-start; gap: 10px; }
+}
 
 .ff-head h1 {
     font-family: "Silkscreen", "Pixelify Sans", monospace;
@@ -23,12 +125,12 @@
     letter-spacing: 0.02em;
 }
 
-.ff-head p {
-    color: var(--parchment-dim);
-    margin: 0;
-    font-size: 13.5px;
-    max-width: 70ch;
-}
+/* `.ff-head p` used to live here and had to go. Both paragraphs in the header
+   are classed now — .ff-strap and .ff-blurb — and an element selector beats a
+   bare class, so this rule sitting further down the file was quietly winning
+   the colour and the size off both of them: the strap came out parchment
+   instead of sky blue, at 13.5px instead of 12. The 70ch ceiling went with it;
+   the flex row is what limits the blurb's width now. */
 
 .ff-layout {
     display: flex;
@@ -1100,9 +1202,27 @@ main.ff-page { width: 100%; }
     cursor: pointer;
 }
 
+/* 42ch, WHICH IS WHAT THE REST OF THIS PANEL MEASURES. At 34 the row was
+   200px wide and the run's figures — "9,190 pts - 43 levels - 50:47" — took
+   148 of them and cannot shrink, so the name was left 44px and "ChrisYepYep"
+   (61px) came out as "ChrisY...". Every name on the board was being cut.
+
+   Widening is the honest fix rather than shrinking the figures: the board sat
+   204px wide under a sign-in line of 296 and looked narrow for it anyway.
+
+   46 and not the 42ch that .ff-status uses in this same panel, which was the
+   tidier number and measured one pixel short: 42 gives the name 92px, and
+   "xX_ShadowRat_Xx" — fifteen characters, the length of a Habbo name, but a
+   wide fifteen — wants 93. Reusing a measure is not worth shipping a board
+   that clips the longest legal name. At 46 the name has about 116px and the
+   row still sits inside its neighbours.
+
+   The board shows a DISCORD display name, which runs to 32 characters, so no
+   width fits every case. Past about nineteen it ellipses, which is what the
+   ellipsis is for. */
 .ff-board {
     margin: 14px auto 0;
-    max-width: 34ch;
+    max-width: 46ch;
     text-align: left;
     border-top: 1px solid var(--border);
     padding-top: 10px;

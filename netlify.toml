@@ -92,8 +92,10 @@
 # is not a once-a-day puzzle whose result gets pasted into a channel.
 #
 # A rewrite for the same reason as /admin and /wizard — the address bar keeps
-# what was typed. Note the page carries robots noindex of its own while the
-# game is still being built, so this URL is reachable but not findable.
+# what was typed. It carried a robots noindex while the game was being built;
+# that came off once all fifty rooms were finished, and this address is now
+# the canonical one the page names and the one in the sitemap. Both URLs still
+# serve the document, which is exactly why only one of them is canonical.
 [[redirects]]
   from = "/fallinfurni"
   to = "/fallinfurni.html"
