@@ -37,18 +37,34 @@ window.GifEncode = (function () {
        Colours are sampled rather than counted exhaustively — every 7th
        pixel, which for a 720px frame is still tens of thousands of samples
        and is indistinguishable in the result. */
-    function buildPalette(samples, maxColours) {
+    function buildPalette(samples, maxColours, populationWeight) {
+        const pop = Number(populationWeight) || 0;
         let boxes = [{ colours: samples }];
         while (boxes.length < maxColours) {
-            // Split the box with the longest side: that is the one whose
-            // colours are least alike, so it is the one worth halving.
+            /* Split the box with the longest side: that is the one whose
+               colours are least alike, so it is the one worth halving.
+
+               SIZE ALONE IGNORES HOW MUCH OF THE PICTURE A BOX IS. That is
+               the right call for a drawing, where a colour matters because it
+               is distinct and not because it is common. It is the wrong call
+               for a large smooth area: a sky is most of the frame but lies on
+               one thin line in colour space, so a few splits leave its boxes
+               narrow, rare colours with wide boxes win every split after
+               that, and the gradient is left banding across entries it never
+               got. populationWeight (0 = off, and the default, so the map is
+               encoded exactly as before) scores a box by its span times its
+               share of the samples, which spends entries where the eye is
+               actually looking. */
             let target = -1;
             let widest = 0;
             for (let i = 0; i < boxes.length; i++) {
                 const box = boxes[i];
                 if (box.colours.length < 2) continue;
                 const range = boxRange(box);
-                if (range.size > widest) { widest = range.size; target = i; }
+                const score = pop
+                    ? range.size * Math.pow(box.colours.length, pop)
+                    : range.size;
+                if (score > widest) { widest = score; target = i; }
             }
             if (target === -1) break;
             const box = boxes[target];
@@ -87,12 +103,22 @@ window.GifEncode = (function () {
        of encoding — 256 comparisons for every pixel of every frame — and
        with it, a map frame of half a million pixels asks maybe four thousand
        real questions, because a drawing has far fewer distinct colours than
-       it has pixels. Keyed on the colour reduced to 5 bits a channel, which
-       is finer than the eye is at these palette sizes. */
+       it has pixels.
+
+       KEYED ON THE WHOLE COLOUR, not on 5 bits a channel. Rounding the key
+       to 5 bits was the same as rounding the picture: two colours inside one
+       8-level bucket share a cache entry, so the first to arrive decides for
+       both and the output can never step finer than 8. On a drawing whose
+       colours sit far apart that is invisible, which is why it survived; on
+       a smooth gradient it IS the banding, and no amount of palette fixes it
+       because the palette never gets consulted. A frame of sky measured 12
+       levels a step with 17 entries available to it. The cache is a little
+       larger for it and the encode no slower in practice, because a picture
+       still has far fewer distinct colours than pixels. */
     function nearestFinder(palette) {
         const cache = new Map();
         return function nearest(r, g, b) {
-            const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+            const key = (r << 16) | (g << 8) | b;
             const hit = cache.get(key);
             if (hit !== undefined) return hit;
             let best = 0, bestDist = Infinity;
@@ -184,7 +210,8 @@ window.GifEncode = (function () {
 
         function ensurePalette() {
             if (palette) return;
-            palette = buildPalette(samples.length ? samples : [[0, 0, 0]], maxColours);
+            palette = buildPalette(samples.length ? samples : [[0, 0, 0]],
+                maxColours, opts.populationWeight);
             // A GIF's table is a power of two, padded out with black.
             let size = 2;
             while (size < palette.length) size <<= 1;
