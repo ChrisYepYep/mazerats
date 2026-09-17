@@ -25,19 +25,36 @@
    shape would throw away exactly the history this is for.
 
    ----------------------------------------------------------------------
-   WHAT IT DOES NOT STORE
+   WHO PLAYED, AND THE ADDRESS THEY PLAYED FROM
 
-   No IP address — the handler never reads one. No session identifier. A
-   signed-out player is stored as an anonymous run and there is nothing in the
-   row that could group their runs together or connect them to a later visit.
+   This used to store nothing that could group one person's runs together,
+   and said so at length. It stores the IP address now, and grouping runs by
+   it is the point rather than a side effect: the admin panel lists every
+   address and every run that came from it, so several accounts sharing one
+   connection are visible.
 
-   A SIGNED-IN player is stored by name, and that is a real difference from
-   js/track.js, which promises it cannot identify anybody. It is not that
+   That is a real change to what this collection is. An anonymous run is no
+   longer anonymous — it carries the address it came from, which is personal
+   data, and two runs from one household can now be tied together whether or
+   not anybody signed in.
+
+   SO THE PRIVACY POLICY HAD TO CHANGE WITH IT. js/privacy-content.js said in
+   as many words that no IP address was recorded and that signed-out runs
+   could not be grouped; both sentences were true when they were written and
+   would have been lies the moment this shipped. They were rewritten in the
+   same change. If this ever stops recording addresses, that text goes back —
+   the two are one decision, not two.
+
+   The address is taken only from the header Netlify computes, never from
+   x-forwarded-for, for the reason spelled out in clientIp below. It is
+   pruned on the same 180-day clock as the rest of the row, because it is part
+   of the row and not a separate store.
+
+   A SIGNED-IN player is stored by name as well, and that is a real difference
+   from js/track.js, which promises it cannot identify anybody. It is not that
    promise being broken, because this is not that system: signing in to
    Fallin' Furni already puts your name on a public leaderboard, and this
-   records the same games that board is built from. But the privacy policy
-   describes the anonymous analytics and says nothing about a game history
-   yet, and it needs a line before this goes live.
+   records the same games that board is built from.
 
    ----------------------------------------------------------------------
    HOW MUCH OF THIS IS TRUE
@@ -89,6 +106,24 @@ const clampInt = (v, lo, hi) => {
 };
 
 const str = (v, max) => String(v === undefined || v === null ? "" : v).slice(0, max);
+
+/* THE ADDRESS THE ROUND WAS PLAYED FROM.
+
+   Only the value Netlify computes, exactly as contact.js and auth.js take
+   it — never x-forwarded-for, which the client sets and could therefore make
+   say anything. Here that matters for a different reason than it does on a
+   rate limit: a spoofable address does not merely let somebody dodge the
+   grouping, it lets them put their runs under SOMEBODY ELSE'S address, and a
+   panel built to show who is playing from where would then be showing an
+   answer an attacker chose.
+
+   Null when the header is absent — on a local `netlify dev`, for instance.
+   Null rather than a shared literal like "unknown", so that runs with no
+   address are one bucket the panel can label honestly instead of a fake
+   address that reads like a real one. */
+function clientIp(event) {
+    return (event.headers || {})["x-nf-client-connection-ip"] || null;
+}
 
 /* One level as it was played. The game already computes all of this in
    RoomGame's summary() — this only decides which of it is worth keeping and
@@ -165,6 +200,8 @@ async function record(db, event) {
         // somebody else is ignored, because this field is not read from it.
         player: player ? str(player.name, MAX_NAME) : null,
         playerId: player ? str(player.id, 64) : null,
+        // Read from the request, never from the body — see clientIp.
+        ip: clientIp(event),
         /* COUNTED here, not taken from the body. The page sends its own tally
            and it is the same number, but deriving it means a request cannot
            claim two hundred levels cleared while sending one round — which
@@ -361,6 +398,63 @@ async function report(db, event) {
         .sort((a, b) => b.runs - a.runs)
         .slice(0, 100);
 
+    /* ---- per ADDRESS, which is the one view that crosses accounts.
+
+       Every other grouping here takes the run's word for who played it, so
+       one person with three Discord accounts is three players and a signed-out
+       run is nobody at all. This groups on where the run came FROM, so those
+       three accounts are one line, and the signed-out runs sit on the line
+       with the account that shares their connection.
+
+       WHAT IT CANNOT TELL YOU, and the panel says so too: a shared address is
+       not a shared person. A family, a student hall, a school, a workplace
+       and a phone network all put unrelated people behind one address, and
+       CGNAT puts thousands there. This finds a QUESTION worth asking, never an
+       answer — and mobile addresses move often enough that one person can also
+       turn up as five lines.
+
+       Named players are listed per address with their own run counts, so the
+       interesting shape — two names, one address, alternating runs — is
+       visible without opening anything. Runs with no address are collected
+       under a null ip rather than dropped: before this shipped, no run had
+       one, and a table that silently omitted all of them would read as "no
+       activity" rather than "not recorded". */
+    const addresses = new Map();
+    for (const r of rows) {
+        const key = r.ip || "";
+        let e = addresses.get(key);
+        if (!e) {
+            e = { ip: r.ip || null, runs: 0, anon: 0, cleared: 0, bestPoints: 0,
+                  first: r.at, last: r.at, touch: 0, players: new Map() };
+            addresses.set(key, e);
+        }
+        e.runs++;
+        if (r.player) bump(e.players, r.player); else e.anon++;
+        e.cleared = Math.max(e.cleared, r.cleared || 0);
+        e.bestPoints = Math.max(e.bestPoints, r.points || 0);
+        if (r.client && r.client.touch) e.touch++;
+        if (new Date(r.at) > new Date(e.last)) e.last = r.at;
+        if (new Date(r.at) < new Date(e.first)) e.first = r.at;
+    }
+
+    const byIp = [...addresses.values()].map(e => ({
+        ip: e.ip,
+        runs: e.runs,
+        anon: e.anon,
+        /* NAMES, not a count of them, because the count is the boring half.
+           Capped at eight per address: past that the row is a public wifi
+           point and the list has stopped being a lead. */
+        players: rank(e.players, 8),
+        named: e.players.size,
+        bestCleared: e.cleared,
+        bestPoints: e.bestPoints,
+        touch: e.touch,
+        first: e.first,
+        last: e.last,
+        // The flag the table is really for: more than one account, one line.
+        shared: e.players.size > 1
+    })).sort((a, b) => (b.named - a.named) || (b.runs - a.runs)).slice(0, 200);
+
     /* ---- the runs themselves, newest first, with their levels intact so the
        panel can open one up and show the whole round. */
     const recent = rows.slice(0, RECENT);
@@ -381,13 +475,20 @@ async function report(db, event) {
             bestCleared: cleared.length ? Math.max(...cleared) : 0,
             medianCleared: median(cleared),
             medianMs: median(rows.map(r => r.ms || 0).filter(Boolean)),
-            touch: rows.filter(r => r.client && r.client.touch).length
+            touch: rows.filter(r => r.client && r.client.touch).length,
+            /* Addresses seen, and how many of them carried more than one
+               account. Both exclude the no-address bucket, which is not an
+               address and would otherwise read as one. */
+            addresses: [...addresses.keys()].filter(Boolean).length,
+            sharedAddresses: byIp.filter(a => a.ip && a.shared).length,
+            noAddress: rows.filter(r => !r.ip).length
         },
         byDay,
         byLevel,
         byOutcome: rank(byOutcome, 8),
         byWhy: rank(byWhy, 8),
         byPlayer,
+        byIp,
         recent
     });
 }

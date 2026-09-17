@@ -737,6 +737,37 @@
                                     </table>
                                 </div>
 
+                                <!-- The one view that crosses accounts: runs
+                                     grouped by the address they came from,
+                                     rather than by who the run says played
+                                     it. Addresses with more than one name on
+                                     them sort to the top, because that is the
+                                     only thing this table is really for. -->
+                                <h3 class="admin-subheading admin-subheading-spaced">Addresses</h3>
+                                <p class="admin-hint">
+                                    Runs grouped by the connection they were played from, so several accounts sharing
+                                    one are visible. <strong>A shared address is not a shared person</strong> — families,
+                                    halls, schools, offices and whole mobile networks put unrelated people behind one,
+                                    and a phone can move between several in a day. Treat a match as a question, never
+                                    an answer.
+                                </p>
+                                <div class="ff-table-wrap">
+                                    <table class="ff-table" id="ff-addresses-table">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col">Address</th>
+                                                <th scope="col">Accounts on it</th>
+                                                <th scope="col" class="ff-num">Runs</th>
+                                                <th scope="col" class="ff-num">Signed out</th>
+                                                <th scope="col" class="ff-num">Best</th>
+                                                <th scope="col">First seen</th>
+                                                <th scope="col">Last seen</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+
                                 <h3 class="admin-subheading admin-subheading-spaced">Runs, newest first</h3>
                                 <p class="admin-hint">Open one to see every round inside it, in the order they were played.</p>
                                 <div class="chrome-list" id="ff-runs"></div>

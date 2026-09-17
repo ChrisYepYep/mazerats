@@ -567,6 +567,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const ffChartsEl = document.getElementById("ff-charts");
     const ffLevelsEl = document.getElementById("ff-levels-table");
     const ffPlayersEl = document.getElementById("ff-players-table");
+    const ffAddressesEl = document.getElementById("ff-addresses-table");
     const ffRunsEl = document.getElementById("ff-runs");
     const ffKeepEl = document.getElementById("ff-keep-days");
 
@@ -622,6 +623,17 @@ document.addEventListener("DOMContentLoaded", () => {
             '<span class="admin-activity-stat"><strong>' + ffClock(t.medianMs) + '</strong> median run</span>' +
             '<span class="admin-activity-stat"><strong>' + t.bestCleared + '</strong> best run</span>' +
             ffStat(t.touch, "run on a touchscreen", "runs on a touchscreen") +
+            ffStat(t.addresses || 0, "address", "addresses") +
+            /* Warned, because it is the only figure here that is ever a
+               reason to go and look at something. Zero shows nothing at all
+               rather than "0 shared", which would read as a finding. */
+            ((t.sharedAddresses || 0)
+                ? ffStat(t.sharedAddresses, "address with several accounts",
+                    "addresses with several accounts", true)
+                : "") +
+            ((t.noAddress || 0)
+                ? ffStat(t.noAddress, "run with no address", "runs with no address")
+                : "") +
             (d.truncated ? '<span class="admin-activity-stat is-warn"><strong>!</strong> only the newest runs are shown</span>' : "");
     }
 
@@ -697,6 +709,50 @@ document.addEventListener("DOMContentLoaded", () => {
         '</tr>').join("");
     }
 
+    /* ---- ADDRESSES.
+
+       Every other table here groups by what the run SAYS about who played it.
+       This one groups by where it came from, which is the only grouping that
+       survives somebody signing in under a second name.
+
+       The row that matters is the one with two or more accounts on it, so
+       those are marked and sorted to the top by the endpoint. The marking is
+       deliberately "worth a look" rather than "caught": everything in the
+       hint above this table about families, halls and mobile networks is
+       true, and a red flag on an office wifi point would be a false
+       accusation the panel had no way to withdraw.
+
+       Runs from before addresses were recorded have no address at all. They
+       are shown as their own row and labelled, rather than dropped — a table
+       that silently omitted them would read as "nobody played" for every
+       range that reaches back past this change. */
+    function ffRenderAddresses(d) {
+        if (!ffAddressesEl) return;
+        const body = ffAddressesEl.querySelector("tbody");
+        const rows = d.byIp || [];
+        if (!rows.length) {
+            body.innerHTML = '<tr><td colspan="7" class="admin-empty">No runs in this range.</td></tr>';
+            return;
+        }
+        body.innerHTML = rows.map(a => {
+            const who = a.players.length
+                ? a.players.map(p => escapeHtml(p.label) + ' <span class="admin-hint">×' + p.n + '</span>').join(", ")
+                : '<span class="admin-hint">Nobody signed in</span>';
+            return '<tr>' +
+                '<td>' + (a.ip
+                    ? '<code>' + escapeHtml(a.ip) + '</code>' +
+                      (a.shared ? ' <span class="admin-activity-stat is-warn"><strong>' + a.named + '</strong> accounts</span>' : "")
+                    : '<span class="admin-hint">Not recorded</span>') + '</td>' +
+                '<td>' + who + '</td>' +
+                '<td class="ff-num">' + a.runs + '</td>' +
+                '<td class="ff-num">' + a.anon + '</td>' +
+                '<td class="ff-num">' + a.bestCleared + '</td>' +
+                '<td>' + escapeHtml(ffDate(a.first)) + '</td>' +
+                '<td>' + escapeHtml(ffDate(a.last)) + '</td>' +
+            '</tr>';
+        }).join("");
+    }
+
     /* One run, with its rounds folded away inside a <details>. Everything is
        in the markup from the start rather than fetched when it opens: the
        rounds came down with the run, and sixty collapsed lists cost less than
@@ -752,6 +808,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ffRenderCharts(d);
         ffRenderLevels(d);
         ffRenderPlayers(d);
+        ffRenderAddresses(d);
         ffRenderRuns(d);
     }
 
