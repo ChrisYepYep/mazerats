@@ -7,48 +7,6 @@
    places — which is precisely what it looked like when the stage was a
    percentage width. 720x498 or nothing. */
 
-/* ---- the top bar, on this page only
-
-   THE TWO BLUES ARE THE CLIENT'S OWN. assets/img/hotel/uk-back.png is the sky
-   behind the hotel view this game opens on, and it is two flat panels rather
-   than a gradient: #84cce8 on the left and #6faeca on the right. Sampled, not
-   guessed — see tools/hotel-view-extract.js for where the file comes from.
-
-   SKY AT THE TOP, GRASS AT THE BOTTOM — the two halves of the hotel view the
-   game opens on, in the order the picture puts them. The blue is
-   assets/img/hotel/uk-back.png (#6faeca) and the green is the lawn in
-   uk-front.png (#669900); both sampled from the files rather than guessed.
-
-   DARKENED BY HUE, not by mixing. The obvious way to do this is to lay those
-   two over the site's near-black at a low alpha, and it does not work: mixing
-   a pale colour into something that dark takes the saturation out with it,
-   and #84cce8 at 0.18 over #120c07 lands on #2f2f30 — a cool grey. The bar
-   read as "slightly lighter", not as blue.
-
-   So each stop keeps its own hue and saturation and only loses lightness:
-   197° for the sky and 80° for the grass, at the darkness a top bar needs.
-   The parchment type and the amber pills sit on both ends unchanged.
-
-   The line underneath is deliberately NOT touched. Every page on the site
-   ends its top bar with the same black rule over a brown shadow, and that
-   edge is part of the site's frame rather than part of this page — see
-   .site-header in style.css, which still supplies both.
-
-   Scoped to body[data-page="fallinfurni"] so the archive's bar is untouched;
-   the attribute is already on <body> for exactly this sort of thing. */
-body[data-page="fallinfurni"] .site-header {
-    background: linear-gradient(180deg, rgba(23, 50, 63, 0.97), rgba(40, 58, 10, 0.94));
-}
-
-/* The maintenance bar keeps its amber. An admin needs to see at a glance that
-   the game is closed, and that reading must not be softened by the page's own
-   colour — so this restates the notice rule at the same specificity rather
-   than letting the wash above win on source order. */
-body[data-page="fallinfurni"] .site-header.site-header-notice {
-    background: linear-gradient(180deg, rgba(94, 51, 12, 0.92), rgba(74, 40, 10, 0.88));
-    border-bottom-color: rgba(230, 144, 36, 0.55);
-}
-
 .ff-page {
     max-width: 1080px;
     margin: 0 auto;
