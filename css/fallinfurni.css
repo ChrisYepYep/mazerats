@@ -503,6 +503,93 @@ body.is-editing #ff-canvas { cursor: pointer; }
 
 .ff-hud-msg:empty { display: block; }
 
+/* ---- pause
+
+   Mirrors .ff-hud into the opposite corner — same inset, same box, same
+   border — so the two read as one set of room widgets rather than as a panel
+   and a stray button. Square, because it holds a glyph and nothing else.
+
+   Above the cover it raises (z-index 3), so the same button pauses and
+   resumes; below .ff-stage::after at 5, so the window's bevel still draws
+   over its corner the way it draws over everything else in the room. */
+.ff-pause-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 4;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: rgba(10, 7, 4, 0.72);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--amber-bright);
+    cursor: pointer;
+    line-height: 0;
+}
+
+.ff-pause-btn[hidden] { display: none; }
+.ff-pause-btn:hover { background: var(--wood-mid); border-color: var(--amber); }
+.ff-pause-btn:focus-visible { outline: 1px solid var(--amber); outline-offset: 1px; }
+
+/* Two bars, drawn as the left and right edges of an empty box — one element,
+   no image, and it stays crisp at the scale the immersive phone layout puts
+   the whole window through. */
+.ff-pause-bars {
+    display: block;
+    width: 11px;
+    height: 13px;
+    box-sizing: border-box;
+    border-left: 3px solid currentColor;
+    border-right: 3px solid currentColor;
+}
+
+/* The cover. OPAQUE, and that is the whole point of it — see the note in
+   fallinfurni.html. A translucent panel would leave the seats readable
+   underneath, which is the one thing a pause in this game must not do. */
+.ff-paused {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-black);
+    text-align: center;
+    line-height: 1.5;
+}
+
+.ff-paused[hidden] { display: none; }
+.ff-paused-inner { padding: 18px 26px; }
+
+.ff-paused-say {
+    font-family: "Silkscreen", "Pixelify Sans", monospace;
+    font-size: 20px;
+    margin: 0 0 6px;
+    letter-spacing: 0.02em;
+    color: var(--amber-bright);
+}
+
+.ff-paused-sub {
+    margin: 0 0 14px;
+    color: var(--parchment-dim);
+}
+
+.ff-paused button {
+    background: var(--wood-mid);
+    border: 1px solid var(--border);
+    color: var(--parchment);
+    padding: 6px 14px;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+}
+
+.ff-paused button:hover { background: var(--chrome-highlight); color: var(--amber-bright); }
+
 .ff-playbar {
     display: flex;
     align-items: center;

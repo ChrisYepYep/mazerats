@@ -86,8 +86,8 @@
 
        So the SCORE waits a moment — and only the score. The figure sits the
        instant it arrives. Holding the pose back instead put it standing on
-       the chair for a fifth of a second first, which is a worse thing to be
-       looking at than the problem it was solving.
+       the chair for the length of this wait first, which is a worse thing to
+       be looking at than the problem it was solving.
 
        COMMITTED ON ARRIVAL, shown after the wait. Cancelling an unaccepted
        seat when the player clicks away would punish exactly the speed this
@@ -96,8 +96,11 @@
 
        Live-tunable under ?debug=1 with FallinFurni.setAcceptMs(n): the right
        number here is the one that feels right, and that is found by trying
-       them. */
-    let ACCEPT_MS = 200;
+       them. It has been 200; 150 still reads as a beat rather than the same
+       frame, and takes a sixth of a second off every seat in the round —
+       which on a fifteen-seat level is two and a half seconds of the clock
+       handed back to the player. */
+    let ACCEPT_MS = 150;
     const WALK_FRAMES = 4;          // the walk cycle, as animation.xml defines it
     /* 84ms a frame, measured off the running client: the stride opens every
        168ms and a four-frame cycle opens twice. Nothing to do with WALK_MS —
@@ -366,9 +369,9 @@
 
                The figure sits the instant it lands, with no beat in between.
                ACCEPT_MS delays the SCORE, not the sitting: holding the pose
-               back made the figure stand on the chair for a fifth of a second
-               first, which is a worse thing to be looking at than the problem
-               it was solving. */
+               back made the figure stand on the chair for the length of that
+               wait first, which is a worse thing to be looking at than the
+               problem it was solving. */
             const facing = seat ? seatFacing(seat) : null;
             return {
                 sx: c.sx, sy: c.sy,
@@ -752,8 +755,12 @@
        independent spans both adding the same interval is the bug the comment
        above `pauseSpanEnd` is about. One reason or four, the freeze is one
        span, opened by whichever arrives first and closed by the last to go. */
-    let gateShut = false;
-    const frozen = () => document.hidden || gateShut;
+    /* AND THE THIRD REASON IS THE PLAYER ASKING. The pause button is not a
+       separate mechanism — it is one more thing that can hold the span open,
+       which is why it costs eight lines rather than a rewrite of the clock.
+       See setPaused, and the cover it raises over the room. */
+    let gateShut = false, paused = false;
+    const frozen = () => document.hidden || gateShut || paused;
 
     function freezeChanged() {
         if (frozen()) {
@@ -770,6 +777,87 @@
 
     function watchVisibility() {
         document.addEventListener("visibilitychange", freezeChanged);
+    }
+
+    /* ---- PAUSE, and the cover that makes it one.
+
+       Stopping the clock is the easy half and `frozen` already does it. The
+       half that matters is that the room goes away: this game is a memory
+       test, and a pause that leaves the seats on screen is a button for
+       turning the test off. So the cover is opaque, and it is raised here
+       rather than left to the frame loop — nothing paints while frozen, which
+       is exactly when this has to change.
+
+       `syncPause` is also what hides the button between rounds, so the one
+       function owns everything the pause state puts on screen. */
+    const pauseEls = {};
+    function syncPause() {
+        if (!pauseEls.btn) {
+            pauseEls.btn = document.getElementById("ff-pause");
+            pauseEls.cover = document.getElementById("ff-paused");
+            if (!pauseEls.btn) return;
+        }
+        /* Not while the room is loading and not while the three-two-one is
+           running — `loading` covers both — and not behind the result of a
+           round that has already finished. There is nothing to pause in any
+           of those, and a button offering to is a button that lies. */
+        const canPause = !!game && game.state === Game.RUNNING && !loading && !Editor;
+        /* Called on every frame of a running round, like the readout beside
+           it, so it writes nothing unless something actually changed — the
+           same reason hudLast exists a few hundred lines down. */
+        if (canPause === pauseEls.canPause && paused === pauseEls.paused) return;
+        pauseEls.canPause = canPause;
+        pauseEls.paused = paused;
+
+        pauseEls.btn.hidden = !canPause;
+        if (pauseEls.cover) pauseEls.cover.hidden = !paused;
+        pauseEls.btn.setAttribute("aria-pressed", paused ? "true" : "false");
+        const say = paused ? "Resume the round" : "Pause the round";
+        pauseEls.btn.title = say;
+        const label = pauseEls.btn.querySelector(".visually-hidden");
+        if (label) label.textContent = say;
+        /* The cover takes the focus with it, so a keyboard player is not left
+           tabbing around a room they cannot see.
+
+           preventScroll, because the room is 500px tall and the button sits
+           in the middle of it: focusing it normally scrolls the page to centre
+           it, so pressing pause JUMPED the whole document and took the pause
+           button itself off the top of the screen. */
+        if (paused) {
+            const r = document.getElementById("ff-resume");
+            if (r) r.focus({ preventScroll: true });
+        }
+    }
+
+    function setPaused(on) {
+        const want = !!on;
+        // Only from a round that is actually running: nothing else can be
+        // paused, and pausing something that is not running would open a span
+        // that the resume path has no reason to close.
+        if (want && (!game || game.state !== Game.RUNNING || loading)) return;
+        if (want === paused) return;
+        paused = want;
+        freezeChanged();
+        syncPause();
+        /* Coming back, the round has to be REDRAWN before the next frame:
+           the cover has just come off a canvas holding whatever was on it
+           when the player stopped, and `lastPaint` was reset by
+           freezeChanged so the first frame back lands immediately. */
+        if (!paused) dirty = true;
+    }
+
+    function wirePause() {
+        const btn = document.getElementById("ff-pause");
+        const resume = document.getElementById("ff-resume");
+        if (btn) btn.addEventListener("click", () => setPaused(!paused));
+        if (resume) resume.addEventListener("click", () => setPaused(false));
+        /* Escape resumes and never pauses. A key that toggles is a key that
+           hides the room by accident in the middle of a round; this one only
+           ever puts it back. */
+        document.addEventListener("keydown", (ev) => {
+            if (ev.key === "Escape" && paused) { ev.preventDefault(); setPaused(false); }
+        });
+        syncPause();
     }
 
     /* ---- ROTATE TO PLAY.
@@ -1101,6 +1189,9 @@
 
         const hide = !game || game.state === Game.IDLE;
         if (hide !== hudLast.hidden) { hudEls.root.hidden = hide; hudLast.hidden = hide; }
+        // The pause button lives and dies with the round, the same as this
+        // does — one call rather than a second place that tracks the state.
+        syncPause();
         if (hide) return;
 
         const left = game.secondsLeft(now);
@@ -3297,10 +3388,15 @@
 
         loading = false;
         pauseSpanEnd(started);
-        /* Still hidden — the player switched away while it loaded. Open a
-           fresh span from here so the tab's own freeze carries on, rather
-           than leaving the round running unwatched. */
-        hiddenAt = document.hidden ? performance.now() : 0;
+        /* Still frozen — the player switched away while it loaded, or turned
+           the phone upright, or has the round paused. Open a fresh span from
+           here so that freeze carries on, rather than leaving the round
+           running unwatched.
+
+           `frozen()` rather than `document.hidden`: the tab was only ever one
+           of the reasons, and a room that finished loading behind the rotate
+           gate had the gate's freeze dropped on the floor here. */
+        hiddenAt = frozen() ? performance.now() : 0;
         lastPaint = 0;
         dirty = true;
     }
@@ -3390,6 +3486,14 @@
        and over with everything already in memory, and half a second of
        "Loading room" each time is friction rather than atmosphere. */
     function beginLevel(level) {
+        /* A LEVEL NEVER OPENS PAUSED. Nothing should be able to get here with
+           the cover up — a round cannot end while it is frozen, so the panel
+           whose button leads here cannot have been reached — but a pause that
+           outlived its round would freeze the next one behind a cover with no
+           button on it, and that is a dead game rather than a wrong number.
+           Cleared through the same span the button uses, never by assignment,
+           so the clock stays balanced either way. */
+        if (paused) { paused = false; freezeChanged(); }
         // Position AND facing: see showStart.
         showStart(level);
         Object.assign(state, Levels.toRoomOpts(level));
@@ -3487,6 +3591,12 @@
 
     function stopRound() {
         hideRoundEnd();
+        /* THE PAUSE DIES WITH THE ROUND, and this is the case where leaving it
+           alive is unrecoverable rather than merely wrong: `frozen` would stay
+           true over a title screen that has no pause button on it to press, so
+           the furni behind the logo would stop falling and nothing on the page
+           could start it again. Cleared through the span, as everywhere. */
+        if (paused) { paused = false; freezeChanged(); }
         if (game) game.stop();
         game = null; run = null;
         if (Editor) syncEditor();
@@ -3574,6 +3684,10 @@
         });
 
         canvas.addEventListener("click", (ev) => {
+            /* The cover is over the canvas and eats this anyway; the guard is
+               here so that staying still while paused does not depend on one
+               element's z-index continuing to sit where it sits. */
+            if (paused) return;
             const t = pointerTile(ev);
             if (!t) return;
             const playing = game && game.state === Game.RUNNING;
@@ -3782,6 +3896,7 @@
         if (state.name) lookup(state.name);
         watchBoardActivity();
         watchVisibility();
+        wirePause();
         watchOrientation();
         requestAnimationFrame(tick);
 

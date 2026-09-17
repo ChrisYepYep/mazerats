@@ -377,6 +377,41 @@
                              and reading only the changed words is nonsense. -->
                         <div class="ff-hud-msg" id="ff-msg" role="status" aria-live="polite" aria-atomic="true"></div>
                     </div>
+
+                    <!-- PAUSE, opposite the readout. The HUD has the room's
+                         top-left corner, so this takes the top-right; they are
+                         the two places in the room nothing is ever drawn. Only
+                         shown while a round is actually running - there is
+                         nothing to pause on the title screen or behind the
+                         result of a round that has already ended. -->
+                    <button type="button" class="ff-pause-btn" id="ff-pause" hidden>
+                        <span class="ff-pause-bars" aria-hidden="true"></span>
+                        <span class="visually-hidden">Pause the round</span>
+                    </button>
+
+                    <!-- AND THE ROOM GOES BEHIND A COVER WHILE IT IS PAUSED.
+
+                         Not a dimming panel - an opaque one. This game asks
+                         you to remember which chairs landed and in what order,
+                         so a pause that leaves the room on screen is not a
+                         pause, it is a button that turns the memory test off.
+                         Both the freezes that already existed hide the room as
+                         a side effect of what they are (a backgrounded tab, a
+                         rotate gate over the whole screen); this one has to do
+                         it on purpose.
+
+                         The clock behind it is stopped by the same single-span
+                         mechanism those two use - see `frozen` in
+                         js/fallinfurni.js - so pausing costs the player
+                         nothing and gains them nothing. -->
+                    <div class="ff-paused" id="ff-paused" hidden role="dialog"
+                         aria-modal="true" aria-labelledby="ff-paused-say">
+                        <div class="ff-paused-inner">
+                            <p class="ff-paused-say" id="ff-paused-say">Paused</p>
+                            <p class="ff-paused-sub">The room is covered and the clock is stopped.</p>
+                            <button type="button" id="ff-resume" class="ff-primary">Resume</button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- BUILDER'S BAR. For a player it held one line — "Click a
