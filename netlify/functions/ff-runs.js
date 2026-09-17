@@ -107,6 +107,17 @@ const clampInt = (v, lo, hi) => {
 
 const str = (v, max) => String(v === undefined || v === null ? "" : v).slice(0, max);
 
+/* The same rule room-figure.js applies before it will ask Habbo about a name,
+   copied rather than loosened so the two cannot drift into disagreeing about
+   what a habbo name is. Anything else becomes null, which reads as "played
+   without giving a name" — the honest description of a value we will not
+   keep. Note what the character set leaves out: <, >, &, quotes and spaces. */
+const HABBO_NAME = /^[A-Za-z0-9_\-.:]{1,32}$/;
+const habboName = (v) => {
+    const s = String(v === undefined || v === null ? "" : v).trim();
+    return HABBO_NAME.test(s) ? s : null;
+};
+
 /* THE ADDRESS THE ROUND WAS PLAYED FROM.
 
    Only the value Netlify computes, exactly as contact.js and auth.js take
@@ -200,6 +211,24 @@ async function record(db, event) {
         // somebody else is ignored, because this field is not read from it.
         player: player ? str(player.name, MAX_NAME) : null,
         playerId: player ? str(player.id, 64) : null,
+        /* THE NAME TYPED INTO THE GAME, which is the only thing a signed-out
+           run can be called. Without it every one of them is the same line in
+           the panel and "who is playing" has no answer for the majority of
+           runs.
+
+           IT IS A CLAIM, and is stored as one. The page only sets it from a
+           lookup Habbo answered, but that guarantee lives in the page, and
+           anything that reaches here could have been typed into a terminal —
+           so it never authenticates, never ranks, and never appears outside
+           the admin panel. `player` above is still the only field that says
+           who somebody IS.
+
+           The shape is room-figure.js's own rule for a habbo name, character
+           for character. That is deliberate: a value that cannot hold <, >,
+           &, a quote or a space cannot become markup wherever it is printed,
+           which is the failure ff-scores.js had to delete a field over. The
+           panel escapes it as well. */
+        habbo: habboName(body.habbo),
         // Read from the request, never from the body — see clientIp.
         ip: clientIp(event),
         /* COUNTED here, not taken from the body. The page sends its own tally
@@ -377,15 +406,43 @@ async function report(db, event) {
         for (const lv of r.levels || []) if (!lv.won && lv.why) bump(byWhy, lv.why);
     }
 
-    /* ---- per PLAYER. Anonymous runs are counted together as one line rather
-       than dropped: "how many of these were signed in" is the first thing
-       anybody asks of a leaderboard game, and it cannot be answered by a
-       table that only lists names. */
+    /* ---- per PLAYER.
+
+       THREE KINDS OF ROW, because there are three different things a run can
+       say about who played it, and flattening them loses the distinction that
+       matters:
+
+         signed in    the Discord session. The only one that is checked, and
+                      the only one the leaderboard will use.
+         named        signed out, but a habbo name was typed into the game.
+                      Their own claim about themselves — good enough to follow
+                      one player across a week of runs, not good enough to
+                      trust against anybody else.
+         unnamed      signed out and no name given. Still counted together,
+                      because "how many were signed in" has to stay answerable.
+
+       A signed-in run keys on the session even when a habbo name was typed as
+       well: the checked identity wins, and one person is one row rather than
+       two halves of themselves. The habbo name is carried along so the panel
+       can show who a signed-in player says they are in the hotel. */
     const players = new Map();
     for (const r of rows) {
-        const key = r.player || "";
+        const kind = r.player ? "player" : (r.habbo ? "habbo" : "none");
+        const key = kind === "player" ? "p:" + r.player
+            : kind === "habbo" ? "h:" + r.habbo
+            : "";
         let e = players.get(key);
-        if (!e) { e = { name: key, runs: 0, best: 0, bestPoints: 0, totalMs: 0, last: r.at, first: r.at }; players.set(key, e); }
+        if (!e) {
+            e = {
+                name: kind === "player" ? r.player : "",
+                habbo: kind === "habbo" ? r.habbo : null,
+                kind,
+                runs: 0, best: 0, bestPoints: 0, totalMs: 0, last: r.at, first: r.at
+            };
+            players.set(key, e);
+        }
+        // A signed-in player who also typed a name: keep the most recent one.
+        if (kind === "player" && r.habbo && !e.habbo) e.habbo = r.habbo;
         e.runs++;
         e.best = Math.max(e.best, r.cleared || 0);
         e.bestPoints = Math.max(e.bestPoints, r.points || 0);
@@ -425,11 +482,17 @@ async function report(db, event) {
         let e = addresses.get(key);
         if (!e) {
             e = { ip: r.ip || null, runs: 0, anon: 0, cleared: 0, bestPoints: 0,
-                  first: r.at, last: r.at, touch: 0, players: new Map() };
+                  first: r.at, last: r.at, touch: 0, players: new Map(), habbos: new Map() };
             addresses.set(key, e);
         }
         e.runs++;
         if (r.player) bump(e.players, r.player); else e.anon++;
+        /* Habbo names are tallied for EVERY run that carries one, signed in or
+           not. An address whose signed-in account and signed-out runs all give
+           the same habbo name is one person being consistent; the same address
+           giving four different ones is the shape this table exists to show,
+           and it was invisible while signed-out runs had nothing on them. */
+        if (r.habbo) bump(e.habbos, r.habbo);
         e.cleared = Math.max(e.cleared, r.cleared || 0);
         e.bestPoints = Math.max(e.bestPoints, r.points || 0);
         if (r.client && r.client.touch) e.touch++;
@@ -446,6 +509,9 @@ async function report(db, event) {
            point and the list has stopped being a lead. */
         players: rank(e.players, 8),
         named: e.players.size,
+        // The same list for the name typed into the game, capped the same way.
+        habbos: rank(e.habbos, 8),
+        habboNames: e.habbos.size,
         bestCleared: e.cleared,
         bestPoints: e.bestPoints,
         touch: e.touch,
@@ -470,7 +536,13 @@ async function report(db, event) {
             won: won.length,
             abandoned: rows.length - finished.length,
             signedIn: signedIn.length,
-            players: [...players.keys()].filter(Boolean).length,
+            /* COUNTED BY KIND, not by "has a key". The keys stopped being a
+               proxy for "is signed in" the moment signed-out runs started
+               grouping under a typed name, and left alone this figure would
+               have quietly started counting them as accounts. */
+            players: [...players.values()].filter(p => p.kind === "player").length,
+            namedAnon: [...players.values()].filter(p => p.kind === "habbo").length,
+            anonNoName: rows.filter(r => !r.player && !r.habbo).length,
             levelsPlayed: rows.reduce((n, r) => n + (r.levels || []).length, 0),
             bestCleared: cleared.length ? Math.max(...cleared) : 0,
             medianCleared: median(cleared),

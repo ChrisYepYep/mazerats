@@ -3023,6 +3023,18 @@
             livesWon: theRun.livesWon || 0,
             livesLeft: theRun.lives || 0,
             levels,
+            /* THE NAME IN THE BOX, so a signed-out run is somebody rather than
+               another tally on one "Anonymous" line. `state.name` is only ever
+               set from a lookup Habbo ANSWERED — a refused name clears it — so
+               an honest client sends a real Origins habbo here or nothing.
+
+               The server cannot know that, and does not pretend to: it checks
+               the shape and treats the value as the player's own claim. It is
+               never a login, never ranks anybody, and never leaves the admin
+               panel. The leaderboard still takes its name from the Discord
+               session alone, which is what stopped this field being a stored
+               XSS hole the last time it existed (see ff-scores.js). */
+            habbo: state.name || null,
             w: window.innerWidth,
             h: window.innerHeight,
             touch: navigator.maxTouchPoints > 0
