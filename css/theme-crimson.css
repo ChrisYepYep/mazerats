@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   687 rules, 1134 declarations, hues 350 (surfaces) / 212 (accents).
+   720 rules, 1191 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -3373,6 +3373,174 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     [data-theme="crimson"] .header-console-btn::after {
         background: transparent;
     }
+}
+
+[data-theme="crimson"] .rc-status {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .rc-status.is-good {
+    color: var(--ok);
+}
+
+[data-theme="crimson"] .rc-status.is-bad {
+    color: var(--danger);
+}
+
+[data-theme="crimson"] .rc-bar {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+}
+
+[data-theme="crimson"] .rc-sep {
+    background: var(--border);
+}
+
+[data-theme="crimson"] .rc-changed {
+    color: var(--amber);
+}
+
+[data-theme="crimson"] .rc-preset,
+[data-theme="crimson"] .rc-nameinput {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="crimson"] .rc-toggle {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .rc-search {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="crimson"] .rc-filters select {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="crimson"] .rc-group > h4 {
+    color: var(--amber);
+}
+
+[data-theme="crimson"] .rc-count {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .rc-row:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+[data-theme="crimson"] .rc-row:hover {
+    background: rgba(113, 130, 149, 0.08);
+}
+
+[data-theme="crimson"] .rc-row.is-changed {
+    box-shadow: inset 2px 0 0 var(--amber);
+}
+
+[data-theme="crimson"] .rc-chip {
+    border: 1px solid var(--chrome-border);
+    background-image: linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%),
+                      linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%);
+}
+
+[data-theme="crimson"] .rc-chip input[type="color"] {
+    border: 0;
+}
+
+[data-theme="crimson"] .rc-name {
+    color: var(--parchment);
+}
+
+[data-theme="crimson"] .rc-where {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .rc-dot {
+    background: var(--amber);
+}
+
+[data-theme="crimson"] .rc-hex {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="crimson"] .rc-warn {
+    color: var(--danger);
+}
+
+[data-theme="crimson"] .rc-revert {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .rc-revert:hover:not([disabled]) {
+    color: var(--amber-bright);
+    border-color: var(--amber);
+}
+
+[data-theme="crimson"] .rc-sprites {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+}
+
+[data-theme="crimson"] .rc-sprites h4 {
+    color: var(--amber);
+}
+
+[data-theme="crimson"] .rc-sprite {
+    background: var(--bg-black);
+    border: 1px solid var(--border);
+}
+
+[data-theme="crimson"] .rc-sprite-head {
+    color: var(--parchment);
+}
+
+[data-theme="crimson"] .rc-sprite-pair input[type="color"] {
+    background: none;
+    border: 1px solid var(--border);
+}
+
+[data-theme="crimson"] body[data-page="admin"] .btn,
+[data-theme="crimson"] body[data-page="admin"] .ctl-btn,
+[data-theme="crimson"] body[data-page="admin"] .btn-enter-mini,
+[data-theme="crimson"] body[data-page="admin"] .admin-wiz-zoom-btn {
+    border: 1.5px solid var(--chrome-highlight);
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--parchment-dim);
+    box-shadow: none;
+}
+
+[data-theme="crimson"] body[data-page="admin"] .btn:hover:not([disabled]),
+[data-theme="crimson"] body[data-page="admin"] .ctl-btn:hover:not([disabled]),
+[data-theme="crimson"] body[data-page="admin"] .btn-enter-mini:hover:not([disabled]),
+[data-theme="crimson"] body[data-page="admin"] .admin-wiz-zoom-btn:hover:not([disabled]) {
+    border-color: var(--amber-bright);
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.2);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.65);
+}
+
+[data-theme="crimson"] body[data-page="admin"] .btn[disabled],
+[data-theme="crimson"] body[data-page="admin"] .ctl-btn[disabled],
+[data-theme="crimson"] body[data-page="admin"] .btn-enter-mini[disabled],
+[data-theme="crimson"] body[data-page="admin"] .admin-wiz-zoom-btn[disabled] {
+    box-shadow: none;
+}
+
+[data-theme="crimson"] body[data-page="admin"] .ctl-btn.active,
+[data-theme="crimson"] body[data-page="admin"] .btn-enter-mini.active {
+    background: var(--chrome-fill);
+    border-color: var(--amber);
+    color: var(--parchment);
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION

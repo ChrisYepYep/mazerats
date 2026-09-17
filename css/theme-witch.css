@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   687 rules, 1134 declarations, hues 274 (surfaces) / 274 (accents).
+   720 rules, 1191 declarations, hues 274 (surfaces) / 274 (accents).
 */
 :root[data-theme="witch"] {
     --bg-black: #050207;
@@ -3373,6 +3373,174 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     [data-theme="witch"] .header-console-btn::after {
         background: transparent;
     }
+}
+
+[data-theme="witch"] .rc-status {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .rc-status.is-good {
+    color: var(--ok);
+}
+
+[data-theme="witch"] .rc-status.is-bad {
+    color: var(--danger);
+}
+
+[data-theme="witch"] .rc-bar {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+}
+
+[data-theme="witch"] .rc-sep {
+    background: var(--border);
+}
+
+[data-theme="witch"] .rc-changed {
+    color: var(--amber);
+}
+
+[data-theme="witch"] .rc-preset,
+[data-theme="witch"] .rc-nameinput {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="witch"] .rc-toggle {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .rc-search {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="witch"] .rc-filters select {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="witch"] .rc-group > h4 {
+    color: var(--amber);
+}
+
+[data-theme="witch"] .rc-count {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .rc-row:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+[data-theme="witch"] .rc-row:hover {
+    background: rgba(141, 77, 190, 0.08);
+}
+
+[data-theme="witch"] .rc-row.is-changed {
+    box-shadow: inset 2px 0 0 var(--amber);
+}
+
+[data-theme="witch"] .rc-chip {
+    border: 1px solid var(--chrome-border);
+    background-image: linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%),
+                      linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%);
+}
+
+[data-theme="witch"] .rc-chip input[type="color"] {
+    border: 0;
+}
+
+[data-theme="witch"] .rc-name {
+    color: var(--parchment);
+}
+
+[data-theme="witch"] .rc-where {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .rc-dot {
+    background: var(--amber);
+}
+
+[data-theme="witch"] .rc-hex {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="witch"] .rc-warn {
+    color: var(--danger);
+}
+
+[data-theme="witch"] .rc-revert {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .rc-revert:hover:not([disabled]) {
+    color: var(--amber-bright);
+    border-color: var(--amber);
+}
+
+[data-theme="witch"] .rc-sprites {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+}
+
+[data-theme="witch"] .rc-sprites h4 {
+    color: var(--amber);
+}
+
+[data-theme="witch"] .rc-sprite {
+    background: var(--bg-black);
+    border: 1px solid var(--border);
+}
+
+[data-theme="witch"] .rc-sprite-head {
+    color: var(--parchment);
+}
+
+[data-theme="witch"] .rc-sprite-pair input[type="color"] {
+    background: none;
+    border: 1px solid var(--border);
+}
+
+[data-theme="witch"] body[data-page="admin"] .btn,
+[data-theme="witch"] body[data-page="admin"] .ctl-btn,
+[data-theme="witch"] body[data-page="admin"] .btn-enter-mini,
+[data-theme="witch"] body[data-page="admin"] .admin-wiz-zoom-btn {
+    border: 1.5px solid var(--chrome-highlight);
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--parchment-dim);
+    box-shadow: none;
+}
+
+[data-theme="witch"] body[data-page="admin"] .btn:hover:not([disabled]),
+[data-theme="witch"] body[data-page="admin"] .ctl-btn:hover:not([disabled]),
+[data-theme="witch"] body[data-page="admin"] .btn-enter-mini:hover:not([disabled]),
+[data-theme="witch"] body[data-page="admin"] .admin-wiz-zoom-btn:hover:not([disabled]) {
+    border-color: var(--amber-bright);
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.2);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.65);
+}
+
+[data-theme="witch"] body[data-page="admin"] .btn[disabled],
+[data-theme="witch"] body[data-page="admin"] .ctl-btn[disabled],
+[data-theme="witch"] body[data-page="admin"] .btn-enter-mini[disabled],
+[data-theme="witch"] body[data-page="admin"] .admin-wiz-zoom-btn[disabled] {
+    box-shadow: none;
+}
+
+[data-theme="witch"] body[data-page="admin"] .ctl-btn.active,
+[data-theme="witch"] body[data-page="admin"] .btn-enter-mini.active {
+    background: var(--chrome-fill);
+    border-color: var(--amber);
+    color: var(--parchment);
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION

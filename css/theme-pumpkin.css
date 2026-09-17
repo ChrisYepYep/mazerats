@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   687 rules, 1134 declarations, hues 18 (surfaces) / 38 (accents).
+   720 rules, 1191 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -3373,6 +3373,174 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     [data-theme="pumpkin"] .header-console-btn::after {
         background: transparent;
     }
+}
+
+[data-theme="pumpkin"] .rc-status {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .rc-status.is-good {
+    color: var(--ok);
+}
+
+[data-theme="pumpkin"] .rc-status.is-bad {
+    color: var(--danger);
+}
+
+[data-theme="pumpkin"] .rc-bar {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+}
+
+[data-theme="pumpkin"] .rc-sep {
+    background: var(--border);
+}
+
+[data-theme="pumpkin"] .rc-changed {
+    color: var(--amber);
+}
+
+[data-theme="pumpkin"] .rc-preset,
+[data-theme="pumpkin"] .rc-nameinput {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="pumpkin"] .rc-toggle {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .rc-search {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="pumpkin"] .rc-filters select {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="pumpkin"] .rc-group > h4 {
+    color: var(--amber);
+}
+
+[data-theme="pumpkin"] .rc-count {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .rc-row:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+[data-theme="pumpkin"] .rc-row:hover {
+    background: rgba(232, 158, 31, 0.08);
+}
+
+[data-theme="pumpkin"] .rc-row.is-changed {
+    box-shadow: inset 2px 0 0 var(--amber);
+}
+
+[data-theme="pumpkin"] .rc-chip {
+    border: 1px solid var(--chrome-border);
+    background-image: linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%),
+                      linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%);
+}
+
+[data-theme="pumpkin"] .rc-chip input[type="color"] {
+    border: 0;
+}
+
+[data-theme="pumpkin"] .rc-name {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .rc-where {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .rc-dot {
+    background: var(--amber);
+}
+
+[data-theme="pumpkin"] .rc-hex {
+    background: var(--bg-black);
+    color: var(--parchment);
+    border: 1px solid var(--border);
+}
+
+[data-theme="pumpkin"] .rc-warn {
+    color: var(--danger);
+}
+
+[data-theme="pumpkin"] .rc-revert {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .rc-revert:hover:not([disabled]) {
+    color: var(--amber-bright);
+    border-color: var(--amber);
+}
+
+[data-theme="pumpkin"] .rc-sprites {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+}
+
+[data-theme="pumpkin"] .rc-sprites h4 {
+    color: var(--amber);
+}
+
+[data-theme="pumpkin"] .rc-sprite {
+    background: var(--bg-black);
+    border: 1px solid var(--border);
+}
+
+[data-theme="pumpkin"] .rc-sprite-head {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .rc-sprite-pair input[type="color"] {
+    background: none;
+    border: 1px solid var(--border);
+}
+
+[data-theme="pumpkin"] body[data-page="admin"] .btn,
+[data-theme="pumpkin"] body[data-page="admin"] .ctl-btn,
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-zoom-btn {
+    border: 1.5px solid var(--chrome-highlight);
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--parchment-dim);
+    box-shadow: none;
+}
+
+[data-theme="pumpkin"] body[data-page="admin"] .btn:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .ctl-btn:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-zoom-btn:hover:not([disabled]) {
+    border-color: var(--amber-bright);
+    color: #ffffff;
+    background: rgba(0, 0, 0, 0.2);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.65);
+}
+
+[data-theme="pumpkin"] body[data-page="admin"] .btn[disabled],
+[data-theme="pumpkin"] body[data-page="admin"] .ctl-btn[disabled],
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini[disabled],
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-zoom-btn[disabled] {
+    box-shadow: none;
+}
+
+[data-theme="pumpkin"] body[data-page="admin"] .ctl-btn.active,
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini.active {
+    background: var(--chrome-fill);
+    border-color: var(--amber);
+    color: var(--parchment);
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION

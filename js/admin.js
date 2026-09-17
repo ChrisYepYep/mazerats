@@ -616,7 +616,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const pct = t.finished ? Math.round((t.won / t.finished) * 100) : 0;
         ffSummaryEl.innerHTML =
             ffStat(t.runs, "run", "runs") +
-            ffStat(t.players, "named player", "named players") +
+            ffStat(t.players, "signed-in player", "signed-in players") +
+            /* Only when there are any. A site where nobody plays signed out
+               should not carry a permanent "0 named without signing in". */
+            ((t.namedAnon || 0) ? ffStat(t.namedAnon, "named without signing in",
+                "named without signing in") : "") +
             ffStat(t.levelsPlayed, "round played", "rounds played") +
             '<span class="admin-activity-stat"><strong>' + pct + '%</strong> of finished runs won</span>' +
             '<span class="admin-activity-stat"><strong>' + t.medianCleared + '</strong> levels cleared, typically</span>' +
@@ -698,8 +702,26 @@ document.addEventListener("DOMContentLoaded", () => {
             body.innerHTML = '<tr><td colspan="7" class="admin-empty">Nobody has played yet.</td></tr>';
             return;
         }
+        /* WHO THE ROW IS, in the three flavours ff-runs.js can tell apart.
+
+           The distinction is the point of the column, so it is carried in the
+           label rather than left to be inferred from a name: a checked Discord
+           account, a habbo name somebody typed about themselves, and the rest.
+           "said in the game" is doing real work — it is the difference between
+           a name the site established and a name it was handed. */
+        const whoCell = (p) => {
+            if (p.kind === "player") {
+                return escapeHtml(p.name) +
+                    (p.habbo ? ' <span class="admin-hint">as ' + escapeHtml(p.habbo) + ' in the game</span>' : "");
+            }
+            if (p.kind === "habbo") {
+                return escapeHtml(p.habbo) +
+                    ' <span class="admin-hint">said in the game, not signed in</span>';
+            }
+            return 'Anonymous <span class="admin-hint">(no name given)</span>';
+        };
         body.innerHTML = d.byPlayer.map(p => '<tr>' +
-            '<td>' + escapeHtml(ffName(p.name)) + (p.name ? "" : ' <span class="admin-hint">(all of them together)</span>') + '</td>' +
+            '<td>' + whoCell(p) + '</td>' +
             '<td class="ff-num">' + p.runs + '</td>' +
             '<td class="ff-num">' + p.best + '</td>' +
             '<td class="ff-num">' + Number(p.bestPoints || 0).toLocaleString() + '</td>' +
@@ -735,9 +757,19 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         body.innerHTML = rows.map(a => {
-            const who = a.players.length
+            /* Two lists, kept apart. Accounts are what the site checked;
+               habbo names are what people said. Merging them into one column
+               of names would make an address look like it had six identities
+               on it when it has one account and that account's own habbo name
+               written underneath — the opposite of what this table is for. */
+            const accounts = a.players.length
                 ? a.players.map(p => escapeHtml(p.label) + ' <span class="admin-hint">×' + p.n + '</span>').join(", ")
                 : '<span class="admin-hint">Nobody signed in</span>';
+            const habbos = (a.habbos || []).length
+                ? '<div class="admin-hint">In the game: ' +
+                  a.habbos.map(h => escapeHtml(h.label) + ' ×' + h.n).join(", ") + '</div>'
+                : "";
+            const who = accounts + habbos;
             return '<tr>' +
                 '<td>' + (a.ip
                     ? '<code>' + escapeHtml(a.ip) + '</code>' +
@@ -776,7 +808,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
             return '<details class="ff-run">' +
                 '<summary>' +
-                    '<span class="ff-run-who">' + escapeHtml(ffName(r.player)) + '</span>' +
+                    /* Signed in shows the account; signed out shows the name
+                       given in the game, marked with a question mark so the
+                       row never reads as a checked identity. Neither means
+                       "Anonymous" any more unless nothing was given at all. */
+                    '<span class="ff-run-who">' +
+                        (r.player ? escapeHtml(r.player)
+                            : r.habbo ? escapeHtml(r.habbo) + '<span class="admin-hint" title="Typed into the game, not signed in">?</span>'
+                            : "Anonymous") +
+                    '</span>' +
                     '<span class="ff-run-tag ff-' + escapeHtml(r.outcome) + '">' + escapeHtml(ffOutcome(r.outcome)) + '</span>' +
                     '<span class="ff-run-meta">' + r.cleared + ' cleared</span>' +
                     '<span class="ff-run-meta">' + Number(r.points || 0).toLocaleString() + ' pts</span>' +
@@ -813,6 +853,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     let ffLoaded = false;
+    let recolourMounted = false;
 
     async function loadFallinFurni() {
         if (!adminToken) return;
@@ -4745,6 +4786,21 @@ document.addEventListener("DOMContentLoaded", () => {
            the admin never open it, so it is fetched when the panel is first
            shown rather than on sign-in. Refresh re-reads it after that. */
         if (name === "ffdata" && !ffLoaded) loadFallinFurni();
+        /* Mounted on first open, for the same reason as the run log and one
+           more: the editor SCANS THE STYLESHEET, and doing that before the
+           panel's own rules are in the document would build a catalogue
+           missing the colours this very panel paints with. */
+        if (name === "recolour" && !recolourMounted && typeof AdminRecolour !== "undefined") {
+            recolourMounted = true;
+            AdminRecolour.mount(
+                document.getElementById("recolour-editor"),
+                adminToken
+            ).catch(e => {
+                recolourMounted = false;
+                document.getElementById("recolour-editor").innerHTML =
+                    '<p class="admin-empty">The palette editor could not start: ' + escapeHtml(e.message) + '</p>';
+            });
+        }
         /* Remembered, so a reload comes back to what you were doing.
            Editing the map is a long job done over many sittings, and being
            put back on the maze list every time the page reloads — which it

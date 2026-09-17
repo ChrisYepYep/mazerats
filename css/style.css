@@ -13930,3 +13930,194 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
         padding: 12px 3px;
     }
 }
+
+/* ---------------------------------------------------------------- RECOLOUR
+
+   The palette editor (js/admin-recolour.js). Everything here is scoped under
+   .rc-editor, and deliberately built from the site's own variables rather
+   than from literals — the editor is previewed with the palette it is
+   editing, so a panel painted in hardcoded browns would be the one thing on
+   screen that did not follow, which is exactly the mistake it exists to find.
+
+   A row is a fixed grid rather than a flex line because the swatches must
+   line up down the column: 283 of them wandering by a few pixels each,
+   according to how long the selector underneath happens to be, is the
+   difference between a list you can scan and one you have to read. */
+.rc-editor { display: block; }
+
+.rc-status { min-height: 20px; margin: 0 0 8px; font-size: 0.82rem; color: var(--parchment-dim); }
+.rc-status.is-good { color: var(--ok); }
+.rc-status.is-bad  { color: var(--danger); }
+
+.rc-bar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 10px; margin-bottom: 12px;
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px;
+    position: sticky; top: 46px; z-index: 6;
+}
+.rc-bar .btn { padding: 4px 10px; font-size: 0.78rem; }
+.rc-sep { flex: 0 0 1px; align-self: stretch; background: var(--border); margin: 0 2px; }
+.rc-changed { margin-left: auto; font-size: 0.78rem; color: var(--amber); }
+.rc-preset, .rc-nameinput { font: inherit; font-size: 0.8rem; padding: 4px 6px;
+    background: var(--bg-black); color: var(--parchment); border: 1px solid var(--border); border-radius: 3px; }
+.rc-nameinput { width: 190px; }
+.rc-toggle { display: inline-flex; gap: 5px; align-items: center; font-size: 0.78rem; color: var(--parchment-dim); }
+
+.rc-filters { display: flex; gap: 8px; align-items: center; margin: 12px 0 10px; }
+.rc-search { flex: 1 1 auto; font: inherit; font-size: 0.82rem; padding: 6px 8px;
+    background: var(--bg-black); color: var(--parchment); border: 1px solid var(--border); border-radius: 3px; }
+.rc-filters select { font: inherit; font-size: 0.8rem; padding: 5px;
+    background: var(--bg-black); color: var(--parchment); border: 1px solid var(--border); border-radius: 3px; }
+
+.rc-group { margin: 0 0 18px; }
+.rc-group > h4 { margin: 0 0 6px; font-size: 0.8rem; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--amber); }
+.rc-count { color: var(--parchment-dim); font-weight: normal; letter-spacing: 0; text-transform: none; }
+
+.rc-row {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) 132px 64px auto 28px;
+    gap: 8px; align-items: center;
+    padding: 4px 6px; border-radius: 3px;
+}
+.rc-row:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+.rc-row:hover { background: rgba(201, 151, 79, 0.08); }
+.rc-row.is-changed { box-shadow: inset 2px 0 0 var(--amber); }
+
+/* The swatch IS the picker. A separate "open the picker" button would be one
+   more thing to explain and one more thing to miss; clicking the colour to
+   change the colour needs no label at all. The real input is stretched over
+   the chip and made invisible, because a native colour input cannot be
+   styled but can be covered. */
+.rc-chip { position: relative; display: block; width: 30px; height: 26px;
+    border: 1px solid var(--chrome-border); border-radius: 3px; cursor: pointer;
+    background-image: linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%),
+                      linear-gradient(45deg, #444 25%, transparent 25%, transparent 75%, #444 75%);
+    background-size: 8px 8px; background-position: 0 0, 4px 4px; }
+.rc-chip input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%;
+    opacity: 0; cursor: pointer; border: 0; padding: 0; }
+
+.rc-meta { min-width: 0; }
+.rc-name { font-size: 0.82rem; color: var(--parchment); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+.rc-where { font-size: 0.7rem; color: var(--parchment-dim); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+.rc-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--amber); vertical-align: middle; }
+
+.rc-hex { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.72rem;
+    padding: 4px 5px; background: var(--bg-black); color: var(--parchment);
+    border: 1px solid var(--border); border-radius: 3px; width: 100%; }
+.rc-alpha { width: 64px; }
+.rc-alpha-none { display: block; width: 64px; }
+.rc-warn { font-size: 0.68rem; color: var(--danger); white-space: nowrap; }
+.rc-revert { background: none; border: 1px solid var(--border); color: var(--parchment-dim);
+    border-radius: 3px; width: 26px; height: 24px; cursor: pointer; font-size: 0.9rem; line-height: 1; }
+.rc-revert:hover:not([disabled]) { color: var(--amber-bright); border-color: var(--amber); }
+.rc-revert[disabled] { opacity: 0.3; cursor: default; }
+
+.rc-sprites { margin: 0 0 14px; padding: 10px;
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; }
+.rc-sprites h4 { margin: 0 0 4px; font-size: 0.8rem; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--amber); }
+.rc-sprite-grid { display: grid; gap: 10px; margin-top: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); }
+.rc-sprite { padding: 8px; background: var(--bg-black); border: 1px solid var(--border); border-radius: 3px; }
+.rc-sprite-head { font-size: 0.78rem; color: var(--parchment); margin-bottom: 5px; }
+.rc-sprite-pair { display: flex; gap: 5px; align-items: center; margin-bottom: 5px; }
+.rc-sprite-pair input[type="color"] { width: 44px; height: 26px; padding: 0; cursor: pointer;
+    background: none; border: 1px solid var(--border); border-radius: 3px; }
+
+@media (max-width: 900px) {
+    .rc-row { grid-template-columns: 30px minmax(0, 1fr) 96px 28px; }
+    .rc-alpha, .rc-alpha-none, .rc-warn { display: none; }
+    .rc-bar { position: static; }
+}
+/* The sprite hints are prose, not a selector, so they wrap rather than being
+   clipped — .rc-where truncates by design for the 300 rows below, where a
+   full selector list would wreck the grid. */
+.rc-sprite .rc-where { white-space: normal; overflow: visible; line-height: 1.35; }
+
+/* ------------------------------------------------- ADMIN BUTTONS, ONE SHAPE
+
+   The panel had four button looks in it. .admin-action-pill was the one it
+   had settled on — uppercase, letter-spaced, rounded, amber on hover — and
+   it was used for "Add a maze" while the maze rows used .ctl-btn, the map
+   editor used .btn-enter-mini, and the recolour editor arrived using .btn,
+   the site's big public call-to-action, which is twice the size of anything
+   else on this page.
+
+   So this is not a new style. It is .admin-action-pill's own values, given to
+   the other three inside the admin stage, matched to the tabs in the top bar
+   that the whole page hangs from. Written as one block rather than by editing
+   four rules so the shared look has ONE place to change, and scoped to
+   body[data-page="admin"] so .btn keeps its public appearance everywhere else
+   on the site — it is the Enter button on the front page.
+
+   .chrome-nav-btn is deliberately NOT included. Those are the panel switcher
+   and they are painted with the btn_active/btn_inactive sprites; giving them
+   a border and a radius would draw a rounded rectangle around a picture of a
+   button. */
+body[data-page="admin"] .btn,
+body[data-page="admin"] .ctl-btn,
+body[data-page="admin"] .btn-enter-mini,
+body[data-page="admin"] .admin-wiz-zoom-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    text-decoration: none;
+    padding: 9px 18px;
+    border: 1.5px solid var(--chrome-highlight);
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--parchment-dim);
+    box-shadow: none;
+    cursor: var(--cursor-pointer);
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s, box-shadow 0.2s;
+}
+
+body[data-page="admin"] .btn:hover:not([disabled]),
+body[data-page="admin"] .ctl-btn:hover:not([disabled]),
+body[data-page="admin"] .btn-enter-mini:hover:not([disabled]),
+body[data-page="admin"] .admin-wiz-zoom-btn:hover:not([disabled]) {
+    border-color: var(--amber-bright);
+    color: #fff8ec;
+    background: rgba(0, 0, 0, 0.2);
+    box-shadow: 0 0 8px rgba(255, 248, 236, 0.65);
+    transform: none;
+}
+
+/* Disabled has to read as disabled at a glance, because several of these are
+   disabled most of the time — Duplicate and Delete until a preset is chosen,
+   Make the GIF until a start and end are set. */
+body[data-page="admin"] .btn[disabled],
+body[data-page="admin"] .ctl-btn[disabled],
+body[data-page="admin"] .btn-enter-mini[disabled],
+body[data-page="admin"] .admin-wiz-zoom-btn[disabled] {
+    opacity: 0.4;
+    cursor: default;
+    box-shadow: none;
+}
+
+/* The row actions are small and there are three per maze, so they keep a
+   tighter padding — the shape is the same, the scale is not. */
+body[data-page="admin"] .chrome-list-row .ctl-btn,
+body[data-page="admin"] .ff-run .ctl-btn,
+body[data-page="admin"] .rc-bar .btn {
+    padding: 5px 12px;
+    font-size: 0.64rem;
+}
+
+/* An active state that matches the tab in the top bar when it is open: the
+   same fill, so "this one is on" looks the same everywhere on the page. */
+body[data-page="admin"] .ctl-btn.active,
+body[data-page="admin"] .btn-enter-mini.active {
+    background: var(--chrome-fill);
+    border-color: var(--amber);
+    color: var(--parchment);
+}

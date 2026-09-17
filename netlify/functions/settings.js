@@ -84,7 +84,8 @@ exports.handler = async (event) => {
             aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT,
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
             fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
-            theme: (doc && doc.theme) || DEFAULT_THEME
+            theme: (doc && doc.theme) || DEFAULT_THEME,
+            palette: (doc && doc.palette) || null
         });
     }
 
@@ -119,6 +120,22 @@ exports.handler = async (event) => {
                 return json(400, { error: "theme must be one of: " + VALID_THEMES.join(", ") });
             }
             update.theme = body.theme;
+        }
+        /* A CUSTOM PALETTE IS ITS OWN FIELD rather than another value of
+           `theme`, and the separation is doing real work: a theme is a
+           generated stylesheet that ships with the site and can be named in
+           advance, while a palette is a row in a database that did not exist
+           when this list was written. Overloading one field would mean either
+           validating `theme` against the database on every save, or not
+           validating it at all. They also stack — a palette is painted over
+           whichever theme is on, so "purple, but with my own amber" needs
+           both to be sayable at once. Empty string clears it. */
+        if (body.palette !== undefined) {
+            const p = String(body.palette || "").trim().toLowerCase();
+            if (p && !/^[a-z0-9-]{1,40}$/.test(p)) {
+                return json(400, { error: "That is not a palette name." });
+            }
+            update.palette = p || null;
         }
         if (body.aboutText !== undefined) {
             update.aboutText = String(body.aboutText);

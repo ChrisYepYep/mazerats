@@ -135,6 +135,7 @@
                             <button type="button" class="chrome-nav-btn" data-panel="wizard" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Atlas</span></button>
                             <button type="button" class="chrome-nav-btn" data-panel="daily" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Daily</span></button>
                             <button type="button" class="chrome-nav-btn" data-panel="ffdata" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Fallin&#39; Furni</span></button>
+                            <button type="button" class="chrome-nav-btn" data-panel="recolour" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Recolour</span></button>
                             <button type="button" class="chrome-nav-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
                             <button type="button" class="chrome-nav-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
                             <button type="button" class="chrome-nav-btn" data-panel="activity" id="activity-nav-btn" role="tab" aria-selected="false" hidden><span class="chrome-nav-btn-label">Activity</span></button>
@@ -624,6 +625,22 @@
                             </section>
 
                             <!-- ---------- Bans ---------- -->
+                            <!-- ---------- Recolour ----------
+
+                                 Everything inside #recolour-editor is drawn by
+                                 js/admin-recolour.js from a live scan of the
+                                 stylesheet, so there is no swatch list here to
+                                 fall out of step with css/style.css. -->
+                            <section class="admin-panel" data-panel="recolour" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Recolour</h3>
+                                        <p class="admin-hint">Every colour the site paints with, found by reading the stylesheet that is actually running &mdash; so this list is whatever the site looks like today, not a list kept up to date by hand. A palette stores only what you changed, which is why one saved last year still works after the CSS has moved on. <strong>The preview is this page</strong>: what you pick here is what you are looking at.</p>
+                                    </div>
+                                </header>
+                                <div id="recolour-editor" class="rc-editor"><p class="admin-hint">Loading the palette&hellip;</p></div>
+                            </section>
+
                             <section class="admin-panel" data-panel="bans" hidden>
                                 <header class="admin-panel-head">
                                     <div>
@@ -719,7 +736,7 @@
                                 </div>
 
                                 <h3 class="admin-subheading admin-subheading-spaced">Players</h3>
-                                <p class="admin-hint">One row per signed-in player, plus a single line for everyone who played without signing in.</p>
+                                <p class="admin-hint">One row per signed-in player, one per habbo name given in the game without signing in, and a single line for everyone who gave no name at all. A name typed into the game is what somebody said about themselves, not something this site checked &mdash; two rows can be one person, and a name can be anybody's.</p>
                                 <div class="ff-table-wrap">
                                     <table class="ff-table" id="ff-players-table">
                                         <thead>
@@ -854,6 +871,8 @@
          page has any use for either, so neither is on the public map. -->
     <script src="js/gif-encode.js?v=2"></script>
     <script src="js/wizard-gif.js?v=2"></script>
+    <script src="js/recolour.js?v=2"></script>
+    <script src="js/admin-recolour.js?v=2"></script>
     <script src="js/admin.js?v=2"></script>
     <script src="js/password-field.js?v=2"></script>
     <script src="js/glyph-palette.js?v=2"></script>
