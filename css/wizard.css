@@ -96,18 +96,119 @@
     min-height: 0;
 }
 
+/* Centred rather than baseline-aligned, which is what it was when the title
+   and its two optional lines all sat on one row. They are a column now, with
+   the crest beside the whole block — and a baseline on a flex container full
+   of columns aligns the FIRST line of each, which hung the crest off the top
+   of the title instead of level with the middle of it. */
+/* Almost no padding top or bottom. The crest is the tallest thing in here by
+   a long way and it is what sets the height, so any vertical padding is
+   simply a gap above and below the crest — and the intent is the opposite of
+   a gap: tucked hard under the top bar, and hanging over the top edge of the
+   map. See .wiz-crest, which does the hanging. */
 .wiz-head {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
+    align-items: center;
     gap: 6px 18px;
-    padding: 14px 20px 10px;
+    padding: 0 20px;
+    /* Positioned, so anything inside the header that has to hang off it has
+       something to hang from. */
+    position: relative;
 }
 
-/* Pushes the search to the far end of the title row, whatever else is in
-   it — the intro line and the credit are both optional and both sit
-   between. */
-.wiz-head .wiz-search { margin-left: auto; }
+/* The search and the secrets button, pushed to the far end of the title row
+   and stacking within themselves rather than wrapping into a row of their own
+   under the crest. See the note in wizard.html for why that distinction
+   matters — the row they used to make sat in the gap the crest hangs into. */
+/* A column, so the secrets button is always under the search rather than
+   beside it when there happens to be room. Wrapping put it in whichever place
+   the width allowed, which meant the control moved about between screens. */
+.wiz-tools {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    margin-left: auto;
+}
+
+/* The title block: the heading, the blurb under it, and the two lines the
+   database may or may not fill in. */
+/* No gap: the blurb sits directly under the title. The two are one block —
+   a name and the line explaining it — and any space between them starts to
+   read as two separate things stacked up. What little air there is comes
+   from the line-height below. */
+.wiz-headings {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* The crest.
+
+   NO width or height, on purpose: it is drawn at exactly the size the file
+   is. It was briefly pinned to 72px square, which scaled the artwork — and
+   scaling pixel art is the one thing you must not do to it. A crest drawn at
+   192 and shown at 72 is not a smaller crest, it is a blurred one, and even
+   with pixelated rendering the thirds of a pixel have to land somewhere.
+
+   So the file is the authority. Re-export it larger or smaller and the
+   header follows, which also means there is no second place to remember to
+   change.
+
+   max-width is the one limit, and it is a safety rail rather than a size: it
+   stops a very large export pushing the title off a narrow screen. Nothing
+   below the natural size is affected by it.
+
+   flex-shrink: 0 because it is a fixed piece of furniture — in a narrow
+   window the title beside it wraps and the search drops to its own line, and
+   neither is a reason to squash the crest. */
+.wiz-crest {
+    flex-shrink: 0;
+    max-width: min(30vw, 100%);
+    height: auto;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+
+    /* Tucked up under the top bar and hanging over the map.
+
+       Both are negative margins rather than a smaller image or a moved
+       header, because a negative margin takes the space out of the LAYOUT
+       without moving the picture within itself: the header's line box
+       shrinks by the amount given back, and the crest simply overflows top
+       and bottom. The bottom one is what puts the foot of the crest over the
+       map's top edge, so the banner appears to be pinned to the parchment
+       rather than sitting on a shelf above it.
+
+       z-index because .wiz-stage is positioned and comes later in the
+       document — without it the map would paint over the part of the crest
+       that hangs into it, which is precisely the part that is meant to show.
+       position: relative to give the z-index something to apply to. */
+    position: relative;
+    z-index: 2;
+    margin-top: -6px;
+    margin-bottom: -52px;
+}
+
+/* Small, dim and directly under the title — the one line that says what the
+   page is to somebody who arrived from a pasted link and has never heard of
+   the place.
+
+   Carries the id "wiz-intro", because this is also where the map record's
+   Intro field lands: the sentence in the markup is the default, and an admin
+   writing one replaces it. */
+.wiz-blurb {
+    /* A small negative top margin pulls it up under the title. The <h1>
+       above has a tall line box — a 40px serif set solid still reserves the
+       font's full ascent and descent — so "touching" by the box model still
+       leaves a visible gap, and this takes that slack out rather than adding
+       any. */
+    margin: -3px 0 0;
+    color: var(--parchment-dim);
+    font-size: 12px;
+    line-height: 1.3;
+    letter-spacing: 0.01em;
+}
 
 /* The map's title, and the one place on this page NOT set in the hand the
    map itself is lettered in.
@@ -136,14 +237,12 @@
     letter-spacing: 0.03em;
 }
 
-.wiz-intro,
 .wiz-credit {
     margin: 0;
     color: var(--parchment-dim);
     font-size: 13px;
+    font-style: italic;
 }
-
-.wiz-credit { font-style: italic; }
 
 /* ---------- the map itself ----------
 
@@ -355,6 +454,12 @@
     transform: translate(-50%, -50%);
     pointer-events: none;
     transition: opacity 0.25s ease;
+    /* Said here as well as by draggable=false in js/wizard-map.js, because
+       Safari honours this one and not always the attribute. Without it a
+       press on a picture becomes a native image drag, which swallows the
+       click and double-click behind it. */
+    -webkit-user-drag: none;
+    user-select: none;
 }
 
 .admin-wiz-stage .wiz-layer { pointer-events: auto; }
@@ -725,6 +830,247 @@
     font-size: 14px;
 }
 
+/* ---------- secret passages ----------
+
+   The control that takes a code, the count of what has been found, and the
+   two things that happen on the map when a passage opens.
+
+   Every block here that sets `display` says so again for [hidden], which is
+   the convention the room sheet below already follows and for the same
+   reason: `hidden` is only display: none from the browser's own stylesheet,
+   and a display declared on a class outranks it. */
+
+.wiz-secrets {
+    z-index: 16;    /* over .wiz-search, whose results drop from z-index 15 */
+}
+
+.wiz-secrets[hidden] { display: none; }
+
+/* A read-out, not a control.
+
+   No cursor: pointer, no hover colour, no border that reads as a button —
+   because there is nothing to press, and the way into a secret passage is to
+   type the word at the map. Anything here that invited a click would be
+   inviting it onto a dead end.
+
+   It keeps the chrome frame, which is the site's furniture for "this is a
+   piece of the interface" rather than for "this is a button", and the same
+   one the search box beside it wears. */
+.wiz-secret-tally {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 2px solid var(--chrome-border);
+    border-radius: 6px;
+    background: var(--chrome-fill);
+    color: var(--parchment-dim);
+    font-size: 13px;
+    /* The clues live in the title attribute, so the cursor should say there
+       is something to read here — and `help` is the one cursor that says
+       exactly that without promising an action. */
+    cursor: help;
+    user-select: none;
+}
+
+/* A keyhole, drawn rather than fetched: one more request for a 12px glyph is
+   not worth it, and an emoji key renders as a different object on every
+   platform. A circle over a tapering slot, which is the shape everybody
+   reads as "locked" at this size. */
+.wiz-secret-mark {
+    position: relative;
+    width: 11px;
+    height: 13px;
+    flex-shrink: 0;
+}
+
+.wiz-secret-mark::before,
+.wiz-secret-mark::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    background: currentColor;
+}
+
+.wiz-secret-mark::before {
+    top: 0;
+    width: 7px;
+    height: 7px;
+    margin-left: -3.5px;
+    border-radius: 50%;
+}
+
+.wiz-secret-mark::after {
+    top: 6px;
+    width: 0;
+    height: 0;
+    margin-left: -3px;
+    border-left: 3px solid transparent;
+    border-right: 3px solid transparent;
+    border-bottom: 7px solid currentColor;
+    background: none;
+}
+
+/* Counts up as passages are found, and goes amber once every one of them
+   has been. */
+.wiz-secret-count { white-space: nowrap; }
+.wiz-secrets.is-complete .wiz-secret-count { color: var(--amber-bright); }
+
+
+/* ---------- what happens on the map ---------- */
+
+/* The announcement. Centred near the top of the stage, over the drawing, and
+   taken away by js/wizard.js when the reader leaves the passage it describes
+   rather than after a set time.
+
+   pointer-events: none matters more now that it can be on screen
+   indefinitely: the card sits over the top of the map, and the gesture that
+   dismisses it is dragging the map out from under it. Catching those drags
+   would leave the reader holding a card they cannot put down. */
+.wiz-reveal {
+    position: absolute;
+    left: 50%;
+    top: 18px;
+    z-index: 18;
+    width: max-content;
+    max-width: min(420px, calc(100% - 32px));
+    padding: 12px 20px;
+    transform: translateX(-50%);
+    border: 2px solid var(--amber);
+    border-radius: 8px;
+    background: rgba(18, 12, 7, 0.92);
+    text-align: center;
+    pointer-events: none;
+    animation: wiz-reveal-in 0.5s ease both;
+}
+
+.wiz-reveal[hidden] { display: none; }
+
+/* Quick. It is being dismissed because the reader has started moving the map,
+   and a card that takes the better part of a second to clear is a card still
+   in the way of what they moved to look at. Kept in step with the timeout in
+   dismissReveal, which is what actually hides it. */
+.wiz-reveal.is-going {
+    opacity: 0;
+    transition: opacity 0.25s ease;
+}
+
+@keyframes wiz-reveal-in {
+    from { opacity: 0; transform: translate(-50%, -10px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.wiz-reveal-name {
+    margin: 0;
+    color: var(--amber-bright);
+    font-family: 'Caveat', cursive;
+    font-size: 26px;
+    line-height: 1.1;
+}
+
+.wiz-reveal-msg {
+    margin: 2px 0 0;
+    color: var(--parchment);
+    font-size: 13px;
+}
+
+.wiz-reveal-msg:empty { display: none; }
+
+/* The echo of a code being typed at the map with no box open.
+
+   Dead centre. It sat at the bottom, tucked out of the way beside the zoom
+   controls — which is where you put a status line, and this is not one. It is
+   the thing the reader is doing: there is no box and no cursor, so these
+   letters are the only evidence that typing at the map does anything at all,
+   and evidence hidden at the edge of the frame is evidence nobody finds.
+
+   Over the drawing rather than beside it, and pointer-events: none so the map
+   can still be dragged straight through it. It takes itself away two seconds
+   after the last keystroke. */
+.wiz-whisper {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 18;
+    max-width: calc(100% - 48px);
+    padding: 10px 24px;
+    transform: translate(-50%, -50%);
+    border-radius: 999px;
+    background: rgba(18, 12, 7, 0.82);
+    color: var(--amber-bright);
+    font-family: 'Caveat', cursive;
+    font-size: 30px;
+    line-height: 1.1;
+    letter-spacing: 0.1em;
+    text-align: center;
+    /* A long guess breaks rather than running off both sides of the frame. */
+    overflow-wrap: anywhere;
+    pointer-events: none;
+}
+
+.wiz-whisper[hidden] { display: none; }
+
+/* A passage arriving, one footprint at a time.
+
+   The rooms and trails a secret brings are drawn by the same code as
+   everything else; this is only the first few seconds of them being there.
+   Rather than fading the lot in at once, the footprints land in the order
+   they were walked and the room's name arrives last — somebody is going
+   somewhere, and you find out where when they get there.
+
+   OPACITY ONLY, in both animations, and that is not a stylistic choice.
+   Every footprint carries an inline transform — its position on the sheet
+   and the angle of the stride — and every room name carries its own scale
+   and rotation. An animation touching transform would throw all of that
+   away for as long as it ran, scattering the prints to the top-left corner
+   of the map.
+
+   The delays are set per element by markFound in js/wizard.js, which spaces
+   them to fill a fixed span however many prints there are: a short passage
+   is walked slowly, a long one does not take all afternoon. Both classes are
+   taken off once they have played — animation fill-mode holds the final
+   opacity, which would otherwise sit on top of the zoom bands' own. */
+@keyframes wiz-step-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Shorter than the gap between prints, near enough — see WALK_STEP in
+   js/wizard.js. A print that is still fading when the next two have landed
+   turns a walk into a wipe, which is exactly what it looked like when the
+   fade was 360ms and the prints were 71ms apart. Just over one print is in
+   motion at a time now, which reads as a footfall rather than a strobe. */
+.wiz-print.is-stepping {
+    animation: wiz-step-in 240ms ease-out both;
+    animation-delay: var(--step-delay, 0ms);
+}
+
+/* A ruled trail inking itself in, for the passages that are drawn as a pen
+   stroke rather than walked. Slower than a footprint because it stands for
+   several of them — markFound gives it a slot of its own and passes the
+   length of that slot down as --ink-time. */
+.wiz-arc.is-inking {
+    animation: wiz-step-in var(--ink-time, 1200ms) ease-in-out both;
+    animation-delay: var(--step-delay, 0ms);
+}
+
+/* Slower than a footprint, because it is the arrival rather than one more
+   pace — and long enough to read as the map settling rather than blinking. */
+.wiz-room.is-arriving {
+    animation: wiz-step-in 900ms ease-out both;
+    animation-delay: var(--step-delay, 0ms);
+}
+
+/* Somebody who would rather the map did not perform. The flight itself is
+   handled in js/wizard.js, which cuts straight to the destination. */
+@media (prefers-reduced-motion: reduce) {
+    .wiz-reveal { animation: none; }
+    .wiz-print.is-stepping,
+    .wiz-arc.is-inking,
+    .wiz-room.is-arriving { animation: none; }
+}
+
 /* ---------- the room sheet ----------
    Sits inside .modal-overlay/.modal from style.css, so the window frame,
    the titlebar and the backdrop are the site's own. Only what goes in the
@@ -956,6 +1302,205 @@
 .admin-wiz-stage[data-locked="true"] .wiz-room,
 .admin-wiz-stage[data-locked="true"] .wiz-layer,
 .admin-wiz-stage[data-locked="true"] .wiz-trail { cursor: grab; }
+
+/* ---------- one thing's own lock ----------
+
+   Everything on the map is locked until it is let out, so the mark goes on
+   the ones that ARE loose. See markUnlocked in js/admin-wizard.js for why
+   that way round.
+
+   A dashed amber edge, which is the same language the marquee uses for
+   "this is a working state, not a finished one", and nothing at all in the
+   way of the drawing underneath. */
+.admin-wiz-stage .wiz-room.is-unlocked .wiz-room-name,
+.admin-wiz-stage .wiz-layer.is-unlocked {
+    outline: 1px dashed rgba(233, 200, 140, 0.75);
+    outline-offset: 2px;
+}
+
+.admin-wiz-stage .wiz-trail.is-unlocked { opacity: 1; }
+
+/* The move cursor only on the things that can actually be moved. Everything
+   else keeps the grab hand, because a press on it pans the map — which is
+   exactly what the cursor should promise. */
+.admin-wiz-stage[data-mode="move"] .wiz-room.is-unlocked,
+.admin-wiz-stage[data-mode="move"] .wiz-layer.is-unlocked { cursor: move; }
+
+/* The padlock, beside whatever was double-clicked.
+
+   Positioned in stage pixels by showLockPop, so `position: absolute` here
+   and the left/top come from the script. High z-index: it sits over the
+   names, the trails and the handles, all of which it may be covering by
+   design — it is the thing being pressed. */
+/* ---------- what a secret holds ----------
+
+   One row per room or trail, each with a cross on it. The list is the
+   control: reading what a secret reveals and changing it are the same
+   thing looked at from two sides, and a sentence you could only read meant
+   dropping one room took reselecting every other one on the map. */
+.admin-wiz-hold-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 4px 0 8px;
+    /* A secret can hold a great many rooms and this sits inside a form
+       inside a list row — without a ceiling, a large one pushes everything
+       below it off the screen. Raised from 230 when the names started
+       wrapping, since a wrapped row is two lines and the old ceiling showed
+       barely four of them. */
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.admin-wiz-hold-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.18);
+    /* Transparent borders the drop indicator colours in, so the rows do not
+       shift by a pixel the moment one is dragged over. */
+    border-top: 2px solid transparent;
+    border-bottom: 2px solid transparent;
+}
+
+.admin-wiz-hold-row:hover { background: rgba(0, 0, 0, 0.3); }
+
+/* The grip. The whole row is draggable, so this is a signpost rather than a
+   handle — which is why the cursor is set on the row and not just here. */
+.admin-wiz-hold-row { cursor: grab; }
+.admin-wiz-hold-row:active { cursor: grabbing; }
+
+.admin-wiz-hold-grip {
+    flex-shrink: 0;
+    color: var(--parchment-dim);
+    font-size: 12px;
+    line-height: 1;
+    opacity: 0.6;
+}
+
+.admin-wiz-hold-row:hover .admin-wiz-hold-grip { opacity: 1; }
+
+/* The step number — what this list is FOR now that it is an order rather
+   than a set. Tabular so the column does not jitter between 9 and 10. */
+.admin-wiz-hold-step {
+    flex-shrink: 0;
+    width: 16px;
+    color: var(--amber);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.admin-wiz-hold-row.is-dragging { opacity: 0.4; }
+
+/* Where it would land — above the row or below it, matching the midpoint
+   test in the drop handler. A line on the wrong edge is worse than no line:
+   it promises a position the drop will not honour. */
+.admin-wiz-hold-row.is-over { border-top-color: var(--amber-bright); }
+.admin-wiz-hold-row.is-over-after { border-bottom-color: var(--amber-bright); }
+
+/* The button inside a draggable row needs its own cursor back, and must not
+   start a drag of its own when it is pressed. */
+.admin-wiz-hold-drop { cursor: pointer; }
+
+/* Fixed width so the names line up down the list rather than starting at a
+   different place depending on whether it is a room or a trail. */
+.admin-wiz-hold-tag {
+    flex-shrink: 0;
+    width: 42px;
+    color: var(--amber);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+/* Wraps rather than ellipsing. A trail's name is two room names with an
+   arrow between them — "The One Eyed Witch Passage → Secret Passage (1)" —
+   and truncating that cuts off the half that says where it goes, which is
+   the half you are reading it for. There is no width at which that fits, so
+   the row gets taller instead.
+
+   overflow-wrap rather than plain wrapping, so a single long unbroken name
+   breaks instead of pushing the × off the end of the row. */
+.admin-wiz-hold-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+/* A record that has been deleted since it was added to the secret. Struck
+   through rather than dropped from the list, so there is something to press
+   the cross on. */
+.admin-wiz-hold-row.is-gone .admin-wiz-hold-name {
+    color: var(--parchment-dim);
+    text-decoration: line-through;
+}
+
+.admin-wiz-hold-drop {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    color: var(--parchment-dim);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.admin-wiz-hold-drop:hover {
+    background: rgba(180, 60, 50, 0.35);
+    color: #fff;
+}
+
+.admin-wiz-hold-empty {
+    margin: 4px 0 8px;
+    color: var(--parchment-dim);
+    font-size: 13px;
+    font-style: italic;
+}
+
+.admin-wiz-hold-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Sizing only. The colours come from `.admin-field select` in style.css,
+   which is how every other control in the admin panel is dressed — a
+   picker that styled itself would be the one field on the page that looked
+   like it came from somewhere else. It only needs to stop being full width,
+   so it can sit on a line with the two buttons. */
+.admin-wiz-hold-add {
+    width: auto;
+    max-width: 240px;
+}
+
+.admin-wiz-lockpop {
+    position: absolute;
+    z-index: 40;
+    padding: 4px;
+    border: 2px solid var(--chrome-border);
+    border-radius: 8px;
+    background: var(--chrome-fill);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+    white-space: nowrap;
+}
+
+.admin-wiz-lockpop[hidden] { display: none; }
+
+.admin-wiz-lockpop button {
+    /* Overrides the pill's own margin so the frame sits tight around it. */
+    margin: 0;
+    font-size: 12px;
+}
 
 .admin-wiz-modes {
     display: flex;
@@ -1545,7 +2090,15 @@ body.is-albus .admin-panel[data-panel="wizard"] .admin-form-actions button {
            dvh is the one on screen now. */
         height: clamp(360px, calc(100dvh - 190px), 900px);
     }
-    .wiz-head { padding: 10px 12px 8px; }
+    .wiz-head { padding: 0 12px; gap: 6px 12px; }
+    /* Less overhang on a phone, where the crest is smaller and 24px would
+       be most of its bottom banner. */
+    .wiz-crest { margin-top: -4px; margin-bottom: -14px; }
+    /* The crest keeps its own size here too — see .wiz-crest. Only the rail
+       tightens, because on a phone the title beside it has already dropped to
+       two lines and there is much less room to give away. */
+    .wiz-crest { max-width: 22vw; }
+    .wiz-blurb { font-size: 11px; }
     .wiz-search { width: calc(100% - 24px); }
     .wiz-tooltip { width: 190px; }
     .wiz-tip-thumb { height: 96px; }

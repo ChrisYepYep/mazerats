@@ -143,20 +143,40 @@ window.WizardMap = function WizardMap(options) {
     let gliding = 0;
     let lastFrame = 0;
 
+    /* The rate the CURRENT glide is easing at, which is GLIDE_RATE for
+       everything the reader does themselves and slower for the one thing the
+       map does to them.
+
+       Revealing a secret passage flies the view across the castle and down
+       onto it, and at the ordinary rate that is over in about a third of a
+       second — which reads as the map having cut, not travelled, and loses
+       the reader their place exactly the way an uneased zoom does. The point
+       of that movement is to be followed, so it is given its own rate rather
+       than the one tuned for a trackpad.
+
+       Reset by every glide that does not ask for a rate, so a slow flight
+       cannot leak into the next thing the reader scrolls. */
+    let glideRate = GLIDE_RATE;
+
     // After anything that moves the view directly — a drag, a resize — so the
     // glide does not pull it back to where it was going before.
     function settle() {
         wantZoom = zoom;
         wantPanX = panX;
         wantPanY = panY;
+        glideRate = GLIDE_RATE;
         if (gliding) { cancelAnimationFrame(gliding); gliding = 0; }
     }
 
-    function glideTo(nextZoom, nextPanX, nextPanY) {
+    function glideTo(nextZoom, nextPanX, nextPanY, rate) {
         wantZoom = nextZoom;
         const held = clampedPan(nextPanX, nextPanY, nextZoom);
         wantPanX = held.x;
         wantPanY = held.y;
+        // The newest request decides the rate, in flight or not: a reader who
+        // scrolls during a slow reveal gets their own scroll at the ordinary
+        // speed rather than being made to wait out the cinema.
+        glideRate = rate > 0 ? rate : GLIDE_RATE;
         if (gliding) return;
         lastFrame = performance.now();
         gliding = requestAnimationFrame(step);
@@ -167,7 +187,7 @@ window.WizardMap = function WizardMap(options) {
         lastFrame = now;
         // 1 - (1 - rate)^frames: the fraction of the gap to close given how
         // many 60Hz frames' worth of time has actually passed.
-        const k = 1 - Math.pow(1 - GLIDE_RATE, dt / 16.7);
+        const k = 1 - Math.pow(1 - glideRate, dt / 16.7);
         zoom += (wantZoom - zoom) * k;
         panX += (wantPanX - panX) * k;
         panY += (wantPanY - panY) * k;
@@ -249,7 +269,7 @@ window.WizardMap = function WizardMap(options) {
     /* Puts a point on the map in the middle of the frame, at a given zoom.
        Used by search, by the exits inside a room's sheet, by a /wizard/<id>
        link arriving cold, and by the editor's room list. */
-    function flyTo(xPct, yPct, toZoom, { smooth = true } = {}) {
+    function flyTo(xPct, yPct, toZoom, { smooth = true, rate = 0 } = {}) {
         const { w, h } = stageSize();
         const target = toZoom == null ? wantZoom
             : Math.max(map.minZoom || 1, Math.min(map.maxZoom || 6, toZoom));
@@ -264,7 +284,7 @@ window.WizardMap = function WizardMap(options) {
             applyTransform();
             return;
         }
-        glideTo(target, toPanX, toPanY);
+        glideTo(target, toPanX, toPanY, rate);
     }
 
     /* A point on the screen as a position on the map, in the same per cent
@@ -666,6 +686,24 @@ window.WizardMap = function WizardMap(options) {
                 el.src = layer.image;
                 el.alt = layer.name || "";
                 el.loading = "lazy";
+                /* An <img> is draggable by default, and that default eats
+                   the gesture. Press an image and move a pixel and the
+                   browser starts dragging the PICTURE — a ghost of it
+                   following the cursor, ready to be dropped into another
+                   window — which cancels the click and double-click that
+                   would have followed.
+
+                   It went unnoticed while every press on a picture began an
+                   editor drag, because that calls preventDefault and the
+                   native drag never got started. Locked pictures decline the
+                   press, so there was nothing left to suppress it, and
+                   double-clicking a picture in the editor stopped working
+                   while double-clicking a room — a <div>, not natively
+                   draggable — carried on.
+
+                   Off on the public map too, where dragging a piece of the
+                   castle out of the page was never something to offer. */
+                el.draggable = false;
             } else {
                 // A layer with no picture yet is still a real record with a
                 // real position, and the editor has to be able to find it in
@@ -1536,6 +1574,39 @@ window.WizardMap = function WizardMap(options) {
             rooms = payload.rooms || [];
             paths = payload.paths || [];
             layers = payload.layers || [];
+        },
+
+        /* Rooms and trails added to a map that is already on screen — which
+           is what unlocking a secret passage does.
+
+           Not setData: the public payload deliberately does not contain the
+           locked records, so they arrive later and on their own, and
+           replacing the whole map with a handful of them would empty the
+           castle. Added in place instead, and the caller re-renders.
+
+           Ids already present are skipped rather than duplicated. A visitor
+           who unlocks the same secret twice — two tabs, or a stored code
+           replayed on top of a fresh one — should get one Room of
+           Requirement, not two drawn on top of each other. Returns how many
+           were genuinely new, so the page can tell "you found something" from
+           "you already had this". */
+        addRecords(payload) {
+            const seenRoom = new Set(rooms.map(r => r.id));
+            const seenPath = new Set(paths.map(p => p.id));
+            let added = 0;
+            for (const room of (payload && payload.rooms) || []) {
+                if (!room || !room.id || seenRoom.has(room.id)) continue;
+                rooms.push(room);
+                seenRoom.add(room.id);
+                added++;
+            }
+            for (const path of (payload && payload.paths) || []) {
+                if (!path || !path.id || seenPath.has(path.id)) continue;
+                paths.push(path);
+                seenPath.add(path.id);
+                added++;
+            }
+            return added;
         },
         render,
         applyBands,

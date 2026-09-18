@@ -102,6 +102,7 @@ window.AdminWizard = (function () {
         restoreSelection();
         drawHandles();
         renderRoomList();
+        renderSecretList();
         renderInspector();
         renderMapSettings();
         updateDirty();
@@ -110,6 +111,40 @@ window.AdminWizard = (function () {
     function find(kind, id) {
         const list = kind === "room" ? data.rooms : kind === "path" ? data.paths : data.layers;
         return (list || []).find(r => r.id === id) || null;
+    }
+
+    /* ---------- one thing's own lock ----------
+
+       Whether this room, trail or picture may be dragged. Separate from the
+       whole-map lock in the toolbar, which is a master switch over the top
+       of these.
+
+       ABSENT MEANS LOCKED, and only an explicit false unlocks. That is the
+       right way round for two reasons. The map already exists — ninety-three
+       names laid out over weeks — and a new field that defaulted to
+       "unlocked" would silently make every one of them draggable again the
+       moment this shipped. And the common act in an editor this far along is
+       looking, not moving: the thing you nudge is the exception, so the
+       exception is what you say out loud.
+
+       Which is also why the visual cue is on the unlocked ones. Marking the
+       locked ones would put a badge on all ninety-three and tell you
+       nothing; marking the loose ones tells you exactly what you have opened
+       up and not yet put back. */
+    const isLocked = record => !record || record.locked !== false;
+
+    /* Unlocking is a save of its own rather than a pending change. The point
+       of a lock is that it is reliable — one that lived only in the browser
+       until somebody remembered to press Save would be a lock that came back
+       on after a refresh and a lock nobody trusted. */
+    async function setRecordLocked(kind, record, next) {
+        if (!record) return;
+        record.locked = !!next;
+        drawHandles();
+        renderInspector();
+        renderRoomList();
+        const ok = await saveOne(kind, record);
+        if (ok) say(next ? "Locked." : "Unlocked.", next ? "" : "good");
     }
 
     function markMoved(kind, id) {
@@ -185,16 +220,17 @@ window.AdminWizard = (function () {
 
     // ---------- modes ----------
 
+    /* One line each. These sit above the map and are read at a glance or not
+       at all — a paragraph there is a paragraph nobody finishes, and the
+       things worth knowing get lost inside it. Shortcuts that are not needed
+       to get started are left out rather than listed. */
     const MODE_HELP = {
-        move: "Drag a name, a trail or a picture to move it — drag the parchment to pan, scroll to zoom. PICK SEVERAL: shift-click each one, or shift-drag across bare parchment to draw a box round them, then drag any one to move the whole group. Arrow keys nudge, shift+arrows nudge further. Click a trail to select it, then click along it to add a bend.",
-        trail: "Click one room, then another, to lay a trail between them. Click a trail to select it — then click anywhere along it to add a bend, drag a dot to shape it, and double-click a dot to remove it. Its two ends, its bend and how near it comes to a name are all in the panel below the map.",
-        zoom: "Zoom to where you want something to appear, select it, then set the band. Things outside their band are shown here as ghosts so you can still find them."
+        move: "Double-click to unlock something, then drag it. Shift-drag the parchment to box-select. Arrows nudge.",
+        trail: "Click two rooms to join them. Click a trail to select, again to add a bend, double-click a dot to remove it.",
+        zoom: "Zoom to where something should appear, select it, set its band. Ghosts are outside their band."
     };
 
-    // Said instead of the above whenever the map is locked, because none of
-    // it is true then and a help line that describes the wrong thing is
-    // worse than no help line.
-    const LOCKED_HELP = "The map is locked: drag anywhere to pan, scroll to zoom, click to look at something. Nothing moves until you unlock it.";
+    const LOCKED_HELP = "The whole map is locked. Drag to pan, scroll to zoom.";
 
     function setMode(next) {
         mode = next;
@@ -280,9 +316,32 @@ window.AdminWizard = (function () {
             const el = view.elementFor(p.kind, p.id);
             if (el) el.classList.add("is-picked");
         }
+        markUnlocked();
         if (!selected) return;
         const el = view.elementFor(selected.kind, selected.id);
         if (el) el.classList.add("is-selected");
+    }
+
+    /* Marks the things that are NOT locked.
+
+       This way round on purpose. Everything starts locked and most of it
+       stays that way, so badging the locked ones would put a mark on all
+       ninety-three names and say nothing; badging the loose ones shows you
+       at a glance exactly what you have opened up — and, at the end of a
+       session, what you have left open.
+
+       Called from restoreSelection because that already runs after every
+       render, which is when the elements these classes belong on are new. */
+    function markUnlocked() {
+        els.canvas.querySelectorAll(".is-unlocked")
+            .forEach(el => el.classList.remove("is-unlocked"));
+        for (const [kind, list] of [["room", data.rooms], ["path", data.paths], ["layer", data.layers]]) {
+            for (const record of list || []) {
+                if (isLocked(record)) continue;
+                const el = view.elementFor(kind, record.id);
+                if (el) el.classList.add("is-unlocked");
+            }
+        }
     }
 
     // ---------- dragging ----------
@@ -353,7 +412,14 @@ window.AdminWizard = (function () {
         /* Locked: nothing here claims the press, so it reaches the map and
            pans. Checked before every branch below, including the handles and
            grips — a lock that still let a trail's control point be dragged
-           would be a lock nobody trusted. */
+           would be a lock nobody trusted.
+
+           That is the whole-map lock. Each thing on the map also has its own,
+           and the per-thing checks are in the branches below, at the point
+           where the record is known. They work the same way: the branch
+           declines the press instead of claiming it, and the press falls
+           through to the map. Nothing has to say "this is locked" — the map
+           simply pans, which is what the person was trying to do. */
         if (locked) return;
 
         /* The rubber band. Shift on empty parchment, because shift on
@@ -372,7 +438,7 @@ window.AdminWizard = (function () {
         const handle = e.target.closest(".wiz-handle");
         if (handle) {
             const path = find("path", handle.dataset.pathId);
-            if (!path) return;
+            if (!path || isLocked(path)) return;
             const index = Number(handle.dataset.index);
             return beginDrag(handle, e, {
                 kind: "handle", path, index,
@@ -385,7 +451,7 @@ window.AdminWizard = (function () {
         const grip = e.target.closest(".wiz-grip");
         if (grip) {
             const layer = find("layer", grip.dataset.layerId);
-            if (!layer) return;
+            if (!layer || isLocked(layer)) return;
             return beginDrag(grip, e, {
                 kind: "resize", record: layer,
                 from: view.screenToPct(e.clientX, e.clientY),
@@ -399,7 +465,17 @@ window.AdminWizard = (function () {
         if (target) {
             const kind = target.dataset.kind;
             const record = find(kind, target.dataset.id);
-            if (!record) return;
+            /* Locked: let go of the press entirely, so the map pans under
+               it as though the name were not there.
+
+               Note what this does NOT stop. Selecting is done by onMapClick,
+               which runs on the click at the end of a gesture and ignores
+               any gesture that moved — so a locked room can still be
+               CLICKED to select it and read it in the inspector, and only
+               DRAGGING it does something different. That is the distinction
+               worth keeping: locking a thing should stop it being moved by
+               accident, not put it out of reach. */
+            if (!record || isLocked(record)) return;
 
             /* Pressing something already picked drags the WHOLE selection.
 
@@ -435,7 +511,7 @@ window.AdminWizard = (function () {
         const trail = e.target.closest(".wiz-trail");
         if (trail) {
             const path = find("path", trail.dataset.id);
-            if (!path || !Array.isArray(path.points)) return;
+            if (!path || isLocked(path) || !Array.isArray(path.points)) return;
             return beginDrag(trail, e, {
                 kind: "trail", record: path,
                 from: view.screenToPct(e.clientX, e.clientY),
@@ -450,7 +526,11 @@ window.AdminWizard = (function () {
     function groupOrigins() {
         return picked.map(p => {
             const record = find(p.kind, p.id);
-            if (!record) return null;
+            // A locked member is left where it is rather than carried along.
+            // The rubber band picks up whatever it crosses, locked or not, so
+            // without this a box drawn over a corner of the map would drag
+            // the locked things in it too.
+            if (!record || isLocked(record)) return null;
             return p.kind === "path"
                 ? { kind: p.kind, record, points: (record.points || []).map(q => q.slice()) }
                 : { kind: p.kind, record, x: record.x, y: record.y };
@@ -696,6 +776,10 @@ window.AdminWizard = (function () {
        screen of confetti, none of which is the one being worked on. */
     function drawHandles() {
         els.handles.innerHTML = "";
+        /* A locked thing draws nothing to grab. Dots and grips that cannot
+           be dragged are worse than none: they say the thing is ready to be
+           shaped, and the only way to discover otherwise is to try. */
+        if (selected && isLocked(find(selected.kind, selected.id))) return;
         if (selected && selected.kind === "layer") return drawGrip(find("layer", selected.id));
         /* Shown whenever a trail is selected, in any mode — not only in
            Trails mode as before. Selecting a trail and finding no way to
@@ -793,6 +877,14 @@ window.AdminWizard = (function () {
     // ---------- clicks on the map ----------
 
     function onMapClick(e) {
+        /* The padlock is a control sitting on the map, not part of it. Its
+           own handler does the work; everything below would only take the
+           selection away from the thing it belongs to. */
+        if (e.target.closest(".admin-wiz-lockpop")) return;
+        // Any other click puts it away — including the one that starts a
+        // double-click, which showLockPop then puts back.
+        hideLockPop();
+
         if (view.wasDrag()) return;
 
         /* A gesture that MOVED something is not a click on it.
@@ -841,6 +933,7 @@ window.AdminWizard = (function () {
            selects that one rather than quietly reshaping this one; and
            never while locked, or the lock would have a hole in it. */
         const onSelectedTrail = selected && selected.kind === "path" && !locked && !addToSelection
+            && !isLocked(find("path", selected.id))
             && (e.target.closest(".wiz-handle-line") || (trail && trail.dataset.id === selected.id));
 
         if (mode === "trail") {
@@ -848,6 +941,35 @@ window.AdminWizard = (function () {
             if (onSelectedTrail) return addBendAt(e.clientX, e.clientY);
             if (trail) return select("path", trail.dataset.id, addToSelection);
             return select(null);
+        }
+
+        /* Locked things are inert to a plain click: no selection, no
+           inspector, nothing. The press already fell through to the map and
+           panned it; this is the click at the end of that same gesture, and
+           it should do as little.
+
+           Returning rather than falling through to the deselect at the
+           bottom, on purpose. Treating a locked room as though it were bare
+           parchment would CLEAR the selection, so clicking one while working
+           on something else would quietly throw that work's selection away —
+           a locked thing should be incapable of doing anything, including
+           that.
+
+           Double-click is the way back in: it selects the thing and offers
+           its padlock. Shift-dragging a box across bare parchment also still
+           picks up whatever it crosses, locked or not, which is what keeps
+           choosing a dozen rooms for a secret from meaning a dozen
+           double-clicks.
+
+           Only in this mode. Trails mode clicks rooms to say which two a new
+           trail runs between, which moves nothing and is not what a lock is
+           protecting against — locking every room would otherwise mean no
+           new trail could be laid at all without unlocking both of its
+           ends. */
+        const hit = room || trail || layer;
+        if (hit) {
+            const hitKind = hit === trail ? "path" : hit.dataset.kind;
+            if (isLocked(find(hitKind, hit.dataset.id))) return;
         }
 
         if (onSelectedTrail) return addBendAt(e.clientX, e.clientY);
@@ -930,19 +1052,86 @@ window.AdminWizard = (function () {
         return Math.hypot(p.x - (a[0] + vx * t), p.y - (a[1] + vy * t));
     }
 
+    /* ---------- the padlock ----------
+
+       Double-clicking anything on the map puts a single button beside it
+       that locks or unlocks that one thing.
+
+       Beside it, on the map, rather than in the inspector below: the whole
+       reason a thing is locked is that you are looking at the map and do not
+       want it to move, so the moment you want it to move is a moment you are
+       looking at the map. A lock control in a panel underneath would mean
+       finding the panel, finding the record in it, and looking back up to
+       see whether the right thing had come loose.
+
+       It is positioned in the STAGE rather than the canvas, so it is a
+       constant size at every zoom — a padlock that shrinks with the map is a
+       padlock you cannot press when zoomed out. */
+    let lockPop = null;
+    let lockPopFor = null;
+
+    function hideLockPop() {
+        lockPopFor = null;
+        if (lockPop) lockPop.hidden = true;
+    }
+
+    function showLockPop(kind, record, clientX, clientY) {
+        if (!lockPop || !els.stage) return;
+        lockPopFor = { kind, id: record.id };
+        const shut = isLocked(record);
+        const btn = lockPop.querySelector("button");
+        btn.textContent = shut ? "🔒 Locked — unlock it" : "🔓 Unlocked — lock it";
+        btn.className = shut ? "admin-action-pill" : "admin-action-pill admin-pill-solid";
+        lockPop.hidden = false;
+
+        /* Placed where the pointer is, then pulled back inside the stage if
+           that would hang it off an edge. Measured after it is visible,
+           because a hidden element has no width to work from. */
+        const box = els.stage.getBoundingClientRect();
+        const size = lockPop.getBoundingClientRect();
+        const x = Math.max(6, Math.min(box.width - size.width - 6, clientX - box.left - size.width / 2));
+        const y = Math.max(6, Math.min(box.height - size.height - 6, clientY - box.top + 14));
+        lockPop.style.left = `${x}px`;
+        lockPop.style.top = `${y}px`;
+    }
+
     function onMapDoubleClick(e) {
+        if (!ctx.canWrite()) return;
+
+        /* A trail's control point: double-clicking one removes it, which is
+           the older meaning of this gesture and stays as it was. Only
+           reachable on an unlocked trail in the first place, since a locked
+           one draws no handles. */
         const handle = e.target.closest(".wiz-handle");
-        if (!handle || !ctx.canWrite()) return;
-        const path = find("path", handle.dataset.pathId);
-        const index = Number(handle.dataset.index);
-        if (!path) return;
-        if (path.points.length <= 2) return say("A trail needs at least two points.", "bad");
-        if (index === 0 || index === path.points.length - 1) {
-            return say("That is an end of the trail — it follows its room. Repoint it below instead.", "");
+        if (handle) {
+            const path = find("path", handle.dataset.pathId);
+            const index = Number(handle.dataset.index);
+            if (!path) return;
+            if (path.points.length <= 2) return say("A trail needs at least two points.", "bad");
+            if (index === 0 || index === path.points.length - 1) {
+                return say("That is an end of the trail — it follows its room. Repoint it below instead.", "");
+            }
+            path.points.splice(index, 1);
+            redrawTrail(path);
+            markMoved("path", path.id);
+            return;
         }
-        path.points.splice(index, 1);
-        redrawTrail(path);
-        markMoved("path", path.id);
+
+        /* Anything else on the map: the padlock for that one thing.
+
+           This is also the only way to take hold of something locked — a
+           locked room lets a single click straight through to the map, so
+           double-click has to both select it and offer the lock, or there
+           would be no route back to a thing once it was shut. */
+        const target = e.target.closest(".wiz-room, .wiz-layer, .wiz-trail");
+        if (!target) return hideLockPop();
+        const kind = target.classList.contains("wiz-trail") ? "path" : target.dataset.kind;
+        const record = find(kind, target.dataset.id);
+        if (!record) return hideLockPop();
+
+        select(kind, record.id);
+        showLockPop(kind, record, e.clientX, e.clientY);
+        e.preventDefault();
     }
 
     // ---------- the inspector ----------
@@ -1626,6 +1815,14 @@ window.AdminWizard = (function () {
             // has a hole in it exactly the width of an arrow key.
             if (locked) return say("The map is locked. Unlock it to move things.", "");
 
+            /* And each thing's own lock, for the same reason. Said once here
+               rather than silently skipping: a nudge that moves four of five
+               picked names is worse than one that moves none, because the
+               one that stayed put is not obviously the one that is locked. */
+            if (picked.some(p => isLocked(find(p.kind, p.id)))) {
+                return say("Something picked is locked.", "");
+            }
+
             // Everything picked, together, by the same step.
             if (picked.length > 1) {
                 for (const p of picked) {
@@ -1772,6 +1969,491 @@ window.AdminWizard = (function () {
             }
             els.roomList.appendChild(row);
         }
+    }
+
+    /* ---------- secret passages ----------
+
+       A secret is a word and a list of things that word brings onto the map.
+       The rooms and trails it names are subtracted from the public payload
+       by netlify/functions/wizard.js, so this panel is the only place they
+       can be seen without the code.
+
+       Which is why the list says how many rooms and trails each one holds,
+       and names them: a secret that holds nothing is a code that does
+       nothing, and a secret holding the wrong room is a room that has
+       silently vanished from the public map. Both are invisible from the
+       outside, and this list is where they have to be caught. */
+    let openSecretId = null;
+
+    /* The heading of one row in the list. Its own function because the open
+       form repaints it as things are added and removed, rather than the whole
+       list being rebuilt underneath the form being used. */
+    function secretSummaryHtml(secret) {
+        const rooms = (secret.rooms || []).length;
+        const paths = (secret.paths || []).length;
+        const holds = [
+            rooms ? `${rooms} room${rooms === 1 ? "" : "s"}` : "",
+            paths ? `${paths} trail${paths === 1 ? "" : "s"}` : ""
+        ].filter(Boolean).join(" and ") || "nothing yet";
+        return `
+            <h3>${esc(secret.name || "Untitled secret")}${
+                secret.enabled === false ? ` <span class="admin-wiz-hidden-tag">off</span>` : ""
+            }</h3>
+            <p class="row-creator">Opens to <strong>${esc(secret.code || "— no code —")}</strong> · holds ${esc(holds)}</p>
+        `;
+    }
+
+    function renderSecretList() {
+        if (!els.secretList) return;
+        const secrets = (data.reveals || []).slice()
+            .sort((a, b) => (a.order || 0) - (b.order || 0) || (a.name || "").localeCompare(b.name || ""));
+
+        els.secretList.innerHTML = "";
+        if (!secrets.length) {
+            els.secretList.innerHTML = `<p class="admin-empty">No secret passages yet. Everything on this map is on it.</p>`;
+            return;
+        }
+
+        for (const secret of secrets) {
+            const row = document.createElement("div");
+            row.className = "chrome-list-row admin-row admin-wiz-row";
+            row.innerHTML = `
+                <div class="admin-wiz-row-head">
+                    <div class="row-info" data-secret="${esc(secret.id)}">${secretSummaryHtml(secret)}</div>
+                    <div class="admin-row-actions">
+                        <button type="button" class="btn admin-edit-btn">${openSecretId === secret.id ? "Close" : "Edit"}</button>
+                    </div>
+                </div>
+                <div class="admin-wiz-row-form"></div>
+            `;
+            row.querySelector(".admin-edit-btn").addEventListener("click", () => {
+                openSecretId = openSecretId === secret.id ? null : secret.id;
+                renderSecretList();
+            });
+            if (openSecretId === secret.id) {
+                row.classList.add("is-open");
+                row.querySelector(".admin-wiz-row-form").appendChild(buildSecretForm(secret));
+            }
+            els.secretList.appendChild(row);
+        }
+    }
+
+    /* What a secret holds, as one removable row each.
+
+       A read-only sentence listing the names was enough to check the thing
+       and useless for changing it: the only way to drop one room was to
+       reselect every other room on the map and press Take selection again.
+       Rows with a cross on them are the ordinary answer, and the ordinary
+       answer is right here.
+
+       A row whose record has since been deleted still gets a row, marked
+       gone. Skipping it would hide the one fault this panel exists to
+       surface — and leave no way to clear the dead id out. */
+    /* The running order of one secret, as a list of "kind:id".
+
+       `sequence` is the stored answer. Everything else here is keeping it
+       honest against the two membership arrays, which are what actually
+       decide what the secret holds: an id added since the order was last
+       arranged has to appear, and an id removed has to go. Reconciled on
+       every read rather than trusted, so no path through the editor can
+       leave the order disagreeing with the contents.
+
+       The fallback for a secret with no sequence is trails first and rooms
+       after — which is the order they were drawn in before any of this
+       existed, so an old secret keeps playing the way it always has until
+       somebody drags something. */
+    function secretSequence(secret) {
+        const held = new Set([
+            ...(secret.paths || []).map(id => `path:${id}`),
+            ...(secret.rooms || []).map(id => `room:${id}`)
+        ]);
+        const kept = (secret.sequence || []).filter(entry => held.has(entry));
+        for (const entry of kept) held.delete(entry);
+        // Whatever the stored order did not mention, in the old order.
+        const rest = [
+            ...(secret.paths || []).map(id => `path:${id}`),
+            ...(secret.rooms || []).map(id => `room:${id}`)
+        ].filter(entry => held.has(entry));
+        return kept.concat(rest);
+    }
+
+    /* Writes an order back, and keeps the two membership arrays pointing the
+       same way so the list and the animation cannot disagree. */
+    function setSecretSequence(secret, sequence) {
+        secret.sequence = sequence.slice();
+        secret.rooms = sequence.filter(e => e.startsWith("room:")).map(e => e.slice(5));
+        secret.paths = sequence.filter(e => e.startsWith("path:")).map(e => e.slice(5));
+    }
+
+    function heldRowsHtml(secret) {
+        const rows = secretSequence(secret).map(entry => {
+            const [kind, id] = entry.split(/:(.+)/);
+            const record = find(kind, id);
+            return {
+                kind, id, entry,
+                label: record ? (kind === "room" ? record.name : trailTitle(record)) : `${id} — gone`,
+                gone: !record
+            };
+        });
+        if (!rows.length) {
+            return `<p class="admin-wiz-hold-empty">Nothing yet — add a room below.</p>`;
+        }
+        return rows.map((r, i) => `
+            <div class="admin-wiz-hold-row${r.gone ? " is-gone" : ""}" draggable="true"
+                 data-entry="${esc(r.entry)}" data-at="${i}">
+                <span class="admin-wiz-hold-grip" aria-hidden="true">⠿</span>
+                <span class="admin-wiz-hold-step">${i + 1}</span>
+                <span class="admin-wiz-hold-tag">${r.kind === "room" ? "Room" : "Trail"}</span>
+                <span class="admin-wiz-hold-name">${esc(r.label)}</span>
+                <button type="button" class="admin-wiz-hold-drop" data-drop="${r.kind}:${esc(r.id)}"
+                        title="Take it out of this secret" aria-label="Remove ${esc(r.label)}">&times;</button>
+            </div>
+        `).join("");
+    }
+
+    /* The picker for adding one. Rooms first and trails after, because a
+       trail almost never needs adding by hand any more — the endpoint rule in
+       netlify/functions/wizard.js brings back every trail touching a revealed
+       room on its own. It stays available for the case that rule cannot
+       reach: a trail you want revealed whose rooms are both already public. */
+    function holdPickerHtml(secret) {
+        const heldRooms = new Set(secret.rooms || []);
+        const heldPaths = new Set(secret.paths || []);
+        const rooms = (data.rooms || [])
+            .filter(r => !heldRooms.has(r.id))
+            .slice()
+            .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        const paths = (data.paths || [])
+            .filter(p => !heldPaths.has(p.id))
+            .slice()
+            .sort((a, b) => trailTitle(a).localeCompare(trailTitle(b)));
+        return `
+            <select class="admin-wiz-hold-add">
+                <option value="">Add a room…</option>
+                <optgroup label="Rooms">
+                    ${rooms.map(r => `<option value="room:${esc(r.id)}">${esc(r.name)}${r.note ? ` (${esc(r.note)})` : ""}</option>`).join("")}
+                </optgroup>
+                <optgroup label="Trails — usually automatic">
+                    ${paths.map(p => `<option value="path:${esc(p.id)}">${esc(trailTitle(p))}</option>`).join("")}
+                </optgroup>
+            </select>
+        `;
+    }
+
+    function buildSecretForm(secret) {
+        const form = document.createElement("form");
+        form.className = "admin-form is-open admin-wiz-secret-form";
+        form.innerHTML = `
+            ${field("Name", `<input type="text" name="name" value="${esc(secret.name || "")}" placeholder="The One-Eyed Witch Passage">`)}
+            ${field("Code", `<input type="text" name="code" value="${esc(secret.code || "")}" placeholder="dissendium" autocomplete="off" spellcheck="false">`)}
+            ${field("Clue — public", `<input type="text" name="hint" value="${esc(secret.hint || "")}" placeholder="A statue on the third floor is not as solid as she looks.">`)}
+            ${field("Says on opening", `<input type="text" name="message" value="${esc(secret.message || "")}" placeholder="The statue's hump slides aside.">`)}
+
+            <div class="admin-field admin-wiz-holds" data-block="holds">
+                <span>Reveals</span>
+                <div class="admin-wiz-hold-list"></div>
+                <div class="admin-row-actions admin-wiz-hold-tools"></div>
+            </div>
+
+            <div class="admin-field admin-wiz-holds" data-block="focus">
+                <span>Where the map flies</span>
+                <p class="admin-wiz-holds-list" data-focus-text></p>
+                <div class="admin-row-actions">
+                    <button type="button" class="btn" data-act="here">Pin the map above</button>
+                    <button type="button" class="btn" data-act="auto">Automatic</button>
+                </div>
+                <p class="admin-hint">When the code is typed, the map travels to the passage. <strong>Automatic</strong> frames whatever was revealed — usually right. <strong>Pin</strong> sends it to the map above exactly as it sits.</p>
+            </div>
+
+            ${field("Live", `<input type="checkbox" name="enabled" ${secret.enabled === false ? "" : "checked"}>`, true)}
+            <p class="admin-hint">Off puts its rooms back on the public map.</p>
+
+            <div class="admin-form-actions">
+                <button type="submit" class="admin-action-pill admin-pill-solid">Save the secret</button>
+                <button type="button" class="admin-action-pill admin-wiz-cancel">Close</button>
+                <button type="button" class="admin-action-pill admin-danger-pill" data-act="delete">Delete it</button>
+            </div>
+        `;
+
+        /* Repaints just the two blocks that change without the form being
+           retyped, so editing a row does not rebuild the form under the
+           person editing it. */
+        function paintHolds() {
+            form.querySelector(".admin-wiz-hold-list").innerHTML = heldRowsHtml(secret);
+            form.querySelector(".admin-wiz-hold-tools").innerHTML = `
+                ${holdPickerHtml(secret)}
+                <button type="button" class="btn" data-act="take">Add map selection</button>
+                ${(secret.rooms || []).length + (secret.paths || []).length
+                    ? `<button type="button" class="btn" data-act="clear">Clear all</button>` : ""}
+            `;
+            refreshSecretRowSummary(secret);
+        }
+
+        function paintFocus() {
+            form.querySelector("[data-focus-text]").textContent =
+                secret.focusX == null || secret.focusY == null
+                    ? "Automatic — it frames whatever it reveals"
+                    : `Pinned to ${Number(secret.focusX).toFixed(1)}%, ${Number(secret.focusY).toFixed(1)}% at ${Number(secret.focusZoom || 3).toFixed(1)}× zoom`;
+        }
+
+        paintHolds();
+        paintFocus();
+
+        /* ---------- dragging the order about ----------
+
+           The list IS the running order — top to bottom is the order things
+           are drawn when the passage opens — so rearranging it by hand is the
+           obvious way to say what happens when.
+
+           Plain HTML5 drag and drop rather than a pointer-move
+           implementation. The rows are a short list in a scrolling box, the
+           browser already handles the drag image, the autoscroll and the
+           escape-to-cancel, and every one of those is a thing that would have
+           to be written and got wrong otherwise.
+
+           The drop lands BEFORE the row it was let go over, or at the end
+           when it is dropped past the last one. Worked out from the pointer's
+           position within the row rather than from the row's index, so
+           dragging something downward past its own position does what the
+           hand meant rather than landing one short. */
+        let dragEntry = null;
+
+        const holdList = () => form.querySelector(".admin-wiz-hold-list");
+
+        form.addEventListener("dragstart", e => {
+            const row = e.target.closest(".admin-wiz-hold-row");
+            if (!row) return;
+            dragEntry = row.dataset.entry;
+            row.classList.add("is-dragging");
+            e.dataTransfer.effectAllowed = "move";
+            // Firefox refuses to start a drag at all without something set.
+            try { e.dataTransfer.setData("text/plain", dragEntry); } catch (err) { /* older browsers */ }
+        });
+
+        form.addEventListener("dragend", () => {
+            dragEntry = null;
+            const list = holdList();
+            if (!list) return;
+            list.querySelectorAll(".is-dragging, .is-over, .is-over-after")
+                .forEach(el => el.classList.remove("is-dragging", "is-over", "is-over-after"));
+        });
+
+        form.addEventListener("dragover", e => {
+            if (!dragEntry) return;
+            const list = holdList();
+            if (!list || !list.contains(e.target)) return;
+            e.preventDefault();               // without this, no drop event
+            e.dataTransfer.dropEffect = "move";
+            const row = e.target.closest(".admin-wiz-hold-row");
+            list.querySelectorAll(".is-over, .is-over-after")
+                .forEach(el => el.classList.remove("is-over", "is-over-after"));
+            if (!row || row.dataset.entry === dragEntry) return;
+            // The line goes where it will actually land — above the row or
+            // below it — decided by the same midpoint test the drop uses.
+            const box = row.getBoundingClientRect();
+            row.classList.add(e.clientY > box.top + box.height / 2 ? "is-over-after" : "is-over");
+        });
+
+        form.addEventListener("drop", async e => {
+            if (!dragEntry) return;
+            const list = holdList();
+            if (!list || !list.contains(e.target)) return;
+            e.preventDefault();
+
+            const order = secretSequence(secret).filter(entry => entry !== dragEntry);
+            const row = e.target.closest(".admin-wiz-hold-row");
+            if (!row) {
+                order.push(dragEntry);            // dropped below the last row
+            } else {
+                const box = row.getBoundingClientRect();
+                const below = e.clientY > box.top + box.height / 2;
+                const at = order.indexOf(row.dataset.entry);
+                if (at === -1) order.push(dragEntry);
+                else order.splice(below ? at + 1 : at, 0, dragEntry);
+            }
+
+            setSecretSequence(secret, order);
+            dragEntry = null;
+            paintHolds();
+            if (await saveSecret(secret)) say("Reordered.", "good");
+        });
+
+        // Adding one, from the picker.
+        form.addEventListener("change", async e => {
+            const pick = e.target.closest(".admin-wiz-hold-add");
+            if (!pick || !pick.value) return;
+            // Onto the end of the running order, which is where a new step
+            // belongs until somebody says otherwise.
+            setSecretSequence(secret, secretSequence(secret).concat([pick.value]));
+            paintHolds();
+            if (await saveSecret(secret)) say("Added.", "good");
+        });
+
+        form.addEventListener("click", async e => {
+            /* Taking one out. Before the data-act handler below, because a
+               row's cross is a button too and would otherwise fall through
+               to it and match nothing. */
+            const drop = e.target.closest("[data-drop]");
+            if (drop) {
+                setSecretSequence(secret,
+                    secretSequence(secret).filter(entry => entry !== drop.dataset.drop));
+                paintHolds();
+                if (await saveSecret(secret)) say("Removed.", "");
+                return;
+            }
+
+            const btn = e.target.closest("button[data-act]");
+            if (!btn) return;
+            const act = btn.dataset.act;
+
+            /* ADDS the map selection rather than replacing what is held.
+                 It used to replace, which was the only behaviour available
+                 when the list could not be edited a row at a time — and it
+                 meant building up a secret from two corners of the map was
+                 impossible. Now that a row can be removed on its own, adding
+                 is the more useful half and the destructive one has a button
+                 of its own that says what it does. */
+            if (act === "take") {
+                if (!picked.length) return say("Nothing selected.", "bad");
+                const rooms = picked.filter(p => p.kind === "room").map(p => p.id);
+                const paths = picked.filter(p => p.kind === "path").map(p => p.id);
+                if (!rooms.length && !paths.length) {
+                    return say("Pictures can't be held back — pick rooms or trails.", "bad");
+                }
+                const order = secretSequence(secret);
+                const before = order.length;
+                const wanted = paths.map(id => `path:${id}`).concat(rooms.map(id => `room:${id}`));
+                setSecretSequence(secret, [...new Set(order.concat(wanted))]);
+                const added = secretSequence(secret).length - before;
+                paintHolds();
+                if (await saveSecret(secret)) {
+                    say(added ? `Added ${added}.` : "Already held.", added ? "good" : "");
+                }
+                return;
+            }
+            if (act === "clear") {
+                if (!confirm("Take everything out of this secret?")) return;
+                setSecretSequence(secret, []);
+                paintHolds();
+                if (await saveSecret(secret)) say("Cleared.", "");
+                return;
+            }
+            if (act === "here") {
+                const map = view.getMap();
+                /* The middle of the frame as it sits, which is what "use the
+                   view above" has to mean — the same thing the map settings
+                   panel's Set start does. */
+                const at = view.screenToPct(
+                    els.stage.getBoundingClientRect().left + els.stage.clientWidth / 2,
+                    els.stage.getBoundingClientRect().top + els.stage.clientHeight / 2
+                );
+                secret.focusX = Math.round(at.x * 10) / 10;
+                secret.focusY = Math.round(at.y * 10) / 10;
+                secret.focusZoom = Math.round(view.getZoom() * 100) / 100;
+                paintFocus();
+                if (await saveSecret(secret)) say("Saved.", "good");
+                return;
+            }
+            if (act === "auto") {
+                secret.focusX = null;
+                secret.focusY = null;
+                secret.focusZoom = null;
+                paintFocus();
+                if (await saveSecret(secret)) say("Automatic.", "");
+                return;
+            }
+            if (act === "delete") {
+                if (!confirm(`Delete "${secret.name || secret.id}"? Its rooms go back on the public map.`)) return;
+                try {
+                    await ctx.api.deleteWizardItem(ctx.token(), "reveal", secret.id);
+                } catch (err) {
+                    if (err.status === 401) return ctx.lockOut();
+                    return say("Could not delete — " + (err.message || "try again."), "bad");
+                }
+                openSecretId = null;
+                say("Deleted.", "good");
+                await load();
+            }
+        });
+
+        form.querySelector(".admin-wiz-cancel").addEventListener("click", () => {
+            openSecretId = null;
+            renderSecretList();
+        });
+
+        form.addEventListener("submit", async e => {
+            e.preventDefault();
+            const read = name => form.querySelector(`[name="${name}"]`);
+            secret.name = read("name").value.trim();
+            secret.code = read("code").value.trim();
+            secret.hint = read("hint").value.trim();
+            secret.message = read("message").value.trim();
+            secret.enabled = read("enabled").checked;
+            if (!secret.code) return say("It needs a code.", "bad");
+            if (await saveSecret(secret)) {
+                say("Saved.", "good");
+                // The heading, not the whole list: rebuilding it here would
+                // throw away the form that was just submitted from, along
+                // with wherever the page was scrolled to.
+                refreshSecretRowSummary(secret);
+            }
+        });
+
+        return form;
+    }
+
+    /* Saves, and leaves the screen alone.
+
+       It used to re-render the whole list, which rebuilt the open form — and
+       that is unusable once the form contains a list you edit a row at a
+       time: every removal threw away the form you were working in, along
+       with anything typed into it and where you had scrolled to. The caller
+       now repaints the part that changed. */
+    async function saveSecret(secret) {
+        try {
+            await ctx.api.updateWizardItem(ctx.token(), "reveal", secret);
+        } catch (err) {
+            if (err.status === 401) { ctx.lockOut(); return false; }
+            say("Could not save — " + (err.message || "try again."), "bad");
+            return false;
+        }
+        return true;
+    }
+
+    /* The row summary at the top of a secret — "holds 3 rooms and 2 trails".
+       Kept in step by hand because saveSecret no longer redraws the list, and
+       a count that disagrees with the rows underneath it is worse than no
+       count. */
+    function refreshSecretRowSummary(secret) {
+        const row = els.secretList && els.secretList.querySelector(`[data-secret="${secret.id}"]`);
+        if (row) row.innerHTML = secretSummaryHtml(secret);
+    }
+
+    async function addSecret() {
+        if (!ctx.canWrite()) return;
+        let created;
+        try {
+            created = await ctx.api.createWizardItem(ctx.token(), "reveal", {
+                name: "A new secret",
+                // Unique on the face of it, and useless on purpose: a blank
+                // code would match the empty guesses the endpoint already
+                // throws away, and a memorable default would be a code that
+                // shipped by accident.
+                code: `change-me-${Date.now().toString(36)}`,
+                hint: "",
+                message: "",
+                rooms: picked.filter(p => p.kind === "room").map(p => p.id),
+                paths: picked.filter(p => p.kind === "path").map(p => p.id),
+                enabled: false
+            });
+        } catch (err) {
+            if (err.status === 401) return ctx.lockOut();
+            return say("Could not add it — " + (err.message || "try again."), "bad");
+        }
+        await load();
+        openSecretId = created.id;
+        renderSecretList();
+        say("Added, not live yet.", "good");
     }
 
     function imageFieldHtml(name, label, current) {
@@ -1928,7 +2610,8 @@ window.AdminWizard = (function () {
         const map = view.getMap();
         els.mapForm.innerHTML = `
             ${field("Map title", `<input type="text" name="title" value="${esc(map.title || "")}">`)}
-            ${field("Intro line — shown under the title", `<input type="text" name="intro" value="${esc(map.intro || "")}">`)}
+            ${field("Intro line — shown under the title", `<input type="text" name="intro" value="${esc(map.intro || "")}" placeholder="An interactive map of Origins Hogwarts">`)}
+            <p class="admin-hint">Leave it empty and the page shows the line in the placeholder above, which is its default.</p>
             ${field("Credit", `<input type="text" name="credit" value="${esc(map.credit || "")}" placeholder="Map created by…">`)}
 
             <div class="admin-wiz-images">
@@ -2081,6 +2764,8 @@ window.AdminWizard = (function () {
             lockBtn: $("wiz-admin-lock"),
             roomList: $("wiz-rooms-list"),
             roomSearch: $("wiz-rooms-search"),
+            secretList: $("wiz-secrets-list"),
+            addSecretBtn: $("wiz-add-secret-btn"),
             /* Two of them, and both mean the same thing: the pill in the
                panel header and the one in the editor's own Add group. They
                are collected as a list rather than looked up singly because
@@ -2091,6 +2776,24 @@ window.AdminWizard = (function () {
             mapForm: $("wiz-map-form")
         };
         if (!els.stage) return;
+
+        /* The one-thing padlock. Kept in its own variable rather than on els
+           because showLockPop and hideLockPop are called from a dozen places
+           and `lockPop` reads better than `els.lockPop` at every one of
+           them. */
+        if (els.addSecretBtn) els.addSecretBtn.addEventListener("click", addSecret);
+
+        lockPop = $("wiz-admin-lockpop");
+        const lockOneBtn = $("wiz-admin-lock-one");
+        if (lockOneBtn) {
+            lockOneBtn.addEventListener("click", async () => {
+                if (!lockPopFor) return;
+                const { kind, id } = lockPopFor;
+                const record = find(kind, id);
+                hideLockPop();
+                await setRecordLocked(kind, record, !isLocked(record));
+            });
+        }
 
         view = WizardMap({
             stage: els.stage,
@@ -2107,6 +2810,9 @@ window.AdminWizard = (function () {
             trailHitLines: true,
             onView: z => {
                 els.zoomLabel.textContent = `${Math.round(z * 100)}%`;
+                // The padlock is placed in stage pixels beside one thing, so
+                // panning or zooming leaves it pointing at empty parchment.
+                hideLockPop();
                 // The band buttons read "from here", so they have to know
                 // where "here" is. And a layer's grip is positioned in
                 // per cent of a box that has just changed scale.

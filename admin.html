@@ -512,6 +512,19 @@
                                             <div class="wiz-handles" id="wiz-admin-handles"></div>
                                             <div class="wiz-rooms"></div>
                                         </div>
+
+                                        <!-- The padlock for one thing, shown where it
+                                             was double-clicked.
+
+                                             Inside the stage but OUTSIDE the canvas, on
+                                             purpose: the canvas is scaled by the zoom,
+                                             and a button inside it would shrink with the
+                                             map until it could not be pressed. Positioned
+                                             in stage pixels by showLockPop in
+                                             js/admin-wizard.js. -->
+                                        <div class="admin-wiz-lockpop" id="wiz-admin-lockpop" hidden>
+                                            <button type="button" class="admin-action-pill" id="wiz-admin-lock-one"></button>
+                                        </div>
                                     </div>
 
                                     <p class="admin-wiz-status" id="wiz-admin-status" hidden></p>
@@ -538,6 +551,34 @@
                                          list to a form with no visible connection to what you
                                          had pressed. -->
                                     <div class="chrome-list" id="wiz-rooms-list"></div>
+                                </div>
+
+                                <!-- ---------- secret passages ----------
+
+                                     Rooms and trails that are not on the
+                                     public map at all until a visitor types
+                                     the word that fetches them.
+
+                                     Worth being clear about what this is,
+                                     because it is the one thing in this
+                                     editor whose point is that it does NOT
+                                     appear: the rooms and trails named by a
+                                     secret are left out of the public
+                                     payload entirely by
+                                     netlify/functions/wizard.js, so they
+                                     cannot be found by reading the page.
+                                     Unlike "hidden", which only means "do
+                                     not draw this" and has never been any
+                                     kind of secret. -->
+                                <div class="admin-section">
+                                    <header class="admin-panel-head admin-panel-head-sub">
+                                        <div>
+                                            <h3 class="admin-subheading">Secret passages</h3>
+                                            <p class="admin-hint">A word, and the rooms it puts on the map. Until someone types it they are not in the page at all.</p>
+                                        </div>
+                                        <button class="admin-action-pill admin-pill-solid admin-add-btn" id="wiz-add-secret-btn" type="button">+ Add a Secret</button>
+                                    </header>
+                                    <div class="chrome-list" id="wiz-secrets-list"></div>
                                 </div>
 
                                 <div class="admin-section">

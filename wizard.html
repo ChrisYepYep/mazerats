@@ -73,9 +73,18 @@
 
     <header class="site-header">
         <div class="brand-group">
+            <!-- This page's own name in the bar, where every other page on
+                 the site carries MAZE RATS.
+
+                 It is still the link home, and the badge beside it still
+                 says whose site this is — which is the trade being made
+                 here. The map is the thing people arrive at from a pasted
+                 link, often having never heard of mazerats.net, so the bar
+                 naming the map tells an arriving stranger what they are
+                 looking at, and the badge tells them where they are. -->
             <a class="brand" href="home.html">
-                <span class="brand-text">MAZE RATS</span>
-                <span class="brand-tagline">Every maze. One place.</span>
+                <span class="brand-text">THE ATLAS</span>
+                <span class="brand-tagline">Find your way.</span>
             </a>
             <!-- The pill names the SITE here rather than the page, because
                  this page is the one people arrive at from a link somebody
@@ -91,17 +100,84 @@
 
     <main>
         <div class="wiz-head">
-            <h1 id="wiz-title">The Sorcerer's Atlas</h1>
-            <p class="wiz-intro" id="wiz-intro" hidden></p>
-            <p class="wiz-credit" id="wiz-credit" hidden></p>
+            <!-- The crest, and the one picture on this page that is part of
+                 the furniture rather than part of the map. Empty alt because
+                 the <h1> beside it already says what it is, and a screen
+                 reader announcing "Origins Hogwarts crest, The Sorcerer's
+                 Atlas" reads the title twice.
+
+                 No width or height here either: it is drawn at the size the
+                 file is, so that the artwork is never scaled. See .wiz-crest,
+                 which explains why that matters for pixel art and carries the
+                 one limit there is. -->
+            <img class="wiz-crest" src="assets/img/wizard/crest.png" alt="" decoding="async">
+            <!-- The title, its blurb, and the two optional lines that come
+                 out of the database. One column, so the crest sits against
+                 the block rather than against the first line of it. -->
+            <div class="wiz-headings">
+                <h1 id="wiz-title">The Sorcerer's Atlas</h1>
+                <!-- The line under the title, written here as the default and
+                     overwritten by whatever the admin has put in the map's
+                     Intro field — see load() in js/wizard.js.
+
+                     One element rather than two. It was briefly a static
+                     blurb with the database's intro line underneath it, which
+                     is two sentences doing one sentence's job: the second
+                     could only ever repeat or contradict the first, and an
+                     admin editing the intro would have found their line
+                     appearing below a hardcoded one they could not reach.
+
+                     Not hidden to start with, because unlike the credit below
+                     it there is always something to say here. An empty Intro
+                     field leaves this sentence, which is the sensible
+                     default rather than a gap. -->
+                <p class="wiz-blurb" id="wiz-intro">An interactive map of Origins Hogwarts</p>
+                <p class="wiz-credit" id="wiz-credit" hidden></p>
+            </div>
             <!-- Beside the title rather than floating over the map. Sat
                  inside the frame it covered the top-left corner of the
                  drawing, which on this map is where Spiral Staircase II
                  is — a search box that hides part of what you are searching
                  is a poor trade for the few pixels it saves. -->
+            <!-- The two controls, grouped.
+
+                 Together rather than as two children of .wiz-head, because
+                 the header wraps: on a narrower window the secrets button
+                 used to drop to a row of its OWN, underneath the crest, and
+                 that row sat between the crest and the map — which is
+                 exactly the space the crest is supposed to be hanging into.
+                 Stacked inside their own column they take their height from
+                 beside the crest instead of below it, so the crest stays the
+                 tallest thing in the header at every width. -->
+            <div class="wiz-tools">
             <div class="wiz-search">
                 <input type="text" id="wiz-search" placeholder="Find a room…" autocomplete="off" aria-label="Find a room on the map">
                 <div class="wiz-results" id="wiz-results" hidden></div>
+            </div>
+
+            <!-- Secret passages: a tally, and nothing to press.
+
+                 There is no box to type a code into, and that is the whole
+                 design rather than an omission. The way in is to type the
+                 word at the map — no field, no cursor, no submit — so the
+                 only people who can open a passage are the ones who have
+                 been told both the word and that saying it does anything.
+                 A visible input would make the puzzle a form, and a form is
+                 something you solve by guessing at it.
+
+                 What is left is a read-out: how many have been found. It
+                 tells somebody there is something here without telling them
+                 what to do about it, which is the right amount to give away.
+                 Hidden entirely until the map says it has any secrets — see
+                 drawSecretCount in js/wizard.js, which also puts the clues
+                 into the title so they are there for somebody who goes
+                 looking without being an instruction to everybody else. -->
+            <div class="wiz-secrets" id="wiz-secrets" hidden>
+                <p class="wiz-secret-tally" id="wiz-secret-tally">
+                    <span class="wiz-secret-mark" aria-hidden="true"></span>
+                    <span class="wiz-secret-count" id="wiz-secret-count">Secrets</span>
+                </p>
+            </div>
             </div>
         </div>
 
@@ -126,6 +202,25 @@
 
             <div class="wiz-tooltip" id="wiz-tooltip" role="tooltip" hidden></div>
             <p class="wiz-status" id="wiz-status" hidden></p>
+
+            <!-- What the map says back when a passage opens. Inside the
+                 stage rather than up in the header, because the reader is
+                 looking at the map when it happens — a message above the
+                 frame is a message delivered somewhere nobody is looking.
+
+                 It sits over the drawing and fades itself out; the flight to
+                 the new passage is what it is really announcing. -->
+            <div class="wiz-reveal" id="wiz-reveal" hidden role="status" aria-live="polite">
+                <p class="wiz-reveal-name" id="wiz-reveal-name"></p>
+                <p class="wiz-reveal-msg" id="wiz-reveal-msg"></p>
+            </div>
+
+            <!-- The echo of what is being typed when somebody types at the
+                 map with no box open. Without it, typing a code does
+                 nothing visible until it is either right or abandoned, and
+                 there is no way to tell the feature exists from the feature
+                 being broken. Shown only once a couple of letters are in. -->
+            <div class="wiz-whisper" id="wiz-whisper" hidden aria-hidden="true"></div>
         </div>
     </main>
 

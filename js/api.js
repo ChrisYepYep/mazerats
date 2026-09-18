@@ -446,6 +446,27 @@ const Api = {
         return res.json();
     },
 
+    /* Typing a code into the map, from a visitor who is nobody.
+
+       A plain fetch rather than _write: there is no token, because the whole
+       point is that anybody may try. The endpoint answers { ok: false } for a
+       wrong code and 429 when somebody is guessing faster than a person can
+       type — both are ordinary answers here, so neither throws; only a
+       genuine failure to reach the endpoint does. */
+    async unlockWizardSecret(codes) {
+        const many = Array.isArray(codes);
+        const res = await fetch("/.netlify/functions/wizard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(many
+                ? { action: "unlock", codes }
+                : { action: "unlock", code: codes })
+        });
+        if (res.status === 429) return { ok: false, found: [], tooMany: true };
+        if (!res.ok) throw new Error(`Unlock failed (${res.status})`);
+        return res.json();
+    },
+
     // The editor's own read: uncached, so a save is read back as written.
     getWizardMapFresh(token) { return this._write("/.netlify/functions/wizard?fresh=1", "GET", token); },
 
