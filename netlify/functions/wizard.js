@@ -264,7 +264,17 @@ const FIELDS = {
        only the order of the performance, which is why it is allowed to be
        absent: a reveal written before it existed simply plays trails first
        and names afterwards, which is what they all did. */
+    /* `landing` is the room the camera comes to rest on. The reveal is
+       followed along its own footprints rather than flown to in one go, and
+       this says where that following stops — anything the secret reveals
+       after it is still drawn, but the map stays put and lets it arrive. */
+    /* `followZoom` is how close the camera sits while it walks the passage,
+       and `stepMs` how long it dwells on each footfall. Both per-secret,
+       because the right answer depends on the passage: a short hop across
+       two rooms wants to be nearer and slower than a corridor crossing half
+       the castle. Absent means the page's own default. */
     reveal: ["name", "code", "hint", "message", "rooms", "paths", "sequence",
+        "landing", "followZoom", "stepMs",
         "focusX", "focusY", "focusZoom", "enabled", "order"]
 };
 
@@ -305,11 +315,17 @@ function pick(kind, body) {
                 : [];
         }
         if (out.enabled !== undefined) out.enabled = out.enabled !== false;
-        for (const num of ["focusX", "focusY", "focusZoom"]) {
+        for (const num of ["focusX", "focusY", "focusZoom", "followZoom", "stepMs"]) {
             if (out[num] === undefined) continue;
             out[num] = out[num] === null || out[num] === "" ? null : Number(out[num]);
             if (Number.isNaN(out[num])) out[num] = null;
         }
+        /* Held inside what the map can actually do. A follow zoom past the
+           map's own limit would simply be clamped on the way in and read back
+           as a number that does not match what happens; a step of five
+           seconds is a reveal nobody waits out. */
+        if (out.followZoom != null) out.followZoom = Math.max(1, Math.min(8, out.followZoom));
+        if (out.stepMs != null) out.stepMs = Math.max(60, Math.min(1500, Math.round(out.stepMs)));
     }
     return out;
 }
@@ -533,7 +549,14 @@ exports.handler = async (event) => {
                    arrays happen to be in. Absent for a reveal made before
                    this existed, and markFound falls back to the old
                    behaviour — every trail, then every name. */
-                sequence: reveal.sequence || null
+                sequence: reveal.sequence || null,
+                // Where the camera stops following. Null means "the last room
+                // in the order", which is the sensible reading of an unset one.
+                landing: reveal.landing || null,
+                // How close it follows, and how long each footfall holds.
+                // Null for either means the page's default.
+                followZoom: reveal.followZoom ?? null,
+                stepMs: reveal.stepMs ?? null
             },
             rooms: (reveal.rooms || []).map(id => roomById.get(id)).filter(Boolean).map(shown),
             /* The trails it names, then the ones that join it to the map,

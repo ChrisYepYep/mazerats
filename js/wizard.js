@@ -51,7 +51,12 @@ document.addEventListener("DOMContentLoaded", () => {
            -disabled sprites for exactly this, so a dead control that still
            looks live is out of step with the rest of the site. */
         onView: z => {
-            if (zoomLabel) zoomLabel.textContent = `${Math.round(z * 100)}%`;
+            /* Only when the number on it would actually differ. This fires on
+               every frame of a reveal's twenty-second walk, and writing the
+               same string into the DOM two thousand times is two thousand
+               style invalidations for no change on screen. */
+            const shown = `${Math.round(z * 100)}%`;
+            if (zoomLabel && zoomLabel.textContent !== shown) zoomLabel.textContent = shown;
             // The reveal card is dismissed by the reader leaving the passage
             // rather than by a timer, and this is where the map says it has
             // moved. See checkRevealAway.
@@ -566,22 +571,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     /* ---------- the flight ----------
 
-       What a reveal looks like. The map pulls back a little, holds, and then
-       moves across and settles slowly onto the new passage.
+       Where a reveal ends up. The travelling itself is followReveal's job —
+       the camera walks the passage's own footprints — and this is only the
+       destination, used when there is no walk to follow and as the framing
+       the follow has to be able to show.
 
-       The pull-back is the part worth explaining. Flying straight from a
-       close view of one corner to a close view of another is a smear: at
-       high zoom the whole journey happens off-screen and the reader arrives
-       somewhere with no idea where it is in relation to where they were.
-       Rising first means the two places are both in frame during the middle
-       of the move, so the passage is delivered with its position in the
-       castle attached — which, on a map whose whole subject is how the rooms
-       connect, is the part that matters.
+       (It was once a single move: pull back, hold, then ease onto the
+       passage. That reads well for a place you are being shown and badly for
+       a route you are meant to travel, which is what the footprints made it
+       into. The rate survives for the no-walk case.)
 
        Skipped entirely for a reader who has asked for reduced motion: they
        get the destination, set rather than travelled to. */
     const REVEAL_RATE = 0.022;   // against GLIDE_RATE's 0.24 — about a tenth
-    const REVEAL_OUT_RATE = 0.05;
 
     function calmly() {
         return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -591,10 +593,41 @@ document.addEventListener("DOMContentLoaded", () => {
        they have not — which is the common case, and the one the editor
        defaults to — the revealed rooms are framed instead, which is very
        nearly always what pinning it by hand would have produced anyway. */
+    /* Close enough to actually SEE what was just revealed.
+
+       Anything on this map can carry a zoom band — "do not draw this until
+       the map is at 1.6" — and a passage whose rooms carry one is a passage
+       that opens into thin air if the view is not that far in. It happened:
+       the Room of Requirement passage had a band of 1.6 on its room and both
+       its trails, the secret pinned the flight at 1.65, and what arrived was
+       a room name at a third of its opacity while the reader sat at the
+       opening view watching nothing appear.
+
+       So the flight has a floor: whatever the revealed records need in order
+       to be drawn at full strength. FADE in js/wizard-map.js gives full
+       opacity at from × 1.1; a little over that, so it lands clear of the
+       fade rather than at the end of it.
+
+       This overrides a pinned zoom as well as an automatic one, which is a
+       liberty worth taking — a pinned view that cannot show the thing it is
+       pinned to is not a decision anybody meant to make. */
+    function revealZoomFloor(found) {
+        let floor = 0;
+        for (const record of (found.rooms || []).concat(found.paths || [])) {
+            if (record && record.fromZoom != null) {
+                floor = Math.max(floor, Number(record.fromZoom) * 1.15);
+            }
+        }
+        return floor;
+    }
+
     function revealTarget(found) {
         const { secret, rooms } = found;
+        const map = view.getMap() || {};
+        const floor = revealZoomFloor(found);
+        const withFloor = z => Math.min(map.maxZoom || 6, Math.max(z, floor));
         if (secret.focusX != null && secret.focusY != null) {
-            return { x: secret.focusX, y: secret.focusY, zoom: secret.focusZoom || 3 };
+            return { x: secret.focusX, y: secret.focusY, zoom: withFloor(secret.focusZoom || 3) };
         }
         const placed = (rooms || []).filter(r => r.x != null && r.y != null);
         if (!placed.length) return null;
@@ -605,32 +638,182 @@ document.addEventListener("DOMContentLoaded", () => {
            room has no spread at all, hence the floor — without it the
            arithmetic asks for infinite magnification of one point. */
         const spread = Math.max(x1 - x0, y1 - y0, 3);
-        const map = view.getMap() || {};
         const want = 62 / spread;
         return {
             x: (x0 + x1) / 2,
             y: (y0 + y1) / 2,
-            zoom: Math.max(map.minZoom || 1, Math.min(map.maxZoom || 6, want))
+            zoom: withFloor(Math.max(map.minZoom || 1, Math.min(map.maxZoom || 6, want)))
         };
     }
 
-    function flyToReveal(target) {
+    /* ---------- walking the camera along the passage ----------
+
+       The map no longer flies to the passage and waits for it; it walks it.
+       As each handful of footprints lands the view is retargeted to where
+       they landed, so the reader travels the route at the pace it is being
+       laid, arriving at the room it leads to rather than being shown it.
+
+       It is close in — FOLLOW_ZOOM — because that is the whole point of
+       following: from far enough out to see the whole passage there is
+       nothing to follow, and the footprints are too small to read as
+       footprints.
+
+       WHERE IT STOPS is the landing room. Everything the secret reveals
+       after that still draws, and the map stays where it is and lets it
+       arrive — a camera that chased the last footprint would leave the room
+       the passage is FOR somewhere off the edge of the frame, which is
+       precisely backwards.
+
+       Each step is a flyTo rather than a path animation, and that works
+       because glideTo retargets a glide already in flight rather than
+       restarting it: the view is always easing towards the newest footprint,
+       so a string of small retargets two hundred milliseconds apart reads as
+       one continuous movement. */
+    const FOLLOW_ZOOM = 4.5;
+    /* How hard the camera is pulled towards where it should be, per 60Hz
+       frame. This is a SMOOTHING factor, not a speed: the thing it chases is
+       already moving at the right pace, and this only decides how loosely it
+       hangs behind. Low enough to round off every corner the trail turns,
+       high enough that it is never left trailing the walk. */
+    const FOLLOW_EASE = 0.045;
+    const FOLLOW_ZOOM_EASE = 0.03;
+
+    // The secret's own following distance, or the default. Held inside the
+    // map's own limit, and never further out than what the revealed records
+    // need in order to be drawn at all — see revealZoomFloor.
+    const followZoomOf = (found, target) => {
+        const map = view.getMap() || {};
+        const asked = found && found.secret && found.secret.followZoom;
+        const want = asked > 0 ? asked : FOLLOW_ZOOM;
+        return Math.min(map.maxZoom || 6,
+            Math.max(want, target ? target.zoom : 0, revealZoomFloor(found)));
+    };
+
+    let followFrame = 0;
+
+    function stopFollowing() {
+        if (followFrame) cancelAnimationFrame(followFrame);
+        followFrame = 0;
+    }
+
+    /* Where along the route the walk has got to at time t.
+
+       The route is a list of places with the time each is reached, and this
+       reads BETWEEN them. That is the whole fix for the camera nudging itself
+       along: pointing it at each footprint in turn gave it a target that
+       stood still for 280ms and then teleported, so it eased in, arrived,
+       stopped, and eased off again — a lurch per footfall. Interpolating
+       gives it a target that is always moving, and something following a
+       thing that moves smoothly moves smoothly. */
+    function routePlace(route, t) {
+        if (t <= route[0].at) return route[0];
+        const last = route[route.length - 1];
+        if (t >= last.at) return last;
+        for (let i = 1; i < route.length; i++) {
+            if (t > route[i].at) continue;
+            const a = route[i - 1], b = route[i];
+            const span = (b.at - a.at) || 1;
+            const f = (t - a.at) / span;
+            return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+        }
+        return last;
+    }
+
+    /* The reader's hand always wins.
+
+       A following camera that carried on through somebody trying to drag the
+       map would be unusable — every pull would be yanked back two hundred
+       milliseconds later, and there would be no way to tell it to stop short
+       of waiting the whole passage out. So the first touch of the map ends
+       the follow for good, and whatever is left of the passage draws itself
+       wherever the reader has chosen to be looking.
+
+       Passive, and on the stage rather than the document: this only wants to
+       know that a gesture started, never to interfere with one. */
+    if (stage) {
+        for (const kind of ["pointerdown", "wheel"]) {
+            stage.addEventListener(kind, stopFollowing, { passive: true });
+        }
+    }
+
+    function followReveal(found, walk, target) {
+        stopFollowing();
         if (!target) return;
-        if (calmly()) {
-            view.flyTo(target.x, target.y, target.zoom, { smooth: false });
+        if (calmly() || !walk.length) {
+            // No journey, just the destination.
+            if (calmly()) view.flyTo(target.x, target.y, target.zoom, { smooth: false });
+            else view.flyTo(target.x, target.y, target.zoom, { rate: REVEAL_RATE });
             return;
         }
-        const map = view.getMap() || {};
-        const here = view.getZoom ? view.getZoom() : 1;
-        /* Up to somewhere both places can be seen from, but never further
-           out than the map itself allows and never further out than the
-           reader already was — pulling BACK from an already-wide view just
-           to push in again is a wobble, not a move. */
-        const high = Math.max(map.minZoom || 1, Math.min(here, target.zoom) * 0.55);
-        view.flyTo((target.x + 50) / 2, (target.y + 50) / 2, high, { rate: REVEAL_OUT_RATE });
-        setTimeout(() => {
-            view.flyTo(target.x, target.y, target.zoom, { rate: REVEAL_RATE });
-        }, 900);
+
+        const zoom = followZoomOf(found, target);
+
+        /* Where the following stops. The landing room if one is set and it is
+           actually on the route; otherwise the last room the passage draws,
+           which is the sensible reading of an unset one. */
+        const landingId = (found.secret && found.secret.landing) || null;
+        let stop = -1;
+        if (landingId) stop = walk.findIndex(step => step.roomId === landingId);
+        if (stop === -1) {
+            for (let i = walk.length - 1; i >= 0; i--) {
+                if (walk[i].roomId) { stop = i; break; }
+            }
+        }
+        if (stop === -1) stop = walk.length - 1;
+
+        /* Driven frame by frame rather than by a timer per footprint.
+
+           The camera keeps its own position and eases towards where the walk
+           has reached, every frame, and the view is SET rather than glided —
+           the easing is here, so handing it to the engine's glide as well
+           would be two smoothings fighting over the same movement.
+
+           The zoom eases on its own track and more slowly still, so the
+           approach is one unbroken movement in and along rather than a zoom
+           followed by a pan. */
+        const route = walk.slice(0, stop + 1);
+        const endAt = route[route.length - 1].at;
+        const start = performance.now();
+        /* The camera starts where the reader is ALREADY looking, not at the
+           head of the trail. Starting it at the trail meant the first frame
+           set the view there outright — a 950px cut before the walk had laid
+           a single print. Beginning from here, the same easing that follows
+           the passage also carries the reader to the start of it, and the
+           whole reveal is one movement from wherever they were. */
+        const box = stage.getBoundingClientRect();
+        const here = view.screenToPct
+            ? view.screenToPct(box.left + box.width / 2, box.top + box.height / 2)
+            : { x: route[0].x, y: route[0].y };
+        let cam = { x: here.x, y: here.y };
+        let camZoom = view.getZoom ? view.getZoom() : zoom;
+        let lastFrame = start;
+
+        const step = now => {
+            const dt = Math.min(64, now - lastFrame) || 16.7;
+            lastFrame = now;
+            const want = routePlace(route, now - start);
+            // Framerate-independent easing, the same shape the engine's own
+            // glide uses: the fraction closed depends on time elapsed, not on
+            // how many frames the machine managed.
+            const k = 1 - Math.pow(1 - FOLLOW_EASE, dt / 16.7);
+            const kz = 1 - Math.pow(1 - FOLLOW_ZOOM_EASE, dt / 16.7);
+            cam.x += (want.x - cam.x) * k;
+            cam.y += (want.y - cam.y) * k;
+            camZoom += (zoom - camZoom) * kz;
+            view.flyTo(cam.x, cam.y, camZoom, { smooth: false });
+
+            /* Runs past the last footprint, because the camera is deliberately
+               behind the walk and still has the last of the distance to close.
+               It stops when it has arrived rather than when the walk did. */
+            const arrived = Math.hypot(want.x - cam.x, want.y - cam.y) < 0.05
+                && Math.abs(zoom - camZoom) < zoom * 0.002;
+            if (now - start > endAt && arrived) {
+                followFrame = 0;
+                return;
+            }
+            followFrame = requestAnimationFrame(step);
+        };
+        followFrame = requestAnimationFrame(step);
     }
 
     /* ---------- the announcement ----------
@@ -862,19 +1045,29 @@ document.addEventListener("DOMContentLoaded", () => {
        the same whether a passage is two prints long or two hundred; what
        changes is how long it takes, which is the honest way round.
 
-       WALK_CEILING is the one concession to that — a passage so long it would
-       otherwise run for a minute is quietly hurried up. It is deliberately
-       far above anything on this map, so in practice every walk runs at
-       WALK_STEP exactly.
-
-       If this wants tuning later, WALK_STEP is the number. Nothing else here
-       needs to move with it: the arcs and the names are counted in
-       footprints' worth of time, so they slow down in proportion. */
+       WALK_STEP is only the default now — a secret can carry its own pace,
+       set in the editor. Nothing else has to move with either: the arcs and
+       the names are counted in footfalls' worth of time, so they slow down in
+       proportion. */
     const WALK_LEAD = 1200;      // before the first print, while the map is still flying
-    const WALK_STEP = 200;       // one footprint every this long — the pace
-    const WALK_CEILING = 20000;  // a very long passage is hurried to fit this
+    const WALK_STEP = 340;       // one footfall every this long — the default pace
     const WALK_SETTLE = 600;     // the beat between the last name and the announcement
-    const NAME_BEATS = 5;        // a name is worth this many footprints of time
+    const NAME_BEATS = 5;        // a name is worth this many footfalls of time
+
+    /* The pace a given passage walks at. The secret's own if it has one —
+       see the editor's Camera settings — and the default otherwise.
+
+       There is no longer a ceiling on the total. There was one, to stop a
+       very long passage running for a minute, and it worked by dividing a
+       budget over however many beats there were — which meant that the
+       moment the pace became something an admin could SET, the ceiling would
+       quietly override anything slow they set it to. The number of beats is
+       already capped (WALK_MAX_BEATS), so the length is bounded by that
+       instead, and the pace now means exactly what it says. */
+    const stepOf = found => {
+        const asked = found && found.secret && found.secret.stepMs;
+        return asked > 0 ? Math.max(60, Math.min(1500, asked)) : WALK_STEP;
+    };
 
     /* The order a passage is drawn in.
 
@@ -937,11 +1130,20 @@ document.addEventListener("DOMContentLoaded", () => {
         return out;
     }
 
-    /* Returns when the name lands, in ms from now — the caller uses it to
+    /* Returns { nameAt, walk }: when the name lands, in ms from now, and the
+       route the camera can follow — one entry per beat that has a place on
+       the sheet. See followReveal.
+
+       Returns nameAt 0 and an empty walk for a reader who has asked for
+       reduced motion, who gets all of it at once and no camera movement.
+
+       (What follows is the original note on when the name lands.)
+
+       Returns when the name lands, in ms from now — the caller uses it to
        hold the announcement back to the same moment. Zero for a reader who
        has asked for reduced motion, who gets all of it at once. */
     function markFound(found) {
-        if (calmly()) return 0;
+        if (calmly()) return { nameAt: 0, walk: [] };
 
         /* The revealed trails, in the order they are to be travelled, broken
            into the pieces that arrive one at a time.
@@ -961,43 +1163,121 @@ document.addEventListener("DOMContentLoaded", () => {
         const ARC_BEATS = 10;
         const order = revealOrder(found);
 
+        /* How many footprints land together on each beat.
+
+           One each is what you want and what short passages get. But a
+           passage's print count is a function of how long its trails are and
+           how many bends they have, not of how important it is — the
+           One-Eyed Witch has 49, and the Room of Requirement passage has 161.
+           At one print per beat that second one walks for over half a minute,
+           and the name of the room it leads to does not appear until sixteen
+           seconds in, by which time anybody sensible has concluded the code
+           did not work. Which is exactly what was reported.
+
+           Slowing the pace was never the answer to that and neither is
+           speeding it up: at 161 prints a duration budget drives the gap down
+           to a wipe again. So the CADENCE is held at WALK_STEP and the prints
+           are dealt out in handfuls instead — two or three landing together
+           reads as a stride rather than a stutter, because a stride is what
+           it is. */
+        const WALK_MAX_BEATS = 90;
+        /* Never more than two to a beat. Three was enough to be seen as a
+           group rather than a pace — while the camera is following you only
+           have a few prints in frame and it passes, but the moment the camera
+           stops and a whole trail is visible, prints arriving three at a time
+           read as the rest of it being dumped out rather than walked. Two is
+           a stride, which is what a pair of footprints is anyway. */
+        const WALK_MAX_PER_BEAT = 2;
+
+        let printCount = 0;
+        for (const entry of order) {
+            if (entry.kind !== "path") continue;
+            const group = view.elementFor("path", entry.id);
+            if (group) printCount += group.querySelectorAll(".wiz-print").length;
+        }
+        const perBeat = Math.max(1,
+            Math.min(WALK_MAX_PER_BEAT, Math.ceil(printCount / WALK_MAX_BEATS)));
+
         /* Each entry in the running order, turned into the things that
-           actually arrive. A trail becomes one beat per footprint, or a
-           single longer beat if it is ruled; a room becomes one beat holding
-           its name. */
+           actually arrive. A trail becomes a run of beats, one per handful of
+           footprints — or a single longer beat if it is ruled; a room becomes
+           one beat holding its name. */
         const beats = [];
         for (const entry of order) {
             if (entry.kind === "room") {
                 const el = view.elementFor("room", entry.id);
-                if (el) beats.push({ el, cls: "is-arriving", span: NAME_BEATS, name: true });
+                if (el) beats.push({ els: [el], cls: "is-arriving", span: NAME_BEATS, name: true, roomId: entry.id });
                 continue;
             }
             const group = view.elementFor("path", entry.id);
             if (!group) continue;
-            const prints = group.querySelectorAll(".wiz-print");
+            const prints = [...group.querySelectorAll(".wiz-print")];
             if (prints.length) {
-                for (const print of prints) beats.push({ el: print, cls: "is-stepping", span: 1 });
+                for (let i = 0; i < prints.length; i += perBeat) {
+                    beats.push({ els: prints.slice(i, i + perBeat), cls: "is-stepping", span: 1 });
+                }
                 continue;
             }
             const arc = group.querySelector(".wiz-arc");
-            if (arc) beats.push({ el: arc, cls: "is-inking", span: ARC_BEATS });
+            if (arc) beats.push({ els: [arc], cls: "is-inking", span: ARC_BEATS });
         }
 
-        const total = beats.reduce((n, b) => n + b.span, 0);
-        // The pace, unless the passage is long enough to need hurrying.
-        const gap = total ? Math.min(WALK_STEP, WALK_CEILING / total) : 0;
+        // The pace. Exactly the pace — the length follows from it.
+        const gap = stepOf(found);
+
+        /* Where each beat sits on the sheet, so the camera can walk the
+           passage rather than being flown to the end of it.
+
+           Read off the elements themselves — a footprint carries its own
+           left/top in per cent, which is the same figure the record was
+           stored with — so there is no second way of working out where
+           something is that could disagree with where it was drawn. */
+        const placeOfEl = el => {
+            if (!el) return null;
+            const x = parseFloat(el.style.left);
+            const y = parseFloat(el.style.top);
+            return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+        };
+        const placeOfRoom = id => {
+            const room = (found.rooms || []).find(r => r.id === id);
+            return room && room.x != null ? { x: room.x, y: room.y } : null;
+        };
 
         const touched = [];
         const names = [];
+        const walk = [];              // { at, x, y, landing } per beat that has a place
         let at = WALK_LEAD;
         let lastNameAt = WALK_LEAD;
         for (const beat of beats) {
-            beat.el.style.setProperty("--step-delay", `${Math.round(at)}ms`);
-            if (beat.span > 1 && !beat.name) {
-                beat.el.style.setProperty("--ink-time", `${Math.round(beat.span * gap)}ms`);
+            for (const el of beat.els) {
+                el.style.setProperty("--step-delay", `${Math.round(at)}ms`);
+                if (beat.span > 1 && !beat.name) {
+                    el.style.setProperty("--ink-time", `${Math.round(beat.span * gap)}ms`);
+                }
+                el.classList.add(beat.cls);
+                (beat.name ? names : touched).push(el);
             }
-            beat.el.classList.add(beat.cls);
-            (beat.name ? names : touched).push(beat.el);
+            /* The camera's route is built from EVERY footprint, not one point
+               per beat — the two prints of a stride get their own moments
+               within the beat, spread across it.
+
+               That is what took the last of the jerk out. A route with one
+               point per beat is a set of straight hops between them, and the
+               camera turns a corner at each one however smoothly it is eased;
+               a route with a point per print follows the curve the trail was
+               actually laid along. It costs nothing, since these positions
+               have already been read off the elements. */
+            if (beat.roomId) {
+                const place = placeOfRoom(beat.roomId);
+                if (place) walk.push({ at, x: place.x, y: place.y, roomId: beat.roomId });
+            } else {
+                beat.els.forEach((el, i) => {
+                    const place = placeOfEl(el);
+                    if (!place) return;
+                    const within = beat.els.length > 1 ? (i / beat.els.length) * beat.span * gap : 0;
+                    walk.push({ at: at + within, x: place.x, y: place.y, roomId: null });
+                });
+            }
             if (beat.name) lastNameAt = at;
             at += beat.span * gap;
         }
@@ -1018,7 +1298,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }, nameAt + 1400);
 
-        return nameAt;
+        return { nameAt, walk };
     }
 
     /* ---------- trying a code ----------
@@ -1065,8 +1345,8 @@ document.addEventListener("DOMContentLoaded", () => {
                    painted once — it runs in the same tick as the render
                    above, so nothing flashes into view and then starts
                    walking. */
-                const nameAt = markFound(first);
-                flyToReveal(revealTarget(first));
+                const { nameAt, walk } = markFound(first);
+                followReveal(first, walk, revealTarget(first));
                 // The banner arrives with the name, not before it. Saying
                 // what has opened while the footprints are still crossing
                 // the parchment gives away the ending. It is handed the

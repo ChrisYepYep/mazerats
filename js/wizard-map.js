@@ -212,8 +212,42 @@ window.WizardMap = function WizardMap(options) {
            the same size on screen at every zoom, because a grab handle that
            shrinks to a pixel when you zoom out is a grab handle you cannot
            grab. They divide by this. */
-        canvas.style.setProperty("--wiz-scale", scale);
-        applyBands();
+        /* Written only when it has actually changed, which during a pan is
+           never.
+
+           A custom property set on the canvas invalidates the computed style
+           of everything inside it, and inside it is every room, every trail
+           and every footprint on the map — several hundred elements asked to
+           recompute because a number they mostly do not use was reassigned
+           the same value. The transform above costs nothing by comparison:
+           that is one compositor property on one element. */
+        if (scaleVar === null || Math.abs(scale - scaleVar) > 1e-6) {
+            canvas.style.setProperty("--wiz-scale", scale);
+            scaleVar = scale;
+        }
+        /* Bands are a function of ZOOM ALONE — how faint a thing is depends
+           on how far in the map is, never on where it is pointed. So a pure
+           pan leaves every one of them exactly as it was, and recomputing
+           them is a pass over every room, trail and picture on the sheet to
+           write back the numbers already there.
+
+           That is a few hundred elements, and it did not matter while the
+           view only moved in short eased bursts. It matters now that a reveal
+           walks the camera along a passage for twenty seconds: measured at
+           5.6ms a frame idle against 10.4ms while following, with stalls up
+           to 81ms — which is exactly the hitching that gets described as the
+           camera glitching.
+
+           Memoised on the zoom it was last done at. Cleared by render(),
+           because new elements need their bands whatever the zoom is doing. */
+        /* The tolerance is deliberately not a hair's breadth. An eased zoom
+           never quite stops moving — it approaches its target asymptotically
+           — so a threshold of 1e-4 is met on every frame for several seconds
+           and the memo never engages at all. A hundredth of a zoom level
+           moves a band's opacity by about three per cent at this map's fade
+           width, which is nothing anybody can see, and it is the difference
+           between the pass running once and running two hundred times. */
+        if (bandedAtZoom === null || Math.abs(zoom - bandedAtZoom) > 0.01) applyBands();
         ensureDetail();
         if (options.onView) options.onView(zoom);
     }
@@ -336,7 +370,14 @@ window.WizardMap = function WizardMap(options) {
         return Math.max(0, Math.min(1, opacity));
     }
 
+    // The zoom the bands on screen were worked out for, and the scale last
+    // published as --wiz-scale. Null for either means "do it regardless".
+    // See applyTransform.
+    let bandedAtZoom = null;
+    let scaleVar = null;
+
     function applyBands() {
+        bandedAtZoom = zoom;
         for (const entry of banded) {
             let opacity = bandOpacity(entry.item);
             if (entry.item.opacity != null) opacity *= Number(entry.item.opacity);
@@ -1271,6 +1312,9 @@ window.WizardMap = function WizardMap(options) {
 
     function render() {
         banded = [];
+        // Everything below is about to be rebuilt, so whatever the bands were
+        // last worked out for describes elements that will not exist.
+        bandedAtZoom = null;
         canvas.style.width = map.width + "px";
         canvas.style.height = map.height + "px";
         // The frame takes the map's shape rather than a guessed one, so the

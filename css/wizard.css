@@ -1466,6 +1466,29 @@
     font-style: italic;
 }
 
+/* The two camera numbers, on one line with their units beside them. Narrow
+   inputs on purpose: these hold a zoom and a count of milliseconds, and a
+   full-width field for "4.5" invites a sentence. */
+.admin-wiz-camera {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin: 8px 0 4px;
+}
+
+.admin-wiz-camera label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--parchment-dim);
+    font-size: 12px;
+}
+
+.admin-wiz-camera input {
+    width: 84px;
+    text-align: right;
+}
+
 .admin-wiz-hold-tools {
     display: flex;
     flex-wrap: wrap;

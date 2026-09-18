@@ -77,7 +77,9 @@ DOCS = [
         kind: "reveal", id: "one-eyed-witch", name: "The One-Eyed Witch Passage",
         code: "dissendium", hint: "Whispered at a statue.", message: "The hump slides aside.",
         rooms: ["r062", "r063"], paths: ["t-secret"], enabled: true,
-        focusX: null, focusY: null, focusZoom: null
+        focusX: null, focusY: null, focusZoom: null,
+        sequence: ["path:t-secret", "room:r062", "room:r063"],
+        landing: "r062"
     },
     {
         kind: "reveal", id: "switched-off", name: "Old news", code: "alohomora",

@@ -2155,6 +2155,26 @@ window.AdminWizard = (function () {
                 <div class="admin-row-actions admin-wiz-hold-tools"></div>
             </div>
 
+            <div class="admin-field admin-wiz-holds" data-block="landing">
+                <span>Comes to rest on</span>
+                <div class="admin-wiz-landing-pick"></div>
+                <p class="admin-hint">The map walks the footprints as they appear and stops here. Anything revealed after it still draws, with the map staying put.</p>
+
+                <div class="admin-wiz-camera">
+                    <label>Follows at
+                        <input type="number" name="followZoom" min="1" max="8" step="0.5"
+                               value="${secret.followZoom != null ? esc(secret.followZoom) : ""}" placeholder="4.5">
+                        <span>×</span>
+                    </label>
+                    <label>A step every
+                        <input type="number" name="stepMs" min="60" max="1500" step="20"
+                               value="${secret.stepMs != null ? esc(secret.stepMs) : ""}" placeholder="280">
+                        <span>ms</span>
+                    </label>
+                </div>
+                <p class="admin-hint">Higher zoom is closer in; higher ms is slower. Leave either empty for the defaults in the placeholders.</p>
+            </div>
+
             <div class="admin-field admin-wiz-holds" data-block="focus">
                 <span>Where the map flies</span>
                 <p class="admin-wiz-holds-list" data-focus-text></p>
@@ -2186,7 +2206,45 @@ window.AdminWizard = (function () {
                 ${(secret.rooms || []).length + (secret.paths || []).length
                     ? `<button type="button" class="btn" data-act="clear">Clear all</button>` : ""}
             `;
+            /* The landing picker offers this secret's own rooms, so it has to
+               be redrawn whenever they change — and a landing room that has
+               just been taken out of the secret has to stop being selected,
+               or the reveal would be told to rest on something it no longer
+               reveals. */
+            if (secret.landing && !(secret.rooms || []).includes(secret.landing)) {
+                secret.landing = null;
+            }
+            paintLanding();
             refreshSecretRowSummary(secret);
+        }
+
+        /* The landing room, chosen from the rooms this secret actually
+           reveals — offering every room on the map would let somebody land
+           the camera on a place the passage never goes, which is a setting
+           whose only use is to break the reveal. "The last one" is the
+           default and is named, rather than being a blank that says nothing
+           about what will happen. */
+        function paintLanding() {
+            const holder = form.querySelector(".admin-wiz-landing-pick");
+            if (!holder) return;
+            const rooms = secretSequence(secret)
+                .filter(e => e.startsWith("room:"))
+                .map(e => e.slice(5))
+                .map(id => ({ id, room: find("room", id) }))
+                .filter(r => r.room);
+            if (!rooms.length) {
+                holder.innerHTML = `<p class="admin-wiz-hold-empty">No rooms in this secret yet.</p>`;
+                return;
+            }
+            const last = rooms[rooms.length - 1];
+            holder.innerHTML = `
+                <select class="admin-wiz-hold-add" name="landing">
+                    <option value="">The last one — ${esc(last.room.name)}</option>
+                    ${rooms.map(r => `<option value="${esc(r.id)}"${
+                        secret.landing === r.id ? " selected" : ""
+                    }>${esc(r.room.name)}</option>`).join("")}
+                </select>
+            `;
         }
 
         function paintFocus() {
@@ -2197,6 +2255,7 @@ window.AdminWizard = (function () {
         }
 
         paintHolds();
+        paintLanding();
         paintFocus();
 
         /* ---------- dragging the order about ----------
@@ -2278,8 +2337,33 @@ window.AdminWizard = (function () {
             if (await saveSecret(secret)) say("Reordered.", "good");
         });
 
-        // Adding one, from the picker.
         form.addEventListener("change", async e => {
+            // The landing room. Its empty value means "the last one", which
+            // is a real choice rather than an unset field, so unlike the add
+            // picker below it saves on an empty value too.
+            const landing = e.target.closest('[name="landing"]');
+            if (landing) {
+                secret.landing = landing.value || null;
+                if (await saveSecret(secret)) {
+                    say(secret.landing ? "It will come to rest there." : "It will rest on the last room.", "good");
+                }
+                return;
+            }
+
+            /* How close the camera follows, and how long it holds each
+               footfall. Empty means "use the default", which is why these
+               store null rather than a number read off the placeholder — a
+               default written into the record is a default that stops
+               following the code when the code changes its mind. */
+            const camera = e.target.closest('[name="followZoom"], [name="stepMs"]');
+            if (camera) {
+                const raw = camera.value.trim();
+                secret[camera.name] = raw === "" ? null : Number(raw);
+                if (await saveSecret(secret)) say("Saved.", "good");
+                return;
+            }
+
+            // Adding one, from the picker.
             const pick = e.target.closest(".admin-wiz-hold-add");
             if (!pick || !pick.value) return;
             // Onto the end of the running order, which is where a new step
