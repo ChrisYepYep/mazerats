@@ -90,7 +90,13 @@ input, button { font-family: inherit; }
     margin: 0 0 8px;
 }
 
-.qz-hero h1 {
+/* h2 as well as h1: the final-scores screen's heading is an h2 so the
+   document has one h1 rather than three screens each claiming to be the
+   page. It is the same heading in the same place on screen and wants the
+   same size — a browser's own smaller default for h2 would shrink it for a
+   reason that has nothing to do with how it looks. */
+.qz-hero h1,
+.qz-hero h2 {
     font-family: 'Silkscreen', monospace;
     font-size: 30px;
     line-height: 1.1;
@@ -165,6 +171,34 @@ input, button { font-family: inherit; }
     line-height: 1.5;
     text-align: center;
 }
+
+/* The line back to the site, under the fineprint on the setup screen — see
+   the note in quiz.html for why it is one line rather than the site's
+   header and footer.
+
+   Quieter than the fineprint above it and set off by a rule, so it reads as
+   the foot of the page rather than as one more thing the host is being told.
+   The padding is what makes it a real target on a phone: the text is 12px
+   and a bare 12px link is not something you hit on purpose. */
+.qz-offsite {
+    margin: 26px 2px 0;
+    padding-top: 18px;
+    border-top: 1px solid var(--border-soft);
+    font-size: 12px;
+    color: var(--parchment-dim);
+    text-align: center;
+}
+
+.qz-offsite a {
+    display: inline-block;
+    padding: 6px 8px;
+    color: var(--amber);
+    text-decoration: none;
+    font-weight: 700;
+}
+
+.qz-offsite a:hover,
+.qz-offsite a:focus-visible { color: var(--amber-bright); text-decoration: underline; }
 
 /* ================================ resume =============================== */
 

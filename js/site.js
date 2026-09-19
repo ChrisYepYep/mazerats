@@ -249,6 +249,44 @@ document.addEventListener("DOMContentLoaded", () => {
     footer.parentNode.insertBefore(section, footer);
 });
 
+/* Links to the archive, pointed at the landing page for a visitor who
+   cannot get into the archive.
+
+   While the site is in Coming Soon or Maintenance, the pre-load gate in
+   home.html's <head> bounces every non-admin to index.html. Four pages a
+   gated visitor can reach — the atlas, the 404 page, the policy, and the
+   admin login — carry a link to home.html in the brand, and the 404 page
+   offers "The archive" as the one way out of it. All of them worked, in the
+   sense that the reader ended up somewhere sensible; what they did was go
+   to a page, wait on a settings request, and get sent somewhere else, with
+   a blank screen in the middle because the gate keeps the body hidden until
+   it has decided. One round trip to arrive where the first link could have
+   pointed.
+
+   Only rewritten when the answer is already certain: the last landing state
+   this browser saw says gated, AND there is no admin token to try. An admin
+   session CAN pass the gate, so its links are left alone — sending a signed
+   in admin to the landing page would cost them a click every time to save a
+   moment they never spend. No cached state, which is a first-ever visit,
+   also leaves them alone: the bounce is the current behaviour and one visit
+   of it is not worth guessing over.
+
+   Written against the cached value rather than site.js's own settings fetch
+   on purpose. That fetch resolves some time after the page is usable, and a
+   link that changes where it points while somebody is reaching for it is a
+   worse thing than the round trip this avoids. */
+document.addEventListener("DOMContentLoaded", () => {
+    let state = null, token = null;
+    try {
+        state = localStorage.getItem("mazerats_landing_state");
+        token = localStorage.getItem("mazerats_admin_token");
+    } catch (e) { return; }      // private mode: nothing known, change nothing
+    if (token) return;
+    if (state !== "coming-soon" && state !== "maintenance") return;
+
+    document.querySelectorAll('a[href="home.html"]').forEach(a => { a.href = "/"; });
+});
+
 // Privacy Policy link, appended onto the end of .site-footer's own
 // copyright line (its last <p>) rather than as a separate line of its
 // own. Where it points depends on whether the page it is sitting on can

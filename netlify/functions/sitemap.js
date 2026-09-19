@@ -56,7 +56,21 @@ exports.handler = async (event) => {
            the one people actually paste. It was noindex while it was being
            built and so had no business here; all fifty rooms are finished now.
            Below home because the archive is what the site is for. */
-        url(`${origin}/fallinfurni`, "", "0.7")
+        url(`${origin}/fallinfurni`, "", "0.7"),
+        /* The privacy policy, last and lowest, because nobody searches for
+           it — but it belongs here.
+
+           It is a real page with a real address, it is not noindex, and it
+           is now what every footer on the site links to: js/site.js sends
+           the atlas, the game and the 404 page here rather than to
+           home.html#privacy, which a Coming Soon gate turns into a bounce
+           to the landing page with the hash dropped. A page that every
+           footer points at and no sitemap mentions is a page search engines
+           reach last and by accident.
+
+           Priority 0.3 says what it is: something that should be findable
+           and is not what anyone came for. */
+        url(`${origin}/privacy`, "", "0.3")
     ];
 
     try {

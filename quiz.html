@@ -117,6 +117,28 @@
             the tab, come back tomorrow — the quiz will be exactly where you
             left it.
         </p>
+
+        <!-- The one way off this page, and the only link on it.
+
+             There was none at all. /quiz is an address a host pastes at
+             people, and this page carries no site header, no site footer and
+             nothing else clickable, so somebody arriving on it from a link
+             had no way to find out what mazerats.net is or to get there —
+             the site's only page with no exit.
+
+             It is not the site header, and deliberately not: this page is
+             built to be added to a home screen and opened like an app, with
+             viewport-fit=cover and safe-area padding, and dropping the
+             archive's bar and footer on top of that would undo the point of
+             it. One quiet line under the fineprint instead.
+
+             On the setup screen only. The play screen is what a host is
+             looking at for an hour with the phone being passed around, and a
+             link out of the quiz is the last thing that wants to be within
+             reach of a thumb there. -->
+        <p class="qz-offsite">
+            <a href="/">Maze Rats</a> &mdash; every maze. One place.
+        </p>
     </div>
 </main>
 
@@ -172,9 +194,16 @@
 <!-- ============================= DONE ============================= -->
 <main class="qz-screen" id="qz-done" hidden>
     <div class="qz-wrap">
+        <!-- h2, not h1. This is the third of three screens in one document
+             and only ever one of them is on screen, so two <h1>s never
+             appear together — but they are both in the markup, and a
+             document with two of them is a document with no single answer to
+             "what is this page". The setup screen's "Quiz" is the page's
+             name; this is the name of a section within it. Styled by
+             .qz-hero h1, .qz-hero h2 so it looks exactly as it did. -->
         <header class="qz-hero">
             <p class="qz-eyebrow">That's your lot</p>
-            <h1>Final scores</h1>
+            <h2>Final scores</h2>
         </header>
         <ol class="qz-final" id="qz-final"></ol>
         <button type="button" class="qz-start" id="qz-again">Another round, same players</button>
