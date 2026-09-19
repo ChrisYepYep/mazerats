@@ -376,6 +376,65 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    /* ---------- how tall the frame is, on a screen this size ----------
+
+       Only on a phone, and only because the alternative was a guess that was
+       wrong by the height of the zoom buttons.
+
+       The narrow rule in css/wizard.css used to size the stage at
+       `100dvh - 190px`, where 190px stood for everything above it — the site
+       bar, the crest, the title, the search box, the secrets tally. On a
+       320px screen that stack is 262px tall, so the frame was given 72px
+       more than there was, and its bottom edge — where the zoom controls
+       live — sat below the fold. On this page that is worse than it sounds:
+       the stage carries `touch-action: none` so that a swipe pans the map,
+       which means the map is not a surface you can scroll the page from, and
+       the buttons hanging off the bottom of it could not be reached at all.
+
+       There is no honest CSS for "whatever is left", so this measures it:
+       where the stage starts, against the viewport that is actually there.
+       Setting the height cannot move the top — everything above the stage is
+       laid out before it — so there is no loop here, just one read.
+
+       The floor is what a map is still worth looking at in, and it is low:
+       a landscape phone has barely 200px to give and a short frame beats a
+       frame with its controls off the screen. The desktop rule never reads
+       this property, so nothing above 720px is touched by it.
+
+       Run on resize and on orientationchange without debouncing, because the
+       map's own resize handler (js/wizard-map.js) re-centres on a timer and
+       must find the new height already in place when it does.
+
+       And run whenever the header above CHANGES height, which it does several
+       times on the way to being settled and not in an order worth relying on:
+       the webfonts land and the title block grows, the map record arrives and
+       replaces the intro line and may add a credit under it, the secrets
+       tally is revealed once the map says it has any, and any of those can
+       take the search row from one line to two. Calling this after each of
+       them in turn is a list that the next addition will be left off — a
+       ResizeObserver on the header simply notices. It watches the two blocks
+       above the stage and nothing below it, so setting the height it
+       computes cannot feed back into what it is watching. */
+    const STAGE_FLOOR = 220;
+
+    function fitStageToScreen() {
+        const top = stage.getBoundingClientRect().top + window.scrollY;
+        /* The stage's own bottom margin, read rather than assumed: it is 8px
+           on a phone and 16px everywhere else, and a number written here
+           would be wrong on one of them the first time either changes. */
+        const gap = parseFloat(getComputedStyle(stage).marginBottom) || 0;
+        const room = Math.round(window.innerHeight - top - gap);
+        stage.style.setProperty("--wiz-stage-h", Math.max(STAGE_FLOOR, room) + "px");
+    }
+
+    fitStageToScreen();
+    window.addEventListener("resize", fitStageToScreen);
+    window.addEventListener("orientationchange", fitStageToScreen);
+    if (window.ResizeObserver) {
+        const watch = new ResizeObserver(fitStageToScreen);
+        document.querySelectorAll(".wiz-head, .site-header").forEach(el => watch.observe(el));
+    }
+
     /* ---------- where the map opens, on a frame this size ----------
 
        Zoom on this map is a multiple of "fitted to the frame", not a size.
@@ -1468,6 +1527,16 @@ document.addEventListener("DOMContentLoaded", () => {
         if (secrets.length && kept.length) {
             tryCodes(kept, { quiet: true });
         }
+
+        /* Everything that sits above the map has now been filled in — the
+           title, the intro line, the credit if there is one, and the secrets
+           tally just above — so this is the first moment the header is the
+           height it will keep, and the last moment before the opening view
+           below asks how tall the frame is in order to decide what zoom that
+           frame is worth. The ResizeObserver on .wiz-head catches all of
+           these too, but only on the next frame, which is after this
+           function has finished; here the answer is needed now. */
+        fitStageToScreen();
 
         /* Where the map opens.
 

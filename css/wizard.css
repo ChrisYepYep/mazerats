@@ -761,9 +761,14 @@
     text-align: center;
 }
 
+/* Above the tally beside it, because the results drop out of here and a
+   dropdown that something else paints over is a dropdown with a row missing.
+   The two were the other way round — see the note on .wiz-secrets — and the
+   first match was hidden behind "No secret passages found" at every width,
+   which on a search that returns two results is half the answer. */
 .wiz-search {
     position: relative;
-    z-index: 15;
+    z-index: 16;
     width: min(280px, 100%);
 }
 
@@ -841,7 +846,12 @@
    and a display declared on a class outranks it. */
 
 .wiz-secrets {
-    z-index: 16;    /* over .wiz-search, whose results drop from z-index 15 */
+    /* Over the map, under the search box. It was 16 — above .wiz-search —
+       on the reasoning that the tally should not be painted over, and what
+       that actually did was paint it over the search RESULTS, which drop out
+       of .wiz-search and so cannot escape that stacking order. The tally has
+       nothing to be above except the drawing; the list of matches has. */
+    z-index: 15;
 }
 
 .wiz-secrets[hidden] { display: none; }
@@ -2102,18 +2112,69 @@ body.is-albus .admin-panel[data-panel="wizard"] .admin-form-actions button {
     cursor: var(--cursor-pointer);
 }
 
-/* ---------- narrow ---------- */
+/* ---------- the frame, on a screen it does not fit on ----------
 
-@media (max-width: 720px) {
+   Two conditions, not one, and the second is the one that was missing.
+
+   The height here used to be `clamp(360px, 100dvh - 190px, 900px)` inside
+   the narrow rule below, and the 190px was a guess at what everything above
+   the map costs. On a 320px-wide phone that header is 262px tall — the crest
+   on one line, the title on the next, then the search and the tally on a
+   line each — so the frame was handed 72px more than the screen had and hung
+   its bottom edge, and the zoom buttons sitting on that edge, below the
+   fold. The usual way out of that is to scroll down to them, and on this
+   page a swipe is a pan: `touch-action: none` on the stage is what makes the
+   map draggable at all, and it means the map is not a surface the page
+   scrolls from. So the controls were not merely off-screen, they were
+   unreachable. The 360px floor made it worse, not better, on exactly the
+   short screens that needed the give.
+
+   The same phone turned on its side is 740 x 360, which is WIDER than the
+   720px the narrow rule asks for and half the height — so it got the desktop
+   rule, whose own floor is that same 360px, and put the frame's bottom edge
+   180px below a 360px screen. Turning a phone sideways to see more of a map
+   is the obvious thing to do with a map, so this is not an edge case; it is
+   the second thing anybody tries. Height is what actually decides this, and
+   a short window on a desktop lands in the same trouble for the same reason.
+
+   The fix is to stop guessing: js/wizard.js measures where the stage really
+   starts against the viewport really there and writes --wiz-stage-h, on
+   load, on resize, and whenever the header above changes height — see
+   fitStageToScreen. The calc is the fallback for the first paint and for a
+   browser that never runs it; the stage is transparent until .is-ready
+   either way, so nothing is seen at the fallback size. */
+@media (max-width: 720px), (max-height: 620px) {
     .wiz-stage {
-        margin: 0 8px 8px;
-        height: clamp(360px, calc(100vh - 190px), 900px);
+        min-height: 0;
+        aspect-ratio: auto;
+        height: var(--wiz-stage-h, calc(100vh - 240px));
         /* See the note on max-height in the base rule: vh is the phone
            viewport as it will be once the browser's chrome scrolls away,
            dvh is the one on screen now. */
-        height: clamp(360px, calc(100dvh - 190px), 900px);
+        height: var(--wiz-stage-h, calc(100dvh - 240px));
+        max-height: none;
     }
+}
+
+/* A short window is one the crest cannot have a third of. At its full
+   min(30vw, …) a 740px-wide landscape phone gives it 222px of height, which
+   is most of the screen spent on a badge above a map nobody can then see.
+   Capped by a number rather than by vw here, because on a short screen it is
+   the height that has run out and vw knows nothing about that. */
+@media (max-height: 620px) {
+    .wiz-crest { max-width: min(30vw, 84px); margin-bottom: -18px; }
+    .wiz-head h1 { font-size: clamp(20px, 3.4vw, 30px); }
+}
+
+/* ---------- narrow ---------- */
+
+@media (max-width: 720px) {
+    .wiz-stage { margin: 0 8px 8px; }
     .wiz-head { padding: 0 12px; gap: 6px 12px; }
+    /* Top rather than centre, so the title sits against the crest's own top
+       edge instead of floating in the middle of it once the tools below have
+       made the row taller than either. */
+    .wiz-head { align-items: flex-start; }
     /* Less overhang on a phone, where the crest is smaller and 24px would
        be most of its bottom banner. */
     .wiz-crest { margin-top: -4px; margin-bottom: -14px; }
@@ -2121,8 +2182,72 @@ body.is-albus .admin-panel[data-panel="wizard"] .admin-form-actions button {
        tightens, because on a phone the title beside it has already dropped to
        two lines and there is much less room to give away. */
     .wiz-crest { max-width: 22vw; }
+    /* Allowed to shrink, so the title stays BESIDE the crest rather than
+       wrapping under it. Without this the headings block keeps its full
+       intrinsic width — the h1 is 250px of "The Sorcerer's Atlas" — and on a
+       320px screen that plus the crest is wider than the line, so the whole
+       block dropped to a row of its own and the header grew by the height of
+       the crest for nothing. */
+    .wiz-headings { flex: 1 1 0; }
+    /* Down to whatever keeps it on one line beside the crest. The base rule
+       floors the title at 26px, which on a 320px screen is wider than the
+       214px left over once the crest and the gutters have had theirs, so the
+       title broke after "Sorcerer's" and left "Atlas" sitting alone against
+       the bottom half of the crest. A title that wraps is not a disaster; a
+       title that wraps into a one-word second line looks like a mistake. */
+    .wiz-head h1 { font-size: clamp(20px, 6.2vw, 26px); }
     .wiz-blurb { font-size: 11px; }
-    .wiz-search { width: calc(100% - 24px); }
+
+    /* The search and the tally, on ONE row of their own.
+
+       As a right-aligned column they cost two rows and lined up ragged, the
+       tally being wider than the search box and neither reaching either
+       margin — which on a narrow screen reads as two controls that have
+       come loose rather than as a toolbar. Side by side on a full-width row
+       they cost one row, the search takes the slack, and both edges are
+       straight.
+
+       flex-basis 100% is what forces the row: .wiz-head wraps, and a child
+       that wants the whole line gets the whole line. margin-left is undone
+       because the auto margin that pushes this to the far end of the title
+       row on a desktop would, on its own row, push it off the left margin. */
+    .wiz-tools {
+        flex: 1 0 100%;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-left: 0;
+    }
+    /* A basis rather than a share, so the search box is never squeezed to
+       nothing by the tally beside it: "No secret passages found" is a long
+       sentence to have to fit, and on the narrowest screens there is not
+       room for both on one line. When there is not, they wrap and each takes
+       a full line — which is why the tally grows too, so a wrapped row ends
+       at the margin rather than halfway across.
+
+       min-width because a flex item will not otherwise shrink below its
+       content, and an input's content width is its size attribute — nothing
+       to do with the text in it — so without this it refuses to give. */
+    .wiz-search { flex: 1 1 160px; width: auto; min-width: 0; }
+    .wiz-secrets { flex: 1 1 auto; }
+    .wiz-secret-tally { padding: 8px 10px; font-size: 12px; }
+
     .wiz-tooltip { width: 190px; }
     .wiz-tip-thumb { height: 96px; }
+}
+
+/* A finger is not a mouse pointer, and these four are the only controls on
+   the page that are pressed rather than typed at or dragged.
+
+   34px is comfortably under the 44px that both platforms ask for, and these
+   sit in the bottom-right corner of the map — the one place a right thumb
+   lands by accident — so an undersized target there is not just hard to hit,
+   it is easy to hit wrong. Sized by pointer rather than by width, because
+   the thing that decides this is what is doing the pressing, not how wide
+   the screen is: a tablet in landscape is 1024px and still all fingers. */
+@media (pointer: coarse) {
+    .wiz-controls { gap: 8px; }
+    .wiz-controls button { width: 44px; height: 44px; font-size: 20px; }
+    .wiz-zoom-label { padding: 10px 8px; }
 }
