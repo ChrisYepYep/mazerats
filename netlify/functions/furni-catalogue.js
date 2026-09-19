@@ -117,6 +117,30 @@ exports.handler = async (event) => {
         // false — so an absent limit falls through to "no limit" on its own.
         const limit = Number(params.limit);
         let items = catalogue.items;
+
+        /* A named handful, for a caller that already knows exactly which
+           rows it wants.
+
+           Fallin' Furni is the one that needs this. It asks for `sprites=1`,
+           which is by far the biggest payload this endpoint serves — 929KB
+           over 1,278 rows — and then throws nearly all of it away, keeping
+           only the classes its levels place that the local furni library
+           does not already cover. Today that is two of them. The filtering
+           was always happening; it was happening after the bytes had crossed
+           the wire.
+
+           Exact match on className, which is the same test the caller was
+           applying to the full list, so the rows that come back are the same
+           rows it would have kept. A name that matches nothing simply is not
+           in the answer — this is a narrowing, not a lookup, and a caller
+           asking for one furni that has been renamed should get the other
+           nine rather than a 404. */
+        const wanted = (params.classes || "").trim();
+        if (wanted) {
+            const keep = new Set(wanted.split(",").map(s => s.trim()).filter(Boolean));
+            items = items.filter(i => keep.has(i.className));
+        }
+
         if (q) {
             /* Name OR className, because className is where the THEME lives.
 

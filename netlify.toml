@@ -40,6 +40,13 @@
 
 [functions]
   directory = "netlify/functions"
+  # The stored furnidata, named explicitly rather than left to the bundler's
+  # tracing. `require("./_furnidata.json")` in furni-meta.js is static and
+  # every bundler Netlify has shipped would follow it — but this is the file
+  # that decides which furni can be sat on, and a deploy that quietly leaves
+  # it out gives Fallin' Furni no seats and no error. Two lines against a
+  # silent failure. See netlify/functions/_furnidata.js.
+  included_files = ["netlify/functions/_furnidata.json"]
 
 # The admin panel is unlinked from the site nav (not discoverable through
 # browsing) and its write actions require a real logged-in admin session

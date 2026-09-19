@@ -2651,17 +2651,49 @@
 
     /* Metadata and artwork for exactly the classes these levels use.
 
-       The catalogue is 1,283 rows carrying every sprite URL; a level uses a
-       handful. It is still one request — filtering happens here rather than at
-       the endpoint — but only the handful is KEPT, and nothing of the
-       15,000-record furnidata is held beyond what the levels name. */
+       TWO REQUESTS THAT ARE NOT THE SAME KIND OF REQUEST, and it is worth
+       being clear about which is which, because they look alike here.
+
+       FURNIDATA IS NOT OPTIONAL. It is the only thing on the page that knows
+       whether a furni can be SAT ON — Furni.libraryMeta answers the footprint
+       from the local library and returns sit:0 for everything, always, by
+       construction. RoomDrop asks `meta.sit` when it works out the sequence,
+       so without this fetch every seat in every level is an obstacle, the
+       sequence is empty, and the round cannot be played at all. Measured
+       across the fifty published levels: 109 seat classes, all 109 of them
+       sittable on furnidata's word alone. It stays unconditional.
+
+       THE CATALOGUE IS ARTWORK, AND THE LIBRARY MOSTLY HAS IT. Sprite URLs
+       are a fallback for classes js/furni-library.js does not carry; urlFor
+       reaches for them only after Furni.librarySprite has missed. So the set
+       worth asking for is not "every class the levels use" — it is the ones
+       the library cannot draw. Of the 250 classes across the published
+       levels, 248 are in the library. The other two cost 929KB of catalogue
+       to fetch, because the endpoint had no way to be asked for less.
+
+       Now it has, so this asks for the two by name, and for none at all when
+       the library covers everything — at which point the request stops being
+       made. The client-side filter below is unchanged and still runs: the
+       server narrowing and this one agree, and keeping both means a server
+       that ignores the parameter still produces the right answer. */
     async function loadLevelFurni(levels) {
         const wanted = new Set();
         for (const lv of levels) for (const c of Levels.furniUsed(lv)) wanted.add(c);
         if (!wanted.size) return;
 
+        /* Which of them the local library cannot draw. Furni.librarySprite is
+           the same lookup urlFor will make at draw time — asked here against
+           state 0, rotation 0, because a class the library holds at all holds
+           every rotation it ships. */
+        const noArt = [...wanted].filter(c => !Furni.librarySprite(c, 0, 0));
+
+        const catUrl = "/.netlify/functions/furni-catalogue?sprites=1&classes="
+            + encodeURIComponent(noArt.join(","));
+
         const [cat, meta] = await Promise.all([
-            fetch("/.netlify/functions/furni-catalogue?sprites=1").then(r => r.json()).catch(() => ({ items: [] })),
+            noArt.length
+                ? fetch(catUrl).then(r => r.json()).catch(() => ({ items: [] }))
+                : Promise.resolve({ items: [] }),
             fetch("/.netlify/functions/furni-meta").then(r => r.json()).catch(() => ({ items: {} }))
         ]);
         for (const row of cat.items || []) {
