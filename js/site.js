@@ -251,11 +251,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Privacy Policy link, appended onto the end of .site-footer's own
 // copyright line (its last <p>) rather than as a separate line of its
-// own — the policy itself lives on the homepage console modal's Privacy
-// page (js/console.js), not a standalone page, so this always points back
-// there: a same-page hash on home.html itself (no reload, just opens the
-// console via console.js's own hashchange listener), or a normal
-// navigation to home.html#privacy from anywhere else.
+// own. Where it points depends on whether the page it is sitting on can
+// show the policy itself: home.html and index.html both can, in a modal,
+// so they get a same-page hash and no navigation at all. Everywhere else
+// goes to /privacy, which is the policy with an address of its own.
 document.addEventListener("DOMContentLoaded", () => {
     const footer = document.querySelector(".site-footer");
     const copyrightLine = footer ? footer.querySelector("p:last-child") : null;
@@ -269,7 +268,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const page = document.body.dataset.page;
     // The policy page does not need a link to itself in its own footer.
     if (page === "legal") return;
-    const href = (page === "home" || page === "welcome") ? "#privacy" : "home.html#privacy";
+    /* And /privacy rather than home.html#privacy for every other page, for
+       the same reason index.html does not link there either. The atlas, the
+       game and the 404 page are all reachable while the site is in Coming
+       Soon — the 404 page especially, since that is where a stale link
+       lands — and from any of them "Privacy Policy" went to home.html,
+       whose gate bounced the reader to the landing page and dropped the
+       hash on the way. The link was not broken so much as quietly
+       pointless: it navigated somewhere, just never to the policy.
+
+       This is also simply the better target now that it exists. The note
+       above used to say the policy was not a standalone page; privacy.html
+       has been one for a while, it is the version that can be linked,
+       printed and read without a 204px porthole, and it is served at
+       /privacy — see the rewrite in netlify.toml. */
+    const href = (page === "home" || page === "welcome") ? "#privacy" : "/privacy";
     copyrightLine.insertAdjacentHTML(
         "beforeend",
         ` <span class="footer-dot" aria-hidden="true">&middot;</span> <a href="${href}">Privacy Policy</a>`

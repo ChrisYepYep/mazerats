@@ -13894,6 +13894,36 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
         background: transparent;
     }
 
+    /* The console's own close button, on the same principle and left off the
+       list above by oversight — the BUTTON that opens the console got the
+       reach, the one that closes it did not. It is a 13px square of pixel
+       art in the corner of the titlebar and it is the way out of a modal
+       that covers most of a phone screen, which makes it the worst 13px on
+       the site to have to hit.
+
+       Drawn at 13px still: the X is a sprite and scaling it would show. 30px
+       of reach rather than 44 for the same reason as the pills above — the
+       console frame is 257px wide and the window title ends 52px to the
+       left of this, so 30 stays clear of it and 44 would not.
+
+       No `position: relative` to go with it, unlike the three pills above.
+       They are static and need to be made into a containing block; this one
+       is already `position: absolute` — top: 6px, right: 14px in the
+       titlebar — and relative would take that away, dropping the button out
+       of the corner it is pinned to and back into the flow, where it lands
+       fourteen pixels off the left edge of the console with the window
+       painted over it. Which is what happened. */
+    .console-close-btn::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: max(100%, 30px);
+        height: max(100%, 30px);
+        background: transparent;
+    }
+
     /* --- controls whose parent clips, so the reach has to be real ---
 
        Neither of these can use the trick above: both sit inside a box with

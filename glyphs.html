@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <meta charset="UTF-8">
+<!-- The one page on the site that was missing this, and the one page that
+     says in its own copy it expects to be read on a phone sometimes: "this
+     page is for a computer rather than a phone... everything is still
+     copyable by tapping a tile if you are on one anyway". Without the line a
+     phone lays the page out at its fallback 980px and then shrinks the whole
+     thing to fit, so the tiles you are meant to tap came out about a third of
+     their size and the prose was unreadable.
+
+     The sheet itself needed no other change: the grid below is auto-fill
+     minmax(96px, 1fr) and reflows to whatever width it is given. It had
+     simply never been given a phone's. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- An internal reference sheet for Volter Goldfish's picture glyphs, used
      while building the site. Useful here, meaningless in a search result —
      robots.txt says the same thing, and this says it without a crawler
