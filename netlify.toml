@@ -34,8 +34,19 @@
 # `|| true` because this is a colour scheme. If it ever fails, the committed
 # files are still there and the deploy should carry on with them rather than
 # taking the archive down over a palette.
+# check-daily-parity runs FIRST and has no `|| true`, unlike the theme step
+# below. It compares how js/daily.js and netlify/functions/_daily.js each
+# derive a day's puzzle, and they have to agree: the games deal in the
+# browser and the score endpoints re-derive on the server to check what a
+# player claims. When those two drift, nothing errors — the server simply
+# decides every correct answer is wrong and the day's scores quietly do not
+# count, with no log line saying so.
+#
+# That is worth failing a deploy over, and it is not hypothetical: adding
+# the featured-day salt to one file and not the other would have done
+# exactly that, on launch day.
 [build]
-  command = "npm install && (node tools/themes.js || true) && node tools/build-minify.js"
+  command = "npm install && node tools/check-daily-parity.js && (node tools/themes.js || true) && node tools/build-minify.js"
   publish = "."
 
 [functions]
@@ -46,20 +57,71 @@
   # that decides which furni can be sat on, and a deploy that quietly leaves
   # it out gives Fallin' Furni no seats and no error. Two lines against a
   # silent failure. See netlify/functions/_furnidata.js.
-  included_files = ["netlify/functions/_furnidata.json"]
+  #
+  # js/featured-days.js for the same reason, and it is the one file the
+  # functions reach for outside their own directory. netlify/functions/
+  # _daily.js requires it so that the salt applied to a featured day is
+  # read from the SAME file the browser reads, rather than from a second
+  # copy that can be edited on its own — see that file's header. The
+  # require is static and the bundler would follow it; naming it here is
+  # the belt to that braces, because the thing it prevents is silent.
+  included_files = ["netlify/functions/_furnidata.json", "js/featured-days.js"]
 
-# The admin panel is unlinked from the site nav (not discoverable through
-# browsing) and its write actions require a real logged-in admin session
-# (username/password against the "admins" collection in MongoDB, see
-# netlify/functions/auth.js — bcrypt-hashed passwords, JWT session tokens),
-# so it no longer needs to be blocked outright — just reachable by anyone
-# who knows the URL, same as any password-gated page.
+# ------------------------------------------------------------ THE ADMIN PANEL
+#
+# It lives at /warren, and it used to live at /admin.
+#
+# WHAT THE RENAME IS AND IS NOT FOR. It is not the lock. The lock is in
+# netlify/functions/auth.js: bcrypt-hashed passwords, JWT session tokens,
+# and a throttle of ten failed sign-ins per IP and fifteen per username per
+# quarter of an hour, counted BEFORE any hashing so a refused attempt costs
+# one indexed count rather than 45ms of CPU. Forty guesses an hour is not a
+# door anybody opens by guessing.
+#
+# What the rename buys is quiet. The automated scanners that sweep every
+# site on the internet ask for /admin, /wp-admin and /administrator by
+# name, and each of those was a real page here — a function invocation, a
+# row in the activity log, and a login form put in front of a robot. At
+# /warren they get nothing, because nothing is there.
+#
+# THE FILE IS RENAMED, NOT REDIRECTED, and that is the part that matters.
+# `publish = "."` serves the whole repo root, so admin.html was reachable
+# at /admin.html whatever the redirects said — moving /admin alone would
+# have left the page sitting in plain sight one URL over. The file is now
+# warren.html, so /admin and /admin.html are not blocked so much as
+# absent: they 404 the way any other address that was never a page does,
+# which tells a scanner nothing at all.
+#
+# It is still unlinked from the site nav and still noindex in its own
+# markup.
+#
+# AND IT IS NO LONGER IN robots.txt, which used to carry "Disallow: /admin".
+# A Disallow line is a published list of the addresses somebody thought
+# were worth hiding, served to anyone who asks and read by every scanner
+# ever written — naming the panel there undid the reason for hiding it.
+# Not even a comment survives in that file: robots.txt goes out to the
+# public, so an explanatory note saying "the admin panel is deliberately
+# not listed" still tells a reader there is one to look for. The reasoning
+# lives here instead, in a file the site does not serve.
+#
+# Nothing is lost by the omission. The noindex in the page's own markup is
+# what actually keeps it out of search results, and that has always been
+# there; robots.txt was only ever saying it a second time, at the cost of
+# advertising the address.
+#
+# THE ADDRESS IS STILL IN PUBLIC PAGE SOURCE, and it is worth being honest
+# about that: home.html and fallinfurni.html each build an "Admin" pill for
+# a verified admin, and the string "warren.html" is in those files whether
+# or not the pill is ever drawn. Anybody who reads view-source can find it.
+# That is a different threat from the one this addresses — a person looking
+# on purpose, rather than a bot working through a list — and the answer to
+# that one is the login throttle above, not the URL.
 
-# Serves admin.html at the clean /admin URL (a rewrite, status 200, so the
-# address bar stays /admin rather than redirecting to /admin.html).
+# Serves warren.html at the clean /warren URL (a rewrite, status 200, so
+# the address bar stays /warren rather than showing the filename).
 [[redirects]]
-  from = "/admin"
-  to = "/admin.html"
+  from = "/warren"
+  to = "/warren.html"
   status = 200
 
 # The privacy policy as a page of its own, at a clean /privacy. It has
@@ -138,6 +200,22 @@
 [[redirects]]
   from = "/wizard/:id"
   to = "/wizard.html"
+  status = 200
+
+# The picture-glyph sheet, at a clean /glyphs like every other page.
+#
+# It was written as an internal reference and reached only by typing
+# glyphs.html, which is why it never had one. It is not internal any more —
+# the archive's side menu offers it as "Alt Codes" (see js/home.js), so it
+# is a page of the site that visitors are invited to open, and it should
+# have an address that looks like one.
+#
+# Still noindex, in its own markup and in robots.txt: useful to somebody
+# naming a room, meaningless in a search result. Being linked and being
+# indexed are different questions and this only changes the first.
+[[redirects]]
+  from = "/glyphs"
+  to = "/glyphs.html"
   status = 200
 
 # publish = "." above means the whole repo root — including this directory
@@ -265,6 +343,23 @@
     # Nothing here uses a camera, a microphone or a location, so nothing
     # embedded in a page can quietly ask for one either.
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    # Every address on this site is https already — Netlify redirects http to
+    # it and has done since the domain was pointed here. This is about the
+    # ONE request that redirect cannot protect: the first one, typed or
+    # pasted without a scheme, which leaves the browser in plaintext and is
+    # therefore the one worth intercepting. After this header has been seen
+    # once, the browser upgrades every later address itself and never sends
+    # that request at all.
+    #
+    # Two years because that is what preload lists want, and includeSubDomains
+    # because there is nothing on a subdomain of mazerats.net to break —
+    # the site, the functions and the images are all served from the apex.
+    #
+    # NOT preloaded (no `preload` directive). Getting on the list is a
+    # submission; getting off it takes months, during which every browser
+    # refuses plain http for the whole domain. The header alone is the part
+    # that is free to undo, and it buys almost all of the protection.
+    Strict-Transport-Security = "max-age=63072000; includeSubDomains"
     # Written from what the site actually loads, which is a short list:
     # Google's font CSS and the font files it points at, the umami analytics
     # script, Habbo's own avatar imaging service, the pictures inside a

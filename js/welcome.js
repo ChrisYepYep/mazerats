@@ -2,11 +2,198 @@
    label and behavior based on the landing state set from the admin page
    (see netlify/functions/settings.js). Defaults to a working "Enter" link
    if the check fails, so a live/API hiccup never locks visitors out. */
+/* ---------------------------------------------------- THE COUNTDOWN
+
+   Under the Enter button while the site is gated and a launch date is set.
+   The markup is in index.html; this fills it and ticks it.
+
+   THREE CONDITIONS, all required: the site is gated, a launchAt exists, and
+   it is still in the future. Any one failing and this does nothing at all
+   and the landing page is what it always was. That is deliberate — the gate
+   is the only thing on this page that has to work, and a countdown is
+   decoration on top of it.
+
+   WHAT HAPPENS AT ZERO. Not the obvious thing. Reaching zero does NOT open
+   the site: the gate is the landingState setting and only an admin flips
+   it, which is right — a date typed a fortnight ago should not be able to
+   publish the archive on its own while nobody is watching. So at zero the
+   clock stops and starts asking the settings endpoint whether the switch
+   has been thrown yet, and the moment it has, the page reloads into the
+   open site. Somebody who left the tab open overnight walks in without
+   touching anything, and nobody has to sit refreshing on launch morning.
+
+   The poll is every 20 seconds and only ever runs after zero, so it costs
+   nothing on any ordinary day.
+
+   ---- AND IT IS JITTERED, WHICH IS THE WHOLE POINT OF THE NUMBERS BELOW.
+
+   Every tab counting down reaches zero at the same instant — that is what
+   a countdown to a fixed moment does. A plain setInterval would then have
+   all of them ask the settings endpoint in the same second, and again
+   twenty seconds later, and again: a thundering herd, arriving at exactly
+   the minute the site is least able to absorb one, made entirely of
+   people who are already waiting patiently.
+
+   So each tab waits a random 0–20s on top of the base interval. The same
+   number of requests still arrive, spread over a window instead of
+   stacked on an instant, and nobody waits meaningfully longer for it —
+   the endpoint is edge-cached for twenty seconds anyway (see
+   GATE_CDN_CACHE in netlify/functions/_cache.js), so the spread lines up
+   with how long a cached answer is good for. */
+const COUNTDOWN_POLL_MS = 20000;
+const COUNTDOWN_POLL_JITTER_MS = 20000;
+
+const nextPollDelay = () =>
+    COUNTDOWN_POLL_MS + Math.floor(Math.random() * COUNTDOWN_POLL_JITTER_MS);
+
+function startCountdown(target) {
+    const box = document.getElementById("welcome-countdown");
+    if (!box) return;
+
+    const label = document.getElementById("welcome-countdown-label");
+    const when = document.getElementById("welcome-countdown-when");
+    const parts = {
+        days: document.getElementById("wc-days"),
+        hours: document.getElementById("wc-hours"),
+        mins: document.getElementById("wc-mins"),
+        secs: document.getElementById("wc-secs")
+    };
+    if (!label || !when || Object.values(parts).some(el => !el)) return;
+
+    label.textContent = "The archive opens in";
+    /* The date said twice over: the clock says how long, this says when.
+
+       IN THE READER'S OWN TIMEZONE, unlike everything else on the site,
+       which is UTC. "Saturday 3 October at 10:00" is what somebody sets an
+       alarm for; UTC is a sum they have to do first. The clock above is
+       the same instant either way. Said out loud on the end, because a
+       time with no zone on a site whose every other time is UTC is a time
+       somebody will get wrong by an hour.
+
+       "en-GB" for the FORMAT, though — the local zone is the point here,
+       the local date order is not. Left as undefined this printed
+       "October 3 at 10:00 AM" on an American machine, which is the same
+       split the three daily games had until it was fixed (see longDate in
+       js/ratrospect.js). The site writes dates one way. */
+    when.textContent = target.toLocaleString("en-GB", {
+        weekday: "long", day: "numeric", month: "long",
+        hour: "2-digit", minute: "2-digit"
+    }) + " your time";
+    box.hidden = false;
+
+    const pad = n => String(n).padStart(2, "0");
+    let pollTimer = null;
+
+    /* Reload only once the gate has actually been lifted. A failed check is
+       not a reason to reload — reloading a gated page just shows the gate
+       again, and doing it every twenty seconds would be a page that flickers
+       at anyone who leaves it open. */
+    async function checkIfOpen() {
+        try {
+            const { landingState } = await Api.getSiteSettings();
+            if (landingState !== "coming-soon" && landingState !== "maintenance") {
+                location.reload();
+            }
+        } catch (e) { /* still shut, or still offline; ask again shortly */ }
+    }
+
+    function tick() {
+        const left = target.getTime() - Date.now();
+        if (left <= 0) {
+            // Stop counting and start watching. The wording is honest about
+            // what it knows: the moment has arrived, the switch has not
+            // necessarily been thrown.
+            label.textContent = "Opening any moment now";
+            box.classList.add("is-due");
+            parts.days.textContent = "0";
+            parts.hours.textContent = "00";
+            parts.mins.textContent = "00";
+            parts.secs.textContent = "00";
+            when.textContent = "";
+            clearInterval(ticker);
+            if (!pollTimer) {
+                /* The FIRST check is jittered too, and that one matters
+                   most: it is the one every waiting tab would otherwise
+                   fire in the same second the clock strikes. A few seconds
+                   of spread before the first ask costs a visitor nothing —
+                   they have been waiting a fortnight — and it is the
+                   difference between a spike and a trickle. */
+                pollTimer = setTimeout(function poll() {
+                    checkIfOpen();
+                    pollTimer = setTimeout(poll, nextPollDelay());
+                }, Math.floor(Math.random() * COUNTDOWN_POLL_JITTER_MS));
+            }
+            return;
+        }
+        const secs = Math.floor(left / 1000);
+        parts.days.textContent = String(Math.floor(secs / 86400));
+        parts.hours.textContent = pad(Math.floor(secs / 3600) % 24);
+        parts.mins.textContent = pad(Math.floor(secs / 60) % 60);
+        parts.secs.textContent = pad(secs % 60);
+    }
+
+    const ticker = setInterval(tick, 1000);
+    tick();
+}
+
+/* ------------------------------------------- FETCHING IT BEFORE IT IS ASKED
+
+   The archive's slow part is one 460KB response (73KB over the wire) that
+   home.html cannot start asking for until home.html has loaded. So the
+   landing page starts asking the moment somebody looks like they are about
+   to press Enter, and the archive lands on a browser that already has it.
+
+   ON INTENT, NOT ON ARRIVAL. Pointing at a button, tabbing onto it or
+   putting a finger down on it are all a few hundred milliseconds of warning
+   before the click, and all of them mean this visitor is going. Fetching on
+   page load instead would pull 73KB for everybody who reads the front door
+   and leaves, which on a launch day is a great many people.
+
+   THE FETCH IS THROWN AWAY, and that is fine — the point is the copy the
+   browser keeps. /rooms answers with `public, max-age=0, must-revalidate`
+   (see netlify/functions/_cache.js), so the body is stored and the real
+   request a second later revalidates into a 304 with no body at all. It
+   also warms the CDN's own copy for whoever is next through the door in
+   the same region, which is worth having on the one day everybody arrives
+   at once.
+
+   ONCE. `{ once: true }` on all three listeners, and a flag besides, because
+   pointerenter and focus both fire for somebody navigating by keyboard. */
+let warmed = false;
+
+function warmTheArchive(btn) {
+    if (!btn) return;
+
+    const warm = () => {
+        if (warmed) return;
+        warmed = true;
+
+        // The page itself, and everything its <head> pulls in.
+        try {
+            const link = document.createElement("link");
+            link.rel = "prefetch";
+            link.href = "home.html";
+            link.as = "document";
+            document.head.appendChild(link);
+        } catch (e) { /* an old browser without rel=prefetch; the fetch below still helps */ }
+
+        // And the archive, which is the part that actually takes the time.
+        // Failures are silent on purpose: this is an optimisation, and the
+        // real request on the next page handles its own errors as it always
+        // did.
+        fetch("/.netlify/functions/rooms", { credentials: "same-origin" }).catch(() => {});
+    };
+
+    ["pointerenter", "focus", "touchstart"].forEach(type => {
+        btn.addEventListener(type, warm, { once: true, passive: true });
+    });
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
     const btn = document.getElementById("welcome-btn");
     const label = document.getElementById("welcome-btn-label");
 
-    const { landingState } = await Api.getSiteSettings();
+    const { landingState, launchAt } = await Api.getSiteSettings();
 
     // aria-disabled moves with the label: the button is focusable in every
     // state (see its markup in index.html), so the state has to be spoken
@@ -30,6 +217,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         // own terms rather than through the stand-in role.
         btn.removeAttribute("role");
         btn.removeAttribute("tabindex");
+        warmTheArchive(btn);
+    }
+
+    /* The countdown, once the button above has said its piece.
+
+       Only while gated: on a live site the door is open and how long it
+       took to get here is nobody's business. Parsed defensively because
+       this value came over the wire — an unreadable date leaves the gate
+       exactly as the block above left it. */
+    const gated = landingState === "coming-soon" || landingState === "maintenance";
+    if (gated && launchAt) {
+        const target = new Date(launchAt);
+        if (!isNaN(target.getTime()) && target.getTime() > Date.now()) {
+            startCountdown(target);
+        }
     }
 });
 

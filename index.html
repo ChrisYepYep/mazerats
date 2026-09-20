@@ -68,6 +68,48 @@
 
     <main class="welcome-screen">
         <div class="welcome-stack">
+            <!-- THE COUNTDOWN, above the wordmark and ranged left.
+
+                 Read as an eyebrow over the title rather than as a panel
+                 under the button: the wordmark is what this page is, and a
+                 clock sitting on top of it says what is about to happen to
+                 it. Left, because the two lines are short and centring two
+                 short lines over a very wide one leaves them floating.
+
+                 OUT OF THE FLOW, anchored to the top of the stack — see
+                 .welcome-countdown in css/style.css. Everything in the
+                 stack counts toward what .welcome-screen centres, so in
+                 the flow this would shove the wordmark and the Enter
+                 button down the page exactly as it shoved them up when it
+                 sat below them.
+
+                 First in the DOM as well as first on the screen, so it is
+                 read in the order it appears.
+
+                 Ships hidden and empty. js/welcome.js fills it only when
+                 the site is gated AND a launch date is set AND that date
+                 is still ahead — three conditions, any of which failing
+                 leaves the landing page exactly as it was before this
+                 existed.
+
+                 aria-live="off" deliberately: a polite live region that
+                 changes every second is a screen reader reading a clock
+                 aloud forever. The digits are aria-hidden below; the
+                 label and the date carry the meaning. -->
+            <div class="welcome-countdown" id="welcome-countdown" hidden aria-live="off">
+                <p class="welcome-countdown-label" id="welcome-countdown-label"></p>
+                <div class="welcome-countdown-clock" aria-hidden="true">
+                    <span class="wc-unit"><strong id="wc-days">0</strong><span class="wc-tag">days</span></span>
+                    <span class="wc-sep">:</span>
+                    <span class="wc-unit"><strong id="wc-hours">00</strong><span class="wc-tag">hrs</span></span>
+                    <span class="wc-sep">:</span>
+                    <span class="wc-unit"><strong id="wc-mins">00</strong><span class="wc-tag">min</span></span>
+                    <span class="wc-sep">:</span>
+                    <span class="wc-unit"><strong id="wc-secs">00</strong><span class="wc-tag">sec</span></span>
+                </div>
+                <p class="welcome-countdown-when" id="welcome-countdown-when"></p>
+            </div>
+
             <h1 class="hero-title welcome-title"><span id="welcome-maze">MAZE<img class="hand-rat" src="assets/img/rat_handstand.png" alt="" aria-hidden="true"></span><span>RATS</span></h1>
             <!-- No href by default and starts disabled — js/welcome.js is the
                  only thing that ever turns this into a working link, and only

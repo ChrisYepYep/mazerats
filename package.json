@@ -3,6 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "description": "Maze Rats — a Habbo Hotel maze room archive.",
+  "scripts": {
+    "check": "node tools/check-daily-parity.js"
+  },
   "dependencies": {
     "@netlify/blobs": "^8.1.0",
     "bcryptjs": "^2.4.3",

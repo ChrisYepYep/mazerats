@@ -8,6 +8,7 @@
 const { getDb } = require("./_db");
 const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
+const { cachedJson, GATE_CDN_CACHE } = require("./_cache");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -42,7 +43,7 @@ const DEFAULT_FF_STATE = "live";
    This list is the gate: a name that is not on it is refused, so a typo or a
    stale bookmark cannot put the site into a theme whose stylesheet does not
    exist. Adding a palette means adding it here, in THEMES in tools/themes.js,
-   and as a button in admin.html.
+   and as a button in warren.html.
 
    Site-wide and stored here, rather than a per-visitor preference kept in
    the browser, because it is a decision about how the archive LOOKS to
@@ -68,6 +69,34 @@ const DEFAULT_THEME = "classic";
 const MAX_LOBBY_FURNI = 10;
 const CLASS_NAME = /^[A-Za-z0-9_]{1,64}$/;
 
+/* When the site opens, as an instant in time, for the countdown on the
+   landing page (see js/welcome.js).
+
+   A SETTING RATHER THAN THE LAUNCH EVENT'S OWN DATE, which was the obvious
+   alternative and is worse. The events collection is the archive's record
+   of things that happened in the hotel; "when does this website open" is
+   not one of those, and reading it from whichever upcoming event happens
+   to be soonest would put a countdown to somebody's maze night on the
+   front door. It is also a thing that gets nudged by an hour the evening
+   before, which should not mean editing an archive record.
+
+   Stored as an ISO instant and always in UTC, like every other date on the
+   site — the countdown is to a moment, not to a wall clock, and everyone
+   watching it is in a different place.
+
+   An empty string is a real value meaning "no date yet": the gate then
+   says Coming Soon exactly as it always did. That is the default, and it
+   is what the landing page falls back to whenever the stored value cannot
+   be parsed — a countdown is a decoration on the gate, and a broken one
+   must never be able to take the gate down with it. */
+function cleanLaunchAt(value) {
+    const raw = String(value == null ? "" : value).trim();
+    if (!raw) return "";
+    const when = new Date(raw);
+    if (isNaN(when.getTime())) return null;      // null means "reject this"
+    return when.toISOString();
+}
+
 exports.handler = async (event) => {
     let db;
     try {
@@ -79,14 +108,20 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === "GET") {
         const doc = await settings.findOne({ _id: "site" });
-        return json(200, {
+        /* Through the edge, on the short gate policy — see GATE_CDN_CACHE in
+           _cache.js for why this one is twenty seconds and not sixty. This
+           is the most-requested endpoint on the site by a wide margin (every
+           page asks once, and before this every page asked three times), and
+           it was the only hot public read with no cache header at all. */
+        return cachedJson(event, {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
             aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT,
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
             fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
             theme: (doc && doc.theme) || DEFAULT_THEME,
-            palette: (doc && doc.palette) || null
-        });
+            palette: (doc && doc.palette) || null,
+            launchAt: (doc && doc.launchAt) || ""
+        }, { cdn: GATE_CDN_CACHE });
     }
 
     if (!isAuthorized(event)) return UNAUTHORIZED;
@@ -136,6 +171,13 @@ exports.handler = async (event) => {
                 return json(400, { error: "That is not a palette name." });
             }
             update.palette = p || null;
+        }
+        if (body.launchAt !== undefined) {
+            const when = cleanLaunchAt(body.launchAt);
+            if (when === null) {
+                return json(400, { error: "launchAt must be a date, or empty to clear it" });
+            }
+            update.launchAt = when;
         }
         if (body.aboutText !== undefined) {
             update.aboutText = String(body.aboutText);

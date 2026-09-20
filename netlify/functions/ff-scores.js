@@ -32,13 +32,71 @@
    A worse run never overwrites a better one, so the table cannot be walked
    backwards by replaying badly. */
 
-const { getDb, ensureUniqueIndex } = require("./_db");
+const { getDb, ensureUniqueIndex, ensureIndex } = require("./_db");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const COLLECTION = "ff_scores";
 const LEVELS = "ff_levels";
 const TOP = 25;
+
+/* ---------------------------------------------------------------- A TOURNAMENT
+
+   A window of days with a board of its own. There is one because the site
+   opens on the 3rd of October and an all-time leaderboard is a poor thing
+   to arrive at: the top of it was set weeks ago by somebody who has had the
+   game to themselves, and a newcomer's first good run lands at position
+   eleven. A week-long board that starts empty is a board everybody is at
+   the top of on day one.
+
+   ITS OWN COLLECTION, AND WHY IT HAS TO BE. ff_scores keeps ONE ROW PER
+   PLAYER holding their all-time best, and a worse run never replaces a
+   better one — so a tournament simply cannot be read out of it. A player
+   whose best run predates the window would appear in it with a run they
+   did not play that week, and a player whose best run predates the window
+   AND who plays well during it would not appear at all, because their
+   tournament run was refused for not beating a row from last month. Both
+   of those are the wrong answer. So a run inside the window is written to
+   both places, judged separately in each.
+
+   ONE ROW PER PLAYER HERE TOO, on the same better-than rule, rather than a
+   log of every run. It is the same kind of board, scoped to a week.
+
+   THE DATES ARE UTC INSTANTS and the end is exclusive, so a week reads as
+   "from the 3rd up to the 10th" with no argument about which side midnight
+   falls on. `to` being exclusive also means the last day is whole.
+
+   SET `id: null` TO TURN IT OFF. Everything below then behaves exactly as
+   it did before this existed: no extra write on POST, no extra read on
+   GET, and the page draws one board. The id is part of the row key, so
+   changing it starts a fresh board rather than adding to the old one. */
+const TOURNAMENT = {
+    id: "launch-week-2026",
+    name: "Launch Week",
+    from: "2026-10-03T09:00:00Z",
+    to: "2026-10-10T09:00:00Z"
+};
+const TOURNAMENT_COLLECTION = "ff_tournament";
+
+/* How long the finished board stays up after the window closes.
+
+   A tournament that vanishes the instant it ends is one nobody sees the
+   result of — the interesting moment is the morning after, when people
+   come back to find out who won. A fortnight, then it goes quietly and the
+   all-time board is the only one again. */
+const RESULT_LINGERS_MS = 14 * 24 * 60 * 60 * 1000;
+
+function tournamentWindow(now = Date.now()) {
+    if (!TOURNAMENT.id) return null;
+    const from = Date.parse(TOURNAMENT.from);
+    const to = Date.parse(TOURNAMENT.to);
+    // A mistyped date must not take the leaderboard down with it.
+    if (isNaN(from) || isNaN(to) || to <= from) return null;
+    const running = now >= from && now < to;
+    const showing = running || (now >= to && now - to < RESULT_LINGERS_MS);
+    if (!showing) return null;
+    return { id: TOURNAMENT.id, name: TOURNAMENT.name, from: TOURNAMENT.from, to: TOURNAMENT.to, running };
+}
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -189,6 +247,13 @@ exports.handler = async (event) => {
            the old ranking had: 250 a level plus the seats only reachable by
            getting there, and ten a second for the clock. The time is still the
            tie-break, for the rare exact draw. */
+        /* The index the sort below needs. Both boards rank on the same
+           three keys, and a leaderboard that reads 25 rows out of a few
+           hundred should walk an index rather than sort the lot in memory
+           every time the title screen is opened — which, during launch
+           week, is a great many times. */
+        await ensureIndex(scores, { points: -1, ms: 1, at: 1 });
+
         const top = await scores
             .find({}, { projection: { _id: 0 } })
             .sort({ points: -1, ms: 1, at: 1 })
@@ -201,6 +266,39 @@ exports.handler = async (event) => {
             out.you = mine ? clean(mine) : null;
             out.signedIn = { name: player.name || player.username, id: player.id };
         }
+
+        /* The tournament board, when there is one running or just finished.
+
+           A second query rather than folding it into the one above: it is a
+           different collection with a different scope, and it only exists
+           for a fortnight or so a year. Sorted the same way the all-time
+           board is, because it is the same kind of ranking over a smaller
+           set of runs, and a board that ranked differently from the one
+           above it would be a board nobody could read.
+
+           Failures here are swallowed. This is a decoration on a page whose
+           job is to let somebody play a game: if the tournament collection
+           is unreachable the all-time board should still be served, not a
+           500. */
+        const meet = tournamentWindow();
+        if (meet) {
+            try {
+                const meetCol = db.collection(TOURNAMENT_COLLECTION);
+                await ensureIndex(meetCol, { tid: 1, points: -1, ms: 1, at: 1 });
+                const rows = await meetCol
+                    .find({ tid: meet.id }, { projection: { _id: 0 } })
+                    .sort({ points: -1, ms: 1, at: 1 })
+                    .limit(TOP)
+                    .toArray();
+                out.tournament = { ...meet, top: rows.map(clean) };
+                if (player) {
+                    const mine = await db.collection(TOURNAMENT_COLLECTION)
+                        .findOne({ tid: meet.id, playerId: player.id }, { projection: { _id: 0 } });
+                    out.tournament.you = mine ? clean(mine) : null;
+                }
+            } catch (e) { /* the all-time board is still worth serving */ }
+        }
+
         return json(200, out);
     }
 
@@ -268,6 +366,43 @@ exports.handler = async (event) => {
     if (better) {
         await scores.updateOne({ playerId: player.id }, { $set: row }, { upsert: true });
     }
+
+    /* And onto the tournament board, judged on its own terms.
+
+       DELIBERATELY NOT `if (better)`. The two boards are scored
+       independently: a run can be the best a player has managed this week
+       while falling short of the best they have ever managed, and that run
+       is exactly what a week-long board is for. Nesting this inside the
+       block above — which is the obvious thing to write — would silently
+       drop the runs the tournament exists to collect.
+
+       `running`, not `showing`: the fortnight the finished board lingers
+       for is a fortnight nobody can add to it.
+
+       Written after the main row and in its own try. A tournament is a
+       nice-to-have on top of a leaderboard; if this collection is having a
+       bad afternoon the player's real score has already been recorded and
+       the response below is still the truth about it. */
+    const meet = tournamentWindow();
+    if (meet && meet.running) {
+        try {
+            const meetRows = db.collection(TOURNAMENT_COLLECTION);
+            await ensureUniqueIndex(meetRows, ["tid", "playerId"]);
+            const prev = await meetRows.findOne({ tid: meet.id, playerId: player.id });
+            const prevPoints = prev ? Number(prev.points) || 0 : 0;
+            const betterHere = !prev
+                || points > prevPoints
+                || (points === prevPoints && ms < prev.ms);
+            if (betterHere) {
+                await meetRows.updateOne(
+                    { tid: meet.id, playerId: player.id },
+                    { $set: { ...row, tid: meet.id } },
+                    { upsert: true }
+                );
+            }
+        } catch (e) { /* the run is on the real board either way */ }
+    }
+
     return json(200, {
         recorded: better,
         reason: better ? null : "not-your-best",

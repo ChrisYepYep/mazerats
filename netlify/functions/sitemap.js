@@ -51,7 +51,11 @@ exports.handler = async (event) => {
     // The pages themselves, which exist whether or not the database answers.
     const entries = [
         url(`${origin}/`, "", "1.0"),
-        url(`${origin}/home.html`, "", "0.9"),
+        /* The archive, at the clean address rather than /home.html. A
+           sitemap entry that is not the page's own canonical is a sitemap
+           entry asking to be ignored, and home.html names /home — see the
+           note beside its <link rel="canonical">. */
+        url(`${origin}/home`, "", "0.9"),
         /* The game, at its pretty address — the one it names as canonical and
            the one people actually paste. It was noindex while it was being
            built and so had no business here; all fifty rooms are finished now.

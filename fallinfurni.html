@@ -26,7 +26,7 @@
 
          It also keeps the other half of the old script: on a gated SITE an
          admin arriving here has nowhere obvious to go, so a "Dev Mode" pill
-         and links to Home and Admin appear for them. Two different states,
+         and a couple of shortcuts appear for them. Two different states,
          read from one request. -->
     <script>
     (function () {
@@ -65,7 +65,7 @@
                 pill.className = "header-badge header-state-pill";
                 pill.textContent = "Dev Mode";
                 brandGroup.appendChild(pill);
-                [["Home", "home.html"], ["Admin", "admin.html"]].forEach(function (pair) {
+                [["Home", "home.html"], ["Admin", "warren.html"]].forEach(function (pair) {
                     var link = document.createElement("a");
                     link.className = "header-badge header-state-pill header-state-link";
                     link.href = pair[1];
@@ -80,8 +80,25 @@
         var token = null;
         try { token = localStorage.getItem(TOKEN_KEY); } catch (e) { /* private mode */ }
 
-        fetch("/.netlify/functions/settings")
-            .then(function (res) { return res.ok ? res.json() : null; })
+        /* THE PAGE'S ONE SETTINGS REQUEST, published for everything after
+           it — the same handshake home.html uses, and for the same reason.
+           This page was asking four times: here, js/api.js, the game's own
+           boot, and js/palette-wear.js.
+
+           IT STILL FIRES FROM THE <head>, first thing, exactly as before.
+           That matters more here than anywhere else on the site: the game's
+           loading bar starts on the back of this request, and moving it
+           behind js/api.js would mean the bar waited on a script download
+           before it could start. The request is unchanged; it is only
+           handed on now instead of being made privately.
+
+           The promise is what is published, not the parsed body, because
+           the later callers arrive while this is still in flight. */
+        var settingsRequest = fetch("/.netlify/functions/settings")
+            .then(function (res) { return res.ok ? res.json() : null; });
+        try { window.__mrSettings = settingsRequest; } catch (e) { /* nothing depends on this */ }
+
+        settingsRequest
             .then(function (settings) {
                 if (!settings) return null;
                 try { localStorage.setItem(LANDING_STATE_KEY, settings.landingState); } catch (e) { /* private mode */ }
@@ -393,6 +410,21 @@
                                  rather than blocking the way in. -->
                             <p class="ff-title-who" id="ff-title-who"></p>
 
+                            <!-- The tournament board, above the all-time one
+                                 while a meet is running or has just finished.
+                                 Everything about it — whether it exists, what
+                                 it is called, who is on it — comes from
+                                 /.netlify/functions/ff-scores, which is also
+                                 where the dates live. Ships hidden and stays
+                                 hidden unless that endpoint says otherwise,
+                                 so the ordinary state of this page is the one
+                                 board it has always had. -->
+                            <div class="ff-board ff-board--meet" id="ff-meet-board" hidden>
+                                <h3><span id="ff-meet-name">Launch Week</span><span class="ff-meet-flag" id="ff-meet-flag"></span></h3>
+                                <p class="ff-meet-note" id="ff-meet-note"></p>
+                                <ol id="ff-meet-list"></ol>
+                            </div>
+
                             <div class="ff-board" id="ff-board" hidden>
                                 <h3>Best runs</h3>
                                 <ol id="ff-board-list"></ol>
@@ -529,10 +561,16 @@
                     <!-- Shown only when the server would not list levels. A
                          dead "sign in" line in the dropdown said what was
                          wrong without offering the way out of it. -->
+                    <!-- No link to the admin panel, for the same reason the
+                         refusal screen in js/fallinfurni.js no longer carries
+                         one: this markup ships to everybody, so a href here
+                         publishes the panel's address in page source. An
+                         owner already knows it. The line still says what is
+                         wrong and what the consequence is, which is the part
+                         that was actually useful. -->
                     <p id="ff-signin" class="ff-signin" hidden>
                         <span class="ff-signin-why"></span>
-                        <a href="/admin" target="_blank" rel="noopener">Sign in</a>
-                        to keep levels on the site — until then, saving keeps them in this browser only.
+                        Sign in to keep levels on the site — until then, saving keeps them in this browser only.
                     </p>
                 </div>
 
@@ -832,7 +870,7 @@
                              carrying a placeholder alone, which disappears as
                              soon as anyone types into it. -->
                         <label class="visually-hidden" for="console-contact-message">Your message</label>
-                        <textarea class="console-input console-input-message" id="console-contact-message" placeholder="Just leaving some feedback..."></textarea>
+                        <textarea class="console-input console-input-message" id="console-contact-message" placeholder="Just leaving some feedback…"></textarea>
                         <label class="console-field-label" for="console-contact-username">Your Origins username:</label>
                         <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="L1C">
                         <!-- Two states, one of which js/console.js hides.
@@ -871,7 +909,7 @@
                         <label class="console-field-label" for="console-submit-builder">Who built it:</label>
                         <input type="text" class="console-input console-input-line" id="console-submit-builder" placeholder="Origins username">
                         <label class="console-field-label" for="console-submit-notes">Anything else:</label>
-                        <textarea class="console-input console-input-message" id="console-submit-notes" placeholder="Opening date, mechanics, what you love about this maze..."></textarea>
+                        <textarea class="console-input console-input-message" id="console-submit-notes" placeholder="Opening date, mechanics, what you love about this maze…"></textarea>
                         <label class="console-field-label" for="console-submit-username">Your Origins username:</label>
                         <input type="text" class="console-input console-input-line" id="console-submit-username" placeholder="So we can credit you">
                         <input type="text" class="console-hp-field" id="console-submit-hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
@@ -954,7 +992,14 @@
                 <i class="ff-rotate-body"></i>
                 <i class="ff-rotate-arrow"></i>
             </div>
-            <p class="ff-rotate-say" id="ff-rotate-say">Turn your phone sideways</p>
+            <!-- "screen", not "phone". A small Android tablet — 600px across
+                 the short edge — is still too narrow to hold a 722px room
+                 and still lands here, and being told to turn a phone one is
+                 not holding is a small thing that reads as the site not
+                 knowing what it is talking to. Anything wide enough to fit
+                 the room upright no longer sees this screen at all; see
+                 roomFitsUpright in js/fallinfurni.js. -->
+            <p class="ff-rotate-say" id="ff-rotate-say">Turn your screen sideways</p>
             <p class="ff-rotate-sub" id="ff-rotate-sub">Fallin' Furni needs the long edge of your screen.</p>
         </div>
 

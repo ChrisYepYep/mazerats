@@ -48,13 +48,60 @@ function acceptsGzip(event) {
     return /\bgzip\b/i.test(accept);
 }
 
+/* A shorter policy, for the one read that decides whether the site is open.
+
+   /settings is asked for on every page load of every page, which makes it
+   the busiest endpoint here by a wide margin and the obvious thing to put
+   behind the edge. But it is also the gate: landingState is what opens and
+   closes the archive, so however long the edge holds a copy is however long
+   the site can be in the wrong state.
+
+   Twenty seconds, and a deliberately SHORT stale window — the long
+   stale-while-revalidate that suits the archive would mean a "coming soon"
+   answer could still be served the better part of a day after the site was
+   opened, which is the one failure worth avoiding here. Twenty on, sixty
+   stale: switching the site live takes effect within a minute or so, and in
+   the meantime the landing page's countdown is polling every twenty seconds
+   anyway and will reload itself as soon as it sees the change.
+
+   Both directions are recoverable and neither is dangerous: a stale gated
+   answer keeps a live site shut a moment longer, a stale open answer keeps
+   an open site open a moment longer. What it buys is that a launch-day
+   crowd of a thousand first page loads becomes a handful of function
+   invocations rather than a thousand. */
+const GATE_CDN_CACHE = "public, durable, s-maxage=20, stale-while-revalidate=60";
+
+/* And a short one for a public leaderboard.
+
+   The daily boards are the same answer for everybody — the GET reads no
+   session and returns no caller-specific row — but they were `no-store`,
+   so a crowd all opening the results panel after the day's puzzle meant
+   one function run and eight Mongo queries EACH. It is the most expensive
+   read on the site per request and it was the only uncached one left.
+
+   Fifteen seconds, with no stale window. A leaderboard is a thing people
+   watch, and fifteen seconds is short enough that a score appears while
+   somebody is still looking at the board that was missing it; the missing
+   stale-while-revalidate is deliberate for the same reason, since a board
+   is exactly the thing where serving a known-old copy to save a round trip
+   is the wrong call.
+
+   NOT FOR ff-scores, which returns the caller's own row and their signed-in
+   name — a shared cache would hand one player's identity to the next. That
+   one stays no-store, and the difference between the two is worth knowing
+   before reaching for this constant again. */
+const BOARD_CDN_CACHE = "public, durable, s-maxage=15";
+
 /* A cacheable JSON response, gzipped where the caller can take it.
 
    Netlify's edge compresses function responses itself, but only when the
    function did not already set Content-Encoding — and doing it here means
    the saving is real regardless of what any layer in front happens to do,
-   including `netlify dev` locally, which does not compress at all. */
-function cachedJson(event, data, { cache = true } = {}) {
+   including `netlify dev` locally, which does not compress at all.
+
+   `cdn` picks the edge policy: the archive's long one by default, or
+   GATE_CDN_CACHE above for /settings. */
+function cachedJson(event, data, { cache = true, cdn = CDN_CACHE } = {}) {
     const body = JSON.stringify(data);
     /* SECURITY_HEADERS first, then this function's own on top. Every cached
        read on the site returns through here — rooms, events, contributors —
@@ -67,7 +114,7 @@ function cachedJson(event, data, { cache = true } = {}) {
         // served to each other's clients.
         "Vary": "Accept-Encoding"
     };
-    if (cache) headers["Netlify-CDN-Cache-Control"] = CDN_CACHE;
+    if (cache) headers["Netlify-CDN-Cache-Control"] = cdn;
 
     if (acceptsGzip(event) && Buffer.byteLength(body) >= MIN_COMPRESS_BYTES) {
         const zipped = zlib.gzipSync(Buffer.from(body));
@@ -81,4 +128,4 @@ function cachedJson(event, data, { cache = true } = {}) {
     return { statusCode: 200, headers, body };
 }
 
-module.exports = { cachedJson, CDN_CACHE, BROWSER_CACHE };
+module.exports = { cachedJson, CDN_CACHE, GATE_CDN_CACHE, BOARD_CDN_CACHE, BROWSER_CACHE };

@@ -36,8 +36,9 @@
    to defend. */
 const { getDb } = require("./_db");
 const { playerFrom } = require("./_player");
-const { today, dayIsOpen, seedFrom, shuffle } = require("./_daily");
+const { today, dayIsOpen, seedFrom, shuffle, daySeed } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
+const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
 
 const COLLECTION = "daily_scores";
 const BOARD_SIZE = 10;
@@ -106,7 +107,7 @@ async function ratrospectDay(day) {
     // The same fixed order the page sorts into before shuffling.
     pool.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
-    const shuffled = shuffle(pool, seedFrom("ratrospect:" + day));
+    const shuffled = shuffle(pool, daySeed(day, "ratrospect"));
     const cards = [];
     const months = new Set();
     for (const card of shuffled) {
@@ -137,11 +138,11 @@ async function oddDay(day) {
     const shares = (a, b) => a.tags.some(t => t && b.tags.includes(t));
     const rounds = [];
     const usedHome = new Set();
-    for (const home of shuffle(pool, seedFrom("odd:" + day))) {
+    for (const home of shuffle(pool, daySeed(day, "odd"))) {
         if (rounds.length >= ROUNDS) break;
         if (usedHome.has(home.id)) continue;
 
-        const seed = seedFrom("odd:" + day + ":" + home.id);
+        const seed = daySeed(day, "odd", home.id);
         const others = pool.filter(m => m.id !== home.id && m.shots.length);
         const related = others.filter(m => shares(home, m));
         const imposter = shuffle(related.length ? related : others, seed)[0];
@@ -153,7 +154,7 @@ async function oddDay(day) {
 
         const tiles = shuffle(
             mine.map(image => ({ image, odd: false })).concat([{ image: theirs, odd: true }]),
-            seedFrom("odd:tiles:" + day + ":" + home.id)
+            daySeed(day, "odd:tiles", home.id)
         );
 
         usedHome.add(home.id);
@@ -305,7 +306,7 @@ function fold(...lists) {
         .slice(0, BOARD_SIZE);
 }
 
-async function combinedBoards(db, params) {
+async function combinedBoards(db, event, params) {
     const day = String(params.day || today()).slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json(400, { error: "Bad day" });
 
@@ -325,7 +326,11 @@ async function combinedBoards(db, params) {
             playerTotals(daily, span(all.from, all.to)), playerTotals(guess, span(all.from, all.to))
         ]);
 
-        return json(200, {
+        /* Eight aggregations across two collections is the most
+           expensive read on the site, and the answer is the same for
+           everybody — so it goes behind the edge for fifteen seconds like
+           the per-game board above. See BOARD_CDN_CACHE in _cache.js. */
+        return cachedJson(event, {
             date: day,
             weekFrom: week.from,
             monthFrom: month.from,
@@ -334,7 +339,7 @@ async function combinedBoards(db, params) {
             week: fold(dWeek, gWeek),
             month: fold(dMonth, gMonth),
             allTime: fold(dAll, gAll)
-        });
+        }, { cdn: BOARD_CDN_CACHE });
     } catch (e) {
         return json(500, { error: "Could not read the scores" });
     }
@@ -375,7 +380,7 @@ exports.handler = async (event) => {
            against someone else's three. `games` says how many of the three
            each row's points came from, so the board can be honest about
            that rather than leaving it to be guessed. */
-        if (game === "all") return combinedBoards(db, params);
+        if (game === "all") return combinedBoards(db, event, params);
 
         if (!GAMES.includes(game)) return json(400, { error: "Unknown game" });
         const day = String(params.day || today()).slice(0, 10);
@@ -396,7 +401,10 @@ exports.handler = async (event) => {
             board(col, game, all.from, all.to)
         ]);
 
-        return json(200, {
+        /* Edge-cached for fifteen seconds — see BOARD_CDN_CACHE in
+           _cache.js. Nothing caller-specific is read or returned on this
+           path, so one answer genuinely serves everybody. */
+        return cachedJson(event, {
             date: day,
             weekFrom: week.from,
             monthFrom: month.from,
@@ -408,7 +416,7 @@ exports.handler = async (event) => {
             week: weekRows,
             month: monthRows,
             allTime: allRows
-        });
+        }, { cdn: BOARD_CDN_CACHE });
     }
 
     if (event.httpMethod === "POST") {

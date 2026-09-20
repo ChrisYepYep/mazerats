@@ -39,7 +39,7 @@
        view.flyTo(x, y, 2.5);
 
    The caller owns the markup — see wizard.html and the atlas panel in
-   admin.html for the elements this expects to find inside `stage`. */
+   warren.html for the elements this expects to find inside `stage`. */
 window.WizardMap = function WizardMap(options) {
     const stage = options.stage;
     const canvas = options.canvas;

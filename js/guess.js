@@ -181,14 +181,15 @@
         };
     }
 
-    function seedFrom(str) {
-        let h = 2166136261;
-        for (let i = 0; i < str.length; i++) {
-            h ^= str.charCodeAt(i);
-            h = Math.imul(h, 16777619);
-        }
-        return h >>> 0;
-    }
+    /* The local copy of seedFrom is gone.
+
+       It was a duplicate of window.Daily.seedFrom — identical FNV-1a, same
+       constants — from before js/daily.js existed. Every caller here now
+       goes through Daily.daySeed instead, so that a featured day (see
+       FEATURED_DAYS in js/daily.js) rerolls this game along with the other
+       two, and a second hashing function sitting unused beside it is a
+       thing somebody would eventually reach for again and quietly opt out
+       of that. */
 
     // ---------- choosing the day's five rooms ----------
 
@@ -238,7 +239,9 @@
        fill five rounds otherwise, which it is not today and might be on a
        fresh install. */
     function pickDay() {
-        const rand = seededRandom(seedFrom(today()));
+        // Through Daily.daySeed so a featured day (see FEATURED_DAYS in
+        // js/daily.js) rerolls this game along with the other two.
+        const rand = seededRandom(window.Daily.daySeed("guess"));
         const shuffled = pool
             .map(p => ({ p, k: rand() }))
             .sort((a, b) => a.k - b.k)
@@ -545,7 +548,7 @@
             return;
         }
 
-        const centre = findCropCentre(img, seededRandom(seedFrom(today() + ":" + i)));
+        const centre = findCropCentre(img, seededRandom(window.Daily.daySeed("guess:crop", i)));
         rounds[i] = {
             maze: pick.maze,
             image: pick.image,
@@ -651,7 +654,7 @@
             .filter(r => r.name && r.id && r.id !== answer.id)
             .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
-        const seed = seedFrom("guess:options:" + today() + ":" + i + ":" + answer.id);
+        const seed = window.Daily.daySeed("guess:options", i, answer.id);
         const related = others.filter(r => tagsOf(r).some(t => mine.has(t)));
         const relatedIds = new Set(related.map(r => r.id));
         const rest = others.filter(r => !relatedIds.has(r.id));
@@ -888,7 +891,7 @@
                             : `for view ${result.guesses.length}${" · "}${POINTS[0]} on the first`}`
                         : `<strong>+0</strong> — no points for a room you don't place`}
                 </p>
-                ${maze ? `<a class="guess-reveal-link" href="home.html#maze-${encodeURIComponent(maze.id)}">See it in the archive &rsaquo;</a>` : ""}
+                ${maze ? `<a class="guess-reveal-link" href="/home#maze-${encodeURIComponent(maze.id)}">See it in the archive &rsaquo;</a>` : ""}
                 <button type="button" class="guess-btn guess-btn--lead guess-advance">${last ? "See how you did &rsaquo;" : `Room ${i + 2} &rsaquo;`}</button>`;
             const advance = refs.between.querySelector(".guess-advance");
             if (advance) advance.addEventListener("click", () => (last ? goTo("results") : nextRound()));
@@ -1382,7 +1385,7 @@
         if (opener) opener.focus({ preventScroll: true });
         // A pasted /guess link should not leave the address bar claiming the
         // game is open once it has been closed.
-        if (location.pathname === "/guess") history.replaceState({}, "", "/home.html");
+        if (location.pathname === "/guess") history.replaceState({}, "", "/home");
     }
 
     // ---------- wiring ----------
@@ -1519,5 +1522,14 @@
        moment the tabs were replaced. */
     window.openGuessGame = function () { open(); };
 
-    document.addEventListener("DOMContentLoaded", mount);
+    /* mount() now, if the document is already parsed.
+
+       This file is no longer a <script src> in home.html — js/daily-loader.js
+       fetches it the first time somebody asks for the game, which is long
+       after DOMContentLoaded has been and gone. Listening for an event that
+       has already fired means mount() never runs and the window opens empty.
+       Both branches, because the deep-link path (/guess, /ratrospect, /odd)
+       still loads it while the document is parsing. */
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount);
+    else mount();
 })();

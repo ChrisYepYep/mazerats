@@ -81,7 +81,16 @@
            enough that a change lands within a second of arriving. */
         const ask = async () => {
             try {
-                const s = await (await fetch("/.netlify/functions/settings")).json();
+                /* Through Api rather than a raw fetch, so this shares the
+                   page's one settings request instead of making a third.
+                   See _settingsPromise in js/api.js.
+
+                   The raw fetch is still the fallback: this script is also
+                   loaded by pages that do not ship api.js, and a palette is
+                   not worth a hard dependency. */
+                const s = typeof Api !== "undefined"
+                    ? await Api.getSiteSettings()
+                    : await (await fetch("/.netlify/functions/settings")).json();
                 if (!s || !s.palette) {
                     /* Turned off since the last visit: forget it and put the
                        site back, or the cache would keep a withdrawn palette

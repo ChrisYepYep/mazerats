@@ -7,13 +7,12 @@
 User-agent: *
 Allow: /
 
-# The admin panel (already noindex in its own markup, said again here so a
-# crawler never has to fetch it to find that out).
-Disallow: /admin
-Disallow: /admin.html
-
-# An internal reference sheet for the Volter Goldfish font's picture
-# glyphs. Useful when building the site, meaningless in a search result.
+# The Volter Goldfish picture-glyph sheet, offered in the archive's side
+# menu as "Alt Codes". Linked, and deliberately not indexed: it is a tool
+# for somebody part-way through naming a room, and it would be a baffling
+# thing to land on from a search. Both addresses, since it answers to the
+# clean one now as well (see netlify.toml).
+Disallow: /glyphs
 Disallow: /glyphs.html
 
 # The Sorcerer's Atlas. Reachable by anyone with the link, but still

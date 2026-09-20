@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   720 rules, 1191 declarations, hues 274 (surfaces) / 274 (accents).
+   734 rules, 1211 declarations, hues 274 (surfaces) / 274 (accents).
 */
 :root[data-theme="witch"] {
     --bg-black: #050207;
@@ -311,6 +311,30 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
+[data-theme="witch"] .welcome-countdown-label {
+    color: var(--parchment);
+}
+
+[data-theme="witch"] .wc-unit strong {
+    color: var(--amber-bright);
+}
+
+[data-theme="witch"] .wc-tag {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .wc-sep {
+    color: var(--amber);
+}
+
+[data-theme="witch"] .welcome-countdown-when {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .welcome-countdown.is-due .welcome-countdown-label {
+    color: var(--amber-bright);
+}
+
 [data-theme="witch"] .btn-enter {
     border-image-source: url('../assets/img/witch/window_frame.png');
     background-image: url('../assets/img/witch/title_pattern.png');
@@ -425,7 +449,7 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 }
 
 [data-theme="witch"] .featured-frame .chrome-nav-btn-recommended {
-    color: #2e2436;
+    color: #756085;
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
@@ -560,7 +584,7 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 }
 
 [data-theme="witch"] .row-date {
-    color: var(--parchment-dim);
+    color: color-mix(in srgb, var(--parchment-dim) 82%, var(--parchment) 18%);
 }
 
 [data-theme="witch"] .ec-title-s1 {
@@ -1793,6 +1817,10 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
         url('../assets/img/witch/MazeBG.png');
 }
 
+[data-theme="witch"] .site-loader-wordmark {
+    color: var(--parchment-mid, #b29dc2);
+}
+
 [data-theme="witch"] .site-loader-label {
     color: var(--parchment);
 }
@@ -2099,6 +2127,29 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 
 [data-theme="witch"] .archive-empty {
     color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .archive-empty-also {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .archive-empty-jump {
+    background: var(--chrome-fill);
+    border: 1px solid var(--chrome-border);
+    box-shadow: inset 0 1px 0 var(--chrome-highlight);
+    color: var(--parchment);
+}
+
+[data-theme="witch"] .archive-empty-jump:hover,
+[data-theme="witch"] .archive-empty-jump:focus-visible {
+    background: var(--chrome-highlight);
+    border-color: var(--amber);
+    color: var(--amber-bright);
+}
+
+[data-theme="witch"] .archive-empty-jump-count {
+    background: var(--amber);
+    color: #09020e;
 }
 
 [data-theme="witch"] .gallery-photos::before {
@@ -3073,6 +3124,14 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     color: var(--parchment);
 }
 
+[data-theme="witch"] .daily-loading {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .daily-loading--failed {
+    color: var(--danger);
+}
+
 [data-theme="witch"] .daily-sheet {
     background: #100916;
     scrollbar-color: var(--wood-dark) #100916;
@@ -3371,6 +3430,12 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     [data-theme="witch"] .header-badge::after,
     [data-theme="witch"] .header-signin::after,
     [data-theme="witch"] .header-console-btn::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="witch"] .console-close-btn::after {
         background: transparent;
     }
 }

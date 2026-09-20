@@ -28,6 +28,7 @@
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, isOwner, UNAUTHORIZED, forbidden } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
+const { cachedJson } = require("./_cache");
 
 /* Levels are OWNER-ONLY, which is stricter than the rest of the archive.
    Everywhere else an "admin" may write; here they may not. The level editor
@@ -133,7 +134,14 @@ exports.handler = async (event) => {
         }
         const published = await levels.find({ published: true }, { projection: { _id: 0 } })
             .sort({ order: 1 }).toArray();
-        return json(200, { count: published.length, levels: published });
+        /* Cached at the edge like the archive is, and for the same reason:
+           this is read on every single load of the game page, it is the
+           same answer for everybody, and it changes only when the owner
+           publishes a level. It was going all the way to Mongo every time.
+
+           The ?all=1 branch above returns through json() and stays
+           uncached, which is what keeps an admin reading the truth. */
+        return cachedJson(event, { count: published.length, levels: published });
     }
 
     let body = {};

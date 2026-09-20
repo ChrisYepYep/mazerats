@@ -1236,6 +1236,72 @@ main.ff-page { width: 100%; }
    reads first; the levels and the clock behind it stay dimmed. */
 .ff-board li em b { font-weight: normal; color: var(--amber-bright); }
 
+/* ---- THE TOURNAMENT BOARD
+
+   Sits above the all-time one while a meet is running, and inherits all of
+   .ff-board — this only says what is different about it. Which is: it has
+   a state to announce, and it is the one you are meant to look at first.
+
+   No border-top, unlike .ff-board. It is the first thing under the sign-in
+   line, and a rule there read as a divider hanging in space rather than as
+   the separator between two boards. The all-time board below keeps its
+   own, which is now doing the job of dividing the two. */
+.ff-board--meet {
+    border-top: 0;
+    padding-top: 4px;
+}
+
+.ff-board--meet h3 {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+}
+
+/* LIVE / FINISHED, as a small pill beside the name. Two states and two
+   colours: amber while it is running and there is something to play for,
+   and the ordinary dim parchment once it is only a record of what
+   happened. */
+.ff-meet-flag {
+    padding: 1px 5px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--wood-dark);
+    color: var(--parchment-dim);
+    font-size: 7.5px;
+    letter-spacing: 0.08em;
+}
+
+.ff-board--meet.is-live .ff-meet-flag {
+    border-color: var(--amber);
+    background: var(--amber);
+    color: #241606;
+}
+
+/* "Ends Saturday 10 October", or the standing on an empty first morning.
+   Roboto rather than Silkscreen: it is a sentence, and the pixel face is
+   for labels. */
+.ff-meet-note {
+    margin: 0 0 7px;
+    text-align: center;
+    font-family: "Roboto", sans-serif;
+    font-size: 10px;
+    color: var(--parchment-dim);
+}
+
+/* Shorter than the all-time board's 134px. Two boards stacked on a title
+   screen that also has to hold a sign-in line and a Play button is a lot
+   of vertical, and this one is the shorter list by nature — a week of runs
+   against all of them. Four names and then it scrolls. */
+.ff-board--meet ol {
+    max-height: 78px;
+}
+
+/* An empty tournament board still has its heading and its note, which is
+   the whole point on the first morning — but an empty <ol> would leave a
+   gap under them where the list will be. */
+.ff-board--meet ol:empty { display: none; }
+
 /* ---- between rounds
 
    Same footprint as the title screen and over the same room: the finished

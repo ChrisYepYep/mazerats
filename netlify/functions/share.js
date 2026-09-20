@@ -188,10 +188,10 @@ function notFound(origin) {
         headers: SHARE_HEADERS,
         body: page({
             title: "Not in the archive",
-            description: "That maze or event isn’t in the Maze Rats archive — it may have been renamed since the link was made.",
+            description: "That maze or event isn't in the Maze Rats archive — it may have been renamed since the link was made.",
             image: `${origin}/assets/img/og-thumbnail.png`,
-            canonical: `${origin}/home.html`,
-            target: "/home.html"
+            canonical: `${origin}/home`,
+            target: "/home"
         })
     };
 }
@@ -211,7 +211,7 @@ exports.handler = async (event) => {
         // own offline copy to fall back to.
         return {
             statusCode: 302,
-            headers: { Location: "/home.html" },
+            headers: { Location: "/home" },
             body: ""
         };
     }
@@ -237,7 +237,7 @@ exports.handler = async (event) => {
             description: describe(record, isEvent),
             image: previewImage(origin, thumb),
             canonical: `${origin}/${isEvent ? "event" : "maze"}/${encodeURIComponent(id)}`,
-            target: `/home.html#${isEvent ? "event" : "maze"}-${encodeURIComponent(id)}`
+            target: `/home#${isEvent ? "event" : "maze"}-${encodeURIComponent(id)}`
         })
     };
 };

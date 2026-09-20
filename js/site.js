@@ -284,7 +284,21 @@ document.addEventListener("DOMContentLoaded", () => {
     if (token) return;
     if (state !== "coming-soon" && state !== "maintenance") return;
 
-    document.querySelectorAll('a[href="home.html"]').forEach(a => { a.href = "/"; });
+    /* Every spelling of the archive's address, not just the bare filename.
+       The page answers to /home and /home.html alike, links to it are
+       written both ways, and some carry a #maze-… or #event-… fragment
+       (js/guess.js's "See it in the archive", the share pages) — all of
+       which land on the same gate and get the same bounce. Matching only
+       the exact string href="home.html" quietly missed every one of them,
+       which is the whole bug this block exists to avoid.
+
+       The fragment is dropped rather than carried over: it names a maze in
+       an archive this visitor cannot open, and the landing page has nothing
+       to do with it. */
+    const ARCHIVE = /^(?:\/)?home(?:\.html)?(?:[#?].*)?$/;
+    document.querySelectorAll("a[href]").forEach(a => {
+        if (ARCHIVE.test(a.getAttribute("href") || "")) a.href = "/";
+    });
 });
 
 // Privacy Policy link, appended onto the end of .site-footer's own

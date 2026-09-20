@@ -29,7 +29,45 @@
 
         function reveal() {
             document.documentElement.style.visibility = "";
+            document.documentElement.removeAttribute("data-gate-peek");
         }
+
+        /* ---- THE BLANK SECOND BETWEEN THE TWO PAGES ----
+
+           The gate below cannot answer until the settings request lands,
+           and that request is allowed 6s before it even retries. Until it
+           did, this page was visibility:hidden — so pressing Enter on the
+           landing page gave you a blank window for as long as the network
+           took, and only then the loading bar. The site looked like it had
+           dropped you, and the loader arrived looking like a second
+           beginning rather than a continuation.
+
+           So: when the LAST ANSWER THIS BROWSER SAW says the site is open,
+           the loading screen is shown straight away and the rest of the
+           page stays hidden behind it. The archive itself is still not
+           revealed until the gate has really decided; all that is let
+           through early is the wordmark and the bar, which is exactly the
+           screen this visitor should be looking at while they wait.
+
+           WHY THAT IS SAFE. A visitor who has "enter" cached is a visitor
+           who has already been shown an open site — there is nothing here
+           they have not already been allowed to see. If the real answer
+           comes back gated they are bounced to index.html as before, and
+           the most they saw in the meantime is the site's own name over a
+           progress bar. No maze, no event, no data: none of it has been
+           fetched yet at this point in the load.
+
+           And it is deliberately NOT done for the other two cases. No
+           cached answer at all is a first-ever visit, where the cautious
+           thing is to stay dark; a cached "coming-soon" is somebody who was
+           bounced last time and is about to be bounced again, who should
+           not be shown a loading bar for an archive they are not getting. */
+        try {
+            if (localStorage.getItem("mazerats_landing_state") === "enter") {
+                document.documentElement.setAttribute("data-gate-peek", "1");
+                document.documentElement.style.visibility = "";
+            }
+        } catch (e) { /* private mode: stay dark, which is the old behaviour */ }
 
         /* Every request in here is on a leash.
 
@@ -81,6 +119,27 @@
             return attempt(0);
         }
 
+        /* THE PAGE'S ONE SETTINGS REQUEST, published for everything that
+           loads after it.
+
+           This gate has to run before any <script src>, so it cannot use
+           js/api.js and has always made its own request. The trouble was
+           that api.js then made another, and js/palette-wear.js a third —
+           three calls to a cold-startable function, in parallel, for one
+           sub-kilobyte answer that could not have changed between them.
+
+           Handing the promise over on the window is the whole fix: api.js's
+           getSiteSettings adopts it when it is there (see the note on
+           _settingsPromise) and every later caller shares this one result.
+
+           A PROMISE, not the resolved value, because that is what is
+           available at this point — the later callers run while this is
+           still in flight, which is the case worth handling. And the
+           promise itself is published before the gate's own .then chain, so
+           a slow gate is not a slow page. */
+        var settingsRequest = getSettings();
+        try { window.__mrSettings = settingsRequest; } catch (e) { /* nothing depends on this */ }
+
         // Same "Dev Mode" pill js/site.js used to add — the DOM isn't
         // necessarily parsed yet the moment the settings/auth fetches
         // resolve, so this waits for it rather than assuming .site-header/
@@ -96,7 +155,7 @@
                 pill.textContent = "Dev Mode";
                 var adminLink = document.createElement("a");
                 adminLink.className = "header-badge header-state-pill header-state-link";
-                adminLink.href = "admin.html";
+                adminLink.href = "warren.html";
                 adminLink.textContent = "Admin";
                 brandGroup.appendChild(pill);
                 brandGroup.appendChild(adminLink);
@@ -117,7 +176,8 @@
             try { return localStorage.getItem(LANDING_STATE_KEY); } catch (e) { return null; }
         }
 
-        getSettings()
+        // The request published above, not a second one.
+        settingsRequest
             .then(function (settings) {
                 rememberState(settings.landingState);
                 /* The palette, from the settings this gate has already
@@ -228,9 +288,18 @@
          robots.txt deliberately invites crawling of /guess, so this is not
          hypothetical. Naming the canonical here costs a visitor nothing —
          every address still works exactly as before — and pools all four onto
-         one. index.html carries its own, pointing at "/". -->
-    <link rel="canonical" href="https://mazerats.net/home.html">
-    <meta property="og:url" content="https://mazerats.net/home.html">
+         one. index.html carries its own, pointing at "/".
+
+         FIVE addresses, in fact: /home and /home.html are both served, with
+         identical bytes, because Netlify answers a page at its clean name as
+         well as its filename. The clean one is named here. It is the address
+         the rest of the site is built out of — /fallinfurni, /privacy,
+         /wizard, /glyphs all canonicalise without the extension — and it is
+         the one somebody pastes. Pointing the canonical at the .html spelling
+         while every link and every share used the clean one meant the version
+         nobody sees was the version being credited. -->
+    <link rel="canonical" href="https://mazerats.net/home">
+    <meta property="og:url" content="https://mazerats.net/home">
     <meta property="og:title" content="Maze Rats">
     <meta property="og:description" content="An archive preserving the history of maze rooms across Habbo Hotel: Origins.">
     <meta property="og:type" content="website">
@@ -271,8 +340,23 @@
          and its 47 thumbnails take a few seconds more, so without this the
          page arrives empty and fills in piece by piece. Removed by
          js/home.js once the data and every thumbnail are in. -->
+    <!-- THE WORDMARK IS PART OF THE LOADER, and it is the whole reason this
+         no longer feels like being stuck between two pages.
+
+         Before, the landing page showed MAZE RATS in 5rem letters, you
+         pressed Enter, and the next thing on screen was a bar on an empty
+         brown floor with no title anywhere near it — two unrelated screens
+         with a gap in the middle. The same wordmark, in the same face, in
+         the same place, turns that into one screen that is getting on with
+         something: the title stays put and a bar appears underneath it.
+
+         aria-hidden because the <h1> two hundred lines down says the same
+         words and this is the decorative copy of them — a screen reader
+         should not meet the site's name twice before reaching the archive.
+         The live region is the label, which is the part that changes. -->
     <div class="site-loader" id="site-loader">
         <div class="site-loader-inner">
+            <p class="site-loader-wordmark" aria-hidden="true"><span>MAZE</span><span>RATS</span></p>
             <p class="site-loader-label" id="site-loader-label">LOADING</p>
             <div class="site-loader-track">
                 <div class="site-loader-fill" id="site-loader-fill"></div>
@@ -511,7 +595,11 @@
                             <p class="chrome-intro" id="featured-intro"></p>
                             <div class="home-results">
                                 <div class="chrome-list" id="featured-grid"></div>
-                                <p class="archive-empty" id="featured-empty" style="display:none;"></p>
+                                <!-- A <div> rather than a <p> since it gained
+                                     the "found in another tab" buttons below
+                                     the message — see renderEmptyState in
+                                     js/home.js. -->
+                                <div class="archive-empty" id="featured-empty" style="display:none;"></div>
                             </div>
                         </div>
                     </div>
@@ -658,7 +746,7 @@
                              carrying a placeholder alone, which disappears as
                              soon as anyone types into it. -->
                         <label class="visually-hidden" for="console-contact-message">Your message</label>
-                        <textarea class="console-input console-input-message" id="console-contact-message" placeholder="Just leaving some feedback..."></textarea>
+                        <textarea class="console-input console-input-message" id="console-contact-message" placeholder="Just leaving some feedback…"></textarea>
                         <label class="console-field-label" for="console-contact-username">Your Origins username:</label>
                         <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="L1C">
                         <!-- Two states, one of which js/console.js hides.
@@ -697,7 +785,7 @@
                         <label class="console-field-label" for="console-submit-builder">Who built it:</label>
                         <input type="text" class="console-input console-input-line" id="console-submit-builder" placeholder="Origins username">
                         <label class="console-field-label" for="console-submit-notes">Anything else:</label>
-                        <textarea class="console-input console-input-message" id="console-submit-notes" placeholder="Opening date, mechanics, what you love about this maze..."></textarea>
+                        <textarea class="console-input console-input-message" id="console-submit-notes" placeholder="Opening date, mechanics, what you love about this maze…"></textarea>
                         <label class="console-field-label" for="console-submit-username">Your Origins username:</label>
                         <input type="text" class="console-input console-input-line" id="console-submit-username" placeholder="So we can credit you">
                         <input type="text" class="console-hp-field" id="console-submit-hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
@@ -1116,10 +1204,22 @@
     <!-- After site.js, which is where imgCdn and compareNames live. -->
     <!-- The two daily games, and the day rules they share. daily.js
          first: both games read it as they set themselves up. -->
+    <!-- daily.js is the shared day/seed/leaderboard layer all three games sit
+         on, and the side menu needs it to say anything at all, so it loads
+         here as it always has.
+
+         The three games themselves do NOT. They are about 39KB gzipped
+         between them and most visits never open one — js/daily-loader.js
+         publishes their openers and fetches whichever is actually asked for,
+         preloading all three in the background for anyone whose browser says
+         they have played before. See that file's header for how the window
+         is at its final size before the game arrives. -->
+    <!-- Before daily.js, which reads the table it defines. The pairing is
+         asserted by tools/check-daily-parity.js so a page cannot quietly
+         load one without the other. -->
+    <script src="js/featured-days.js?v=2"></script>
     <script src="js/daily.js?v=2"></script>
-    <script src="js/guess.js?v=2"></script>
-    <script src="js/ratrospect.js?v=2"></script>
-    <script src="js/oddoneout.js?v=2"></script>
+    <script src="js/daily-loader.js?v=2"></script>
     <script src="js/track.js?v=2"></script>
 </body>
 </html>

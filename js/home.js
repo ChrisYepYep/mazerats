@@ -1797,7 +1797,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // search box's own placeholder — this text can land in Volter
             // Goldfish, which is particular about punctuation.
             emptyEl.textContent = loadFailed
-                ? "Couldn’t load the archive. Try refreshing the page."
+                ? "Couldn't load the archive. Try refreshing the page."
                 : "Still loading the archive...";
             emptyEl.style.display = loaderGone ? "block" : "none";
             return;
@@ -1892,12 +1892,135 @@ document.addEventListener("DOMContentLoaded", () => {
         wireRowActivation(grid, currentItems);
         wireThumbFadeIn(grid);
 
-        const messages = query.trim() ? emptyMessagesSearch : emptyMessagesNoSearch;
-        emptyEl.textContent = showWhatsNew
-            ? (query.trim() ? "Nothing new matches your search." : "Nothing has been added yet.")
-            : messages[view];
-        emptyEl.style.display = currentItems.length === 0 ? "block" : "none";
+        renderEmptyState(view, currentItems.length === 0);
         updateWalkedCount();
+    }
+
+    /* ---------- the empty state, and the way out of it ----------
+
+       A search only ever looks in the tab you are standing in. That is the
+       right behaviour — the tabs exist to narrow things — but it made the
+       one thing people arrive wanting to do fail silently: type the name of
+       a maze you remember, land on Open because that is where the archive
+       opens, and get "No open mazes match your search." for a maze that is
+       sitting in Archived. Nothing on screen said so, and nothing offered
+       to go there. The archive knew the answer and would not say it.
+
+       So when a search comes back empty, the other tabs are searched too
+       and whichever ones have something say so, with a button that goes
+       there AND KEEPS THE SEARCH — which is the part the ordinary nav
+       buttons deliberately do not do (they clear it; see their handlers).
+
+       Only on a search. With no query an empty tab is simply empty, and
+       "nothing archived yet, but there are 19 events" is a non-sequitur. */
+    const CROSS_TAB_LABELS = {
+        open: "Open", archived: "Archived", collab: "Collab",
+        upcoming: "Upcoming", past: "Past", archive: "Archived events"
+    };
+    const MAZE_VIEWS = ["open", "archived", "collab"];
+    const EVENT_VIEWS = ["upcoming", "past", "archive"];
+
+    // How many items in some OTHER view match what is currently typed.
+    // Normalised through the same pipeline the real list uses, so "matches"
+    // means exactly what it means everywhere else.
+    function countElsewhere(view) {
+        const isEvents = EVENT_VIEWS.includes(view);
+        return sourceItems(view)
+            .map(item => normalize(item, isEvents))
+            .filter(matchesQuery)
+            .length;
+    }
+
+    function renderEmptyState(view, isEmpty) {
+        emptyEl.style.display = isEmpty ? "block" : "none";
+        if (!isEmpty) { emptyEl.innerHTML = ""; return; }
+
+        const searching = !!query.trim();
+        const message = showWhatsNew
+            ? (searching ? "Nothing new matches your search." : "Nothing has been added yet.")
+            : (searching ? emptyMessagesSearch : emptyMessagesNoSearch)[view];
+
+        emptyEl.innerHTML = "";
+        const say = document.createElement("p");
+        say.className = "archive-empty-say";
+        say.textContent = message;
+        emptyEl.appendChild(say);
+
+        // What's New already searches both kinds at once, so there is no
+        // other tab for it to point at.
+        if (!searching || showWhatsNew) return;
+
+        /* Every other tab, both categories. Crossing from Mazes to Events
+           matters as much as moving between sub-tabs — "Halloween 2024" is
+           a collab maze and an event, and somebody typing it has no way to
+           know which of the two the archive filed it under. */
+        const elsewhere = [...MAZE_VIEWS, ...EVENT_VIEWS]
+            .filter(v => v !== view)
+            .map(v => ({ view: v, n: countElsewhere(v) }))
+            .filter(x => x.n > 0);
+
+        if (!elsewhere.length) return;
+
+        const also = document.createElement("p");
+        also.className = "archive-empty-also";
+        also.textContent = elsewhere.length === 1
+            ? "It is in another tab:"
+            : "It is in other tabs:";
+        emptyEl.appendChild(also);
+
+        const row = document.createElement("div");
+        row.className = "archive-empty-jumps";
+        elsewhere.forEach(({ view: v, n }) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "archive-empty-jump";
+            // Counted out loud: it is the difference between "there might be
+            // something over there" and "there are two things over there".
+            btn.innerHTML = "";
+            const label = document.createElement("span");
+            label.className = "archive-empty-jump-label";
+            label.textContent = CROSS_TAB_LABELS[v];
+            const count = document.createElement("span");
+            count.className = "archive-empty-jump-count";
+            count.textContent = String(n);
+            btn.append(label, count);
+            btn.setAttribute("aria-label",
+                `Search ${CROSS_TAB_LABELS[v]} instead — ${n} ${n === 1 ? "match" : "matches"}`);
+            btn.addEventListener("click", () => jumpKeepingSearch(v));
+            row.appendChild(btn);
+        });
+        emptyEl.appendChild(row);
+    }
+
+    /* Switch tabs without throwing the search away.
+
+       The nav buttons clear the box on purpose: picking a category by hand
+       is starting again. Arriving from here is the opposite — the search is
+       the reason you are going. So this sets the same state they do and
+       leaves `query` and the input alone.
+
+       eventsSubTouched is set for the same reason the sub-nav sets it: the
+       visitor has now chosen an events tab explicitly, and resolvedEventsSub
+       must stop second-guessing them. */
+    function jumpKeepingSearch(view) {
+        if (MAZE_VIEWS.includes(view)) {
+            topView = "mazes";
+            mazesSub = view;
+        } else {
+            topView = "events";
+            eventsSub = view;
+            eventsSubTouched = true;
+        }
+        showFeatured = false;
+        showWhatsNew = false;
+        showTimeline = false;
+        showFurni = false;
+        furniFilter = null;
+        render();
+        // Back to the box, so the next keystroke carries on refining rather
+        // than going nowhere — the button that was just pressed no longer
+        // exists to hold focus, and focus would otherwise fall to <body>.
+        if (searchInput) searchInput.focus();
     }
 
     // Populates .featured-frame's own list — one maze per difficulty, two
@@ -5641,7 +5764,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 state: "Type the pictures in Habbo names",
                 badge: "",
                 on: false,
-                run: () => window.open("glyphs.html", "_blank", "noopener")
+                run: () => window.open("/glyphs", "_blank", "noopener")
             }
         ].filter(e => !(onPhone && e.name === "Alt Codes"));
         /* The sheet is a reference table of several hundred characters
@@ -5687,6 +5810,19 @@ document.addEventListener("DOMContentLoaded", () => {
                risks looking up a row by an index that was true when the
                button was drawn and is not now. The rows a click can reach
                are exactly the rows that were drawn. */
+            /* Somebody looking at this list is one click from a game, so
+               fetch all three now if they are not here already (see
+               js/daily-loader.js). It costs nothing on the common path —
+               a returning player's were preloaded at idle and this finds
+               them already in hand — and it means the click that follows
+               opens a window that is filled rather than one that is filling.
+
+               Fire and forget. Nothing below waits on it: the rows are
+               drawn from whatever the status hooks can say right now, and
+               what they say with the games absent is the sensible default
+               wording each row already carries. */
+            if (window.DailyGames) window.DailyGames.preloadAll();
+
             const entries = sideMenuEntries();
             menu.innerHTML = entries.map((e, i) => e.heading
                 ? `<p class="side-menu-heading">${escapeHtml(e.heading)}</p>`
@@ -6179,8 +6315,8 @@ document.addEventListener("DOMContentLoaded", () => {
         notice.innerHTML =
             '<div class="data-degraded-body">' +
                 '<p class="data-degraded-head">The archive is offline</p>' +
-                "<p class=\"data-degraded-say\">We can’t reach the live " + escapeHtml(what) +
-                " right now, so you’re seeing a small offline copy — most of the archive isn’t here. " +
+                "<p class=\"data-degraded-say\">We can't reach the live " + escapeHtml(what) +
+                " right now, so you're seeing a small offline copy — most of the archive isn't here. " +
                 "This is usually brief; the full archive should be back shortly.</p>" +
             "</div>" +
             '<button type="button" class="btn data-degraded-retry" id="data-degraded-retry">Try again</button>';

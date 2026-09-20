@@ -81,6 +81,68 @@
     font-display: swap;
 }
 
+/* ---- THE PICTURE GLYPHS, AND ONLY THE PICTURE GLYPHS ----
+
+   The same Volter file a fourth time, restricted by unicode-range to the
+   24 codepoints where the font draws a picture instead of the character
+   Unicode assigns to that slot. glyphs.html is the reference sheet and
+   marks them `is-pic`; this list is taken from it.
+
+   THE PROBLEM THIS SOLVES. Habbo room names are typed with Alt codes, so
+   several mazes in the archive carry these characters — "ª Funky Maze ª",
+   "*ÕMaze EmpireÕ*", "[ ª ] A Horrible Maze [ ª ]". In the archive list
+   and the timeline, which are set in Volter, ª is a skull and Õ is a
+   flower, which is what the builder typed and what everyone in the hotel
+   sees. Everywhere set in Roboto — the daily games' answer lists and
+   cards — the same name came out as a feminine ordinal and a capital O
+   with a tilde. Same maze, two names, on one site.
+
+   WHY A UNICODE-RANGE RATHER THAN SETTING VOLTER ON THOSE ELEMENTS. A
+   maze name in a game's answer list is a line of ordinary prose at
+   ordinary size, and Volter is a 9px pixel face — set the whole label in
+   it and every name in the game becomes a different, smaller, blockier
+   thing than the interface around it. This way the browser takes exactly
+   the 24 characters from Volter and every letter, digit and space from
+   the face that was already there. The pictures appear; nothing else
+   about the label changes.
+
+   AND WHY IT IS NOT IN THE SITE-WIDE FONT STACK. Three of the 24 are
+   U+2014, U+2018 and U+2022 — em dash, left quote and bullet — which this
+   site's prose is full of. Applied globally, every em dash in the privacy
+   policy would render as a double note. It belongs only on elements that
+   print a name verbatim out of the database, where the Habbo reading is
+   the correct one. See .guess-option-name and .ratro-card-title.
+
+   No extra request: it is the same file the rest of the page already
+   loads, and unicode-range only decides which characters are drawn from
+   it. */
+@font-face {
+    font-family: 'Volter Glyphs';
+    src: url('../assets/fonts/VolterGoldfish.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+    unicode-range: U+00A5, U+00AA, U+00AC, U+00B1, U+00B5, U+00B6, U+00BA,
+                   U+00BB, U+00CC, U+00CD, U+00CE, U+00D5, U+00E6, U+00EC,
+                   U+00ED, U+00EE, U+00F5, U+00F7, U+0192, U+2014, U+2018,
+                   U+2020, U+2021, U+2022;
+}
+
+/* The bold cut of the same, for a name printed in a <strong> — the
+   browser would otherwise synthesise bold from the regular face and
+   thicken a pixel drawing into a smudge. */
+@font-face {
+    font-family: 'Volter Glyphs';
+    src: url('../assets/fonts/VolterGoldfishBold.ttf') format('truetype');
+    font-weight: bold;
+    font-style: normal;
+    font-display: swap;
+    unicode-range: U+00A5, U+00AA, U+00AC, U+00B1, U+00B5, U+00B6, U+00BA,
+                   U+00BB, U+00CC, U+00CD, U+00CE, U+00D5, U+00E6, U+00EC,
+                   U+00ED, U+00EE, U+00F5, U+00F7, U+0192, U+2014, U+2018,
+                   U+2020, U+2021, U+2022;
+}
+
 * { box-sizing: border-box; }
 
 /* Site-wide scrollbar treatment — every scrolling element (this page
@@ -1123,6 +1185,178 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-wrap: balance;
 }
 
+/* ---------- THE LAUNCH COUNTDOWN ----------
+
+   Under the Enter button while the site is gated and a date is set. See
+   startCountdown in js/welcome.js, and the markup in index.html.
+
+   Deliberately quieter than the button above it: parchment-dim label, the
+   digits in amber, no frame of its own. The button is the thing on this
+   page and the countdown is the sentence underneath it — giving this its
+   own window chrome would have made the landing page two competing
+   panels stacked on top of each other. */
+/* An eyebrow over the wordmark, ranged left.
+
+   RANGED LEFT because the block is two short lines and the wordmark under
+   it is very wide — centred, they float in the middle of nothing. Against
+   the left edge of the title they read as a kicker belonging to it, which
+   is what they are.
+
+   IT MUST NOT MOVE THE TITLE, and that is why it is out of the flow.
+   .welcome-screen is a centred flex column, so everything inside
+   .welcome-stack counts toward what is being centred: below the button it
+   shoved the wordmark 62px UP the page (measured, at every window height),
+   and above the title it would shove it just as far down. Anchored to the
+   top of the stack instead, the stack stays exactly as tall as the title
+   and the button, and they sit where they always did.
+
+   ONLY WHERE THERE IS ROOM FOR IT. Out of flow means it adds nothing to
+   the page's height, so where the space above the title is short it
+   simply climbs behind the site header with nothing to scroll to it —
+   which is exactly what a phone does: the header carries the brand, the
+   Discord badge AND the events ticker there, standing 99px tall, and the
+   countdown landed at 81px, under it. Measured, not guessed.
+
+   So BOTH dimensions gate it. Wide enough that the header is a single
+   short row, and tall enough that there is somewhere for the block to go.
+   Anywhere else it goes back in the flow above the title and is allowed
+   to move it: on a narrow screen the page scrolls anyway, and being able
+   to read the thing beats where it sits. */
+.welcome-countdown {
+    margin-bottom: 14px;
+    text-align: left;
+    /* OVER THE HANDSTANDING RAT, not under it.
+
+       The rat is perched on the top-left of the MAZE span and reaches
+       about 40px above it at z-index 2 — which is fine over a letterform
+       and not fine over a clock. In the in-flow layout (narrow screens)
+       it landed across the seconds: measured, the rat spanning x 239-275
+       and the seconds sitting at 254-278. A decorative sprite must not be
+       the reason a digit cannot be read, so the countdown is given a
+       stacking context of its own, one above it.
+
+       The rat is pointer-events: none, so nothing about clicking changes
+       either way. */
+    position: relative;
+    z-index: 3;
+}
+
+@media (min-width: 700px) and (min-height: 620px) {
+    .welcome-stack { position: relative; }
+
+    .welcome-countdown {
+        position: absolute;
+        /* Off the TOP of the stack, so it stacks upward from the title's
+           own top edge rather than pushing it down. */
+        bottom: 100%;
+        left: 0;
+        right: 0;
+        /* Tight. It belongs to the wordmark; a generous gap would make it
+           a separate thing sitting above one. */
+        margin: 0 0 10px;
+    }
+}
+
+/* "The archive opens in". Brighter and a size up from where it started:
+   at 0.6rem in --parchment-dim with 2px of tracking it was the least
+   legible line on the page, which is the wrong thing for the line that
+   says what the numbers underneath it mean. Full parchment, 0.7rem, and
+   the tracking pulled in — Silkscreen is a pixel face and wide letter
+   spacing is what makes it swim at small sizes. */
+.welcome-countdown-label {
+    margin: 0 0 9px;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--parchment);
+}
+
+.welcome-countdown-clock {
+    display: flex;
+    align-items: baseline;
+    /* Left, with the label above it and the wordmark below. */
+    justify-content: flex-start;
+    gap: 5px;
+}
+
+/* Number and unit on ONE line now, not stacked.
+
+   Stacked, each unit was a 36px column with a caption under it — a little
+   table, which is the right shape for a centred banner and the wrong one
+   for a single line of kicker over a title. Side by side they read as
+   "12 days", which is how somebody would say it.
+
+   No min-width either: the row is ranged left, so there is no centre for
+   an uneven width to pull away from, and tabular figures below already
+   stop the digits themselves from shuffling. */
+.wc-unit {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+}
+
+/* Smaller than it was. At 1.6rem the clock was competing with the Enter
+   button for the eye, and the button is the thing on this page — the
+   countdown is the sentence under it saying when the button will work. */
+.wc-unit strong {
+    font-family: 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 1.15rem;
+    line-height: 1.1;
+    color: var(--amber-bright);
+    /* The seconds change every second and a proportional face would shuffle
+       every other digit sideways each time one did. */
+    font-variant-numeric: tabular-nums;
+}
+
+.wc-tag {
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.5rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
+}
+
+/* The colons sit on the digits' baseline rather than in the middle of the
+   whole unit, which includes the label underneath — centred on that, they
+   floated a few pixels low. */
+.wc-sep {
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.95rem;
+    line-height: 1.4;
+    color: var(--amber);
+    opacity: 0.5;
+}
+
+.welcome-countdown-when {
+    margin: 5px 0 0;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.72rem;
+    color: var(--parchment-dim);
+}
+
+/* At zero, while the page waits for the switch to actually be thrown. The
+   clock reads all noughts and would otherwise sit there looking broken;
+   dimming it puts the weight on the line above, which is the one now
+   saying something. */
+.welcome-countdown.is-due .welcome-countdown-clock {
+    opacity: 0.35;
+}
+
+.welcome-countdown.is-due .welcome-countdown-label {
+    color: var(--amber-bright);
+}
+
+/* A phone holds the four units at their full size only just — 4 x 44px plus
+   three colons is 190px, which fits — but the gap between them and the top
+   margin are both worth trimming so the clock does not push the fansite
+   footer off a short screen. */
+@media (max-width: 420px) {
+    .wc-unit strong { font-size: 1rem; }
+    .welcome-countdown-when { font-size: 0.66rem; }
+}
+
 /* Same stacked MAZE/RATS treatment as the homepage hero, just bigger. */
 /* Unchanged, and worth a note saying so: the title is NOT what made this
    page scroll sideways, however much it looks like the culprit. Measured at
@@ -1596,14 +1830,22 @@ body[data-page="home"] .hero { padding-top: 18px; }
    class-only specificity that later rule was winning over a bare
    .chrome-nav-btn-recommended selector here.
 
-   Only a touch lighter than .featured-frame's own #2e2418 fill (rather than
-   the standard #f5ecd8 nav-tab cream) with the base .chrome-nav-btn drop
-   shadow swapped for a thin highlight below instead — a raised drop shadow
-   reads as text sitting on top of the panel, while a highlight below (with
-   no dark shadow needed since the color is already close to the fill) reads
-   as the label stamped/pressed into it, letterpress-style. */
+   Lighter than .featured-frame's own #2e2418 fill (rather than the standard
+   #f5ecd8 nav-tab cream) with the base .chrome-nav-btn drop shadow swapped
+   for a thin highlight below instead — a raised drop shadow reads as text
+   sitting on top of the panel, while a highlight below reads as the label
+   stamped/pressed into it, letterpress-style.
+
+   THE LETTERPRESS IS THE HIGHLIGHT, NOT THE DIMNESS, which is what makes
+   the contrast fix below cost nothing. This was #6b563a, chosen to sit
+   only a touch off the fill — and at 8.8px that came to 2.18:1 against it,
+   which is a section heading on the public archive that people genuinely
+   struggle to read. #a98a5e is 4.69:1, the smallest step in the palette
+   that clears AA, and the 1px white highlight underneath is untouched, so
+   the label still reads as pressed into the panel rather than laid on it.
+   Measured both ways round, not eyeballed. */
 .featured-frame .chrome-nav-btn-recommended {
-    color: #6b563a;
+    color: #a98a5e;
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-weight: 700;
@@ -2303,7 +2545,26 @@ body[data-page="home"] .hero { padding-top: 18px; }
     margin: 0 0 4px;
 }
 
-.row-date { color: var(--parchment-dim); }
+/* A shade up from --parchment-dim, and mixed rather than named.
+
+   The date sits on .chrome-list-row, which lays rgba(0, 0, 0, 0.25) over
+   the list fill — so this one line of dim text is on a darker ground than
+   --parchment-dim is used against anywhere else, and at 9px it came to
+   4.33:1 against it. Just under AA, on every row in the archive.
+
+   COLOUR-MIXED FROM THE TOKENS, NOT A NEW HEX, because --parchment-dim is
+   themed: it is #a89a84 in classic, #9f92aa in purple, #969ba0 in crimson.
+   A literal here would have left the date brown on a purple site. Lifting
+   the themed dim tone toward the themed light one keeps the relationship
+   in every palette, and needs no new variable and no regeneration of the
+   generated theme files. color-mix is already used elsewhere in this
+   stylesheet, so it is not a new demand on the browser.
+
+   18% is the smallest lift that clears AA with a little room to spare —
+   measured in the page, not calculated from the tokens, because the
+   background is a composite of two layers. It is still visibly the dim
+   tone: the maze name above it stays the brighter thing on the row. */
+.row-date { color: color-mix(in srgb, var(--parchment-dim) 82%, var(--parchment) 18%); }
 
 /* The dot between the builder/host name and the date.
 
@@ -8071,6 +8332,25 @@ body[data-page="admin"] .search-box input {
    body's exact background so the loading screen and the site behind it are
    the same surface. The reveal is then a fade of the middle of the page, not
    a cut between two different-looking screens. */
+/* ---- WHILE THE GATE IS STILL DECIDING ----
+
+   home.html's <head> sets data-gate-peek when this browser's last answer
+   said the site was open, and lets the page be seen a few seconds earlier
+   than the gate can confirm it — see the long note beside it for why that
+   is safe and why it is not done in the other cases.
+
+   What it lets through is the loading screen and nothing else. .site-loader
+   already covers the viewport opaquely, so this is belt and braces rather
+   than the mechanism; it is here because "the loader happens to be on top"
+   is a thing that stays true until somebody adds a fixed element with a
+   higher z-index, and the cost of being explicit is one rule.
+
+   visibility rather than display, so nothing is laid out differently for
+   those few seconds and revealing cannot reflow the page. */
+html[data-gate-peek] body > *:not(.site-loader) {
+    visibility: hidden;
+}
+
 .site-loader {
     position: fixed;
     inset: 0;
@@ -8119,6 +8399,40 @@ body[data-page="admin"] .search-box input {
     align-items: center;
     gap: 9px;
 }
+
+/* The site's name, over the bar.
+
+   Written out here rather than reusing .hero-title, and the values are
+   copied from it on purpose: Montserrat 800 in --parchment-mid, the same
+   two stacked lines with the second a touch larger (MAZE renders wider
+   than RATS at the same size, so RATS is set at 1.1em to make the two
+   read the same width — the same trick and the same number as the real
+   title). Reusing the class would have dragged along .hero-title's
+   margin-bottom and its flex-column gap, both of which are tuned for a
+   title with a page under it rather than a bar.
+
+   Sized between the landing page's huge wordmark and the archive's small
+   one. This screen sits between those two and should read as the journey
+   from one to the other rather than as a third size nobody has seen. */
+.site-loader-wordmark {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0 0 18px;
+    line-height: 0.82;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: clamp(2.6rem, 9vw, 5rem);
+    letter-spacing: 0.5px;
+    color: var(--parchment-mid, #c7a679);
+    /* The loader is removed 300ms after it finishes; letting the wordmark
+       fade with it rather than blink out is most of why the handover to
+       the archive reads as one movement. Inherited from .site-loader's own
+       is-done transition, so nothing extra is declared here. */
+}
+
+.site-loader-wordmark span { display: block; }
+.site-loader-wordmark span:last-child { font-size: 1.1em; }
 
 .site-loader-label {
     margin: 0;
@@ -9419,6 +9733,80 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.6875rem;
     line-height: 1.7;
     color: var(--parchment-dim);
+}
+
+/* The message itself, now that the box holds more than one thing. It was a
+   bare <p> with the panel's own padding doing the spacing; the margin is
+   reset so the padding above still decides where the block sits. */
+.archive-empty-say {
+    margin: 0;
+}
+
+/* "It is in another tab:" — the line that turns a dead end into a
+   signpost. Dimmer than the message above it: the message is the answer to
+   what was asked, this is the offer. */
+.archive-empty-also {
+    margin: 18px 0 0;
+    color: var(--parchment-dim);
+    opacity: 0.8;
+}
+
+.archive-empty-jumps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 10px;
+}
+
+/* Built to read as one of the archive's own chrome buttons rather than as
+   a link in a sentence — same wood fill, same border, same 1px highlight
+   along the top that .chrome-frame and the round-end buttons use. It is a
+   navigation control and should look like the ones above it.
+
+   min-height 30px because this is the one control on the panel that exists
+   only to be pressed, and a visitor reaching it has already had one thing
+   not work. */
+.archive-empty-jump {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 30px;
+    padding: 5px 11px;
+    background: var(--chrome-fill);
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 var(--chrome-highlight);
+    font-family: inherit;
+    font-size: inherit;
+    line-height: 1;
+    color: var(--parchment);
+    cursor: var(--cursor-pointer);
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.archive-empty-jump:hover,
+.archive-empty-jump:focus-visible {
+    background: var(--chrome-highlight);
+    border-color: var(--amber);
+    color: var(--amber-bright);
+}
+
+/* The count, in a pill of its own so the number reads as a quantity rather
+   than as part of the tab's name — "Archived 2", not "Archived 2" as a
+   title. Tabular figures so a 1 and a 7 make the same width of pill. */
+.archive-empty-jump-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 17px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--amber);
+    color: #241606;
+    font-size: 0.6rem;
+    font-variant-numeric: tabular-nums;
 }
 
 /* Lets the archive grow on a tall window instead of holding 615px whatever
@@ -10815,7 +11203,15 @@ body[data-page="admin"] #activity-sessions {
     transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
 }
 
-.guess-option-name { min-width: 0; overflow-wrap: anywhere; }
+/* A maze name, printed verbatim out of the archive — so the Habbo picture
+   glyphs in it are drawn as pictures rather than as the Latin letters that
+   share their codepoints. See the 'Volter Glyphs' @font-face at the top of
+   this file for why this is a unicode-range and not a font swap. */
+.guess-option-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-family: 'Volter Glyphs', Roboto, sans-serif;
+}
 
 .guess-option-mark {
     flex: 0 0 auto;
@@ -10930,7 +11326,14 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment);
 }
 
-.guess-reveal strong { color: var(--amber-bright); font-weight: 400; }
+/* The answer, named. Same treatment as the option list above — this is the
+   one place the game says the maze's real name out loud, so it should be
+   the real name. */
+.guess-reveal strong {
+    color: var(--amber-bright);
+    font-weight: 400;
+    font-family: 'Volter Glyphs', Roboto, sans-serif;
+}
 
 .guess-reveal-verdict {
     display: block;
@@ -12769,6 +13172,54 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
     flex-direction: column;
 }
 
+/* The line shown inside a daily window while its game is still being
+   fetched — see js/daily-loader.js. Only ever appears after 400ms, so on
+   any ordinary connection nobody sees it at all.
+
+   Centred in the window rather than sat at the top of it, because the
+   window is already at full height by the time this exists (the sheet
+   below stands at a fixed --daily-h) and a line of text in the corner of
+   a 500px empty box reads as a broken game rather than a loading one.
+
+   Absolutely centred rather than margin:auto, because the three boxes it
+   is dropped into are not laid out alike: .daily-sheet is a flex column
+   (where auto margins would work) and .guess-deck is a positioned box full
+   of absolutely positioned sheets (where they would not).
+
+   .guess-deck is already `position: relative`; .daily-sheet has been given
+   it below purely so this can inset against it, which changes nothing
+   about how it lays out. */
+.daily-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 20px;
+    text-align: center;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.6875rem;
+    line-height: 1.7;
+    color: var(--parchment-dim);
+    /* It fades in rather than appearing, so the 400ms threshold does not
+       read as a flicker on a connection that lands at 450ms. */
+    animation: daily-loading-in 0.25s ease both;
+}
+
+.daily-loading--failed {
+    color: var(--danger);
+}
+
+@keyframes daily-loading-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .daily-loading { animation: none; }
+}
+
 /* The window holds a frame, and the frame holds one darker sheet — which is
    what Guess the Maze does, and most of why that window looks finished. The
    game sits ON something rather than floating in the window's own colour,
@@ -12797,6 +13248,9 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
        deck height as --deck-h for exactly the same reason. */
     --daily-h: clamp(430px, 66vh, 560px);
     height: var(--daily-h);
+    /* Only so .daily-loading can inset against it while the game is being
+       fetched (see js/daily-loader.js). Nothing else here depends on it. */
+    position: relative;
     /* Fills the frame across as well as standing to a fixed height: the
        frame is a flex row, and without this the sheet is only as wide as
        its widest line, leaving the rest of the window bare. */
@@ -13010,6 +13464,10 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
     font-size: 0.78rem;
     line-height: 1.25;
     color: var(--parchment);
+    /* A maze or event name straight out of the archive, so the Habbo
+       picture glyphs in it are drawn rather than spelled — see the
+       'Volter Glyphs' @font-face at the top of this file. */
+    font-family: 'Volter Glyphs', Roboto, sans-serif;
     /* Two lines and then an ellipsis: a five-word maze name should not make
        one card twice the height of its neighbours. */
     display: -webkit-box;
@@ -13945,8 +14403,53 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
         min-height: 40px;
     }
 
+    /* The arrow got its height here and not its width, which left it 15px
+       across — narrower than it is tall, and the narrow way is the way a
+       thumb misses. The sprite is 15px of pixel art and stays that size;
+       the button around it grows, with the image centred in it rather than
+       stretched.
+
+       24, not 30: this is the one control that sits ON the scrolling panel
+       rather than beside it, and every pixel it takes is a pixel of maze
+       list it covers. 24 is the WCAG minimum and it clears the panel's own
+       15px track without reaching into the rows. */
     .custom-scrollbar-arrow {
         min-height: 26px;
+        min-width: 24px;
+        background-size: 15px 15px;
+        background-position: center;
+        background-repeat: no-repeat;
+    }
+
+    /* The Privacy Policy link, which js/site.js appends onto the end of the
+       copyright line (see the block at the foot of that file). It is a real
+       link in the footer of every page and it was the last 14px-tall thing
+       left down there — .fellow-fansites a above had been given padding and
+       this had not, because it is not one of them and the selector never
+       reached it.
+
+       Padding rather than a reach, for the same reason the fansite row uses
+       padding: the copyright sentence wraps to three or four lines on a
+       phone and an ::after would overlap the text above it. 6px top and
+       bottom takes it to 26px, which clears the minimum without pushing the
+       last line of the footer off its own baseline. */
+    .site-footer p:last-child a {
+        display: inline-block;
+        padding: 6px 4px;
+    }
+
+    /* The console's own fields. A hit area cannot help an <input> — you have
+       to land in the box AND then type in it, so the box itself has to be
+       big enough. They were 20px.
+
+       24px, and no more: the contact page inside the console is already
+       taller than the 204px screen it scrolls in, so every pixel added here
+       is a pixel further to scroll before reaching Send. This is the
+       smallest size that clears the minimum. The message field is 58px
+       already and is left alone. */
+    .console-input-username,
+    .console-input-discord {
+        min-height: 24px;
     }
 
     /* The fansite row wraps to three lines on a phone, one line about 30px

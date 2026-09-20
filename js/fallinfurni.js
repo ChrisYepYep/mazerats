@@ -896,6 +896,38 @@
         return shortEdge > 0 && shortEdge < 820;
     }
 
+    /* Whether the room actually fits across the narrow edge of this screen.
+
+       isHandheld() above answers a different question from the one the gate
+       needs, and for a while it was being asked both. "Is this a touch
+       device small enough to need the immersive treatment" is true of a
+       tablet; "is this screen too narrow in portrait to show the room" is
+       not. A 768x1024 iPad matched the first, so upright it was shown a
+       screen saying "turn your phone sideways" — about a room 722px wide,
+       on 768px of screen, which would have fitted with room to spare.
+
+       So the gate asks this instead, and a tablet that can hold the room
+       upright simply gets the immersive layout in portrait: scaled by
+       fitImmersive to whatever the display allows, chrome out of the way,
+       playable either way up. A phone still cannot fit it and still gets
+       the gate, which is what the gate is for.
+
+       Measured off #ff-window for the same reason fitImmersive measures it
+       — the window's real width is the CSS's business and a constant here
+       would drift from it. The fallback is only for the moment before
+       layout; applyOrientation runs again on the next resize either way.
+
+       `screen` rather than the viewport, matching isHandheld: the answer
+       must not change when the device turns. */
+    const FF_WINDOW_FALLBACK = 722;
+
+    function roomFitsUpright() {
+        const win = document.getElementById("ff-window");
+        const need = (win && win.offsetWidth) || FF_WINDOW_FALLBACK;
+        const shortEdge = Math.min(screen.width || 0, screen.height || 0);
+        return shortEdge > 0 && shortEdge >= need;
+    }
+
     const isPortrait = () => window.matchMedia
         ? window.matchMedia("(orientation: portrait)").matches
         : window.innerHeight > window.innerWidth;
@@ -952,7 +984,10 @@
     function applyOrientation() {
         const body = document.body;
         const handheld = isHandheld();
-        const shut = handheld && isPortrait();
+        // Upright AND too narrow to hold the room. A tablet that can hold it
+        // upright falls through to the immersive branch below rather than
+        // being asked to turn — see roomFitsUpright.
+        const shut = handheld && isPortrait() && !roomFitsUpright();
 
         body.classList.toggle("ff-handheld", handheld);
         body.classList.toggle("ff-rotate-shut", shut);
@@ -1725,8 +1760,9 @@
 
     async function loadSplash() {
         try {
-            const res = await fetch("/.netlify/functions/settings", { credentials: "same-origin" });
-            const data = res.ok ? await res.json() : {};
+            // The page's one settings request (see _settingsPromise in
+            // js/api.js), not a fourth call to the same endpoint.
+            const data = (typeof Api !== "undefined" ? await Api.getSiteSettings() : {}) || {};
             splashFurni = Array.isArray(data.lobbyFurni) && data.lobbyFurni.length
                 ? data.lobbyFurni.slice()
                 : (Lobby ? Lobby.DEFAULT_FURNI.slice() : []);
@@ -1749,6 +1785,13 @@
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) { status(data.error || "Could not save the splash furni.", "bad"); return; }
+            // The page is holding one shared copy of the settings and this
+            // just changed them, so drop it — otherwise the next read on
+            // this page hands back the splash list as it was before the
+            // save. A raw PUT rather than Api.updateSiteSettings (which
+            // does this itself) because this one carries the editor's own
+            // token, so it has to say so here.
+            if (typeof Api !== "undefined") Api.forgetSiteSettings();
             status("Splash furni saved.", "good");
         } catch (e) {
             status(`Could not save the splash furni: ${e.message}`, "bad");
@@ -2036,7 +2079,19 @@
         box.innerHTML =
             "<h1>Level editor</h1>" +
             `<p>${reason} The Fallin' Furni level editor is limited to owner accounts.</p>` +
-            '<p><a href="/admin">Sign in</a> &middot; <a href="/fallinfurni">Play Fallin\' Furni</a></p>';
+            /* NO LINK TO THE ADMIN PANEL HERE, deliberately.
+
+               This screen is what ANYONE gets by putting ?edit on the end of
+               the game's address — it is the one place a signed-out stranger
+               is shown something about signing in, and it used to hand them
+               the panel's URL to click. That made the address public to
+               exactly the people it is now renamed to be quiet from (see the
+               note in netlify.toml).
+
+               An owner does not need the link: they know where the panel is
+               and they are one bookmark away from it. Anybody else has no
+               use for it. So the way out offered here is back to the game. */
+            '<p><a href="/fallinfurni">Play Fallin\' Furni</a></p>';
         main.appendChild(box);
     }
 
@@ -2770,9 +2825,10 @@
     async function loadLobbyFurni() {
         if (!Lobby) return;
         try {
-            const res = await fetch("/.netlify/functions/settings", { credentials: "same-origin" });
-            if (!res.ok) return;
-            const data = await res.json();
+            // Shares the request the page already made — see the note in
+            // fallinfurni.html's <head> and _settingsPromise in js/api.js.
+            const data = typeof Api !== "undefined" ? await Api.getSiteSettings() : null;
+            if (!data) return;
             if (Array.isArray(data.lobbyFurni) && data.lobbyFurni.length) {
                 Lobby.setFurni(data.lobbyFurni);
                 Lobby.preload(() => { dirty = true; });
@@ -2895,9 +2951,74 @@
                 list.appendChild(li);
             }
             box.hidden = !(data.top || []).length;
+            renderMeet(data.tournament);
         } catch {
             box.hidden = true;      // no board is better than a broken one
+            renderMeet(null);
         }
+    }
+
+    /* The tournament board, when the server says there is one.
+
+       ENTIRELY SERVER-LED. The dates, the name and whether it is still
+       running are all decided in netlify/functions/ff-scores.js and arrive
+       in the same response as the scores — nothing here knows when launch
+       week is, and nothing here has to be edited when it ends. A page that
+       carried its own copy of the dates would be a page that kept saying
+       "running" after the endpoint had stopped accepting runs, which is
+       the one thing a leaderboard must not do.
+
+       SHOWN EVEN WHEN EMPTY, unlike the all-time board above, and only
+       while running. An empty all-time board means something has gone
+       wrong; an empty tournament board on the first morning means nobody
+       has played yet, which is an invitation rather than a fault — it is
+       the one moment when being top of it costs a single run. Once the
+       meet has ended an empty board is just an empty board, so it goes. */
+    function renderMeet(meet) {
+        const box = document.getElementById("ff-meet-board");
+        const list = document.getElementById("ff-meet-list");
+        const name = document.getElementById("ff-meet-name");
+        const flag = document.getElementById("ff-meet-flag");
+        const note = document.getElementById("ff-meet-note");
+        if (!box || !list) return;
+
+        if (!meet) { box.hidden = true; return; }
+
+        const rows = meet.top || [];
+        if (!meet.running && !rows.length) { box.hidden = true; return; }
+
+        if (name) name.textContent = meet.name || "Tournament";
+        if (flag) flag.textContent = meet.running ? "LIVE" : "FINISHED";
+        box.classList.toggle("is-live", Boolean(meet.running));
+
+        if (note) {
+            note.textContent = meet.running
+                ? (rows.length
+                    ? "Your best run this week. Ends " + meetEnds(meet.to) + "."
+                    : "Nobody has played yet. Ends " + meetEnds(meet.to) + ".")
+                : "Final standings.";
+        }
+
+        list.innerHTML = "";
+        for (const row of rows) {
+            const li = document.createElement("li");
+            const points = Number(row.points) || 0;
+            li.innerHTML = `<span>${escapeText(row.name)}</span>` +
+                `<em><b>${points.toLocaleString()} pts</b> - ` +
+                `${row.levels} ${row.levels === 1 ? "level" : "levels"} - ${asClock(row.ms)}</em>`;
+            list.appendChild(li);
+        }
+        box.hidden = false;
+    }
+
+    // "Saturday 10 October" — en-GB like every other date the site writes
+    // (see longDate in js/ratrospect.js), and in the reader's own zone,
+    // since this is a deadline somebody is working to rather than a
+    // timestamp.
+    function meetEnds(iso) {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return "soon";
+        return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
     }
 
     const escapeText = (s) => String(s || "").replace(/[<>&"]/g, c => (

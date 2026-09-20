@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   720 rules, 1191 declarations, hues 350 (surfaces) / 212 (accents).
+   734 rules, 1211 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -311,6 +311,30 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
+[data-theme="crimson"] .welcome-countdown-label {
+    color: var(--parchment);
+}
+
+[data-theme="crimson"] .wc-unit strong {
+    color: var(--amber-bright);
+}
+
+[data-theme="crimson"] .wc-tag {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .wc-sep {
+    color: var(--amber);
+}
+
+[data-theme="crimson"] .welcome-countdown-when {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .welcome-countdown.is-due .welcome-countdown-label {
+    color: var(--amber-bright);
+}
+
 [data-theme="crimson"] .btn-enter {
     border-image-source: url('../assets/img/crimson/window_frame.png');
     background-image: url('../assets/img/crimson/title_pattern.png');
@@ -425,7 +449,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .featured-frame .chrome-nav-btn-recommended {
-    color: #322d2e;
+    color: #6b6f74;
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
@@ -560,7 +584,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .row-date {
-    color: var(--parchment-dim);
+    color: color-mix(in srgb, var(--parchment-dim) 82%, var(--parchment) 18%);
 }
 
 [data-theme="crimson"] .ec-title-s1 {
@@ -1793,6 +1817,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
         url('../assets/img/crimson/MazeBG.png');
 }
 
+[data-theme="crimson"] .site-loader-wordmark {
+    color: var(--parchment-mid, #aab1b8);
+}
+
 [data-theme="crimson"] .site-loader-label {
     color: var(--parchment);
 }
@@ -2099,6 +2127,29 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 
 [data-theme="crimson"] .archive-empty {
     color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .archive-empty-also {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .archive-empty-jump {
+    background: var(--chrome-fill);
+    border: 1px solid var(--chrome-border);
+    box-shadow: inset 0 1px 0 var(--chrome-highlight);
+    color: var(--parchment);
+}
+
+[data-theme="crimson"] .archive-empty-jump:hover,
+[data-theme="crimson"] .archive-empty-jump:focus-visible {
+    background: var(--chrome-highlight);
+    border-color: var(--amber);
+    color: var(--amber-bright);
+}
+
+[data-theme="crimson"] .archive-empty-jump-count {
+    background: var(--amber);
+    color: #0d090a;
 }
 
 [data-theme="crimson"] .gallery-photos::before {
@@ -3073,6 +3124,14 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: var(--parchment);
 }
 
+[data-theme="crimson"] .daily-loading {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .daily-loading--failed {
+    color: var(--danger);
+}
+
 [data-theme="crimson"] .daily-sheet {
     background: #161011;
     scrollbar-color: var(--wood-dark) #161011;
@@ -3371,6 +3430,12 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     [data-theme="crimson"] .header-badge::after,
     [data-theme="crimson"] .header-signin::after,
     [data-theme="crimson"] .header-console-btn::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="crimson"] .console-close-btn::after {
         background: transparent;
     }
 }

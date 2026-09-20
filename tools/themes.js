@@ -61,7 +61,7 @@ const ROOT = path.resolve(__dirname, "..");
 
    Everything below this line is one transform; a theme is just the numbers it
    is handed. Adding one means adding a row here, a name to VALID_THEMES in
-   netlify/functions/settings.js, and a button in admin.html — no new code.
+   netlify/functions/settings.js, and a button in warren.html — no new code.
 
      surfaceHue  the hue the DARK end becomes: the page, the window surround,
                  the rows, the frame art's fills

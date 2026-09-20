@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   720 rules, 1191 declarations, hues 272 (surfaces) / 272 (accents).
+   734 rules, 1211 declarations, hues 272 (surfaces) / 272 (accents).
 */
 :root[data-theme="purple"] {
     --bg-black: #020104;
@@ -311,6 +311,30 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
+[data-theme="purple"] .welcome-countdown-label {
+    color: var(--parchment);
+}
+
+[data-theme="purple"] .wc-unit strong {
+    color: var(--amber-bright);
+}
+
+[data-theme="purple"] .wc-tag {
+    color: var(--parchment-dim);
+}
+
+[data-theme="purple"] .wc-sep {
+    color: var(--amber);
+}
+
+[data-theme="purple"] .welcome-countdown-when {
+    color: var(--parchment-dim);
+}
+
+[data-theme="purple"] .welcome-countdown.is-due .welcome-countdown-label {
+    color: var(--amber-bright);
+}
+
 [data-theme="purple"] .btn-enter {
     border-image-source: url('../assets/img/purple/window_frame.png');
     background-image: url('../assets/img/purple/title_pattern.png');
@@ -425,7 +449,7 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
 }
 
 [data-theme="purple"] .featured-frame .chrome-nav-btn-recommended {
-    color: #2e1b3e;
+    color: #7a539c;
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
@@ -560,7 +584,7 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
 }
 
 [data-theme="purple"] .row-date {
-    color: var(--parchment-dim);
+    color: color-mix(in srgb, var(--parchment-dim) 82%, var(--parchment) 18%);
 }
 
 [data-theme="purple"] .ec-title-s1 {
@@ -1793,6 +1817,10 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
         url('../assets/img/purple/MazeBG.png');
 }
 
+[data-theme="purple"] .site-loader-wordmark {
+    color: var(--parchment-mid, #b09ac3);
+}
+
 [data-theme="purple"] .site-loader-label {
     color: var(--parchment);
 }
@@ -2099,6 +2127,29 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
 
 [data-theme="purple"] .archive-empty {
     color: var(--parchment-dim);
+}
+
+[data-theme="purple"] .archive-empty-also {
+    color: var(--parchment-dim);
+}
+
+[data-theme="purple"] .archive-empty-jump {
+    background: var(--chrome-fill);
+    border: 1px solid var(--chrome-border);
+    box-shadow: inset 0 1px 0 var(--chrome-highlight);
+    color: var(--parchment);
+}
+
+[data-theme="purple"] .archive-empty-jump:hover,
+[data-theme="purple"] .archive-empty-jump:focus-visible {
+    background: var(--chrome-highlight);
+    border-color: var(--amber);
+    color: var(--amber-bright);
+}
+
+[data-theme="purple"] .archive-empty-jump-count {
+    background: var(--amber);
+    color: #060209;
 }
 
 [data-theme="purple"] .gallery-photos::before {
@@ -3073,6 +3124,14 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     color: var(--parchment);
 }
 
+[data-theme="purple"] .daily-loading {
+    color: var(--parchment-dim);
+}
+
+[data-theme="purple"] .daily-loading--failed {
+    color: var(--danger);
+}
+
 [data-theme="purple"] .daily-sheet {
     background: #0c0711;
     scrollbar-color: var(--wood-dark) #0c0711;
@@ -3371,6 +3430,12 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     [data-theme="purple"] .header-badge::after,
     [data-theme="purple"] .header-signin::after,
     [data-theme="purple"] .header-console-btn::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="purple"] .console-close-btn::after {
         background: transparent;
     }
 }

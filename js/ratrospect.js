@@ -130,7 +130,7 @@
        the first card, then keep taking the next whose month nobody has yet.
        Fifty-odd records spread across two years fill this easily. */
     function pickDay() {
-        const shuffled = window.Daily.shuffle(pool, window.Daily.seedFrom("ratrospect:" + day()));
+        const shuffled = window.Daily.shuffle(pool, window.Daily.daySeed("ratrospect"));
         const chosen = [];
         const months = new Set();
         for (const card of shuffled) {
@@ -279,10 +279,20 @@
 
     /* The day, written out. Guess the Maze puts it under its title and it
        is worth having: a daily game should say which day it is dealing,
-       especially one somebody has come back to after a while. */
+       especially one somebody has come back to after a while.
+
+       "en-GB" RATHER THAN THE VISITOR'S OWN LOCALE, which is what passing
+       undefined here asked for. Guess the Maze names the locale (see
+       js/guess.js) and this did not, so on any machine not set to British
+       English the two games disagreed about how to write the same day —
+       "Sunday, September 20" here against "Sunday 20 September" two clicks
+       away. Nobody sees one game in isolation; the menu offers all three
+       together. The site is written in British English throughout and the
+       date it prints should be too. js/oddoneout.js and js/daily.js carry
+       the same line for the same reason. */
     function longDate() {
         const d = new Date(day() + "T12:00:00Z");
-        return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+        return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
     }
 
     function escapeHtml(str) {
@@ -799,5 +809,14 @@
 
     window.openRatrospect = function () { open(); };
 
-    document.addEventListener("DOMContentLoaded", mount);
+    /* mount() now, if the document is already parsed.
+
+       This file is no longer a <script src> in home.html — js/daily-loader.js
+       fetches it the first time somebody asks for the game, which is long
+       after DOMContentLoaded has been and gone. Listening for an event that
+       has already fired means mount() never runs and the window opens empty.
+       Both branches, because the deep-link path (/guess, /ratrospect, /odd)
+       still loads it while the document is parsing. */
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount);
+    else mount();
 })();

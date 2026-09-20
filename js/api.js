@@ -363,23 +363,89 @@ const Api = {
         }
     },
 
-    // The welcome button ships disabled and only this call can enable it —
-    // relies on _getWithFallback's timeout so a hung (not just failing)
-    // request can't leave visitors stuck on the disabled button forever.
+    /* ---------- ONE SETTINGS REQUEST PER PAGE ----------
+
+       This endpoint answers with under a kilobyte and it was being asked
+       three times on every page load, by callers that had no idea the
+       others existed: the gate script in home.html's <head>, this method
+       (for js/site.js, js/welcome.js and the console's About page), and
+       js/palette-wear.js with a raw fetch of its own. Fallin' Furni managed
+       four. Three cold-startable function calls, in parallel, for one
+       answer that cannot have changed between them.
+
+       Two things fix it, and both are needed because the first caller runs
+       before this file exists.
+
+       1. `_settingsPromise` memoises the IN-FLIGHT promise, not the result.
+          Memoising the result would still let a burst of callers on one
+          page each fire their own request before the first came back, which
+          is exactly the shape of the problem — every one of them runs
+          during the same tick of page setup.
+
+       2. `window.__mrSettings` is the handshake with the inline gate. That
+          script has to run first, before any <script src> has loaded, so it
+          cannot use this. It publishes its own promise on the window
+          instead, and this adopts it. So the gate's request IS the page's
+          request, and Fallin' Furni keeps its own boot sequence exactly as
+          it was — its loading bar still starts on a request fired from the
+          <head>, nothing waits on this file to load first.
+
+       DELIBERATELY NOT CACHED ACROSS PAGES, in localStorage or anywhere
+       else. The landing state is the gate; a stale cached "enter" would
+       hold a gated site open for the length of the cache. Per page load is
+       the right lifetime: everything that asks during one load is asking
+       about the same moment.
+
+       An adopted promise is normalised through the same handling below —
+       the gate's raw fetch resolves to the parsed body and knows nothing
+       about remembering the state or applying the theme. */
+    _settingsPromise: null,
+
     async getSiteSettings() {
-        const settings = await this._getWithFallback("/.netlify/functions/settings", "site settings",
-            () => ({ landingState: this.lastKnownLandingState() || "coming-soon", aboutText: "", fromCache: true }));
-        if (!settings.fromCache && settings.landingState) this.rememberLandingState(settings.landingState);
-        // Only from a real answer: the fallback object has no theme in it, and
-        // treating "absent" as classic would flip a purple site back to brown
-        // every time the archive was briefly unreachable.
-        if (!settings.fromCache && settings.theme) this.applyTheme(settings.theme);
-        return settings;
+        if (this._settingsPromise) return this._settingsPromise;
+
+        const shared = typeof window !== "undefined" && window.__mrSettings;
+        const fetched = shared
+            // The gate's own request. `.catch` and not a bare adopt: if that
+            // one failed, this must still fall back the way it always did
+            // rather than rejecting into every caller on the page.
+            ? Promise.resolve(shared).catch(() => null).then(v => v ||
+                ({ landingState: this.lastKnownLandingState() || "coming-soon", aboutText: "", fromCache: true }))
+            : this._getWithFallback("/.netlify/functions/settings", "site settings",
+                () => ({ landingState: this.lastKnownLandingState() || "coming-soon", aboutText: "", fromCache: true }));
+
+        this._settingsPromise = fetched.then(settings => {
+            if (!settings.fromCache && settings.landingState) this.rememberLandingState(settings.landingState);
+            // Only from a real answer: the fallback object has no theme in it, and
+            // treating "absent" as classic would flip a purple site back to brown
+            // every time the archive was briefly unreachable.
+            if (!settings.fromCache && settings.theme) this.applyTheme(settings.theme);
+            return settings;
+        });
+
+        return this._settingsPromise;
+    },
+
+    /* Throws the shared answer away, so the next read goes to the network.
+
+       For the admin panel, which is the one page that CHANGES these
+       settings and then immediately wants to see what it changed. Every
+       other page reads once and is done. Called by updateSiteSettings
+       below, rather than left to each caller to remember. */
+    forgetSiteSettings() {
+        this._settingsPromise = null;
+        if (typeof window !== "undefined") window.__mrSettings = null;
     },
     // updates is a partial object — { landingState } and/or { aboutText } —
     // the function only touches whichever fields are actually present.
+    //
+    // Drops the shared answer on the way out: whatever this just changed,
+    // the copy held by getSiteSettings above is now the old one, and the
+    // admin panel reads it back immediately after writing.
     updateSiteSettings(token, updates) {
-        return this._write("/.netlify/functions/settings", "PUT", token, updates);
+        const done = this._write("/.netlify/functions/settings", "PUT", token, updates);
+        this.forgetSiteSettings();
+        return done;
     },
 
     getContributors() {

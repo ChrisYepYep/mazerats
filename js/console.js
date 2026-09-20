@@ -7,7 +7,7 @@
 document.addEventListener("DOMContentLoaded", () => {
     const modal = document.getElementById("console-modal");
     const openBtn = document.getElementById("header-console-btn");
-    if (!modal || !openBtn) return; // page doesn't have the console (e.g. admin.html)
+    if (!modal || !openBtn) return; // page doesn't have the console (e.g. warren.html)
 
     const frame = document.getElementById("console-frame");
     const closeBtn = document.getElementById("console-close-btn");

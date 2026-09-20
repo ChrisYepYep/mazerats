@@ -83,13 +83,13 @@
     function pickDay() {
         const rounds = [];
         const usedHome = new Set();
-        const homes = window.Daily.shuffle(pool, window.Daily.seedFrom("odd:" + day()));
+        const homes = window.Daily.shuffle(pool, window.Daily.daySeed("odd"));
 
         for (const home of homes) {
             if (rounds.length >= ROUNDS) break;
             if (usedHome.has(home.id)) continue;
 
-            const seed = window.Daily.seedFrom("odd:" + day() + ":" + home.id);
+            const seed = window.Daily.daySeed("odd", home.id);
             const others = pool.filter(m => m.id !== home.id && m.shots.length);
             const related = others.filter(m => shares(home, m));
             const from = related.length ? related : others;
@@ -103,7 +103,7 @@
             const tiles = window.Daily.shuffle(
                 mine.map(image => ({ image, maze: home, odd: false }))
                     .concat([{ image: theirs, maze: imposter, odd: true }]),
-                window.Daily.seedFrom("odd:tiles:" + day() + ":" + home.id)
+                window.Daily.daySeed("odd:tiles", home.id)
             );
 
             usedHome.add(home.id);
@@ -182,10 +182,13 @@
 
     /* The day, written out. Guess the Maze puts it under its title and it
        is worth having: a daily game should say which day it is dealing,
-       especially one somebody has come back to after a while. */
+       especially one somebody has come back to after a while.
+
+       "en-GB" so all three daily games write the day the same way — see the
+       note on the same function in js/ratrospect.js. */
     function longDate() {
         const d = new Date(day() + "T12:00:00Z");
-        return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+        return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
     }
 
     function escapeHtml(str) {
@@ -399,5 +402,14 @@
 
     window.openOddOneOut = function () { open(); };
 
-    document.addEventListener("DOMContentLoaded", mount);
+    /* mount() now, if the document is already parsed.
+
+       This file is no longer a <script src> in home.html — js/daily-loader.js
+       fetches it the first time somebody asks for the game, which is long
+       after DOMContentLoaded has been and gone. Listening for an event that
+       has already fired means mount() never runs and the window opens empty.
+       Both branches, because the deep-link path (/guess, /ratrospect, /odd)
+       still loads it while the document is parsing. */
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount);
+    else mount();
 })();

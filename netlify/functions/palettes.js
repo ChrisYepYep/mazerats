@@ -119,9 +119,19 @@ exports.handler = async (event) => {
         return json(200, { count: all.length, palettes: all.map(clean) });
     }
 
-    if (!isAuthorized(event)) return json(401, UNAUTHORIZED);
+    /* Returned as they are, not wrapped in json().
+
+       UNAUTHORIZED and READ_ONLY from _auth.js are already whole responses
+       — statusCode, headers and a JSON body. Passing one to json() put the
+       entire response object INTO the body, so this endpoint answered 401
+       with {"statusCode":401,"headers":{…}} where every other endpoint
+       answers {"error":"Unauthorized"}. The status was right and the
+       refusal held, but a caller reading .error off it got undefined and
+       would have shown an empty message. This was the only file in
+       netlify/functions doing it. */
+    if (!isAuthorized(event)) return UNAUTHORIZED;
     // Async, and the scope is the site-wide one a palette plainly is.
-    if (!await canWrite(event, "site")) return json(403, READ_ONLY);
+    if (!await canWrite(event, "site")) return READ_ONLY;
     const who = usernameFromToken(event);
 
     let body = {};

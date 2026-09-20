@@ -60,6 +60,75 @@ window.Daily = (function () {
             .map(o => o.item);
     }
 
+    /* ---------- A DAY WORTH ARRIVING ON ----------
+
+       Every day's puzzle is derived from its own date, which is exactly
+       right 364 days a year: nobody chooses it, everybody gets the same
+       one, and there is nothing to maintain. It is wrong for precisely one
+       day — the day the site opens, when more people will play their first
+       ever round than on any other day, and the round they get is whatever
+       the 3rd of October happens to hash to.
+
+       So a date here can be given a SALT, which is stirred into every seed
+       the three games derive for that day. It does not choose the mazes;
+       it rerolls them. Change the salt, deploy, look at what the games
+       deal, and keep the one you like.
+
+       WHY A SALT AND NOT A HAND-PICKED LIST. A list means a new data shape,
+       an admin screen to edit it, validation for maze ids that might have
+       been renamed since, and three games each needing to be taught to
+       accept an override — a fair amount of machinery, all of it capable
+       of dealing a broken day if any part of it is wrong. A salt cannot
+       produce an invalid round, because it produces exactly the same kind
+       of round the other 364 days produce. It is one line, it is reviewed
+       like code, and the worst it can do is deal a day somebody did not
+       prefer.
+
+       CHANGE IT BEFORE THE DAY, NOT DURING IT. The salt is part of the
+       seed, so changing it mid-day re-deals the puzzle under anyone already
+       playing and orphans the scores already submitted. It is committed
+       code and only moves on a deploy, which makes that hard to do by
+       accident — but it is the one rule.
+
+       An empty table is the normal state. Once launch day has passed this
+       can go back to being empty, or keep an entry for the next occasion.
+
+       THE TABLE ITSELF LIVES IN js/featured-days.js, which the server
+       reads too — it used to be written out here and again in
+       netlify/functions/_daily.js, and two copies of it is precisely the
+       thing that deals one puzzle in the browser and checks a different
+       one on the server. One file, both sides. See that file's header.
+
+       The `|| {}` is not a fallback so much as a floor: a page that loaded
+       daily.js without featured-days.js would apply no salt and desync
+       from the server, so the pairing is asserted at build time by
+       tools/check-daily-parity.js rather than papered over here. This
+       keeps the failure to "no featured days" instead of a TypeError. */
+    const FEATURED_DAYS = (typeof globalThis !== "undefined" && globalThis.FEATURED_DAYS) || {};
+
+    function saltFor(iso) {
+        const salt = FEATURED_DAYS[iso];
+        return salt ? ":" + salt : "";
+    }
+
+    /* The seed a game should use for a given day, salt included.
+
+       Every seed the three games derive goes through here rather than
+       calling seedFrom with a hand-built string, so a featured day reaches
+       all of them and none can be forgotten. `parts` is whatever else that
+       particular seed is made of — a round index, a maze id — and the day
+       and the salt are added here. */
+    function daySeed(...parts) {
+        const day = today();
+        return seedFrom(parts.join(":") + ":" + day + saltFor(day));
+    }
+
+    // Whether today is one of the featured days, for anything that wants to
+    // say so out loud.
+    function isFeaturedDay() {
+        return Boolean(FEATURED_DAYS[today()]);
+    }
+
     // Yesterday's key, for deciding whether a streak survived.
     function dayBefore(iso) {
         const d = new Date(iso + "T00:00:00Z");
@@ -142,9 +211,11 @@ window.Daily = (function () {
         { key: "allTime", label: "All time", empty: "No scores recorded yet." }
     ];
 
+    // "en-GB" so a date on a leaderboard row is written the same way as the
+    // date under the game's own title — see js/ratrospect.js's longDate.
     function niceDate(iso) {
         const d = new Date(iso + "T00:00:00Z");
-        return d.toLocaleDateString(undefined, { day: "numeric", month: "long", timeZone: "UTC" });
+        return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
     }
 
     /* Someone else's day, as five squares. Safe beside a name because it
@@ -329,5 +400,5 @@ window.Daily = (function () {
     // combinedBoard is published so Guess the Maze can draw the same second
     // column beside its own board — that game keeps its own board code and
     // its own endpoint, and this is the one piece all three share.
-    return { today, seededRandom, seedFrom, shuffle, dayBefore, claimReset, submit, boards, combinedBoard };
+    return { today, seededRandom, seedFrom, daySeed, isFeaturedDay, shuffle, dayBefore, claimReset, submit, boards, combinedBoard };
 })();

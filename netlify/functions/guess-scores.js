@@ -36,7 +36,7 @@ const { SECURITY_HEADERS } = require("./_headers");
    — it was written before _daily.js existed and its day is dealt from its own
    POINTS array — but "is this day still accepting scores" is a rule about the
    clock rather than about the game, and both games want the same answer. */
-const { dayIsOpen } = require("./_daily");
+const { dayIsOpen, daySeed } = require("./_daily");
 
 const COLLECTION = "guess_scores";
 const ROUNDS = 5;
@@ -87,14 +87,11 @@ function seededRandom(seed) {
     };
 }
 
-function seedFrom(str) {
-    let h = 2166136261;
-    for (let i = 0; i < str.length; i++) {
-        h ^= str.charCodeAt(i);
-        h = Math.imul(h, 16777619);
-    }
-    return h >>> 0;
-}
+/* The local seedFrom is gone: the one caller now asks _daily.daySeed for
+   its seed instead, so that a featured day is salted here exactly as it is
+   in the browser. A spare copy of the hash left sitting beside it is a
+   thing somebody would reach for again and, by doing so, silently opt this
+   endpoint back out of the salt. */
 
 const normalise = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -135,7 +132,11 @@ async function answersFor(day) {
         return 0;
     });
 
-    const rand = seededRandom(seedFrom(day));
+    /* THROUGH _daily.daySeed, not the bare day, so a featured day is
+       salted here exactly as it is in js/daily.js. Without this the page
+       deals one set of five and this checks another — see the header of
+       netlify/functions/_daily.js. */
+    const rand = seededRandom(daySeed(day, "guess"));
     const shuffled = pool
         .map(p => ({ p, k: rand() }))
         .sort((a, b) => a.k - b.k)

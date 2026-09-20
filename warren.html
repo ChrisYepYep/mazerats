@@ -207,6 +207,34 @@
                                 <p class="ctl-status" id="landing-toggle-status" style="display:none;"></p>
                             </div>
 
+                            <!-- The countdown on the front door.
+
+                                 Only ever shown while the landing page is on
+                                 Soon or Maint., and only while the moment is
+                                 still ahead — see js/welcome.js. Leaving it
+                                 empty is a real answer and the normal one
+                                 until a date is actually picked: the gate
+                                 then reads "Coming Soon" exactly as it did
+                                 before this field existed.
+
+                                 datetime-local has no timezone of its own, so
+                                 the label says which one is meant and
+                                 js/admin.js does the conversion both ways.
+                                 UTC because the countdown is to an instant
+                                 and the people watching it are spread across
+                                 a dozen of them. -->
+                            <div class="ctl-card" id="launch-at" style="display:none;"
+                                 title="When the site opens. Shown as a countdown on the landing page while it is gated.">
+                                <span class="ctl-label">Launch countdown (UTC)</span>
+                                <div class="ctl-seg">
+                                    <input type="datetime-local" id="launch-at-input" class="ctl-input"
+                                           aria-label="Launch date and time, in UTC">
+                                    <button type="button" class="ctl-btn" id="launch-at-save">Save</button>
+                                    <button type="button" class="ctl-btn" id="launch-at-clear">Clear</button>
+                                </div>
+                                <p class="ctl-status" id="launch-at-status" style="display:none;"></p>
+                            </div>
+
                             <!-- Classic is the brown the archive has always been;
                                  Purple is the violet built from that same palette
                                  and the same pixel art by tools/themes.js.
@@ -258,7 +286,7 @@
                                 <p class="ctl-status ctl-status-note" id="furni-scan-remote" hidden>
                                     Scans run on your own PC. Open the
                                     <strong>Maze Rats Dev Server</strong> shortcut, then use this page at
-                                    <strong>localhost:8888/admin.html</strong>.
+                                    <strong>localhost:8888/warren</strong>.
                                 </p>
                                 <div class="furni-progress" id="furni-progress" hidden>
                                     <div class="furni-progress-track"><div class="furni-progress-fill" id="furni-progress-fill"></div></div>

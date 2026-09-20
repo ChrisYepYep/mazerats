@@ -98,7 +98,7 @@ function actionFrom(event) {
    javascript: URI impossible to smuggle back. */
 function safeReturn(to) {
     const raw = typeof to === "string" ? to : "";
-    if (!raw.startsWith("/") || raw.startsWith("//")) return "/home.html";
+    if (!raw.startsWith("/") || raw.startsWith("//")) return "/home";
     return raw;
 }
 
@@ -174,7 +174,7 @@ exports.handler = async (event) => {
     if (action === "callback") {
         const q = event.queryStringParameters || {};
         const origin = siteOrigin(event);
-        const fail = (why) => redirect(`${origin}/home.html?signin=${encodeURIComponent(why)}`, [
+        const fail = (why) => redirect(`${origin}/home?signin=${encodeURIComponent(why)}`, [
             `${STATE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
         ]);
 

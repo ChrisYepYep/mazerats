@@ -1,4 +1,4 @@
-/* Admin panel logic for admin.html — add/edit/delete mazes and events.
+/* Admin panel logic for warren.html (served at /warren) — add/edit/delete mazes and events.
    Everything here writes live to MongoDB via the Netlify Functions in
    netlify/functions/ (see js/api.js) — no local-only staging anymore.
    Write requests are gated by a session token from logging in with a
@@ -60,6 +60,11 @@ document.addEventListener("DOMContentLoaded", () => {
        "which one is active" bookkeeping and disabled it on every save. */
     const landingToggleBtns = document.querySelectorAll("#landing-toggle .btn-enter-mini");
     const landingToggleStatus = document.getElementById("landing-toggle-status");
+    const launchAtEl = document.getElementById("launch-at");
+    const launchAtInput = document.getElementById("launch-at-input");
+    const launchAtSave = document.getElementById("launch-at-save");
+    const launchAtClear = document.getElementById("launch-at-clear");
+    const launchAtStatus = document.getElementById("launch-at-status");
 
     // Fallin' Furni's own live/maintenance switch, in the game's rail group.
     const ffToggleEl = document.getElementById("ff-state-toggle");
@@ -358,6 +363,7 @@ document.addEventListener("DOMContentLoaded", () => {
         adminContent.style.display = "none";
         if (adminRailEl) adminRailEl.style.display = "none";
         landingToggleEl.style.display = "none";
+        if (launchAtEl) launchAtEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
         loginModal.classList.add("open");
@@ -381,6 +387,7 @@ document.addEventListener("DOMContentLoaded", () => {
         adminContent.style.display = "none";
         if (adminRailEl) adminRailEl.style.display = "none";
         landingToggleEl.style.display = "none";
+        if (launchAtEl) launchAtEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
         loginModal.classList.add("open");
@@ -989,6 +996,7 @@ document.addEventListener("DOMContentLoaded", () => {
             adminSessionUserEl.title = currentUserRole === "owner" ? "Owner" : "Admin";
         }
         landingToggleEl.style.display = "flex";
+        if (launchAtEl) launchAtEl.style.display = "flex";
         if (ffToggleEl) ffToggleEl.style.display = "block";
         if (themeToggleEl) themeToggleEl.style.display = "flex";
         /* The glyph palette used to be shown here, when it was a docked
@@ -4284,10 +4292,70 @@ document.addEventListener("DOMContentLoaded", () => {
         brandGroup.appendChild(homeLink);
     }
 
+    /* ---------- the launch countdown's date ----------
+
+       <input type="datetime-local"> has no timezone. Its value is a bare
+       wall-clock string, read and written in whatever the browser's local
+       zone is, and the stored setting is an ISO instant in UTC (see
+       cleanLaunchAt in netlify/functions/settings.js). These two do the
+       conversion explicitly rather than letting Date() guess, because
+       letting it guess is how a launch ends up an hour out in March.
+
+       toUtcFields formats the UTC parts by hand for the same reason:
+       toISOString().slice(0, 16) would be correct today and is the kind of
+       line that gets "tidied up" into toLocaleString later. */
+    function isoToLocalField(iso) {
+        if (!iso) return "";
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return "";
+        const pad = n => String(n).padStart(2, "0");
+        return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}` +
+               `T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+    }
+
+    // The field holds UTC (the label says so), so the string is read back as
+    // UTC rather than through the local-time parse a bare Date() would do.
+    function localFieldToIso(value) {
+        const raw = String(value || "").trim();
+        if (!raw) return "";
+        const d = new Date(raw + ":00Z");
+        return isNaN(d.getTime()) ? null : d.toISOString();
+    }
+
+    function showLaunchAtStatus(text) {
+        if (!launchAtStatus) return;
+        launchAtStatus.textContent = text;
+        launchAtStatus.style.display = text ? "block" : "none";
+    }
+
+    async function saveLaunchAt(value) {
+        const iso = localFieldToIso(value);
+        if (iso === null) { showLaunchAtStatus("That is not a date I can read."); return; }
+        const controls = [launchAtInput, launchAtSave, launchAtClear].filter(Boolean);
+        controls.forEach(c => c.disabled = true);
+        showLaunchAtStatus("");
+        try {
+            await Api.updateSiteSettings(adminToken, { launchAt: iso });
+            launchAtInput.value = isoToLocalField(iso);
+            showLaunchAtStatus(iso
+                ? "Counting down to " + new Date(iso).toUTCString().replace(" GMT", " UTC") + "."
+                : "Countdown off — the gate just says Coming Soon.");
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            showLaunchAtStatus(err.message || "Couldn't save the launch date.");
+        } finally {
+            controls.forEach(c => c.disabled = false);
+        }
+    }
+
+    if (launchAtSave) launchAtSave.addEventListener("click", () => saveLaunchAt(launchAtInput.value));
+    if (launchAtClear) launchAtClear.addEventListener("click", () => { launchAtInput.value = ""; saveLaunchAt(""); });
+
     async function loadLandingState() {
         try {
             // One read, every switch: they all live in the same settings document.
-            const { landingState, fallinFurniState, theme } = await Api.getSiteSettings();
+            const { landingState, fallinFurniState, theme, launchAt } = await Api.getSiteSettings();
+            if (launchAtInput) launchAtInput.value = isoToLocalField(launchAt);
             landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
             renderDevModeLink(landingState);
             const ff = fallinFurniState || "live";

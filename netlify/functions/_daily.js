@@ -81,4 +81,58 @@ function shuffle(list, seed) {
         .map(o => o.item);
 }
 
-module.exports = { today, dayIsOpen, seededRandom, seedFrom, shuffle };
+/* ---------------------------------------------------- FEATURED DAYS
+
+   THE SAME FILE THE BROWSER READS, not a copy of it.
+
+   A featured day is a date whose puzzle is re-rolled with a salt, so the
+   day the site opens deals something better than whatever that date
+   happens to hash to. The table was briefly written out here as well as
+   in the browser, with a build-time check comparing the two — and two
+   tables, either of which can be edited alone, is exactly how the browser
+   ends up dealing one puzzle while the server checks a different one.
+   Silently: no error, no log, just a day where every correct answer is
+   judged wrong.
+
+   js/featured-days.js holds nothing but the table and detects which
+   runtime it is in, so Node gets it through module.exports and the
+   browser gets it as a global. See its header for how to change one.
+
+   REACHING OUT OF netlify/functions/ IS DELIBERATE and is the only place
+   this codebase does it. The alternative was keeping the table here and
+   shipping it to the browser somehow, which means either a build step or
+   an async fetch — and an async fetch is worse than the bug it fixes:
+   daySeed is synchronous, so a game dealing before the table arrived
+   would apply no salt and desync, which is the whole failure being
+   removed.
+
+   The require is static, so the bundler follows it; it is also named in
+   `included_files` in netlify.toml, for the same belt-and-braces reason
+   _furnidata.json is. */
+const FEATURED_DAYS = require("../../js/featured-days.js");
+
+function saltFor(iso) {
+    const salt = FEATURED_DAYS[iso];
+    return salt ? ":" + salt : "";
+}
+
+/* The seed for a day, salt included — the server's half of Daily.daySeed.
+
+   THE STRING MUST BE BUILT EXACTLY AS js/daily.js BUILDS IT: the parts
+   joined with colons, then the day, then the salt. A different join order
+   is a different hash and therefore a different puzzle. The table can no
+   longer drift, but this arithmetic is still written twice, which is why
+   tools/check-daily-parity.js compares the NUMBERS the two produce
+   rather than the tables. */
+function daySeed(day, ...parts) {
+    return seedFrom(parts.join(":") + ":" + day + saltFor(day));
+}
+
+function isFeaturedDay(day) {
+    return Boolean(FEATURED_DAYS[day]);
+}
+
+module.exports = {
+    today, dayIsOpen, seededRandom, seedFrom, shuffle,
+    FEATURED_DAYS, daySeed, isFeaturedDay
+};
