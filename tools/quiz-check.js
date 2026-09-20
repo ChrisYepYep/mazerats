@@ -5,9 +5,11 @@
  * What it can prove, and what it cannot. It catches STRUCTURAL faults — a
  * question asked twice, a draft note left in an answer, an entry that is not
  * a proper pair, an id collision — and it is worth running because at a
- * couple of thousand questions those are invisible by eye. It cannot check
- * whether an answer is TRUE. Nothing here can. Facts have to be right when
- * they are written.
+ * couple of thousand questions those are invisible by eye. It also catches
+ * the same FACT asked twice in different words, which is the repeat a host
+ * actually notices and which the exact-text check cannot see — see "the same
+ * question twice" below. It cannot check whether an answer is TRUE. Nothing
+ * here can. Facts have to be right when they are written.
  *
  * The id check matters more than it looks. js/quiz.js identifies a question
  * by a hash of its text so the never-repeat history survives the bank being
@@ -123,6 +125,91 @@ CATS.forEach(cat => {
 });
 const repeated = [...byAnswer.entries()].filter(([, n]) => n >= 4).sort((a, b) => b[1] - a[1]);
 
+/* ------------------------------------------------- the same question twice
+ *
+ * The exact-text check above cannot see the repeat a host actually notices:
+ * the SAME FACT asked in different words. "Which band sang X?" and "Which
+ * band released X?" are two ids, so the never-repeat history in js/quiz.js
+ * treats them as two questions and will happily ask both in one round. From
+ * the table it is the same question twice.
+ *
+ * So: two questions whose answers are identical and whose wording overlaps
+ * heavily are treated as one question written twice. Sharing an answer alone
+ * is fine — "Which language is spoken in Austria?" and "...in Switzerland?"
+ * are both German and are plainly different questions — which is why the
+ * wording has to overlap too.
+ *
+ * Above HARD it is a failure; between SOFT and HARD it is printed to be
+ * looked at, because the line is a judgement and a tool that cries wolf gets
+ * ignored. Comparison is over content words only, so "which band sang" and
+ * "which band released" differ by one token, not four. */
+const SOFT = 0.5;
+const HARD = 0.8;
+
+const STOP = new Set(['the', 'a', 'an', 'of', 'in', 'on', 'at', 'to', 'for', 'is', 'are',
+    'was', 'were', 'what', 'which', 'who', 'whom', 'whose', 'where', 'when', 'how', 'did',
+    'does', 'do', 'and', 'or', 'it', 'its', 'that', 'this', 'with', 'by', 'from', 'as',
+    'be', 'been', 'has', 'have', 'had', 'called', 'named', 'name', 'you', 'your', 'his',
+    'her', 'their', 'they', 'he', 'she', 'one', 'many', 'most']);
+
+function contentWords(s) {
+    return new Set(String(s).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ')
+        .split(/\s+/).filter(w => w && !STOP.has(w)));
+}
+
+function overlap(a, b) {
+    let shared = 0;
+    a.forEach(w => { if (b.has(w)) { shared++; } });
+    const union = a.size + b.size - shared;
+    return union ? shared / union : 0;
+}
+
+const entries = [];
+CATS.forEach(cat => {
+    (BANK[cat.id] || []).forEach((row, i) => {
+        if (!Array.isArray(row) || row.length !== 2) { return; }
+        entries.push({
+            at: `[${cat.id}:${i}]`,
+            q: row[0],
+            answer: String(row[1]).toLowerCase().replace(/[^a-z0-9]+/g, ''),
+            words: contentWords(row[0])
+        });
+    });
+});
+
+/* Only questions sharing a content word can overlap at all, so bucket by word
+   rather than comparing every question with every other one — at this size
+   that is the difference between instant and a quarter of a million pairs. */
+const byWord = new Map();
+entries.forEach(e => e.words.forEach(w => {
+    if (!byWord.has(w)) { byWord.set(w, []); }
+    byWord.get(w).push(e);
+}));
+
+const judged = new Set();
+const nearReview = [];
+byWord.forEach(bucket => {
+    for (let x = 0; x < bucket.length; x++) {
+        for (let y = x + 1; y < bucket.length; y++) {
+            const A = bucket[x];
+            const B = bucket[y];
+            if (A.answer !== B.answer) { continue; }
+            const key = A.at + B.at;
+            if (judged.has(key)) { continue; }
+            judged.add(key);
+            const score = overlap(A.words, B.words);
+            if (score < SOFT) { continue; }
+            const line = score.toFixed(2) + '  ' + A.at + ' ' + A.q +
+                         '\n        ' + B.at + ' ' + B.q;
+            if (score >= HARD) {
+                problems.push(`${A.at} same question as ${B.at} in different words: ${A.q}`);
+            } else {
+                nearReview.push(line);
+            }
+        }
+    }
+});
+
 console.log('per category');
 CATS.forEach(cat => {
     const n = (BANK[cat.id] || []).length;
@@ -133,6 +220,11 @@ console.log('  ' + String(total).padStart(5) + '  TOTAL');
 if (repeated.length) {
     console.log('\nsame answer 4+ times in one category (review, not a failure)');
     repeated.forEach(([k, n]) => console.log('  ' + String(n).padStart(3) + '  ' + k));
+}
+
+if (nearReview.length) {
+    console.log('\nsame answer and similar wording (review, not a failure)');
+    nearReview.sort().reverse().forEach(l => console.log('  ' + l));
 }
 
 if (problems.length) {
