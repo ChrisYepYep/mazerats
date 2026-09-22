@@ -199,10 +199,18 @@
        to carry the maze's name on a wall or a sign, and they are also the
        thumbnail on the archive's own rows, so they are the one picture a
        regular visitor could recognise without ever having walked the maze. */
+    /* Hallways are not in it, and the same test runs on the server before
+       it derives the answers (netlify/functions/guess-scores.js). The
+       archive lists the hallway and should — it is part of the history —
+       but it is a corridor between mazes, so a round asking which maze a
+       picture of it came from has no answer, and offering its name as one
+       of the five is offering something that cannot be right. See
+       Daily.isHallway. */
     function buildPool() {
         const out = [];
         ROOMS.forEach(room => {
             if (!room.name || !room.id) return;
+            if (window.Daily.isHallway(room)) return;
             (room.gallery || []).forEach(g => {
                 if (g && g.image) out.push({ maze: room, image: g.image });
             });
@@ -648,10 +656,16 @@
         const tagsOf = r => (r.tags || []).map(t => String(t).toLowerCase()).filter(Boolean);
         const mine = new Set(tagsOf(answer));
 
-        // Sorted before anything is drawn from it, for the same reason the
-        // picture pool is: an unordered list makes an unreproducible shuffle.
+        /* Sorted before anything is drawn from it, for the same reason the
+           picture pool is: an unordered list makes an unreproducible shuffle.
+
+           And hallways are out of the DECOYS too, not just the answers. A
+           name in this list is a claim that the picture might have come from
+           it, and the hallway is the one room on the site where that can
+           never be true — so it reads as the odd one out to anybody who
+           knows the archive, which quietly narrows five names to four. */
         const others = ROOMS
-            .filter(r => r.name && r.id && r.id !== answer.id)
+            .filter(r => r.name && r.id && r.id !== answer.id && !window.Daily.isHallway(r))
             .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
         const seed = window.Daily.daySeed("guess:options", i, answer.id);
@@ -895,10 +909,72 @@
                 <button type="button" class="guess-btn guess-btn--lead guess-advance">${last ? "See how you did &rsaquo;" : `Room ${i + 2} &rsaquo;`}</button>`;
             const advance = refs.between.querySelector(".guess-advance");
             if (advance) advance.addEventListener("click", () => (last ? goTo("results") : nextRound()));
+            revealBetween(sheet, refs.between);
         } else {
             refs.between.hidden = true;
             refs.between.innerHTML = "";
         }
+    }
+
+    /* Brings the result and the button that leaves the round onto the
+       screen, on the screens where they do not already fit.
+
+       A finished round is the round PLUS the reveal underneath it — the
+       verdict, the maze's name, what it scored, the link into the archive
+       and "Room 3 ›" — and that block is 158px that was not there a moment
+       ago. On a desktop the sheet has the room and nothing moves. On a phone
+       it does not: measured at 375x667 the whole block landed between 25px
+       and 186px BELOW the bottom edge of the deck, so what the player saw
+       when they answered was the five names with a tick on one of them and
+       no indication the round had produced anything, let alone a way out of
+       it. The sheet scrolls, so it was all reachable — by a scroll nobody
+       had a reason to try, inside a window with no scrollbar on it.
+
+       Only when it is genuinely off-screen. The check is against the sheet's
+       own scrolling box rather than a width, because the thing that decides
+       this is how much room is left, and a short landscape window on a
+       desktop has the same problem as a phone.
+
+       And the picture is left where it is. It could be shrunk instead, but
+       the arithmetic does not work: at 667px there is no size of picture,
+       down to nothing at all, that fits the reveal in as well as the five
+       names. Scrolling to the answer is the honest fix, and it also keeps
+       the room available to scroll back up to, which is the one thing a
+       player might actually want to look at again after being told what
+       it was. */
+    function revealBetween(sheet, between) {
+        const box = sheet.el.querySelector(".guess-sheet-inner");
+        if (!box || !between) return;
+
+        /* Measured as the difference between two rectangles inside the SAME
+           sheet, and measured now rather than on the next frame.
+
+           Both of those are the same decision. A sheet arriving is a sheet
+           part way through a 0.44s transform, so its rectangle is wherever
+           the animation has got to — but the box and the block inside it are
+           carried by that transform together, so the distance BETWEEN them
+           is the same at every point in the slide. Nothing has to settle
+           before this can be asked, which means it does not have to wait for
+           a frame, which means it cannot be lost on the frame that never
+           comes: rAF does not fire in a background tab, and the first
+           version of this quietly did nothing at all under a throttled one.
+
+           Setting innerHTML above has already forced the layout this reads,
+           so there is no measurement here that the line before it did not
+           already pay for. */
+        const room = between.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom;
+        if (room <= 0) return;      // already on screen; nothing to do
+
+        /* scrollIntoView would also scroll the deck and the page behind it —
+           the deck is a clipped box that can still be scrolled
+           programmatically, and nothing scrolls it back. Moving the one box
+           that is meant to move avoids the whole question. */
+        box.scrollTo({
+            top: box.scrollTop + room + 8,      // 8px so it is not flush
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+                ? "auto"
+                : "smooth"
+        });
     }
 
     function renderIntro() {
@@ -1137,10 +1213,9 @@
 
        Guess the Maze keeps its own board code and its own endpoint — it came
        first, is scored by netlify/functions/guess-scores.js against its own
-       POINTS array, and its rows carry a grid the other two do not. What it
-       does NOT need its own copy of is the day added up across all three,
-       so that half is drawn by the same renderer Ratrospect and Odd One Out
-       use.
+       POINTS array, and its rows carry a grid the game beside it does not.
+       What it does NOT need its own copy of is the day added up across every
+       game, so that half is drawn by the shared renderer in js/daily.js.
 
        Built once and remembered: renderBoards runs again on every range
        switch, and rebuilding the pair each time would throw the combined
@@ -1528,7 +1603,7 @@
        fetches it the first time somebody asks for the game, which is long
        after DOMContentLoaded has been and gone. Listening for an event that
        has already fired means mount() never runs and the window opens empty.
-       Both branches, because the deep-link path (/guess, /ratrospect, /odd)
+       Both branches, because the deep-link path (/guess, /odd)
        still loads it while the document is parsing. */
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount);
     else mount();

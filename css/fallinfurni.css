@@ -1579,12 +1579,30 @@ body[data-ff-closed] .ff-title-maint {
 }
 
 /* What is taken away: the way in, the board, and the instruction for a game
-   nobody can start. The title, the notice and the room stay. */
+   nobody can start. The title, the notice and the room stay.
+
+   THE SAME SET IS HELD BACK WHILE THE QUESTION IS STILL OPEN, which is what
+   the html[data-ff-gate] half below is for. The attribute is set in the
+   <head> before any of this markup has been parsed (see the long note there),
+   so the very first paint is already without a username field — where
+   body[data-ff-closed] can only ever arrive after the settings request
+   answers, by which time the form has been on screen and typed into.
+
+   Two selectors rather than one list, because they mean different things and
+   end at different times: "closed" is an answer and stays, "checking" is the
+   absence of one and is cleared by every path out of the question, including
+   the failures. Anything that leaves html[data-ff-gate] set for good would be
+   a game nobody can start, so nothing is allowed to depend on it. */
 body[data-ff-closed] .ff-title-sub,
 body[data-ff-closed] .ff-title-form,
 body[data-ff-closed] .ff-title-who,
 body[data-ff-closed] #ff-play-status,
-body[data-ff-closed] .ff-board { display: none; }
+body[data-ff-closed] .ff-board,
+html[data-ff-gate="checking"] .ff-title-sub,
+html[data-ff-gate="checking"] .ff-title-form,
+html[data-ff-gate="checking"] .ff-title-who,
+html[data-ff-gate="checking"] #ff-play-status,
+html[data-ff-gate="checking"] .ff-board { display: none; }
 
 
 /* ---- lives, on the run-end table

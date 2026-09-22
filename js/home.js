@@ -1183,6 +1183,103 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         document.querySelectorAll(`.saved-toggle[data-saved-id="${CSS.escape(id)}"]`)
             .forEach(btn => paintSavedToggle(btn, saved));
+        if (saved) tellWhereSavedGo();
+    }
+
+    /* ---------- the one thing Save never said ----------
+
+       Where the maze went.
+
+       Pressing Save turned a button into "Saved" and that was the whole of
+       the feedback. It is honest and it is useless: it confirms the press,
+       which the reader already knew about, and says nothing about the list
+       they have just joined. The list does exist — Your Progress, under "Saved
+       to complete" — but it is behind the burger, under two other headings,
+       and nothing on the way to it mentions saving. So the reasonable
+       conclusion from the button alone is that Save is a bookmark that goes
+       nowhere, which is exactly what it looked like.
+
+       ONCE PER BROWSER, not once per save. The question "where did that go"
+       is asked the first time and never again, and a note that reappears on
+       every save is a note somebody is dismissing rather than reading by the
+       third maze. The flag is written the moment it is shown rather than
+       when it is dismissed, so a reader who navigates away mid-toast has
+       still been told.
+
+       It OFFERS THE PLACE rather than just naming it. Saying "find it under
+       Your Progress" leaves the reader to go and find Your Progress; a
+       button that opens it turns the answer into the thing itself, which is
+       the difference between an explanation and a way through.
+
+       No counter anywhere. A number beside Save would be a second thing to
+       keep in step with two lists that already disagree by design — a maze
+       both saved and walked is on one and not the other — and the menu row
+       already carries "· N saved" for anyone who wants the figure. */
+    const SAVED_TOLD_KEY = "mazerats_saved_told";
+
+    function tellWhereSavedGo() {
+        try {
+            if (localStorage.getItem(SAVED_TOLD_KEY)) return;
+            localStorage.setItem(SAVED_TOLD_KEY, "1");
+        } catch (e) {
+            /* Private mode: nothing can be remembered, so this would show on
+               every single save. Better to say it never than to nag. */
+            return;
+        }
+
+        // One at a time, in case a second save lands while the first is up.
+        const existing = document.getElementById("saved-note");
+        if (existing) existing.remove();
+
+        const note = document.createElement("div");
+        note.className = "saved-note";
+        note.id = "saved-note";
+        // polite rather than assertive: it is a courtesy, and it must not cut
+        // across whatever a screen reader is in the middle of saying.
+        note.setAttribute("role", "status");
+        note.setAttribute("aria-live", "polite");
+        note.innerHTML = `
+            <p class="saved-note-text">Saved. It is waiting for you in
+                <strong>Your Progress</strong>, under &ldquo;Saved to complete&rdquo;.</p>
+            <div class="saved-note-actions">
+                <button type="button" class="saved-note-go">Take me there</button>
+                <button type="button" class="saved-note-close" aria-label="Dismiss">Got it</button>
+            </div>`;
+        document.body.appendChild(note);
+
+        let timer = null;
+        const close = () => {
+            clearTimeout(timer);
+            note.classList.add("is-out");
+            // Removed on a timer rather than on animationend: the event does
+            // not arrive at all when animations are off, and a note that
+            // cannot leave is worse than one that leaves unanimated.
+            setTimeout(() => note.remove(), 240);
+        };
+
+        note.querySelector(".saved-note-close").addEventListener("click", close);
+        note.querySelector(".saved-note-go").addEventListener("click", () => {
+            close();
+            openProgress();
+        });
+
+        /* Long, and deliberately so. This is two lines of prose with a
+           choice at the end of it, not a "Link copied" — the reader has to
+           finish reading before the offer means anything, and a toast that
+           leaves while somebody is still deciding has wasted the one showing
+           it gets. Hovering or tabbing into it stops the clock entirely. */
+        const HOLD = 9000;
+        const start = () => { clearTimeout(timer); timer = setTimeout(close, HOLD); };
+        note.addEventListener("pointerenter", () => clearTimeout(timer));
+        note.addEventListener("pointerleave", start);
+        note.addEventListener("focusin", () => clearTimeout(timer));
+        note.addEventListener("focusout", start);
+
+        /* It arrives on a CSS animation attached to the class itself, so
+           there is no "add a class next frame" dance here and nothing to go
+           wrong if that frame is slow to come. The only thing script does
+           about the animation is take it away again. */
+        start();
     }
 
     function paintSavedToggle(btn, saved) {
@@ -1407,6 +1504,12 @@ document.addEventListener("DOMContentLoaded", () => {
                repeating the first date. */
             n.archivedAt = archivedAt(item, isEvent);
             n.updatedAt = item.updatedAt || "";
+            /* Carried across here rather than in normalize(), alongside the
+               other three fields this log needs and nothing else does.
+               normalize builds an explicit shape — it does not spread the
+               record — so anything not named there is dropped, which is
+               exactly what happened to this on the first attempt. */
+            n.changes = Array.isArray(item.changes) ? item.changes : [];
             /* What the log groups and captions by: the day something
                happened, and which of the two things happened. An edit made
                the same day a record was catalogued is part of cataloguing
@@ -1491,6 +1594,53 @@ document.addEventListener("DOMContentLoaded", () => {
        a rule down the left so it reads down the page as a sequence of
        events rather than across as a catalogue of objects. */
 
+    /* What an edit actually did, in a few words.
+
+       The keys are written by netlify/functions/_changes.js at the moment of
+       the save, because that is the only moment both versions of a record
+       exist. The WORDING lives here rather than there on purpose: a stored
+       sentence would have to be migrated to be rewritten, and a stored key
+       only has to be re-read.
+
+       Every key the server can emit has a line. A key with no line here is
+       skipped rather than printed raw — a log reading "ecSeason" helps
+       nobody — but that is a fallback, not a plan: anything added to GROUPS
+       there wants a row here. */
+    const CHANGE_WORDS = {
+        "imagery-added": "Added room imagery",
+        "imagery": "Room imagery updated",
+        "furni": "Updated furni listing",
+        "markers": "Entrance or finish updated",
+        "status": "Status changed",
+        "difficulty": "Difficulty re-rated",
+        "tags": "Tags updated",
+        "dates": "Dates updated",
+        "links": "Links updated",
+        "text": "Changes made to texts",
+        "details": "Details updated",
+    };
+
+    /* ONE LINE, however much was done. An edit that touched five things
+       reports the two that matter most and counts the rest — the list is
+       ordered by the server with pictures and furni first, so the two shown
+       are the two a reader would have picked out anyway.
+
+       Nothing at all for a record with no `changes` field, which is every
+       record edited before this existed and every record only ever added.
+       An absent line is honest; inventing "Updated" for them would be the
+       log telling somebody something it does not know. */
+    function changeLineHtml(n) {
+        const keys = Array.isArray(n.changes) ? n.changes : [];
+        const words = keys.map(k => CHANGE_WORDS[k]).filter(Boolean);
+        if (!words.length) return "";
+
+        const shown = words.slice(0, 2).join(" · ");
+        const rest = words.length - 2;
+        return `<span class="updatelog-change">${escapeHtml(
+            rest > 0 ? `${shown} · +${rest} more` : shown
+        )}</span>`;
+    }
+
     function logDayLabel(iso) {
         const day = String(iso).slice(0, 10);
         const today = new Date().toISOString().slice(0, 10);
@@ -1557,6 +1707,7 @@ document.addEventListener("DOMContentLoaded", () => {
                                                 (n.isEvent ? "Event" : isHallway(n) ? "Hallway" : "Maze")
                                                 + (n.owner ? ` · ${n.owner}` : "")
                                             )}</span>
+                                            ${n.activity === "updated" ? changeLineHtml(n) : ""}
                                         </span>
                                     </button>
                                 </li>`).join("")}
@@ -2341,6 +2492,52 @@ document.addEventListener("DOMContentLoaded", () => {
             .reduce((total, el) => total + el.getBoundingClientRect().height, 0);
         return Math.max(featuredFrameBody.scrollHeight, Math.ceil(rects));
     }
+
+    /* Drops picks off the end until the rest fit the height the panel is
+       actually going to get.
+
+       WHY THIS IS NEEDED AT ALL. How many picks are drawn is decided by
+       width — four on a phone, two otherwise (see featuredFrameCount) — and
+       how much room they get is decided by height. The two never spoke, so a
+       phone drew four rows into a space that fits about three. Measured at
+       375x667: 485px of rows into a 354px panel, the third cut off 8px from
+       its bottom and the fourth entirely below it.
+
+       The panel was given overflow-y: auto for this, which stopped it
+       CLIPPING but did not stop it looking clipped — the scrollbar is the
+       site's own custom one and reserves no width, so what a phone actually
+       shows is a row sliced in half and no indication anything is below it.
+       A featured list you have to discover is scrollable is not doing the
+       one job it has.
+
+       WHY IT MEASURES RATHER THAN COUNTS. Row heights are not equal: a name
+       that wraps to two lines makes a 119px row where a short one makes
+       100px, so any fixed number is right for some draws and wrong for
+       others — which is exactly why this went unnoticed, being a property of
+       the random picks rather than of the layout. Dropping one at a time and
+       re-asking is the only answer that cannot be wrong about a draw it has
+       not seen.
+
+       IT ASKS featuredBodyContentHeight, the same function the cap is
+       computed from, so the two cannot disagree about what a height includes
+       — padding, borders, box-sizing, the lot. Cheap enough to do the
+       obvious way: at most four rows, so at most three extra measurements.
+
+       display is set inline rather than using the hidden ATTRIBUTE, because
+       .chrome-list-row declares its own display and any class-level display
+       outranks [hidden] — the same trap .guess-options[hidden] is written to
+       avoid in style.css. One row is always kept: a panel with nothing in it
+       is worse than one with a single pick. */
+    function trimFeaturedToFit(budget) {
+        const rows = Array.from(featuredFrameList.children);
+        rows.forEach(row => { row.style.display = ""; });
+        if (rows.length < 2 || budget <= 0) return;
+
+        for (let i = rows.length - 1; i >= 1; i--) {
+            if (featuredBodyContentHeight() <= budget) break;
+            rows[i].style.display = "none";
+        }
+    }
     // Must match .featured-frame's own negative margin-top in style.css —
     // see the comment on featuredFrameTarget below for why this needs
     // adding back into that calculation.
@@ -2425,8 +2622,28 @@ document.addEventListener("DOMContentLoaded", () => {
         // with long descriptions can otherwise want more height than
         // .featured-frame has to give, leaving .chrome-frame nothing (or
         // even a negative budget) to work with.
+        /* The budget, named rather than inlined, because the trim below and
+           the cap below that have to be given the SAME number — a row kept
+           against one figure and a panel sized to another is the bug this is
+           fixing, one level down. */
+        const bodyBudget = Math.max(0, spaceForBodyAndChrome - CHROME_FRAME_VISIBLE_SLIVER);
+
+        /* Fit the picks to the budget BEFORE the cap is worked out, so the
+           cap is computed against what will actually be shown. Done here and
+           not in renderFeaturedList because the budget does not exist until
+           this point: the render runs first and knows only how many picks to
+           draw, never how much room they will get.
+
+           Safe to measure rows now even though the panel itself is mid
+           transition, which the rest of this function is at pains to avoid —
+           a row's own height does not depend on the height of the box it
+           sits in, so it is settled even while its container is not. It is
+           the CONTAINER that cannot be trusted here, and the container is
+           not what this reads. */
+        if (active) trimFeaturedToFit(bodyBudget);
+
         const bodyTarget = active
-            ? Math.min(featuredBodyContentHeight(), Math.max(0, spaceForBodyAndChrome - CHROME_FRAME_VISIBLE_SLIVER))
+            ? Math.min(featuredBodyContentHeight(), bodyBudget)
             : 0;
         featuredFrameBody.style.maxHeight = bodyTarget + "px";
 
@@ -4935,13 +5152,22 @@ document.addEventListener("DOMContentLoaded", () => {
         // from, or nobody resolved — either way, leave the list hidden.
         if (token !== builderToken || !profiles.length) return;
 
-        // Combined into one card once a maze credits three or more people —
-        // past a pair, a column of separate cards is taller than the modal
-        // wants to be and says the same thing less clearly. A Collab drops to
-        // the combined card at two, since crediting a team is the point of
-        // that status; anything else keeps a card each at two so both
-        // builders still get their motto and last-seen.
-        if (profiles.length >= 3 || (n.statusKey === "collab" && profiles.length > 1)) {
+        /* ONE PERSON GETS A CARD. MORE THAN ONE SHARE ONE. That is the whole
+           rule, for mazes and events alike.
+
+           It used to be three separate ones — three or more share a card, a
+           Collab-status maze shares at two, everything else keeps a card each
+           at two — on the reasoning that a pair is worth showing in full so
+           both get their motto and last-seen. In practice it only produced
+           inconsistency: the same two names read as one credit on a Collab
+           and as two on anything else, and a reader has no way of knowing
+           which rule they are looking at.
+
+           Two people who built or ran something together are one credit. The
+           motto and last-seen are what a solo card has room for and a shared
+           one does not, and that is a fair trade for the archive saying the
+           same thing every time. */
+        if (profiles.length > 1) {
             modalBuilder.appendChild(collabCard(profiles));
         } else {
             profiles.forEach((profile, i) => modalBuilder.appendChild(builderCard(profile, i % 2 === 1)));
@@ -5667,6 +5893,44 @@ document.addEventListener("DOMContentLoaded", () => {
        opening on its own account.
 
        Adding a fourth way in means one more entry in this array. */
+    /* Whether Fallin' Furni is open, for the menu row that offers it.
+
+       THE ROW USED TO BE A CONSTANT. It said "Sit on every seat, in order"
+       whether the game was live or shut, because nothing in this file had
+       ever read the site settings — and unlike the two daily games above it,
+       that row NAVIGATES. So a closed game cost a reader the archive, a whole
+       page load, a "Maintenance, back soon!", and the trip back. A row that
+       opened in place and did nothing would be a shrug; this was a round
+       trip to a locked door.
+
+       IT COSTS NO REQUEST. The settings are already in flight before this
+       page is even revealed — the pre-load gate in home.html's <head> asks
+       for them and publishes the promise as window.__mrSettings, and
+       Api.getSiteSettings adopts it rather than asking again. This is
+       reading an answer the page already has.
+
+       Held in a variable rather than awaited, because sideMenuEntries is
+       synchronous and called afresh every time the menu is drawn. By the
+       time anybody has opened the burger the value is long since here; if it
+       somehow is not, null reads as open, which is the wording the row has
+       always had and the same way the game itself fails. */
+    /* Asked right here rather than from a DOMContentLoaded listener, and that
+       is not a shortcut: everything in this file ALREADY runs inside one (see
+       the top of the file), so registering another from in here adds it to an
+       event that is currently being dispatched — and a listener added during
+       dispatch is never called. Written that way first, and the row went on
+       saying "Sit on every seat, in order" with the game shut. */
+    let ffClosedState = null;
+
+    if (typeof Api !== "undefined") {
+        Api.getSiteSettings()
+            .then(s => {
+                const state = s && s.fallinFurniState;
+                if (state === "maintenance" || state === "coming-soon") ffClosedState = state;
+            })
+            .catch(() => { /* fail open, as the game's own gate does */ });
+    }
+
     function sideMenuEntries() {
         const g = typeof window.GuessStatus === "function" ? window.GuessStatus() : null;
         // The last fortnight's worth, not the log's length — see
@@ -5674,7 +5938,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const fresh = whatsNewRecentCount();
         const f = progressFigures();
 
-        const r = typeof window.RatrospectStatus === "function" ? window.RatrospectStatus() : null;
         const o = typeof window.OddOneOutStatus === "function" ? window.OddOneOutStatus() : null;
 
         /* Read fresh rather than captured once, for the same reason
@@ -5703,16 +5966,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 run: () => { if (typeof window.openGuessGame === "function") window.openGuessGame(); }
             },
             {
-                name: "Ratrospect",
-                state: !r ? "Put the archive in order"
-                    : r.finished ? `Done — ${r.points} points`
-                        : r.started ? `${r.done} of ${r.total} cards placed`
-                            : "Not played today",
-                badge: r && r.finished ? String(r.points) : "",
-                on: false,
-                run: () => { if (typeof window.openRatrospect === "function") window.openRatrospect(); }
-            },
-            {
                 name: "Odd One Out",
                 state: !o ? "Spot the room that does not belong"
                     : o.finished ? `Done — ${o.points} points`
@@ -5726,11 +5979,42 @@ document.addEventListener("DOMContentLoaded", () => {
                 /* Not a daily puzzle and not a window: Fallin' Furni is a room
                    you walk about in, and it wants the whole viewport rather
                    than a 204px console pane. So this one NAVIGATES, where the
-                   three above open in place. */
+                   games above open in place. See ffClosedState above. */
                 name: "Fallin' Furni",
-                state: "Sit on every seat, in order",
+                /* The second line stops describing the game and starts
+                   reporting on it. Two words, not a sentence: this is a
+                   status, and "Closed for maintenance" was a status trying to
+                   be an explanation. */
+                state: ffClosedState === "coming-soon" ? "Coming Soon"
+                    : ffClosedState === "maintenance" ? "Maintenance"
+                        : "Sit on every seat, in order",
                 badge: "",
                 on: false,
+                /* IT STAYS A DOOR WHILE IT IS SHUT, and that is the point
+                   rather than an oversight.
+
+                   The first cut of this disabled the row and dimmed it, on
+                   the reasoning that a link to a game you cannot play is a
+                   link to a locked door. That is the wrong way round for a
+                   game that has not launched: the page behind it says
+                   "Coming soon!" over the room itself, with the furni
+                   falling, and somebody who walks in and sees that is
+                   somebody looking forward to it. Turning them away at the
+                   menu is throwing away the only advertising the game has
+                   before it opens.
+
+                   So the row reports, it does not close. Nothing here is
+                   disabled, nothing is dimmed, and the press goes where it
+                   always went — the page's own gate decides what a visitor
+                   is allowed to do once they arrive (see the head of
+                   fallinfurni.html), which is where that decision belongs
+                   and the only place it can be enforced anyway.
+
+                   It is not marked out visually either — no class, no colour.
+                   The row looks exactly like the ones around it and the
+                   WORDS do the work. See the note by .side-menu-state in
+                   css/style.css for the two treatments that were tried and
+                   removed. */
                 run: () => { window.location.href = "/fallinfurni"; }
             },
             { heading: "The archive" },
@@ -5775,9 +6059,9 @@ document.addEventListener("DOMContentLoaded", () => {
            untouched and still answers to its own address. */
     }
 
-    /* The three daily games were briefly offered a second time, as a row of
-       buttons above the archive on a phone, on the reasoning that the spine
-       holding them was too small to find.
+    /* The daily games were briefly offered a second time, as a row of buttons
+       above the archive on a phone, on the reasoning that the spine holding
+       them was too small to find.
 
        That solved the wrong half of it. The archive is the centrepiece of
        this page, and a stack of game buttons sitting above it pushed the

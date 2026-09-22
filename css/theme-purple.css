@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   734 rules, 1211 declarations, hues 272 (surfaces) / 272 (accents).
+   718 rules, 1190 declarations, hues 272 (surfaces) / 272 (accents).
 */
 :root[data-theme="purple"] {
     --bg-black: #020104;
@@ -2792,6 +2792,42 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     border-bottom-color: #280f3e;
 }
 
+[data-theme="purple"] .saved-note {
+    background: var(--wood-dark, #0c0711);
+    border: 1px solid var(--chrome-border);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.72);
+}
+
+[data-theme="purple"] .saved-note-text {
+    color: var(--parchment);
+}
+
+[data-theme="purple"] .saved-note-text strong {
+    color: var(--amber-bright);
+}
+
+[data-theme="purple"] .saved-note-go {
+    border: 1px solid #e5ddec;
+    background: linear-gradient(180deg, #eee8f3, #d8cee0);
+    color: #0e0417;
+}
+
+[data-theme="purple"] .saved-note-close {
+    border: 1px solid var(--chrome-border);
+    background: transparent;
+    color: var(--parchment-dim);
+}
+
+[data-theme="purple"] .saved-note-close:hover,
+[data-theme="purple"] .saved-note-close:focus-visible {
+    color: var(--parchment);
+}
+
+[data-theme="purple"] .saved-note-go:focus-visible,
+[data-theme="purple"] .saved-note-close:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="purple"] .progress-face {
     border: 1px solid var(--amber);
 }
@@ -2967,6 +3003,10 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
 
 [data-theme="purple"] .updatelog-meta {
     color: var(--unknown);
+}
+
+[data-theme="purple"] .updatelog-change {
+    color: var(--amber);
 }
 
 [data-theme="purple"] .admin-tab-btn {
@@ -3170,115 +3210,7 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
-[data-theme="purple"] .daily-lives-label {
-    color: var(--parchment-dim);
-}
-
-[data-theme="purple"] .daily-life {
-    background: var(--amber-bright);
-    box-shadow: 0 0 0 1px #000;
-}
-
-[data-theme="purple"] .daily-life.is-spent {
-    background: transparent;
-    box-shadow: inset 0 0 0 1px #2a143d;
-}
-
 [data-theme="purple"] .daily-verdict {
-    color: var(--parchment);
-}
-
-[data-theme="purple"] .ratro-card {
-    background: var(--bg-panel-light);
-    border: 2px solid var(--chrome-border);
-    box-shadow: inset 0 1px 0 rgba(233, 226, 240, 0.08);
-}
-
-[data-theme="purple"] .ratro-thumb {
-    background: var(--bg-black);
-}
-
-[data-theme="purple"] .ratro-thumb--blank {
-    background: var(--bg-black);
-}
-
-[data-theme="purple"] .ratro-card-kind {
-    color: #3e1d5b;
-}
-
-[data-theme="purple"] .ratro-card-title {
-    color: var(--parchment);
-}
-
-[data-theme="purple"] .ratro-card-by {
-    color: var(--parchment-dim);
-}
-
-[data-theme="purple"] .ratro-card-when {
-    color: var(--amber-bright);
-}
-
-[data-theme="purple"] .ratro-card.is-hand {
-    border-color: var(--amber-bright);
-    background: var(--bg-panel);
-}
-
-[data-theme="purple"] .ratro-card.is-ghost {
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
-}
-
-[data-theme="purple"] .ratro-end {
-    color: #3e1d5b;
-}
-
-[data-theme="purple"] .ratro-line {
-    background-image: linear-gradient(rgba(178, 147, 205, 0.45), rgba(178, 147, 205, 0.45));
-}
-
-[data-theme="purple"] .ratro-card.is-down::after {
-    background: rgba(178, 147, 205, 0.45);
-}
-
-[data-theme="purple"] .ratro-card.is-down.is-right {
-    border-color: #7fbf6a;
-}
-
-[data-theme="purple"] .ratro-card.is-down.is-wrong {
-    border-color: #c46a5a;
-}
-
-[data-theme="purple"] .ratro-gap {
-    border: 2px dashed rgba(178, 147, 205, 0.45);
-    background: transparent;
-    color: #3e1d5b;
-}
-
-[data-theme="purple"] .ratro-gap:hover,
-[data-theme="purple"] .ratro-gap:focus-visible {
-    border-color: var(--amber-bright);
-    background: rgba(178, 147, 205, 0.12);
-    outline: none;
-}
-
-[data-theme="purple"] .ratro-gap.is-open {
-    border-color: var(--amber-bright);
-    background: rgba(178, 147, 205, 0.16);
-}
-
-[data-theme="purple"] .ratro-slot-ghost {
-    border: 2px dashed #7fbf6a;
-    color: #7fbf6a;
-}
-
-[data-theme="purple"] .ratro-verdict {
-    background: var(--bg-panel);
-}
-
-[data-theme="purple"] .ratro-verdict-line {
-    color: var(--parchment-dim);
-}
-
-[data-theme="purple"] .ratro-verdict-line strong {
     color: var(--parchment);
 }
 

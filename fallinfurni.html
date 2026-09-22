@@ -14,8 +14,14 @@
          index.html; the game is public and stays public. What this does is
          narrower on every axis:
 
-           it never hides the document   the page draws, then the game area is
-                                         swapped for a notice if it has to be
+           it never hides the document   the page draws and the room loads
+                                         whatever the answer turns out to be
+           it holds back the WAY IN      and only that, and only until the
+                                         answer arrives — the username field,
+                                         the Play button and the boards. See
+                                         the note on data-ff-gate below for
+                                         why that is not the same as hiding
+                                         the page, and why it has a leash
            it FAILS OPEN                 no answer, a failed request, a
                                          browser with the script blocked —
                                          all of them show the game. Closing a
@@ -23,6 +29,9 @@
                                          timed out is a worse outcome than
                                          leaving it open a little too long
            an admin plays regardless     which is the point of closing it
+           it has TWO closed states      "coming soon" and "maintenance",
+                                         mechanically identical and differing
+                                         only in what the notice says
 
          It also keeps the other half of the old script: on a gated SITE an
          admin arriving here has nowhere obvious to go, so a "Dev Mode" pill
@@ -34,19 +43,77 @@
         var LANDING_STATE_KEY = "mazerats_landing_state";   // shared with js/api.js
         var EDITING = /[?&]edit\b/.test(location.search);
 
-        function closeGame() {
-            function run() { document.body.setAttribute("data-ff-closed", "1"); }
+        /* ---- THE WAY IN IS HIDDEN UNTIL THE ANSWER IS KNOWN ----
+
+           Set here, synchronously, before a single byte of <body> has been
+           parsed — which is the only place it can be set and still be true of
+           the first paint.
+
+           WHAT IT FIXES. The notice used to go up when the settings request
+           answered, and the title screen is drawn long before that: the game
+           file says so itself (see gameClosed in js/fallinfurni.js, "usually
+           after this file has already drawn the title"). So a closed game
+           showed the username field and a Play button first, for as long as
+           the request took — which on a cold function over mobile data is not
+           a flicker, it is a second or more of a form that is about to be
+           taken away. Somebody could start typing their name into it.
+
+           WHAT IT DOES NOT CHANGE IS THE FAILING OPEN, and that is the whole
+           difficulty of doing this at all. Hiding the way in by default is
+           one keystroke away from a game that nobody can play when the
+           settings endpoint has a bad afternoon. So this attribute is not
+           "closed", it is "not yet known", and EVERY path out of the question
+           clears it — answered live, answered closed, request failed,
+           request hung past the leash below, script never ran at all. The
+           form is hidden while the question is open and never for longer.
+
+           The room behind the title still loads and still draws throughout.
+           What is held back is the four things you could act on, and only
+           until there is an answer about whether you may. */
+        document.documentElement.setAttribute("data-ff-gate", "checking");
+
+        function openGate() {
+            document.documentElement.removeAttribute("data-ff-gate");
+        }
+
+        /* And a leash on it, for the case the promise chain below never
+           settles at all — a request that neither resolves nor rejects is
+           exactly the failure the site gate was given a timeout for, and the
+           cost of it here would be a permanently hidden Play button.
+
+           6s, as in home.html's gate. Long enough that no ordinary answer
+           races it, short enough that nobody sits looking at a game they
+           cannot start. Clearing an already-cleared attribute is harmless,
+           so this does not need to know whether it won. */
+        setTimeout(openGate, 6000);
+
+        function closeGame(state) {
+            function run() {
+                document.body.setAttribute("data-ff-closed", "1");
+                /* The notice is one element with two wordings. "Back soon"
+                   is a promise about something that existed; a game that has
+                   never opened needs the other sentence. */
+                var note = document.getElementById("ff-title-maint");
+                if (note) {
+                    note.textContent = state === "coming-soon"
+                        ? "Coming soon!"
+                        : "Maintenance, back soon!";
+                }
+                openGate();
+            }
             if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
             else run();
         }
 
-        function addMaintenancePill() {
+        function addMaintenancePill(state) {
             function run() {
                 var brandGroup = document.querySelector(".brand-group");
                 if (!brandGroup) return;
                 var pill = document.createElement("span");
                 pill.className = "header-badge header-state-pill";
-                pill.textContent = "Game in maintenance";
+                pill.textContent = state === "coming-soon"
+                    ? "Game not open yet"
+                    : "Game in maintenance";
                 brandGroup.appendChild(pill);
                 var header = document.querySelector(".site-header");
                 if (header) header.classList.add("site-header-notice");
@@ -65,7 +132,7 @@
                 pill.className = "header-badge header-state-pill";
                 pill.textContent = "Dev Mode";
                 brandGroup.appendChild(pill);
-                [["Home", "home.html"], ["Admin", "warren.html"]].forEach(function (pair) {
+                [["Home", "/home"], ["Admin", "warren.html"]].forEach(function (pair) {
                     var link = document.createElement("a");
                     link.className = "header-badge header-state-pill header-state-link";
                     link.href = pair[1];
@@ -100,13 +167,22 @@
 
         settingsRequest
             .then(function (settings) {
-                if (!settings) return null;
+                // No answer is not an answer to hold the form back for.
+                if (!settings) { openGate(); return null; }
                 try { localStorage.setItem(LANDING_STATE_KEY, settings.landingState); } catch (e) { /* private mode */ }
 
                 var siteGated = settings.landingState === "coming-soon" ||
                                 settings.landingState === "maintenance";
-                var gameClosed = settings.fallinFurniState === "maintenance";
-                if (!siteGated && !gameClosed) return null;
+                /* Either closed state takes the way in away; they differ only
+                   in the wording, which is passed along rather than decided
+                   again further down. */
+                var ffState = settings.fallinFurniState;
+                var gameClosed = ffState === "maintenance" || ffState === "coming-soon";
+                if (!siteGated && !gameClosed) { openGate(); return null; }
+                /* An open game with a gated SITE still has nothing to hide:
+                   the pills below are about the site, not about whether this
+                   game can be played. */
+                if (!gameClosed) openGate();
 
                 /* Both questions need the same answer — is this an admin? —
                    so the token is verified once and both act on it. No token
@@ -117,7 +193,10 @@
                    check in js/fallinfurni.js and being able to work on the
                    game is the whole reason for closing it. */
                 if (!token) {
-                    if (gameClosed && !EDITING) closeGame();
+                    if (gameClosed && !EDITING) closeGame(ffState);
+                    // Editing a closed game, or a closed-game path that did
+                    // not close it: either way the question is settled.
+                    else openGate();
                     return null;
                 }
                 return fetch("/.netlify/functions/auth", {
@@ -129,14 +208,29 @@
                     .then(function (who) {
                         var isAdmin = !!(who && who.username);
                         if (gameClosed) {
-                            if (isAdmin) addMaintenancePill();
-                            else if (!EDITING) closeGame();
+                            // An admin plays a closed game — which is the
+                            // point of closing it — so the way in comes back.
+                            if (isAdmin) { addMaintenancePill(ffState); openGate(); }
+                            else if (!EDITING) closeGame(ffState);
+                            else openGate();
                         }
                         if (siteGated && isAdmin) addPills();
                         return null;
+                    })
+                    /* A verify that never came back is not an admin. For an
+                       open game that means nothing at all; for a closed one it
+                       has to fall through to the closed treatment, or the way
+                       in stays hidden with no notice beside it until the leash
+                       above fires — six seconds of a title screen that
+                       explains nothing. Not-an-admin is the safe reading here
+                       precisely because being wrong costs an admin one reload
+                       and costs a player nothing. */
+                    .catch(function () {
+                        if (gameClosed && !EDITING) closeGame(ffState);
+                        else openGate();
                     });
             })
-            .catch(function () { /* fail open: the game stays playable */ });
+            .catch(function () { openGate(); /* fail open: the game stays playable */ });
     })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -940,7 +1034,7 @@
                              the formal one. -->
                         <div class="console-hashline" aria-hidden="true"></div>
                         <p class="console-blurb console-privacy-out">
-                            <a href="privacy.html" target="_blank" rel="noopener">Open the full policy as a page &rsaquo;</a>
+                            <a href="/privacy" target="_blank" rel="noopener">Open the full policy as a page &rsaquo;</a>
                         </p>
                     </div>
                     <div class="console-page" id="console-page-about" style="display:none;">
@@ -1015,7 +1109,7 @@
              and landing on it directly is the normal way in. A real href
              always has somewhere to go, and it is the same address the
              header's own Home badge uses. -->
-        <a class="ff-rotate-back" href="home.html">&#9664;&nbsp; Back to Maze Rats</a>
+        <a class="ff-rotate-back" href="/home">&#9664;&nbsp; Back to Maze Rats</a>
     </div>
 
     <!-- The shared chrome's own dependencies, in home.html's order: site.js

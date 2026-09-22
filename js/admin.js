@@ -4465,18 +4465,32 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.addEventListener("click", () => setTheme(btn.dataset.themeState, btn));
     });
 
+    /* What each closed state says on the way in and once it is set. Keyed
+       rather than branched, so adding a fourth wording is a row here instead
+       of another arm of an if — which is what this was before "coming soon"
+       turned the one closed state into two. "live" is absent on purpose: it
+       opens the game, it is reversible in a click, and it asks nothing. */
+    const FF_STATE_MESSAGES = {
+        "coming-soon": {
+            confirm: "Set Fallin' Furni to coming soon? Players will see a “Coming soon!” notice instead of the game.",
+            done: "Fallin' Furni is marked coming soon. You can still play and edit it while signed in."
+        },
+        "maintenance": {
+            confirm: "Put Fallin' Furni into maintenance? Players will see a notice instead of the game.",
+            done: "Fallin' Furni is under maintenance. You can still play and edit it while signed in."
+        }
+    };
+
     ffToggleBtns.forEach(btn => {
         btn.addEventListener("click", async () => {
             const state = btn.dataset.ffState;
-            if (state === "maintenance") {
-                const ok = await showConfirmDialog(
-                    "Put Fallin' Furni into maintenance? Players will see a notice instead of the game.");
+            const messages = FF_STATE_MESSAGES[state];
+            if (messages) {
+                const ok = await showConfirmDialog(messages.confirm);
                 if (!ok) return;
             }
             const ok = await setFallinFurniState(state, btn);
-            if (ok && state === "maintenance") {
-                await showInfoDialog("Fallin' Furni is under maintenance. You can still play and edit it while signed in.");
-            }
+            if (ok && messages) await showInfoDialog(messages.done);
         });
     });
 
@@ -4912,12 +4926,12 @@ document.addEventListener("DOMContentLoaded", () => {
        act on one game.
 
        What a reset means differs by game and the panel says so rather than
-       showing three identical buttons that do different amounts. Guess the
-       Maze keeps a scored row per player per day, so its row is deleted and
-       the day can be submitted again. Ratrospect and Odd One Out keep their
-       day in the player's own browser, which nothing here can reach — for
-       those, and for the browser half of Guess the Maze, a ticket is left
-       for the game to collect the next time that player opens it. See
+       showing identical buttons that do different amounts. Guess the Maze
+       keeps a scored row per player per day, so its row is deleted and the
+       day can be submitted again. Odd One Out keeps its day in the player's
+       own browser, which nothing here can reach — for it, and for the
+       browser half of Guess the Maze, a ticket is left for the game to
+       collect the next time that player opens it. See
        netlify/functions/daily-games.js. */
 
     const dailySearchEl = document.getElementById("daily-search");

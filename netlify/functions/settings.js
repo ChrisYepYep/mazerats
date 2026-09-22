@@ -24,13 +24,24 @@ const DEFAULT_ABOUT_TEXT = "";
 
    The game page is public whatever the rest of the site is doing, so the
    landing state cannot speak for it — closing the site does not close the
-   game, and closing the game should not close the site. Two values, because a
-   game page has nothing to be "coming soon" about: it is either playable or
-   it is being worked on.
+   game, and closing the game should not close the site.
+
+   THREE VALUES NOW. This said two, on the reasoning that a game page has
+   nothing to be "coming soon" about: it is either playable or it is being
+   worked on. That turned out to be wrong in the one case that matters, which
+   is a game that has not launched yet — "Maintenance, back soon!" tells a
+   first-time visitor that something they have never seen is temporarily
+   broken, which is both untrue and a worse first impression than saying it
+   is not open yet.
+
+   The two closed states are identical in every mechanical respect: the way
+   in is taken away, an admin still plays, the editor is untouched. They
+   differ only in what the notice says, which is the whole point of having
+   both.
 
    Defaults to live, so a site that has never touched this setting behaves
    exactly as it did before the setting existed. */
-const VALID_FF_STATES = ["live", "maintenance"];
+const VALID_FF_STATES = ["live", "coming-soon", "maintenance"];
 const DEFAULT_FF_STATE = "live";
 
 /* WHICH PALETTE THE SITE WEARS.

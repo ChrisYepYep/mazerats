@@ -171,11 +171,12 @@ window.Daily = (function () {
 
     /* ---------- the leaderboards ----------
 
-       Ratrospect and Odd One Out share a board endpoint and, from here
-       down, share the drawing of it too: same spans, same rows, same look
-       as Guess the Maze, which is where the classes come from. Three daily
-       games with three subtly different boards would be three things to
-       keep in step for no gain to anybody reading them.
+       Odd One Out reads from the shared board endpoint — which served
+       Ratrospect too, until that game was dropped — and, from here down,
+       shares the drawing of it: same spans, same rows, same look as Guess
+       the Maze, which is where the classes come from. Daily games with
+       subtly different boards would be several things to keep in step for
+       no gain to anybody reading them.
 
        What each game passes in is what it DID — which gap a card went into,
        which tile was picked. Never a score: the server derives the day and
@@ -212,7 +213,7 @@ window.Daily = (function () {
     ];
 
     // "en-GB" so a date on a leaderboard row is written the same way as the
-    // date under the game's own title — see js/ratrospect.js's longDate.
+    // date under the game's own title — see longDate in js/oddoneout.js.
     function niceDate(iso) {
         const d = new Date(iso + "T00:00:00Z");
         return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" });
@@ -252,18 +253,25 @@ window.Daily = (function () {
             </li>`).join("");
     }
 
-    /* ---------- the day across all three games ----------
+    /* ---------- the day across every game ----------
 
        Drawn beside a game's own board rather than instead of it, and it
        answers a different question: the board on the left is who is best at
        this game, and this one is who turned up. A player who is nowhere near
-       the top of any single board can lead this one by playing all three
-       every morning, which is exactly the habit worth rewarding.
+       the top of either single board can lead this one by playing both every
+       morning, which is exactly the habit worth rewarding.
+
+       Not named for a number. It said "All three games" and listed them by
+       name underneath, which was two things to remember to change when
+       Ratrospect was dropped and exactly one of them obvious — the count is
+       in the heading, and a heading that is quietly wrong is worse than one
+       that says less. It now names no total at all, so the next game to
+       arrive or leave changes the wording in one place rather than three.
 
        Published so Guess the Maze can use it too — that game keeps its own
        board code and its own endpoint (see netlify/functions/guess-scores.js),
-       and the combined figures come from neither of them. One renderer,
-       three games, one shape on screen.
+       and the combined figures come from neither of them. One renderer, every
+       game, one shape on screen.
 
        Never throws, and never takes the game's own board down with it: a
        second board that cannot be reached says so in its own column and
@@ -297,9 +305,9 @@ window.Daily = (function () {
 
             host.innerHTML = `
                 <div class="guess-board">
-                    <p class="guess-board-title">All three games</p>
+                    <p class="guess-board-title">Every game</p>
                     <div class="guess-board-ranges" role="group" aria-label="Which span the combined board covers">${tabs}</div>
-                    <p class="guess-board-span">Guess the Maze, Ratrospect and Odd One Out added together</p>
+                    <p class="guess-board-span">Guess the Maze and Odd One Out added together</p>
                     <ol class="guess-board-list">${rows(data[range], me(), COMBINED_EMPTY[range] || COMBINED_EMPTY.day)}</ol>
                 </div>`;
 
@@ -397,8 +405,34 @@ window.Daily = (function () {
             .catch(() => { data = "failed"; draw(); });
     }
 
+    /* A hallway is not a maze, and none of the games may deal one.
+
+       The archive has always known this — js/home.js leaves hallways out of
+       the maze count, the walked tally and the featured rows — but it knew
+       it only for itself, and the games build their pools straight from the
+       rooms the API returns. So "Origins Maze Rats Hallway" was a round of
+       Guess the Maze with nothing in it to guess, and one of the five names
+       offered against rooms that really were mazes.
+
+       Here rather than in each game because all three need it, and matched
+       against the server's own copy in netlify/functions/_daily.js: the
+       browser deals the day and the server re-derives it to score what comes
+       back, so a room excluded on one side and not the other is the two
+       sides playing different games. Same reason daySeed is written twice.
+
+       The archive keeps its own copy in js/home.js and that is deliberate —
+       home.js does not load daily.js's answer for anything else, and the
+       archive's counts must not start depending on the games' module. Two
+       readings of one tag, which is a tag neither of them defines. */
+    const HALLWAY_TAG = "hallway";
+
+    function isHallway(record) {
+        return (record && Array.isArray(record.tags) ? record.tags : [])
+            .some(t => String(t).trim().toLowerCase() === HALLWAY_TAG);
+    }
+
     // combinedBoard is published so Guess the Maze can draw the same second
     // column beside its own board — that game keeps its own board code and
     // its own endpoint, and this is the one piece all three share.
-    return { today, seededRandom, seedFrom, daySeed, isFeaturedDay, shuffle, dayBefore, claimReset, submit, boards, combinedBoard };
+    return { today, seededRandom, seedFrom, daySeed, isFeaturedDay, shuffle, dayBefore, claimReset, submit, boards, combinedBoard, isHallway };
 })();

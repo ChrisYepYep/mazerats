@@ -40,7 +40,7 @@
 
     <header class="site-header">
         <div class="brand-group">
-            <a class="brand" href="home.html">
+            <a class="brand" href="/home">
                 <span class="brand-text">MAZE RATS</span>
                 <span class="brand-tagline">Every maze. One place.</span>
             </a>
@@ -184,10 +184,20 @@
                                     <a class="ctl-btn" href="/fallinfurni?edit=1" target="_blank" rel="noopener">Level editor</a>
                                 <!-- The GAME's own state, not the site's — it is
                                      public whatever the landing page is doing, so
-                                     closing it is a separate decision. -->
+                                     closing it is a separate decision.
+
+                                     Three states, and the two closed ones differ
+                                     only in what the player is told: "Coming
+                                     soon!" for a game that has not opened yet,
+                                     "Maintenance, back soon!" for one that has.
+                                     Saying "back soon" to somebody who has never
+                                     seen it is both untrue and a worse first
+                                     impression. Ordered left to right as the game
+                                     travels: not open, closed again, open. -->
                                 <div id="ff-state-toggle" style="display:none;"
-                                     title="Maintenance shows players a &quot;back soon&quot; notice. You can still play and edit while signed in.">
+                                     title="Coming soon and Maintenance both take the way in away and show a notice; they differ only in its wording. You can still play and edit while signed in.">
                                     <div class="ctl-seg">
+                                        <button type="button" class="btn-enter-mini ff-state-btn" data-ff-state="coming-soon">Soon</button>
                                         <button type="button" class="btn-enter-mini ff-state-btn" data-ff-state="maintenance">Maint.</button>
                                         <button type="button" class="btn-enter-mini ff-state-btn" data-ff-state="live">Live</button>
                                     </div>
@@ -681,7 +691,7 @@
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Daily games</h3>
-                                        <p class="admin-hint">Guess the Maze, Ratrospect and Odd One Out. Pick a player to see where they stand and, where it is warranted, give them a day back &mdash; one game at a time.</p>
+                                        <p class="admin-hint">Guess the Maze and Odd One Out. Pick a player to see where they stand and, where it is warranted, give them a day back &mdash; one game at a time.</p>
                                     </div>
                                     <div class="admin-panel-actions">
                                         <input type="search" id="daily-search" class="admin-input" placeholder="Find a player..." aria-label="Find a player">

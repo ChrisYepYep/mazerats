@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Maze Rats — a Habbo Hotel maze room archive.",
   "scripts": {
-    "check": "node tools/check-daily-parity.js"
+    "check": "node tools/check-daily-parity.js && node tools/check-changes.js"
   },
   "dependencies": {
     "@netlify/blobs": "^8.1.0",

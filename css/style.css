@@ -111,7 +111,7 @@
    site's prose is full of. Applied globally, every em dash in the privacy
    policy would render as a double note. It belongs only on elements that
    print a name verbatim out of the database, where the Habbo reading is
-   the correct one. See .guess-option-name and .ratro-card-title.
+   the correct one. See .guess-option-name.
 
    No extra request: it is the same file the rest of the page already
    loads, and unicode-range only decides which characters are drawn from
@@ -10454,6 +10454,24 @@ body[data-page="admin"] #activity-sessions {
     background: rgba(26, 15, 4, 0.17);
 }
 
+/* Fallin' Furni's row reads "Coming Soon" or "Maintenance" in place of "Sit
+   on every seat, in order" while the game is shut (see js/home.js). There is
+   deliberately NO rule for it here, and this note is the reason why.
+
+   Two treatments were tried and both were wrong. Disabling the row and
+   dimming it to 0.55 made the line read as missing rather than changed —
+   and turned the menu away from the page that is the game's only advertising
+   before it opens. Colouring the line var(--amber-bright) instead was worse:
+   this panel's background is #c9ad84 and that amber is #c7a679, so the status
+   was set in very nearly the colour it was printed on. Amber is the site's
+   highlight on its DARK surfaces; the side menu is a piece of cream card, and
+   nothing from the dark palette can be dropped onto it unchecked.
+
+   The status now inherits .side-menu-state's #6b5231 like every other row,
+   which is both readable on this background and the point: the line says
+   "Coming Soon" instead of a description, and the words are the signal. It
+   does not need to shout to be noticed. */
+
 .side-menu-name {
     display: flex;
     align-items: baseline;
@@ -10685,10 +10703,25 @@ body[data-page="admin"] #activity-sessions {
     .archive-stack {
         /* A square handle rather than a 30px tab. This is the burger, it is
            the only way to the games and to What's New, and it is the one
-           control on a phone that has to be found without being looked
-           for — so it gets the 44px both Apple and Google call the floor
-           for something a thumb has to hit. */
-        --spine-w: 44px;
+           control on a phone that has to be found without being looked for.
+           It was 44px on the reasoning that Apple and Google both call 44
+           the floor for something a thumb has to hit.
+
+           THE BOX IS NOW 30px AND THE REACH IS STILL 44px, which are two
+           different measurements that 44 was being asked to be at once. The
+           handle sits on the archive window's own titlebar, and that bar is
+           33px tall: a 44px square in it overhangs by 11px, so what a phone
+           actually showed was a button too big for the strip it is fastened
+           to, bulging past the chrome above and below. 30px sits inside the
+           bar with a pixel or two to spare on each side, which is what the
+           rest of this window's chrome does.
+
+           The press area is not reduced with it. ::after on .side-spine--menu
+           below reaches back out to 44px — invisible, and free to overlap the
+           titlebar because the only thing under it there is the window's own
+           name, which is text rather than a control. So the target a thumb
+           finds is exactly the size it was; only the drawn box changed. */
+        --spine-w: 30px;
         --spine-top: 16px;
         --menu-w: 210px;
     }
@@ -10720,6 +10753,30 @@ body[data-page="admin"] #activity-sessions {
     .side-spine--menu {
         height: var(--spine-w);
         border-radius: 5px;
+        /* The frame the reach below is positioned against. Scoped to this
+           handle rather than put on .side-spine, so the room modal's Actions
+           tab — same class, different job — is untouched. */
+        position: relative;
+    }
+
+    /* The reach, kept at 44px while the box above came down to 30.
+       Centred on the handle, so the 7px it adds on each side is a thumb
+       landing slightly wide rather than missing. pointer-events are
+       inherited from the button, and it is drawn behind nothing — it has no
+       paint of its own — so the only thing it changes is where a press
+       counts.
+
+       Safe to overlap outwards here in a way the fansite row above is not:
+       there is exactly one control on this titlebar, so there is no
+       neighbour for it to steal from. */
+    .side-spine--menu::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 44px;
+        height: 44px;
+        transform: translate(-50%, -50%);
     }
 
     /* Sideways text in a handle this size would be unreadable, and the
@@ -10739,7 +10796,19 @@ body[data-page="admin"] #activity-sessions {
 
     .side-menu {
         position: absolute;
-        top: 52px;
+        /* Hung off the handle rather than off a number. This sat at a flat
+           52px, which was the 44px handle plus the 8px of daylight under it,
+           and it only stayed right for as long as the handle stayed 44px —
+           at 30px a fixed 52 would have left 22px of gap and the panel would
+           have read as floating rather than dropping from the burger.
+
+           Measured from the DRAWER, which is what this is positioned
+           against: the drawer's own top is the handle's top, so the sum is
+           the handle's height and the gap, and --spine-top is not a term in
+           it. (It cancels out at the value --spine-top currently holds,
+           which is exactly the sort of coincidence that survives one change
+           and breaks on the next.) */
+        top: calc(var(--spine-w) + 8px);
         right: 0;
         width: var(--menu-w);
         border-radius: 5px;
@@ -10900,7 +10969,7 @@ body[data-page="admin"] #activity-sessions {
 
    Guess the Maze puts this class on .guess-sheet-inner, which is already a
    flex column — so align-items and gap below found a flex container and did
-   what they say. Ratrospect and Odd One Out build their splash as a plain
+   what they say. Odd One Out builds its splash as a plain
    <div class="guess-splash"> inside .daily-sheet, where there was no flex
    container of its own: align-items had nothing to align, and the rules
    list — which sets its own max-width and zero side margins — sat hard
@@ -10908,7 +10977,7 @@ body[data-page="admin"] #activity-sessions {
    different layouts, because the container came from somewhere else.
 
    Saying it here costs Guess the Maze nothing (it restates what
-   .guess-sheet-inner already sets) and gives the other two the container
+   .guess-sheet-inner already sets) and gives the other the container
    the rest of this rule has always assumed. */
 .guess-splash {
     display: flex;
@@ -11468,7 +11537,12 @@ body[data-page="admin"] #activity-sessions {
     /* Taller deck, and the picture goes above the board rather than beside
        it — it is still the thing being read, so it keeps the full width and
        is capped against the viewport instead of against its column. */
-    .guess-deck { --deck-h: clamp(500px, 78vh, 680px); --tuck: 14px; }
+    /* --tuck was 14px. It is the height of the strip each waiting sheet
+       shows along the bottom, and with five of them still to come that is
+       five times whatever it says — 70px of the live sheet's foot reserved
+       on the round that needs the room most. 11px still clears the 9px
+       label inside it and gives 15px of that back. */
+    .guess-deck { --deck-h: clamp(500px, 78vh, 680px); --tuck: 11px; }
     .guess-sheet-inner { padding: 13px 13px calc(12px + var(--tucked) * var(--tuck)); }
     /* Sized by its content rather than squeezed into the sheet's height.
        Stacked, the picture and the board together want more room than a
@@ -11482,14 +11556,39 @@ body[data-page="admin"] #activity-sessions {
         gap: 12px;
     }
     /* Stacked, so the height it has to fit inside is no longer the sheet's
-       — the board sits underneath it. Capped against the viewport instead,
-       by the same min() so it stays square. */
-    /* The percentage, not the vh, is what binds on a phone: on a 375px
-       screen the column is 270px and 44vh is 357, so the picture is as wide
-       as the sheet lets it be and lowering the vh term changes nothing at
-       all. The room a fifth name needs has to come off the width. 92% is
-       measured rather than picked — see the note on .guess-option below. */
-    .guess-picture { width: min(92%, 44vh); }
+       — the board sits underneath it.
+
+       THE THIRD TERM IS THE ONE THAT MATTERS, and it is the term this rule
+       was missing. The base .guess-picture above derives the height actually
+       available from --deck-h and --tucked, which is the whole reason those
+       are variables; this override replaced that with a flat percentage and
+       a vh, neither of which knows anything about the board sitting
+       underneath the picture. On a tall phone that was harmless — 92% of the
+       column binds first and the picture comes out 253px — so it measured
+       fine on the handset it was written on and was quietly wrong on every
+       shorter one.
+
+       What it cost, measured at 375x667: the sheet wanted 618px of the 519
+       it had, and the fifth name — the last of the five you are choosing
+       between — sat 17px below the bottom edge of the deck. Not clipped in a
+       way that looks like clipping, either: the sheet scrolls, so the name
+       was simply not there until you found the scroll. A round that asks you
+       to pick one of five and shows you four is not a harder round, it is a
+       broken one.
+
+       288px is the rest of the sheet, added up rather than guessed: 13px of
+       padding above, 12px of grid gap, 12px below, and a 250px board — the
+       headline at 13, the pips at 22, five 36px names with 5px between them,
+       and the panel's own 10px gaps. Every one of those is a number in this
+       block or the one it inherits from.
+
+       The vh and the percentage both stay. On a tall phone they still bind
+       first and nothing about the game changes there; this only takes over
+       where the height is genuinely the tighter of the two, which is exactly
+       where the names were going missing. */
+    .guess-picture {
+        width: min(92%, 44vh, calc(var(--deck-h) - 288px - var(--tucked) * var(--tuck)));
+    }
     .guess-panel { overflow: visible; }
     /* Sized by their own content rather than sharing out a height. Stacked
        under the picture the sheet is no longer the thing bounding this
@@ -12081,6 +12180,124 @@ body[data-page="admin"] #activity-sessions {
 .modal-meta-actions .saved-toggle:hover .saved-toggle-mark::after { border-bottom-color: #413425; }
 .modal-meta-actions .saved-toggle.is-saved:hover .saved-toggle-mark::after { border-bottom-color: #6d5529; }
 
+/* ---------- where a saved maze went ----------
+
+   Shown once per browser, the first time anything is saved — see
+   tellWhereSavedGo in js/home.js for why once and not always.
+
+   FIXED TO THE FOOT OF THE WINDOW rather than anchored to the button that
+   summoned it, and the button is the reason: Save appears on every row of a
+   list that scrolls, and inside the maze sheet, so an anchored note would
+   have to follow a target that can be halfway up the page or behind a modal
+   by the time it is read. The foot of the screen is where the reader is not
+   looking, which is the right place for something that must not cover the
+   thing they just pressed.
+
+   Above the overlay layer (.modal-overlay sits at 40) because "Take me
+   there" opens a modal and the note has to outlive the click — it removes
+   itself afterwards, but not before the panel it opened is already up. */
+.saved-note {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    z-index: 60;
+    width: min(380px, calc(100vw - 32px));
+    transform: translateX(-50%);
+    padding: 13px 15px;
+    background: var(--wood-dark, #2e2418);
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.72);
+    /* On the class itself, so it plays the moment the element is in the
+       document and nothing has to add a second class a frame later.
+
+       backwards, NOT both, and that is the whole difference between an
+       enhancement and a dependency. `both` holds the last keyframe after the
+       animation finishes, which means the element's real appearance is the
+       animation's business — and anywhere the animation does not actually
+       run, it is held at the FIRST frame instead and the note is a fully
+       built, correctly announced, invisible box. With backwards the resting
+       state is the plain rule above, opacity and all; the animation only
+       borrows the element on the way in. Caught exactly that way, in a
+       browser that had stopped advancing animations: right text, right
+       role, opacity 0. */
+    animation: saved-note-in 0.22s ease-out backwards;
+}
+
+.saved-note.is-out { animation: saved-note-out 0.2s ease-in both; }
+
+@keyframes saved-note-in {
+    from { opacity: 0; transform: translate(-50%, 10px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes saved-note-out {
+    from { opacity: 1; transform: translate(-50%, 0); }
+    to   { opacity: 0; transform: translate(-50%, 8px); }
+}
+
+/* The note still appears and still leaves; it simply does neither by
+   travelling. Both keyframes are replaced rather than the animation
+   removed, because `animation: none` would drop the `both` fill and leave
+   the element at whatever the last frame said. */
+@media (prefers-reduced-motion: reduce) {
+    .saved-note,
+    .saved-note.is-out { animation-duration: 0.01ms; }
+}
+
+.saved-note-text {
+    margin: 0 0 10px;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--parchment);
+}
+
+.saved-note-text strong { color: var(--amber-bright); font-weight: 700; }
+
+.saved-note-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* Both are real buttons at a real size: this is the one moment the site
+   offers to take somebody somewhere they did not know existed, and a 14px
+   text link would be a poor way to make the offer. */
+.saved-note-go,
+.saved-note-close {
+    min-height: 30px;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    cursor: var(--cursor-pointer);
+}
+
+/* The lead, in the site's cream-on-wood, matching .header-signin — the one
+   filled control in a row says which one is the offer. */
+.saved-note-go {
+    border: 1px solid #efe4cc;
+    background: linear-gradient(180deg, #f6efdd, #e2d5b8);
+    color: #3a2812;
+}
+
+.saved-note-close {
+    border: 1px solid var(--chrome-border);
+    background: transparent;
+    color: var(--parchment-dim);
+}
+
+.saved-note-close:hover,
+.saved-note-close:focus-visible { color: var(--parchment); }
+
+.saved-note-go:focus-visible,
+.saved-note-close:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
+}
+
 /* ---------- your progress ----------
 
    The third window, opened by the third side tab. Same chrome as the game
@@ -12481,6 +12698,28 @@ body[data-page="admin"] #activity-sessions {
 .updatelog-meta {
     font-size: 0.62rem;
     color: var(--unknown);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* What the edit actually did — the third line, under the kind and the
+   builder. Only ever present on an "Updated" entry, and only when the record
+   carries a change list (see changeLineHtml in js/home.js).
+
+   Amber against the meta line's grey, because it is the one part of an entry
+   that is news rather than description: the row already says which maze and
+   what sort of thing it is, and this is the only line that says what
+   happened to it. Safe to use the dark-palette amber here, unlike the side
+   menu — this log sits on the dark window ground, not on cream card.
+
+   Clipped to one line like the two above it. The wording is generated from a
+   fixed table and the long case is capped at two items plus a count, so it
+   has room; the ellipsis is for a narrow phone rather than for runaway
+   text. */
+.updatelog-change {
+    font-size: 0.62rem;
+    color: var(--amber);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -13151,14 +13390,20 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
    The daily games
    ==========================================================================
 
-   Ratrospect and Odd One Out are two games, and they are one FIXTURE: same
-   window, same way in, same score out of five hundred, pasted into the same
-   channel side by side. So the parts that are not the game itself — the
-   rules you are shown on the way in, and the card you are left with on the
-   way out — are shared here rather than written twice and left to drift.
+   A daily game is a FIXTURE: same window, same way in, same score out of
+   five hundred, pasted into the same channel. So the parts that are not the
+   game itself — the rules you are shown on the way in, and the card you are
+   left with on the way out — are shared here rather than written once per
+   game and left to drift.
 
-   What is particular to each game lives under its own prefix further down:
-   the line of cards for Ratrospect, the four pictures for Odd One Out. */
+   Written for two games and now carrying one. Ratrospect used these classes
+   alongside Odd One Out until it was dropped; everything under .ratro- went
+   with it and everything here stayed, which is the split working as
+   intended — the shared half never had to be untangled from the particular
+   half, because they were never tangled.
+
+   What is particular to a game lives under its own prefix further down: the
+   four pictures for Odd One Out, the deck for Guess the Maze. */
 
 /* .modal sets max-width: 600px on itself, so a plain .daily-window loses to
    it on specificity and the window silently stays narrow — which is exactly
@@ -13267,14 +13512,13 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
 
 /* ---------- one pixel face per window ----------
 
-   These three windows are one game each, and they were set in two typefaces
-   between them. Guess the Maze letters all its microtype in Volter Goldfish
-   — the face the rest of this site uses, at the single size it is drawn for
-   — while Ratrospect and Odd One Out were written later in Silkscreen. That
-   was invisible until the two met: Ratrospect's splash carries a Volter
-   Goldfish eyebrow, and the board directly underneath it counts the cards in
-   Silkscreen, so one window says the same kind of thing twice in two
-   different hands.
+   Each window is one game, and they were set in two typefaces between them.
+   Guess the Maze letters all its microtype in Volter Goldfish — the face the
+   rest of this site uses, at the single size it is drawn for — while the
+   games written after it reached for Silkscreen. That was invisible until
+   the two met inside one window: a splash carrying a Volter Goldfish eyebrow
+   over a board counting the rounds in Silkscreen says the same kind of thing
+   twice in two different hands.
 
    Everything below moves to Volter Goldfish at 0.5625rem/400, which is not a
    preference but the rule the face itself imposes — it is a bitmap, drawn
@@ -13330,45 +13574,6 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
     color: var(--parchment-dim);
 }
 
-/* Lives, as pips rather than hearts — a heart belongs to a different sort of
-   game. A spent one stays in place hollow, so what is left reads against
-   what there was.
-
-   Named, because three dots on their own are decoration: the word is set in
-   the same microtype as the two readouts either side of it, so the bar
-   reads as three labelled figures rather than a number, some dots, and
-   another number. See headHtml in js/ratrospect.js. */
-.daily-lives {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    margin: 0;
-}
-
-.daily-lives-label {
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--parchment-dim);
-}
-
-.daily-lives-pips { display: inline-flex; gap: 5px; }
-
-.daily-life {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: var(--amber-bright);
-    box-shadow: 0 0 0 1px #000;
-}
-
-.daily-life.is-spent {
-    background: transparent;
-    box-shadow: inset 0 0 0 1px #6b5231;
-}
-
 /* ---------- the card you are left with ----------
 
    Nothing here draws it: the results card IS Guess the Maze's, class for
@@ -13386,419 +13591,28 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
     color: var(--parchment);
 }
 
-/* .daily-answers-name and .daily-answers-points styled the shared answers
-   list that used to close Ratrospect's and Odd One Out's results cards.
-   That list is gone from both — see resultsHtml in js/oddoneout.js — and
-   these went with it.
+/* .daily-answers-name and .daily-answers-points styled the answers list that
+   used to close Odd One Out's results card. That list is gone — see
+   resultsHtml in js/oddoneout.js — and these went with it.
 
-   ==========================================================================
-   Ratrospect - the line of cards
-   ========================================================================== */
+   Everything that stood below this point was Ratrospect: the line of cards,
+   the hand, the slots, the verdict, and a whole breakpoint turning the board
+   on its side for a phone. The game is gone (see js/daily-loader.js for what
+   the roster is now), and so is all of it. What survives here are the
+   .daily-* classes, which were always shared rather than Ratrospect's own —
+   the window, the sheet, the head, the question, the note, the results card.
+   .daily-lives and .daily-life went too: lives were a Ratrospect rule and
+   nothing else on the site counts them. */
+/* The question above the four pictures, centred once the sheet is narrow
+   enough that a left-aligned line reads as hanging off the tiles rather
+   than belonging to them.
 
-.ratro-hand-wrap {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-}
-
-/* A card: square picture, name under it, and the date under that once it is
-   down. The one in hand and the ones on the line are the same object at two
-   moments, so they are one rule with a modifier rather than two treatments
-   that drift apart. */
-.ratro-card {
-    width: 132px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 8px;
-    background: var(--bg-panel-light);
-    border: 2px solid var(--chrome-border);
-    border-radius: 6px;
-    box-shadow: inset 0 1px 0 rgba(255, 236, 200, 0.08);
-    text-align: center;
-}
-
-.ratro-thumb {
-    display: block;
-    width: 100%;
-    /* The picture takes no pointer of its own, so a press anywhere on the
-       card is a press on the CARD — which is the thing that gets dragged.
-       -webkit-user-drag stops the browser offering the image as a drag of
-       its own, which is what made the card feel stuck: the native image drag
-       swallowed the gesture and dropped nothing. draggable="false" says the
-       same thing in the markup; both are here because the two mechanisms
-       are not the same mechanism. */
-    pointer-events: none;
-    -webkit-user-drag: none;
-    user-select: none;
-    -webkit-user-select: none;
-    /* Square, so six cards in a row are six of the same shape and the line
-       reads as a line rather than as a row of different pictures. */
-    aspect-ratio: 1 / 1;
-    object-fit: cover;
-    border-radius: 3px;
-    background: var(--bg-black);
-}
-
-.ratro-thumb--blank {
-    display: block;
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    border-radius: 3px;
-    background: var(--bg-black);
-}
-
-.ratro-card-kind {
-    margin: 0;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: #8a6a3d;
-}
-
-.ratro-card-title {
-    margin: 0;
-    font-size: 0.78rem;
-    line-height: 1.25;
-    color: var(--parchment);
-    /* A maze or event name straight out of the archive, so the Habbo
-       picture glyphs in it are drawn rather than spelled — see the
-       'Volter Glyphs' @font-face at the top of this file. */
-    font-family: 'Volter Glyphs', Roboto, sans-serif;
-    /* Two lines and then an ellipsis: a five-word maze name should not make
-       one card twice the height of its neighbours. */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.ratro-card-by { margin: 0; font-size: 0.68rem; color: var(--parchment-dim); }
-
-.ratro-card-when {
-    margin: 0;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    letter-spacing: 0.04em;
-    color: var(--amber-bright);
-}
-
-/* The card in hand is the question, so it is the loudest thing on the board,
-   and it says it can be picked up by lifting under the cursor. */
-.ratro-card.is-hand {
-    border-color: var(--amber-bright);
-    background: var(--bg-panel);
-    cursor: grab;
-    touch-action: none;
-    /* Nothing on the card is text somebody wants to select, and a press that
-       starts a selection is a press that does not start a drag. */
-    user-select: none;
-    -webkit-user-select: none;
-    transition: transform 0.12s ease-out, opacity 0.12s ease-out;
-}
-
-.ratro-card.is-hand:hover { transform: translateY(-2px); }
-.ratro-card.is-hand:active { cursor: grabbing; }
-
-/* Left in place while the ghost is carried rather than removed: taking it
-   out of the flow would jump the whole board the moment a drag started. */
-.ratro-card.is-lifted { opacity: 0.25; }
-
-.ratro-card.is-ghost {
-    position: fixed;
-    z-index: 1200;
-    margin: 0;
-    transform: translate(-50%, -50%) rotate(-2deg);
-    pointer-events: none;
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
-}
-
-/* ---------- Ratrospect: the timeline itself ----------
-
-   The cards used to stand in a row with nothing underneath them, and the
-   places you could drop one into were invisible until a drag was already
-   happening — so the board did not say what it was or where anything could
-   go. There is a drawn rail now, its ends are labelled, and every slot on
-   it is visible before you pick anything up. */
-.ratro-timeline {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* Set across rather than down. Turned on its side it was three cramped
-   letters a column wide, which is a decoration; the words are there to say
-   which way time runs, so they have to be readable at a glance. */
-.ratro-end {
-    flex: 0 0 auto;
-    align-self: flex-end;
-    padding-bottom: 8px;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    color: #8a6a3d;
-}
-
-/* The rail is a background rather than an element, and `local` is the whole
-   trick: it makes the painting area the SCROLLED content rather than the
-   visible box, so the line is drawn under every card at any width instead
-   of stopping at the edge of the window. */
-.ratro-line {
-    position: relative;
-    flex: 1 1 auto;
-    display: flex;
-    align-items: flex-end;
-    gap: 0;
-    overflow-x: auto;
-    padding: 6px 4px 26px;
-    background-image: linear-gradient(rgba(226, 178, 96, 0.45), rgba(226, 178, 96, 0.45));
-    background-repeat: no-repeat;
-    background-position: 0 calc(100% - 12px);
-    background-size: 100% 2px;
-    background-attachment: local;
-}
-
-/* Every card stands on the rail: a short stem from the card down to the
-   line, so a card reads as a point in time rather than as a tile that
-   happens to be near one. */
-.ratro-card.is-down { position: relative; }
-
-.ratro-card.is-down::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    top: 100%;
-    width: 2px;
-    height: 12px;
-    background: rgba(226, 178, 96, 0.45);
-    transform: translateX(-50%);
-}
-
-.ratro-card.is-down.is-right { border-color: #7fbf6a; }
-.ratro-card.is-down.is-wrong { border-color: #c46a5a; opacity: 0.9; }
-
-/* A slot on the rail, visible from the start. It widens under a dragged
-   card rather than appearing from nothing, so the line opens where the card
-   is going instead of flickering into existence. */
-.ratro-gap {
-    flex: 0 0 auto;
-    align-self: stretch;
-    width: 26px;
-    margin: 0 4px 12px;
-    border: 2px dashed rgba(226, 178, 96, 0.45);
-    border-radius: 6px;
-    background: transparent;
-    color: #8a6a3d;
-    cursor: var(--cursor-pointer);
-    transition: width 0.16s ease-out, border-color 0.16s ease-out, background-color 0.16s ease-out;
-}
-
-.ratro-gap:hover,
-.ratro-gap:focus-visible {
-    border-color: var(--amber-bright);
-    background: rgba(226, 178, 96, 0.12);
-    outline: none;
-}
-
-.ratro-gap.is-open {
-    width: 132px;
-    border-color: var(--amber-bright);
-    background: rgba(226, 178, 96, 0.16);
-}
-
-/* Where a wrong card should have gone: the same shape as a slot, holding
-   the words instead of a card. */
-.ratro-slot-ghost {
-    flex: 0 0 auto;
-    align-self: stretch;
-    display: grid;
-    place-items: center;
-    width: 132px;
-    margin-bottom: 12px;
-    padding: 4px;
-    border: 2px dashed #7fbf6a;
-    border-radius: 6px;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    line-height: 1.4;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #7fbf6a;
-    text-align: center;
-}
-
-/* ---------- what just happened ---------- */
-
-.ratro-verdict {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-    padding: 10px 12px;
-    border-radius: 6px;
-    border-left: 3px solid transparent;
-    background: var(--bg-panel);
-}
-
-.ratro-verdict.is-right { border-left-color: #7fbf6a; }
-.ratro-verdict.is-wrong { border-left-color: #c46a5a; }
-
-.ratro-verdict-line {
-    margin: 0;
-    font-size: 0.86rem;
-    color: var(--parchment-dim);
-}
-
-.ratro-verdict-line strong { color: var(--parchment); }
-
-/* ---------- Ratrospect on a phone ----------
-
-   The line turns on its side, and the reason is that it has to.
-
-   Across, this board asks a phone for six cards and seven slots in a strip
-   about 190px wide — what is left of a 375px screen once the sheet's
-   padding and the OLDER and NEWER labels either end have taken their share.
-   That is not quite two cards. Every card after the second lived off the
-   edge of a sideways scroller, and the gesture the game is built on was
-   "drag a card into a gap you cannot see, in a strip that scrolls under
-   your finger while you do it". It was not hard, it was not possible.
-
-   Down, the same six cards get the full width of the sheet and the axis a
-   phone is actually shaped for. A card becomes a row — picture, name, date
-   — so six of them are a list you scroll the ordinary way; a slot becomes a
-   full-width bar, which is a tap target rather than a 26px sliver. Nothing
-   about the game changes: the same cards, the same slots, the same drag,
-   and the gaps are still the buttons they always were for anyone who would
-   rather tap than drag.
-
-   OLDER and NEWER go above and below, which is where they have to be once
-   the axis turns — they are the only thing saying which end of the list is
-   the past.
-
-   js/ratrospect.js reads the direction off this rule rather than carrying a
-   width of its own, so the drag follows the layout and the breakpoint is
-   written once. */
+   All that is left of a much longer block here. This breakpoint used to
+   carry Ratrospect's board, which had to turn on its side on a phone —
+   six cards and seven slots will not fit across 190px — and .daily-ask
+   was centred alongside it because both games use it. The game is gone;
+   the shared line is not. */
 @media (max-width: 620px) {
-    .ratro-card { width: 108px; }
-    .ratro-gap.is-open,
-    .ratro-slot-ghost { width: 108px; }
-
-    /* The board is the sheet's remaining height, and the line takes what is
-       left of it after the card in hand. min-height: 0 on both, or a flex
-       child refuses to shrink below its content and the scroller never
-       scrolls — it just makes the whole sheet longer. */
-    .ratro-timeline {
-        flex: 1 1 auto;
-        min-height: 0;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 5px;
-    }
-
-    .ratro-end {
-        align-self: stretch;
-        padding-bottom: 0;
-        text-align: center;
-    }
-
-    .ratro-line {
-        flex-direction: column;
-        align-items: stretch;
-        min-height: 0;
-        overflow-x: hidden;
-        overflow-y: auto;
-        /* Room down the left for the rail and the stems that meet it. */
-        padding: 4px 2px 4px 22px;
-        /* The rail turns with the line: a 2px column down the left rather
-           than a 2px row along the bottom. `local` still does the same job
-           it does across — the rail is painted onto the scrolled content,
-           so it runs the full length of the list instead of stopping at the
-           bottom of the visible box. */
-        background-position: 11px 0;
-        background-size: 2px 100%;
-    }
-
-    /* A card on the line becomes a row: picture, then name and date. The
-       card in hand keeps its shape below — it is the question, and it
-       should not look like one of the answers. */
-    .ratro-card.is-down {
-        width: auto;
-        display: grid;
-        grid-template-columns: 42px minmax(0, 1fr);
-        align-items: center;
-        gap: 9px;
-        text-align: left;
-    }
-
-    .ratro-card.is-down .ratro-thumb,
-    .ratro-card.is-down .ratro-thumb--blank {
-        grid-row: span 2;
-        width: 42px;
-    }
-
-    /* The stem reaches sideways to the rail now rather than down to it. */
-    .ratro-card.is-down::after {
-        left: -13px;
-        top: 50%;
-        width: 13px;
-        height: 2px;
-        transform: translateY(-50%);
-    }
-
-    /* A slot is a full-width bar. It grows in height under a dragged card,
-       which is the same gesture the desktop board makes across. */
-    .ratro-gap {
-        width: auto;
-        align-self: stretch;
-        height: 24px;
-        margin: 5px 0;
-        transition: height 0.16s ease-out, border-color 0.16s ease-out, background-color 0.16s ease-out;
-    }
-
-    .ratro-gap.is-open {
-        width: auto;
-        height: 60px;
-    }
-
-    .ratro-slot-ghost {
-        width: auto;
-        align-self: stretch;
-        height: 44px;
-        margin: 5px 0;
-    }
-
-    /* The card in hand lies down too, and this is what buys the list its
-       room: standing up it is a 108px picture with three lines under it,
-       most of a phone's remaining height for one card. On its side it is
-       the same card in about a third of the space, and what it gives back
-       goes to the line, which is the part you have to be able to see. */
-    .ratro-card.is-hand {
-        width: 100%;
-        display: grid;
-        grid-template-columns: 76px minmax(0, 1fr);
-        grid-template-rows: auto auto auto;
-        align-items: center;
-        column-gap: 10px;
-        row-gap: 2px;
-        text-align: left;
-    }
-
-    .ratro-card.is-hand .ratro-thumb,
-    .ratro-card.is-hand .ratro-thumb--blank {
-        grid-row: 1 / -1;
-        width: 76px;
-    }
-
-    .ratro-hand-wrap { align-items: stretch; }
     .daily-ask { text-align: center; }
 }
 
@@ -14452,15 +14266,28 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
         min-height: 24px;
     }
 
-    /* The fansite row wraps to three lines on a phone, one line about 30px
-       below the next, and the links within a line sit 16px apart. Padding
-       rather than a reach for exactly the reason given above: overlapping
-       hit areas here would have each row quietly stealing presses from the
-       one above it. 12px top and bottom takes a 18px link to 42px without
-       any of them touching. */
+    /* The fansite row wraps on a phone, and every name in it has to be big
+       enough to press. Padding rather than a reach, for exactly the reason
+       given above: overlapping hit areas here would have each row quietly
+       stealing presses from the one above it.
+
+       12px top and bottom, which is what this was, took an 18px link to 42px
+       — and with eleven fansites the row wraps to FOUR lines, so that is
+       four 42px bands 43px apart and 170px of footer given over to a list of
+       links. Measured, not estimated: the names are 11.5px text sitting in
+       the middle of 30px of nothing, and the gaps between the lines read as
+       bigger than the lines themselves, which is the complaint.
+
+       6px instead. The link comes out at 30px, the lines sit 30px apart
+       rather than 43, and the block is 122px rather than 170. It stays
+       clear of the 24px minimum this stylesheet holds everything else to —
+       see the console fields above, which were sized against the same floor
+       and for the same reason — and the rows still do not touch, so nothing
+       steals a press from its neighbour. What changes is only the empty
+       space, which is the thing there was too much of. */
     .fellow-fansites a {
         display: inline-block;
-        padding: 12px 3px;
+        padding: 6px 3px;
     }
 }
 

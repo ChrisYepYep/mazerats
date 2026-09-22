@@ -51,10 +51,18 @@
        the Maze leaves them out: the entrance is the thumbnail the archive
        lists the maze under, and it is the picture most likely to carry the
        maze's name on a wall. A round that can be won by having scrolled the
-       archive is not a round about style. */
+       archive is not a round about style.
+
+       HALLWAYS ARE OUT, here as in Guess the Maze and on the server that
+       scores this (netlify/functions/daily-scores.js). This game asks which
+       of four rooms was built by somebody else, and a corridor has none of
+       what that question is about — no palette of its own, nothing
+       furnished, no idea being worked out. As the home maze it is a round
+       with no answer to find; as the imposter it is the one tile anybody can
+       pick without looking at the other three. See Daily.isHallway. */
     function buildPool(rooms) {
         return (rooms || [])
-            .filter(room => room && room.id && room.name)
+            .filter(room => room && room.id && room.name && !window.Daily.isHallway(room))
             .map(room => ({
                 id: room.id,
                 name: room.name,
@@ -149,7 +157,16 @@
         try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) { /* private mode */ }
     }
 
-    // Days played, not days won — see the same decision in js/ratrospect.js.
+    /* Banked once, when the day ends. A streak counts days PLAYED rather
+       than days won: coming back is the habit worth rewarding, and a game
+       that breaks your streak for a bad day is one you stop opening after a
+       bad day.
+
+       Written out here rather than pointed at. Several notes in this file
+       used to be one-line references to the reasoning in the game that sat
+       beside it, which was fine until that game was dropped and its file
+       went with it. A cross-reference is only as durable as the file it
+       names. */
     function bankDay() {
         if (stats.lastDay === day()) return;
         stats.streak = stats.lastDay === window.Daily.dayBefore(day()) ? stats.streak + 1 : 1;
@@ -184,8 +201,14 @@
        is worth having: a daily game should say which day it is dealing,
        especially one somebody has come back to after a while.
 
-       "en-GB" so all three daily games write the day the same way — see the
-       note on the same function in js/ratrospect.js. */
+       "en-GB" RATHER THAN THE VISITOR'S OWN LOCALE, which is what passing
+       undefined here asks for. On any machine not set to British English
+       that makes the two games disagree about how to write the same day —
+       "Sunday, September 20" here against "Sunday 20 September" two clicks
+       away. Nobody sees one game in isolation; the menu offers them
+       together. The site is written in British English throughout and the
+       date it prints should be too. js/guess.js and js/daily.js name the
+       same locale for the same reason. */
     function longDate() {
         const d = new Date(day() + "T12:00:00Z");
         return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
@@ -286,8 +309,11 @@
            nobody else has played yet. */
     }
 
-    /* Something a person might say, rather than a status line — see the
-       same decision in js/ratrospect.js. */
+    /* Something a person might actually say, rather than a status line.
+
+       What somebody wants at the end of a run is to be told how it went, in
+       the tone of a friend watching over their shoulder: short, and about
+       the run rather than about the game. */
     function verdictFor(right) {
         if (right === ROUNDS) return "All five. Nothing got past you.";
         if (right === ROUNDS - 1) return "One slipped through.";
@@ -313,8 +339,11 @@
     }
 
     function wireResults() {
-        // Which tile was picked each round, in order. See the same note in
-        // js/ratrospect.js.
+        /* The run as it was played: which tile was picked each round, in
+           order. The server deals the same five rounds and works out for
+           itself which of those were right — see
+           netlify/functions/daily-scores.js for why the page never sends a
+           score. */
         if (!posted) {
             posted = true;
             window.Daily.submit("odd", day(), state.picks.map(p => ({ tile: p.tile })));
@@ -350,7 +379,9 @@
             try { rooms = await Api.getRooms(); } catch (e) { rooms = []; }
             pool = buildPool(rooms);
         }
-        // See the same claim in js/ratrospect.js.
+        /* A day given back by an administrator lands here: the ticket is
+           claimed before the stored day is read, so what loads is the fresh
+           day rather than the one being cleared. */
         if (await window.Daily.claimReset("odd")) {
             try { localStorage.removeItem(STATE_KEY); } catch (e) { /* private mode */ }
         }
@@ -408,7 +439,7 @@
        fetches it the first time somebody asks for the game, which is long
        after DOMContentLoaded has been and gone. Listening for an event that
        has already fired means mount() never runs and the window opens empty.
-       Both branches, because the deep-link path (/guess, /ratrospect, /odd)
+       Both branches, because the deep-link path (/guess, /odd)
        still loads it while the document is parsing. */
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount);
     else mount();

@@ -1,26 +1,40 @@
-/* /.netlify/functions/daily-scores — leaderboards for Ratrospect and Odd
-   One Out.
+/* /.netlify/functions/daily-scores — leaderboards for Odd One Out.
 
-   GET  ?game=ratrospect&day=YYYY-MM-DD    today's board, and the week,
-                                           month and all-time tables
-   POST {game, day, moves}                 records the signed-in player's
-                                           finished day
+   GET  ?game=odd&day=YYYY-MM-DD    today's board, and the week, month and
+                                    all-time tables
+   POST {game, day, moves}          records the signed-in player's finished
+                                    day
 
    Guess the Maze has had a board since it was built (guess-scores.js); this
-   is the same idea for the other two, in one endpoint because the two games
-   differ only in how a day is dealt and how a move is judged. Everything
-   round that — the collection, the spans, the one-row-per-player-per-day
-   rule, what a board looks like — is identical, and two files would have
-   been two of each.
+   is the same idea for the games beside it.
+
+   IT IS STILL SHAPED FOR SEVERAL, with one left in it. This endpoint was
+   written to serve Ratrospect and Odd One Out together, because the two
+   differed only in how a day was dealt and how a move was judged —
+   everything round that is identical, and two files would have been two of
+   each. Ratrospect was dropped and its half went: ratrospectDay,
+   scoreRatrospect, readDate, the lives, and its name in GAMES. One Wall was
+   added into the same shape and then dropped in its turn, taking its
+   generator and scoreOneWall with it.
+
+   Twice now, the join is what made the removal a deletion rather than an
+   untangling — which is the argument for keeping it.
+
+   What is left deliberately keeps the join: `game` is still a parameter
+   checked against a list, rows are still keyed by it, and the board code
+   still knows nothing about which game it is drawing. Collapsing all that
+   into a single hardcoded "odd" would save a few lines now and have to be
+   undone by the next game to arrive — and the rows already in the
+   collection carry a game field either way.
 
    ----------------------------------------------------------------------
    How much this trusts the page
 
    The same amount guess-scores.js does, and for the same reasons. The day's
-   cards, rooms, intruders and answers are DERIVED here, from the same
-   seeded shuffle the browser runs over the same archive out of the same
-   database. The page sends what it DID — which gap a card went into, which
-   tile was picked — and never a score. Points are computed here.
+   rooms, intruders and answers are DERIVED here, from the same seeded
+   shuffle the browser runs over the same archive out of the same database.
+   The page sends what it DID — which tile was picked — and never a score.
+   Points are computed here.
 
    What that does not stop is somebody writing a request by hand claiming
    the right move every time. Closing that needs the server to hand out the
@@ -30,23 +44,23 @@
    write the request is not, and one submission per player per day is the
    backstop that stops even that compounding.
 
-   Both games' dates and pictures are public archive data, so a determined
-   player could work out a perfect day offline in either. That is true of
-   Guess the Maze too. A leaderboard here is a thing to enjoy, not a thing
-   to defend. */
+   The pictures are public archive data, so a determined player could work
+   out a perfect day offline. That is true of Guess the Maze too. A
+   leaderboard here is a thing to enjoy, not a thing to defend. */
 const { getDb } = require("./_db");
 const { playerFrom } = require("./_player");
-const { today, dayIsOpen, seedFrom, shuffle, daySeed } = require("./_daily");
+const { today, dayIsOpen, seedFrom, shuffle, daySeed, isHallway } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
 
 const COLLECTION = "daily_scores";
 const BOARD_SIZE = 10;
 const POINTS_EACH = 100;
-const ROUNDS = 5;              // both games: five moves a day
-const LIVES = 3;               // Ratrospect only
+const ROUNDS = 5;              // five moves a day
 
-const GAMES = ["ratrospect", "odd"];
+// Still a list, still checked against. See the note at the top of the file
+// for why this did not collapse into a constant when it came down to one.
+const GAMES = ["odd"];
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -68,64 +82,15 @@ async function ensureIndexes(col) {
 
 /* ---------- dealing the day, exactly as the page deals it ---------- */
 
-function readDate(value) {
-    const text = String(value).trim();
-    const monthOnly = /^\d{4}-\d{2}$/.test(text);
-    const at = Date.parse(monthOnly ? text + "-01T12:00:00Z"
-        : /^\d{4}-\d{2}-\d{2}$/.test(text) ? text + "T12:00:00Z" : text);
-    if (isNaN(at)) return null;
-    return { at, month: new Date(at).toISOString().slice(0, 7) };
-}
-
-// See pictureOf in js/ratrospect.js: an entrance is an object in this
-// archive, not a string, and a card that assumes otherwise shows nothing.
-function pictureOf(record) {
-    const pick = v => (typeof v === "string" ? v.trim()
-        : v && typeof v === "object" && typeof v.image === "string" ? v.image.trim() : "");
-    const gallery = Array.isArray(record.gallery) ? record.gallery : [];
-    return pick(record.thumb) || pick(record.entrance) || pick(gallery[0]) || "";
-}
-
-async function ratrospectDay(day) {
-    const db = await getDb();
-    const [rooms, events] = await Promise.all([
-        db.collection("rooms").find({}, { projection: { id: 1, name: 1, added: 1, thumb: 1, entrance: 1, gallery: 1 } }).toArray(),
-        db.collection("events").find({}, { projection: { id: 1, title: 1, date: 1 } }).toArray()
-    ]);
-
-    const pool = [];
-    rooms.forEach(room => {
-        if (!room || !room.name || !room.added) return;
-        const when = readDate(room.added);
-        if (when) pool.push({ id: "maze:" + room.id, at: when.at, month: when.month, title: room.name });
-    });
-    events.forEach(ev => {
-        if (!ev || !ev.title || !ev.date) return;
-        const when = readDate(ev.date);
-        if (when) pool.push({ id: "event:" + ev.id, at: when.at, month: when.month, title: ev.title });
-    });
-    // The same fixed order the page sorts into before shuffling.
-    pool.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-
-    const shuffled = shuffle(pool, daySeed(day, "ratrospect"));
-    const cards = [];
-    const months = new Set();
-    for (const card of shuffled) {
-        if (cards.length >= ROUNDS + 1) break;
-        if (months.has(card.month)) continue;
-        months.add(card.month);
-        cards.push(card);
-    }
-    return cards;
-}
-
 async function oddDay(day) {
     const db = await getDb();
     const rooms = await db.collection("rooms")
         .find({}, { projection: { id: 1, name: 1, tags: 1, gallery: 1 } }).toArray();
 
     const pool = rooms
-        .filter(room => room && room.id && room.name)
+        // Exactly as js/oddoneout.js builds its pool. A room dropped there
+        // and kept here would deal one set of rounds and score another.
+        .filter(room => room && room.id && room.name && !isHallway(room))
         .map(room => ({
             id: room.id,
             name: room.name,
@@ -164,39 +129,6 @@ async function oddDay(day) {
 }
 
 /* ---------- judging what the player did ---------- */
-
-/* Ratrospect: the moves are replayed. A card is placed into a gap in the
-   line as it stood AT THAT MOMENT, so the line has to be rebuilt move by
-   move — a card placed correctly joins it and changes where everything
-   after it belongs. Sending the whole run rather than a score is what makes
-   this checkable at all. */
-function scoreRatrospect(cards, moves) {
-    if (!cards.length) return null;
-    let lives = LIVES;
-    let points = 0;
-    const grid = [];
-    let down = [cards[0]];
-
-    for (let i = 0; i < moves.length; i++) {
-        if (i >= ROUNDS || lives <= 0) break;
-        const move = moves[i];
-        const card = cards[i + 1];
-        if (!card) break;
-        const gap = Number(move && move.gap);
-        if (!Number.isInteger(gap) || gap < 0 || gap > down.length) return null;
-
-        const correct = down.filter(c => c.at < card.at).length;
-        const right = gap === correct;
-        grid.push(right ? 1 : 0);
-        if (right) {
-            points += POINTS_EACH;
-            down = down.concat([card]).sort((a, b) => a.at - b.at);
-        } else {
-            lives -= 1;
-        }
-    }
-    return { points, solved: grid.filter(Boolean).length, grid };
-}
 
 // Odd One Out: five independent rounds, one pick each.
 function scoreOdd(rounds, moves) {
@@ -256,10 +188,10 @@ async function board(col, game, from, to) {
    stays readable next to the aggregation above it.
 
    Reading more than BOARD_SIZE from each side before folding is the part
-   that matters: a player who is eleventh at Ratrospect and eleventh at Odd
-   One Out can be third combined, and taking the top ten of each first would
-   lose them. The cap is generous rather than exact — a true answer needs
-   every row, and this is a leaderboard, not an audit. */
+   that matters: a player who is eleventh at Guess the Maze and eleventh at
+   Odd One Out can be third combined, and taking the top ten of each first
+   would lose them. The cap is generous rather than exact — a true answer
+   needs every row, and this is a leaderboard, not an audit. */
 const COMBINE_DEPTH = 200;
 
 async function playerTotals(col, match) {
@@ -364,15 +296,16 @@ exports.handler = async (event) => {
 
            A separate board, asked for by name, rather than a fourth span on
            an existing one: it answers a different question. The per-game
-           boards ask who is best at Ratrospect; this asks who turned up.
+           boards ask who is best at one game; this asks who turned up.
 
            It has to read two collections, and that is not tidiness — it is
-           where the rows actually are. Ratrospect and Odd One Out were
-           written together and share `daily_scores`; Guess the Maze came
-           first and has `guess_scores` to itself, scored by its own function
-           against its own POINTS array. Neither is wrong and merging them
-           would be a migration for no benefit, so the combining happens
-           here, at the one point that wants both.
+           where the rows actually are. `daily_scores` was written to hold
+           Ratrospect and Odd One Out together and still holds the rows of
+           both, the dropped game included; Guess the Maze came first and has
+           `guess_scores` to itself, scored by its own function against its
+           own POINTS array. Neither is wrong and merging them would be a
+           migration for no benefit, so the combining happens here, at the
+           one point that wants both.
 
            Everything is summed per player across whichever games they
            played, so a player who plays one game is not penalised into
@@ -440,11 +373,14 @@ exports.handler = async (event) => {
         const moves = Array.isArray(body.moves) ? body.moves.slice(0, ROUNDS) : null;
         if (!moves || !moves.length) return json(400, { error: "Bad moves" });
 
+        /* One game in the switch, and the switch kept: `game` has already
+           been checked against GAMES above, so anything reaching here is a
+           name this endpoint serves. With one entry it is a lookup that
+           happens to have a single answer, which is the honest shape for a
+           list that has twice now been expected to grow again. */
         let scored;
         try {
-            scored = game === "ratrospect"
-                ? scoreRatrospect(await ratrospectDay(day), moves)
-                : scoreOdd(await oddDay(day), moves);
+            scored = scoreOdd(await oddDay(day), moves);
         } catch (e) {
             return json(500, { error: "Could not check the day" });
         }

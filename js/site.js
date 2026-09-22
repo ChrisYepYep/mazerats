@@ -129,13 +129,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         // regular visitors during Coming Soon/Maintenance and would just
         // bounce them straight back here anyway (see the pre-load gate in
         // home.html's own <head>). Everywhere else it still points at
-        // home.html#event-<id> — a normal navigation from any other page,
+        // /home#event-<id> — a normal navigation from any other page,
         // or a same-page hash change already handled by home.js's own
         // openEventFromHash if already there.
         const isWelcome = document.body.dataset.page === "welcome";
         const href = isWelcome
             ? `#event-${encodeURIComponent(event.id || "")}`
-            : `home.html#event-${encodeURIComponent(event.id || "")}`;
+            : `/home#event-${encodeURIComponent(event.id || "")}`;
         return `<a class="header-events-title" href="${href}">${escapeHtml(event.title || "")}</a><p class="header-events-when">${formatEventWhen(event.date)}</p>`;
     }
 

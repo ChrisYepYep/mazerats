@@ -7,6 +7,7 @@ const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { packRecords } = require("./_furni-payload");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
+const { describe: describeChanges } = require("./_changes");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -142,6 +143,33 @@ exports.handler = async (event) => {
            updatedAt of its own (a form that read the record, sat open, and
            saved) cannot write the clock backwards. */
         update.updatedAt = new Date().toISOString();
+
+        /* WHAT changed, not just that something did — read before the write,
+           because the write is what destroys the answer. $set overwrites the
+           record, so the only moment both versions exist is this one.
+           What's New prints a line from it (see js/home.js); describe returns
+           stable keys rather than sentences so the wording can be rewritten
+           without touching stored records.
+
+           One extra read per save, on a path used by one person a few times
+           a day. If two saves of the same record overlapped, the later one
+           could describe itself against a document the earlier had already
+           moved — a slightly wrong list on a changelog line, which is the
+           least important thing in this function and not worth a transaction.
+
+           NOTHING HERE CAN FAIL THE SAVE. describe swallows its own errors
+           and returns null, this reads the previous document defensively, and
+           the field is only set when there is genuinely a list to set. A maze
+           that saves without its changelog line is fine; a maze that does not
+           save is not. */
+        let previous = null;
+        try {
+            previous = await rooms.findOne({ id: body.id });
+        } catch (e) { /* the update below reports a missing record on its own */ }
+
+        const changed = describeChanges(previous, update);
+        if (changed) update.changes = changed;
+
         const result = await rooms.findOneAndUpdate(
             { id: body.id },
             { $set: update },

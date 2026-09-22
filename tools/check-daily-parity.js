@@ -148,12 +148,14 @@ for (const iso of Object.keys(server.FEATURED_DAYS)) {
     }
 }
 
-// Every shape of seed the three games actually ask for.
+// Every shape of seed the games actually ask for. ["ratrospect"] was one of
+// them until that game was dropped; it came out with the rest of it, because
+// a shape nothing derives is a comparison that can never fail and therefore
+// never catches anything.
 const SHAPES = [
     ["guess"],
     ["guess:crop", 3],
     ["guess:options", 2, "the-little-maze"],
-    ["ratrospect"],
     ["odd"],
     ["odd", "maze-empire"],
     ["odd:tiles", "maze-empire"]

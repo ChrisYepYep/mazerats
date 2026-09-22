@@ -1,17 +1,17 @@
 /* /.netlify/functions/daily-games — the daily games, from the admin's side.
 
-   Three games run a puzzle a day: Guess the Maze, Ratrospect and Odd One
-   Out. This endpoint is how an administrator looks at one player's standing
-   in them and, where it is warranted, gives a day back.
+   Two games run a puzzle a day: Guess the Maze and Odd One Out. This
+   endpoint is how an administrator looks at one player's standing in them
+   and, where it is warranted, gives a day back.
 
    ----------------------------------------------------------------------
    Where a day actually lives, which is the whole difficulty
 
-   All three now keep a scored row per player per day — Guess the Maze in
-   guess_scores, the other two in daily_scores since they were given
-   leaderboards of their own. None of them keeps the day IN PROGRESS there:
-   that lives in the player's own browser, in localStorage, which is not
-   something a server can reach into.
+   Both keep a scored row per player per day — Guess the Maze in
+   guess_scores, Odd One Out in daily_scores, which it has shared in its time
+   with Ratrospect and with One Wall, both since dropped. Neither keeps the
+   day IN PROGRESS there: that lives in the player's own browser, in
+   localStorage, which is not something a server can reach into.
 
    So a reset is two things, and it does both:
 
@@ -59,9 +59,18 @@ const PLAYER_STATE = "player_state";
    at all until they were given leaderboards; they now write to
    daily_scores, one row per player per day per game. `collection` is what a
    reset has to clear on top of the ticket it always writes. */
+/* The retired games are out of this list, and that is a decision rather than
+   a tidy-up: it means an admin can no longer give back a Ratrospect or One
+   Wall day. Neither game can be played, so there is no day left to give —
+   and leaving the rows in would offer a reset for something the player has
+   no way to replay, which is a button that does nothing dressed as one that
+   does.
+
+   Their rows are still in daily_scores under game: "ratrospect" and
+   "onewall", untouched. Nothing reads them now; nothing deletes them
+   either. */
 const GAMES = [
     { key: "guess", name: "Guess the Maze", collection: "guess_scores", filter: {} },
-    { key: "ratrospect", name: "Ratrospect", collection: "daily_scores", filter: { game: "ratrospect" } },
     { key: "odd", name: "Odd One Out", collection: "daily_scores", filter: { game: "odd" } }
 ];
 

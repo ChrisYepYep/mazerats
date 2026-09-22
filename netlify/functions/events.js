@@ -4,6 +4,7 @@ const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { packRecords } = require("./_furni-payload");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
+const { describe: describeChanges } = require("./_changes");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -106,6 +107,18 @@ exports.handler = async (event) => {
         // stale value in the body cannot wind the clock back. See the same
         // field in rooms.js.
         update.updatedAt = new Date().toISOString();
+
+        // What changed, on the same terms as rooms.js — see the long note
+        // there. Read before the write because the write is what destroys the
+        // answer, and unable to fail the save.
+        let previous = null;
+        try {
+            previous = await events.findOne({ id: body.id });
+        } catch (e) { /* the update below reports a missing record on its own */ }
+
+        const changed = describeChanges(previous, update);
+        if (changed) update.changes = changed;
+
         const result = await events.findOneAndUpdate(
             { id: body.id },
             { $set: update },

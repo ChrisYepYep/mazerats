@@ -132,7 +132,36 @@ function isFeaturedDay(day) {
     return Boolean(FEATURED_DAYS[day]);
 }
 
+/* A hallway is not a maze, and the daily games must not deal one.
+ *
+ * The archive has always known this — js/home.js has carried the same test
+ * since the walked count was first wrong by one — but it knew it only for
+ * itself. The games read the rooms collection directly and took every
+ * document in it, so "Origins Maze Rats Hallway" turned up as a round of
+ * Guess the Maze with nothing in it to guess, and as one of the five names
+ * offered against rooms that were actually mazes.
+ *
+ * IT LIVES HERE BECAUSE BOTH SIDES NEED IT. The browser picks the day's
+ * rooms and the server re-derives the same pick to score what is submitted
+ * (see the header above), and a filter applied on one side only is not a
+ * filter at all — it is the two sides dealing different rounds, which is
+ * precisely the silent failure tools/check-daily-parity.js exists to make
+ * noisy. js/daily.js carries the same test for the browser, for the same
+ * reason daySeed is implemented twice: the two runtimes cannot share it as
+ * easily as they share a table.
+ *
+ * Read off the tag, case-insensitively, exactly as the archive reads it.
+ * The tag is already how this site says what a room is; a second field
+ * saying the same thing would be a second thing to keep in step.
+ */
+const HALLWAY_TAG = "hallway";
+
+function isHallway(record) {
+    return (record && Array.isArray(record.tags) ? record.tags : [])
+        .some(t => String(t).trim().toLowerCase() === HALLWAY_TAG);
+}
+
 module.exports = {
     today, dayIsOpen, seededRandom, seedFrom, shuffle,
-    FEATURED_DAYS, daySeed, isFeaturedDay
+    FEATURED_DAYS, daySeed, isFeaturedDay, isHallway
 };

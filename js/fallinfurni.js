@@ -3012,7 +3012,7 @@
     }
 
     // "Saturday 10 October" — en-GB like every other date the site writes
-    // (see longDate in js/ratrospect.js), and in the reader's own zone,
+    // (see longDate in js/oddoneout.js), and in the reader's own zone,
     // since this is a deadline somebody is working to rather than a
     // timestamp.
     function meetEnds(iso) {

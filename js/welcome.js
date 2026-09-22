@@ -73,8 +73,8 @@ function startCountdown(target) {
        "en-GB" for the FORMAT, though — the local zone is the point here,
        the local date order is not. Left as undefined this printed
        "October 3 at 10:00 AM" on an American machine, which is the same
-       split the three daily games had until it was fixed (see longDate in
-       js/ratrospect.js). The site writes dates one way. */
+       split the daily games had until it was fixed (see longDate in
+       js/oddoneout.js). The site writes dates one way. */
     when.textContent = target.toLocaleString("en-GB", {
         weekday: "long", day: "numeric", month: "long",
         hour: "2-digit", minute: "2-digit"
@@ -172,7 +172,7 @@ function warmTheArchive(btn) {
         try {
             const link = document.createElement("link");
             link.rel = "prefetch";
-            link.href = "home.html";
+            link.href = "/home";
             link.as = "document";
             document.head.appendChild(link);
         } catch (e) { /* an old browser without rel=prefetch; the fetch below still helps */ }
@@ -210,7 +210,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         btn.setAttribute("aria-disabled", "true");
     } else {
         label.textContent = "Enter";
-        btn.setAttribute("href", "home.html");
+        /* The clean address, not the filename. This is the one link on the
+           site that every first-time visitor presses, so whatever it says is
+           what ends up in the address bar — and, from there, in whatever they
+           paste into Discord. The prefetch above was pointed at the same
+           spelling for the same reason: two spellings would be two cache
+           entries and the warm one would be the address nobody arrives at. */
+        btn.setAttribute("href", "/home");
         btn.classList.remove("is-disabled");
         btn.removeAttribute("aria-disabled");
         // A real link again, so it takes its place in the tab order on its
@@ -395,6 +401,51 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // Guards against a slow profile lookup landing after the visitor has
     // opened a different event — the same token pattern home.js uses.
+    /* Several hosts in one card, rather than a card each.
+
+       The same shape js/home.js builds when a maze credits three or more
+       builders — avatars in a row, names on one line under them — and it is
+       here for the same reason it is there: past a pair, a column of full
+       cards is taller than the modal wants to be and says the same thing
+       less clearly. The Valentines and Anniversary collabs have four hosts
+       apiece, which was four stacked cards on this page against one combined
+       card two clicks away.
+
+       Markup contract with css/style.css, exactly as the rest of this file's
+       copy is: .builder-card--collab / .builder-avatars / .builder-avatar /
+       .builder-text / .builder-name. Nothing new is styled for it. */
+    function collabCard(profiles) {
+        const card = document.createElement("div");
+        card.className = "builder-card builder-card--collab";
+
+        const avatars = document.createElement("div");
+        avatars.className = "builder-avatars";
+        profiles.forEach(profile => {
+            if (!profile.avatar) return;
+            const avatar = document.createElement("img");
+            avatar.className = "builder-avatar";
+            avatar.src = profile.avatar;
+            avatar.alt = "";
+            avatar.loading = "lazy";
+            // A host whose figure will not load drops out rather than
+            // leaving a broken image in the row.
+            avatar.addEventListener("error", () => avatar.remove());
+            avatars.appendChild(avatar);
+        });
+        if (avatars.children.length) card.appendChild(avatars);
+
+        const text = document.createElement("div");
+        text.className = "builder-text";
+        const nameLine = document.createElement("p");
+        nameLine.className = "builder-name";
+        // Text node, not innerHTML — these names come from Habbo.
+        nameLine.appendChild(document.createTextNode(profiles.map(p => p.name).join(", ")));
+        text.appendChild(nameLine);
+        card.appendChild(text);
+
+        return card;
+    }
+
     let builderToken = 0;
 
     async function showHostCard(event) {
@@ -411,7 +462,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         const profiles = (await Promise.all(names.map(n => Api.getHabboProfile(n)))).filter(Boolean);
         if (token !== builderToken || !profiles.length) return;
 
-        profiles.forEach((p, i) => builderEl.appendChild(builderCard(p, i % 2 === 1)));
+        /* MORE THAN ONE HOST AND THEY SHARE A CARD. Only a solo host gets the
+           full treatment with their motto and last-seen under them.
+
+           The same single rule js/home.js now uses for a maze's builders —
+           see showBuilderCard there. Two people who ran something together
+           are one credit, and the same event opened in either modal says so
+           the same way. */
+        if (profiles.length > 1) {
+            builderEl.appendChild(collabCard(profiles));
+        } else {
+            profiles.forEach((p, i) => builderEl.appendChild(builderCard(p, i % 2 === 1)));
+        }
         // The cards carry the names themselves, so "by <host>" would only
         // repeat them.
         hostEl.hidden = true;

@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   734 rules, 1211 declarations, hues 274 (surfaces) / 274 (accents).
+   718 rules, 1190 declarations, hues 274 (surfaces) / 274 (accents).
 */
 :root[data-theme="witch"] {
     --bg-black: #050207;
@@ -2792,6 +2792,42 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     border-bottom-color: #2b0f40;
 }
 
+[data-theme="witch"] .saved-note {
+    background: var(--wood-dark, #100916);
+    border: 1px solid var(--chrome-border);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.72);
+}
+
+[data-theme="witch"] .saved-note-text {
+    color: var(--parchment);
+}
+
+[data-theme="witch"] .saved-note-text strong {
+    color: var(--amber-bright);
+}
+
+[data-theme="witch"] .saved-note-go {
+    border: 1px solid #ece8f0;
+    background: linear-gradient(180deg, #f6f3f8, #dfd9e4);
+    color: #12051c;
+}
+
+[data-theme="witch"] .saved-note-close {
+    border: 1px solid var(--chrome-border);
+    background: transparent;
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .saved-note-close:hover,
+[data-theme="witch"] .saved-note-close:focus-visible {
+    color: var(--parchment);
+}
+
+[data-theme="witch"] .saved-note-go:focus-visible,
+[data-theme="witch"] .saved-note-close:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="witch"] .progress-face {
     border: 1px solid var(--amber);
 }
@@ -2967,6 +3003,10 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 
 [data-theme="witch"] .updatelog-meta {
     color: var(--unknown);
+}
+
+[data-theme="witch"] .updatelog-change {
+    color: var(--amber);
 }
 
 [data-theme="witch"] .admin-tab-btn {
@@ -3170,115 +3210,7 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
-[data-theme="witch"] .daily-lives-label {
-    color: var(--parchment-dim);
-}
-
-[data-theme="witch"] .daily-life {
-    background: var(--amber-bright);
-    box-shadow: 0 0 0 1px #000;
-}
-
-[data-theme="witch"] .daily-life.is-spent {
-    background: transparent;
-    box-shadow: inset 0 0 0 1px #2c153f;
-}
-
 [data-theme="witch"] .daily-verdict {
-    color: var(--parchment);
-}
-
-[data-theme="witch"] .ratro-card {
-    background: var(--bg-panel-light);
-    border: 2px solid var(--chrome-border);
-    box-shadow: inset 0 1px 0 rgba(241, 237, 244, 0.08);
-}
-
-[data-theme="witch"] .ratro-thumb {
-    background: var(--bg-black);
-}
-
-[data-theme="witch"] .ratro-thumb--blank {
-    background: var(--bg-black);
-}
-
-[data-theme="witch"] .ratro-card-kind {
-    color: #3d1c57;
-}
-
-[data-theme="witch"] .ratro-card-title {
-    color: var(--parchment);
-}
-
-[data-theme="witch"] .ratro-card-by {
-    color: var(--parchment-dim);
-}
-
-[data-theme="witch"] .ratro-card-when {
-    color: var(--amber-bright);
-}
-
-[data-theme="witch"] .ratro-card.is-hand {
-    border-color: var(--amber-bright);
-    background: var(--bg-panel);
-}
-
-[data-theme="witch"] .ratro-card.is-ghost {
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
-}
-
-[data-theme="witch"] .ratro-end {
-    color: #3d1c57;
-}
-
-[data-theme="witch"] .ratro-line {
-    background-image: linear-gradient(rgba(181, 151, 204, 0.45), rgba(181, 151, 204, 0.45));
-}
-
-[data-theme="witch"] .ratro-card.is-down::after {
-    background: rgba(181, 151, 204, 0.45);
-}
-
-[data-theme="witch"] .ratro-card.is-down.is-right {
-    border-color: #7fbf6a;
-}
-
-[data-theme="witch"] .ratro-card.is-down.is-wrong {
-    border-color: #c46a5a;
-}
-
-[data-theme="witch"] .ratro-gap {
-    border: 2px dashed rgba(181, 151, 204, 0.45);
-    background: transparent;
-    color: #3d1c57;
-}
-
-[data-theme="witch"] .ratro-gap:hover,
-[data-theme="witch"] .ratro-gap:focus-visible {
-    border-color: var(--amber-bright);
-    background: rgba(181, 151, 204, 0.12);
-    outline: none;
-}
-
-[data-theme="witch"] .ratro-gap.is-open {
-    border-color: var(--amber-bright);
-    background: rgba(181, 151, 204, 0.16);
-}
-
-[data-theme="witch"] .ratro-slot-ghost {
-    border: 2px dashed #7fbf6a;
-    color: #7fbf6a;
-}
-
-[data-theme="witch"] .ratro-verdict {
-    background: var(--bg-panel);
-}
-
-[data-theme="witch"] .ratro-verdict-line {
-    color: var(--parchment-dim);
-}
-
-[data-theme="witch"] .ratro-verdict-line strong {
     color: var(--parchment);
 }
 

@@ -36,7 +36,7 @@ const { SECURITY_HEADERS } = require("./_headers");
    — it was written before _daily.js existed and its day is dealt from its own
    POINTS array — but "is this day still accepting scores" is a rule about the
    clock rather than about the game, and both games want the same answer. */
-const { dayIsOpen, daySeed } = require("./_daily");
+const { dayIsOpen, daySeed, isHallway } = require("./_daily");
 
 const COLLECTION = "guess_scores";
 const ROUNDS = 5;
@@ -104,13 +104,19 @@ async function answersFor(day) {
     if (answerCache.day === day && answerCache.names) return answerCache.names;
 
     const db = await getDb();
+    /* tags comes back for isHallway below, and for nothing else. Worth
+       saying because a projection is a list of what this function needs and
+       this one field is needed by a filter rather than by the answer. */
     const rooms = await db.collection("rooms")
-        .find({}, { projection: { id: 1, name: 1, gallery: 1 } })
+        .find({}, { projection: { id: 1, name: 1, tags: 1, gallery: 1 } })
         .toArray();
 
     const pool = [];
     rooms.forEach(room => {
         if (!room.name || !room.id) return;
+        // Exactly as js/guess.js builds its pool — a room dropped there and
+        // kept here would deal one set of five and score another.
+        if (isHallway(room)) return;
         (room.gallery || []).forEach(g => {
             if (g && g.image) pool.push({ maze: room, image: g.image });
         });

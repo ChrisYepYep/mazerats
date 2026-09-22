@@ -234,7 +234,7 @@
 
                 var token = localStorage.getItem(TOKEN_KEY);
                 if (!token) {
-                    location.replace("index.html");
+                    location.replace("/");
                     return;
                 }
 
@@ -250,7 +250,7 @@
                     .then(function (res) { return res.ok ? res.json() : null; })
                     .then(function (result) {
                         if (!result || !result.username) {
-                            location.replace("index.html");
+                            location.replace("/");
                             return;
                         }
                         applyAdminNotice();
@@ -261,7 +261,7 @@
                 // Reached only if the admin verify call itself fails. The
                 // state says this page is gated and the token could not be
                 // confirmed, so the answer is the same as no token at all.
-                location.replace("index.html");
+                location.replace("/");
             });
     })();
     </script>
@@ -278,26 +278,30 @@
     <meta name="theme-color" content="#120c07">
     <title>Maze Rats — A Habbo Hotel Maze Room Archive</title>
     <meta name="description" content="Maze Rats is a fan-run archive preserving the history of maze rooms across Habbo Hotel.">
-    <!-- This page answers to four addresses, not one. /guess, /ratrospect and
-         /odd are rewrites to this same file (see netlify.toml) so that a link
-         pasted into a channel keeps the address it was pasted as — the game
-         is opened afterwards, in script, off the path. That means all four
+    <!-- This page answers to three addresses, not one. /guess and /odd are
+         rewrites to this same file (see netlify.toml) so that a link pasted
+         into a channel keeps the address it was pasted as — the game is
+         opened afterwards, in script, off the path. That means all three
          serve BYTE-IDENTICAL markup, and a crawler has no way to tell they
-         are one page: it indexes four duplicates, picks whichever it likes as
-         the real one, and splits the credit for inbound links between them.
-         robots.txt deliberately invites crawling of /guess, so this is not
-         hypothetical. Naming the canonical here costs a visitor nothing —
-         every address still works exactly as before — and pools all four onto
-         one. index.html carries its own, pointing at "/".
+         are one page: it indexes three duplicates, picks whichever it likes
+         as the real one, and splits the credit for inbound links between
+         them. robots.txt deliberately invites crawling of /guess, so this is
+         not hypothetical. Naming the canonical here costs a visitor nothing —
+         every address still works exactly as before — and pools all three
+         onto one. index.html carries its own, pointing at "/".
 
-         FIVE addresses, in fact: /home and /home.html are both served, with
-         identical bytes, because Netlify answers a page at its clean name as
-         well as its filename. The clean one is named here. It is the address
-         the rest of the site is built out of — /fallinfurni, /privacy,
-         /wizard, /glyphs all canonicalise without the extension — and it is
-         the one somebody pastes. Pointing the canonical at the .html spelling
-         while every link and every share used the clean one meant the version
-         nobody sees was the version being credited. -->
+         It was four until Ratrospect was dropped; /ratrospect is gone from
+         netlify.toml with it, so that address now 404s like any other that
+         was never a page.
+
+         /home.html is no longer one of them. It used to serve these same
+         bytes — Netlify answers a page at its clean name as well as its
+         filename — which made it a fourth duplicate of the same document.
+         It now 301s to /home, so there is one URL rather than two and the
+         canonical below has nothing left to disambiguate. That clean
+         spelling is the address the rest of the site is built out of
+         (/fallinfurni, /privacy, /wizard, /glyphs all match) and the one
+         somebody pastes. -->
     <link rel="canonical" href="https://mazerats.net/home">
     <meta property="og:url" content="https://mazerats.net/home">
     <meta property="og:title" content="Maze Rats">
@@ -816,7 +820,7 @@
                              the formal one. -->
                         <div class="console-hashline" aria-hidden="true"></div>
                         <p class="console-blurb console-privacy-out">
-                            <a href="privacy.html" target="_blank" rel="noopener">Open the full policy as a page &rsaquo;</a>
+                            <a href="/privacy" target="_blank" rel="noopener">Open the full policy as a page &rsaquo;</a>
                         </p>
                     </div>
                     <div class="console-page" id="console-page-about" style="display:none;">
@@ -921,29 +925,17 @@
         </div>
     </div>
 
-    <!-- ---------- Ratrospect ----------
-
-         The archive in the order it happened: one card face up, five more to
-         slot into the line around it. Everything inside is built by
-         js/ratrospect.js, which is why the body is empty here — the board,
-         the results and the splash are the same box at different moments,
-         and markup for all three would be markup for two of them being
-         hidden at any time. -->
-    <div class="modal-overlay ratro-overlay" id="ratro-overlay">
-        <div class="modal daily-window ratro-window" id="ratro-window" role="dialog" aria-modal="true" aria-labelledby="ratro-title" tabindex="-1">
-            <div class="chrome-titlebar">
-                <h2 id="ratro-title">Ratrospect</h2>
-                <button class="chrome-close" id="ratro-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
-            </div>
-            <div class="chrome-frame daily-frame"><div class="daily-sheet daily-body ratro-body" id="ratro-body"></div></div>
-        </div>
-    </div>
-
     <!-- ---------- Odd One Out ----------
 
          Four rooms, three of them the same maze. Built by js/oddoneout.js,
-         which owns the board, the results and everything between — see the
-         note on the Ratrospect window above for why the body is empty. -->
+         which owns the board, the results and everything between, which is
+         why the body is empty here: the board, the results and the splash
+         are the same box at different moments, and markup for all three
+         would be markup for two of them being hidden at any time.
+
+         A third window stood above this one until Ratrospect was dropped.
+         Nothing of it is left — see js/daily-loader.js for the roster as it
+         now stands. -->
     <div class="modal-overlay odd-overlay" id="odd-overlay">
         <div class="modal daily-window odd-window" id="odd-window" role="dialog" aria-modal="true" aria-labelledby="odd-title" tabindex="-1">
             <div class="chrome-titlebar">

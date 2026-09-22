@@ -3,15 +3,28 @@
    ----------------------------------------------------------------------
    WHY
 
-   The three daily games are about 39KB gzipped between them, and home.html
-   loaded all three on every visit — including the large majority of visits
-   that are somebody looking at mazes and never opening a game at all. The
-   archive is what the site is for; the games are a thing you can also do.
-   They should not be on the critical path of the page that is.
+   The daily games were about 39KB gzipped between them, and home.html loaded
+   every one on every visit — including the large majority of visits that are
+   somebody looking at mazes and never opening a game at all. The archive is
+   what the site is for; the games are a thing you can also do. They should
+   not be on the critical path of the page that is.
+
+   THE ROSTER IS TWO, AND THIS TABLE IS THE ROSTER — a game missing from
+   here is a game the page cannot open.
+
+   It has been three twice. Ratrospect — the archive dealt as cards to be put
+   in date order — was dropped, and One Wall, which replaced it, was dropped
+   in turn: the puzzle was sound and the round was over in seconds, which is
+   a thing you only find out by playing it. Each time, everything the game
+   owned went with it — the file, the window in home.html, the rewrite, the
+   row in the side menu, its half of the score endpoint and its CSS.
+
+   That this is a flat table of six fields is why those removals were an
+   afternoon each rather than a week.
 
    js/daily.js STILL LOADS EAGERLY and is not part of this. It is the shared
-   day/seed/leaderboard layer the three games are built on, it is small, and
-   the side menu needs Daily.today() to say anything at all.
+   day/seed/leaderboard layer both games are built on, it is small, and the
+   side menu needs Daily.today() to say anything at all.
 
    ----------------------------------------------------------------------
    AND WHY NOTHING POPS
@@ -19,11 +32,11 @@
    Three things had to be true before this was worth doing.
 
    THE WINDOW IS THE RIGHT SIZE BEFORE THE GAME ARRIVES. It is, and not by
-   luck: all three windows are already in home.html's markup, and all three
-   size themselves from CSS rather than from content — .daily-sheet stands
-   at clamp(430px, 66vh, 560px) and .guess-deck has a fixed height of its
-   own. So the overlay opens at exactly the size it will be, empty, and the
-   game fills it in. Nothing resizes under the pointer.
+   luck: both windows are already in home.html's markup, and both size
+   themselves from CSS rather than from content — .daily-sheet stands at
+   clamp(430px, 66vh, 560px) and .guess-deck has a fixed height of its own.
+   So the overlay opens at exactly the size it will be, empty, and the game
+   fills it in. Nothing resizes under the pointer.
 
    THE MENU STILL KNOWS THE SCORE. The side menu says "3 of 5 rooms done"
    and it reads that from window.GuessStatus, which lives in the game file.
@@ -42,12 +55,12 @@
    ----------------------------------------------------------------------
    THE DEEP LINKS
 
-   /guess, /ratrospect and /odd are rewrites to home.html (see netlify.toml)
-   and each game opens itself when it sees its own path. That check is
-   inside the game file, which now might never load — so the path is read
-   here too, and the matching game is loaded at once rather than at idle.
-   Those three addresses get the old behaviour exactly: the game is on its
-   way before anything else is asked for. */
+   /guess and /odd are rewrites to home.html (see netlify.toml) and each game
+   opens itself when it sees its own path. That check is inside the game
+   file, which now might never load — so the path is read here too, and the
+   matching game is loaded at once rather than at idle. Both addresses get
+   the old behaviour exactly: the game is on its way before anything else is
+   asked for. */
 (function () {
     "use strict";
 
@@ -61,14 +74,6 @@
             // Where a "still loading" line can be put without disturbing
             // anything the game will later render into.
             body: "guess-deck"
-        },
-        ratrospect: {
-            src: "js/ratrospect.js?v=2",
-            open: "openRatrospect",
-            overlay: "ratro-overlay",
-            win: "ratro-window",
-            path: "/ratrospect",
-            body: "ratro-body"
         },
         odd: {
             src: "js/oddoneout.js?v=2",
@@ -189,10 +194,10 @@
 
     /* Has this visitor played a daily game before?
 
-       Any save under any of the three games, whatever day it is from — the
-       question is "is this someone who plays", not "have they played
-       today". Somebody who played last week should still find the menu
-       telling them the truth the moment they open it.
+       Any save under any game the site has ever run, whatever day it is
+       from — the question is "is this someone who plays", not "have they
+       played today". Somebody who played last week should still find the
+       menu telling them the truth the moment they open it.
 
        MATCHED BY PREFIX, NOT BY EXACT KEY, and that is the important part.
        Each game versions its own storage key and bumps it when the shape of
@@ -205,7 +210,14 @@
        Stats keys count as much as state keys, and matter more — a state key
        holds one day and a stats key holds the fact that there have been
        days at all. */
-    const SAVE_PREFIXES = ["mazerats_guess", "mazerats_ratrospect", "mazerats_odd"];
+    /* The two retired games are deliberately still in this list. It only
+       answers "has this browser played a daily before", and somebody who
+       played Ratrospect or One Wall last week is exactly such a person:
+       dropping their prefixes would quietly demote them to a first-timer and
+       leave their side menu dead until they opened a game by hand. Two
+       string comparisons, and they can come out once nobody is carrying
+       those keys any more. */
+    const SAVE_PREFIXES = ["mazerats_guess", "mazerats_ratrospect", "mazerats_odd", "mazerats_onewall"];
 
     function hasPlayedBefore() {
         try {

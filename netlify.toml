@@ -46,7 +46,7 @@
 # the featured-day salt to one file and not the other would have done
 # exactly that, on launch day.
 [build]
-  command = "npm install && node tools/check-daily-parity.js && (node tools/themes.js || true) && node tools/build-minify.js"
+  command = "npm install && node tools/check-daily-parity.js && node tools/check-changes.js && (node tools/themes.js || true) && node tools/build-minify.js"
   publish = "."
 
 [functions]
@@ -117,6 +117,101 @@
 # on purpose, rather than a bot working through a list — and the answer to
 # that one is the login throttle above, not the URL.
 
+# The archive itself, at a clean /home.
+#
+# It had no rule of its own and worked anyway, because Netlify serves a
+# pretty URL for every .html file it publishes — which is exactly why this
+# is worth writing down. The behaviour that made /home resolve is a default
+# somebody can turn off in a UI this repo does not contain, and the site now
+# depends on it: js/guess.js rewrites /guess to /home on open, the links all
+# point there, and the .html spelling below redirects to it. Stated here, the
+# address survives the setting.
+[[redirects]]
+  from = "/home"
+  to = "/home.html"
+  status = 200
+
+# --- and the filenames, sent to the clean address -----------------------
+#
+# Every page above answers to two URLs: the clean one and the .html one the
+# file is actually called. The rewrites only ever decided what a clean URL
+# SERVES; they said nothing about what happens when a visitor arrives at the
+# filename, and the site walked them there itself — the brand link in the
+# header of five pages was href="home.html", the landing page's own Enter
+# button was href="home.html", and home.html's gate bounced with
+# location.replace("index.html"). Click any of those and the address bar read
+# /home.html for the rest of the visit, which then got pasted into Discord.
+#
+# 301 rather than a rewrite, and that is the whole point: a rewrite would
+# serve the page at the filename and leave the filename in the bar, which is
+# the thing being fixed. The links themselves are also corrected (see the
+# commit) — this rule is for the ones already in the wild, in bookmarks and
+# in pasted messages, which no edit here can reach.
+#
+# It also settles the canonical question these pages each carry a <link> tag
+# about. Two URLs serving one document is a duplicate a crawler has to be
+# told about; one URL redirecting to the other is not a duplicate at all.
+#
+# NOT CHAINED, so the rewrites above are unaffected: Netlify resolves a
+# rewrite's target against the published files, and does not run the result
+# back through this table. /guess still serves home.html and still shows
+# /guess. Verified rather than assumed — see the note on the parity check.
+#
+# force = true ON EVERY ONE OF THEM, and without it none of these rules do
+# anything at all. A redirect whose `from` matches a file that really exists
+# is skipped by default — the file wins, silently — and every path here is by
+# definition a real file, since being the filename is the whole reason it
+# needs redirecting. Written without it first, and the local check showed
+# seven 200s where seven 301s were wanted, which is exactly how this fails:
+# not with an error, but by serving the page at the address being retired.
+[[redirects]]
+  from = "/index.html"
+  to = "/"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/home.html"
+  to = "/home"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/privacy.html"
+  to = "/privacy"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/fallinfurni.html"
+  to = "/fallinfurni"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/quiz.html"
+  to = "/quiz"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/wizard.html"
+  to = "/wizard"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/glyphs.html"
+  to = "/glyphs"
+  status = 301
+  force = true
+
+# warren.html is deliberately NOT in the list above. The panel's address is
+# the filename — /warren is the rewrite, warren.html is the file — and a
+# redirect from it would be a public confirmation that the page exists, at
+# the one address this whole section is written to keep quiet. It stays as
+# it is: two ways in, neither of them advertised.
+
 # Serves warren.html at the clean /warren URL (a rewrite, status 200, so
 # the address bar stays /warren rather than showing the filename).
 [[redirects]]
@@ -146,18 +241,21 @@
 # The other daily game, on the same terms and for the same reason: a result
 # posted in a channel is a link somebody follows, and it should open the
 # game rather than the archive with the game somewhere inside it.
-[[redirects]]
-  from = "/ratrospect"
-  to = "/home.html"
-  status = 200
-
+#
+# There was a /ratrospect here, and later a /onewall. Both games have been
+# dropped and both rules went with them rather than being pointed at the
+# archive as a courtesy: a rewrite that still served a page would leave the
+# address looking alive and open a homepage with no game on it, which is a
+# worse answer than the 404 an address that is no longer a page should give.
+# Nothing of either is left to link to — see js/daily-loader.js for the
+# roster.
 [[redirects]]
   from = "/odd"
   to = "/home.html"
   status = 200
 
 # Fallin' Furni. A page of its own rather than a window on the homepage, unlike
-# the three daily games above: it wants the whole viewport for the room, and it
+# the daily games above: it wants the whole viewport for the room, and it
 # is not a once-a-day puzzle whose result gets pasted into a channel.
 #
 # A rewrite for the same reason as /admin and /wizard — the address bar keeps

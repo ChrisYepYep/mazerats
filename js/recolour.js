@@ -163,7 +163,7 @@ window.Recolour = (function () {
         [/\.ff-|fallinfurni|\.room-/i,                "Fallin' Furni"],
         [/\.wiz-|wizard|atlas/i,                      "The Atlas"],
         [/\.qz-|quiz/i,                               "Quiz"],
-        [/\.guess|\.odd-|\.ratro|daily/i,             "Daily games"],
+        [/\.guess|\.odd-|daily/i,                     "Daily games"],
         [/\.console|\.header|\.site-header|\.brand/i, "Header & console"],
         [/\.tag\b|\.badge|pill/i,                     "Tags & badges"],
         [/table|\bth\b|\btd\b|\btr\b|row/i,           "Tables & rows"],
