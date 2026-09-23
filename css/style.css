@@ -10467,7 +10467,7 @@ body[data-page="admin"] #activity-sessions {
    highlight on its DARK surfaces; the side menu is a piece of cream card, and
    nothing from the dark palette can be dropped onto it unchecked.
 
-   The status now inherits .side-menu-state's #6b5231 like every other row,
+   The status now inherits .side-menu-state's own colour like every other row,
    which is both readable on this background and the point: the line says
    "Coming Soon" instead of a description, and the words are the signal. It
    does not need to shout to be noticed. */
@@ -10489,10 +10489,28 @@ body[data-page="admin"] #activity-sessions {
    opening rather than merely a way through to somewhere. Set in a brown
    rather than a grey: this card is warm, and a neutral grey on it reads as
    a mistake. */
+/* #4f3f25, and it was #6b5231 until it was measured against the card it is
+   printed on.
+
+   This panel's background is #c9ad84 and that brown gave 3.40:1 — under the
+   4.5:1 WCAG asks of normal text, and this IS normal text at 9.9px, nowhere
+   near the 18.66px where the relaxed threshold starts. It is also the second
+   line of every row of the only menu the site has, on every page, which
+   makes it about the worst place on the archive to be hard to read.
+
+   #4f3f25 measures 4.73:1 and is the same brown three steps down — dark
+   enough to pass, warm enough that the card still reads as one piece. The
+   obvious alternative, lightening the card instead, was not tried for a
+   reason: the panel's colour is shared with the spine that opens it and with
+   .modal-actions-panel, so moving it would repaint three things to fix one.
+
+   The themes carry their own value for this rule and are regenerated from
+   here (tools/themes.js), so each palette picks up the darker tone in its
+   own hue rather than keeping the old one. */
 .side-menu-state {
     font-size: 0.62rem;
     line-height: 1.3;
-    color: #6b5231;
+    color: #4f3f25;
 }
 
 .side-menu-badge {
