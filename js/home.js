@@ -1609,6 +1609,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const CHANGE_WORDS = {
         "imagery-added": "Added room imagery",
         "imagery": "Room imagery updated",
+        /* The thumbnail is the picture a record is LISTED under; the entrance
+           and finish are pictures of the maze. They shared a line until an
+           event whose promo image changed was told its entrance had. */
+        "thumb": "Thumbnail updated",
         "furni": "Updated furni listing",
         "markers": "Entrance or finish updated",
         "status": "Status changed",

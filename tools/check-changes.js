@@ -111,8 +111,26 @@ check("links",
 check("dates",
     describe(room(), { ...room(), added: "2024-06-24" }), ["dates"]);
 
-check("thumb/entrance/finish are markers, not imagery",
-    describe(room(), { ...room(), thumb: "new.png" }), ["markers"]);
+/* The thumbnail is its own group, separate from the entrance and finish.
+   It shared one with them until an event whose promo image changed was
+   reported as "Entrance or finish updated" — see the note in _changes.js. */
+check("the thumbnail is its own group",
+    describe(room(), { ...room(), thumb: "new.png" }), ["thumb"]);
+
+check("the entrance is markers, not the thumbnail",
+    describe(room(), { ...room(), entrance: { image: "b.png", label: "Start", oldVersions: [] } }),
+    ["markers"]);
+
+check("the finish is markers too",
+    describe(room(), { ...room(), finish: { image: "y.png", label: "Done", oldVersions: [] } }),
+    ["markers"]);
+
+check("thumbnail and entrance together report both, thumbnail first",
+    describe(room(), {
+        ...room(),
+        thumb: "new.png",
+        finish: { image: "y.png", label: "Done", oldVersions: [] },
+    }), ["thumb", "markers"]);
 
 // ---------- imagery: grew, or merely changed ----------
 
@@ -172,6 +190,70 @@ check("event host is text", describe(evt(), { ...evt(), host: "markeh" }), ["tex
 check("event date is dates", describe(evt(), { ...evt(), date: "2026-10-04T08:00:00.000Z" }), ["dates"]);
 check("event article is links", describe(evt(), { ...evt(), article: "<p>x</p>" }), ["links"]);
 check("event ecSeason is details", describe(evt(), { ...evt(), ecSeason: "s2" }), ["details"]);
+/* The case this split exists for: every event has a thumbnail and only a
+   few have an entrance, so an event's picture changing must not be
+   reported as its entrance changing. mazerats.net Launch said exactly
+   that before the groups were separated. */
+check("an event whose promo image changed says thumbnail, not entrance",
+    describe(evt(), { ...evt(), thumb: "promo-v2.png" }), ["thumb"]);
+
+// ---------- accumulating across several saves in one day ----------
+//
+// The case this exists for, reported from the live archive: adding room
+// images is one save and the furni scan that follows is another, so the
+// second replaced the first and the day's entry said only "Updated furni
+// listing" for an afternoon that had also added pictures.
+
+const TODAY = new Date().toISOString().slice(0, 10) + "T09:00:00.000Z";
+const YESTERDAY = new Date(Date.now() - 86400000).toISOString().slice(0, 10) + "T09:00:00.000Z";
+
+// The record as it stands after save one: images added, stamped today.
+const afterImages = () => ({ ...room(), changes: ["imagery-added"], updatedAt: TODAY });
+
+check("a second save the same day keeps the first save's groups",
+    describe(afterImages(), { ...room(), furni: { "r1.png": [[0, "x.png"]] } }),
+    ["imagery-added", "furni"]);
+
+check("and a third joins them, still in GROUPS order",
+    describe({ ...room(), changes: ["imagery-added", "furni"], updatedAt: TODAY },
+        { ...room(), status: "closed" }),
+    ["imagery-added", "furni", "status"]);
+
+check("a save the NEXT day starts a fresh list",
+    describe({ ...room(), changes: ["imagery-added", "furni"], updatedAt: YESTERDAY },
+        { ...room(), status: "closed" }),
+    ["status"]);
+
+check("a save that changes nothing keeps the day's list",
+    describe(afterImages(), { ...room() }), ["imagery-added"]);
+
+check("a no-op the next day clears it",
+    describe({ ...room(), changes: ["furni"], updatedAt: YESTERDAY }, { ...room() }), []);
+
+check("added outranks updated when both land on one day",
+    describe({ ...room(), changes: ["imagery-added"], updatedAt: TODAY },
+        { ...room(), gallery: [{ image: "swapped.png", label: "X", oldVersions: [] }] }),
+    ["imagery-added"]);
+
+check("a stored list with no usable stamp does not carry over",
+    describe({ ...room(), changes: ["furni"], updatedAt: "" }, { ...room(), status: "closed" }),
+    ["status"]);
+
+check("a junk stamp does not carry over either",
+    describe({ ...room(), changes: ["furni"], updatedAt: "not a date" }, { ...room(), status: "closed" }),
+    ["status"]);
+
+check("a stored list that is not an array is ignored",
+    describe({ ...room(), changes: "furni", updatedAt: TODAY }, { ...room(), status: "closed" }),
+    ["status"]);
+
+check("duplicates across saves are not repeated",
+    describe({ ...room(), changes: ["furni"], updatedAt: TODAY },
+        { ...room(), furni: { "r1.png": [[0, "y.png"]] } }), ["furni"]);
+
+check("details stays last even when carried over",
+    describe({ ...room(), changes: ["details"], updatedAt: TODAY },
+        { ...room(), description: "new" }), ["text", "details"]);
 
 // ---------- it must never throw ----------
 

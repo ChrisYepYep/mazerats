@@ -56,8 +56,23 @@
    never appear in the other's body. */
 const GROUPS = [
     { key: "imagery",    fields: ["gallery", "relatedImages"] },
+    /* THE THUMBNAIL IS ITS OWN GROUP, and used not to be — it sat with the
+       entrance and the finish under "markers", which reported every one of
+       them as "Entrance or finish updated".
+
+       That was wrong for most records it fired on. All 21 events carry a
+       thumbnail and only 4 have an entrance or a finish, so an event whose
+       promo image changed was told its entrance had — and mazerats.net
+       Launch said exactly that in the log. A maze that only had its
+       thumbnail replaced said it too.
+
+       They are genuinely different things: the thumbnail is the picture the
+       archive lists a record UNDER, and the entrance and finish are pictures
+       of the maze itself. Splitting them costs one row here and one line of
+       wording in js/home.js. */
+    { key: "thumb",      fields: ["thumb"] },
     { key: "furni",      fields: ["furni"] },
-    { key: "markers",    fields: ["thumb", "entrance", "finish"] },
+    { key: "markers",    fields: ["entrance", "finish"] },
     { key: "status",     fields: ["status"] },
     { key: "difficulty", fields: ["difficulty"] },
     { key: "tags",       fields: ["tags"] },
@@ -163,7 +178,13 @@ function describe(before, update) {
             hit.add(FIELD_GROUP.get(field) || CATCH_ALL);
         });
 
-        if (!hit.size) return [];
+        /* A save that changed nothing KEEPS the day's list rather than
+           clearing it. The admin form writes the whole record every time, so
+           re-opening a maze and pressing Save without touching anything is an
+           ordinary thing to do — and it must not be able to erase the
+           afternoon's work from the log. Nothing changed, so the day's story
+           is exactly what it already was. */
+        if (!hit.size) return order(union(new Set(), carriedOver(before)));
 
         /* "Added" only when there are genuinely MORE pictures than before.
            A gallery that gained two shots and lost one is a gallery that was
@@ -177,20 +198,74 @@ function describe(before, update) {
            against the stored record's twenty and call a save that added one
            a removal of eighteen. */
         const after = Object.assign({}, before, update);
-        const out = [];
-        GROUPS.forEach(g => {
-            if (!hit.has(g.key)) return;
-            out.push(g.key === "imagery" && pictureCount(after) > pictureCount(before)
-                ? "imagery-added"
-                : g.key);
-        });
-        if (hit.has(CATCH_ALL) && out.indexOf(CATCH_ALL) === -1) out.push(CATCH_ALL);
+        if (hit.has("imagery") && pictureCount(after) > pictureCount(before)) {
+            hit.delete("imagery");
+            hit.add("imagery-added");
+        }
 
-        return out;
+        return order(union(hit, carriedOver(before)));
     } catch (e) {
         // A changelog is never worth a failed save. See the header.
         return null;
     }
+}
+
+/* ---------- one record, one day, one list ----------
+ *
+ * WHAT THIS IS FOR. A save used to replace the change list outright, so the
+ * record described the LAST write and nothing before it. That is the wrong
+ * shape for where it is read: What's New groups by day and shows a record
+ * once under that day, so a maze saved three times on Tuesday got one line
+ * describing only the third save.
+ *
+ * It showed up the first week. Adding room images to a maze is one save; the
+ * furni scan that follows is another, because the scan runs against images
+ * that have to be stored before it can read them. So the imagery was
+ * recorded, then immediately overwritten, and the day's entry said only
+ * "Updated furni listing" for an afternoon that had plainly also added
+ * pictures.
+ *
+ * SO IT ACCUMULATES WITHIN THE DAY and starts fresh on a new one — the same
+ * boundary the log itself groups on, which is what makes the line and the
+ * heading it sits under describe the same span of time. A record edited
+ * across midnight gets a new list, because it gets a new heading too.
+ *
+ * The day is UTC, as every other day boundary on this site is (see
+ * js/daily.js), so an evening's work does not split in two for one reader
+ * and not another.
+ */
+function carriedOver(before) {
+    const stored = Array.isArray(before.changes) ? before.changes : [];
+    if (!stored.length) return [];
+
+    const last = String(before.updatedAt || "").slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    // A stamp that is not a date at all is treated as another day: the
+    // cautious answer is a fresh list, not a list that never empties.
+    return /^\d{4}-\d{2}-\d{2}$/.test(last) && last === today ? stored : [];
+}
+
+function union(hit, stored) {
+    const all = new Set(hit);
+    stored.forEach(k => all.add(k));
+    /* "Added" outranks "updated" for the day. A save that added pictures and
+       a later one that reordered them is, taken together, a day on which
+       pictures were added — and the two keys are the same group, so keeping
+       both would say it twice. */
+    if (all.has("imagery-added")) all.delete("imagery");
+    return all;
+}
+
+// GROUPS order, with the catch-all last. Sorting here rather than at each
+// call site means a merged list reads the same as a fresh one.
+function order(keys) {
+    const out = [];
+    GROUPS.forEach(g => {
+        if (keys.has(g.key)) out.push(g.key);
+        else if (g.key === "imagery" && keys.has("imagery-added")) out.push("imagery-added");
+    });
+    if (keys.has(CATCH_ALL) && out.indexOf(CATCH_ALL) === -1) out.push(CATCH_ALL);
+    return out;
 }
 
 module.exports = { describe, GROUPS, canon };
