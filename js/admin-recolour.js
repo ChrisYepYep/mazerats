@@ -357,7 +357,7 @@ window.AdminRecolour = (function () {
     async function api(method, body, q) {
         const r = await fetch(API + (q || ""), {
             method,
-            headers: { "Content-Type": "application/json", "x-admin-token": token },
+            headers: { "Content-Type": "application/json", "x-admin-token": currentToken() },
             body: body ? JSON.stringify(body) : undefined
         });
         const data = await r.json().catch(() => ({}));
@@ -432,11 +432,48 @@ window.AdminRecolour = (function () {
     }
 
     /* The panel is one page and a palette has to survive the other six, so
-       the preview travels in sessionStorage and the site picks it up. */
+       the preview is handed to a new tab, which keeps it for itself.
+
+       It used to be written to sessionStorage here and the tab opened
+       "noopener" — but a noopener tab starts with an EMPTY sessionStorage,
+       so the preview never arrived; and the key stayed in THIS tab, where
+       every page opened afterwards wore the unsaved palette until the tab was
+       closed. Now it goes through localStorage (the one store the new tab
+       can see) as a one-shot handoff: a token that only the opened address
+       carries, and an expiry a few seconds out. js/palette-wear.js takes it,
+       deletes it, and moves it into the preview tab's own sessionStorage.
+       Nothing is written to this tab's storage at all.
+
+       "noopener" is kept: the preview has no business holding a handle back
+       to the signed-in admin panel. */
+    const HANDOFF_KEY = "mazerats_palette_preview_handoff";
+    function previewToken() {
+        try {
+            const bytes = crypto.getRandomValues(new Uint8Array(12));
+            return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+        } catch (e) {
+            return (Date.now().toString(36) + Math.random().toString(36).slice(2)).slice(0, 24);
+        }
+    }
     function previewOnSite() {
         try {
-            sessionStorage.setItem("mazerats_palette_preview", JSON.stringify(state.palette));
-            window.open("/home.html?palette=preview", "_blank", "noopener");
+            // Sweeps up after the old sessionStorage preview in this tab, if
+            // it is still carrying one from before this change.
+            try { sessionStorage.removeItem("mazerats_palette_preview"); } catch (e) {}
+            // Not `token`: that name is the session token, one scope up.
+            const handoff = previewToken();
+            localStorage.setItem(HANDOFF_KEY, JSON.stringify({
+                token: handoff,
+                // Long enough for a cold function start behind the page's own
+                // gate; short enough that a blocked pop-up does not leave a
+                // palette waiting for some later tab. palette-wear.js also
+                // sweeps an expired one whenever any page loads.
+                expires: Date.now() + 30000,
+                palette: state.palette
+            }));
+            // /home, not /home.html: the .html address is a 301 to /home now
+            // (see netlify.toml), and there is no reason to spend a hop.
+            window.open("/home?palette=preview#palette-preview=" + handoff, "_blank", "noopener");
             say("Opened the site with this palette on. It lasts for that tab only.", "good");
         } catch (e) { say("Could not start a preview — private mode?", "bad"); }
     }
@@ -480,6 +517,16 @@ window.AdminRecolour = (function () {
     }
 
     /* --------------------------------------------------------------- open */
+
+    /* The session token, read at the moment of each request. js/admin.js
+       now hands over a function (as it does for the atlas) rather than the
+       token itself: the editor is mounted once for the life of the page, so
+       a copy taken at mount was the OLD token after signing back in, and
+       every save failed until the page was reloaded. A plain string is
+       still accepted, for any caller that has one. */
+    function currentToken() {
+        return typeof token === "function" ? (token() || "") : (token || "");
+    }
 
     async function mount(container, adminToken) {
         shell = container;

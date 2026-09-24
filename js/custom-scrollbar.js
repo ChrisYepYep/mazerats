@@ -1,5 +1,5 @@
 /* Custom pixel-art scrollbar for .home-results/.room-desc-box (homepage),
-   #rooms-list/#events-list/#admins-list (admin page), #console-screen-scroll
+   #rooms-list/#events-list/#admins-list/#contributors-list (admin page), #console-screen-scroll
    (console modal) and .gallery-strip (the maze modal's thumbnail slider) —
    see css/style.css's .custom-scrollbar-* rules for why this exists as real
    DOM elements instead of ::-webkit-scrollbar-track/-thumb/-button image
@@ -46,7 +46,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    document.querySelectorAll(".home-results, .room-desc-box, #rooms-list, #events-list, #admins-list, #console-screen-scroll, #glyph-palette-list")
+    document.querySelectorAll(".home-results, .room-desc-box, #rooms-list, #events-list, #admins-list, #contributors-list, #console-screen-scroll, #glyph-palette-list")
         .forEach(el => setUp(el, "y"));
 
     // The maze modal's thumbnail strip (and the old-versions strip, which is

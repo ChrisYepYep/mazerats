@@ -84,6 +84,21 @@ window.WizardGif = (function () {
        Outside a recording there is no cache and every read is live, which is
        what the preview and any one-off render want. */
     let styleCache = null;
+    /* The blob URLs made for pen-stroke SVGs during a recording (see the
+       trails in renderStill). Each has to outlive its image for as long as
+       the image is being stamped, so they are revoked together when the
+       recording ends - and taken out of the image cache with them, which
+       otherwise kept a promise per dead URL for the life of the page. */
+    let recordingUrls = [];
+
+    function endRecording() {
+        styleCache = null;
+        for (const url of recordingUrls) {
+            URL.revokeObjectURL(url);
+            cache.delete(url);
+        }
+        recordingUrls = [];
+    }
 
     function infoFor(el) {
         if (styleCache) {
@@ -447,8 +462,8 @@ window.WizardGif = (function () {
                     // running, and let go with the cache when it ends. The
                     // blob URL has to outlive the image, so it is not revoked
                     // until then either.
-                    if (styleCache) styleCache.set(svg, img);
-                    else URL.revokeObjectURL(url);
+                    if (styleCache) { styleCache.set(svg, img); recordingUrls.push(url); }
+                    else { URL.revokeObjectURL(url); cache.delete(url); }
                 } catch (e) {}
             }
             ctx.restore();
@@ -541,40 +556,71 @@ window.WizardGif = (function () {
            took about a second a frame. */
         styleCache = new Map();
 
-        const out = document.createElement("canvas");
-        const gif = window.GifEncode.begin(width, height, { delay: Math.round(100 / fps) });
-        const done = [];
+        /* ONE FRAME'S PIXELS AT A TIME.
 
-        for (let i = 0; i < shots.length; i++) {
-            const shot = shots[i];
-            const atZoom = zoomForShot(stage, shot);
-            await renderStill(stage, canvas, { shot, width, height, atZoom, target: out });
-            const frame = out.getContext("2d").getImageData(0, 0, width, height);
+           This used to draw every frame, keep every frame's ImageData in an
+           array, and only then encode - and an ImageData is four bytes a
+           pixel. Twenty seconds at 25fps at 900px wide is five hundred frames
+           of 2.7MB: well over a gigabyte held at once, which is a tab that
+           dies rather than a GIF that is slow.
+
+           The palette is what forced it: the GIF's colour table goes in the
+           header, so it has to be learnt from the frames before any frame can
+           be written. So it is done in two passes over the SHOTS rather than
+           one over stored pixels. The first draws only the frames the table
+           is learnt from (every fourth, and the last) and lets each go; the
+           second draws every frame and hands it straight to the encoder,
+           which keeps only its compressed bytes (see write() in
+           js/gif-encode.js). Drawing a quarter of the frames twice is the
+           price, and it is a small one next to the encode.
+
+           try/finally so a frame that throws half-way still lets go of the
+           measurements and the blob URLs - they were left behind on failure
+           before, and the next recording then drew from a stale cache. */
+        try {
+            const out = document.createElement("canvas");
+            const gif = window.GifEncode.begin(width, height, { delay: Math.round(100 / fps) });
+            const ctx = out.getContext("2d", { willReadFrequently: true });
+            const draw = async i => {
+                const shot = shots[i];
+                await renderStill(stage, canvas, { shot, width, height, atZoom: zoomForShot(stage, shot), target: out });
+                return ctx.getImageData(0, 0, width, height);
+            };
+
             /* Every fourth frame is enough to learn the colours: consecutive
                frames of a zoom are the same drawing at a slightly different
                size. The first and last are always studied, because those two
                are where a colour that appears nowhere else — the far end of a
                fade — is most likely to live. */
-            if (i % 4 === 0 || i === shots.length - 1) gif.study(frame);
-            done.push(frame);
-            if (onProgress) onProgress(0.7 * ((i + 1) / shots.length), "Drawing frame " + (i + 1));
-            await new Promise(r => setTimeout(r));
-        }
-
-        for (let i = 0; i < done.length; i++) {
-            gif.write(done[i]);
-            if (i % 4 === 0) {
-                if (onProgress) onProgress(0.7 + 0.3 * (i / done.length), "Encoding");
+            const studied = shots.map((_, i) => i).filter(i => i % 4 === 0 || i === shots.length - 1);
+            for (let k = 0; k < studied.length; k++) {
+                gif.study(await draw(studied[k]));
+                if (onProgress) onProgress(0.2 * ((k + 1) / studied.length), "Learning the colours");
                 await new Promise(r => setTimeout(r));
             }
+
+            for (let i = 0; i < shots.length; i++) {
+                gif.write(await draw(i));
+                if (onProgress) onProgress(0.2 + 0.8 * ((i + 1) / shots.length), "Frame " + (i + 1));
+                await new Promise(r => setTimeout(r));
+            }
+            if (onProgress) onProgress(1, "Done");
+            return gif.finish();
+        } finally {
+            // Let the measurements go: the next recording may be of a map
+            // that has been edited since, and a stale box is a footprint drawn
+            // where it used to be.
+            endRecording();
         }
-        if (onProgress) onProgress(1, "Done");
-        // Let the measurements go: the next recording may be of a map that
-        // has been edited since, and a stale box is a footprint drawn where
-        // it used to be.
-        styleCache = null;
-        return gif.finish();
     }
+
+    /* THE MOST FRAMES ONE GIF WILL BE MADE OF. Even encoded as they go, a
+       GIF's frames are all in memory until it is saved, and past about this
+       many the file is too big to paste anywhere it would be seen. When the
+       seconds and the frame rate asked for come to more, the rate is lowered
+       to fit and the panel says so - the length is the thing a person chose
+       on purpose; the smoothness is the thing they will not miss. */
+    const MAX_FRAMES = 240;
 
     // ---------- the panel in the editor ----------
 
@@ -597,8 +643,35 @@ window.WizardGif = (function () {
         let to = null;
         let madeUrl = null;
 
-        const frameCount = () => Math.max(2, Math.round(Number($("wiz-gif-seconds").value || 5) * Number($("wiz-gif-fps").value || 12)));
-        const outWidth = () => Math.max(240, Math.min(900, Math.round(Number($("wiz-gif-width").value || 480))));
+        /* A field's value held to the min and max the field itself declares.
+           A number input's max only limits its arrows: typing 90 into a box
+           that says max="25" gives 90, and 90fps is what got drawn. */
+        function bounded(id, fallback) {
+            const el = $(id);
+            let v = Number(el.value);
+            if (!Number.isFinite(v) || el.value === "") v = fallback;
+            const lo = el.min === "" ? -Infinity : Number(el.min);
+            const hi = el.max === "" ? Infinity : Number(el.max);
+            return Math.min(hi, Math.max(lo, v));
+        }
+
+        // What will actually be made: the seconds asked for, and the rate
+        // lowered if the two together come to more than MAX_FRAMES.
+        function plan() {
+            const seconds = bounded("wiz-gif-seconds", 5);
+            const asked = bounded("wiz-gif-fps", 12);
+            const fps = seconds * asked > MAX_FRAMES
+                ? Math.max(1, Math.floor(MAX_FRAMES / seconds))
+                : asked;
+            const frames = Math.max(2, Math.min(MAX_FRAMES, Math.round(seconds * fps)));
+            const note = fps !== asked
+                ? ` Capped at ${MAX_FRAMES} frames, so ${fps}fps rather than ${asked}.`
+                : "";
+            return { seconds, fps, frames, note };
+        }
+
+        const frameCount = () => plan().frames;
+        const outWidth = () => Math.round(bounded("wiz-gif-width", 480));
         const outHeight = () => {
             const box = stage.getBoundingClientRect();
             return Math.round(outWidth() * (box.height / box.width));
@@ -627,9 +700,10 @@ window.WizardGif = (function () {
                pixels. It is an estimate and says so — a run that spends
                longer on the close, busy end of the map will beat it, and one
                held on empty parchment will come in under. */
-            const bytes = outWidth() * outHeight() * frameCount() * 0.16;
+            const p = plan();
+            const bytes = outWidth() * outHeight() * p.frames * 0.16;
             const mb = bytes / 1048576;
-            status.textContent = `${frameCount()} frames, about ${mb < 1 ? Math.round(bytes / 1024) + "KB" : mb.toFixed(1) + "MB"}.`;
+            status.textContent = `${p.frames} frames, about ${mb < 1 ? Math.round(bytes / 1024) + "KB" : mb.toFixed(1) + "MB"}.${p.note}`;
             make.disabled = false;
         }
 
@@ -647,6 +721,15 @@ window.WizardGif = (function () {
 
         ["wiz-gif-width", "wiz-gif-seconds", "wiz-gif-fps"].forEach(id => {
             $(id).addEventListener("input", () => { if (from && to) estimate(); });
+            /* And on leaving the box, the number in it is put back inside its
+               limits, so what the field says is what will be made. Not on
+               every keystroke: typing "12" passes through "1" on the way. */
+            $(id).addEventListener("change", () => {
+                const el = $(id);
+                const v = bounded(id, Number(el.defaultValue) || 0);
+                if (String(v) !== el.value) el.value = String(v);
+                if (from && to) estimate();
+            });
         });
 
         make.addEventListener("click", async () => {
@@ -654,11 +737,12 @@ window.WizardGif = (function () {
             make.disabled = true;
             result.hidden = true;
             try {
+                const p = plan();
                 const blob = await record({
                     stage, canvas, from, to,
                     width: outWidth(), height: outHeight(),
-                    frames: frameCount(), fps: Number($("wiz-gif-fps").value || 12),
-                    onProgress: (p, label) => { status.textContent = `${label}… ${Math.round(p * 100)}%`; }
+                    frames: p.frames, fps: p.fps,
+                    onProgress: (at, label) => { status.textContent = `${label}… ${Math.round(at * 100)}%`; }
                 });
                 if (madeUrl) URL.revokeObjectURL(madeUrl);
                 madeUrl = URL.createObjectURL(blob);
@@ -667,7 +751,7 @@ window.WizardGif = (function () {
                 const kb = blob.size / 1024;
                 sizeOut.textContent = kb > 1024 ? (kb / 1024).toFixed(1) + "MB" : Math.round(kb) + "KB";
                 result.hidden = false;
-                status.textContent = `${frameCount()} frames, made.`;
+                status.textContent = `${frameCount()} frames, made.${plan().note}`;
             } catch (err) {
                 status.textContent = "Could not make it — " + (err.message || "try again.");
             }

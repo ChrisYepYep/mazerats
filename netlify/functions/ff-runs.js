@@ -70,7 +70,7 @@
    whatever it is handed into a database is a different problem entirely. */
 
 const { getDb } = require("./_db");
-const { isAuthorized, UNAUTHORIZED } = require("./_auth");
+const { hasAccount, UNAUTHORIZED } = require("./_auth");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 
@@ -88,6 +88,40 @@ const KEEP_DAYS = 180;
    count — 200 is far past anything reachable and still bounded. */
 const MAX_LEVELS = 200;
 const MAX_NAME = 80;
+
+/* How many runs one address may record in a window. This takes a POST from
+   anybody, unsigned, and every one is a document kept for six months — so
+   without a ceiling a loop in a terminal could fill the collection and
+   drown the panel's charts in invented rounds. A real round of Fallin'
+   Furni takes minutes; thirty in ten minutes is a household playing flat
+   out, with room to spare.
+
+   Counted on the `ip` each row already carries, so this adds nothing to
+   what is stored (see the note on addresses above). A request with no
+   address is not counted — the same choice contact.js makes, and for the
+   same reason: a shared stand-in would let strangers throttle each other. */
+const RATE_LIMIT_COUNT = 30;
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+
+/* The database prunes the log itself, as track.js has it do for site
+   events: a TTL index on `at` rather than a deleteMany on every write, which
+   was a collection scan per round played until an index happened to cover
+   it. createIndex is a no-op when the index already exists, so this is
+   asked once per warm container. The second index is what the rate limit
+   counts on. If the TTL index cannot be made — an old index on `at` with
+   different options would refuse it — the manual prune stays in use, so
+   the retention promise never quietly lapses. */
+let indexState = null;          // null = not yet tried; true/false = TTL in place
+async function ensureIndexes(db) {
+    if (indexState !== null) return indexState;
+    const col = db.collection(COLLECTION);
+    let ttl = true;
+    await col.createIndex({ at: 1 }, { expireAfterSeconds: KEEP_DAYS * 24 * 60 * 60 })
+        .catch(e => { ttl = false; console.warn("ff-runs: TTL index not created -", e.message); });
+    await col.createIndex({ ip: 1, at: -1 }).catch(() => {});
+    indexState = ttl;
+    return indexState;
+}
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -171,7 +205,8 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("ff-runs: database connection failed", e);
+        return json(503, { error: "Database connection failed" });
     }
 
     if (event.httpMethod === "POST") return record(db, event);
@@ -258,15 +293,30 @@ async function record(db, event) {
         v: 1
     };
 
-    await db.collection(COLLECTION).insertOne(doc);
+    try {
+        const ttl = await ensureIndexes(db);
+        const col = db.collection(COLLECTION);
+        if (doc.ip) {
+            const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
+            const recent = await col.countDocuments({ ip: doc.ip, at: { $gte: since } },
+                { limit: RATE_LIMIT_COUNT });
+            if (recent >= RATE_LIMIT_COUNT) {
+                return json(429, { recorded: false, reason: "rate" });
+            }
+        }
+        await col.insertOne(doc);
 
-    /* Pruned opportunistically rather than on a schedule, the way the rest of
-       this site's logs are: a site with no traffic writes nothing and needs no
-       cleanup, and one with traffic cleans itself every time somebody plays.
-       Failure here must not fail the write — the run is already saved and the
-       player is owed an answer. */
-    const cutoff = new Date(Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000);
-    db.collection(COLLECTION).deleteMany({ at: { $lt: cutoff } }).catch(() => {});
+        /* The fallback prune, only while the TTL index above is missing.
+           Failure here must not fail the write — the run is already saved
+           and the player is owed an answer. */
+        if (!ttl) {
+            const cutoff = new Date(Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000);
+            col.deleteMany({ at: { $lt: cutoff } }).catch(() => {});
+        }
+    } catch (e) {
+        console.error("ff-runs: could not record a run", e);
+        return json(503, { recorded: false, reason: "unavailable" });
+    }
 
     return json(200, { recorded: true });
 }
@@ -302,7 +352,9 @@ const rank = (map, limit) => [...map].sort((a, b) => b[1] - a[1])
     .slice(0, limit).map(([label, n]) => ({ label, n }));
 
 async function report(db, event) {
-    if (!isAuthorized(event)) return UNAUTHORIZED;
+    // hasAccount rather than isAuthorized: this lists addresses, so a
+    // deleted account's leftover token should not keep reading it.
+    if (!(await hasAccount(event))) return UNAUTHORIZED;
 
     const asked = ((event.queryStringParameters || {}).range || "30d");
     const range = RANGES[asked] ? asked : "30d";

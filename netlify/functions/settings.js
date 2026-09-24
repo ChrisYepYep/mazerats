@@ -18,7 +18,6 @@ const json = (statusCode, data) => ({
 
 const VALID_STATES = ["enter", "coming-soon", "maintenance"];
 const DEFAULT_STATE = "enter";
-const DEFAULT_ABOUT_TEXT = "";
 
 /* FALLIN' FURNI'S OWN STATE, separate from the site's.
 
@@ -113,12 +112,19 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("settings: database connection failed", e);
+        return json(500, { error: "Database connection failed" });
     }
     const settings = db.collection("settings");
 
     if (event.httpMethod === "GET") {
-        const doc = await settings.findOne({ _id: "site" });
+        let doc;
+        try {
+            doc = await settings.findOne({ _id: "site" });
+        } catch (e) {
+            console.error("settings: read failed", e);
+            return json(503, { error: "Settings could not be read just now." });
+        }
         /* Through the edge, on the short gate policy — see GATE_CDN_CACHE in
            _cache.js for why this one is twenty seconds and not sixty. This
            is the most-requested endpoint on the site by a wide margin (every
@@ -126,7 +132,6 @@ exports.handler = async (event) => {
            it was the only hot public read with no cache header at all. */
         return cachedJson(event, {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
-            aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT,
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
             fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
             theme: (doc && doc.theme) || DEFAULT_THEME,
@@ -190,9 +195,6 @@ exports.handler = async (event) => {
             }
             update.launchAt = when;
         }
-        if (body.aboutText !== undefined) {
-            update.aboutText = String(body.aboutText);
-        }
         if (body.lobbyFurni !== undefined) {
             if (!Array.isArray(body.lobbyFurni)) {
                 return json(400, { error: "lobbyFurni must be an array of furni class names" });
@@ -223,7 +225,6 @@ exports.handler = async (event) => {
         const doc = await settings.findOne({ _id: "site" });
         return json(200, {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
-            aboutText: (doc && doc.aboutText) || DEFAULT_ABOUT_TEXT,
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
             fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
             theme: (doc && doc.theme) || DEFAULT_THEME

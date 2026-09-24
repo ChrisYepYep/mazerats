@@ -165,7 +165,7 @@ let checked = 0;
 
 for (const day of [...days].sort()) {
     // The browser's daySeed reads today() internally, so the clock is moved
-    // rather than the argument passed — the same path the games take.
+    // rather than the argument passed.
     const mine = asOf(day, () => SHAPES.map(parts => browser.daySeed(...parts)));
     const theirs = SHAPES.map(parts => server.daySeed(day, ...parts));
 
@@ -175,6 +175,26 @@ for (const day of [...days].sort()) {
             fail(`${day} ${JSON.stringify(parts)} — browser ${mine[i]} vs server ${theirs[i]}`);
         }
     });
+
+    /* daySeedFor is the path the games actually take now: they pin the day
+       they started on and deal from it, so a round crossing midnight is not
+       re-dealt (see day() in js/oddoneout.js and picks() in js/guess.js).
+       It is checked with the clock deliberately set to a DIFFERENT day, so
+       an implementation that quietly read today() instead of its argument
+       would fail here rather than pass by coincidence. */
+    if (typeof browser.daySeedFor !== "function") {
+        fail("js/daily.js did not publish window.Daily.daySeedFor");
+    } else {
+        const elsewhere = day === "2026-01-01" ? "2026-06-15" : "2026-01-01";
+        const pinned = asOf(elsewhere, () => SHAPES.map(parts => browser.daySeedFor(day, ...parts)));
+        SHAPES.forEach((parts, i) => {
+            checked++;
+            if (pinned[i] !== theirs[i]) {
+                fail(`${day} ${JSON.stringify(parts)} via daySeedFor (clock on ${elsewhere}) — ` +
+                    `browser ${pinned[i]} vs server ${theirs[i]}`);
+            }
+        });
+    }
 
     // Sanity: the fake clock must actually be reaching the sandbox, or
     // every comparison above is comparing the same day with itself and
@@ -191,6 +211,42 @@ for (const day of [...days].sort()) {
         if (bFeatured !== server.isFeaturedDay(day)) {
             fail(`${day} — isFeaturedDay disagrees (browser ${bFeatured}, server ${server.isFeaturedDay(day)})`);
         }
+    }
+}
+
+/* ---- 3. which mazes a day may deal from ----
+
+   Both sides leave out a maze catalogued on or after the day being dealt
+   (existedBefore), so a maze added at lunchtime joins tomorrow's pool
+   instead of re-dealing today's. Like daySeed it is written twice, and a
+   maze kept on one side and dropped on the other is the two sides dealing
+   different games — so the two are asked the same questions here,
+   including the awkward ones: no stamp at all (older records), a stamp on
+   the day itself, the instant before midnight, and junk. */
+const POOL_CASES = [
+    {},
+    { createdAt: "2026-09-23T23:59:59.999Z" },
+    { createdAt: "2026-09-24T00:00:00.000Z" },
+    { createdAt: "2026-09-24T13:00:00.000Z" },
+    { createdAt: "2026-09-25T00:00:00.000Z" },
+    { createdAt: "" },
+    { createdAt: 12345 },
+    null
+];
+if (typeof browser.existedBefore !== "function" || typeof server.existedBefore !== "function") {
+    fail("existedBefore is missing from js/daily.js or netlify/functions/_daily.js");
+} else {
+    const poolDay = "2026-09-24";
+    POOL_CASES.forEach(rec => {
+        checked++;
+        const b = browser.existedBefore(rec, poolDay);
+        const s = server.existedBefore(rec, poolDay);
+        if (b !== s) fail(`existedBefore(${JSON.stringify(rec)}, ${poolDay}) — browser ${b} vs server ${s}`);
+    });
+    // And the answer itself, for the one case that decides the feature: a
+    // maze created during the day must NOT be in that day's pool.
+    if (server.existedBefore({ createdAt: "2026-09-24T13:00:00.000Z" }, poolDay) !== false) {
+        fail("existedBefore lets a maze created during the day into that day's pool");
     }
 }
 

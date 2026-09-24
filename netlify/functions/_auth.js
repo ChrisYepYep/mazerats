@@ -8,20 +8,61 @@ const { getDb } = require("./_db.js");
 const { recordWrite } = require("./_audit.js");
 const { SECURITY_HEADERS } = require("./_headers");
 
+/* The audience every admin session token carries, and the one thing that
+   tells it apart from every other JWT this site signs.
+
+   There are three kinds, all signed with the same SESSION_SECRET: the admin
+   session minted in auth.js, the player cookie minted in _player.js, and the
+   short-lived OAuth state in discord-auth.js. The player cookie was always
+   namespaced ("mazerats-player") and its verifier refused anything without
+   that — but this verifier checked nothing beyond the signature, so the
+   namespacing only ever worked in one direction. A player cookie is an
+   HttpOnly cookie a signed-in visitor can nonetheless read out of their own
+   browser, and its `sub` is their Discord id; pasted into x-admin-token it
+   verified here, and the id became a "username". That id has no admins row,
+   and lookUpRole used to read a missing row as "admin" — so any Discord
+   account could write to the archive.
+
+   Now each kind names its audience and each verifier demands its own. No
+   transition allowance for the audience-less admin tokens already issued:
+   accepting "no aud" for a while would also accept the OAuth state token,
+   which has none either, and the cost of being strict is only that anyone
+   signed in to the admin at deploy time signs in again — sessions last
+   twelve hours regardless. */
+const ADMIN_AUDIENCE = "mazerats-admin";
+
+function signAdminToken(username) {
+    return jwt.sign({ sub: username }, process.env.SESSION_SECRET, {
+        expiresIn: "12h", audience: ADMIN_AUDIENCE, algorithm: "HS256"
+    });
+}
+
+/* A valid, unexpired admin token — which is NOT the same as a live account.
+   This is answered from the token alone, so an account deleted mid-session
+   still passes here until its token expires (up to 12 hours). Everything
+   that changes something goes through canWrite, which does look the account
+   up; reads that hand out anything personal (messages, IPs, the admin list)
+   use hasAccount below instead. The remaining isAuthorized-only reads are
+   archive data a viewer is meant to see anyway. */
 function isAuthorized(event) {
     return Boolean(usernameFromToken(event));
 }
 
 function tokenPayload(event) {
-    const token = event.headers["x-admin-token"] || "";
+    const token = (event && event.headers && event.headers["x-admin-token"]) || "";
     if (!token || !process.env.SESSION_SECRET) return null;
     try {
         /* The algorithm is named rather than inferred. jsonwebtoken 9 already
            refuses to verify an asymmetric token against a string secret, so
            this is not today's bug — it is the one where a future version, or
            a swap to a key object, quietly widens what counts as a valid
-           signature. A token that is not HS256 is not ours. */
-        return jwt.verify(token, process.env.SESSION_SECRET, { algorithms: ["HS256"] });
+           signature. A token that is not HS256 is not ours.
+
+           The audience is required, not merely checked when present: see
+           ADMIN_AUDIENCE above. */
+        return jwt.verify(token, process.env.SESSION_SECRET, {
+            algorithms: ["HS256"], audience: ADMIN_AUDIENCE
+        });
     } catch (e) {
         return null;
     }
@@ -116,7 +157,14 @@ async function lookUpRole(event) {
     try {
         const db = await getDb();
         const admin = await db.collection("admins").findOne({ username });
-        return resolveRole(admin || { username });
+        /* No row, no role. This used to be resolveRole(admin || { username }),
+           which read a missing account as "admin" — so a deleted account kept
+           full write access for the rest of its token's life, and any token
+           whose subject had never been an account at all (see ADMIN_AUDIENCE)
+           was promoted on the spot. The permanent owner needs no exception:
+           every way in through auth.js, bootstrap included, goes through a
+           stored row first. */
+        return admin ? resolveRole(admin) : null;
     } catch (e) {
         // A database that can't be reached is not permission to proceed.
         return null;
@@ -125,6 +173,25 @@ async function lookUpRole(event) {
 
 async function isOwner(event) {
     return (await roleOf(event)) === "owner";
+}
+
+/* isOwner, for the owner-only endpoints that CHANGE something — the level
+   editor, the furni scans and refreshes. Those never pass through canWrite,
+   so they never reached the one place the action log is written, and the
+   most privileged writes on the site were the only ones that left no trace.
+   Same fire-and-forget record canWrite makes: it cannot hold up or fail the
+   request. isOwner stays as it was for the owner-only READS. */
+async function isOwnerWrite(event) {
+    const owner = await isOwner(event);
+    if (owner) recordWrite(event, usernameFromToken(event), sessionOf(event));
+    return owner;
+}
+
+/* isAuthorized plus "and the account still exists". One lookup (memoized
+   with everything else in roleOf), for the reads where a deleted account
+   still being able to look for twelve hours actually matters. */
+async function hasAccount(event) {
+    return (await roleOf(event)) !== null;
 }
 
 /* The guard every mutating endpoint uses in place of isAuthorized. Reads
@@ -185,7 +252,8 @@ async function refuseWrite(event) {
 }
 
 module.exports = {
-    isAuthorized, usernameFromToken, sessionOf, UNAUTHORIZED,
-    PERMANENT_OWNER, ROLES, resolveRole, roleOf, isOwner, canWrite,
+    isAuthorized, hasAccount, usernameFromToken, sessionOf, UNAUTHORIZED,
+    ADMIN_AUDIENCE, signAdminToken,
+    PERMANENT_OWNER, ROLES, resolveRole, roleOf, isOwner, isOwnerWrite, canWrite,
     forbidden, READ_ONLY, OUT_OF_SCOPE, refuseWrite, WRITE_SCOPES
 };

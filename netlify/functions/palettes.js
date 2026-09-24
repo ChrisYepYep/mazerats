@@ -34,8 +34,9 @@
    with it — so a preset cannot carry `}` out of its declaration and start
    writing rules of its own. */
 const { getDb } = require("./_db");
-const { isAuthorized, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { isAuthorized, canWrite, refuseWrite, usernameFromToken, UNAUTHORIZED } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
+const { cachedJson } = require("./_cache");
 
 const COLLECTION = "palettes";
 const MAX_NAME = 60;
@@ -102,7 +103,8 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("palettes: database connection failed", e);
+        return json(503, { error: "Database connection failed" });
     }
     const col = db.collection(COLLECTION);
     const params = event.queryStringParameters || {};
@@ -111,12 +113,23 @@ exports.handler = async (event) => {
        wearing before it can paint anything. There is nothing private in one:
        it is a list of colours, and every one of them is on screen anyway. */
     if (event.httpMethod === "GET") {
-        if (params.id) {
-            const one = await col.findOne({ id: slug(params.id) }, { projection: { _id: 0 } });
-            return one ? json(200, clean(one)) : json(404, { error: "No palette by that name." });
+        try {
+            if (params.id) {
+                const one = await col.findOne({ id: slug(params.id) }, { projection: { _id: 0 } });
+                /* Through the edge, on the archive's own policy. Every visitor
+                   wearing a palette asks for it on every page, and it was the
+                   one per-page public read still going to Mongo each time. A
+                   minute's staleness after an edit is the same promise rooms
+                   and events make (see _cache.js). The 404 is not cached, so a
+                   palette created a moment ago is not hidden behind one. */
+                return one ? cachedJson(event, clean(one)) : json(404, { error: "No palette by that name." });
+            }
+            const all = await col.find({}, { projection: { _id: 0 } }).sort({ at: 1 }).toArray();
+            return json(200, { count: all.length, palettes: all.map(clean) });
+        } catch (e) {
+            console.error("palettes: read failed", e);
+            return json(503, { error: "Palettes could not be read just now." });
         }
-        const all = await col.find({}, { projection: { _id: 0 } }).sort({ at: 1 }).toArray();
-        return json(200, { count: all.length, palettes: all.map(clean) });
     }
 
     /* Returned as they are, not wrapped in json().
@@ -131,7 +144,9 @@ exports.handler = async (event) => {
        netlify/functions doing it. */
     if (!isAuthorized(event)) return UNAUTHORIZED;
     // Async, and the scope is the site-wide one a palette plainly is.
-    if (!await canWrite(event, "site")) return READ_ONLY;
+    // refuseWrite, not READ_ONLY: a wizard account is not view-only, it is
+    // out of scope here, and was being told the wrong one of the two.
+    if (!await canWrite(event, "site")) return await refuseWrite(event);
     const who = usernameFromToken(event);
 
     let body = {};
@@ -172,7 +187,18 @@ exports.handler = async (event) => {
         const id = slug(params.id || body.id);
         if (!id) return json(400, { error: "Which palette?" });
         const r = await col.deleteOne({ id });
-        return json(200, { deleted: r.deletedCount === 1 });
+        /* And if the site was wearing it, it stops. settings.palette is a
+           name, not a copy (see settings.js), so deleting the live palette
+           left the setting pointing at nothing: every visitor's page asked
+           for it, got a 404, and the admin's selector showed a palette that
+           no longer existed. Conditional on the name, so a delete can never
+           clear a DIFFERENT palette someone chose in the meantime. */
+        let unset = false;
+        if (r.deletedCount === 1) {
+            const s = await db.collection("settings").updateOne({ _id: "site", palette: id }, { $set: { palette: null } });
+            unset = s.modifiedCount === 1;
+        }
+        return json(200, { deleted: r.deletedCount === 1, ...(unset ? { clearedLive: true } : {}) });
     }
 
     return json(405, { error: "Method not allowed" });

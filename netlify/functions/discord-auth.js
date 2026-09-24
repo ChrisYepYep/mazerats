@@ -37,6 +37,7 @@ const { SECURITY_HEADERS } = require("./_headers");
 
 const STATE_COOKIE = "mr_oauth";
 const STATE_TTL = 10 * 60;                 // ten minutes to finish a login
+const STATE_AUDIENCE = "mazerats-oauth-state";
 const DISCORD_API = "https://discord.com/api/v10";
 
 const json = (statusCode, data, extra) => ({
@@ -147,7 +148,11 @@ exports.handler = async (event) => {
            callback can tell "we already tried the quiet way" from "first
            attempt". Without it the retry could bounce forever. */
         const retried = q.consent === "1";
-        const state = jwt.sign({ nonce, to, retried }, process.env.SESSION_SECRET, { expiresIn: STATE_TTL });
+        /* Its own audience, like the admin and player tokens, so that no
+           JWT this site signs can stand in for another kind. It carries no
+           `sub` and the admin verifier demands its own audience, so it was
+           never usable as an admin token; this closes the other direction. */
+        const state = jwt.sign({ nonce, to, retried }, process.env.SESSION_SECRET, { expiresIn: STATE_TTL, audience: STATE_AUDIENCE });
 
         const authorize = new URL(`${DISCORD_API}/oauth2/authorize`);
         authorize.searchParams.set("client_id", process.env.DISCORD_CLIENT_ID);
@@ -189,7 +194,7 @@ exports.handler = async (event) => {
             // refuses "none" and will not check an asymmetric token against a
             // string secret, but the whole point of pinning it is to not
             // depend on that staying true.
-            try { claims = jwt.verify(q.state, process.env.SESSION_SECRET, { algorithms: ["HS256"] }); } catch (e) { claims = null; }
+            try { claims = jwt.verify(q.state, process.env.SESSION_SECRET, { algorithms: ["HS256"], audience: STATE_AUDIENCE }); } catch (e) { claims = null; }
         }
 
         if (q.error) {

@@ -137,6 +137,16 @@ document.addEventListener("DOMContentLoaded", () => {
        is furniFilter's listing, which predates it — this is only the way in.
        Cleared by the same top-nav and sub-nav clicks the other two are. */
     let showFurni = false;
+    /* A search carried in the address (?q=), so a filtered list is a link
+       somebody can send. Read once, before the first render; kept in step
+       from then on by syncSearchToUrl. */
+    try {
+        const fromUrl = new URLSearchParams(location.search).get("q");
+        if (fromUrl) {
+            query = fromUrl.slice(0, 200);
+            searchInput.value = query;
+        }
+    } catch (e) { /* no search in the address, or one that will not parse */ }
     let activeGallery = null;
     // Furni per room image for whatever is open, keyed by image path.
     // Events never have any (see normalize), and this says so out loud so
@@ -212,14 +222,6 @@ document.addEventListener("DOMContentLoaded", () => {
         past: "No past events yet.",
         archive: "No archived events yet."
     };
-    const emptyMessagesSearch = {
-        open: "No open mazes match your search.",
-        archived: "No archived mazes match your search.",
-        collab: "No collab mazes match your search.",
-        upcoming: "No events match your search.",
-        past: "No past events match your search.",
-        archive: "No archived events match your search."
-    };
 
     function sourceItems(view) {
         if (view === "featured" || view === "open") return ROOMS.filter(r => r.status === "open" || r.status === "unknown");
@@ -235,7 +237,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Normalizes a room or event into one shared shape so rendering and the
     // modal don't need to branch on what kind of thing they're showing.
+    //
+    // The raw record rides along on the result, non-enumerable so that no
+    // spread, Object.keys or JSON of a normalized record ever sees it, purely
+    // so searchHaystack can key its cache on something that outlives one
+    // render — see the comment above that function.
     function normalize(item, isEvents) {
+        const n = normalizeShape(item, isEvents);
+        if (item && typeof item === "object") Object.defineProperty(n, "_raw", { value: item });
+        return n;
+    }
+
+    function normalizeShape(item, isEvents) {
         if (isEvents) {
             return {
                 isEvent: true,
@@ -351,21 +364,44 @@ document.addEventListener("DOMContentLoaded", () => {
        the result was reachable only by opening a maze and reading down a
        strip. Now "bonsai" finds the mazes with a bonsai in them.
 
-       Cached on the record, because matchesQuery runs once per record per
-       keystroke and the furni map alone is a few hundred entries: building
-       this string fresh each time turned typing into a stutter. The cache
-       is keyed to nothing — a record is normalized once and replaced
-       wholesale when the archive reloads, so it cannot go stale. */
+       Cached, because matchesQuery runs once per record per keystroke and
+       the furni map alone is a few hundred entries: building this string
+       fresh each time turned typing into a stutter.
+
+       THE CACHE USED TO LIVE ON THE NORMALIZED RECORD, which did nothing.
+       render() normalizes every record afresh on every call — every
+       keystroke — so each one arrived with an empty _haystack and the furni
+       was flattened again anyway, and an empty result then did it again for
+       the other kind in the empty state. So it is keyed on the RAW record now,
+       which is the object that actually persists between keystrokes, in a
+       WeakMap that is thrown away whole whenever the archive reloads (see
+       where ROOMS and EVENTS are assigned) so an edited maze cannot keep an
+       old haystack.
+
+       The status label is left out of the cached part and added each time:
+       an event's label ("Live", "Upcoming", "Past") moves with the clock
+       while its raw record does not, and it is one short string. */
+    let haystackCache = new WeakMap();
     function searchHaystack(n) {
         if (n._haystack !== undefined) return n._haystack;
+        const raw = n._raw;
+        let base = raw ? haystackCache.get(raw) : undefined;
+        if (base === undefined) {
+            base = staticHaystack(n);
+            if (raw) haystackCache.set(raw, base);
+        }
+        n._haystack = base + " \u0000 " + String(n.statusLabel || "").toLowerCase();
+        return n._haystack;
+    }
+
+    function staticHaystack(n) {
         const parts = [
             n.name,
             n.subtitle,
             n.description,
             n.details,
             ...(n.tags || []),
-            n.difficulty,
-            n.statusLabel
+            n.difficulty
         ];
         /* The furni is stored keyed by the gallery image it was found in,
            so the same piece appears once per room it stands in — flattened
@@ -393,14 +429,154 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             }
         }
-        n._haystack = parts.filter(Boolean).join(" \u0000 ").toLowerCase();
-        return n._haystack;
+        return parts.filter(Boolean).join(" \u0000 ").toLowerCase();
+    }
+
+    /* ---------- the search, with filters in it ----------
+
+       The box takes plain words the way it always has, and ALSO a handful
+       of named filters, written the way a lot of sites have taught people to
+       write them:
+
+           by:ChrisYepYep   tag:illusion   hotel:es   diff:hard
+           furni:throne     year:2025      -collab    "aquarium corridor"
+
+       A word with a minus in front excludes; quotes keep a phrase together;
+       any of the named filters can be negated too (-tag:collab). Words that
+       are not filters still search the whole record, exactly as before.
+
+       The filters live IN THE BOX rather than in a separate row of controls,
+       and that is the design rather than a shortcut. Clicking a tag, a
+       difficulty, a hotel or a builder's name in a maze's window writes the
+       filter into the box (see applyFilterChip), so the thing you clicked is
+       visible, editable and deletable in the place you already search — and
+       the syntax teaches itself the first time anybody clicks a tag. The
+       address carries the box (?q=, see syncSearchToUrl), so a filtered list
+       is a link you can send.
+
+       Parsed once per distinct query string, not per record per keystroke. */
+    const SEARCH_KEYS = {
+        by: "by", builder: "by", host: "by", owner: "by",
+        tag: "tag", tags: "tag",
+        hotel: "hotel",
+        diff: "diff", difficulty: "diff",
+        furni: "furni",
+        year: "year"
+    };
+
+    let parsedFor = null;
+    let parsedSearch = null;
+
+    function parseSearch(raw) {
+        if (raw === parsedFor) return parsedSearch;
+        const out = { words: [], not: [], keys: [], notKeys: [] };
+        const re = /(-?)(?:([a-z]+):)?(?:"([^"]*)"?|(\S+))/gi;
+        let m;
+        while ((m = re.exec(raw)) !== null) {
+            if (!m[0]) { re.lastIndex++; continue; }
+            const neg = m[1] === "-";
+            const rawKey = m[2] ? m[2].toLowerCase() : "";
+            const value = (m[3] !== undefined ? m[3] : m[4] || "").trim().toLowerCase();
+            const key = SEARCH_KEYS[rawKey];
+            if (rawKey && !key) {
+                // "foo:bar" with a key nobody knows is just a word with a
+                // colon in it — a maze could be called that.
+                const word = `${rawKey}:${value}`;
+                (neg ? out.not : out.words).push(word);
+                continue;
+            }
+            if (!value) continue;
+            if (key) (neg ? out.notKeys : out.keys).push({ key, value });
+            else (neg ? out.not : out.words).push(value);
+        }
+        parsedFor = raw;
+        parsedSearch = out;
+        return out;
+    }
+
+    // Difficulty accepts its label as well as its key: "very hard",
+    // "very-hard" and "veryhard" all mean the same thing to somebody typing.
+    function diffKey(v) {
+        return String(v || "").toLowerCase().replace(/[\s_]+/g, "-");
+    }
+
+    // The furni names alone, for furni:. Cached against the raw record the
+    // same way the haystack is, and dropped with it when the archive reloads.
+    let furniNameCache = new WeakMap();
+    function furniNamesOf(n) {
+        const raw = n._raw;
+        if (raw && furniNameCache.has(raw)) return furniNameCache.get(raw);
+        const names = [];
+        const furni = n.furni && typeof n.furni === "object" ? n.furni : null;
+        if (furni) {
+            for (const key of Object.keys(furni)) {
+                const record = furni[key];
+                const items = Array.isArray(record) ? record : (record && record.items) || [];
+                for (const piece of items) {
+                    if (piece && !piece.hidden && piece.name) names.push(String(piece.name).toLowerCase());
+                }
+            }
+        }
+        if (raw) furniNameCache.set(raw, names);
+        return names;
+    }
+
+    function keyMatches(n, { key, value }) {
+        switch (key) {
+            case "by":
+                // Collabs list several builders in one field; any of them counts.
+                return String(n.owner || "").toLowerCase().split(",").some(b => b.trim().includes(value));
+            case "tag":
+                return (n.tags || []).some(t => String(t).toLowerCase().includes(value));
+            case "hotel":
+                return String(n.hotel || "").toLowerCase() === value;
+            case "diff":
+                return diffKey(n.difficulty) === diffKey(value)
+                    || diffKey(DIFFICULTY_LABELS[n.difficulty]) === diffKey(value);
+            case "furni":
+                return furniNamesOf(n).some(name => name.includes(value));
+            case "year":
+                return String(n.dateValue || "").slice(0, 4) === value;
+            default:
+                return true;
+        }
     }
 
     function matchesQuery(n) {
-        const q = query.trim().toLowerCase();
-        if (!q) return true;
-        return searchHaystack(n).includes(q);
+        const raw = query.trim();
+        if (!raw) return true;
+        const s = parseSearch(raw);
+        const hay = searchHaystack(n);
+        for (const w of s.words) if (!hay.includes(w)) return false;
+        for (const w of s.not) if (hay.includes(w)) return false;
+        for (const k of s.keys) if (!keyMatches(n, k)) return false;
+        for (const k of s.notKeys) if (keyMatches(n, k)) return false;
+        return true;
+    }
+
+    /* A filter token for the box, quoted when the value has a space in it
+       ("very hard", a tag like "FURNI MAZE") so it survives being parsed
+       back out. */
+    function filterToken(key, value) {
+        const v = String(value || "").trim();
+        return /\s/.test(v) ? `${key}:"${v}"` : `${key}:${v}`;
+    }
+
+    /* The box's text with one filter set: any earlier filter of the SAME kind
+       is replaced rather than stacked, because clicking "Hard" after "Easy"
+       means "show me hard ones now", not "show me mazes that are both". */
+    function withFilter(text, key, value) {
+        const kept = [];
+        const re = /(-?)(?:([a-z]+):)?(?:"([^"]*)"?|(\S+))/gi;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            if (!m[0]) { re.lastIndex++; continue; }
+            const k = m[2] ? SEARCH_KEYS[m[2].toLowerCase()] : null;
+            if (k === key && m[1] !== "-") continue;
+            kept.push(m[0]);
+        }
+        kept.push(filterToken(key, value));
+        return kept.join(" ");
     }
 
     // Order matters here — it's also the ascending "easiest first" sort
@@ -420,6 +596,40 @@ document.addEventListener("DOMContentLoaded", () => {
     // escape, and the callers are spread across every render path here.
     function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    /* A stored value that is about to become part of a class name.
+
+       Escaping alone is not enough there: an escaped value cannot break out
+       of the attribute, but it can still carry a space and so add classes of
+       its own choosing, and a maze's status is written into the class list
+       straight from the record. The status and difficulty values the site
+       actually uses are all lower-case words and hyphens, so anything else is
+       reduced to that rather than rejected — "Very Hard" still styles as
+       something, it just cannot smuggle anything in. */
+    function cssToken(str) {
+        return String(str == null ? "" : str).toLowerCase().replace(/[^a-z0-9-]/g, "");
+    }
+
+    /* A stored address that is about to become a link someone clicks.
+
+       Only http and https go through. Escaping keeps a URL inside its
+       attribute, but "javascript:..." is a perfectly well-formed attribute
+       value and runs when clicked — and every link this is used for comes
+       from the database (a maze's Habbo link, an article's source, a furni's
+       catalogue page), which is not somewhere a script should be able to
+       live. Returns "" for anything else, and every caller hides its link
+       when it gets "", so a bad address reads as no address rather than as
+       a link that does something unexpected. */
+    function safeHttpUrl(str) {
+        const raw = String(str == null ? "" : str).trim();
+        if (!raw) return "";
+        try {
+            const url = new URL(raw, location.href);
+            return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+        } catch (e) {
+            return "";
+        }
     }
 
     // Turns any bare URL in the Links & References text into a real,
@@ -497,9 +707,95 @@ document.addEventListener("DOMContentLoaded", () => {
        should not be able to run script in a visitor's session. */
     function tagsHtml(n) {
         const difficultyHtml = n.difficulty
-            ? `<span class="tag difficulty-${escapeHtml(n.difficulty)}">${escapeHtml(DIFFICULTY_LABELS[n.difficulty] || n.difficulty)}</span>`
+            ? `<span class="tag difficulty-${cssToken(n.difficulty)}">${escapeHtml(DIFFICULTY_LABELS[n.difficulty] || n.difficulty)}</span>`
             : "";
         return difficultyHtml + (n.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("");
+    }
+
+    /* The same chips as tagsHtml, in a maze's window, as BUTTONS: each one
+       lists everything else that shares it. The row cards keep the plain
+       spans — the whole card is already one button there, and a button
+       inside a button is neither valid nor something a thumb can aim at.
+
+       Followed by a "More by" chip per builder. The builder card above hides
+       the plain "by" line whenever it resolves, so the names are otherwise
+       not something you can press anywhere in the window. */
+    function modalFilterChipsHtml(n) {
+        const chip = (key, value, label, cls, title) =>
+            `<button type="button" class="tag tag-filter${cls ? " " + cls : ""}" data-filter-key="${key}" data-filter-value="${escapeHtml(value)}" title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
+        const kind = n.isEvent ? "event" : "maze";
+        const diffLabel = DIFFICULTY_LABELS[n.difficulty] || n.difficulty;
+        const parts = [];
+        if (n.difficulty) {
+            parts.push(chip("diff", diffLabel, diffLabel, `difficulty-${cssToken(n.difficulty)}`, `Every ${String(diffLabel).toLowerCase()} ${kind}`));
+        }
+        (n.tags || []).forEach(t => parts.push(chip("tag", t, t, "", `Everything tagged ${t}`)));
+        creatorNames(n.owner).forEach(name => parts.push(chip("by", name, `More by ${name}`, "tag-by", `Everything by ${name}`)));
+        return parts.join("");
+    }
+
+    /* A chip in a maze's window was pressed: close the window and show the
+       archive filtered by it.
+
+       The filter is written into the search box (see withFilter), so what
+       was applied is visible and can be edited or deleted like any search.
+       The list is put back to the plain archive for the record's own kind —
+       out of What's New, the timeline and the furni browser, which each
+       draw their own thing and would ignore a filter — and onto the tab
+       the record lives in, so the one you came from is in the list you
+       land on. */
+    function applyFilterChip(key, value, n) {
+        const next = withFilter(query.trim(), key, value);
+        closeModal();
+        showFeatured = false;
+        showWhatsNew = false;
+        showTimeline = false;
+        showFurni = false;
+       
+        furniFilter = null;
+        if (n) {
+            if (n.isEvent) {
+                topView = "events";
+                // Same test sourceItems uses to file an event under a tab.
+                const raw = n._raw;
+                if (raw) {
+                    eventsSub = isUpcomingTabEvent(raw) ? "upcoming" : eventStatus(raw) === "past" ? "past" : "archive";
+                    eventsSubTouched = true;
+                }
+            } else {
+                topView = "mazes";
+                const tab = MAZE_TAB_OF_STATUS[n.statusKey];
+                if (tab) mazesSub = tab;
+            }
+        }
+        searchInput.value = next;
+        query = next;
+        render();
+        const results = document.querySelector(".home-results");
+        if (results) results.scrollTop = 0;
+    }
+
+    // Which Mazes tab a status is listed under — the mapping sourceItems uses.
+    const MAZE_TAB_OF_STATUS = { open: "open", unknown: "open", closed: "archived", collab: "collab" };
+
+    /* The box, in the address bar. replaceState rather than pushState: typing
+       is not navigation, and a Back button that stepped through every
+       keystroke would be worse than one that ignores them. The hash is left
+       alone — it belongs to the maze window (see syncModalHistory). */
+    let syncedSearch = null;
+    function syncSearchToUrl() {
+        const q = query.trim();
+        if (q === syncedSearch) return;
+        syncedSearch = q;
+        try {
+            const url = new URL(location.href);
+            if (q) url.searchParams.set("q", q);
+            else url.searchParams.delete("q");
+            const next = url.pathname + url.search + url.hash;
+            if (next !== location.pathname + location.search + location.hash) {
+                history.replaceState(history.state, "", next);
+            }
+        } catch (e) { /* an address the URL parser refuses is left as it is */ }
     }
 
     /* Counted once per burst of typing rather than per keystroke, and
@@ -692,12 +988,18 @@ document.addEventListener("DOMContentLoaded", () => {
            of them by name is a reasonable thing to want. */
         sortSelect.disabled = showWhatsNew || showTimeline || showFurni || !!furniFilter;
         featuredMazesBtn.classList.toggle("active", showFeatured);
-        // Only ever repopulates on the render() call that actually flips
-        // showFeatured to true (the button's own click handler) — every
-        // other render() while still in that state only happens after a
-        // sub-nav/top-nav click has already set it back to false, which
-        // closes the frame instead.
-        renderFeaturedList();
+        /* Reshuffles only on the render() that actually flips showFeatured
+           to true — the panel opening. This comment used to claim every
+           other render while it stays open only follows a nav click that
+           closes it, but that was never true: a search keystroke, a status
+           tick, a Save, the account arriving — all of them render, and each
+           one dealt the visitor a fresh pair of picks while they were
+           reading the last. Every other render now re-draws the same picks
+           (see renderFeaturedList); the Refresh button is the other way to
+           ask for new ones. */
+        const featuredOpening = showFeatured && !featuredWasOpen;
+        featuredWasOpen = showFeatured;
+        renderFeaturedList(featuredOpening);
         // Couples .chrome-frame's minimize state to showFeatured — see this
         // function's own comment for why the two frames' heights need to be
         // computed together.
@@ -737,6 +1039,9 @@ document.addEventListener("DOMContentLoaded", () => {
            their space with them, so there is no empty band above the list —
            which is the thing hiding the frame was reaching for. */
         if (featuredFrame) featuredFrame.classList.toggle("is-events", isEvents);
+        // "Clear filter", on the line over the list, whenever it is narrowed.
+        const clearBtn = document.getElementById("clear-filter-btn");
+        if (clearBtn) clearBtn.hidden = !(query.trim() || furniFilter);
 
         // Explains the auto-archiving rule (see eventStatus) at the point it
         // actually matters — sitting in the Archive listing itself, rather
@@ -997,35 +1302,155 @@ document.addEventListener("DOMContentLoaded", () => {
        sets are UNIONED rather than one replacing the other: a tick made
        here before signing in survives, and so does one made on a machine
        this browser has never seen. That is only safe because a walked list
-       is a set — there is no "which is newer" to get wrong. */
+       is a set — there is no "which is newer" to get wrong.
+
+       TWO BOOKS ARE KEPT BESIDE EACH LIST, both in localStorage because a
+       sign-in outlives the tab:
+
+       - PENDING: ids ticked on this device (signed in or out) that the
+         account has not yet confirmed holding. Only these are ever pushed.
+         Each device used to PUT its WHOLE list, so a device that had not
+         heard about an un-tick made elsewhere put the maze straight back
+         (the server unions). An id leaves this book once a server reply
+         includes it.
+
+       - FROM ACCOUNT: ids that are in the local list only because the
+         account's copy was merged in. On sign-out (or any answer of
+         "nobody", which also covers an expired session) exactly these are
+         taken back out. They used to stay, so the next person to sign in
+         on the same browser uploaded the previous account's ticks as their
+         own. Stripping only this book, rather than restoring a snapshot,
+         is what guarantees a signed-out visitor's own ticks are never
+         lost: a hand-made tick is never in it, and ticking an id by hand
+         takes it out. It also lets an un-tick made on another device reach
+         this one: an id that came from the account and is no longer on it
+         is dropped here too.
+
+       Upgrading from before these books: with no pending book on record,
+       every local id not known to be the account's is treated as pending
+       once. That is the old behaviour, one last time, so nobody's
+       unsynced ticks are stranded by the change. */
+    const TICK_LISTS = ["walked", "saved"];
+    const PENDING_KEY = { walked: "mazerats_walked_pending", saved: "mazerats_saved_pending" };
+    const ACCOUNT_KEY = { walked: "mazerats_walked_account", saved: "mazerats_saved_account" };
+    const pendingTicks = { walked: new Set(), saved: new Set() };
+    const accountTicks = { walked: new Set(), saved: new Set() };
+
+    function tickSet(list) { return list === "walked" ? walkedIds : savedIds; }
+    function persistTickSet(list) { if (list === "walked") saveWalked(); else persistSaved(); }
+
+    function readIdSet(key) {
+        try {
+            const raw = localStorage.getItem(key);
+            if (raw == null) return null;
+            const list = JSON.parse(raw);
+            return new Set(Array.isArray(list) ? list.filter(id => typeof id === "string") : []);
+        } catch (e) { return null; }
+    }
+    function writeIdSet(key, set) {
+        try { localStorage.setItem(key, JSON.stringify([...set])); } catch (e) { /* private mode */ }
+    }
+    function persistBooks(list) {
+        writeIdSet(PENDING_KEY[list], pendingTicks[list]);
+        writeIdSet(ACCOUNT_KEY[list], accountTicks[list]);
+    }
+
+    // After loadWalked and loadSaved, which it reads.
+    function loadTickBooks() {
+        TICK_LISTS.forEach(list => {
+            accountTicks[list] = readIdSet(ACCOUNT_KEY[list]) || new Set();
+            const stored = readIdSet(PENDING_KEY[list]);
+            if (stored) {
+                pendingTicks[list] = stored;
+            } else {
+                pendingTicks[list] = new Set([...tickSet(list)].filter(id => !accountTicks[list].has(id)));
+                persistBooks(list);
+            }
+        });
+    }
+
+    // A tick or un-tick made by hand on this device.
+    function noteTick(list, id, on) {
+        accountTicks[list].delete(id);
+        if (on) pendingTicks[list].add(id);
+        else pendingTicks[list].delete(id);
+        persistBooks(list);
+        if (window.Account && Account.current) {
+            if (on) Account.saveState({ [list]: [...pendingTicks[list]] });
+            else if (list === "walked") Account.forgetWalked(id);
+            else Account.forgetSaved(id);
+        }
+    }
+
+    // A server reply that holds an id confirms it: it is no longer pending.
+    function confirmTicks(state) {
+        if (!state) return;
+        TICK_LISTS.forEach(list => {
+            const server = new Set(Array.isArray(state[list]) ? state[list] : []);
+            let changed = false;
+            pendingTicks[list].forEach(id => { if (server.has(id)) { pendingTicks[list].delete(id); changed = true; } });
+            if (changed) persistBooks(list);
+        });
+    }
+
     function syncWalked() {
         if (!window.Account || !Account.current) return;
         Account.fetchState().then(state => {
             if (!state) return;
-            const wasWalked = walkedIds.size;
-            const wasSaved = savedIds.size;
-
-            const serverWalked = Array.isArray(state.walked) ? state.walked : [];
-            const serverSaved = Array.isArray(state.saved) ? state.saved : [];
-            serverWalked.forEach(id => walkedIds.add(id));
-            serverSaved.forEach(id => savedIds.add(id));
-
-            /* Anything this device knew that the server did not goes back
-               up. The endpoint unions on its side too, so this is
-               idempotent — and only sent when there IS something it has not
-               seen, so a device that is merely up to date stays quiet. */
+            let anyChange = false;
             const patch = {};
-            if (walkedIds.size > serverWalked.length) patch.walked = [...walkedIds];
-            if (savedIds.size > serverSaved.length) patch.saved = [...savedIds];
-            if (Object.keys(patch).length) Account.saveState(patch);
 
-            if (walkedIds.size !== wasWalked) saveWalked();
-            if (savedIds.size !== wasSaved) persistSaved();
-            if (walkedIds.size !== wasWalked || savedIds.size !== wasSaved) {
+            TICK_LISTS.forEach(list => {
+                const local = tickSet(list);
+                const server = new Set(Array.isArray(state[list]) ? state[list] : []);
+                let changed = false;
+                // Taken off the account elsewhere: leaves here too, if this
+                // device only had it from the account in the first place.
+                accountTicks[list].forEach(id => {
+                    if (!server.has(id)) { accountTicks[list].delete(id); local.delete(id); changed = true; }
+                });
+                server.forEach(id => {
+                    if (!local.has(id)) { local.add(id); accountTicks[list].add(id); changed = true; }
+                });
+                pendingTicks[list].forEach(id => { if (server.has(id)) pendingTicks[list].delete(id); });
+                /* Only what was ticked HERE and the account has not seen goes
+                   up, so a device that is merely up to date (or out of date)
+                   stays quiet. */
+                if (pendingTicks[list].size) patch[list] = [...pendingTicks[list]];
+                persistBooks(list);
+                if (changed) { persistTickSet(list); anyChange = true; }
+            });
+
+            if (Object.keys(patch).length) Account.saveState(patch);
+            if (anyChange) {
                 render();
                 updateWalkedCount();
             }
         });
+    }
+
+    // Nobody signed in (a sign-out, or a session that has lapsed): the
+    // account's ticks leave this browser; the visitor's own stay.
+    function dropAccountTicks() {
+        let anyChange = false;
+        TICK_LISTS.forEach(list => {
+            if (!accountTicks[list].size) return;
+            const local = tickSet(list);
+            accountTicks[list].forEach(id => local.delete(id));
+            accountTicks[list].clear();
+            persistBooks(list);
+            persistTickSet(list);
+            anyChange = true;
+        });
+        if (anyChange) {
+            render();
+            updateWalkedCount();
+        }
+    }
+
+    function onAccountAnswer(me) {
+        if (me) syncWalked();
+        else dropAccountTicks();
     }
 
     function isWalked(id) {
@@ -1039,11 +1464,9 @@ document.addEventListener("DOMContentLoaded", () => {
         saveWalked();
         /* And onto the account, if there is one. Removal is its own call
            because the save unions rather than replaces — see forgetWalked
-           in js/account.js for why that has to be true. */
-        if (window.Account && Account.current) {
-            if (walked) Account.saveState({ walked: [...walkedIds] });
-            else Account.forgetWalked(id);
-        }
+           in js/account.js for why that has to be true. Only the pending
+           ticks are sent, not the whole list: see noteTick above. */
+        noteTick("walked", id, walked);
         // Every place that maze appears follows the tick at once: it can be
         // on the main list and in the featured panel at the same time, and
         // its modal may be open over both.
@@ -1177,10 +1600,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (saved) savedIds.add(id);
         else savedIds.delete(id);
         persistSaved();
-        if (window.Account && Account.current) {
-            if (saved) Account.saveState({ saved: [...savedIds] });
-            else Account.forgetSaved(id);
-        }
+        noteTick("saved", id, saved);
         document.querySelectorAll(`.saved-toggle[data-saved-id="${CSS.escape(id)}"]`)
             .forEach(btn => paintSavedToggle(btn, saved));
         if (saved) tellWhereSavedGo();
@@ -1202,9 +1622,12 @@ document.addEventListener("DOMContentLoaded", () => {
        ONCE PER BROWSER, not once per save. The question "where did that go"
        is asked the first time and never again, and a note that reappears on
        every save is a note somebody is dismissing rather than reading by the
-       third maze. The flag is written the moment it is shown rather than
-       when it is dismissed, so a reader who navigates away mid-toast has
-       still been told.
+       third maze. The flag is written once the note is actually in the page
+       rather than when it is dismissed, so a reader who navigates away
+       mid-toast has still been told — but no earlier than that. It used to
+       be written first thing, before the note existed, and the note was
+       then drawn underneath the room modal (see .saved-note's z-index), so
+       the one showing it ever got was spent where nobody could see it.
 
        It OFFERS THE PLACE rather than just naming it. Saying "find it under
        Your Progress" leaves the reader to go and find Your Progress; a
@@ -1220,7 +1643,6 @@ document.addEventListener("DOMContentLoaded", () => {
     function tellWhereSavedGo() {
         try {
             if (localStorage.getItem(SAVED_TOLD_KEY)) return;
-            localStorage.setItem(SAVED_TOLD_KEY, "1");
         } catch (e) {
             /* Private mode: nothing can be remembered, so this would show on
                every single save. Better to say it never than to nag. */
@@ -1246,6 +1668,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 <button type="button" class="saved-note-close" aria-label="Dismiss">Got it</button>
             </div>`;
         document.body.appendChild(note);
+        // Now it has been shown, and only now does it count as told.
+        try { localStorage.setItem(SAVED_TOLD_KEY, "1"); } catch (e) { /* private mode */ }
 
         let timer = null;
         const close = () => {
@@ -1258,8 +1682,14 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         note.querySelector(".saved-note-close").addEventListener("click", close);
+        /* The room modal goes first. Save is pressed inside it, so it is
+           almost always open when this is, and Your Progress opening
+           underneath it (both are .modal-overlay windows at the same layer,
+           and the room modal comes later in the page) was a button that
+           appeared to do nothing. closeModal is a no-op when it is shut. */
         note.querySelector(".saved-note-go").addEventListener("click", () => {
             close();
+            closeModal({ keepFocus: true });
             openProgress();
         });
 
@@ -1346,6 +1776,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     loadWalked();
     loadSaved();
+    loadTickBooks();
 
     /* The exact request a row's thumbnail makes, in one place.
 
@@ -1398,7 +1829,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const showDate = isOpenView || n.isEvent;
 
         return `
-            <div class="chrome-list-row featured" data-difficulty="${n.difficulty || ""}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
+            <div class="chrome-list-row featured" data-difficulty="${cssToken(n.difficulty)}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
                 <div class="row-thumb">
                     ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${rowThumbUrl(n.thumb)}" alt="${escapeHtml(rowThumbAlt(n))}" loading="lazy"></div>` : ""}
                 </div>
@@ -1410,7 +1841,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="row-tags">${tagsHtml(n)}</div>
                 </div>
                 <div class="row-side">
-                    <span class="status-badge status-${n.statusKey}">${n.statusLabel}</span>
+                    <span class="status-badge status-${cssToken(n.statusKey)}">${escapeHtml(n.statusLabel || "")}</span>
                     <span class="chrome-go">Go &#9654;</span>
                 </div>
             </div>
@@ -1645,21 +2076,48 @@ document.addEventListener("DOMContentLoaded", () => {
         )}</span>`;
     }
 
-    function logDayLabel(iso) {
-        const day = String(iso).slice(0, 10);
-        const today = new Date().toISOString().slice(0, 10);
-        const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    /* The log is grouped and headed by the VISITOR'S day, not UTC's.
+
+       It was UTC throughout — the grouping sliced the ISO string and
+       "Today" was today in Greenwich — so for a UK reader, an hour of every
+       summer night belonged to the wrong day: something catalogued at
+       00:30 BST was filed under yesterday and headed "Yesterday" while it
+       was, to them, today. Every other timezone was out by more. What a
+       reader means by "today" is their own, so both the grouping key and
+       the labels are now local; the formatting stays en-GB.
+
+       A bare date with no time (the fallback for records older than the
+       createdAt stamp — see whatsNewItems) is a calendar day already, not
+       an instant, and is kept exactly as written: read as an instant it is
+       midnight UTC, which west of Greenwich is the evening before. */
+    function localDayKey(value) {
+        const s = String(value || "");
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+        const d = new Date(s);
+        if (isNaN(d)) return s.slice(0, 10);
+        const pad = x => String(x).padStart(2, "0");
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+
+    function logDayLabel(day) {
+        const now = new Date();
+        const today = localDayKey(now.toISOString());
+        // Yesterday by the calendar rather than by 24 hours back, which is a
+        // different day on the two nights a year the clocks change.
+        const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12);
+        const yesterday = localDayKey(y.toISOString());
         if (day === today) return "Today";
         if (day === yesterday) return "Yesterday";
-        const d = new Date(day + "T00:00:00Z");
-        if (isNaN(d)) return day;
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+        if (!m) return day;
+        // Local noon, so no offset can tip it into a neighbouring day.
+        const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12);
         // The year only where it is not this one — on a log that mostly
         // covers recent weeks, repeating it on every heading is noise.
         const sameYear = day.slice(0, 4) === today.slice(0, 4);
         return d.toLocaleDateString("en-GB", {
             weekday: "short", day: "numeric", month: "long",
-            ...(sameYear ? {} : { year: "numeric" }),
-            timeZone: "UTC"
+            ...(sameYear ? {} : { year: "numeric" })
         });
     }
 
@@ -1682,7 +2140,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // that order without sorting anything twice.
         const days = [];
         items.forEach((n, i) => {
-            const day = String(n.activityAt || "").slice(0, 10);
+            const day = localDayKey(n.activityAt);
             const last = days[days.length - 1];
             if (!last || last.day !== day) days.push({ day, entries: [{ n, i }] });
             else last.entries.push({ n, i });
@@ -1823,7 +2281,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="timeline-entry-body">
                     <p class="timeline-entry-name">
                         ${medal}<button type="button" class="timeline-open" data-timeline-index="${index}">${escapeHtml(entry.name)}</button>
-                        <span class="timeline-badge status-badge status-${escapeHtml(entry.statusKey)}">${escapeHtml(entry.statusLabel)}</span>
+                        <span class="timeline-badge status-badge status-${cssToken(entry.statusKey)}">${escapeHtml(entry.statusLabel)}</span>
                     </p>
                     ${entry.by ? `<p class="timeline-entry-by">${entry.kind === "event" ? "Event hosted" : "Maze built"} by ${escapeHtml(entry.by)}</p>` : ""}
                     ${entry.note ? `<p class="timeline-entry-note">${escapeHtml(entry.note)}</p>` : ""}
@@ -1882,8 +2340,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const omission = undatedTotal
             ? `<p class="timeline-omission">${escapeHtml(missing.join(" and "))} ` +
               (undatedTotal === 1
-                  ? "is not shown here — there is no record of when it opened."
-                  : "are not shown here — there is no record of when they opened.") +
+                  // A colon rather than a dash: .timeline-omission is set in
+                  // Volter Goldfish, which draws U+2014 as a musical note.
+                  ? "is not shown here: there is no record of when it opened."
+                  : "are not shown here: there is no record of when they opened.") +
               `</p>`
             : "";
 
@@ -1935,6 +2395,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // frame's open (chrome-frame is minimized out of the way then anyway).
     function render() {
         updateChrome();
+        syncSearchToUrl();
 
         if (!dataLoaded) {
             grid.innerHTML = "";
@@ -1944,9 +2405,10 @@ document.addEventListener("DOMContentLoaded", () => {
                looking archive holding no mazes at all.
 
                It can be up for a while. The loader gives up at
-               LOADER_MAX_WAIT (8s) and the archive request is allowed 6s and
-               then 12s before it falls back to the bundled copy, so a slow
-               connection has ten seconds of looking at an archive that
+               LOADER_MAX_WAIT (8s) and the archive request is allowed 10s and
+               then 15s before it falls back to the bundled copy (see
+               _getWithFallback in js/api.js), so a slow connection can spend
+               the best part of twenty seconds looking at an archive that
                appears to be empty. Say which it is instead. */
             // Three dots rather than an ellipsis character, matching the
             // search box's own placeholder — this text can land in Volter
@@ -1977,6 +2439,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+
         /* The furni browser, on the same footing as the timeline: it renders
            its own thing and returns rather than going through the row
            machinery, because a furni is not a maze and a list of them is not
@@ -2005,11 +2468,19 @@ document.addEventListener("DOMContentLoaded", () => {
            alphabetically like any other list of mazes. The search box still
            applies to all three: narrowing any of them by name is a
            reasonable thing to want. */
+        /* A search or a filter looks across EVERY tab of its kind — Open,
+           Archived and Collab for mazes, all three event tabs for events —
+           because the tabs are how the archive is shelved, not something a
+           person searching knows or cares about. "tag:illusion" on Open used
+           to list only the open ones, and an "Also in: Archived 6" row under
+           them was how you found out there were more. Each row still carries
+           its own status badge, so nothing is lost by mixing them. */
+        const searching = !!query.trim();
         const rawItems = furniFilter
             ? furniFilteredItems().filter(matchesQuery)
             : showWhatsNew
                 ? whatsNewItems().filter(matchesQuery)
-                : sourceItems(view)
+                : (searching ? kindItems(topView) : sourceItems(view))
                     .map(item => normalize(item, topView === "events"))
                     .filter(matchesQuery);
         const items = (showWhatsNew || furniFilter) ? rawItems : sortItems(rawItems);
@@ -2019,7 +2490,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // maze opened, shown right next to the owner's name instead. What's
         // New keeps the description: a mixed list of mazes and events needs
         // the line that says what each one is.
-        const isOpenView = !showWhatsNew && view === "open";
+        const isOpenView = !showWhatsNew && !searching && view === "open";
 
         grid.innerHTML = furniFilterChipHtml() + currentItems.map(n => roomRowHtml(n, isOpenView)).join("");
 
@@ -2051,37 +2522,32 @@ document.addEventListener("DOMContentLoaded", () => {
         updateWalkedCount();
     }
 
+    // Every record of one kind, across all three of its tabs — what a search
+    // looks through (see render).
+    function kindItems(kind) {
+        return kind === "events" ? EVENTS : ROOMS;
+    }
+
     /* ---------- the empty state, and the way out of it ----------
 
-       A search only ever looks in the tab you are standing in. That is the
-       right behaviour — the tabs exist to narrow things — but it made the
-       one thing people arrive wanting to do fail silently: type the name of
-       a maze you remember, land on Open because that is where the archive
-       opens, and get "No open mazes match your search." for a maze that is
-       sitting in Archived. Nothing on screen said so, and nothing offered
-       to go there. The archive knew the answer and would not say it.
+       A search already covers every tab of its kind (see render), so when
+       it comes back empty the only place left to look is the OTHER kind —
+       "Halloween 2024" is a collab maze and an event, and somebody typing it
+       has no way to know which of the two the archive filed it under. So an
+       empty search says so, and if the other kind has matches it offers one
+       button across that keeps the search (which the ordinary nav buttons
+       deliberately do not do; they clear it — see their handlers).
 
-       So when a search comes back empty, the other tabs are searched too
-       and whichever ones have something say so, with a button that goes
-       there AND KEEPS THE SEARCH — which is the part the ordinary nav
-       buttons deliberately do not do (they clear it; see their handlers).
-
-       Only on a search. With no query an empty tab is simply empty, and
-       "nothing archived yet, but there are 19 events" is a non-sequitur. */
-    const CROSS_TAB_LABELS = {
-        open: "Open", archived: "Archived", collab: "Collab",
-        upcoming: "Upcoming", past: "Past", archive: "Archived events"
-    };
+       Only on a search. With no query an empty tab is simply empty. */
     const MAZE_VIEWS = ["open", "archived", "collab"];
     const EVENT_VIEWS = ["upcoming", "past", "archive"];
 
-    // How many items in some OTHER view match what is currently typed.
-    // Normalised through the same pipeline the real list uses, so "matches"
-    // means exactly what it means everywhere else.
-    function countElsewhere(view) {
-        const isEvents = EVENT_VIEWS.includes(view);
-        return sourceItems(view)
-            .map(item => normalize(item, isEvents))
+    // How many of one kind match what is currently typed. Normalised through
+    // the same pipeline the real list uses, so "matches" means exactly what
+    // it means everywhere else.
+    function countOfKind(kind) {
+        return kindItems(kind)
+            .map(item => normalize(item, kind === "events"))
             .filter(matchesQuery)
             .length;
     }
@@ -2093,7 +2559,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const searching = !!query.trim();
         const message = showWhatsNew
             ? (searching ? "Nothing new matches your search." : "Nothing has been added yet.")
-            : (searching ? emptyMessagesSearch : emptyMessagesNoSearch)[view];
+            : searching
+                ? (topView === "events" ? "No events match your search." : "No mazes match your search.")
+                : emptyMessagesNoSearch[view];
 
         emptyEl.innerHTML = "";
         const say = document.createElement("p");
@@ -2101,49 +2569,30 @@ document.addEventListener("DOMContentLoaded", () => {
         say.textContent = message;
         emptyEl.appendChild(say);
 
-        // What's New already searches both kinds at once, so there is no
-        // other tab for it to point at.
+        // What's New already searches both kinds at once.
         if (!searching || showWhatsNew) return;
 
-        /* Every other tab, both categories. Crossing from Mazes to Events
-           matters as much as moving between sub-tabs — "Halloween 2024" is
-           a collab maze and an event, and somebody typing it has no way to
-           know which of the two the archive filed it under. */
-        const elsewhere = [...MAZE_VIEWS, ...EVENT_VIEWS]
-            .filter(v => v !== view)
-            .map(v => ({ view: v, n: countElsewhere(v) }))
-            .filter(x => x.n > 0);
-
-        if (!elsewhere.length) return;
-
-        const also = document.createElement("p");
-        also.className = "archive-empty-also";
-        also.textContent = elsewhere.length === 1
-            ? "It is in another tab:"
-            : "It is in other tabs:";
-        emptyEl.appendChild(also);
+        const other = topView === "events" ? "mazes" : "events";
+        const n = countOfKind(other);
+        if (!n) return;
 
         const row = document.createElement("div");
         row.className = "archive-empty-jumps";
-        elsewhere.forEach(({ view: v, n }) => {
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "archive-empty-jump";
-            // Counted out loud: it is the difference between "there might be
-            // something over there" and "there are two things over there".
-            btn.innerHTML = "";
-            const label = document.createElement("span");
-            label.className = "archive-empty-jump-label";
-            label.textContent = CROSS_TAB_LABELS[v];
-            const count = document.createElement("span");
-            count.className = "archive-empty-jump-count";
-            count.textContent = String(n);
-            btn.append(label, count);
-            btn.setAttribute("aria-label",
-                `Search ${CROSS_TAB_LABELS[v]} instead — ${n} ${n === 1 ? "match" : "matches"}`);
-            btn.addEventListener("click", () => jumpKeepingSearch(v));
-            row.appendChild(btn);
-        });
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "archive-empty-jump";
+        const label = document.createElement("span");
+        label.className = "archive-empty-jump-label";
+        label.textContent = other === "events" ? "Search events instead" : "Search mazes instead";
+        // Counted out loud: "there might be something over there" and
+        // "there are two things over there" are different offers.
+        const count = document.createElement("span");
+        count.className = "archive-empty-jump-count";
+        count.textContent = String(n);
+        btn.append(label, count);
+        btn.setAttribute("aria-label", `Search ${other} instead, ${n} ${n === 1 ? "match" : "matches"}`);
+        btn.addEventListener("click", () => jumpKeepingSearch(other === "events" ? eventsSub : mazesSub));
+        row.appendChild(btn);
         emptyEl.appendChild(row);
     }
 
@@ -2170,6 +2619,7 @@ document.addEventListener("DOMContentLoaded", () => {
         showWhatsNew = false;
         showTimeline = false;
         showFurni = false;
+       
         furniFilter = null;
         render();
         // Back to the box, so the next keystroke carries on refining rather
@@ -2206,6 +2656,10 @@ document.addEventListener("DOMContentLoaded", () => {
         return window.innerWidth <= FEATURED_PHONE_MAX ? 4 : 2;
     }
     let featuredListItems = [];
+    // Whether the panel was open at the previous render, so the render that
+    // opens it can be told apart from the ones that merely happen while it
+    // is open. See updateChrome.
+    let featuredWasOpen = false;
 
     // Fisher-Yates — every entry gets an equal shot rather than always
     // favouring whichever happened to sort first.
@@ -2252,11 +2706,20 @@ document.addEventListener("DOMContentLoaded", () => {
             .sort((a, b) => difficultyRank(a.difficulty) - difficultyRank(b.difficulty));
     }
 
-    function renderFeaturedList() {
+    /* reshuffle: deal new picks (the panel opening, or Refresh). Otherwise
+       the picks already dealt are drawn again, re-read from the current
+       archive by id so a maze edited or saved in the meantime shows as it
+       now is — and a fresh deal only if there is nothing to redraw (the
+       panel was opened before the archive had loaded, or every pick has
+       since left the pool). */
+    function renderFeaturedList(reshuffle) {
         if (!showFeatured || !dataLoaded) return;
 
         const pool = sourceItems("featured").map(item => normalize(item, false));
-        featuredListItems = pickFeatured(pool);
+        const kept = reshuffle ? [] : featuredListItems
+            .map(old => pool.find(n => n.id && n.id === old.id))
+            .filter(Boolean);
+        featuredListItems = kept.length ? kept : pickFeatured(pool);
 
         featuredFrameList.innerHTML = featuredListItems.map(n => roomRowHtml(n, false)).join("");
         wireRowActivation(featuredFrameList, featuredListItems);
@@ -2306,7 +2769,7 @@ document.addEventListener("DOMContentLoaded", () => {
         outgoing.classList.add("featured-frame-list-outgoing");
         outgoingClip.appendChild(outgoing);
 
-        renderFeaturedList();
+        renderFeaturedList(true);
 
         // Starts the real (now new-content) list above the frame, no
         // transition yet, before the reflow below locks that in as the
@@ -3756,8 +4219,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderFurniBrowser() {
         const all = furniBrowserEntries();
-        const entries = query
-            ? all.filter(f => f.name.toLowerCase().includes(query.toLowerCase()))
+        // Trimmed like the archive's own search (matchesQuery): a stray
+        // trailing space typed or pasted into the box otherwise matched
+        // only names with a space at that point, and emptied the grid.
+        const q = query.trim().toLowerCase();
+        const entries = q
+            ? all.filter(f => f.name.toLowerCase().includes(q))
             : all;
 
         if (!entries.length) {
@@ -3959,6 +4426,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showFeatured = false;
             showWhatsNew = false;
             showTimeline = false;
+           
             render();
             const results = document.querySelector(".home-results");
             if (results) results.scrollTop = 0;
@@ -4117,7 +4585,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function furniFilterChipHtml() {
         if (!furniFilter) return "";
         const icon = furniFilter.icon
-            ? `<img class="furni-filter-icon" src="${furniFilter.icon}" alt="">`
+            ? `<img class="furni-filter-icon" src="${escapeHtml(furniFilter.icon)}" alt="">`
             : "";
         const back = furniFilter.fromMazeId
             ? `<button type="button" class="furni-filter-btn" id="furni-filter-back">Back</button>`
@@ -4164,8 +4632,11 @@ document.addEventListener("DOMContentLoaded", () => {
         card.querySelector(".furni-card-motto").textContent = entry.motto || "";
         card.querySelector(".furni-card-date").textContent =
             entry.releaseDate ? `Released ${formatMazeDate(entry.releaseDate)}` : "";
+        // http(s) only, like every other link built from stored data here
+        // (see safeHttpUrl); anything else is treated as no link at all.
         const link = card.querySelector(".furni-card-link");
-        if (entry.url) link.href = entry.url;
+        const furniUrl = safeHttpUrl(entry.url);
+        if (furniUrl) link.href = furniUrl;
         else link.remove();
         // Where else this same furni turns up in the archive.
         renderFurniAlsoIn(card, entry);
@@ -4847,6 +5318,35 @@ document.addEventListener("DOMContentLoaded", () => {
     // arriving) must not leave a frame stuck to the cursor forever.
     window.addEventListener("pointercancel", endFrameDrag);
 
+    /* The big picture is the only way into the lightbox, and it was a
+       click-only <img>. Made a real control whenever there is a gallery for
+       it to open: in the tab order, announced as a button, and pressed with
+       Enter or Space. Its name is set here rather than left to the alt,
+       because the alt says what the picture IS ("Alt Maze — Room 3") and a
+       button's name has to say what pressing it does. */
+    function setGalleryImageOperable(on) {
+        if (on) {
+            modalGalleryImg.setAttribute("tabindex", "0");
+            modalGalleryImg.setAttribute("role", "button");
+            modalGalleryImg.setAttribute("aria-label", "Enlarge this picture");
+        } else {
+            modalGalleryImg.removeAttribute("tabindex");
+            modalGalleryImg.removeAttribute("role");
+            modalGalleryImg.removeAttribute("aria-label");
+        }
+    }
+
+    modalGalleryImg.addEventListener("keydown", e => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        if (!activeGallery) return;
+        e.preventDefault();
+        openLightbox();
+    });
+
+    // Where focus was when the lightbox opened, so a keyboard user who
+    // opened it from the picture lands back on the picture, not on <body>.
+    let lightboxTriggerEl = null;
+
     function openLightbox() {
         if (!activeGallery || !activeGallery.length) return;
         stopAutoAdvance();
@@ -4854,11 +5354,19 @@ document.addEventListener("DOMContentLoaded", () => {
         lightboxImg.alt = modalGalleryImg.alt;
         const g = activeGallery[activeIndex];
         lightboxCounter.textContent = g.kind === "room" ? `${galleryCounter.textContent} — ${galleryPosition.textContent}` : galleryCounter.textContent;
+        if (!lightboxOverlay.classList.contains("open")) lightboxTriggerEl = document.activeElement;
         lightboxOverlay.classList.add("open");
+        if (lightboxClose) lightboxClose.focus({ preventScroll: true });
     }
 
     function closeLightbox() {
+        const wasOpen = lightboxOverlay.classList.contains("open");
         lightboxOverlay.classList.remove("open");
+        const back = lightboxTriggerEl;
+        lightboxTriggerEl = null;
+        if (wasOpen && back && document.body.contains(back) && lightboxOverlay.contains(document.activeElement)) {
+            back.focus({ preventScroll: true });
+        }
         // Only resume the carousel if the room modal itself is still open
         // AND not already on its way out — closeModal() also calls this (to
         // reset lightbox state on exit) while "open" is still set for the
@@ -5141,6 +5649,9 @@ document.addEventListener("DOMContentLoaded", () => {
         modalBuilder.hidden = true;
         modalCreator.hidden = false;
         modalBuilder.innerHTML = "";
+        // No card yet (and perhaps never, for a builder not on Origins):
+        // the caption goes back to its one-figure position.
+        setBuilderFigures(1);
 
         const names = creatorNames(n.owner);
         if (!names.length) return;
@@ -5180,6 +5691,19 @@ document.addEventListener("DOMContentLoaded", () => {
         // "by <name>" line would just repeat them.
         modalCreator.hidden = true;
         modalBuilder.hidden = false;
+        setBuilderFigures(modalBuilder.querySelectorAll(".builder-avatar").length);
+    }
+
+    /* How many builder figures stand up into the furni row above the card,
+       so its "Furni Info" caption can stand clear of them (see
+       .furni-strip-caption). One figure is the case the caption's own margin
+       was measured for; a collab card lines up several, overlapping, and the
+       caption moves right by one figure's step for each extra one — the
+       icons on the right give up that width by scrolling, as they already do
+       for a long row. */
+    function setBuilderFigures(count) {
+        if (!furniStrip) return;
+        furniStrip.style.setProperty("--builder-figures", String(Math.max(1, count || 1)));
     }
 
     /* ---------- sharing one maze or event ----------
@@ -5286,6 +5810,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!actionsDrawer || !actionsSpine) return;
         actionsDrawer.classList.toggle("is-open", open);
         actionsSpine.setAttribute("aria-expanded", open ? "true" : "false");
+        // The INCOMPLETE tab below shares this edge; one card out at a time.
+        // (Declared further down, and only ever reached once the page has run.)
+        if (open && incompleteDrawer && incompleteDrawer.classList.contains("is-open")) {
+            incompleteDrawer.classList.remove("is-open");
+            if (incompleteSpine) incompleteSpine.setAttribute("aria-expanded", "false");
+        }
     }
 
     if (actionsDrawer && actionsSpine && actionsPanel) {
@@ -5328,7 +5858,12 @@ document.addEventListener("DOMContentLoaded", () => {
        first one. Used by the furni listing, which names actual ROOMS — a
        row that says "the fountain is in Room 7" and then opens on Room 1
        has not answered the thing it was asked. */
+    // The record the window is showing, for the controls inside it that act
+    // on "this one" — the filter chips and the Dead End strip.
+    let modalItem = null;
+
     function openModal(n, opts = {}) {
+        modalItem = n;
         // Invalidates any in-flight closeModal() from a rapid re-open (its
         // animationend/fallback would otherwise fire later and rip the
         // "open"/"closing" classes off this new instance mid-view).
@@ -5354,9 +5889,14 @@ document.addEventListener("DOMContentLoaded", () => {
         // reliably says which kind it is.
         const isEventItem = n.dateFieldLabel === "Date";
         const dateDisplay = isEventItem ? formatEventDuration(n.dateValue, n.endDateValue) : formatMazeDate(n.dateValue);
+        // The hotel is a filter like the tags below it: pressing it lists
+        // everything from the same hotel (see applyFilterChip).
+        const hotelHtml = n.hotel
+            ? `<span>Hotel: <button type="button" class="meta-filter" data-filter-key="hotel" data-filter-value="${escapeHtml(n.hotel)}" title="Everything from the ${escapeHtml(n.hotel)} hotel">${escapeHtml(n.hotel)}</button></span>`
+            : `<span>Hotel: Unknown</span>`;
         modalMeta.innerHTML = `
-            <span class="status-badge status-${escapeHtml(n.statusKey)}">${escapeHtml(n.statusLabel)}</span>
-            <span>Hotel: ${escapeHtml(n.hotel || "Unknown")}</span>
+            <span class="status-badge status-${cssToken(n.statusKey)}">${escapeHtml(n.statusLabel)}</span>
+            ${hotelHtml}
             <span>${escapeHtml(n.dateFieldLabel)}: ${escapeHtml(dateDisplay || "Unknown")}</span>
         `;
         /* Share and Completed live in the window's titlebar, at its left end
@@ -5406,7 +5946,15 @@ document.addEventListener("DOMContentLoaded", () => {
            before it was ever stored, so what is held is already only the
            handful of elements an article is allowed to be. Nothing is fetched
            or parsed here.
-        
+
+           Sanitised twice on the server, and both matter: article.js cleans
+           it on IMPORT, and netlify/functions/events.js cleans it again on
+           SAVE, because an event save carries the article back in its body
+           and whatever arrives there is what gets stored — the import step
+           alone would be bypassed by anyone who wrote to the events endpoint
+           directly. If either of those ever stops sanitising, this line is
+           where it shows.
+
            An article stands in for the event's full details — the admin form
            will not let both be set — so the description above it is the short
            one, and this reads as the piece itself below it. */
@@ -5426,7 +5974,9 @@ document.addEventListener("DOMContentLoaded", () => {
                press to find out. The paragraph is hidden too, not just the
                anchor: hiding the anchor alone leaves its own empty line of
                margin under the article body. */
-            const source = article.url || "";
+            // http(s) only (see safeHttpUrl): anything else counts as no
+            // source, and the line goes, exactly as a missing one does.
+            const source = safeHttpUrl(article.url);
             modalArticleLink.href = source || "#";
             const sourceLine = modalArticleLink.closest(".modal-article-source");
             if (sourceLine) sourceLine.hidden = !source;
@@ -5444,7 +5994,8 @@ document.addEventListener("DOMContentLoaded", () => {
             modalLinks.innerHTML = "";
             modalLinksWrap.style.display = "none";
         }
-        modalTags.innerHTML = tagsHtml(n);
+        modalTags.innerHTML = modalFilterChipsHtml(n);
+        renderModalDeadEnd(n);
 
         /* An EC event's season medal, at the right of the builder row, and a
            wash of the badge's own green over the modal with it (see
@@ -5464,8 +6015,11 @@ document.addEventListener("DOMContentLoaded", () => {
         modalEcBadge.hidden = !ecSeason;
         modalEcLabel.hidden = !ecSeason;
         modalEl.classList.toggle("is-ec", !!ecSeason);
-        if (n.habboLink) {
-            modalLink.href = n.habboLink;
+        // Through safeHttpUrl, so a stored link that is not http(s) is shown
+        // as no link rather than as a button that runs something.
+        const habboLink = safeHttpUrl(n.habboLink);
+        if (habboLink) {
+            modalLink.href = habboLink;
             modalLink.style.display = "inline-block";
         } else {
             modalLink.style.display = "none";
@@ -5474,7 +6028,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // done it. Hiding the button alone leaves an empty <p> in the body's
         // column, which reads as a band of dead space under the builder card
         // on every event — none of which have a room to visit.
-        modalVisitWrap.style.display = n.habboLink ? "" : "none";
+        modalVisitWrap.style.display = habboLink ? "" : "none";
 
         // The entrance/finish images (if set) always bookend the gallery,
         // ahead of and after the room-by-room shots — they're stored
@@ -5549,14 +6103,28 @@ document.addEventListener("DOMContentLoaded", () => {
                usual width, so the count survives a slightly wider window
                without going back to loading the whole hundred of The Little
                Maze up front. */
+            /* Keyboard-operable as well as clickable: tabindex="0" and
+               role="button", with Enter and Space doing what a click does.
+               They were bare <img>s with a click listener, which a keyboard
+               cannot reach at all — so for anyone not using a pointer, the
+               strip was a row of pictures of rooms they could not go to.
+               The alt is the button's name ("Room 3", "Entrance"), which is
+               what it says it goes to; the "?" stand-in is given one the
+               same way, as a title is not a name. */
             galleryStrip.innerHTML = activeGallery.map((g, i) => g.image
-                ? `<img src="${imgCdn(g.image, 110, 110, 55)}" ${i < STRIP_EAGER ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"'} decoding="async" alt="${escapeHtml(displayLabel(g))}" data-index="${i}">`
-                : `<div class="gallery-strip-missing" data-index="${i}" title="${escapeHtml(displayLabel(g))}">?</div>`
+                ? `<img src="${imgCdn(g.image, 110, 110, 55)}" ${i < STRIP_EAGER ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"'} decoding="async" alt="${escapeHtml(displayLabel(g))}" data-index="${i}" tabindex="0" role="button">`
+                : `<div class="gallery-strip-missing" data-index="${i}" title="${escapeHtml(displayLabel(g))}" tabindex="0" role="button" aria-label="${escapeHtml(displayLabel(g))}">?</div>`
             ).join("");
             galleryStrip.querySelectorAll("img, .gallery-strip-missing").forEach(thumb => {
-                thumb.addEventListener("click", () => {
+                const go = () => {
                     showGalleryImage(Number(thumb.dataset.index));
                     restartAutoAdvance();
+                };
+                thumb.addEventListener("click", go);
+                thumb.addEventListener("keydown", e => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    go();
                 });
             });
             /* Straight to the picture the caller asked for, when it asked
@@ -5567,8 +6135,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 : -1;
             showGalleryImage(wanted >= 0 ? wanted : 0, { instant: true });
             restartAutoAdvance();
+            setGalleryImageOperable(true);
         } else {
             activeGallery = null;
+            // No gallery, no lightbox (openLightbox returns at once), so the
+            // picture stops being a button rather than being one that does
+            // nothing.
+            setGalleryImageOperable(false);
             renderFurniStrip(null);
             modalThumb.classList.remove("has-gallery");
             galleryMissingPill.style.display = "none";
@@ -5620,18 +6193,27 @@ document.addEventListener("DOMContentLoaded", () => {
         // reopening the modal never starts mid-way through a previous view.
         resetOldVersionInstant();
 
+        const wasOpen = modalOverlay.classList.contains("open");
         modalOverlay.classList.add("open");
         // Moves keyboard focus into the dialog itself (see modalCard's own
         // tabindex="-1" in home.html — focusable via script, not Tab) so a
         // keyboard user's very next Tab press starts cycling the modal's
         // own contents instead of whatever's still behind the overlay.
         modalCard.focus();
+        // The address follows the window — see "the modal and the Back
+        // button" below.
+        syncModalHistory(n, wasOpen, !!opts.fromHashChange);
     }
 
     // Plays modalOut (see style.css) before actually hiding the overlay,
     // instead of just snapping display:none the instant the user clicks
     // away — the reverse of the modalIn pop the modal opens with.
-    function closeModal() {
+    /* opts.fromHistory: the close IS a history step (Back was pressed), so
+       it must not take another one of its own.
+       opts.keepFocus: something else is about to take focus (the saved
+       note's "Take me there" opens Your Progress), and handing it back to
+       the row that opened this modal 300ms later would steal it. */
+    function closeModal(opts = {}) {
         if (!modalOverlay.classList.contains("open") || modalOverlay.classList.contains("closing")) return;
 
         const token = ++modalCloseToken;
@@ -5649,11 +6231,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Drop a #event-… or #maze-… hash left over from opening this modal
         // (via the header widget or a shared link) so a refresh after closing
-        // doesn't reopen it — replaceState instead of clearing location.hash
-        // so it doesn't add a back-button entry or re-fire hashchange.
-        if (/^#(event|maze)-/.test(location.hash)) {
-            history.replaceState(null, "", location.pathname + location.search);
-        }
+        // doesn't reopen it. When the entry is one this page pushed for the
+        // modal, stepping back off it is what removes it — otherwise closing
+        // with the X would leave it behind and the next Back would land on
+        // the same archive page and appear to do nothing. Anything else (a
+        // deep link someone arrived on) is rewritten in place, as before:
+        // stepping back from THAT would leave the site.
+        if (!opts.fromHistory) leaveModalHistory();
+
+        if (opts.keepFocus) modalTriggerEl = null;
 
         const finish = () => {
             if (token !== modalCloseToken) return; // superseded by a reopen
@@ -5672,6 +6258,132 @@ document.addEventListener("DOMContentLoaded", () => {
         // the modal must not get stuck permanently mid-close.
         setTimeout(finish, 300);
     }
+
+    /* ---------- the modal and the Back button ----------
+
+       On a phone the room modal fills the screen and looks like a page, so
+       Back is what people press to leave it — and it pushed no history
+       entry, so Back left the SITE, taking the visitor off the archive
+       entirely from what they took to be one level in.
+
+       So opening a modal from inside the page pushes an entry naming it
+       (#maze-<id> / #event-<id>, the same addresses a shared link uses), and
+       Back pops it and closes the modal. The entries carry a marker in their
+       state so this code only ever steps back over entries it made itself.
+
+       - Opened by a click: pushed.
+       - Opened while one is already showing (a furni card's "also in", the
+         furni listing's Back): the entry is REPLACED, not stacked, so Back
+         closes the window rather than walking through every maze viewed in
+         it.
+       - Opened by a hash change (the header ticker's link while already on
+         the archive): the browser has made the entry already, so it is only
+         marked as ours.
+       - Opened from the address the page LOADED with (a shared link): left
+         unmarked. That entry is the visitor's way into the site; closing the
+         modal rewrites its hash away, exactly as it always did, and never
+         steps back off it.
+
+       Closing by any other route (X, Escape, the backdrop) steps back over
+       our own entry — see leaveModalHistory — so it does not linger as a
+       dead entry that makes the next Back press appear to do nothing.
+
+       history.back() is asynchronous, so a modal reopened in the gap before
+       its popstate lands would have its new entry popped by the old close.
+       pendingBack covers that gap: the push waits for the popstate, and the
+       popstate knows not to close anything while a reopen is waiting. */
+    const MODAL_STATE = "mazeratsModal";
+    let pendingBack = false;
+    let pendingPush = null;
+
+    function modalHash(n) {
+        return `#${n.isEvent ? "event" : "maze"}-${encodeURIComponent(n.id || "")}`;
+    }
+
+    function ownsModalEntry() {
+        return !!(history.state && history.state[MODAL_STATE]);
+    }
+
+    // Compared decoded, so an id the share page escaped slightly differently
+    // from encodeURIComponent still counts as the address already showing.
+    function sameModalHash(a, b) {
+        const dec = s => { try { return decodeURIComponent(s); } catch (e) { return s; } };
+        return dec(a) === dec(b);
+    }
+
+    // The address of whatever the modal is showing, so a hashchange that
+    // names the same thing (this code's own pushes are followed by one when
+    // a reopen races a step back) does not rebuild the window it is already
+    // looking at.
+    let shownModalHash = null;
+
+    function syncModalHistory(n, wasOpen, fromHashChange) {
+        shownModalHash = n && n.id ? modalHash(n) : null;
+        if (!n || !n.id) return;
+        const hash = modalHash(n);
+        const url = location.pathname + location.search + hash;
+        if (pendingBack) { pendingPush = hash; return; }
+        try {
+            if (fromHashChange) {
+                if (!ownsModalEntry()) history.replaceState({ [MODAL_STATE]: true }, "", url);
+            } else if (sameModalHash(location.hash, hash)) {
+                // Already at this address: the load-time deep link, or a
+                // Forward press back onto an entry we pushed earlier. Nothing
+                // to add either way.
+            } else if (wasOpen && (ownsModalEntry() || /^#(event|maze)-/.test(location.hash))) {
+                history.replaceState(history.state, "", url);
+            } else {
+                history.pushState({ [MODAL_STATE]: true }, "", url);
+            }
+        } catch (e) { /* a sandboxed frame can refuse history writes; the modal still works */ }
+    }
+
+    function leaveModalHistory() {
+        if (!/^#(event|maze)-/.test(location.hash)) return;
+        if (ownsModalEntry()) {
+            pendingBack = true;
+            history.back();
+        } else {
+            history.replaceState(null, "", location.pathname + location.search);
+        }
+    }
+
+    window.addEventListener("popstate", () => {
+        if (pendingBack) {
+            const reopened = pendingPush && modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing");
+            /* Landed on ANOTHER of our modal entries — possible when the
+               header ticker's link was followed while a maze was already
+               open, which makes the browser stack a second entry that this
+               code can only mark, not prevent. The window is closed, so keep
+               stepping until the archive's own entry is reached; stopping
+               here would leave a hash the next hashchange reopens. */
+            if (!reopened && ownsModalEntry() && /^#(event|maze)-/.test(location.hash)) {
+                history.back();
+                return;
+            }
+            pendingBack = false;
+            /* The entry stepped back onto is the one from BEFORE the window
+               opened, so it carries whatever search was in the address then.
+               A filter chip closes the window and sets a new search in the
+               same moment (see applyFilterChip); written into the entry that
+               was being left, it went with it. Put it on this one. */
+            syncedSearch = null;
+            syncSearchToUrl();
+            // A modal reopened while the step back was in flight gets the
+            // entry it asked for now that the old one is gone.
+            if (reopened) {
+                history.pushState({ [MODAL_STATE]: true }, "", location.pathname + location.search + pendingPush);
+            }
+            pendingPush = null;
+            return;
+        }
+        // Back from a modal's entry to the plain archive: close it, without
+        // stepping back a second time. Forward onto a maze's entry is handled
+        // by the hashchange that fires alongside this (openFromHash).
+        if (!/^#(event|maze)-/.test(location.hash) && modalOverlay.classList.contains("open")) {
+            closeModal({ fromHistory: true });
+        }
+    });
 
     searchInput.addEventListener("input", e => {
         query = e.target.value;
@@ -5728,6 +6440,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
         return { walkable, walkedHere, savedRooms, toWalk, byDifficulty };
     }
+
+    /* For the console's Profile page (js/console-profile.js): the same
+       figures this window draws, so the two can never disagree, and a way
+       to open this window for the detail. */
+    window.ArchiveProgress = {
+        figures() {
+            const f = progressFigures();
+            return { done: f.walkedHere.length, total: f.walkable.length, toWalk: f.toWalk.length };
+        },
+        open: () => openProgress()
+    };
 
     function progressHtml() {
         const f = progressFigures();
@@ -5833,26 +6556,45 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.addEventListener("click", () => {
                 const room = ROOMS.find(r => r.id === btn.dataset.openMaze);
                 if (!room) return;
-                closeProgress();
+                closeProgress({ keepFocus: true });
                 openModal(normalize(room, false));
             });
         });
     }
 
+    /* Where focus was when the window opened, handed back when it closes —
+       the room modal has always done this (modalTriggerEl) and this window
+       did not, so closing it dropped a keyboard user at the top of the
+       document. Only recorded on a fresh open, so re-rendering an open
+       window cannot overwrite the real opener with something inside it. */
+    let progressTriggerEl = null;
+
     function openProgress() {
         const overlay = document.getElementById("progress-overlay");
         if (!overlay) return;
+        if (!overlay.classList.contains("open")) progressTriggerEl = document.activeElement;
         renderProgress();
         overlay.classList.add("open");
         document.body.classList.add("modal-open");
         document.getElementById("progress-window").focus();
     }
 
-    function closeProgress() {
+    /* opts.keepFocus: something is about to open in its place (a saved
+       maze's row opens the room modal) and will take focus itself. */
+    function closeProgress(opts = {}) {
         const overlay = document.getElementById("progress-overlay");
         if (!overlay) return;
         overlay.classList.remove("open");
         document.body.classList.remove("modal-open");
+        const back = progressTriggerEl;
+        progressTriggerEl = null;
+        if (opts.keepFocus || !back || !document.body.contains(back)) return;
+        // The side menu's own rows are hidden once the menu shuts, so a row
+        // that opened this is no place to land — its spine is.
+        const landing = back.closest && back.closest("#side-menu")
+            ? document.getElementById("side-spine")
+            : back;
+        if (landing && typeof landing.focus === "function") landing.focus({ preventScroll: true });
     }
 
     (function wireProgress() {
@@ -5871,17 +6613,284 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!overlay) return;
         if (close) close.addEventListener("click", closeProgress);
         overlay.addEventListener("click", e => { if (e.target === overlay) closeProgress(); });
-        document.addEventListener("keydown", e => {
-            if (e.key === "Escape" && overlay.classList.contains("open")) closeProgress();
-        });
+        // Escape through the shared rule — see registerEscapeLayer.
+        registerEscapeLayer(
+            () => overlay.classList.contains("open") ? [overlay] : [],
+            () => closeProgress()
+        );
     })();
 
     /* Pulls the account's ticks down as soon as we know who is signed in,
        and again if they sign in or out during the visit. onChange fires on
-       every answer including "nobody", which syncWalked ignores. */
+       every answer including "nobody", which now takes the account's
+       ticks back off this browser (see dropAccountTicks) unless the
+       answer was only a failed request (Account.unsure). */
     if (window.Account) {
-        Account.onChange(syncWalked);
+        Account.onChange(me => {
+            if (me) onAccountAnswer(me);
+            else if (!Account.unsure) onAccountAnswer(null);
+        });
+        if (Account.onStored) Account.onStored(confirmTicks);
         Account.ready();
+    }
+
+    /* ---------- Missing Pieces ----------
+
+       Records that stop short: a maze nobody screenshotted the finish of, an
+       event with no photos, a builder never written down. js/dead-ends.js
+       lists what a record can be missing (the "dead ends" name in the code is
+       the feature's first draft; people see "Missing Pieces"). This is the
+       archive's half: the INCOMPLETE tab on a maze's window, and the data the
+       console's Missing Pieces list and Add Maze Info form read (see
+       js/console-info.js, and window.MissingPieces below).
+
+       Every missing piece here was MARKED BY HAND in /warren. Nothing is
+       inferred from the record — the page used to guess, and a maze whose
+       entrance is simply its room 1 was advertised as missing an entrance
+       shot. A record with no flag is complete as far as this page is
+       concerned.
+
+       The flags are one small cached read, fetched when the archive loads so
+       a maze's window can show its tab the moment it opens. If it fails, the
+       page shows nothing as missing, which is the safe way to be wrong. */
+    const DEAD_ENDS_URL = "/.netlify/functions/dead-ends";
+    const deadEnds = { flags: new Map(), trail: new Map(), loaded: false };
+    let deadEndsReq = null;
+    const deadEndsListeners = [];
+
+    function loadDeadEnds() {
+        if (deadEndsReq) return deadEndsReq;
+        deadEndsReq = fetch(DEAD_ENDS_URL, { headers: { Accept: "application/json" } })
+            .then(res => { if (!res.ok) throw new Error(String(res.status)); return res.json(); })
+            .then(data => {
+                deadEnds.flags = new Map((data.flags || []).map(f => [`${f.type}:${f.id}`, f]));
+                deadEnds.trail = new Map((data.trail || []).map(t => [`${t.type}:${t.id}`, t.leads]));
+                deadEnds.loaded = true;
+                if (modalItem && modalOverlay.classList.contains("open")) renderModalDeadEnd(modalItem);
+                deadEndsListeners.forEach(fn => { try { fn(); } catch (e) { /* a listener's own problem */ } });
+            })
+            .catch(() => { deadEndsReq = null; });
+        return deadEndsReq;
+    }
+
+    function deadEndKey(n) { return `${n.isEvent ? "event" : "maze"}:${n.id}`; }
+
+    // What one normalized record is missing: the pieces an admin marked.
+    function gapsOfItem(n) {
+        if (typeof DeadEnds === "undefined" || !n || !n.id) return [];
+        return DeadEnds.gapsOf(n.isEvent ? "event" : "maze", deadEnds.flags.get(deadEndKey(n)) || null);
+    }
+
+    // Every marked record, longest on the list first so the oldest asks do
+    // not sink under new ones.
+    function deadEndItems() {
+        const all = [
+            ...ROOMS.map(r => normalize(r, false)),
+            ...EVENTS.map(e => normalize(e, true))
+        ];
+        return all
+            .map(n => ({ n, gaps: gapsOfItem(n), flag: deadEnds.flags.get(deadEndKey(n)) || null }))
+            .filter(e => e.gaps.length)
+            .sort((a, b) => String(a.flag.markedAt || "").localeCompare(String(b.flag.markedAt || ""))
+                || compareNames(a.n.name, b.n.name));
+    }
+
+    function trailLine(n) {
+        const waiting = deadEnds.trail.get(deadEndKey(n)) || 0;
+        return waiting
+            ? `<p class="incomplete-trail">Someone is on the trail: ${waiting} ${waiting === 1 ? "lead" : "leads"} waiting to be read.</p>`
+            : "";
+    }
+
+    /* What the console reads. The console is its own file and does not
+       share this one's scope, so the archive's records and the flags are
+       handed over through this, as plain data: every record anyone could add
+       information to, and which of them are marked as missing something. */
+    // One shared wait for the archive, rather than a fresh 200ms poll per
+    // caller: the console asks every time a page of it is drawn.
+    let archiveWait = null;
+    function archiveReady() {
+        if (dataLoaded) return Promise.resolve();
+        if (!archiveWait) {
+            archiveWait = new Promise(resolve => {
+                const t = setInterval(() => { if (dataLoaded) { clearInterval(t); resolve(); } }, 200);
+            });
+        }
+        return archiveWait;
+    }
+
+    window.MissingPieces = {
+        /* Resolves once the archive is in and the flags have been ASKED for,
+           whether or not that ask worked: loadDeadEnds swallows its own
+           failure. So a caller checks loaded() afterwards; calling ready()
+           again straight away on a false loaded() is what made the Missing
+           Pieces page hammer a dead endpoint forever. */
+        ready() {
+            return Promise.all([archiveReady(), loadDeadEnds()]);
+        },
+        loaded: () => dataLoaded && deadEnds.loaded,
+        /* The archive alone, for the Add Maze Info form's record list, which
+           needs no flags. It used to wait on loaded() above, so a failed
+           dead-ends read left the form with no mazes to choose from. */
+        archiveReady,
+        archiveLoaded: () => dataLoaded,
+        // Every maze and event, by name, for the form's "which one" list.
+        records() {
+            return [
+                ...ROOMS.map(r => ({ type: "maze", id: r.id, name: r.name || r.id })),
+                ...EVENTS.map(e => ({ type: "event", id: e.id, name: e.title || e.id }))
+            ].filter(r => r.id).sort((a, b) => compareNames(a.name, b.name));
+        },
+        // The marked ones, with what each is missing and the admin's note.
+        missing() {
+            return deadEndItems().map(e => ({
+                type: e.n.isEvent ? "event" : "maze",
+                id: e.n.id,
+                name: e.n.name,
+                pieces: e.gaps,
+                note: (e.flag && e.flag.note) || "",
+                waiting: deadEnds.trail.get(deadEndKey(e.n)) || 0
+            }));
+        },
+        gapsOf(type, id) {
+            return typeof DeadEnds === "undefined" ? [] : DeadEnds.gapsOf(type, deadEnds.flags.get(`${type}:${id}`) || null);
+        },
+        // A lead was just sent: count it at once rather than waiting for the
+        // edge-cached list to catch up, so the sender sees it land.
+        noteLead(type, id) {
+            const k = `${type}:${id}`;
+            deadEnds.trail.set(k, (deadEnds.trail.get(k) || 0) + 1);
+            if (modalItem && modalOverlay.classList.contains("open")) renderModalDeadEnd(modalItem);
+        },
+        // Open a record's window from the console's list.
+        openRecord(type, id) {
+            const raw = type === "event" ? EVENTS.find(e => e.id === id) : ROOMS.find(r => r.id === id);
+            if (raw) openModal(normalize(raw, type === "event"));
+        },
+        onChange(fn) { if (typeof fn === "function") deadEndsListeners.push(fn); }
+    };
+
+    /* ---- the INCOMPLETE tab on a maze's window ----
+
+       A second tab on the window's right edge, under Actions, in the same
+       cream and the same slide: the word INCOMPLETE down the spine, and the
+       list of what is missing on the card it pulls out. It is only there on
+       a record somebody has marked, so a complete maze's window is exactly
+       what it always was.
+
+       Below 1000px there is no room beside the window for a tab to open into
+       (see .modal-actions-drawer), so the same card hangs from a small
+       INCOMPLETE pill in the meta row instead — the status badge's row,
+       which is where "what state is this record in" already lives. */
+    const incompleteDrawer = document.getElementById("modal-incomplete-drawer");
+    const incompleteSpine = document.getElementById("modal-incomplete-spine");
+    const incompletePanel = document.getElementById("modal-incomplete-panel");
+
+    function incompleteCardHtml(n, gaps) {
+        const flag = deadEnds.flags.get(deadEndKey(n));
+        return `
+            <p class="incomplete-title">Still missing</p>
+            <ul class="incomplete-list">${gaps.map(key => {
+                const p = DeadEnds.piece(key);
+                return `<li>${escapeHtml(p ? p.ask : key)}</li>`;
+            }).join("")}</ul>
+            ${flag && flag.note ? `<p class="incomplete-note">${escapeHtml(flag.note)}</p>` : ""}
+            ${trailLine(n).replace("deadend-trail", "incomplete-trail")}
+            <button type="button" class="incomplete-help" data-lead>I can help</button>`;
+    }
+
+    function setIncompleteOpen(open) {
+        if (!incompleteDrawer) return;
+        incompleteDrawer.classList.toggle("is-open", open);
+        if (incompleteSpine) incompleteSpine.setAttribute("aria-expanded", open ? "true" : "false");
+        // One card out at a time: the two tabs share an edge.
+        if (open) setActionsOpen(false);
+    }
+
+    function renderModalDeadEnd(n) {
+        const gaps = gapsOfItem(n);
+        const pill = document.getElementById("modal-incomplete-pill");
+        const pop = document.getElementById("modal-incomplete-pop");
+        setIncompleteOpen(false);
+        if (pop) pop.hidden = true;
+
+        if (!gaps.length) {
+            if (incompleteDrawer) incompleteDrawer.hidden = true;
+            if (incompletePanel) incompletePanel.innerHTML = "";
+            if (pill) pill.remove();
+            if (pop) pop.remove();
+            if (!deadEnds.loaded) loadDeadEnds();
+            return;
+        }
+
+        const card = incompleteCardHtml(n, gaps);
+        if (incompleteDrawer && incompletePanel) {
+            incompletePanel.innerHTML = card;
+            incompleteDrawer.hidden = false;
+        }
+
+        /* The narrow version. Rebuilt with the meta row, which openModal
+           rewrites on every open, so it is added here each time rather than
+           kept. The CSS shows whichever of the two fits the width. */
+        if (!pill) {
+            const b = document.createElement("button");
+            b.type = "button";
+            b.id = "modal-incomplete-pill";
+            b.className = "incomplete-pill";
+            b.setAttribute("aria-expanded", "false");
+            b.setAttribute("aria-controls", "modal-incomplete-pop");
+            b.textContent = "Incomplete";
+            modalMeta.appendChild(b);
+            const box = document.createElement("div");
+            box.id = "modal-incomplete-pop";
+            box.className = "incomplete-pop";
+            box.hidden = true;
+            modalMeta.appendChild(box);
+            b.addEventListener("click", ev => {
+                ev.stopPropagation();
+                box.hidden = !box.hidden;
+                b.setAttribute("aria-expanded", box.hidden ? "false" : "true");
+            });
+        }
+        document.getElementById("modal-incomplete-pop").innerHTML = card;
+    }
+
+    if (incompleteDrawer && incompleteSpine) {
+        incompleteSpine.addEventListener("click", e => {
+            e.stopPropagation();
+            const open = !incompleteDrawer.classList.contains("is-open");
+            setIncompleteOpen(open);
+            if (open) {
+                const first = incompletePanel.querySelector("button");
+                if (first) first.focus({ preventScroll: true });
+            }
+        });
+        // Anywhere else in the window closes it, as the Actions tab does.
+        modalOverlay.addEventListener("click", e => {
+            if (!incompleteDrawer.classList.contains("is-open")) return;
+            if (incompleteDrawer.contains(e.target)) return;
+            setIncompleteOpen(false);
+        });
+        registerEscapeLayer(
+            () => incompleteDrawer.classList.contains("is-open") && modalOverlay.classList.contains("open") ? [incompleteDrawer] : [],
+            () => { setIncompleteOpen(false); incompleteSpine.focus({ preventScroll: true }); }
+        );
+    }
+
+    // "I can help" on either version of the card: the console's Add Maze
+    // Info form, already pointed at this record.
+    modalOverlay.addEventListener("click", e => {
+        const btn = e.target.closest("[data-lead]");
+        if (!btn || !modalItem) return;
+        setIncompleteOpen(false);
+        if (window.MazeConsole) MazeConsole.openInfo({ type: modalItem.isEvent ? "event" : "maze", id: modalItem.id });
+    });
+
+    // For the side menu's line: how many records are marked. Null until both
+    // the archive and the flags are in, so the menu never says "none" early.
+    function deadEndFigures() {
+        if (!dataLoaded || !deadEnds.loaded || typeof DeadEnds === "undefined") return null;
+        return deadEndItems().length;
     }
 
     /* ---------- the side menu ----------
@@ -5941,6 +6950,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // WHATS_NEW_RECENT_DAYS for why the two are different numbers.
         const fresh = whatsNewRecentCount();
         const f = progressFigures();
+        const de = deadEndFigures();
 
         const o = typeof window.OddOneOutStatus === "function" ? window.OddOneOutStatus() : null;
 
@@ -6021,6 +7031,15 @@ document.addEventListener("DOMContentLoaded", () => {
                    removed. */
                 run: () => { window.location.href = "/fallinfurni"; }
             },
+            {
+                // Every board in one window (js/leaderboards.js), so the
+                // scores can be looked at without finishing a game first.
+                name: "Leaderboards",
+                state: "Who's on top today",
+                badge: "",
+                on: false,
+                run: () => { if (window.Leaderboards) Leaderboards.open(); }
+            },
             { heading: "The archive" },
             {
                 name: "What's New",
@@ -6028,6 +7047,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 badge: fresh ? String(fresh) : "",
                 on: showWhatsNew,
                 run: toggleWhatsNew
+            },
+            {
+                name: "Missing Pieces",
+                state: de === null ? "Help finish the archive"
+                    : de ? `${de} ${de === 1 ? "record needs" : "records need"} your help`
+                        : "Every record is complete",
+                badge: "",
+                on: false,
+                // The console's list, not a view of the archive: each entry
+                // leads straight into the Add Maze Info form beside it.
+                run: () => { if (window.MazeConsole) MazeConsole.openMissing(); }
             },
             {
                 name: "Your Progress",
@@ -6128,6 +7158,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     const entry = entries[Number(btn.dataset.i)];
                     // Closed BEFORE the view changes underneath it, or the
                     // menu is left sitting over the thing it just went to.
+                    // Focus goes to the spine first: closing makes the
+                    // menu inert, which would drop focus from this row to
+                    // the body, and every window opened below records the
+                    // focused element as the place to hand focus back to.
+                    spine.focus({ preventScroll: true });
                     setOpen(false);
                     if (entry) entry.run();
                 });
@@ -6140,7 +7175,19 @@ document.addEventListener("DOMContentLoaded", () => {
             if (open) render();
             drawer.classList.toggle("is-open", open);
             spine.setAttribute("aria-expanded", open ? "true" : "false");
+            /* On a desktop the closed menu is still display:flex, only slid
+               behind the window, so its buttons stayed in the tab order and
+               a keyboard user tabbed through a menu they could not see.
+               inert takes them out (and out of the accessibility tree)
+               without touching any style, so the slide is unchanged. A
+               focused row loses focus to the body when this lands; every
+               path that closes the menu then moves focus on itself (the
+               row's own window, the spine on Escape, or whatever was
+               clicked). */
+            menu.toggleAttribute("inert", !open);
         }
+        // Closed at load, so inert from the start.
+        menu.setAttribute("inert", "");
 
         spine.addEventListener("click", e => {
             e.stopPropagation();
@@ -6160,11 +7207,13 @@ document.addEventListener("DOMContentLoaded", () => {
             setOpen(false);
         });
 
-        document.addEventListener("keydown", e => {
-            if (e.key !== "Escape" || !isOpen()) return;
-            setOpen(false);
-            spine.focus({ preventScroll: true });
-        });
+        // Escape goes through the shared top-most-layer rule (EscapeLayers
+        // in js/site.js), so it closes the menu only when nothing sits in
+        // front of it.
+        registerEscapeLayer(
+            () => isOpen() ? [drawer] : [],
+            () => { setOpen(false); spine.focus({ preventScroll: true }); }
+        );
 
     })();
 
@@ -6182,6 +7231,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showWhatsNew = false;
             showTimeline = false;
             showFurni = false;
+           
             furniFilter = null;
             searchInput.value = "";
             query = "";
@@ -6205,6 +7255,7 @@ document.addEventListener("DOMContentLoaded", () => {
             showWhatsNew = false;
             showTimeline = false;
             showFurni = false;
+           
             furniFilter = null;
             searchInput.value = "";
             query = "";
@@ -6295,6 +7346,26 @@ document.addEventListener("DOMContentLoaded", () => {
     // off the button underneath — no stopPropagation needed.
     featuredRefreshBtn.addEventListener("click", refreshFeaturedList);
 
+    /* "Clear filter": the search box emptied (which is where every filter
+       lives — see withFilter), and a furni listing let go of, back to the
+       plain archive in whichever tab and view was underneath. The address
+       loses its ?q= with it, through render's syncSearchToUrl. */
+    const clearFilterBtn = document.getElementById("clear-filter-btn");
+    if (clearFilterBtn) {
+        clearFilterBtn.addEventListener("click", () => {
+            searchInput.value = "";
+            query = "";
+            if (furniFilter) {
+                furniFilter = null;
+                showFurni = false;
+            }
+            render();
+            const results = document.querySelector(".home-results");
+            if (results) results.scrollTop = 0;
+            searchInput.focus({ preventScroll: true });
+        });
+    }
+
     // Restore-only now (see .chrome-frame-minimize-toggle's own opacity
     // rule in style.css — it's invisible and inert whenever not minimized,
     // so this only ever fires from the minimized state) — same exit as
@@ -6310,6 +7381,12 @@ document.addEventListener("DOMContentLoaded", () => {
     modalOverlay.addEventListener("click", e => {
         if (e.target === modalOverlay) closeModal();
     });
+    // The window's filter chips — tags, difficulty, hotel, "More by".
+    modalOverlay.addEventListener("click", e => {
+        const chip = e.target.closest("[data-filter-key]");
+        if (!chip || !modalOverlay.contains(chip)) return;
+        applyFilterChip(chip.dataset.filterKey, chip.dataset.filterValue, modalItem);
+    });
     oldVersionsPill.addEventListener("click", toggleOldVersions);
     galleryPrev.addEventListener("click", () => { showGalleryImage(activeIndex - 1); restartAutoAdvance(); });
     galleryNext.addEventListener("click", () => { showGalleryImage(activeIndex + 1); restartAutoAdvance(); });
@@ -6323,15 +7400,51 @@ document.addEventListener("DOMContentLoaded", () => {
     lightboxPrev.addEventListener("click", () => showGalleryImage(activeIndex - 1));
     lightboxNext.addEventListener("click", () => showGalleryImage(activeIndex + 1));
 
+    /* Escape, one layer per press, front-most first — the picture over the
+       modal, then the tab pulled out of it, then the modal — through the
+       one shared rule in js/site.js (EscapeLayers) rather than this
+       listener's own if/else chain, which only knew about the three layers
+       in this file and could not see the console or the photo frames
+       sitting in front of them. */
+    function registerEscapeLayer(elements, close) {
+        if (window.EscapeLayers) window.EscapeLayers.register({ elements, close });
+    }
+
+    registerEscapeLayer(
+        () => lightboxOverlay.classList.contains("open") ? [lightboxOverlay] : [],
+        () => closeLightbox()
+    );
+    if (actionsDrawer && actionsSpine) {
+        registerEscapeLayer(
+            () => actionsOpen() && modalOverlay.classList.contains("open") ? [actionsDrawer] : [],
+            () => { setActionsOpen(false); actionsSpine.focus({ preventScroll: true }); }
+        );
+    }
+    registerEscapeLayer(
+        () => modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing") ? [modalOverlay] : [],
+        () => closeModal()
+    );
+    // Photo frames and furni cards float over everything and can be open
+    // several at once; Escape takes them down one at a time, front first.
+    registerEscapeLayer(() => openPhotoFrames.slice(), frame => closePhotoFrame(frame));
+    registerEscapeLayer(() => openFurniCards.slice(), card => closeFurniCard(card));
+    /* The two daily games keep their own Escape listeners in js/guess.js
+       and js/oddoneout.js. Registered here so they take part in the same
+       ordering — the shared listener stops the event once it acts, so theirs
+       never fire as well — and closed through their own X, which runs
+       exactly the close() those listeners would have. */
+    ["guess", "odd"].forEach(name => {
+        const overlay = document.getElementById(`${name}-overlay`);
+        const x = document.getElementById(`${name}-close`);
+        if (!overlay || !x) return;
+        registerEscapeLayer(
+            () => overlay.classList.contains("open") ? [overlay] : [],
+            () => x.click()
+        );
+    });
+
     document.addEventListener("keydown", e => {
         if (!modalOverlay.classList.contains("open")) return;
-        if (e.key === "Escape") {
-            // Innermost thing first, one press at a time: the picture over
-            // the modal, then the tab pulled out of it, then the modal.
-            if (lightboxOverlay.classList.contains("open")) closeLightbox();
-            else if (actionsOpen()) { setActionsOpen(false); actionsSpine.focus({ preventScroll: true }); }
-            else closeModal();
-        }
         if (activeGallery) {
             if (e.key === "ArrowLeft") { showGalleryImage(activeIndex - 1); restartAutoAdvance(); }
             if (e.key === "ArrowRight") { showGalleryImage(activeIndex + 1); restartAutoAdvance(); }
@@ -6376,14 +7489,31 @@ document.addEventListener("DOMContentLoaded", () => {
        is what /maze/<id> lands on once the share function has handed a real
        browser through (see netlify/functions/share.js), and what the Copy
        link button in the modal writes to the clipboard. */
-    function openFromHash() {
+    /* fromHashChange is true when the browser moved to this address while
+       the page was already open (a link, or Back/Forward), false for the
+       address the page loaded with — the modal's history handling treats
+       the two differently; see "the modal and the Back button". */
+    function openFromHash(fromHashChange) {
         if (!dataLoaded) return;
+        // Mid-way through stepping back off a closed modal's entries: the
+        // hash about to be left is not a request to open anything.
+        if (pendingBack) return;
         const m = /^#(event|maze)-(.+)$/.exec(location.hash);
         if (!m) return;
-        const id = decodeURIComponent(m[2]);
+        // Already showing exactly this: nothing to open.
+        if (modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing")
+            && shownModalHash && sameModalHash(location.hash, shownModalHash)) return;
+        /* A bare "%" that is not an escape — a hand-edited or truncated
+           link — makes decodeURIComponent throw, and uncaught here it took
+           the load path down with it: openFromHash runs straight after the
+           first render. A hash that does not decode names nothing, so it is
+           ignored like any other unknown id. */
+        let id;
+        try { id = decodeURIComponent(m[2]); } catch (e) { return; }
+        const opts = { fromHashChange: fromHashChange === true };
         if (m[1] === "event") {
             const match = EVENTS.find(e => e.id === id);
-            if (match) openModal(normalize(match, true));
+            if (match) openModal(normalize(match, true), opts);
             return;
         }
         const match = ROOMS.find(r => r.id === id);
@@ -6396,10 +7526,10 @@ document.addEventListener("DOMContentLoaded", () => {
         showFeatured = false;
         mazesSub = match.status === "closed" ? "archived" : match.status === "collab" ? "collab" : "open";
         render();
-        openModal(normalize(match, false));
+        openModal(normalize(match, false), opts);
     }
 
-    window.addEventListener("hashchange", openFromHash);
+    window.addEventListener("hashchange", () => openFromHash(true));
 
     render();
 
@@ -6629,6 +7759,10 @@ document.addEventListener("DOMContentLoaded", () => {
     Promise.all([roomsReq, eventsReq]).then(async ([rooms, events]) => {
         ROOMS = rooms;
         EVENTS = events;
+        // New records, so every cached search string is for an object that
+        // no longer exists — dropped whole rather than left to the GC.
+        haystackCache = new WeakMap();
+        furniNameCache = new WeakMap();
 
         /* The archive is in. From here the only thing left to wait for is
            thumbnails, which is what the cap was always for — so arm it now
@@ -6653,6 +7787,10 @@ document.addEventListener("DOMContentLoaded", () => {
         lastStatusSignature = eventStatusSignature();
         render();
         openFromHash();
+        // Which records are marked as dead ends. Small and edge-cached, and
+        // nothing waits on it: a maze's window re-draws its strip when it
+        // lands (see loadDeadEnds).
+        loadDeadEnds();
 
         await preloadThumbs(thumbs);
         hideLoader();

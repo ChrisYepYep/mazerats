@@ -13,9 +13,18 @@
 const { getDb } = require("./_db");
 const { SECURITY_HEADERS } = require("./_headers");
 
+/* A profile is the same answer for every visitor, and the modal asks for
+   one per builder every time a maze is opened — so a found profile, and a
+   settled "no such person", may be kept for a few minutes by the browser
+   and the edge alike. Five minutes sits well inside the half hour the
+   server-side cache below already holds a profile for, so it cannot make
+   "online" any staler than it was. Failures are not cached: a 503 is
+   Origins having a bad minute, and should not outlast it. */
+const CACHEABLE = { 200: "public, max-age=300", 404: "public, max-age=300" };
+
 const json = (statusCode, data) => ({
     statusCode,
-    headers: SECURITY_HEADERS,
+    headers: { ...SECURITY_HEADERS, "Cache-Control": CACHEABLE[statusCode] || "no-store" },
     body: JSON.stringify(data)
 });
 
@@ -161,25 +170,50 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("habbo: database connection failed", e);
+        return json(503, { error: "Origins profile lookup is unavailable right now" });
     }
-
-    const hotelCode = await archivedCreditHotel(db, name);
-    if (hotelCode === null) return json(404, { error: "Not credited in this archive" });
-
-    const host = ORIGINS_HOSTS[hotelCode] || DEFAULT_HOST;
 
     // Keyed by hotel as well as name: the same username on origins.habbo.com
     // and origins.habbo.es is not necessarily the same person.
     const cache = db.collection("habbo_cache");
-    const key = `${host}:${name.toLowerCase()}`;
-    const cached = await cache.findOne({ key }, { projection: { _id: 0 } });
-    const fresh = cached && (Date.now() - new Date(cached.fetchedAt).getTime()) < CACHE_TTL_MS;
+    const isFresh = (c) => c && (Date.now() - new Date(c.fetchedAt).getTime()) < CACHE_TTL_MS;
+    const cachedAnswer = (c) => c.found
+        ? json(200, { ...c.profile, cachedAt: c.fetchedAt, stale: false })
+        : json(404, { error: "No Origins profile for that name" });
 
-    if (fresh) {
-        if (!cached.found) return json(404, { error: "No Origins profile for that name" });
-        return json(200, { ...cached.profile, cachedAt: cached.fetchedAt, stale: false });
+    let hotelCode, cached;
+    try {
+        /* THE CACHE FIRST, before the archive is searched.
+
+           The credit check below is two case-insensitive regex scans, over
+           rooms and then events, which no index can help with — and it ran
+           on every call, including the great majority that were then
+           answered from a fresh cache row anyway. A row only ever exists for
+           a name that passed the credit check when it was written, so a
+           fresh one is its own proof, to within the half hour it stays
+           fresh. Looked up under every hotel the name could be on; if the
+           name is fresh under exactly one, that is the answer. Two at once
+           (the same name credited on two hotels) is left to the full path,
+           which knows which hotel the archive means. */
+        const lower = name.toLowerCase();
+        const keys = Object.values(ORIGINS_HOSTS).map(h => `${h}:${lower}`);
+        const rows = (await cache.find({ key: { $in: keys } }, { projection: { _id: 0 } }).toArray())
+            .filter(isFresh);
+        if (rows.length === 1) return cachedAnswer(rows[0]);
+
+        hotelCode = await archivedCreditHotel(db, name);
+        if (hotelCode === null) return json(404, { error: "Not credited in this archive" });
+        cached = await cache.findOne({ key: `${ORIGINS_HOSTS[hotelCode] || DEFAULT_HOST}:${lower}` }, { projection: { _id: 0 } });
+    } catch (e) {
+        console.error("habbo: archive lookup failed", e);
+        return json(503, { error: "Origins profile lookup is unavailable right now" });
     }
+
+    const host = ORIGINS_HOSTS[hotelCode] || DEFAULT_HOST;
+    const key = `${host}:${name.toLowerCase()}`;
+
+    if (isFresh(cached)) return cachedAnswer(cached);
 
     let result;
     try {
@@ -196,11 +230,13 @@ exports.handler = async (event) => {
     }
 
     const fetchedAt = new Date().toISOString();
+    // The answer is already in hand; failing to remember it is no reason
+    // not to give it.
     await cache.updateOne(
         { key },
         { $set: { key, name, host, found: result.found, profile: result.profile || null, fetchedAt } },
         { upsert: true }
-    );
+    ).catch(e => console.warn("habbo.js: could not cache", key, "-", e.message));
 
     if (!result.found) return json(404, { error: "No Origins profile for that name" });
     return json(200, { ...result.profile, cachedAt: fetchedAt, stale: false });

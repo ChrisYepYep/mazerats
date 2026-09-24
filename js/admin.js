@@ -19,6 +19,26 @@ document.addEventListener("DOMContentLoaded", () => {
         return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
+    /* For a stored address about to become a src or an href. Escaping stops
+       it breaking out of the attribute, but says nothing about what the
+       attribute then points at — "javascript:" or "data:" survive escaping
+       untouched. So only the two shapes this panel ever legitimately stores
+       are let through: an absolute http(s) address (FurniIndex icons, Blob
+       URLs) and a path on this site ("/assets/…", "assets/…"). Anything else
+       becomes "", which draws as a missing picture rather than running. */
+    function safeUrl(url) {
+        const s = String(url || "").trim();
+        if (!s) return "";
+        if (/^https?:\/\//i.test(s)) return s;
+        // Protocol-relative ("//evil.example") would be another host, and a
+        // colon before the first slash is a scheme of some kind.
+        if (s.startsWith("//")) return "";
+        const firstSlash = s.indexOf("/");
+        const colon = s.indexOf(":");
+        if (colon !== -1 && (firstSlash === -1 || colon < firstSlash)) return "";
+        return s;
+    }
+
     // localStorage, not sessionStorage — an admin checking the live site
     // (home.html, see the pre-load Coming Soon/Maintenance gate in its own
     // <head>) in a second tab or window needs this same token there too;
@@ -46,9 +66,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const contributorsListEl = document.getElementById("contributors-list");
     const contributorsFormEl = document.getElementById("contributors-form");
     const contributorsAddBtn = document.getElementById("contributors-add-btn");
-    const aboutTextInput = document.getElementById("about-text-input");
-    const aboutSaveBtn = document.getElementById("about-save-btn");
-    const aboutSaveStatus = document.getElementById("about-save-status");
     const contactMessagesListEl = document.getElementById("contact-messages-list");
     const bansListEl = document.getElementById("bans-list");
     const adminRailEl = document.getElementById("admin-rail");
@@ -228,6 +245,9 @@ document.addEventListener("DOMContentLoaded", () => {
     let workingContributors = [];
     let workingContactMessages = [];
     let workingBans = [];
+    // Whether workingRooms/workingEvents are the real archive or the empty
+    // stand-in a failed load leaves behind — see openContributorForm.
+    let archiveLoadedOk = false;
     let roomsQuery = "";
     let roomsSortBy = "name";
     let eventsSortBy = "date-desc";
@@ -347,6 +367,16 @@ document.addEventListener("DOMContentLoaded", () => {
             writeToken(adminToken);
             await enterAdmin();
         } catch (err) {
+            /* Only a failure of the login itself belongs in the login box.
+               Once enterAdmin has run, the modal is closed and anything
+               written into it is invisible — so a later failure is said in
+               the panel instead. (enterAdmin catches its own loading errors;
+               this is the backstop for anything it did not foresee.) */
+            if (!loginModal.classList.contains("open")) {
+                showLoadBanner("Something went wrong opening the panel: " +
+                    (err.message || "unknown error") + ". Reload the page to try again.");
+                return;
+            }
             loginError.textContent = err.message || "Wrong username or password — try again.";
             loginError.style.display = "block";
         } finally {
@@ -378,6 +408,7 @@ document.addEventListener("DOMContentLoaded", () => {
         currentUserRole = "admin";
         workingRooms = [];
         workingEvents = [];
+        archiveLoadedOk = false;
         workingAdmins = [];
         workingContributors = [];
         workingContactMessages = [];
@@ -600,12 +631,24 @@ document.addEventListener("DOMContentLoaded", () => {
        unrecognised token is shown as-is rather than hidden: a new ending
        added to the game should appear here as something odd to look up, not
        vanish into a blank cell. */
+    /* Two generations of words. "time", "poi" and "quit" are what the game
+       sends today — see endedBecause in js/room-game.js, and the "quit" that
+       js/fallinfurni.js stamps on the round a player walks out of. The older
+       four (seated/timeout/wrong/decoy) are from before the rules settled:
+       nothing sends them now, but rows recorded then still carry them, and a
+       range reaching back that far should read the same as one that does
+       not. "poi" is the original's auto-kick chair — the one seat that ends
+       the round the moment it is sat on — so it is named for what the
+       player did, not for the internal role name. */
     const FF_WHY = {
+        time: "Ran out of time",
+        poi: "Sat on the auto-kick chair",
+        quit: "Walked away",
+        complete: "Finished",
         seated: "All seats taken",
         timeout: "Ran out of time",
         wrong: "Sat in the wrong seat",
-        decoy: "Sat on a decoy",
-        quit: "Walked away"
+        decoy: "Sat on a decoy"
     };
     const ffWhy = w => FF_WHY[w] || w || "—";
 
@@ -968,10 +1011,6 @@ document.addEventListener("DOMContentLoaded", () => {
         // in the rule.
         document.body.classList.toggle("is-albus", currentUserRole === "wizard");
         if (activityNavBtn) activityNavBtn.hidden = !canReadActivity();
-        // readOnly as well as the CSS: a field nobody can save is still a
-        // field somebody can type a paragraph into and then lose.
-        const aboutInput = document.getElementById("about-text-input");
-        if (aboutInput) aboutInput.readOnly = !canWrite();
         if (furniSidebar) furniSidebar.hidden = !owner;
         if (owner) updateFurniLocality();
         // Only an owner has anything to poll for, and furni-scan-status
@@ -985,6 +1024,42 @@ document.addEventListener("DOMContentLoaded", () => {
            Otherwise, whatever was open last time. */
         const opening = currentUserRole === "wizard" ? "wizard" : rememberedPanel();
         if (opening) showPanel(opening);
+    }
+
+    /* A load that failed has to look different from a load that found
+       nothing. Every list below has an empty state ("No messages yet.", "No
+       contributors added yet.") and, before this, a failed read left either
+       that or a blank box — both of which say something untrue about the
+       data. These two write the failure where the list would have been, and
+       one line across the top of the panel for the failure that matters
+       most (the archive itself). Built with textContent: an error message
+       can quote the server, and is not markup. */
+    function showLoadFailure(listEl, message) {
+        if (!listEl) return;
+        listEl.innerHTML = "";
+        const line = document.createElement("p");
+        line.className = "admin-empty admin-form-error";
+        line.setAttribute("role", "alert");
+        line.textContent = message;
+        listEl.appendChild(line);
+    }
+
+    let loadBannerEl = null;
+    function showLoadBanner(message) {
+        if (!adminContent) return;
+        if (!loadBannerEl) {
+            loadBannerEl = document.createElement("p");
+            loadBannerEl.className = "admin-form-error admin-load-banner";
+            loadBannerEl.setAttribute("role", "alert");
+            loadBannerEl.style.padding = "10px 14px";
+            loadBannerEl.style.margin = "0 0 12px";
+            loadBannerEl.style.border = "1px solid currentColor";
+        }
+        loadBannerEl.textContent = message;
+        adminContent.prepend(loadBannerEl);
+    }
+    function clearLoadBanner() {
+        if (loadBannerEl) loadBannerEl.remove();
     }
 
     async function enterAdmin() {
@@ -1005,21 +1080,58 @@ document.addEventListener("DOMContentLoaded", () => {
         // The full records, not the packed public ones — the furni editor
         // works on coverage, hidden flags and the rest, none of which the
         // site's own payload carries.
-        const [rooms, events] = await Promise.all([
-            Api.getRoomsFull(adminToken),
-            Api.getEventsFull(adminToken)
-        ]);
-        workingRooms = rooms;
-        workingEvents = events;
-        renderList("rooms");
-        renderList("events");
+        /* Caught here, and not left to the caller. By this line the login
+           modal is already closed, so an error thrown out of here landed in
+           the login form's catch and wrote itself into a modal nobody could
+           see — and, because the loaders below never ran, left every other
+           panel blank as well. From the stored-token path at the bottom of
+           the file it was worse: an unhandled rejection and a silent, empty
+           panel.
+
+           A 401 is the session having gone between the token check and this
+           read, and gets the same "Session expired" login as everywhere
+           else. Anything else is the archive failing to load, which is said
+           plainly in the panel and in the two lists it would have filled
+           (an empty list would otherwise read as "No mazes yet — add the
+           first one below", which is precisely the wrong thing to believe
+           with the database briefly unreachable). Everything else still
+           loads: the messages, bans and settings have nothing to do with
+           whether the maze list came back. */
+        clearLoadBanner();
+        let archiveLoaded = false;
+        try {
+            const [rooms, events] = await Promise.all([
+                Api.getRoomsFull(adminToken),
+                Api.getEventsFull(adminToken)
+            ]);
+            workingRooms = rooms;
+            workingEvents = events;
+            archiveLoaded = true;
+            archiveLoadedOk = true;
+        } catch (err) {
+            if (err && err.status === 401) { lockOut(); return; }
+            workingRooms = [];
+            workingEvents = [];
+            archiveLoadedOk = false;
+            showLoadBanner("Couldn't load the mazes and events" +
+                (err && err.message ? " (" + err.message + ")" : "") +
+                ". Nothing has been changed — reload the page to try again.");
+        }
+        if (archiveLoaded) {
+            renderList("rooms");
+            renderList("events");
+        } else {
+            ["rooms", "events"].forEach(key => {
+                showLoadFailure(COLLECTIONS[key].listEl,
+                    "Couldn't load the " + COLLECTIONS[key].plural.toLowerCase() + ". Reload the page to try again.");
+            });
+        }
         applyRoleVisibility();
         startWizardPanel();
         loadActivity();
         loadAdmins();
         loadLandingState();
         loadContributors();
-        loadAboutText();
         loadContactMessages();
         loadBans();
         loadDaily();
@@ -1035,7 +1147,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
        The token is passed as a function, not a value. A session can be
        renewed or dropped while the panel is open, and a copy taken at
-       start-up would be the old one for the rest of the sitting. */
+       start-up would be the old one for the rest of the sitting.
+
+       Called on every enterAdmin, which includes signing back in after the
+       session ran out. AdminWizard.init is safe to call twice: the second
+       call swaps in this context and reloads, rather than building a second
+       map engine with a second set of listeners (which is what it did, and
+       every drag and keypress then ran twice). */
     function startWizardPanel() {
         if (typeof AdminWizard === "undefined") return;
         AdminWizard.init({
@@ -1187,6 +1305,116 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    /* ---------- deleting pictures only once the record agrees ----------
+
+       Removing a picture in the maze/event form used to delete it from
+       storage THERE AND THEN — a gallery row, an older version, the
+       entrance or finish, a related image, the bookend bumped by "Delete
+       it". The record still pointed at it until Save. So pressing Cancel, a
+       failed save, or simply closing the tab left the stored record naming a
+       picture that no longer existed: a broken image on the live site, for
+       an edit that was never made.
+
+       Now the form keeps a list instead. Every removal (and every
+       replacement) QUEUES the old key on the form, and nothing is deleted
+       until a save has actually succeeded — and even then only the keys that
+       no longer appear anywhere in the saved record, nor in any other loaded
+       maze or event (a thumbnail field can be pointed at another record's
+       picture by hand, and deleting that would break the other one).
+
+       Only keys this form is entitled to delete are ever deleted: ones the
+       stored record held when the form opened, and ones uploaded while it
+       was open. A picture added by address ("Add from URL", e.g. a Missing
+       Pieces copy) and then removed again before saving belongs to nobody
+       yet, and is left alone. */
+    function imageKeysOf(record) {
+        const keys = new Set();
+        if (!record) return keys;
+        const add = url => { const k = blobKeyFromUrl(url); if (k) keys.add(k); };
+        const withOld = entry => {
+            if (!entry) return;
+            add(typeof entry === "string" ? entry : entry.image);
+            if (typeof entry === "object") (entry.oldVersions || []).forEach(v => add(v && (typeof v === "string" ? v : v.image)));
+        };
+        add(record.thumb);
+        withOld(record.entrance);
+        withOld(record.finish);
+        (record.gallery || []).forEach(withOld);
+        (record.relatedImages || []).forEach(r => add(r && (typeof r === "string" ? r : r.image)));
+        return keys;
+    }
+
+    // Every picture key any loaded maze or event still points at.
+    function allReferencedKeys() {
+        const keys = new Set();
+        workingRooms.concat(workingEvents).forEach(item => imageKeysOf(item).forEach(k => keys.add(k)));
+        return keys;
+    }
+
+    // What an open form currently points at, drafts included.
+    function formImageKeys(formEl) {
+        if (!formEl || !formEl.classList.contains("is-open")) return new Set();
+        const value = name => {
+            const el = formEl.querySelector(`[name="${name}"]`);
+            return el ? el.value : "";
+        };
+        return imageKeysOf({
+            thumb: value("thumb"),
+            entrance: { image: value("entranceImage"), oldVersions: formEl._entranceOldVersions || [] },
+            finish: { image: value("finishImage"), oldVersions: formEl._finishOldVersions || [] },
+            gallery: formEl._galleryDraft || [],
+            relatedImages: formEl._relatedDraft || []
+        });
+    }
+
+    function queueImageDelete(formEl, url) {
+        const key = blobKeyFromUrl(url);
+        if (key && formEl && formEl._pendingDeletes) formEl._pendingDeletes.add(key);
+    }
+
+    function noteUpload(formEl, url) {
+        const key = blobKeyFromUrl(url);
+        if (key && formEl && formEl._sessionUploads) formEl._sessionUploads.add(key);
+    }
+
+    /* After a successful save: the queued keys this form may delete, plus
+       anything uploaded during the edit that the saved record does not use
+       (uploaded, then replaced again before saving), minus everything still
+       referenced anywhere. Called with the sets captured before closeForm
+       wipes them. */
+    function flushPendingDeletes(pendingDeletes, sessionUploads, storedKeys) {
+        const referenced = allReferencedKeys();
+        const doomed = new Set();
+        pendingDeletes.forEach(k => {
+            if (storedKeys.has(k) || sessionUploads.has(k)) doomed.add(k);
+        });
+        sessionUploads.forEach(k => doomed.add(k));
+        doomed.forEach(k => { if (!referenced.has(k)) deleteImageSafe(k); });
+    }
+
+    /* Throwing an edit away. Pictures uploaded during it were never saved
+       into any record, so they would otherwise sit in storage for good —
+       they are deleted here, as long as that is plainly safe: nothing loaded
+       points at them, the other collection's open form is not using one, and
+       no save of this form failed in a way that leaves it unknown whether
+       the server stored it (a dropped connection or a server error can land
+       AFTER the write — deleting then would break a saved record). The
+       queued removals are simply forgotten: the stored record still uses
+       those pictures. */
+    function discardFormUploads(key) {
+        const formEl = COLLECTIONS[key] && COLLECTIONS[key].formEl;
+        if (!formEl || !formEl._sessionUploads) return;
+        const uploads = formEl._sessionUploads;
+        formEl._sessionUploads = new Set();
+        if (formEl._pendingDeletes) formEl._pendingDeletes.clear();
+        if (formEl._saveAmbiguous || !adminToken) return;
+        const referenced = allReferencedKeys();
+        Object.keys(COLLECTIONS).forEach(other => {
+            if (other !== key) formImageKeys(COLLECTIONS[other].formEl).forEach(k => referenced.add(k));
+        });
+        uploads.forEach(k => { if (!referenced.has(k)) deleteImageSafe(k); });
+    }
+
     // Wraps a file input in a much larger drag-and-drop target instead of
     // leaving it as the browser's own tiny "Choose File" control — used for
     // every image upload on the page (thumbnail, entrance/finish, gallery
@@ -1263,19 +1491,31 @@ document.addEventListener("DOMContentLoaded", () => {
     // promotion — so they get their own lightweight normalizer, nested
     // inside normalizeGalleryEntry below rather than a full second copy of
     // normalizeGalleryEntry's shape.
+    /* The three normalisers below spread the stored entry FIRST and then
+       set the fields the editor understands. They used to build a fresh
+       object from only those fields, so any other sub-key on an entry — one
+       a later feature adds, or one written by a script — was silently
+       dropped the next time anybody pressed Save on the record. */
     function normalizeOldVersionEntry(entry) {
         if (typeof entry === "string") return { image: entry, label: "" };
-        return { image: entry.image, label: entry.label || "" };
+        return { ...entry, image: entry.image, label: entry.label || "" };
     }
 
     // Gallery entries used to be plain image path strings; the editor below
     // stores {image, label} objects instead so labels aren't tied to a
     // filename. Normalize both shapes so older seeded rooms keep working.
+    //
+    // Only the legacy STRING shape gets a label made up from its filename.
+    // An object entry keeps the label it has, empty included: `label ||
+    // derive(...)` turned a deliberately blank label back into "Room 12"
+    // every time the maze was opened, so an untouched save quietly changed
+    // the record.
     function normalizeGalleryEntry(entry) {
         if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry), bonus: false, runThrough: false, oldVersions: [] };
         return {
+            ...entry,
             image: entry.image,
-            label: entry.label || deriveGalleryLabel(entry.image),
+            label: entry.label == null ? "" : String(entry.label),
             bonus: !!entry.bonus,
             runThrough: !!entry.runThrough,
             oldVersions: (entry.oldVersions || []).map(normalizeOldVersionEntry)
@@ -1288,7 +1528,29 @@ document.addEventListener("DOMContentLoaded", () => {
     // extra pictures hung off a maze/event rather than part of its sequence.
     function normalizeRelatedEntry(entry) {
         if (typeof entry === "string") return { image: entry, name: "" };
-        return { image: entry.image || "", name: entry.name || "" };
+        return { ...entry, image: entry.image || "", name: entry.name || "" };
+    }
+
+    /* "Add from URL" — for a picture that is already in the archive's own
+       storage but in no record yet. The Missing Pieces panel copies a lead's
+       screenshots into storage when it is accepted and lists the addresses,
+       but the gallery and related images only took uploads, so there was
+       nowhere to paste them. Only this site's own image address is accepted
+       (/.netlify/functions/image?key=rooms/…), absolute or relative, and it
+       is stored in exactly the relative shape an upload produces. Returns
+       the address, or null with a reason. */
+    function archiveImageFromUrl(raw) {
+        const text = String(raw || "").trim();
+        if (!text) return { error: "Paste an image address first." };
+        let u;
+        try { u = new URL(text, location.origin); } catch (e) { return { error: "That isn't an address." }; }
+        const ours = u.origin === location.origin || /^(www\.)?mazerats\.net$/i.test(u.hostname);
+        const key = u.searchParams.get("key") || "";
+        if (!ours || u.pathname !== "/.netlify/functions/image" ||
+            !/^rooms\/[A-Za-z0-9._\/ -]+$/.test(key) || key.includes("..")) {
+            return { error: "Only this site's own archive images can be added by address — one starting /.netlify/functions/image?key=rooms/" };
+        }
+        return { url: `/.netlify/functions/image?key=${key}` };
     }
 
     // Mirrors wireGalleryEditor's shape (draft array on the form element,
@@ -1335,8 +1597,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     draft[i].name = e.target.value;
                 });
                 row.querySelector(".admin-related-remove").addEventListener("click", () => {
-                    const key = blobKeyFromUrl(draft[i].image);
-                    if (key) deleteImageSafe(key);
+                    // Queued, not deleted: the saved record still uses it
+                    // until Save — see imageKeysOf.
+                    queueImageDelete(formEl, draft[i].image);
                     draft.splice(i, 1);
                     renderRelatedList();
                 });
@@ -1400,8 +1663,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     status.style.display = "block";
                     try {
                         const { url } = await uploadImageFile(uploadPrefix, file);
-                        const oldKey = blobKeyFromUrl(draft[i].image);
-                        if (oldKey) deleteImageSafe(oldKey);
+                        noteUpload(formEl, url);
+                        queueImageDelete(formEl, draft[i].image);
                         draft[i].image = url;
                         status.style.display = "none";
                         renderRelatedList();
@@ -1432,6 +1695,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         ? `Uploading ${f + 1} of ${files.length}…`
                         : "Uploading…";
                     const { url } = await uploadImageFile(uploadPrefix, files[f]);
+                    noteUpload(formEl, url);
                     // Named after the file to start with — a real name beats
                     // an empty box, and it's editable in the row right away.
                     formEl._relatedDraft.push({
@@ -1454,6 +1718,32 @@ document.addEventListener("DOMContentLoaded", () => {
                 resetDropzoneText(fileInput);
             }
         });
+
+        // A picture already in the archive's storage, by address — see
+        // archiveImageFromUrl. Named from the last part of its key.
+        const urlInput = formEl.querySelector(".admin-related-url");
+        const urlBtn = formEl.querySelector(".admin-related-url-btn");
+        if (urlInput && urlBtn) {
+            const addFromUrl = () => {
+                const got = archiveImageFromUrl(urlInput.value);
+                status.style.display = "block";
+                if (got.error) { status.textContent = got.error; return; }
+                const draft = formEl._relatedDraft;
+                if (draft.some(r => r.image === got.url)) { status.textContent = "That picture is already in the list."; return; }
+                draft.push({ image: got.url, name: deriveGalleryLabel(got.url.split("/").pop()) });
+                urlInput.value = "";
+                status.style.display = "none";
+                renderRelatedList();
+            };
+            urlBtn.addEventListener("click", addFromUrl);
+            // Enter adds, and must not submit the maze — the same trap as
+            // the gallery's own label field.
+            urlInput.addEventListener("keydown", e => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                addFromUrl();
+            });
+        }
 
         renderRelatedList();
     }
@@ -1567,7 +1857,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 const rows = items.map((f, i) => '' +
                     '<div class="admin-furni-item ' + (f.hidden ? "is-hidden" : "") + (f.manual ? " is-manual" : "") + '" data-image="' + escapeHtml(image) + '" data-index="' + i + '">' +
-                        '<img src="' + escapeHtml(f.sprite || f.icon || "") + '" alt="">' +
+                        '<img src="' + escapeHtml(safeUrl(f.sprite || f.icon)) + '" alt="">' +
                         '<span class="admin-furni-name">' + escapeHtml(f.name || "") + '</span>' +
                         // A hand-added entry has no coverage to report, and
                         // showing it as "0%" read as a failed match rather
@@ -1753,7 +2043,7 @@ document.addEventListener("DOMContentLoaded", () => {
                            220px scroller (.admin-furni-results), so all but
                            the first handful are genuinely off screen and the
                            rest arrive as they are scrolled to. */
-                        '<img src="' + escapeHtml(f.icon || "") + '" alt="" loading="lazy" decoding="async">' +
+                        '<img src="' + escapeHtml(safeUrl(f.icon)) + '" alt="" loading="lazy" decoding="async">' +
                         '<span class="admin-furni-result-name">' + escapeHtml(f.name || "") + line + '</span>' +
                         '<span class="admin-hint">' + (isAdded ? "added" : escapeHtml((f.releaseDate || "").slice(0, 4))) + '</span>' +
                     '</button>';
@@ -1901,6 +2191,9 @@ document.addEventListener("DOMContentLoaded", () => {
             status.textContent = "Uploading…";
             try {
                 const { url } = await uploadImageFile(uploadPrefix, file);
+                noteUpload(formEl, url);
+                // The thumbnail it replaces goes on the after-save list.
+                queueImageDelete(formEl, textInput.value);
                 textInput.value = url;
                 status.textContent = "Uploaded";
             } catch (err) {
@@ -1948,6 +2241,8 @@ document.addEventListener("DOMContentLoaded", () => {
             status.textContent = "Uploading…";
             try {
                 const { url } = await uploadImageFile(uploadPrefix, file);
+                noteUpload(formEl, url);
+                queueImageDelete(formEl, textInput.value);
                 textInput.value = url;
                 if (previewEl) {
                     previewEl.style.backgroundImage = `url('${imgCdn(url, 100, 100, 55)}')`;
@@ -1969,9 +2264,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (removeBtn) {
             removeBtn.addEventListener("click", async () => {
-                if (!await showConfirmDialog(`Remove the ${kind === "entrance" ? "Entrance" : "Finish"} image? This can't be undone.`)) return;
-                const key = blobKeyFromUrl(textInput.value);
-                if (key) deleteImageSafe(key);
+                if (!await showConfirmDialog(`Remove the ${kind === "entrance" ? "Entrance" : "Finish"} image? It is deleted for good when you save.`)) return;
+                queueImageDelete(formEl, textInput.value);
                 textInput.value = "";
                 if (previewEl) {
                     previewEl.style.backgroundImage = "";
@@ -1987,10 +2281,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 // The image's own older-version history goes with it — an
                 // empty slot with old versions attached doesn't mean anything.
-                (formEl[`_${kind}OldVersions`] || []).forEach(v => {
-                    const vKey = blobKeyFromUrl(v.image);
-                    if (vKey) deleteImageSafe(vKey);
-                });
+                (formEl[`_${kind}OldVersions`] || []).forEach(v => queueImageDelete(formEl, v.image));
                 formEl[`_${kind}OldVersions`] = [];
                 formEl[`_${kind}OldVersionsExpanded`] = false;
                 const refresh = formEl[`_render${kind}OldVersions`];
@@ -2116,8 +2407,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (!await showConfirmDialog("Remove this older version image?")) return;
                     const [removed] = items.splice(vi, 1);
                     render();
-                    const key = blobKeyFromUrl(removed.image);
-                    if (key) deleteImageSafe(key);
+                    queueImageDelete(formEl, removed.image);
                 });
             });
 
@@ -2139,6 +2429,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 subStatus.textContent = "Uploading…";
                 try {
                     const { url } = await uploadImageFile(uploadPrefix, file);
+                    noteUpload(formEl, url);
                     items.push({ image: url, label });
                     render();
                 } catch (err) {
@@ -2178,10 +2469,10 @@ document.addEventListener("DOMContentLoaded", () => {
                         <button type="button" class="chrome-close" aria-label="Cancel">&times;</button>
                     </div>
                     <div class="modal-body">
-                        <p class="room-desc-full">This maze already has a ${kindLabel.toLowerCase()} image ("${existingLabel}"). What should happen to it?</p>
+                        <p class="room-desc-full">This maze already has a ${kindLabel.toLowerCase()} image ("${escapeHtml(existingLabel)}"). What should happen to it?</p>
                         <div class="admin-form-actions" style="flex-direction:column; align-items:stretch; gap:8px; margin-top:10px;">
                             <button type="button" class="admin-action-pill admin-pill-solid" data-choice="keep">Move it into the room list</button>
-                            <button type="button" class="admin-action-pill admin-pill-danger" data-choice="discard">Delete it</button>
+                            <button type="button" class="admin-action-pill admin-pill-danger" data-choice="discard">Delete it when I save</button>
                             <button type="button" class="admin-action-pill" data-choice="cancel">Cancel</button>
                         </div>
                     </div>
@@ -2301,12 +2592,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 // back into the room list, same as its image and label.
                 draft.push({ image: existingImage, label: existingLabel, bonus: false, runThrough: false, oldVersions: existingOldVersions });
             } else {
-                const key = blobKeyFromUrl(existingImage);
-                if (key) deleteImageSafe(key);
-                existingOldVersions.forEach(v => {
-                    const vKey = blobKeyFromUrl(v.image);
-                    if (vKey) deleteImageSafe(vKey);
-                });
+                // "Delete it" — queued like every other removal, so a
+                // Cancel afterwards leaves the saved maze's picture intact.
+                queueImageDelete(formEl, existingImage);
+                existingOldVersions.forEach(v => queueImageDelete(formEl, v.image));
             }
         }
 
@@ -2503,6 +2792,11 @@ document.addEventListener("DOMContentLoaded", () => {
                         status.textContent = "Uploading…";
                         try {
                             const { url } = await uploadImageFile(uploadPrefix, file);
+                            noteUpload(formEl, url);
+                            // Replacing used to leave the old picture in
+                            // storage for good; it goes on the after-save
+                            // list now, like a removal.
+                            queueImageDelete(formEl, draft[i].image);
                             draft[i].image = url;
                             status.style.display = "none";
                             renderGalleryList();
@@ -2591,16 +2885,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
 
                 row.querySelector(".admin-gallery-remove").addEventListener("click", async () => {
-                    if (!await showConfirmDialog(`Remove "${draft[i].label || "this room"}"? This can't be undone.`)) return;
+                    if (!await showConfirmDialog(`Remove "${escapeHtml(draft[i].label || "this room")}"? Its pictures are deleted for good when you save.`)) return;
                     expandedOldVersions.clear();
                     const [removed] = draft.splice(i, 1);
                     renderGalleryList();
-                    const key = blobKeyFromUrl(removed.image);
-                    if (key) deleteImageSafe(key);
-                    removed.oldVersions.forEach(v => {
-                        const vKey = blobKeyFromUrl(v.image);
-                        if (vKey) deleteImageSafe(vKey);
-                    });
+                    // Queued — see imageKeysOf. Deleting here broke the live
+                    // maze whenever the edit was then cancelled.
+                    queueImageDelete(formEl, removed.image);
+                    removed.oldVersions.forEach(v => queueImageDelete(formEl, v.image));
                 });
 
                 if (!expandedOldVersions.has(i)) return;
@@ -2620,8 +2912,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         if (!await showConfirmDialog("Remove this older version image?")) return;
                         const [removed] = draft[i].oldVersions.splice(vi, 1);
                         renderGalleryList();
-                        const key = blobKeyFromUrl(removed.image);
-                        if (key) deleteImageSafe(key);
+                        queueImageDelete(formEl, removed.image);
                     });
                 });
 
@@ -2643,6 +2934,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     subStatus.textContent = "Uploading…";
                     try {
                         const { url } = await uploadImageFile(uploadPrefix, file);
+                        noteUpload(formEl, url);
                         draft[i].oldVersions.push({ image: url, label });
                         renderGalleryList();
                     } catch (err) {
@@ -2695,6 +2987,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     const file = files[n];
                     status.textContent = files.length > 1 ? `Uploading ${n + 1} of ${files.length}…` : "Uploading…";
                     const { url } = await uploadImageFile(uploadPrefix, file);
+                    noteUpload(formEl, url);
                     const label = explicitLabel || deriveGalleryLabel(file.name);
                     draft.push({ image: url, label, bonus: false, runThrough: false, oldVersions: [] });
                     renderGalleryList();
@@ -2710,34 +3003,47 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
 
+        // A picture already in the archive's storage, by address — the
+        // Missing Pieces panel's copied screenshots land here. See
+        // archiveImageFromUrl for what is accepted.
+        const urlInput = formEl.querySelector(".admin-gallery-url");
+        const urlBtn = formEl.querySelector(".admin-gallery-url-btn");
+        if (urlInput && urlBtn) {
+            const addFromUrl = () => {
+                const got = archiveImageFromUrl(urlInput.value);
+                status.style.display = "block";
+                if (got.error) { status.textContent = got.error; return; }
+                const draft = formEl._galleryDraft;
+                if (draft.some(g => g.image === got.url)) { status.textContent = "That picture is already in the list."; return; }
+                const label = labelInput.value.trim() || deriveGalleryLabel(got.url.split("/").pop());
+                draft.push({ image: got.url, label, bonus: false, runThrough: false, oldVersions: [] });
+                urlInput.value = "";
+                labelInput.value = "";
+                status.style.display = "none";
+                renderGalleryList();
+            };
+            urlBtn.addEventListener("click", addFromUrl);
+            urlInput.addEventListener("keydown", e => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                addFromUrl();
+            });
+        }
+
         renderGalleryList();
     }
 
+    /* Every picture a deleted record owned. Built on imageKeysOf, which is
+       the one list of where a record keeps pictures — the hand-written copy
+       this replaced had forgotten relatedImages, so deleting a maze left its
+       related pictures in storage for good. Called after the record is gone
+       from the working list, so a picture another record still points at
+       (a thumbnail aimed at somebody else's room by hand) is spared. */
     function cleanupItemImages(item) {
-        const keys = [];
-        const thumbKey = blobKeyFromUrl(item.thumb);
-        if (thumbKey) keys.push(thumbKey);
-        const entranceKey = blobKeyFromUrl(item.entrance && item.entrance.image);
-        if (entranceKey) keys.push(entranceKey);
-        (item.entrance && item.entrance.oldVersions || []).forEach(v => {
-            const key = blobKeyFromUrl(v.image);
-            if (key) keys.push(key);
+        const referenced = allReferencedKeys();
+        imageKeysOf(item).forEach(key => {
+            if (!referenced.has(key)) deleteImageSafe(key);
         });
-        const finishKey = blobKeyFromUrl(item.finish && item.finish.image);
-        if (finishKey) keys.push(finishKey);
-        (item.finish && item.finish.oldVersions || []).forEach(v => {
-            const key = blobKeyFromUrl(v.image);
-            if (key) keys.push(key);
-        });
-        (item.gallery || []).forEach(entry => {
-            const key = blobKeyFromUrl(typeof entry === "string" ? entry : entry.image);
-            if (key) keys.push(key);
-            (entry.oldVersions || []).forEach(v => {
-                const vKey = blobKeyFromUrl(v.image);
-                if (vKey) keys.push(vKey);
-            });
-        });
-        keys.forEach(key => deleteImageSafe(key));
     }
 
     // ---------- list rendering ----------
@@ -2836,7 +3142,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <p class="row-desc">${escapeHtml(item.description || "")}</p>
                 </div>
                 <div class="row-side">
-                    <span class="status-badge status-${item.status}">${item.status}</span>
+                    <span class="status-badge status-${escapeHtml(item.status || "")}">${escapeHtml(item.status || "")}</span>
                     <div class="admin-row-actions">
                         <button type="button" class="btn admin-edit-btn">Edit</button>
                         ${key === "rooms" && canScanFurni() && isLocalSite() ? '<button type="button" class="btn admin-scan-btn">Scan</button>' : ""}
@@ -2849,7 +3155,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // the list otherwise re-orders) would otherwise keep pointing
             // at whatever now sits at that same index instead of the item
             // actually being edited.
-            row.querySelector(".admin-edit-btn").addEventListener("click", () => openForm(key, item.id));
+            row.querySelector(".admin-edit-btn").addEventListener("click", () => requestOpenForm(key, item.id));
             row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteItem(key, item.id));
             const scanBtn = row.querySelector(".admin-scan-btn");
             if (scanBtn) scanBtn.addEventListener("click", () => scanOneItem(key, item.id));
@@ -2983,21 +3289,32 @@ document.addEventListener("DOMContentLoaded", () => {
             const label = button.textContent;
             button.textContent = "Reading…";
             say("todo", "<p>Reading the article from Habbo…</p>");
+            // Kept so a failed re-read can put it back. This used to be set
+            // to null on failure while the link stayed in the field — and
+            // Save then wrote article: null, deleting the stored copy
+            // because Habbo's site happened to be slow for a moment.
+            const previous = formEl._articleDraft;
+            let failed = "";
             try {
                 const article = await Api.readArticle(adminToken, url);
                 formEl._articleDraft = article;
                 // Whatever was typed is replaced by the URL actually read,
                 // so the field and the stored copy cannot disagree.
                 urlInput.value = article.url;
-                refresh();
             } catch (err) {
                 if (err.status === 401) { lockOut(); return; }
-                formEl._articleDraft = null;
-                say("bad", "<p>" + escapeHtml(err.message || "That article could not be read.") + "</p>");
+                formEl._articleDraft = previous;
+                failed = err.message || "That article could not be read.";
             } finally {
                 button.textContent = label;
                 button.disabled = false;
                 refresh();
+                // After refresh, which would otherwise paint "press Add
+                // Article" straight over the reason it failed.
+                if (failed) {
+                    say("bad", "<p>" + escapeHtml(failed) + "</p>" +
+                        (previous && previous.body ? "<p>The article already stored is kept unless you clear the link.</p>" : ""));
+                }
             }
         });
 
@@ -3052,6 +3369,22 @@ document.addEventListener("DOMContentLoaded", () => {
         update();
     }
 
+    /* The way into openForm from a button. Edit, "Add maze"/"Add event" and
+       the sidebar shortcuts all called openForm directly, which rebuilt the
+       form over whatever was in it — so pressing Edit on the next maze
+       while half-way through this one threw the unsaved work away without
+       a word. Cancel already asked first (requestCloseForm); this asks the
+       same question on the way in. */
+    async function requestOpenForm(key, editId) {
+        if (isFormDirty(key)) {
+            const ok = await showConfirmDialog("Discard your unsaved changes to the entry you have open? Anything you have added or edited since opening it will be lost.");
+            if (!ok) return;
+        }
+        // Whatever the form being replaced uploaded and never saved.
+        discardFormUploads(key);
+        openForm(key, editId);
+    }
+
     function openForm(key, editId) {
         // The sidebar quick-add buttons work from whichever tab is showing,
         // and Edit can be reached the same way — so bring the owning panel
@@ -3063,6 +3396,31 @@ document.addEventListener("DOMContentLoaded", () => {
         const item = isEdit ? (cfg.getAll().find(i => i.id === editId) || {}) : {};
         const isEvents = key === "events";
         const isRooms = key === "rooms";
+
+        /* Reset before anything else. wireFurniEditor only assigns a new
+           draft when the form HAS a furni section — a maze with no room
+           images yet has none — so without this, Edit on maze A and then
+           Edit on imageless maze B carried A's furni draft into B, and
+           Save wrote A's furni onto B. */
+        cfg.formEl._furniDraft = null;
+
+        /* The after-save bookkeeping — see imageKeysOf and
+           discardFormUploads. What the stored record held when this form
+           opened is what the form may delete after a save. */
+        cfg.formEl._pendingDeletes = new Set();
+        cfg.formEl._sessionUploads = new Set();
+        cfg.formEl._storedKeys = imageKeysOf(item);
+        cfg.formEl._saveAmbiguous = false;
+
+        /* When the record was last saved, as this form first saw it. Sent
+           back with the save so the server can refuse it (409) if somebody
+           else has saved the record since — see _baseUpdatedAt in
+           netlify/functions/rooms.js. "" for a record that has never been
+           edited since the field existed. */
+        cfg.formEl._baseUpdatedAt = item.updatedAt || "";
+        // The stored furni as it was, to tell at save time whether the
+        // furni editor changed anything — see submitForm.
+        cfg.formEl._furniOriginal = JSON.stringify(item.furni || {});
 
         // _galleryDraft/_selectedTags/_entranceOldVersions/_finishOldVersions
         // all get freshly reassigned further down for whichever item is
@@ -3076,9 +3434,16 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl._entranceOldVersionsExpanded = null;
         cfg.formEl._finishOldVersionsExpanded = null;
 
+        /* A stored status not in the list is carried as an extra selected
+           option, exactly as the Hotel field below does it. Without it the
+           <select> fell back to its first option and an untouched save
+           rewrote the maze to "Open". (rooms.js refuses an unrecognised
+           status, so such a save now says so instead of changing it.) */
+        const statusKnown = !item.status || cfg.statusOptions.some(([value]) => value === item.status);
         const statusOptionsHtml = cfg.statusOptions.map(([value, label]) =>
             `<option value="${value}" ${item.status === value ? "selected" : ""}>${label}</option>`
-        ).join("");
+        ).join("") + (statusKnown ? "" :
+            `<option value="${escapeHtml(item.status)}" selected>${escapeHtml(item.status)} (unrecognised)</option>`);
 
         // Mazes still pick their own status. Events don't get the dropdown:
         // the site works an event's status out from its start/end dates
@@ -3101,7 +3466,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="admin-field admin-derived-status">
                     <span>Status</span>
                     <p class="admin-derived-status-value"><span class="status-badge"></span></p>
-                    <input type="hidden" name="status" value="${item.status || "upcoming"}">
+                    <input type="hidden" name="status" value="${escapeHtml(item.status || "upcoming")}">
                     <p class="admin-hint">Set automatically from the dates above: LIVE once the start passes, Past once the end does, Archived after ${EventStatus.ARCHIVE_YEARS} year${EventStatus.ARCHIVE_YEARS === 1 ? "" : "s"}.</p>
                 </div>
               `
@@ -3154,6 +3519,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const end = isEvents ? splitIso(item.endDate) : { date: "", time: "" };
 
         const openedDate = isRooms ? parseMazeDate(item[cfg.fieldMap.date]) : { day: "", month: "", year: "" };
+        /* A stored opening date this form cannot show (not YYYY-MM or
+           YYYY-MM-DD — "Summer 2004", say) used to read back as three blank
+           boxes and save as "", erasing it. It is kept aside instead and
+           written back as it was unless a date is picked. */
+        const rawDate = isRooms ? String(item[cfg.fieldMap.date] || "") : "";
+        cfg.formEl._rawDate = rawDate && !openedDate.year ? rawDate : "";
         const dayOptionsHtml = ["<option value=\"\">—</option>"].concat(
             Array.from({ length: 31 }, (_, i) => {
                 const v = String(i + 1).padStart(2, "0");
@@ -3185,6 +3556,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <input type="number" name="dateYear" aria-label="Year" placeholder="Year" min="2000" max="2100" value="${openedDate.year}">
                     </div>
                     <p class="admin-hint">Leave Day on "—" if the exact day it opened isn't known — the site will just show the month and year.</p>
+                    ${cfg.formEl._rawDate ? `<p class="admin-hint">Stored as "${escapeHtml(cfg.formEl._rawDate)}", which isn't a date these boxes can show. It is kept exactly as it is unless you pick a month and year.</p>` : ""}
                 </div>
               `;
 
@@ -3200,7 +3572,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <p class="admin-tag-status" style="display:none;"></p>
                 </div>
               `
-            : fieldRow("Tags (comma-separated)", `<input type="text" name="tags" value="${(item.tags || []).join(", ")}">`);
+            : fieldRow("Tags (comma-separated)", `<input type="text" name="tags" value="${escapeHtml((item.tags || []).join(", "))}">`);
 
         // Entrance/Finish share this layout: a live preview + label input
         // (identical row markup to a gallery room). The thumb itself is the
@@ -3226,7 +3598,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="admin-gallery-row">
                         <div class="admin-gallery-row-top">
                             ${thumbHtml}
-                            <input type="text" name="${kind}Label" class="admin-gallery-label" placeholder="Label (e.g. ${kindLabel})" value="${entry.label || kindLabel}">
+                            <input type="text" name="${kind}Label" class="admin-gallery-label" placeholder="Label (e.g. ${kindLabel})" value="${escapeHtml(entry.label || kindLabel)}">
                         </div>
                         <div class="admin-gallery-actions">
                             <button type="button" class="admin-pill-btn admin-${kind}-oldversions-toggle" title="Add or view older versions of this image">Old Version</button>
@@ -3234,7 +3606,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         </div>
                         <div class="admin-${kind}-oldversions-container"></div>
                     </div>
-                    <input type="hidden" name="${kind}Image" value="${entry.image || ""}">
+                    <input type="hidden" name="${kind}Image" value="${escapeHtml(entry.image || "")}">
                     <p class="admin-${kind}-status" style="display:none;"></p>
                 </div>
             `;
@@ -3261,6 +3633,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     <input type="text" class="admin-gallery-new-label" placeholder="${isRooms ? "Room label (e.g. Room 12)" : "Photo label"}">
                     <input type="file" class="admin-gallery-new-file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
                     <button type="button" class="admin-action-pill admin-gallery-add-btn">+ Add ${isRooms ? "Room" : "Photo"} Image</button>
+                </div>
+                <div class="admin-gallery-add admin-url-add">
+                    <input type="text" class="admin-gallery-url" placeholder="…or paste an archive image address (/.netlify/functions/image?key=rooms/…)">
+                    <button type="button" class="admin-pill-btn admin-gallery-url-btn">+ Add from URL</button>
                 </div>
                 <p class="admin-gallery-status" style="display:none;"></p>
             </div>
@@ -3302,6 +3678,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 <p class="admin-hint">Extra pictures attached to this ${cfg.singular.toLowerCase()} — press cuttings, posters, before-and-afters. Each one appears as a small photo icon on the bottom-right of the image viewer, opening a draggable photo frame with its name underneath. Drop images here (several at once is fine) and they upload straight away; name each one in the row it adds. Drag the &#9776; handle or use the arrows to reorder them — that order is the order their icons appear in, left to right.</p>
                 <div class="admin-related-list"></div>
                 <input type="file" class="admin-related-new-file" accept="image/png,image/jpeg,image/gif,image/webp" multiple>
+                <div class="admin-gallery-add admin-url-add">
+                    <input type="text" class="admin-related-url" placeholder="…or paste an archive image address (/.netlify/functions/image?key=rooms/…)">
+                    <button type="button" class="admin-pill-btn admin-related-url-btn">+ Add from URL</button>
+                </div>
                 <p class="admin-related-status" style="display:none;"></p>
             </div>
         `;
@@ -3326,13 +3706,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 // so its own value is carried as an extra selected option.
                 `<option value="${value}" ${(item.hotel || "") === value ? "selected" : ""}>${label}</option>`
             ).join("")}${HOTEL_OPTIONS.some(([value]) => value === (item.hotel || "")) ? "" :
-                `<option value="${item.hotel}" selected>${item.hotel} (unrecognised)</option>`}</select>`)}
+                // Escaped in the attribute as well as the label: the value
+                // attribute is what the form submits, and the parser decodes
+                // &amp;/&quot; back to the stored characters, so escaping is
+                // what makes open-then-save give back exactly what was stored
+                // (unescaped, a `"` cut the value short and an "&amp;" typed
+                // as text came back as a bare "&").
+                `<option value="${escapeHtml(item.hotel)}" selected>${escapeHtml(item.hotel)} (unrecognised)</option>`}</select>`)}
             ${dateFieldHtml}
             ${derivedStatusFieldHtml}
             ${tagsFieldHtml}
             ${fieldRow("Thumbnail image", `
                 <div class="admin-thumb-upload">
-                    <input type="text" name="thumb" value="${item.thumb || ""}" placeholder="assets/... or https://...">
+                    <input type="text" name="thumb" value="${escapeHtml(item.thumb || "")}" placeholder="assets/... or https://...">
                     <input type="file" class="admin-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp">
                     <span class="admin-thumb-status"></span>
                 </div>
@@ -3340,8 +3726,8 @@ document.addEventListener("DOMContentLoaded", () => {
             ${fieldRow("Short description (shown on the card)", `<textarea name="description" rows="2">${escapeHtml(item.description || "")}</textarea>`)}
             ${articleFieldHtml}
             ${fieldRow("Full details (shown in the popup, optional)", `<textarea name="details" rows="4">${escapeHtml(item.details || "")}</textarea>`)}
-            ${fieldRow("Links &amp; References (optional, shown directly beneath the description)", `<textarea name="linksReferences" rows="3">${item.linksReferences || ""}</textarea>`)}
-            ${fieldRow("Habbo link (optional)", `<input type="text" name="habboLink" value="${item.habboLink || ""}" placeholder="https://...">`)}
+            ${fieldRow("Links &amp; References (optional, shown directly beneath the description)", `<textarea name="linksReferences" rows="3">${escapeHtml(item.linksReferences || "")}</textarea>`)}
+            ${fieldRow("Habbo link (optional)", `<input type="text" name="habboLink" value="${escapeHtml(item.habboLink || "")}" placeholder="https://...">`)}
             ${entranceSectionHtml}
             ${gallerySectionHtml}
             ${finishSectionHtml}
@@ -3452,6 +3838,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const ok = await showConfirmDialog("Discard your unsaved changes to this entry? Anything you have added or edited since opening it will be lost.");
             if (!ok) return;
         }
+        // Asked even when the form reads as clean: an image uploaded and
+        // then removed again leaves the drafts as they were, but the upload
+        // itself is still sitting in storage.
+        discardFormUploads(key);
         closeForm(key);
     }
 
@@ -3472,6 +3862,14 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl._finishOldVersions = null;
         cfg.formEl._entranceOldVersionsExpanded = null;
         cfg.formEl._finishOldVersionsExpanded = null;
+        // Dropped, not acted on: a close after a successful save has
+        // already flushed these (submitForm), and any other close is the
+        // edit being abandoned — the stored record still uses every picture
+        // that was queued for deletion.
+        cfg.formEl._pendingDeletes = null;
+        cfg.formEl._sessionUploads = null;
+        cfg.formEl._storedKeys = null;
+        cfg.formEl._rawDate = "";
         cfg.addBtn.style.display = "inline-block";
 
         if (activeFormKey === key) {
@@ -3490,25 +3888,47 @@ document.addEventListener("DOMContentLoaded", () => {
         const status = formEl.querySelector(".admin-tag-status");
 
         let tagPool = [];
+        let tagPoolFailed = false;
         try {
             tagPool = await Api.getTags();
         } catch (e) {
             tagPool = [];
+            tagPoolFailed = true;
         }
 
+        /* Built as elements rather than a joined string of markup. A tag is
+           free text anyone with write access can create (see addNewTag
+           below), and it went into both the data-tag attribute and the
+           button's label unescaped — a `"` ended the attribute early and a
+           tag spelled as markup ran as markup in this session. textContent
+           and dataset cannot be read as HTML at all, and the tag also comes
+           back out of dataset exactly as it went in, which is what the
+           selected set is keyed on. */
         function renderChips() {
             const selected = formEl._selectedTags;
             const allTags = Array.from(new Set([...tagPool, ...selected]));
-            listEl.innerHTML = allTags.map(tag => `
-                <button type="button" class="tag-chip${selected.has(tag) ? " selected" : ""}" data-tag="${tag}">${tag}</button>
-            `).join("");
-            listEl.querySelectorAll(".tag-chip").forEach(chip => {
+            listEl.innerHTML = "";
+            if (!allTags.length && tagPoolFailed) {
+                // Said out loud rather than left as an empty box, which reads
+                // as "there are no tags" rather than "the list didn't load".
+                const note = document.createElement("p");
+                note.className = "admin-empty";
+                note.textContent = "Couldn't load the tag list. Reopen this form to try again.";
+                listEl.appendChild(note);
+                return;
+            }
+            allTags.forEach(tag => {
+                const chip = document.createElement("button");
+                chip.type = "button";
+                chip.className = "tag-chip" + (selected.has(tag) ? " selected" : "");
+                chip.dataset.tag = tag;
+                chip.textContent = tag;
                 chip.addEventListener("click", () => {
-                    const tag = chip.dataset.tag;
                     if (selected.has(tag)) selected.delete(tag);
                     else selected.add(tag);
                     renderChips();
                 });
+                listEl.appendChild(chip);
             });
         }
 
@@ -3588,6 +4008,19 @@ document.addEventListener("DOMContentLoaded", () => {
         payload[cfg.fieldMap.title] = data.title;
         payload[cfg.fieldMap.subtitle] = data.subtitle;
 
+        /* The server's own bookkeeping, taken back out of the spread above.
+           `...existing` sent the stored change list and both timestamps
+           straight back — and rooms.js/events.js kept a client-sent
+           `changes` whenever it could not describe the save itself, so the
+           What's New line could be whatever the browser last read. They
+           are the server's facts; it writes them. */
+        delete payload.changes;
+        delete payload.updatedAt;
+        delete payload.createdAt;
+        // Which version this edit started from — the server refuses the
+        // save if the record has moved on since (see openForm).
+        if (editId !== null) payload._baseUpdatedAt = form._baseUpdatedAt || "";
+
         if (key === "events") {
             /* An event's start and end are each a date field and a time
                field, and each pair is all-or-nothing: both blank means no
@@ -3612,8 +4045,23 @@ document.addEventListener("DOMContentLoaded", () => {
             payload.ecSeason = data.ecSeason || "";
             /* The stored article, or nothing. Clearing the link field is how
                an article is removed, so an empty field has to write null
-               rather than leave the old copy sitting on the record. */
-            payload.article = (data.articleUrl || "").trim() ? (form._articleDraft || null) : null;
+               rather than leave the old copy sitting on the record.
+
+               With a link in the field, the article saved is the one that
+               was READ FROM THAT LINK: the draft when its url matches, else
+               the stored copy when that matches. If neither does — the link
+               was edited and never re-read, or the re-read failed — the
+               stored article is kept as it is rather than deleted. Losing a
+               stored article to a slow response from Habbo was the bug;
+               the cost of this way round is only that an unread new link is
+               not saved until Add Article succeeds, which the field already
+               says ("Nothing is stored until you do"). */
+            const link = (data.articleUrl || "").trim();
+            const draft = form._articleDraft;
+            const stored = existing.article && existing.article.body ? existing.article : null;
+            if (!link) payload.article = null;
+            else if (draft && draft.body && draft.url === link) payload.article = draft;
+            else payload.article = stored;
             // A saved article is what the event shows; details would be
             // dead text underneath it.
             if (payload.article) payload.details = "";
@@ -3624,7 +4072,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const year = (data.dateYear || "").trim();
             const month = data.dateMonth || "";
             const day = data.dateDay || "";
-            payload[cfg.fieldMap.date] = year && month ? `${year.padStart(4, "0")}-${month}${day ? `-${day}` : ""}` : "";
+            payload[cfg.fieldMap.date] = year && month ? `${year.padStart(4, "0")}-${month}${day ? `-${day}` : ""}`
+                // An unrecognised stored value stays unless a date was
+                // picked — see _rawDate in openForm.
+                : (form._rawDate || "");
         }
 
         if (key === "rooms") {
@@ -3638,14 +4089,34 @@ document.addEventListener("DOMContentLoaded", () => {
         // Dropped if an upload left a row without an image — a related
         // image with nothing to show has no meaning on the public side.
         payload.relatedImages = (form._relatedDraft || []).filter(r => r.image);
-        // Only written when the form actually rendered the furni editor —
-        // otherwise saving a maze that has never been scanned would write
-        // an empty object over results a scan added in the meantime.
+        /* Furni is only sent when the furni editor actually changed it.
+
+           A scan writes a maze's furni straight into the database without
+           touching updatedAt (tools/furni-scan-local.js), so the conflict
+           check below cannot see it. A form opened before the scan finished
+           and saved after it used to send its own, pre-scan copy — both the
+           draft and, through `...existing`, the stored furni as it was when
+           the page loaded — and silently wiped out the scan's results.
+           Leaving the field off the save lets $set keep whatever is stored.
+
+           The one exception is the orphan pruning further down: if the
+           gallery lost a picture that has furni recorded against it, the
+           pruned copy has to be written, and that save does carry the
+           form's copy of the furni. */
+        delete payload.furni;
+        const furniChanged = !!form._furniDraft && JSON.stringify(form._furniDraft) !== form._furniOriginal;
         if (form._furniDraft) payload.furni = form._furniDraft;
-        const entranceImage = (data.entranceImage || "").trim();
-        payload.entrance = entranceImage ? { image: entranceImage, label: (data.entranceLabel || "").trim() || "Entrance", oldVersions: form._entranceOldVersions || [] } : null;
-        const finishImage = (data.finishImage || "").trim();
-        payload.finish = finishImage ? { image: finishImage, label: (data.finishLabel || "").trim() || "Finish", oldVersions: form._finishOldVersions || [] } : null;
+        /* The entrance and finish keep any sub-fields the editor does not
+           know about, as the gallery entries now do — but only while the
+           slot still holds the same picture: details belonging to the old
+           image should not ride along onto a new one. */
+        const bookend = (kind, image, label, fallback) => {
+            if (!image) return null;
+            const was = existing[kind] && typeof existing[kind] === "object" && existing[kind].image === image ? existing[kind] : {};
+            return { ...was, image, label: label || fallback, oldVersions: form[`_${kind}OldVersions`] || [] };
+        };
+        payload.entrance = bookend("entrance", (data.entranceImage || "").trim(), (data.entranceLabel || "").trim(), "Entrance");
+        payload.finish = bookend("finish", (data.finishImage || "").trim(), (data.finishLabel || "").trim(), "Finish");
 
         /* Drop furni belonging to pictures this maze no longer has.
 
@@ -3689,6 +4160,10 @@ document.addEventListener("DOMContentLoaded", () => {
             if (dropped) {
                 console.info(`Dropped ${dropped} furni record${dropped === 1 ? "" : "s"} with no matching picture.`);
                 payload.furni = pruned;
+            } else if (!furniChanged) {
+                // Nothing edited and nothing to prune: leave the stored
+                // furni to the database — see the note above.
+                delete payload.furni;
             }
         }
 
@@ -3734,11 +4209,28 @@ document.addEventListener("DOMContentLoaded", () => {
                 const created = await cfg.create(payload);
                 items.push(created);
             }
+            // Captured before closeForm clears them, then acted on only now
+            // that the save has landed — see imageKeysOf.
+            const pendingDeletes = form._pendingDeletes || new Set();
+            const sessionUploads = form._sessionUploads || new Set();
+            const storedKeys = form._storedKeys || new Set();
             closeForm(key);
             renderList(key);
+            flushPendingDeletes(pendingDeletes, sessionUploads, storedKeys);
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
-            refuse(err.message || "Something went wrong saving this.");
+            /* Somebody else saved this record after this form opened. Said
+               plainly and the form kept open, so nothing typed is lost —
+               but not saved over their work either. */
+            if (err.status === 409) {
+                refuse("Someone else saved this record since you opened it - reload it to see their changes. (Your edits are still here: copy anything you need before reopening it.)");
+            } else {
+                // A dropped connection or a server error can arrive AFTER
+                // the write landed, so from here on nothing this form
+                // uploaded is safe to delete on Cancel.
+                if (!err.status || err.status >= 500) form._saveAmbiguous = true;
+                refuse(err.message || "Something went wrong saving this.");
+            }
             submitBtn.disabled = false;
             submitBtn.textContent = "Save";
         }
@@ -3774,6 +4266,8 @@ document.addEventListener("DOMContentLoaded", () => {
             renderAdminsList();
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
+            // Said, not swallowed — see showLoadFailure.
+            showLoadFailure(adminsListEl, err.message || "Couldn't load the admin accounts.");
         }
     }
 
@@ -3803,7 +4297,7 @@ document.addEventListener("DOMContentLoaded", () => {
             row.innerHTML = `
                 <div class="row-info">
                     <h3>${escapeHtml(admin.username)}${isSelf ? ' <span class="admin-you-tag">(you)</span>' : ""}</h3>
-                    <p class="row-creator">${ROLE_LABELS[role] || "Admin"} · ${admin.createdAt ? "Added " + admin.createdAt.slice(0, 10) : ""}</p>
+                    <p class="row-creator">${ROLE_LABELS[role] || "Admin"} · ${admin.createdAt ? "Added " + escapeHtml(String(admin.createdAt).slice(0, 10)) : ""}</p>
                 </div>
                 <div class="admin-row-actions">
                     ${(isSelf || canDelete) ? `<button type="button" class="btn admin-reset-btn">Reset Password</button>` : ""}
@@ -3855,7 +4349,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function openResetForm(username) {
         adminsFormEl.innerHTML = `
-            <h3 class="admin-form-title">Reset Password — ${username}</h3>
+            <h3 class="admin-form-title">Reset Password — ${escapeHtml(username)}</h3>
             ${fieldRow("New password (8+ characters)", `<input type="password" name="password" required minlength="8" autocomplete="new-password">`)}
             ${fieldRow("Confirm new password", `<input type="password" name="confirm" required minlength="8" autocomplete="new-password">`)}
             <p class="admin-form-error" style="display:none;"></p>
@@ -3930,8 +4424,16 @@ document.addEventListener("DOMContentLoaded", () => {
     // kept in sync manually, same pattern as DIFFICULTY_ORDER elsewhere.
     const CONTRIBUTION_TYPES = ["Room Images", "Event Images", "Collab Images", "Historical Data", "Web Development"];
 
+    /* Had no catch at all: a failed read was an unhandled rejection from
+       enterAdmin (which does not await it) and an empty box where the list
+       should be. The read is public, so there is no 401 to handle. */
     async function loadContributors() {
-        workingContributors = await Api.getContributors();
+        try {
+            workingContributors = await Api.getContributors();
+        } catch (err) {
+            showLoadFailure(contributorsListEl, err.message || "Couldn't load the contributors.");
+            return;
+        }
         renderContributorsList();
     }
 
@@ -3944,7 +4446,7 @@ document.addEventListener("DOMContentLoaded", () => {
             contributorsListEl.appendChild(empty);
             return;
         }
-        workingContributors.forEach((contributor, index) => {
+        workingContributors.forEach(contributor => {
             const row = document.createElement("div");
             row.className = "chrome-list-row admin-row";
             // What they are credited with, in the same terms the console
@@ -3970,7 +4472,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     <button type="button" class="btn admin-delete-btn">Delete</button>
                 </div>
             `;
-            row.querySelector(".admin-edit-btn").addEventListener("click", () => openContributorForm(index));
+            // By id rather than list position: the list is re-read whenever
+            // the panel is shown (see showPanel), and an index taken from
+            // the old copy could point at somebody else in the new one.
+            row.querySelector(".admin-edit-btn").addEventListener("click", () => openContributorForm(contributor.id));
             row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteContributor(contributor.id));
             contributorsListEl.appendChild(row);
         });
@@ -3998,12 +4503,23 @@ document.addEventListener("DOMContentLoaded", () => {
         `).join("") + `</div>`;
     }
 
-    function openContributorForm(editIndex) {
-        const isEdit = editIndex !== undefined && editIndex !== null;
-        const contributor = isEdit ? workingContributors[editIndex] : {};
+    function openContributorForm(editId) {
+        const found = editId != null ? workingContributors.find(c => c.id === editId) : null;
+        const isEdit = !!found;
+        const contributor = found || {};
         const existingTypes = contributor.types || [];
         const chosenMazes = contributor.mazes || [];
         const chosenEvents = contributor.events || [];
+
+        /* Credits the pickers below cannot show. When the archive failed to
+           load, both pickers are empty, and saving sent mazes: [] and
+           events: [] — wiping every attribution this person had. Whatever
+           was chosen and is not on offer is carried through the save
+           untouched instead (see contributorCounts). With the archive
+           loaded, an id missing from it belongs to a record that has since
+           been deleted, and is let go as before. */
+        contributorsFormEl._keptMazes = archiveLoadedOk ? [] : chosenMazes.filter(id => !workingRooms.some(r => r.id === id));
+        contributorsFormEl._keptEvents = archiveLoadedOk ? [] : chosenEvents.filter(id => !workingEvents.some(e => e.id === id));
 
         const typesHtml = CONTRIBUTION_TYPES.map(type => `
             <label class="admin-checkbox-option">
@@ -4031,7 +4547,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 <span>Events contributed to</span>
                 ${recordPickerHtml("events", events, chosenEvents, e => e.title || e.id)}
             </div>
-            ${fieldRow("Other contributions", `<input type="number" name="extra" min="0" step="1" value="${contributor.extra != null ? contributor.extra : legacyExtra(contributor)}">`)}
+            ${contributorsFormEl._keptMazes.length || contributorsFormEl._keptEvents.length
+                ? `<p class="admin-field-note">The archive didn't load, so ${contributorsFormEl._keptMazes.length + contributorsFormEl._keptEvents.length} earlier credit(s) can't be shown here. They are kept as they are when you save.</p>`
+                : ""}
+            ${fieldRow("Other contributions", `<input type="number" name="extra" min="0" step="1" value="${escapeHtml(contributor.extra != null ? contributor.extra : legacyExtra(contributor))}">`)}
             <p class="admin-field-note">Anything not tied to a maze or an event — site work, research, and so on. Added to the ticks above.</p>
             <p class="admin-field-note admin-contributor-total" id="contributor-total"></p>
             <div class="admin-field">
@@ -4046,25 +4565,31 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
         contributorsFormEl.dataset.id = isEdit ? contributor.id : "";
 
-        // The total, kept live as the boxes are ticked, so the number the
-        // console will show is visible while the picking is being done
-        // rather than only after saving.
-        const paintTotal = () => {
-            const totalEl = contributorsFormEl.querySelector("#contributor-total");
-            if (!totalEl) return;
-            const counts = contributorCounts(new FormData(contributorsFormEl));
-            totalEl.textContent =
-                `Counts as ${counts.count} contribution${counts.count === 1 ? "" : "s"}` +
-                ` (${counts.mazes.length} maze${counts.mazes.length === 1 ? "" : "s"},` +
-                ` ${counts.events.length} event${counts.events.length === 1 ? "" : "s"},` +
-                ` ${counts.extra} other).`;
-        };
-        contributorsFormEl.addEventListener("change", paintTotal);
-        contributorsFormEl.addEventListener("input", paintTotal);
-        paintTotal();
+        paintContributorTotal();
 
         openContributorsForm();
     }
+
+    /* The total, kept live as the boxes are ticked, so the number the
+       console will show is visible while the picking is being done rather
+       than only after saving.
+
+       Wired ONCE, here, rather than inside openContributorForm: that added
+       another pair of listeners to the same form element every time it was
+       opened, so after a dozen edits each tick repainted the total a dozen
+       times over. */
+    function paintContributorTotal() {
+        const totalEl = contributorsFormEl.querySelector("#contributor-total");
+        if (!totalEl) return;
+        const counts = contributorCounts(new FormData(contributorsFormEl));
+        totalEl.textContent =
+            `Counts as ${counts.count} contribution${counts.count === 1 ? "" : "s"}` +
+            ` (${counts.mazes.length} maze${counts.mazes.length === 1 ? "" : "s"},` +
+            ` ${counts.events.length} event${counts.events.length === 1 ? "" : "s"},` +
+            ` ${counts.extra} other).`;
+    }
+    contributorsFormEl.addEventListener("change", paintContributorTotal);
+    contributorsFormEl.addEventListener("input", paintContributorTotal);
 
     /* A contributor saved before the pickers existed has a hand-typed count
        and nothing to attribute it to. That number is real work someone did,
@@ -4078,8 +4603,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // The three numbers the form produces, in one place so the live total
     // and the save can never disagree about the arithmetic.
     function contributorCounts(formData) {
-        const mazes = formData.getAll("mazes");
-        const events = formData.getAll("events");
+        // Plus any credits the pickers could not show — see _keptMazes.
+        const mazes = formData.getAll("mazes").concat(contributorsFormEl._keptMazes || []);
+        const events = formData.getAll("events").concat(contributorsFormEl._keptEvents || []);
         const extra = Math.max(0, parseInt(formData.get("extra"), 10) || 0);
         return { mazes, events, extra, count: mazes.length + events.length + extra };
     }
@@ -4094,6 +4620,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function closeContributorsForm() {
         contributorsFormEl.classList.remove("is-open");
         contributorsFormEl.innerHTML = "";
+        contributorsFormEl._keptMazes = [];
+        contributorsFormEl._keptEvents = [];
         contributorsAddBtn.style.display = "inline-block";
     }
 
@@ -4147,33 +4675,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     contributorsAddBtn.addEventListener("click", () => openContributorForm());
 
-    // ---------- console: about text ----------
-
-    async function loadAboutText() {
-        try {
-            const { aboutText } = await Api.getSiteSettings();
-            aboutTextInput.value = aboutText || "";
-        } catch (e) {
-            // best-effort — the field just stays empty
-        }
-    }
-
-    aboutSaveBtn.addEventListener("click", async () => {
-        aboutSaveBtn.disabled = true;
-        aboutSaveBtn.textContent = "Saving…";
-        aboutSaveStatus.style.display = "none";
-        try {
-            await Api.updateSiteSettings(adminToken, { aboutText: aboutTextInput.value });
-            aboutSaveStatus.textContent = "Saved.";
-            aboutSaveStatus.style.display = "block";
-        } catch (err) {
-            if (err.status === 401) { lockOut(); return; }
-            aboutSaveStatus.textContent = err.message || "Couldn't save the About text.";
-            aboutSaveStatus.style.display = "block";
-        } finally {
-            aboutSaveBtn.disabled = false;
-            aboutSaveBtn.textContent = "Save About Text";
-        }
+    /* js/admin-dead-ends.js announces a lead review that credited somebody,
+       so the list here is re-read at once rather than at the next visit to
+       the Console panel. Not while the form is open — see showPanel. */
+    document.addEventListener("mazerats:contributors-changed", () => {
+        if (adminToken && !contributorsFormEl.classList.contains("is-open")) loadContributors();
     });
 
     // ---------- console: contact messages ----------
@@ -4181,13 +4687,24 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadContactMessages() {
         try {
             workingContactMessages = await Api.getContactMessages(adminToken);
-            renderContactMessagesList();
+            contactMessagesFailed = "";
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
+            contactMessagesFailed = err.message || "Couldn't load the messages.";
         }
+        renderContactMessagesList();
     }
 
+    /* Kept as state rather than written once, because loadBans redraws this
+       list too (for the Ban/Unban buttons) and would otherwise paint "No
+       messages yet." straight over the failure a moment after it appeared. */
+    let contactMessagesFailed = "";
+
     function renderContactMessagesList() {
+        if (contactMessagesFailed) {
+            showLoadFailure(contactMessagesListEl, contactMessagesFailed);
+            return;
+        }
         contactMessagesListEl.innerHTML = "";
         if (!workingContactMessages.length) {
             const empty = document.createElement("p");
@@ -4354,7 +4871,18 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadLandingState() {
         try {
             // One read, every switch: they all live in the same settings document.
-            const { landingState, fallinFurniState, theme, launchAt } = await Api.getSiteSettings();
+            const { landingState, fallinFurniState, theme, launchAt, fromCache } = await Api.getSiteSettings();
+            /* The stand-in getSiteSettings answers with during an outage
+               (fromCache, see js/api.js) has a GUESSED landing state and no
+               Fallin' Furni state or palette at all. Lighting buttons from it
+               would show this admin a site state that may not be the real
+               one — "Live" highlighted on a site that is actually closed —
+               so nothing is lit and the reason is said instead. */
+            if (fromCache) {
+                landingToggleStatus.textContent = "Couldn't read the current site settings — reload to see which mode is on.";
+                landingToggleStatus.style.display = "block";
+                return;
+            }
             if (launchAtInput) launchAtInput.value = isoToLocalField(launchAt);
             landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
             renderDevModeLink(landingState);
@@ -4424,6 +4952,11 @@ document.addEventListener("DOMContentLoaded", () => {
             ffToggleBtns.forEach(b => b.classList.toggle("active", b === clickedBtn));
             return true;
         } catch (err) {
+            // The same expired-session handling as the landing switch above.
+            // Without it an expired token showed as "Couldn't update" under
+            // the buttons, with nothing to say that logging in again was the
+            // whole of the fix.
+            if (err.status === 401) { lockOut(); return false; }
             ffToggleStatus.textContent = err.message || "Couldn't update Fallin' Furni.";
             ffToggleStatus.style.display = "block";
             return false;
@@ -4793,7 +5326,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     Object.keys(COLLECTIONS).forEach(key => {
         const cfg = COLLECTIONS[key];
-        cfg.addBtn.addEventListener("click", () => openForm(key));
+        cfg.addBtn.addEventListener("click", () => requestOpenForm(key));
         cfg.formEl.addEventListener("submit", e => submitForm(key, e));
     });
 
@@ -4802,8 +5335,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // internal scroll, so these just save hunting down the page for them.
     const sidebarAddRoomBtn = document.getElementById("sidebar-add-room-btn");
     const sidebarAddEventBtn = document.getElementById("sidebar-add-event-btn");
-    if (sidebarAddRoomBtn) sidebarAddRoomBtn.addEventListener("click", () => openForm("rooms"));
-    if (sidebarAddEventBtn) sidebarAddEventBtn.addEventListener("click", () => openForm("events"));
+    if (sidebarAddRoomBtn) sidebarAddRoomBtn.addEventListener("click", () => requestOpenForm("rooms"));
+    if (sidebarAddEventBtn) sidebarAddEventBtn.addEventListener("click", () => requestOpenForm("events"));
 
     // Floating Save/Cancel just proxy to whichever maze/event form is
     // currently open — requestSubmit() runs the same validation + submit
@@ -4836,9 +5369,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------- tab panels ----------
 
-    // Which panel each editable collection lives in. Contributors share
-    // the Console panel with the About text; the rest map to a tab of
-    // their own name.
+    // Which panel each editable collection lives in. Contributors have the
+    // Console panel to themselves (the About text that used to share it is
+    // gone); the rest map to a tab of their own name.
     const PANEL_FOR_COLLECTION = {
         rooms: "rooms",
         events: "events",
@@ -4868,6 +5401,16 @@ document.addEventListener("DOMContentLoaded", () => {
            the admin never open it, so it is fetched when the panel is first
            shown rather than on sign-in. Refresh re-reads it after that. */
         if (name === "ffdata" && !ffLoaded) loadFallinFurni();
+        /* The contributor list is re-read every time its panel is shown,
+           not only at sign-in. Accepting a lead in Missing Pieces can credit
+           somebody server-side, and editing that person from a list loaded
+           an hour earlier saved the old copy straight back over the credit.
+           Skipped while the contributor form is open, so a re-read never
+           shifts the list out from under an edit in progress. */
+        if (name === PANEL_FOR_COLLECTION.contributors && adminToken &&
+            !contributorsFormEl.classList.contains("is-open")) {
+            loadContributors();
+        }
         /* Mounted on first open, for the same reason as the run log and one
            more: the editor SCANS THE STYLESHEET, and doing that before the
            panel's own rules are in the document would build a catalogue
@@ -4876,7 +5419,12 @@ document.addEventListener("DOMContentLoaded", () => {
             recolourMounted = true;
             AdminRecolour.mount(
                 document.getElementById("recolour-editor"),
-                adminToken
+                // A function, not the value — the same handover the atlas
+                // gets (see startWizardPanel). The editor is mounted once and
+                // lives for the page, so a copy of the token taken here went
+                // stale the moment the session was renewed, and every save
+                // after signing back in failed.
+                () => adminToken
             ).catch(e => {
                 recolourMounted = false;
                 document.getElementById("recolour-editor").innerHTML =
@@ -4950,16 +5498,30 @@ document.addEventListener("DOMContentLoaded", () => {
             dailyPlayers = data.players || [];
             dailyDetail = data.detail || null;
             dailyToday = data.today || "";
-        } catch (e) {
+            dailyFailed = "";
+        } catch (err) {
+            /* Every error used to land here and draw "Nobody has played a
+               daily game yet." — an expired session and a database outage
+               both reported as an empty game. The first now gets the
+               session-expired login like every other panel; the second says
+               it failed, in the list, instead of saying nobody played. */
+            if (err && err.status === 401) { lockOut(); return; }
             dailyPlayers = [];
             dailyDetail = null;
+            dailyFailed = (err && err.message) || "Couldn't load the daily games.";
         }
         renderDailyPlayers();
         renderDailyDetail();
     }
 
+    let dailyFailed = "";
+
     function renderDailyPlayers() {
         if (!dailyPlayersEl) return;
+        if (dailyFailed) {
+            showLoadFailure(dailyPlayersEl, dailyFailed);
+            return;
+        }
         dailyPlayersEl.innerHTML = "";
 
         if (!dailyPlayers.length) {
@@ -5167,9 +5729,13 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadBans() {
         try {
             workingBans = await Api.getBans(adminToken);
+            bansFailed = "";
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
             workingBans = [];
+            // "No bans yet." after a failed read would tell an admin the
+            // address they banned last week is free to post again.
+            bansFailed = err.message || "Couldn't load the ban list.";
         }
         renderBansList();
         // Each message row shows Ban or Unban depending on whether its own
@@ -5181,7 +5747,13 @@ document.addEventListener("DOMContentLoaded", () => {
         return Boolean(ip) && workingBans.some(ban => ban.ip === ip);
     }
 
+    let bansFailed = "";
+
     function renderBansList() {
+        if (bansFailed) {
+            showLoadFailure(bansListEl, bansFailed);
+            return;
+        }
         bansListEl.innerHTML = "";
         if (!workingBans.length) {
             const empty = document.createElement("p");
@@ -5278,7 +5850,10 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!result) { lockOut(); return; }
             currentUsername = result.username;
             currentUserRole = result.role || "admin";
-            enterAdmin();
+            // The same backstop as the login form's: said in the panel, not
+            // left as an unhandled rejection behind a half-drawn page.
+            enterAdmin().catch(err => showLoadBanner("Something went wrong opening the panel: " +
+                ((err && err.message) || "unknown error") + ". Reload the page to try again."));
         });
     }
 });

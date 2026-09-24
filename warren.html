@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Caveat is here for the atlas panel, which letters room names in
@@ -9,7 +10,6 @@
          the editor sharing the page's engine is that what you arrange is
          what you get. -->
     <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
-    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <meta name="robots" content="noindex, nofollow">
@@ -126,19 +126,53 @@
                 <!-- ---------- NAV ---------- -->
                 <div class="admin-tab" data-menu="nav">
                     <button type="button" class="admin-tab-btn" aria-haspopup="true" aria-expanded="false">Nav</button>
+                    <!-- The same language as CONTROL beside it: a row of
+                         cards, each a LABEL over its buttons, the buttons
+                         the same pills Control's actions are. It used to be
+                         a bare three-column grid of the archive's sprite
+                         buttons, squeezed to 78px so "Fallin' Furni" hit
+                         both edges, and it looked like a different page
+                         from the panel next to it.
+
+                         Grouped by what the section is FOR, so the eye can
+                         go to "people" or "games" rather than read eleven
+                         words. Every button keeps .chrome-nav-btn and its
+                         data-panel: js/admin.js finds them by exactly that
+                         and does not care how they are grouped. -->
                     <div class="admin-drop admin-drop-nav">
-                        <nav class="admin-nav-grid" id="admin-nav" role="tablist" aria-label="Admin sections">
-                            <button type="button" class="chrome-nav-btn active" data-panel="rooms" role="tab" aria-selected="true"><span class="chrome-nav-btn-label">Mazes</span></button>
-                            <button type="button" class="chrome-nav-btn" data-panel="events" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Events</span></button>
-                            <button type="button" class="chrome-nav-btn" data-panel="console" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Console</span></button>
-                            <button type="button" class="chrome-nav-btn" data-panel="messages" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Messages</span></button>
-                            <button type="button" class="chrome-nav-btn" data-panel="wizard" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Atlas</span></button>
-                            <button type="button" class="chrome-nav-btn" data-panel="daily" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Daily</span></button>
-                            <button type="button" class="chrome-nav-btn" data-panel="ffdata" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Fallin&#39; Furni</span></button>
-                            <button type="button" class="chrome-nav-btn" data-panel="recolour" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Recolour</span></button>
-                            <button type="button" class="chrome-nav-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
-                            <button type="button" class="chrome-nav-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
-                            <button type="button" class="chrome-nav-btn" data-panel="activity" id="activity-nav-btn" role="tab" aria-selected="false" hidden><span class="chrome-nav-btn-label">Activity</span></button>
+                        <nav class="ctl-grid admin-nav-grid" id="admin-nav" role="tablist" aria-label="Admin sections">
+                            <div class="ctl-card">
+                                <span class="ctl-label">Archive</span>
+                                <div class="admin-nav-col">
+                                    <button type="button" class="chrome-nav-btn ctl-btn active" data-panel="rooms" role="tab" aria-selected="true"><span class="chrome-nav-btn-label">Mazes</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="events" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Events</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="deadends" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Missing Pieces</span><span class="admin-nav-count" id="dead-end-nav-count" hidden></span></button>
+                                </div>
+                            </div>
+                            <div class="ctl-card">
+                                <span class="ctl-label">Site</span>
+                                <div class="admin-nav-col">
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="console" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Console</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="messages" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Messages</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="recolour" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Recolour</span></button>
+                                </div>
+                            </div>
+                            <div class="ctl-card">
+                                <span class="ctl-label">Games</span>
+                                <div class="admin-nav-col">
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="daily" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Daily</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="ffdata" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Fallin&#39; Furni</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="wizard" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Atlas</span></button>
+                                </div>
+                            </div>
+                            <div class="ctl-card">
+                                <span class="ctl-label">People</span>
+                                <div class="admin-nav-col">
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="activity" id="activity-nav-btn" role="tab" aria-selected="false" hidden><span class="chrome-nav-btn-label">Activity</span></button>
+                                </div>
+                            </div>
                         </nav>
                     </div>
                 </div>
@@ -394,7 +428,7 @@
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Console</h3>
-                                        <p class="admin-hint">What the homepage console shows on its People and About pages.</p>
+                                        <p class="admin-hint">Who the homepage console credits on its Source page.</p>
                                     </div>
                                 </header>
 
@@ -402,27 +436,12 @@
                                     <header class="admin-panel-head admin-panel-head-sub">
                                         <div>
                                             <h3 class="admin-subheading">Contributors</h3>
-                                            <p class="admin-hint">Shown on the homepage console's People page.</p>
+                                            <p class="admin-hint">Shown on the homepage console's Source page, most contributions first.</p>
                                         </div>
                                         <button class="admin-action-pill admin-pill-solid admin-add-btn" id="contributors-add-btn" type="button">+ Add a Contributor</button>
                                     </header>
                                     <div class="chrome-list" id="contributors-list"></div>
                                     <form class="admin-form" id="contributors-form"></form>
-                                </div>
-
-                                <div class="admin-section">
-                                    <header class="admin-panel-head admin-panel-head-sub">
-                                        <div>
-                                            <h3 class="admin-subheading">About Text</h3>
-                                            <p class="admin-hint">Shown on the homepage console's About page.</p>
-                                        </div>
-                                        <button class="admin-action-pill admin-pill-solid" id="about-save-btn" type="button">Save About Text</button>
-                                    </header>
-                                    <label class="admin-field">
-                                        <span>About blurb</span>
-                                        <textarea id="about-text-input" rows="6"></textarea>
-                                    </label>
-                                    <p class="admin-hint" id="about-save-status" style="display:none;"></p>
                                 </div>
                             </section>
 
@@ -435,6 +454,53 @@
                                     </div>
                                 </header>
                                 <div class="chrome-list" id="contact-messages-list"></div>
+                            </section>
+
+                            <!-- ---------- Missing Pieces ----------
+                                 Records that stop short, and what visitors
+                                 send in to finish them. Everything here is
+                                 js/admin-dead-ends.js; the rules for what a
+                                 record can be missing are js/dead-ends.js,
+                                 shared with the archive and the server. -->
+                            <section class="admin-panel" data-panel="deadends" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Missing Pieces</h3>
+                                        <p class="admin-hint">Mazes and events the archive can't finish without help. Tick what's missing and it's listed in the console's Missing Pieces page and on the record itself, with an "I can help" button. Submissions from the console's Add Maze Info form land here, including ones about mazes that aren't in the archive yet. Images people send stay private until you accept them.</p>
+                                    </div>
+                                    <button class="admin-action-pill" id="dead-end-refresh" type="button">Refresh</button>
+                                </header>
+
+                                <div class="admin-section">
+                                    <header class="admin-panel-head admin-panel-head-sub">
+                                        <div>
+                                            <h3 class="admin-subheading">Leads</h3>
+                                            <p class="admin-hint">What visitors sent through Add Maze Info. Accepting can copy their screenshots into the archive, tick off what they answered, and credit them in Contributors.</p>
+                                        </div>
+                                        <div class="ctl-seg" id="dead-end-lead-tabs" role="group" aria-label="Which leads"></div>
+                                    </header>
+                                    <div class="chrome-list" id="dead-end-leads"></div>
+                                </div>
+
+                                <div class="admin-section">
+                                    <header class="admin-panel-head admin-panel-head-sub">
+                                        <div>
+                                            <h3 class="admin-subheading">Records</h3>
+                                            <p class="admin-hint">Only what you tick and save here shows on the site. "Suggestions" lists unmarked records the page thinks have gaps; opening one pre-ticks those, so untick anything that isn't really missing.</p>
+                                        </div>
+                                        <div class="ctl-row">
+                                            <input type="search" class="ctl-input" id="dead-end-record-search" placeholder="Find any maze or event" aria-label="Find a record">
+                                            <div class="sort-box">
+                                                <select id="dead-end-record-filter" aria-label="Which records">
+                                                    <option value="marked" selected>Marked</option>
+                                                    <option value="suggested">Suggestions</option>
+                                                    <option value="all">Everything</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </header>
+                                    <div class="chrome-list" id="dead-end-records"></div>
+                                </div>
                             </section>
 
                             <!-- ---------- the atlas ----------
@@ -953,6 +1019,8 @@
     <script src="js/recolour.js?v=2"></script>
     <script src="js/admin-recolour.js?v=2"></script>
     <script src="js/admin.js?v=2"></script>
+    <script src="js/dead-ends.js?v=2"></script>
+    <script src="js/admin-dead-ends.js?v=2"></script>
     <script src="js/password-field.js?v=2"></script>
     <script src="js/glyph-palette.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>

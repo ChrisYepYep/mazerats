@@ -1543,6 +1543,60 @@ body[data-page="home"] .hero { padding-top: 18px; }
         0 -3px 0 rgba(0, 0, 0, 0.45);
 }
 
+/* ---- the gap between a window's edge and what is inside it ----
+
+   TWELVE PIXELS, left, right and bottom: the window's 1px outline, then 12px
+   of clear chrome, then the first panel inside. The top is the titlebar's
+   business (eight rows of dots and 9px under them — see .chrome-titlebar),
+   so this never touches it.
+
+   The window's border stays 14px, because everything positioned against it
+   is measured from it — the titlebar's grips, the close button, the modal's
+   side tabs. Only the 4px of that border next to the content is plain fill
+   (window_frame.png draws its outline, fill and highlight in the outer 3px),
+   so the panels simply reach 1px out into it: a negative margin of
+   (13px - 14px). The border-image is painted underneath, so nothing of the
+   frame is covered but plain brown. */
+.chrome-window,
+.modal {
+    --window-edge-gap: 13px;              /* outline + 12px clear */
+    --window-inset: calc(var(--window-edge-gap) - 14px);
+}
+
+.chrome-window > .chrome-frame,
+.modal > .chrome-frame {
+    margin-left: var(--window-inset);
+    margin-right: var(--window-inset);
+    margin-bottom: var(--window-inset);
+}
+
+/* The archive window stacks four panels rather than one frame: the two tab
+   rows, the search drawer and the results. Sides for all four; the bottom
+   for the last. Their own top margins (the rows overlap each other on
+   purpose) are left exactly as they were. */
+#browse-window > .chrome-nav,
+#browse-window > #search-wrap,
+#browse-window > .featured-frame {
+    margin-left: var(--window-inset);
+    margin-right: var(--window-inset);
+}
+#browse-window > .featured-frame { margin-bottom: var(--window-inset); }
+
+/* Fallin' Furni's window holds the game's stage directly (and, in the level
+   editor, a play bar under it). */
+.ff-window > .ff-stage,
+.ff-window > .ff-playbar {
+    margin-left: var(--window-inset);
+    margin-right: var(--window-inset);
+}
+.ff-window > .ff-stage { margin-bottom: var(--window-inset); }
+/* The editor's bar follows the stage: it takes the bottom inset instead, and
+   gives back the 1px the stage reached down into the border. */
+.ff-window > .ff-stage + .ff-playbar {
+    margin-top: calc(-1 * var(--window-inset));
+    margin-bottom: var(--window-inset);
+}
+
 /* When a page-level nav sits between the titlebar and the frame (see
    .chrome-nav below), the frame's own top margin is dropped so the two sit
    flush — the nav's bottom border becomes the frame's top edge. Both the
@@ -2098,29 +2152,47 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .chrome-titlebar {
     /* The room the title is guaranteed at each end of the bar. */
     --titlebar-pad: 40px;
-    /* Above and below it. Kept tighter than a line of 15px Silkscreen would
-       naturally sit in, which is what narrows the whole top section: the
-       bar was 41px for 23px of text, and Habbo's own windows hold their
-       titles far closer than that. */
-    --titlebar-pad-y: 6px;
     /* Clear ground between a grip and the title. */
     --titlebar-grip-gap: 10px;
-    /* Clear ground under a grip, along the bar's bottom edge. */
-    --titlebar-grip-inset: 3px;
+
+    /* --- the bar's height, and it is only ever this ---
+
+       EIGHT ROWS OF DOTS, HUNG FROM THE WINDOW'S TOP, AND 9PX UNDER THEM.
+
+       Every titlebar on the site is the same shape now, whatever its title:
+       the grip is eight rows (15px — the tile's dots are on its even rows, so
+       15px is exactly eight with no half-row at the foot), it hangs from the
+       window's top edge where a grip belongs, and the window's body starts
+       9px under its last row of dots. The title and the close button sit on
+       the grip's own centre line.
+
+       The height used to come from the title — 15px Silkscreen, padded —
+       and the grip stretched to fill it, which on the taller bars came to
+       twenty-odd rows and read as a textured panel rather than a grip. */
+    --titlebar-grip-rows: 15px;
+    --titlebar-under-grip: 9px;
+    /* How far the title sits below the grip's top, so that the foot of its
+       capitals lands on the grip's last row of dots (see the title's rule). */
+    --titlebar-title-drop: 5px;
+    /* How much lower the grip hangs than it stands in from the sides: 4px
+       in from the window's edges, and this much more below its top — 6px in
+       all. Everything on the grip's line (title, close, a modal's actions)
+       and the bar's own height follow it, so the 9px under the dots holds. */
+    --titlebar-grip-drop: 2px;
 
     /* --- how the grip sits against the window's own frame --- */
 
     /* .chrome-window's border-width, and the radius of the corner drawn
        inside it: window_frame.png's outline is a quarter circle of radius
        12, meeting the top edge at x=12 and the left edge at y=12. Neither
-       is this rule's to change — they are stated here because the two
-       numbers below are worked out FROM them. */
+       is this rule's to change — they are stated here because the numbers
+       below are worked out FROM them. */
     --titlebar-frame: 14px;
     --titlebar-frame-radius: 12px;
 
     /* How far the grip stands inside the window's own edge. The one number
-       to move for more or less breathing space at the corners; the bleed
-       and the radius both follow it. */
+       to move for more or less breathing space at the corners; the bleed,
+       the radius and the bar's height all follow it. */
     --titlebar-grip-edge: 4px;
 
     /* How far the grip reaches OUT of the bar, on its three outer sides.
@@ -2142,25 +2214,35 @@ body[data-page="home"] .hero { padding-top: 18px; }
        distance rather than crossing it. */
     --titlebar-grip-radius: calc(var(--titlebar-frame-radius) - var(--titlebar-grip-edge));
 
+    /* The grip's centre line, measured from the bar's own top. Negative: the
+       bar starts under the window's 14px border and the grip starts 4px
+       inside the window, above it. Everything that sits "on the title's
+       line" — the title, the close button, a modal's actions — is placed on
+       this. */
+    --titlebar-line: calc(var(--titlebar-grip-rows) / 2 + var(--titlebar-grip-drop) - var(--titlebar-bleed));
+
     position: relative;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     gap: var(--titlebar-grip-gap);
-    padding: var(--titlebar-pad-y) var(--titlebar-pad);
+    padding: 0 var(--titlebar-pad);
+    /* From the window's edge: 6px, then 15px of grip, then 9px of clear bar
+       — less the 14px of border the bar starts under. A min rather than a
+       height only so that a title allowed two lines (a long maze name on a
+       phone) makes room for itself instead of spilling into the window. */
+    min-height: calc(var(--titlebar-grip-edge) + var(--titlebar-grip-drop) + var(--titlebar-grip-rows) + var(--titlebar-under-grip) - var(--titlebar-frame));
+    box-sizing: border-box;
     background-color: var(--chrome-fill);
 }
 
 /* Rows of dots, 1px on and 1px off in both directions, taken straight off
    the tile rather than redrawn: title_pattern.png IS that grid, so a box
-   of any size shows however many of its rows fit and nothing else.
+   of any size shows however many of its rows fit and nothing else — and
+   this box is exactly eight rows (see the bar's own rule above).
 
-   Stretched rather than given a height, so the bleed and the inset cover
-   every bar this class dresses — they run from 31px to 41px tall — without
-   a number each. The top margin carries it out over the bar's padding AND
-   over the window's border to the frame; the bottom one only cancels the
-   padding, less the inset, since below the bar is the window's own body
-   rather than its rim. */
+   Hung from the window's top edge: the top margin carries it up out of the
+   bar, over the window's border, to 4px inside the frame. */
 .chrome-titlebar::before,
 .chrome-titlebar::after {
     content: "";
@@ -2169,12 +2251,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
        a long title would be pushed out of the bar instead of the grips
        giving way to it. */
     min-width: 0;
-    align-self: stretch;
-    margin-top: calc(-1 * (var(--titlebar-pad-y) + var(--titlebar-bleed)));
-    margin-bottom: calc(var(--titlebar-grip-inset) - var(--titlebar-pad-y));
+    height: var(--titlebar-grip-rows);
+    margin-top: calc(var(--titlebar-grip-drop) - var(--titlebar-bleed));
     background-image: url('../assets/img/title_pattern.png');
     background-repeat: repeat;
     image-rendering: pixelated;
+    /* A touch lighter than the tile as drawn (76,54,34 to about 91,65,41),
+       so the dots read clearly against the bar's own brown. A filter rather
+       than a new tile so each palette's own tile (css/theme-*.css) lightens
+       by the same amount in its own colour. The tile's gaps are transparent,
+       so only the dots change. */
+    filter: brightness(1.2);
 }
 
 /* Out past the padding and the border to the window's own corner, and
@@ -2184,6 +2271,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
    The two are equal and opposite, which matters more than it looks: the
    grips share the bar's leftover space evenly, so any difference between
    these would move the title off centre by half of it. */
+/* The 9px under the grip is the bar's to give, and only the bar's: the
+   frame or tab row that follows a titlebar keeps its side and bottom
+   margins but not its top one, which would otherwise add its own 10px to
+   the bar's 9. */
+.chrome-titlebar + .chrome-frame,
+.chrome-titlebar + .chrome-nav {
+    margin-top: 0;
+}
+
 .chrome-titlebar::before {
     margin-left: calc(-1 * (var(--titlebar-pad) + var(--titlebar-bleed)));
     border-top-left-radius: var(--titlebar-grip-radius);
@@ -2194,17 +2290,30 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-top-right-radius: var(--titlebar-grip-radius);
 }
 
+/* Every window's title, in the one face: Volter Goldfish's bold cut at its
+   native 9px, which is the size its pixels were drawn for. 'Volter Goldfish
+   Bold' is the family declared for that file on its own (see the
+   @font-face rules at the top), so weight 400 selects it as it stands
+   rather than asking the browser to embolden anything.
+
+   Sat on the grip's LAST row: the foot of the capitals is on the same pixel
+   row as the bottom row of dots either side. A line the grip's height from
+   the grip's own top put the baseline 10px down — 5px above that last row,
+   measured — so the title is dropped by --titlebar-title-drop. */
 .chrome-titlebar h1,
 .chrome-titlebar h2,
 .chrome-titlebar .chrome-title-text {
-    font-family: 'Silkscreen', monospace;
-    font-weight: 700;
-    font-size: 0.95rem;
-    color: #fff8ec;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: var(--titlebar-grip-rows);
+    /* The nav tabs' cream (see .chrome-nav-btn), not the near-white this
+       was: no other text on the site is that colour. */
+    color: #f5ecd8;
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
     letter-spacing: 0.5px;
     text-align: center;
-    margin: 0;
+    margin: calc(var(--titlebar-title-drop) + var(--titlebar-grip-drop) - var(--titlebar-bleed)) 0 0;
     /* Was a backing plate — its own --chrome-fill background, 9px/12px of
        padding and a -9px vertical margin to span the bar and break the
        dots around the text. The grips leave a real gap instead, so there
@@ -2221,8 +2330,14 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .chrome-close {
     position: absolute;
     right: 10px;
-    top: 50%;
+    /* On the grip's centre line, like the title — not the bar's middle —
+       and a pixel above it, where the X sits best against the dots. */
+    top: calc(var(--titlebar-line, 50%) - 1px);
     transform: translateY(-50%);
+    /* Over the grips. The grip after the title carries a filter, and a filter
+       makes it a layer of its own, painted after this button in the bar's
+       order — so without this the dots were drawn across the X. */
+    z-index: 1;
     width: 24px;
     height: 24px;
     background: linear-gradient(180deg, #fff, #dcd3c0);
@@ -3146,6 +3261,58 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: block;
 }
 
+/* The line over the list: the Events archive note or the completed tally
+   on the left, "Clear filter" on the right. Each of the three keeps its own
+   16px of top padding, as the two notes always had, so the row is exactly
+   as tall as whichever is showing and no taller when none is. */
+.list-status {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+}
+
+/* "Refresh recommendations" in every respect but position: the same pixel
+   face, size, amber and hover glow, so the two read as the same kind of
+   control. Shown whenever the list is narrowed — a search, a chip pressed in
+   a maze's window, a furni — by js/home.js (updateChrome). */
+.clear-filter-btn {
+    margin-left: auto;
+    padding: 16px 0 0;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: none;
+    cursor: var(--cursor-pointer);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    letter-spacing: 0.4px;
+    color: var(--amber-bright);
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
+    white-space: nowrap;
+}
+.clear-filter-btn[hidden] { display: none; }
+.clear-filter-btn:hover,
+.clear-filter-btn:focus-visible {
+    color: #fff8ec;
+    text-shadow: 0 0 6px rgba(255, 248, 236, 0.65);
+    outline: none;
+}
+
+/* A thumb-sized target without moving the words: the hit area grows down
+   and left into the empty line around them. */
+@media (pointer: coarse) {
+    .clear-filter-btn { position: relative; }
+    .clear-filter-btn::after {
+        content: "";
+        position: absolute;
+        top: 6px;
+        right: -8px;
+        bottom: -10px;
+        left: -12px;
+    }
+}
+
 /* The long wording by default; the short one only where the media query
    below asks for it. */
 .featured-refresh-short { display: none; }
@@ -3734,26 +3901,11 @@ body[data-page="home"] .hero { padding-top: 18px; }
         inset 1px 0 0 var(--chrome-highlight);
 }
 
-/* Set on the variables, not on padding, so the grips still reach past both
-   to the frame.
-
-   The vertical one stays where the shared rule had it rather than
-   narrowing with it. A modal titles itself in 9px Volter where the
-   homepage and admin bars use 15px Silkscreen, so this bar is already the
-   short one — and #modal-close is the biggest close button on the site at
-   26px, which a 6px padding would leave taller than the bar it sits in. */
-.modal .chrome-titlebar { --titlebar-pad: 28px; --titlebar-pad-y: 9px; }
-
-/* The maze name in the modal titlebar. Scoped to .modal so the homepage and
-   admin titlebars keep their Silkscreen. 700 is what selects
-   VolterGoldfishBold.ttf — the bold cut shares the regular's family name and
-   is told apart by weight alone (see the @font-face pair at the top of this
-   file), so 400 would quietly hand back the regular face instead. */
-.modal .chrome-titlebar h2 {
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 700;
-}
+/* Set on the variable, not on padding, so the grips still reach past it to
+   the frame. The bar's height and the title's face are the shared ones now
+   (see .chrome-titlebar) — every window titles itself the way this one
+   always did. */
+.modal .chrome-titlebar { --titlebar-pad: 28px; }
 
 @keyframes modalIn {
     from { opacity: 0; transform: translateY(10px) scale(0.98); }
@@ -4627,8 +4779,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
     /* Clear of the builder avatar. It belongs to the meta row below, but it
        is 64px wide and tall enough to stand up into this one, so it covers
        exactly the space this caption would otherwise occupy: 64px plus the
-       2px it starts in from the strip's edge, plus a gap. */
-    margin-left: 72px;
+       2px it starts in from the strip's edge, plus a gap.
+
+       A collab card stands several figures there, each overlapping the one
+       before so it adds 28px (see .builder-avatars .builder-avatar), and the
+       group starts 10px further left. js/home.js sets --builder-figures to
+       how many are showing; measured on a four-builder maze, the last
+       figure's box ends at 46px + 28px for each figure after the first, so
+       the caption sits the same 6px clear of that. One figure keeps the
+       72px it always had. */
+    margin-left: max(72px, calc(52px + (var(--builder-figures, 1) - 1) * 28px));
     padding-right: 5px;
     overflow: hidden;
     white-space: nowrap;
@@ -5199,6 +5359,23 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-color: var(--amber);
 }
 
+/* The strip and the big picture are keyboard controls now (see the strip
+   markup and setGalleryImageOperable in js/home.js), so they need to show
+   where focus is. Drawn inside the box: the strip scrolls and the viewport
+   clips, and an outline outside either would be cut off. Keyboard focus
+   only — a click leaves no ring. */
+.gallery-strip img:focus-visible,
+.gallery-strip-missing:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: -2px;
+    opacity: 1;
+}
+
+.modal-gallery-img:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: -3px;
+}
+
 /* Shown centred in .gallery-viewport instead of .modal-gallery-img for a
    room added with just a title and no screenshot yet (see showGalleryImage
    in home.js) — plain pill, deliberately neutral/muted rather than amber
@@ -5748,11 +5925,12 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .modal .chrome-titlebar .modal-meta-actions {
     position: absolute;
     left: 10px;
-    top: 50%;
-    /* Centred on the bar, then lifted 5px: dead centre sat them low against
-       the title beside them, whose glyphs carry no descenders to fill the
-       space underneath. */
-    transform: translateY(calc(-50% - 5px));
+    /* Over the grips, as .chrome-close is and for the same reason. */
+    z-index: 1;
+    /* On the grip's centre line, where the title and the close button sit
+       (see --titlebar-line on .chrome-titlebar). */
+    top: var(--titlebar-line);
+    transform: translateY(-50%);
     display: flex;
     align-items: center;
     gap: 6px;
@@ -6060,7 +6238,8 @@ body[data-page="home"] .hero { padding-top: 18px; }
 #events-list,
 #admins-list,
 #contact-messages-list,
-#bans-list {
+#bans-list,
+#contributors-list {
     max-height: min(520px, 55vh);
     overflow-y: auto;
     /* Explicit rather than relying on default flex-item sizing — once
@@ -6505,7 +6684,25 @@ body.is-viewer #about-save-btn,
 body.is-viewer #furni-scan-all-btn,
 body.is-viewer #furni-scan-new-btn,
 body.is-viewer .admin-floating-actions .admin-action-pill,
-body.is-viewer .admin-form-actions button {
+body.is-viewer .admin-form-actions button,
+/* The atlas controls that write, which the list above missed because they
+   are plain .admin-action-pill/.btn buttons rather than the named classes:
+   the inspector's Hide, its group actions and its zoom-band buttons, and the
+   secret and room forms' own buttons. A view-only account could press them
+   and was only refused by the server afterwards. "Centre on it" and "Pick
+   none" are left usable on purpose — they move the view, not the map.
+   (css/wizard.css lifts all of this back off for an Albus account.) */
+body.is-viewer #wiz-admin-inspector [data-act]:not([data-act="centre"]):not([data-act="multi-none"]),
+body.is-viewer #wiz-admin-inspector [data-band],
+body.is-viewer .admin-wiz-secret-form .btn,
+body.is-viewer .admin-wiz-hold-drop,
+body.is-viewer .admin-wiz-inline-form [data-clear],
+/* And the palette editor's three writes. palettes.js refuses anyone below
+   a full admin — an Albus account included, which is why this is not in
+   wizard.css's exception. Previewing, exporting and the rest stay live. */
+body.is-viewer #recolour-editor .btn[data-role="save"],
+body.is-viewer #recolour-editor .btn[data-role="duplicate"],
+body.is-viewer #recolour-editor .btn[data-role="delete"] {
     opacity: 0.4;
     cursor: not-allowed;
     /* Blocks the pointer. The keyboard route (tab to it, press Enter) is
@@ -6515,13 +6712,6 @@ body.is-viewer .admin-form-actions button {
     /* The hover glow and the amber border would otherwise still fire on the
        row around it and read as "this one is available". */
     box-shadow: none;
-}
-
-/* Read-only in the literal sense: the About blurb is still there to read,
-   it just cannot be edited. Paired with readOnly in js/admin.js so a viewer
-   cannot type a paragraph into a field they can never save. */
-body.is-viewer #about-text-input {
-    opacity: 0.7;
 }
 
 .admin-field {
@@ -7517,7 +7707,7 @@ body[data-page="admin"] .search-box input {
 .console-top-pattern {
     position: absolute;
     /* Lowered 3px from the modal's own top edge, with the bottom edge kept
-       flush against .console-screen's own top (26px), so the height is
+       flush against .console-screen's own top (32px), so the height is
        whatever is left. 4px in from each side — the same --titlebar-grip-
        edge the window titlebars stand at — keeps it clear of the border's
        own outer edge; the right matches the left, where it used to sit at
@@ -7528,9 +7718,12 @@ body[data-page="admin"] .search-box input {
     top: 4px;
     left: 4px;
     right: 4px;
-    height: 22px;
+    /* The same shape as every window titlebar (see .chrome-titlebar): the
+       dots 2px down, eight rows of them, then 9px clear before the screen's
+       own top shadow — 2 + 15 + 9 + that 2px shadow = 28. */
+    height: 28px;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     /* Clear ground between a grip and the title. */
     gap: 6px;
@@ -7538,11 +7731,9 @@ body[data-page="admin"] .search-box input {
     z-index: 3;
 }
 
-/* Stretched to the strip, less 2px of clear ground top and bottom — the
-   same inset .chrome-titlebar uses, and for the same reason: this stands
-   in for a fill that covered the strip edge to edge, so it carries that
-   weight, and its ends run into the frame's corner curve (the frame clips
-   itself to a 16px radius) the way the fill's did.
+/* Eight rows of dots from the strip's top, as on every window titlebar (see
+   .chrome-titlebar::before), running into the frame's corner curve at the
+   ends the way the titlebars' do.
 
    The tile's dots sit on its ODD rows, unlike title_pattern.png's, which
    sit on the even ones — so it is pulled up 1px to put a row of them on
@@ -7552,8 +7743,10 @@ body[data-page="admin"] .search-box input {
     content: "";
     flex: 1 1 0;
     min-width: 0;
-    align-self: stretch;
-    margin-bottom: 3px;
+    height: 15px;
+    /* 2px down from the strip's top, as the window grips hang (see
+       --titlebar-grip-drop on .chrome-titlebar). */
+    margin-top: 2px;
     background-image: url('../assets/img/console/cnsl-top-pattern.png');
     background-repeat: repeat;
     background-position: 0 -1px;
@@ -7561,8 +7754,8 @@ body[data-page="admin"] .search-box input {
 }
 
 /* Rounded where they meet the frame's corner, so the dots follow its curve
-   in rather than sitting in a square block against it. Worked out the way
-   --titlebar-grip-radius is, and to the same answer: cnsl-frame-border.png
+   in rather than sitting in a square block against it. Worked out from the
+   frame: cnsl-frame-border.png
    draws the same quarter circle of radius 12, and this strip stands the
    same 4px inside it, so 12 less 4 is concentric with it. .console-frame's
    own overflow clip takes a bite out of this corner as well, but a looser
@@ -7574,31 +7767,26 @@ body[data-page="admin"] .search-box input {
 .console-frame.is-dragging { cursor: grabbing; }
 
 .console-title {
-    /* Stretched to the strip's full height and the text sat on the bottom
-       of it, rather than centred: the title sits low, tight to the screen
-       below it, which is what makes it read as part of the chrome instead
-       of floating in the strip. The 4px underneath puts the letters on
-       exactly the pixels they occupied when this was absolutely positioned
-       at top:4/height:20 with 2px under it. */
+    /* Sat on the grip's last row of dots, as every window title is (see
+       --titlebar-title-drop on .chrome-titlebar): a line the grip's height,
+       dropped 5px, puts the foot of the capitals on that row. */
     flex: 0 1 auto;
-    align-self: stretch;
+    line-height: 15px;
     /* A title long enough to reach the close button would be trouble; the
        grips give way first (flex: 1 1 0 against this one's 0 1 auto), and
        this stops the text itself before it gets there. */
     max-width: calc(100% - 62px);
     min-width: 0;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding: 0 4px 4px;
-    margin: 0;
+    padding: 0 4px;
+    margin: 7px 0 0;
     color: #996600;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-weight: 700;
-    font-size: 0.6rem;
+    /* The window titles' face and size (see .chrome-titlebar h2). */
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
     letter-spacing: 0;
     text-shadow: none;
     /* Nothing to paint behind the letters any more: the grips leave a real
@@ -7609,7 +7797,9 @@ body[data-page="admin"] .search-box input {
 
 .console-close-btn {
     position: absolute;
-    top: 6px;
+    /* Centred on the grip's line: the grip runs 6px to 21px, so its middle
+       is 13.5 and a 13px sprite starts at 7. */
+    top: 7px;
     right: 14px;
     width: 13px;
     height: 13px;
@@ -7633,10 +7823,13 @@ body[data-page="admin"] .search-box input {
 
 .console-screen {
     position: absolute;
-    top: 26px;
+    /* 9px under the grip's last row of dots, counting the 2px top shadow
+       below (6 + 15 + 9 + 2). The bottom edge stays where it always was, so
+       the screen gives up the 6px it moved down. */
+    top: 32px;
     left: 14px;
     width: 229px;
-    height: 206px;
+    height: 200px;
     border: 1px solid #000;
     border-radius: 15px;
     background-image: url('../assets/img/console/cnsl-bg-tile.png');
@@ -7715,6 +7908,15 @@ body[data-page="admin"] .search-box input {
     font-size: 0.5625rem;
     line-height: 1.4;
     color: #eeeeee;
+}
+
+/* One em dash in a Volter paragraph, set in Roboto — Volter Goldfish draws
+   U+2014 as a musical note. See appendPrivacyText in js/privacy-content.js;
+   the same one-character swap as .row-date-dot and .timeline-sep. Left at
+   the paragraph's own size, since here it is a word-sized aside rather
+   than a separator dot. */
+.console-dash {
+    font-family: 'Roboto', sans-serif;
 }
 
 
@@ -7876,6 +8078,218 @@ body[data-page="admin"] .search-box input {
     min-width: 48px;
 }
 
+/* ---- CONSOLE: MISSING PIECES (js/console-info.js)
+
+   The Add Maze Info form and the Missing Pieces list, in the console's own
+   controls: the same white-on-grey inputs, 1px white borders and 9px Volter
+   as the Contact form. */
+
+/* The form's labels are its section heads, so they are set in capitals
+   ("HABBO ORIGINS USERNAME") and given a little more air above. */
+.console-info-label {
+    margin-top: 10px;
+    letter-spacing: 0.3px;
+}
+
+/* A line under a field: what it is for, or why it is not there. The same
+   size as everything else on the screen; it was 0.5rem, which Volter cannot
+   draw legibly. Only the faded colour sets it apart. */
+.console-note {
+    margin: -4px 0 8px;
+    font-size: 0.5625rem;
+    line-height: 1.4;
+    color: rgba(238, 238, 238, 0.7);
+}
+
+.console-select {
+    height: 20px;
+    padding: 0 4px;
+    margin-bottom: 8px;
+    cursor: var(--cursor-pointer);
+}
+/* The open list is drawn by the browser; dark, so it reads as the screen's. */
+.console-select option,
+.console-select optgroup { background: #2b2b2b; color: #eeeeee; }
+
+/* One thing being added: the choice, then the one input it needs. The rows
+   are separated by the console's dotted rule so a long form still reads as
+   a list of separate answers. */
+.console-info-item + .console-info-item {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px dotted rgba(238, 238, 238, 0.35);
+}
+
+.console-info-item-head {
+    display: flex;
+    gap: 4px;
+}
+.console-info-item-head .console-select { flex: 1 1 auto; min-width: 0; }
+
+.console-info-remove {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid #eeeeee;
+    border-radius: 2px;
+    color: #eeeeee;
+    font-family: inherit;
+    font-size: 0.5625rem;
+    line-height: 18px;
+    cursor: var(--cursor-pointer);
+}
+.console-info-remove[hidden] { display: none; }
+.console-info-remove:hover { background: rgba(238, 238, 238, 0.15); }
+
+.console-info-input .console-input-message { width: 100%; margin-bottom: 8px; }
+
+.console-file {
+    padding: 3px 4px;
+    margin-bottom: 8px;
+    cursor: var(--cursor-pointer);
+}
+
+.console-info-add {
+    display: block;
+    margin: 2px 0 4px;
+}
+
+/* A link-shaped button inside a note ("Sign in"). */
+.console-link-btn {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: #ffffff;
+    text-decoration: underline;
+    cursor: var(--cursor-pointer);
+}
+
+/* The list: each marked record, what it needs, and "I can help". */
+.console-missing-entry { padding: 6px 0; }
+
+.console-missing-name {
+    display: block;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    color: #ffffff;
+    text-align: left;
+    cursor: var(--cursor-pointer);
+}
+.console-missing-name:hover,
+.console-missing-name:focus-visible { text-decoration: underline; outline: none; }
+
+.console-missing-needs,
+.console-missing-note {
+    margin: 3px 0 0;
+    font-size: 0.5625rem;
+    line-height: 1.4;
+    color: #eeeeee;
+}
+.console-missing-note { color: rgba(238, 238, 238, 0.7); }
+
+.console-missing-help { margin-top: 6px; }
+
+/* ---- CONSOLE: PROFILE (js/console-profile.js)
+
+   The signed-in player's page. The console screen is a single-colour
+   display (see .console-contributor-name below), so structure does the
+   work: bold heads, "label ...... value" lines the way the contributors
+   list sets a name against its total, and the dotted rule between
+   sections. */
+.console-profile-who {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 8px;
+}
+
+.console-profile-face {
+    width: 26px;
+    height: 26px;
+    flex: 0 0 auto;
+    border: 1px solid #eeeeee;
+    border-radius: 2px;
+    image-rendering: auto;
+}
+
+.console-profile-name,
+.console-profile-head {
+    margin: 0;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    color: #ffffff;
+    overflow-wrap: anywhere;
+}
+
+.console-profile-head { margin: 8px 0 4px; }
+
+.console-profile-since {
+    margin: 2px 0 0;
+    font-size: 0.5625rem;
+    color: rgba(238, 238, 238, 0.7);
+}
+
+.console-profile-rule { margin: 8px 0 0; }
+
+.console-profile-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 3px;
+    font-size: 0.5625rem;
+    line-height: 1.4;
+    color: #eeeeee;
+}
+
+.console-profile-value {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* Each game's own figures, indented under the two totals they add up to. */
+.console-profile-sub {
+    padding-left: 6px;
+    border-left: 1px dotted rgba(238, 238, 238, 0.35);
+    margin-top: 4px;
+}
+.console-profile-sub .console-profile-head { margin-top: 6px; }
+
+/* Completed out of the archive, as a bar drawn in the screen's own white:
+   an outline, and a solid fill as far as they have got. */
+.console-profile-bar {
+    height: 6px;
+    margin: 2px 0 6px;
+    border: 1px solid #eeeeee;
+    padding: 1px;
+}
+.console-profile-bar span {
+    display: block;
+    height: 100%;
+    background: #eeeeee;
+}
+
+.console-profile-list {
+    margin: 0 0 8px;
+    padding: 0 0 0 10px;
+    font-size: 0.5625rem;
+    line-height: 1.5;
+    color: #eeeeee;
+    list-style: square;
+}
+
+.console-profile-btn { margin-top: 6px; }
+.console-profile-note { margin: 6px 0 0; }
+.console-profile-signout { display: block; margin-top: 8px; font-size: 0.5625rem; }
+
 /* ---- contributors page ---- */
 
 .console-contributors-list {
@@ -7996,7 +8410,7 @@ body[data-page="admin"] .search-box input {
     cursor: var(--cursor-pointer);
 }
 
-#about-btn { width: 48px; }
+#profile-btn { width: 48px; }
 
 .console-tab-label {
     position: absolute;
@@ -8023,8 +8437,8 @@ body[data-page="admin"] .search-box input {
    only the tab's own label/id/content changed to Privacy Policy. */
 #privacy-btn { background-image: url('../assets/img/console/cnsl-tab-search-inactive.png'); }
 #privacy-btn.active { background-image: url('../assets/img/console/cnsl-tab-search-active.png'); }
-#about-btn { background-image: url('../assets/img/console/cnsl-tab-qmark-inactive.png'); }
-#about-btn.active { background-image: url('../assets/img/console/cnsl-tab-qmark-active.png'); }
+#profile-btn { background-image: url('../assets/img/console/cnsl-tab-profile-inactive.png'); }
+#profile-btn.active { background-image: url('../assets/img/console/cnsl-tab-profile-active.png'); }
 
 
 /* ---- console's own custom scrollbar — same mechanism as
@@ -8200,10 +8614,9 @@ body[data-page="admin"] .search-box input {
        the variable so the custom scrollbar's cancelling margin narrows with
        it instead of overshooting the frame edge by the difference. */
     .chrome-body { --chrome-body-pad: 12px; }
-    /* Both values go through the variables, so the grips still reach past
-       them to the frame. */
-    .chrome-titlebar { --titlebar-pad: 34px; --titlebar-pad-y: 7px; }
-    .chrome-titlebar h1, .chrome-titlebar h2, .chrome-titlebar .chrome-title-text { font-size: 0.8rem; }
+    /* Through the variable, so the grips still reach past it to the frame.
+       The title keeps its 9px here: it is already the small size. */
+    .chrome-titlebar { --titlebar-pad: 34px; }
     .chrome-tab { font-size: 0.56rem; letter-spacing: 0; border-width: 8px; }
     .chrome-window { width: 100%; }
     .chrome-nav-btn { width: auto; flex: 1; font-size: 0.6rem; padding: 9px 6px; }
@@ -8555,7 +8968,14 @@ body[data-page="admin"] .container {
        — a window floating short of the bottom of the screen with a strip of
        page pattern under it reads as something failing to load. */
     min-height: 100%;
+    /* And the panel inside fills the window, so its foot sits the same 12px
+       from the window's edge as every other window's (see --window-inset)
+       rather than stopping wherever a short panel's content ends. */
+    display: flex;
+    flex-direction: column;
 }
+
+.admin-stage .admin-window > .chrome-frame { flex: 1 1 auto; }
 
 /* A heading, a line of explanation and the panel's primary action, on one
    row. Every panel opens the same way, so moving between them doesn't move
@@ -8589,8 +9009,8 @@ body[data-page="admin"] .container {
     color: var(--amber-bright);
 }
 
-/* Contributors and About are two jobs on one tab; a rule between them beats
-   running them together as one column of controls. */
+/* Two jobs on one tab (the Missing Pieces panel has Leads and Records); a
+   rule between them beats running them together as one column of controls. */
 .admin-section + .admin-section {
     margin-top: 26px;
     padding-top: 22px;
@@ -9742,21 +10162,12 @@ body[data-page="admin"] #activity-sessions {
     margin: 0;
 }
 
-/* "It is in another tab:" — the line that turns a dead end into a
-   signpost. Dimmer than the message above it: the message is the answer to
-   what was asked, this is the offer. */
-.archive-empty-also {
-    margin: 18px 0 0;
-    color: var(--parchment-dim);
-    opacity: 0.8;
-}
-
 .archive-empty-jumps {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     justify-content: center;
-    margin-top: 10px;
+    margin-top: 14px;
 }
 
 /* Built to read as one of the archive's own chrome buttons rather than as
@@ -12097,6 +12508,12 @@ body[data-page="admin"] #activity-sessions {
     .guess-board-row { grid-template-columns: 16px 20px 1fr auto; }
 }
 
+/* The Leaderboards window (js/leaderboards.js) always draws the fifth
+   column — a small pill saying how many games or days a total came from,
+   never a grid — so it keeps it at every width rather than letting the
+   score wrap under the name on a phone. */
+.boards-board .guess-board-row { grid-template-columns: 16px 20px 1fr auto auto; }
+
 /* ---------- saved to walk later ----------
 
    Beside Completed in the maze's own titlebar, and shaped like it: the two
@@ -12211,14 +12628,22 @@ body[data-page="admin"] #activity-sessions {
    looking, which is the right place for something that must not cover the
    thing they just pressed.
 
-   Above the overlay layer (.modal-overlay sits at 40) because "Take me
-   there" opens a modal and the note has to outlive the click — it removes
-   itself afterwards, but not before the panel it opened is already up. */
+   ABOVE EVERY OVERLAY ON THE PAGE, and it was not. This comment used to
+   say .modal-overlay sat at 40; it sits at 100, and this note was at 60 —
+   so the one place Save is pressed, the room modal, drew its overlay
+   straight over the note and nobody ever saw it. Worse, it is once per
+   browser, so the single showing it gets was spent invisibly.
+
+   900 clears everything that can be open at the same time: the room modal
+   and the other .modal-overlay windows (100), the lightbox and the console
+   (200), and the photo frames and furni cards (300 and 320, each climbing
+   by one per bring-to-front). It stays under the skip link (999), which
+   has to beat everything. */
 .saved-note {
     position: fixed;
     left: 50%;
     bottom: 18px;
-    z-index: 60;
+    z-index: 900;
     width: min(380px, calc(100vw - 32px));
     transform: translateX(-50%);
     padding: 13px 15px;
@@ -12573,6 +12998,161 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment-dim);
 }
 
+/* ---------------------------------------------------------- MISSING PIECES
+
+   The INCOMPLETE tab on a maze's window (below). The list of what is
+   missing and the Add Maze Info form live in the console now — see
+   CONSOLE: MISSING PIECES further down. Everything here was marked by hand
+   in /warren. */
+
+/* ---- INCOMPLETE, on a maze's window.
+
+   A second tab under Actions: the same drawer (.modal-actions-drawer gives
+   it the slide, the cream, the hiding below 1000px and the panel that is
+   invisible while shut), placed lower and given a wider card because it
+   holds sentences rather than three short buttons.
+
+   --spine-top is Actions' own 58px plus the height of the ACTIONS spine and
+   an 8px gap, measured in the browser rather than guessed: the spine is
+   sized by its word, so the number moves if that word ever does. */
+.modal-incomplete-drawer {
+    --spine-top: 136px;
+    --menu-w: 196px;
+}
+.modal-incomplete-drawer[hidden] { display: none; }
+
+.modal-incomplete-panel {
+    gap: 6px;
+    padding: 9px 10px 10px;
+    color: #1a0f04;
+}
+
+.incomplete-title {
+    margin: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #4f3f25;
+}
+
+/* Plain lines under a hashed rule each, the side menu's own divider — the
+   card is a short list, not a set of chips. */
+.incomplete-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.7rem;
+    line-height: 1.35;
+}
+.incomplete-list li {
+    position: relative;
+    padding: 4px 0 4px 11px;
+}
+.incomplete-list li::before {
+    content: "";
+    position: absolute;
+    left: 1px;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    margin-top: -3px;
+    border: 1px solid #6b5431;
+    border-radius: 1px;
+}
+
+.incomplete-note {
+    margin: 0;
+    font-size: 0.66rem;
+    line-height: 1.4;
+    font-style: italic;
+    color: #3d301b;
+}
+.incomplete-trail { margin: 0; font-size: 0.62rem; color: #3f5a24; }
+
+.incomplete-help {
+    margin-top: 2px;
+    padding: 6px 8px;
+    border: 1px solid #6b5431;
+    border-radius: 4px;
+    background: #d6bb96;
+    color: #1a0f04;
+    font-family: inherit;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    cursor: var(--cursor-pointer);
+    transition: background-color 0.12s ease-out;
+}
+.incomplete-help:hover,
+.incomplete-help:focus-visible { background: #e6cfae; outline: none; }
+
+/* The narrow version: a pill in the meta row, beside the status badge, and
+   the same card opening under the row when it is pressed. Hidden wherever
+   the tab can be shown. */
+.incomplete-pill,
+.incomplete-pop { display: none; }
+
+@media (max-width: 999px) {
+    .incomplete-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px 1px;
+        border: 1.5px dashed var(--amber);
+        border-radius: 10px;
+        background: transparent;
+        color: var(--amber-bright);
+        font-family: inherit;
+        font-size: 0.56rem;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        cursor: var(--cursor-pointer);
+    }
+    .incomplete-pop:not([hidden]) {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        flex-basis: 100%;
+        padding: 9px 10px 10px;
+        border: 1px solid var(--chrome-border);
+        border-radius: 5px;
+        background: #c9ad84;
+        color: #1a0f04;
+    }
+}
+
+/* The window's filters: the same chips, pressable. A pointer and a lift on
+   hover are the whole difference, so a tag still looks like a tag. */
+button.tag.tag-filter {
+    font-family: inherit;
+    cursor: var(--cursor-pointer);
+    transition: border-color 0.15s, color 0.15s;
+}
+button.tag.tag-filter:hover,
+button.tag.tag-filter:focus-visible {
+    border-color: var(--amber);
+    color: var(--parchment);
+    outline: none;
+}
+/* "More by" is a person rather than a property of the maze, so it is set a
+   little apart: no fill, the name in its own colour. */
+button.tag.tag-by { background: transparent; border-style: dashed; }
+
+.meta-filter {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: inherit;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+    cursor: var(--cursor-pointer);
+}
+.meta-filter:hover,
+.meta-filter:focus-visible { color: var(--amber-bright); outline: none; }
+
+
 .updatelog {
     display: flex;
     flex-direction: column;
@@ -12925,20 +13505,176 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
     overflow-y: auto;
 }
 
-.admin-drop-nav { min-width: 260px; }
+/* ---- NAV, in CONTROL's own language.
 
-.admin-nav-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(78px, 1fr));
-    gap: 4px;
+   It used to be a three-column grid of the archive's sprite buttons at 78px
+   each — "Fallin' Furni" touched both edges, the sprite's rounded corners
+   were drawn at a size they were never cut for, and it sat beside a Control
+   panel of clean pills and labelled cards looking like it had come from a
+   different page. Now it IS that page: the same .ctl-card groups under the
+   same .ctl-label headings, and every section button is a .ctl-btn pill,
+   with "you are here" in the filled active state Control's own buttons use.
+
+   Anchored to the bar like Control (see the note on .admin-drop-control
+   below) rather than to its own tab, so the two panels open from the same
+   left edge and a narrow window wraps the cards instead of scrolling. */
+.admin-tab[data-menu="nav"] { position: static; }
+
+.admin-drop-nav {
+    left: 12px;
+    width: max-content;
+    max-width: calc(100% - 24px);
 }
 
-.admin-nav-grid .chrome-nav-btn {
-    padding: 7px 8px;
+.admin-nav-col {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+/* .chrome-nav-btn stays on these buttons only because js/admin.js finds
+   them by it. Everything it paints — the btn_inactive sprite underneath, the
+   flex: 1 stretch, Silkscreen at 0.55rem, the embossed shadow — is undone
+   here, so what is left is exactly the admin pill (see ADMIN BUTTONS, ONE
+   SHAPE near the end of this file, which gives .ctl-btn its border, radius
+   and colours, and its filled .active). */
+/* Written with the body[data-page] prefix so it outranks that shared pill
+   rule, which is more specific than a bare class pair and would otherwise
+   put its own padding and centring back. */
+body[data-page="admin"] .admin-nav-grid .chrome-nav-btn {
+    flex: none;
+    width: 100%;
+    min-width: 132px;
+    height: 32px;
+    padding: 0 16px;
+    justify-content: space-between;
+    gap: 10px;
+    text-shadow: none;
+    isolation: auto;
+}
+.admin-nav-grid .chrome-nav-btn::before,
+.admin-nav-grid .chrome-nav-btn::after { content: none; }
+
+/* The label is left-aligned inside a full-width pill, so the four columns
+   read as lists — a centred word in a wide pill made each column ragged. */
+.admin-nav-grid .chrome-nav-btn-label { text-align: left; }
+
+/* A number on a section that is waiting for you: new Dead End leads. */
+.admin-nav-count {
+    min-width: 18px;
+    height: 16px;
+    padding: 0 5px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    background: var(--amber);
+    color: #1a0f04;
     font-size: 0.6rem;
-    min-height: 0;
+    line-height: 16px;
+    text-align: center;
+}
+.admin-nav-count[hidden] { display: none; }
+
+/* ---- DEAD ENDS, the admin panel (js/admin-dead-ends.js).
+
+   SOLID chips are marked and asked for in public. OUTLINED ones are the
+   page's suggestions on a record nobody has marked, and a visitor never
+   sees them — see js/dead-ends.js for why nothing is inferred publicly. */
+.de-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 6px; }
+
+.de-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 9px;
+    border: 1.5px solid var(--chrome-highlight);
+    border-radius: 10px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
     white-space: nowrap;
 }
+.de-chip.is-marked { background: var(--amber); border-color: var(--amber); color: #1a0f04; }
+.de-chip.is-noticed { border-style: dashed; }
+.de-chip.de-status-new { border-color: var(--amber-bright); color: var(--amber-bright); }
+.de-chip.de-status-accepted { border-color: var(--ok, #7fb069); color: var(--ok, #7fb069); }
+.de-chip.de-status-rejected { border-color: var(--danger); color: var(--danger); }
+
+/* A lead's own words keep their line breaks — somebody describing a route
+   room by room writes it as a list. */
+.de-lead-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* One item of a submission: the action they chose, then what they sent. */
+.de-lead-item { margin-top: 8px; }
+.de-lead-item .de-lead-text { margin: 2px 0 0; }
+.de-lead-who { margin: 4px 0 0; font-size: 0.65rem; color: var(--parchment-dim); }
+
+.de-shots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.de-shot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 120px;
+    height: 76px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+    font-size: 0.6rem;
+    color: var(--parchment-dim);
+}
+.de-shot img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
+.de-shot.is-missing { border-style: dashed; }
+
+/* The accept form and the record editor open INSIDE the row they belong to,
+   under a rule, so it is never in doubt which lead or record is being
+   changed. */
+.de-accept,
+.de-editor,
+.de-promoted {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(0, 0, 0, 0.35);
+    max-width: 560px;
+}
+.de-accept .ctl-actions,
+.de-editor .ctl-actions { margin-top: 2px; }
+
+.de-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    color: var(--parchment);
+    cursor: var(--cursor-pointer);
+}
+.de-check input { margin: 0; accent-color: var(--amber); }
+
+.de-resolve { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+
+.de-pieces {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 6px 14px;
+}
+/* "Suggested:" before an unmarked record's outlined chips, and the line
+   over a pre-ticked editor. */
+.de-hint { margin: 0; font-size: 0.62rem; color: var(--parchment-dim); align-self: center; }
+.de-editor .de-hint { align-self: flex-start; }
+
+textarea.ctl-input.de-note {
+    height: auto;
+    padding: 7px 10px;
+    border-radius: 10px;
+    resize: vertical;
+    line-height: 1.4;
+}
+
+.de-flash:empty { display: none; }
+.de-flash { margin: 0 0 8px; color: var(--amber-bright); }
 
 /* ---- CONTROL: one row of cards, all the same shape.
 
@@ -14306,6 +15042,122 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
     .fellow-fansites a {
         display: inline-block;
         padding: 6px 3px;
+    }
+
+    /* --- five more that the first pass missed, all measured on a phone ---
+
+       Every one keeps its drawn size and gains an invisible ::after, for
+       the reason the header pills do: each is either pixel art at 1:1 or a
+       deliberately small control in a deliberately tight row. The box each
+       one sits in — the photo frame, the titlebar, the timeline entry, the
+       furni chip, the meta row's photo strip — sets no overflow of its own,
+       so the reach is not cropped the way the events headline's was above.
+       Each is sized to the room around it rather than to a flat 44, and
+       never so far that it laps a neighbouring control. */
+
+    /* The photo frame's X: a 10px square, and the ONLY way to close a
+       frame. The reach runs up and out past the frame's top-right corner
+       (32px square) but stops 1px short of the picture at y 19, so a tap on
+       the top of the photo still doubles it rather than shutting it. It
+       sits over the right-hand end of the drag strip, which is the price:
+       that strip is the frame's whole width and loses only its last 32px.
+       No position: relative — the button is already absolute, pinned to the
+       X in the artwork, and relative would unpin it (see .console-close-btn
+       above for what that did last time). */
+    .photo-frame-close::after {
+        content: "";
+        position: absolute;
+        left: -11px;
+        right: -11px;
+        top: -17px;
+        bottom: -5px;
+        background: transparent;
+    }
+
+    /* A timeline entry's name: 12px of Volter text, and the button is the
+       text. 32px tall, and at least 32 wide for a very short name. Entries
+       are at least 26px apart, so neighbouring reaches meet in the gap
+       between two names — ground that belonged to neither — and the later
+       one takes it. */
+    .timeline-open {
+        position: relative;
+    }
+
+    .timeline-open::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        width: max(100%, 32px);
+        height: 32px;
+        transform: translateY(-50%);
+        background: transparent;
+    }
+
+    /* Back and Clear on the furni chip: 20px tall inside a 34px row. The
+       reach takes the row's full height and half the 8px gap on each side,
+       so the two meet in the middle of the gap and never overlap. */
+    .furni-filter-btn {
+        position: relative;
+    }
+
+    .furni-filter-btn::after {
+        content: "";
+        position: absolute;
+        left: -4px;
+        right: -4px;
+        top: 50%;
+        height: 34px;
+        transform: translateY(-50%);
+        background: transparent;
+    }
+
+    /* The photo-wall icons on the meta row: 14 by 23 of pixel art, stacked
+       so each laps 4px under the next. Taller only, as a rule — a wider
+       reach on a stack whose pitch is 10px would have every icon taking its
+       neighbours' presses, which is worse than a narrow target. A LONE icon
+       has no neighbours and gets the full 32 both ways. */
+    .gallery-photo-btn::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 32px;
+        transform: translateY(-50%);
+        background: transparent;
+    }
+
+    .gallery-photos > .gallery-photo-btn:only-child::after {
+        left: 50%;
+        right: auto;
+        width: 32px;
+        transform: translate(-50%, -50%);
+    }
+
+    /* Save, Completed and Share, glyph-only on the room modal's titlebar
+       below 1000px (see the max-width: 999px block): about 24px square.
+       36px tall — the bar's own height plus a hair — and half the 4px gap
+       each side, so the three reaches butt up against one another without
+       overlapping. Scoped to the titlebar: above 999px the same buttons are
+       full-width labelled rows in the actions tab and need nothing. */
+    .modal .chrome-titlebar .modal-share-btn,
+    .modal .chrome-titlebar .saved-toggle,
+    .modal .chrome-titlebar .walked-toggle {
+        position: relative;
+    }
+
+    .modal .chrome-titlebar .modal-share-btn::after,
+    .modal .chrome-titlebar .saved-toggle::after,
+    .modal .chrome-titlebar .walked-toggle::after {
+        content: "";
+        position: absolute;
+        left: -2px;
+        right: -2px;
+        top: 50%;
+        height: 36px;
+        transform: translateY(-50%);
+        background: transparent;
     }
 }
 

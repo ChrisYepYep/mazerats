@@ -16,6 +16,21 @@ document.addEventListener("keydown", e => {
     const active = document.activeElement;
     if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
 
+    /* Not while something is open over the page. The lists behind a window
+       are still "visible" by the offsetParent test below — the overlay
+       covers them, it does not hide them — so a letter pressed inside a
+       daily game or a maze's own window used to scroll the archive
+       underneath it, and the player closed the window to find themselves
+       somewhere else entirely.
+
+       Two markers, because the site's windows do not all set the same one:
+       the daily games and the progress window add body.modal-open, while
+       the maze modal and the image lightbox only put .open on their own
+       overlay. Either is enough to mean "the page behind is not what the
+       keyboard is talking to". */
+    if (document.body && document.body.classList.contains("modal-open")) return;
+    if (document.querySelector(".modal-overlay.open, .lightbox-overlay.open")) return;
+
     const letter = e.key.toLowerCase();
     /* Matched on the same reading of the name the sort uses (sortableName
        in js/site.js), not on the raw rendered text — otherwise the two

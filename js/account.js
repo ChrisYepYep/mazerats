@@ -42,10 +42,15 @@
                 if (!res.ok) throw new Error(String(res.status));
                 const data = await res.json();
                 Account.current = data && data.player ? data.player : null;
+                Account.unsure = false;
             } catch (e) {
                 // No session, no network, or the function is not deployed.
                 // All three mean the same thing to every caller: signed out.
                 Account.current = null;
+                // ...except to one that would act on a sign-out: home.js
+                // takes the account's ticks off the browser on "nobody",
+                // and should not do that because the network blinked.
+                Account.unsure = true;
             }
             announce();
             return Account.current;
@@ -64,10 +69,17 @@
         },
 
         async signOut() {
+            // Whatever is still queued for this account goes first, while
+            // the session cookie is still good; after, it would be dropped.
+            try { await flushState(); } catch (e) { /* nothing to undo */ }
             try {
                 await fetch(`${ENDPOINT}?action=signout`, { credentials: "same-origin" });
             } catch (e) { /* the cookie is the server's to clear; nothing local to undo */ }
             Account.current = null;
+            Account.unsure = false;
+            /* The account's own ticks are taken back off this browser by
+               home.js's dropAccountTicks, on the announce below; that is
+               what stops the next person to sign in here uploading them. */
             announce();
         },
 
@@ -125,12 +137,20 @@
         },
 
         // For the one case that cannot wait 600ms: the page is going away.
-        flushState
+        flushState,
+
+        /* Called with the server's merged state after every save it
+           accepted. home.js uses it to know which ticks the account now
+           holds, so it stops sending them (see noteTick there). */
+        onStored(fn) { if (typeof fn === "function") storedListeners.push(fn); }
     };
+    const storedListeners = [];
 
     const STATE_ENDPOINT = "/.netlify/functions/player-data";
     let pendingPatch = {};
     let saveTimer = null;
+    // The PUT currently on the wire, if any — see forget() for who waits on it.
+    let inFlight = null;
 
     async function flushState() {
         clearTimeout(saveTimer);
@@ -138,23 +158,54 @@
         const patch = pendingPatch;
         pendingPatch = {};
         if (!Object.keys(patch).length) return;
-        try {
-            const res = await fetch(STATE_ENDPOINT, {
-                method: "PUT",
-                credentials: "same-origin",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(patch)
-            });
-            if (res.ok) Account.stored = await res.json();
-        } catch (e) { /* the local copy is already right; nothing to undo */ }
+        const send = (async () => {
+            try {
+                const res = await fetch(STATE_ENDPOINT, {
+                    method: "PUT",
+                    credentials: "same-origin",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(patch),
+                    /* Without this the pagehide flush below was usually
+                       cancelled with the page, so the last ticks before
+                       closing the tab never arrived. The body is a few ids
+                       and at most one day's game, far under keepalive's
+                       64KB limit. */
+                    keepalive: true
+                });
+                if (res.ok) {
+                    Account.stored = await res.json();
+                    storedListeners.forEach(fn => { try { fn(Account.stored); } catch (e) { /* its own problem */ } });
+                }
+            } catch (e) { /* the local copy is already right; nothing to undo */ }
+        })();
+        inFlight = send;
+        await send;
+        if (inFlight === send) inFlight = null;
     }
 
     /* Un-ticking has to be said out loud. The save above unions the list
        so two devices cannot delete each other's entries, which means a
        shorter list is not a removal — this is. The parameter name is which
-       list to take it out of. */
+       list to take it out of.
+
+       AND IT HAS TO WIN AGAINST A SAVE STILL WAITING TO GO. A tick queues a
+       snapshot of the WHOLE list for 600ms; untick the same maze inside that
+       window and this DELETE went out at once while the snapshot, still
+       holding the id, followed it — and the server's union put the maze
+       straight back. Tick-then-change-your-mind is the commonest way this is
+       ever used, so it was the commonest way it broke. Two things close it:
+
+       - the id is taken out of the queued snapshot, so the PUT that follows
+         no longer carries it;
+       - a PUT already on the wire is waited for, so the DELETE lands after
+         it rather than racing it (the server applies whichever arrives
+         last, and that must be the removal). */
     async function forget(list, id) {
         if (!Account.current || !id) return;
+        if (Array.isArray(pendingPatch[list])) {
+            pendingPatch[list] = pendingPatch[list].filter(x => x !== id);
+        }
+        if (inFlight) { try { await inFlight; } catch (e) { /* settled either way */ } }
         try {
             await fetch(`${STATE_ENDPOINT}?${list}=${encodeURIComponent(id)}`, {
                 method: "DELETE",
@@ -199,9 +250,15 @@
            and pressing it signs out. One control rather than a name plus a
            separate "sign out" link, because the header has room for one
            thing and the name is what people look for to check they are
-           signed in as themselves. */
+           signed in as themselves.
+
+           The aria-label says what pressing does: announced as just the
+           name, a screen reader user had no way to know it signs out. It
+           still contains the visible name, so voice control ("click
+           <name>") finds it. */
         host.innerHTML = `
             <button type="button" class="header-signin is-signed-in" id="account-signout"
+                    aria-label="Sign out ${escapeHtml(me.name)}"
                     title="Signed in as ${escapeHtml(me.name)} — press to sign out">
                 ${me.avatar ? `<img class="header-signin-face" src="${escapeHtml(me.avatar)}" alt="" aria-hidden="true">` : ""}
                 <span class="header-signin-name">${escapeHtml(me.name)}</span>

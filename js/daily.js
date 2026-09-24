@@ -119,8 +119,38 @@ window.Daily = (function () {
        particular seed is made of — a round index, a maze id — and the day
        and the salt are added here. */
     function daySeed(...parts) {
-        const day = today();
+        return daySeedFor(today(), ...parts);
+    }
+
+    /* The same seed for a NAMED day rather than whatever today is.
+
+       What a game should actually deal from. daySeed reads the clock every
+       time it is called, which is fine for a round started and finished
+       inside one day and wrong for the one that crosses midnight: Odd One
+       Out was re-dealt under the player between one pick and the next, so
+       rounds one to three came from yesterday, four and five from today, and
+       the mixed result was filed under today — where the unique index then
+       refused the player's real go at today. A game pins the day it started
+       on and passes it here for every draw.
+
+       Built exactly as daySeed builds it, and as daySeed(day, ...parts)
+       does on the server (netlify/functions/_daily.js), which already took
+       the day as its first argument; tools/check-daily-parity.js compares
+       this one's numbers against the server's too. */
+    function daySeedFor(day, ...parts) {
         return seedFrom(parts.join(":") + ":" + day + saltFor(day));
+    }
+
+    /* Whether a maze was in the archive before a given day began — the
+       browser's half of existedBefore in netlify/functions/_daily.js, which
+       has the full reasoning. In short: a maze catalogued mid-day joins the
+       rotation at the next midnight rather than re-dealing the day under
+       everybody already playing it. createdAt is stamped by the server on
+       insert and never rewritten; a record older than the stamp has none
+       and counts as always having been there. */
+    function existedBefore(record, day) {
+        const stamp = record && typeof record.createdAt === "string" ? record.createdAt.slice(0, 10) : "";
+        return !stamp || stamp < day;
     }
 
     // Whether today is one of the featured days, for anything that wants to
@@ -157,13 +187,16 @@ window.Daily = (function () {
             if (!body || !Array.isArray(body.games) || !body.games.includes(game)) return false;
             // Spend it BEFORE clearing, so a failure here cannot leave a
             // ticket that wipes the player's day again on every open.
-            await fetch("/.netlify/functions/daily-games?mine=1", {
+            const spent = await fetch("/.netlify/functions/daily-games?mine=1", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "same-origin",
                 body: JSON.stringify({ game })
             });
-            return true;
+            // fetch only throws on a network failure; a 4xx/5xx came back
+            // as "spent" all the same, so the day was cleared while the
+            // ticket stayed, to clear it again on the next open.
+            return spent.ok;
         } catch (e) {
             return false;
         }
@@ -233,17 +266,44 @@ window.Daily = (function () {
        Only ever drawn on the combined board, where it is the thing that
        stops the ranking being misread: without it, a player on 500 and a
        player on 1400 look like one is four times better, when in fact one
-       played a single game well and the other played all three. */
+       played a single game well and the other played both.
+
+       Out of DAILY_GAME_COUNT, not a written-in 3: it said "/3" long after
+       a third game was dropped and only two daily games were left (Guess
+       the Maze and Odd One Out, the two the combined board adds up). This
+       file keeps no list of the games to count, so the number is here,
+       beside the one place it is drawn; js/leaderboards.js draws the same
+       pill with its own "/2". */
+    const DAILY_GAME_COUNT = 2;
     function gamesPill(n) {
         if (!n) return "";
-        return `<span class="guess-board-games" title="${n} of 3 games played">${n}<span aria-hidden="true">/3</span></span>`;
+        return `<span class="guess-board-games" title="${n} of ${DAILY_GAME_COUNT} games played">${n}<span aria-hidden="true">/${DAILY_GAME_COUNT}</span></span>`;
+    }
+
+    /* The number beside each row, with ties sharing one: 1, 1, 3.
+
+       Numbered by position, two players on the same points were first and
+       second, and which was which came down to the order the database
+       handed them back in — a ranking nobody earned. Standard competition
+       ranking instead: equal points, equal place, and the next place along
+       skips by however many shared the last. The list is already sorted by
+       points, so a row only has to look at the one above it.
+
+       Published so Guess the Maze numbers its own board the same way. */
+    function ranks(list) {
+        const out = [];
+        (list || []).forEach((row, i) => {
+            out.push(i > 0 && row.points === list[i - 1].points ? out[i - 1] : i + 1);
+        });
+        return out;
     }
 
     function rows(list, mine, empty) {
         if (!list || !list.length) return `<li class="guess-board-empty">${escapeHtml(empty)}</li>`;
+        const place = ranks(list);
         return list.map((row, i) => `
             <li class="guess-board-row${mine && row.id === mine ? " is-me" : ""}">
-                <span class="guess-board-rank" aria-hidden="true">${i + 1}</span>
+                <span class="guess-board-rank" aria-hidden="true">${place[i]}</span>
                 ${row.avatar
                     ? `<img class="guess-board-face" src="${escapeHtml(row.avatar)}" alt="" aria-hidden="true" loading="lazy">`
                     : `<span class="guess-board-face is-blank" aria-hidden="true"></span>`}
@@ -283,8 +343,24 @@ window.Daily = (function () {
         allTime: "No scores recorded yet."
     };
 
-    function combinedBoard(host) {
+    /* Past the fifteen-second edge cache, for the one fetch that needs it.
+
+       The boards sit behind BOARD_CDN_CACHE, which is right for everybody
+       idly opening the results — and wrong for the player who has just
+       submitted, because the copy the edge is holding was made before their
+       row existed, so the board they are shown is the one board on the site
+       guaranteed not to have them on it. A throwaway query parameter is a
+       different cache key, which is all it takes; the endpoint ignores it.
+       Only ever passed straight after a submit, so it costs one uncached
+       read per player per day. */
+    function boardUrl(base, fresh) {
+        return fresh ? `${base}&fresh=${Date.now()}` : base;
+    }
+
+    function combinedBoard(host, opts) {
         if (!host) return;
+        const o = opts || {};
+        const forDay = o.day || today();
         let data = null;
         let range = "day";
 
@@ -317,7 +393,7 @@ window.Daily = (function () {
         }
 
         draw();
-        fetch(`${SCORES_URL}?game=all&day=${encodeURIComponent(today())}`, {
+        fetch(boardUrl(`${SCORES_URL}?game=all&day=${encodeURIComponent(forDay)}`, o.fresh), {
             headers: { Accept: "application/json" },
             credentials: "same-origin"
         })
@@ -351,7 +427,11 @@ window.Daily = (function () {
                 <div class="guess-boards-all"></div>
             </div>`;
         const panel = host.querySelector(".guess-boards-own");
-        combinedBoard(host.querySelector(".guess-boards-all"));
+        /* The day the board is FOR is the day that was played, which the
+           game passes in — not today(), which a round finished a minute past
+           midnight has already moved on from. */
+        const forDay = o.day || today();
+        combinedBoard(host.querySelector(".guess-boards-all"), { day: forDay, fresh: o.fresh });
 
         const me = () => (window.Account && Account.current ? Account.current.id : null);
 
@@ -396,7 +476,7 @@ window.Daily = (function () {
         }
 
         draw();
-        fetch(`${SCORES_URL}?game=${encodeURIComponent(game)}&day=${encodeURIComponent(today())}`, {
+        fetch(boardUrl(`${SCORES_URL}?game=${encodeURIComponent(game)}&day=${encodeURIComponent(forDay)}`, o.fresh), {
             headers: { Accept: "application/json" },
             credentials: "same-origin"
         })
@@ -434,5 +514,8 @@ window.Daily = (function () {
     // combinedBoard is published so Guess the Maze can draw the same second
     // column beside its own board — that game keeps its own board code and
     // its own endpoint, and this is the one piece all three share.
-    return { today, seededRandom, seedFrom, daySeed, isFeaturedDay, shuffle, dayBefore, claimReset, submit, boards, combinedBoard, isHallway };
+    return {
+        today, seededRandom, seedFrom, daySeed, daySeedFor, isFeaturedDay, shuffle, dayBefore,
+        claimReset, submit, boards, combinedBoard, ranks, isHallway, existedBefore
+    };
 })();

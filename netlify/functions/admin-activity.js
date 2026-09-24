@@ -63,7 +63,8 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("admin-activity: database connection failed", e);
+        return json(500, { error: "Database connection failed" });
     }
 
     const asked = ((event.queryStringParameters || {}).range || "7d");

@@ -101,7 +101,7 @@ const FIELD_GROUP = (() => {
    rather than for representation.
  *
  * WHAT IS DELIBERATELY TREATED AS EQUAL:
- *   null / undefined / ""      all "nothing". A cleared field arrives as ""
+ *   null / undefined / "" / [] all "nothing". A cleared field arrives as ""
  *                              from a form and is stored as null; that is
  *                              the same emptiness twice, not an edit.
  *   7 / "7", true / "true"     a form returns every value as a string. A
@@ -129,7 +129,12 @@ function canon(value, depth) {
     if (t === "number") return Number.isFinite(value) ? "s:" + String(value) : "";
     if (t === "boolean") return "s:" + String(value);
     if (value instanceof Date) return "s:" + value.toISOString();
-    if (Array.isArray(value)) return "[" + value.map(v => canon(v, d + 1)).join(",") + "]";
+    /* An EMPTY list is nothing too. The admin form always writes
+       relatedImages, [] when there are none, and a record saved before that
+       field existed has no relatedImages at all — so the first save of every
+       older maze reported "Updated room imagery" when only its furni had
+       been touched (The Trip and Star Maze, September 2026). */
+    if (Array.isArray(value)) return value.length ? "[" + value.map(v => canon(v, d + 1)).join(",") + "]" : "";
     if (t === "object") {
         /* Every key, and IGNORED is deliberately not consulted here. That
            list is about TOP-LEVEL record fields — the id, the save's own
@@ -165,6 +170,27 @@ function pictureCount(doc) {
  * `before` is the stored document, `update` the body about to be written.
  * Returns stable keys in GROUPS order, e.g. ["imagery-added", "text"].
  */
+/* The fields an update genuinely changes, by the same rules describe uses —
+ * or null when that cannot be said (no previous version, bad input, anything
+ * throwing). An EMPTY array is a definite answer: the save changes nothing.
+ *
+ * The callers need this apart from describe because describe cannot tell
+ * them. A save that changes nothing returns the day's carried-over list,
+ * which is indistinguishable from a save that changed exactly those things —
+ * and rooms.js and events.js have to know which it was, so that pressing
+ * Save on an untouched maze neither moves its "updated" date nor rewrites
+ * its changelog. Null is the cautious answer and means "treat it as an
+ * ordinary save". */
+function changedFields(before, update) {
+    try {
+        if (!before || typeof before !== "object") return null;
+        if (!update || typeof update !== "object") return null;
+        return Object.keys(update).filter(field => !IGNORED.has(field) && !same(before[field], update[field]));
+    } catch (e) {
+        return null;
+    }
+}
+
 function describe(before, update) {
     try {
         if (!before || typeof before !== "object") return null;
@@ -172,11 +198,9 @@ function describe(before, update) {
 
         const hit = new Set();
 
-        Object.keys(update).forEach(field => {
-            if (IGNORED.has(field)) return;
-            if (same(before[field], update[field])) return;
-            hit.add(FIELD_GROUP.get(field) || CATCH_ALL);
-        });
+        const fields = changedFields(before, update);
+        if (!fields) return null;
+        fields.forEach(field => hit.add(FIELD_GROUP.get(field) || CATCH_ALL));
 
         /* A save that changed nothing KEEPS the day's list rather than
            clearing it. The admin form writes the whole record every time, so
@@ -268,4 +292,4 @@ function order(keys) {
     return out;
 }
 
-module.exports = { describe, GROUPS, canon };
+module.exports = { describe, changedFields, GROUPS, canon };

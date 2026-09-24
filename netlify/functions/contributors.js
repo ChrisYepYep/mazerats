@@ -21,13 +21,19 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("contributors: database connection failed", e);
+        return json(503, { error: "Database connection failed" });
     }
     const contributors = db.collection("contributors");
 
     if (event.httpMethod === "GET") {
-        const all = await contributors.find({}, { projection: { _id: 0 } }).toArray();
-        return json(200, all);
+        try {
+            const all = await contributors.find({}, { projection: { _id: 0 } }).toArray();
+            return json(200, all);
+        } catch (e) {
+            console.error("contributors: read failed", e);
+            return json(503, { error: "The contributors could not be read just now." });
+        }
     }
 
     if (!isAuthorized(event)) return UNAUTHORIZED;

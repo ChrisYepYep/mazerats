@@ -32,7 +32,7 @@
 const path = require("path");
 const { spawn } = require("child_process");
 const { getDb } = require("./_db.js");
-const { isOwner, isAuthorized, UNAUTHORIZED, forbidden } = require("./_auth.js");
+const { isOwnerWrite, isAuthorized, UNAUTHORIZED, forbidden } = require("./_auth.js");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -54,7 +54,8 @@ exports.handler = async (event) => {
     // against every image it covers, and there is exactly one progress
     // record, so a second scan started by somebody else stamps on the first.
     if (!isAuthorized(event)) return UNAUTHORIZED;
-    if (!(await isOwner(event))) return forbidden("Only an owner can run a furni scan.");
+    // isOwnerWrite, so a scan is in the activity log like any other write.
+    if (!(await isOwnerWrite(event))) return forbidden("Only an owner can run a furni scan.");
 
     if (process.env.NETLIFY_DEV !== "true") {
         return json(501, {

@@ -2,8 +2,9 @@
    button (see home.html/style.css's .header-console-btn), built from the
    cnsl-* sprite set in assets/img/console/. Self-contained (own file, not
    folded into home.js) since it's a fairly independent feature: its own
-   open/close, drag, tab pages, and two small data reads (contributors,
-   about text) that don't touch anything else js/home.js already tracks. */
+   open/close, drag, tab pages, and the contributors read; the Add Maze Info,
+   Missing Pieces and Profile pages are built by their own files
+   (js/console-info.js, js/console-profile.js). */
 document.addEventListener("DOMContentLoaded", () => {
     const modal = document.getElementById("console-modal");
     const openBtn = document.getElementById("header-console-btn");
@@ -19,21 +20,25 @@ document.addEventListener("DOMContentLoaded", () => {
         contact: document.getElementById("console-page-contact"),
         people: document.getElementById("console-page-people"),
         privacy: document.getElementById("console-page-privacy"),
-        about: document.getElementById("console-page-about"),
+        // The signed-in player's page, built by js/console-profile.js
+        // whenever it is shown (see the console:page event below).
+        profile: document.getElementById("console-page-profile"),
         // Not tab-reachable — only ever shown by the Send button on
         // success, and left out of the tabButtons active-state match
         // below since no tab's data-page is "thanks".
         thanks: document.getElementById("console-page-thanks"),
-        // The two forms behind that choice. Neither is a tab of its own;
-        // CONTACT stays lit while either shows, because both of them are
-        // still that tab (see CONTACT_PAGES below).
+        // The pages behind that choice. None is a tab of its own; CONTACT
+        // stays lit while any shows, because all of them are still that tab
+        // (see CONTACT_PAGES below). info and missing are built by
+        // js/console-info.js.
         message: document.getElementById("console-page-message"),
-        submit: document.getElementById("console-page-submit")
+        info: document.getElementById("console-page-info"),
+        missing: document.getElementById("console-page-missing")
     };
 
     // Which pages belong to the CONTACT tab, so the row of tab lights keeps
     // saying where you are rather than going blank on a sub-page.
-    const CONTACT_PAGES = ["contact", "message", "submit"];
+    const CONTACT_PAGES = ["contact", "message", "info", "missing"];
 
     function clearPrivacyHash() {
         if (location.hash === "#privacy") {
@@ -64,6 +69,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // the new page's own max scroll, landing it scrolled to the bottom
         // instead of a fresh page starting at the top.
         screenScroll.scrollTop = 0;
+        // For the pages other files build, which want to fill themselves
+        // each time they are shown rather than once at load.
+        document.dispatchEvent(new CustomEvent("console:page", { detail: { name } }));
     }
 
     tabButtons.forEach(btn => {
@@ -144,7 +152,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let dataLoaded = false;
 
+    /* Where focus goes back to on closing. Closing (X or Escape) used to
+       leave focus on a button that had just been hidden, which drops a
+       keyboard user at the top of the page. Recorded only on a real open,
+       not on a page change inside an open console. */
+    let opener = null;
+
     function openConsole(defaultPage) {
+        if (modal.style.display !== "block") {
+            const active = document.activeElement;
+            opener = active && active !== document.body && !modal.contains(active) ? active : null;
+        }
         modal.style.display = "block";
         // Lands on Contact by default — otherwise the tab buttons' own
         // .active state (only ever changed by clicking one) could disagree
@@ -159,31 +177,58 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!dataLoaded) {
             dataLoaded = true;
             loadContributors();
-            loadAbout();
         }
     }
 
-    function closeConsole() {
+    // Something the opener can no longer take: gone from the page, hidden,
+    // or inside an inert region (the closed side menu, see wireSideMenu in
+    // js/home.js). focus() on any of those silently does nothing.
+    function canTakeFocus(el) {
+        return !!(el && document.body.contains(el) && typeof el.focus === "function"
+            && el.getClientRects().length && !(el.closest && el.closest("[inert]")));
+    }
+
+    /* opts.keepFocus is for a caller closing the console in order to open
+       another window, which takes focus itself; handing it back to the
+       opener would pull it out from under that window. And even without
+       it, focus is only restored if it is still in the console (or lost to
+       the body): anything that has already taken it elsewhere keeps it. */
+    function closeConsole(opts) {
+        const active = document.activeElement;
+        const hadFocus = !active || active === document.body || modal.contains(active);
         modal.style.display = "none";
         clearPrivacyHash();
+        const back = opener;
+        opener = null;
+        if ((opts && opts.keepFocus) || !hadFocus) return;
+        let landing = canTakeFocus(back) ? back : null;
+        if (!landing && back && back.closest && back.closest("#side-menu")) {
+            landing = document.getElementById("side-spine");
+        }
+        if (!canTakeFocus(landing)) landing = document.getElementById("header-console-btn");
+        if (canTakeFocus(landing)) landing.focus({ preventScroll: true });
     }
 
     openBtn.addEventListener("click", () => openConsole());
-    closeBtn.addEventListener("click", closeConsole);
+    // Wrapped, so the click event is not read as closeConsole's options.
+    closeBtn.addEventListener("click", () => closeConsole());
 
     /* Escape closes it, like every other modal on the site — the room modal,
        the lightbox and both of the landing page's own modals all do, and
-       this was the one that only answered its X. Bound on the document
-       rather than the console, since the console does not hold focus. */
-    document.addEventListener("keydown", e => {
-        if (e.key !== "Escape") return;
-        if (modal.style.display !== "block") return;
-        // The room modal is in front when both are open, and Escape belongs
-        // to whatever is on top.
-        const roomModal = document.getElementById("room-modal");
-        if (roomModal && roomModal.classList.contains("open")) return;
-        closeConsole();
-    });
+       this was the one that only answered its X.
+
+       Through the shared top-most-layer rule (EscapeLayers, js/site.js)
+       rather than a listener of its own. This used to step aside whenever
+       the room modal was open, on the belief that the modal was in front —
+       but the console sits at z-index 200 against the overlay's 100, so it
+       is the one in front, and Escape was closing the window BEHIND it.
+       The shared rule compares where each actually paints. */
+    if (window.EscapeLayers) {
+        window.EscapeLayers.register({
+            elements: () => modal.style.display === "block" ? [modal] : [],
+            close: () => closeConsole()
+        });
+    }
 
     // The footer's Privacy Policy link (js/site.js) points at
     // "#privacy" on this page — a same-page hash change if already here,
@@ -298,7 +343,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (player) {
             discordField.hidden = true;
             signedAsEl.hidden = false;
-            signedAsEl.textContent = `Sending as ${player.name} — signed in with Discord.`;
+            // A comma, not a dash: this line is set in Volter Goldfish, which
+            // draws U+2014 as a musical note (see PICTURE_GLYPHS in js/site.js).
+            signedAsEl.textContent = `Sending as ${player.name}, signed in with Discord.`;
         } else {
             discordField.hidden = false;
             signedAsEl.hidden = true;
@@ -323,13 +370,14 @@ document.addEventListener("DOMContentLoaded", () => {
         showPage("contact");
     });
 
-    // The two ways out of the choice screen.
+    // The ways out of the choice screen. The two Missing Pieces pages are
+    // js/console-info.js's; it fills them before they are shown.
     const choiceContactBtn = document.getElementById("console-choice-contact");
-    const choiceSubmitBtn = document.getElementById("console-choice-submit");
-    if (choiceContactBtn) {
-        choiceContactBtn.addEventListener("click", () => showPage("message"));
-        choiceSubmitBtn.addEventListener("click", () => showPage("submit"));
-    }
+    const choiceInfoBtn = document.getElementById("console-choice-info");
+    const choiceMissingBtn = document.getElementById("console-choice-missing");
+    if (choiceContactBtn) choiceContactBtn.addEventListener("click", () => showPage("message"));
+    if (choiceInfoBtn) choiceInfoBtn.addEventListener("click", () => MazeConsole.openInfo(null));
+    if (choiceMissingBtn) choiceMissingBtn.addEventListener("click", () => MazeConsole.openMissing());
 
     // Saved server-side (netlify/functions/contact.js -> MongoDB, visible
     // on the admin page) and, if the function has RESEND_API_KEY/
@@ -349,7 +397,9 @@ document.addEventListener("DOMContentLoaded", () => {
             usernameInput.value = "";
             discordInput.value = "";
             statusEl.style.display = "none";
-            showPage("thanks");
+            // The thanks page's own sentence: an Add Maze Info send before
+            // this one may have left its wording there.
+            MazeConsole.showThanks();
         } catch (e) {
             showStatus(e.message || "Something went wrong. Try again in a moment.", true);
         } finally {
@@ -357,68 +407,37 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    const thanksMessageEl = document.getElementById("console-thanks-message");
+    const THANKS_DEFAULT = thanksMessageEl ? thanksMessageEl.textContent : "";
     thanksOkBtn.addEventListener("click", () => showPage("contact"));
 
-    /* ---------- submit a maze ----------
-
-       The same endpoint as the contact form, asked properly. A free-text
-       box invites "you should add my maze" and nothing else, and an archive
-       cannot act on a submission whose builder and room it has to go and
-       chase. The fields are written into the message body rather than sent
-       as new ones, so nothing changes server-side: contact.js keeps its
-       honeypot, its per-IP rate limit and its admin inbox, and a submission
-       lands in the same place a message does. */
-    const submitBackBtn = document.getElementById("console-submit-back");
-    const submitSendBtn = document.getElementById("console-submit-send");
-    const submitNameInput = document.getElementById("console-submit-name");
-    const submitBuilderInput = document.getElementById("console-submit-builder");
-    const submitNotesInput = document.getElementById("console-submit-notes");
-    const submitUsernameInput = document.getElementById("console-submit-username");
-    const submitHpInput = document.getElementById("console-submit-hp");
-    const submitStatusEl = document.getElementById("console-submit-status");
-
-    if (submitBackBtn) {
-        submitBackBtn.addEventListener("click", () => showPage("contact"));
-
-        submitSendBtn.addEventListener("click", async () => {
-            const name = submitNameInput.value.trim();
-            // The one field that has to be there: everything else can be
-            // found from a name, and nothing can be found without one.
-            if (!name) {
-                submitStatusEl.textContent = "A maze name is the one thing we need.";
-                submitStatusEl.classList.add("is-error");
-                submitStatusEl.style.display = "block";
-                submitNameInput.focus();
-                return;
-            }
-            const builder = submitBuilderInput.value.trim();
-            const notes = submitNotesInput.value.trim();
-
-            // Labelled so it is obvious in the admin inbox which of these
-            // is a submission and which is somebody saying hello.
-            const message = [
-                "MAZE SUBMISSION",
-                `Maze: ${name}`,
-                builder ? `Builder: ${builder}` : "",
-                notes ? `\n${notes}` : ""
-            ].filter(Boolean).join("\n");
-
-            submitSendBtn.disabled = true;
-            try {
-                await Api.submitContactMessage(message, submitUsernameInput.value.trim(), "", submitHpInput.value);
-                [submitNameInput, submitBuilderInput, submitNotesInput, submitUsernameInput]
-                    .forEach(el => { el.value = ""; });
-                submitStatusEl.style.display = "none";
-                showPage("thanks");
-            } catch (e) {
-                submitStatusEl.textContent = e.message || "Something went wrong. Try again in a moment.";
-                submitStatusEl.classList.add("is-error");
-                submitStatusEl.style.display = "block";
-            } finally {
-                submitSendBtn.disabled = false;
-            }
-        });
-    }
+    /* The console, for the rest of the page. js/console-info.js fills the
+       Add Maze Info and Missing Pieces pages and assigns openInfo and
+       openMissing below; js/home.js calls them from a maze's INCOMPLETE tab
+       and from the side menu. Those two are stubs until console-info.js has
+       run, which is at DOMContentLoaded like this file — nothing can press
+       a button before then. */
+    const MazeConsole = window.MazeConsole = {
+        open(page) {
+            if (modal.style.display === "block") showPage(page || "contact");
+            else openConsole(page);
+        },
+        showPage,
+        // The thanks page with its own sentence, then its default again for
+        // the next time the Contact form uses it.
+        showThanks(text) {
+            if (thanksMessageEl) thanksMessageEl.textContent = text || THANKS_DEFAULT;
+            showPage("thanks");
+        },
+        resetThanks() {
+            if (thanksMessageEl) thanksMessageEl.textContent = THANKS_DEFAULT;
+        },
+        openInfo() { MazeConsole.open("info"); },
+        openMissing() { MazeConsole.open("missing"); },
+        openProfile() { MazeConsole.open("profile"); },
+        // close({ keepFocus: true }) when closing to open another window.
+        close: (opts) => closeConsole(opts)
+    };
 
     // ---------- contributors page ----------
 
@@ -510,13 +529,4 @@ document.addEventListener("DOMContentLoaded", () => {
 if (typeof renderPrivacySections === "function") {
     renderPrivacySections(document.getElementById("console-privacy-body"));
 }
-
-    // ---------- about page ----------
-
-    const aboutBlurbEl = document.getElementById("console-about-blurb");
-
-    async function loadAbout() {
-        const { aboutText } = await Api.getSiteSettings();
-        aboutBlurbEl.textContent = aboutText || "";
-    }
 });

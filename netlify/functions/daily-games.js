@@ -32,7 +32,7 @@
    the only thing that makes a player identifiable across a page load. Play
    from a signed-out browser is anonymous by construction and cannot be
    addressed by anybody, including us. */
-const { getDb } = require("./_db");
+const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
@@ -86,24 +86,31 @@ const json = (statusCode, data) => ({
 // disagree about which day "today" is. See js/daily.js.
 const today = () => new Date().toISOString().slice(0, 10);
 
-let ensured = false;
+/* One pending ticket per player per game: asking twice is the same ask.
+
+   Through ensureUniqueIndex, which lets a failure THROW. This used to be
+   createIndex(...).catch(() => {}) with the flag set regardless, so an index
+   that could not be built was marked done and the one-ticket rule quietly
+   stopped being enforced. A unique index is a correctness rule, not a speed
+   hint (see _db.js), so failing to build it now fails the request. */
 async function ensureIndexes(col) {
-    if (ensured) return;
-    // One pending ticket per player per game: asking twice is the same ask.
-    await col.createIndex({ playerId: 1, game: 1 }, { unique: true }).catch(() => {});
-    ensured = true;
+    await ensureUniqueIndex(col, ["playerId", "game"]);
 }
 
 exports.handler = async (event) => {
-    let db;
+    let db, scores, resets;
     try {
         db = await getDb();
+        scores = db.collection(SCORES);
+        resets = db.collection(RESETS);
+        await ensureIndexes(resets);
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        /* No `detail`. This answer goes to anybody, before any sign-in
+           check, and the driver's message can name the cluster host. The
+           log has it. */
+        console.error("daily-games: database unavailable", e);
+        return json(500, { error: "Database connection failed" });
     }
-    const scores = db.collection(SCORES);
-    const resets = db.collection(RESETS);
-    await ensureIndexes(resets);
 
     const params = event.queryStringParameters || {};
 
@@ -144,13 +151,26 @@ exports.handler = async (event) => {
            the older and larger one; the other two live in daily_scores, and
            a player who has only ever played those must still be findable
            here. */
+        /* Only the live games' rows. daily_scores still holds every
+           Ratrospect and One Wall day (see the note on GAMES above), and
+           counting them here gave a player days and points for games that
+           cannot be played or reset — figures the admin would be deciding
+           a reset on. The filter is built from GAMES so it moves with it.
+
+           Both aggregations are sorted before they are grouped, so `$last`
+           is the player's newest name rather than whichever row Mongo's
+           natural order happened to put last. */
+        const liveDaily = GAMES.filter(g => g.collection === "daily_scores").map(g => g.filter.game);
         const knownDaily = await db.collection("daily_scores").aggregate([
+            { $match: { game: { $in: liveDaily } } },
+            { $sort: { day: 1, at: 1 } },
             { $group: { _id: "$playerId", name: { $last: "$name" }, avatar: { $last: "$avatar" }, days: { $sum: 1 }, points: { $sum: "$points" }, lastDay: { $max: "$day" } } },
-            { $sort: { lastDay: -1 } },
+            { $sort: { lastDay: -1, _id: 1 } },
             { $limit: 200 }
         ]).toArray();
 
         const known = await scores.aggregate([
+            { $sort: { day: 1, at: 1 } },
             {
                 $group: {
                     _id: "$playerId",
@@ -161,7 +181,7 @@ exports.handler = async (event) => {
                     lastDay: { $max: "$day" }
                 }
             },
-            { $sort: { lastDay: -1 } },
+            { $sort: { lastDay: -1, _id: 1 } },
             { $limit: 200 }
         ]).toArray();
 
@@ -253,7 +273,12 @@ exports.handler = async (event) => {
     if (event.httpMethod === "POST") {
         // canWrite, not isAuthorized: a viewer is a real account and passes
         // the gate above quite correctly, and still may not change anything.
-        if (!canWrite(event)) return READ_ONLY;
+        //
+        // AWAITED. canWrite is async (it looks the account's role up), so
+        // the bare call returned a Promise — which is truthy, so the `!`
+        // made it false every time and a viewer sailed straight through to
+        // deleting a player's scored day. Every other endpoint awaits it.
+        if (!(await canWrite(event))) return READ_ONLY;
 
         let body = {};
         try { body = JSON.parse(event.body || "{}"); } catch (e) { body = {}; }

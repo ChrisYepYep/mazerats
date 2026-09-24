@@ -72,6 +72,9 @@ check("cleared field: null in the database, empty string from the form",
 check("undefined against missing",
     describe({ ...room(), host: undefined }, { ...room() }), []);
 
+check("an empty list against a field the record never had",
+    describe((({ relatedImages, ...r }) => r)(room()), { ...room(), relatedImages: [], furni: { changed: 1 } }), ["furni"]);
+
 check("boolean round-tripped as a string",
     describe({ ...room(), live: true }, { ...room(), live: "true" }), []);
 

@@ -30,19 +30,23 @@
 const PRIVACY_SECTIONS = [
     {
         heading: "What we collect.",
-        body: "When you submit a form via the Contact Us page, we collect the details you provide — your message content, your Habbo Origins username, and an optional Discord handle — solely to process and respond to your enquiry. Short-term IP logging is implemented for automated spam prevention and security filtering. There is one other place an IP address is kept, and it is kept for longer and for a different reason: every round of Fallin' Furni records the address it was played from, described in full below. If you choose to sign in, we also hold what your Discord account tells us and what you do while signed in, both described below."
+        body: "When you submit a form via the Contact Us page, we collect the details you provide — your message content, your Habbo Origins username, and an optional Discord handle — solely to process and respond to your enquiry. Sending what you know through Add Maze Info works the same way and is described in its own section below. Short-term IP logging is implemented for automated spam prevention and security filtering. There is one other place an IP address is kept, and it is kept for longer and for a different reason: every round of Fallin' Furni records the address it was played from, described in full below. If you choose to sign in, we also hold what your Discord account tells us and what you do while signed in, both described below."
     },
     {
         heading: "Signing in with Discord.",
-        body: "Signing in is entirely optional. Everything on this site — the archive, the daily game, marking a maze as completed — works without an account, and nothing is hidden behind one. If you do sign in, we ask Discord for one permission only: \"identify\", which returns your Discord user ID, your display name and your avatar picture. We do not ask for your email address, your servers, your friends, or anything else, and we cannot see them. We keep your ID, display name and avatar URL, and the dates you first signed in and were last seen. The access token Discord issues during sign-in is used once to read that profile and is then discarded, never stored — so nothing here can act on your behalf on Discord, and there is no credential of yours for anyone to steal from us."
+        body: "Signing in is entirely optional. Everything on this site — the archive, the two daily games, marking a maze as completed — works without an account, and nothing is hidden behind one. If you do sign in, we ask Discord for one permission only: \"identify\", which returns your Discord user ID, your display name and your avatar picture. We do not ask for your email address, your servers, your friends, or anything else, and we cannot see them. We keep your ID, display name and avatar URL, and the dates you first signed in and were last seen. The access token Discord issues during sign-in is used once to read that profile and is then discarded, never stored — so nothing here can act on your behalf on Discord, and there is no credential of yours for anyone to steal from us."
     },
     {
         heading: "Playing Fallin' Furni.",
         body: "Every round of Fallin' Furni is recorded so the game can be tuned — which levels people clear, which they run out of time on, and where a run ends. A record holds what happened in the game: the levels played, how long each took, how many seats were taken, how the round ended, the points scored, the size of the browser window, and whether the screen was a touchscreen. If you are signed in it carries your Discord display name and ID, the same identity the leaderboard already shows. If you typed a Habbo Origins name into the game to play as that avatar, that name is kept on the record too, whether or not you are signed in, so that runs played without an account can be told apart instead of all counting as one anonymous player. It is only ever treated as something you told us rather than something we checked, it is never used to sign you in or to rank you, and it is never shown publicly — the leaderboard takes its name from your Discord account alone. It also holds the IP address the round was played from, whether or not you are signed in, and we group runs by that address so that we can see when one leaderboard is being played by several accounts from the same connection. That means a run played without signing in is not anonymous: it can be grouped with other runs from the same address, including ones where somebody did sign in. This is the only part of the site that keeps an IP address against what you did rather than for short-term spam and security filtering, and it applies to Fallin' Furni alone — the interaction records described below still have no address on them. These records are never shown publicly and are only ever read by an administrator looking at how the game is playing; they are deleted automatically after 180 days, address and all."
     },
     {
+        heading: "Adding what you know about a maze.",
+        body: "The console's Add Maze Info form lets anyone send what they know about a maze or event, whether it is in the archive yet or not, and its Missing Pieces page lists the ones we most need help with. A submission holds what you write, which maze or event it is about, the Habbo Origins name you give if you give one, and — like a contact message — the IP address it was sent from, which is used only so that an administrator can block an address sending spam. If you are signed in with Discord it also carries your Discord display name and ID, and images can only be sent while signed in, so that the pictures can be answered for. Nothing in a submission is public: it is read by an administrator, and an image is only ever shown on the site if it is accepted into the archive, where it becomes one of that record's pictures. If a submission is accepted and you gave a name, it may be added to the site's list of contributors. Images from a rejected submission are deleted at once, and an image that was uploaded but never sent is deleted within a day. The words of a submission are kept with the archive's records until an administrator deletes them, and you can ask for yours to be removed at any time through the Contact Us form."
+    },
+    {
         heading: "What your account holds.",
-        body: "Signed in, the things this site would otherwise remember only in your browser are kept against your account instead, so they follow you between your phone and your computer: which mazes you have marked as completed, which you have saved to complete later, your progress in the current day of the daily game, and your finished daily scores. Your display name, avatar, score and result grid — the five coloured squares saying how each room went, which name no maze and so give nothing away — are shown publicly on the daily game's leaderboards. That is the entire purpose of signing in, and it is the only place your account is visible to anyone else. Which mazes you have completed, and which you have saved to complete later, are never shown to anybody but you."
+        body: "Signed in, the things this site would otherwise remember only in your browser are kept against your account instead, so they follow you between your phone and your computer: which mazes you have marked as completed, which you have saved to complete later, your progress through the current day of each daily game, and your finished daily scores. Your display name, avatar, score and result grid — the row of coloured squares saying how each round went, which names no maze and so gives nothing away — are shown publicly on the daily games' leaderboards. That is the entire purpose of signing in, and it is the only place your account is visible to anyone else. Which mazes you have completed, and which you have saved to complete later, are never shown to anybody but you. The console's Profile page gathers these together with your daily game streaks and places, your best Fallin' Furni run and what you have sent through Add Maze Info; it is worked out from the records described here each time you open it, nothing extra is stored to make it, and it is only ever shown to you."
     },
     {
         heading: "Use of data.",
@@ -54,11 +58,11 @@ const PRIVACY_SECTIONS = [
     },
     {
         heading: "Browser storage.",
-        body: "Your browser holds a small amount of information for this site on your own device. For visitors that is a short-lived session identifier used only for the interaction records described above, a note of whether the site was last seen as open so the page still behaves correctly if our server is briefly unreachable, and — if you have played the daily game or marked a maze as completed — that progress, which stays on your device alone unless you sign in. Signing in adds a session cookie so the site knows it is still you: it is marked HttpOnly, which means the page's own scripts cannot read it, it holds nothing but your Discord ID, display name and avatar, and it expires after thirty days. For signed-in administrators there is also an admin session token. None of it is used to follow you across other websites, none of it is sold or shared, and clearing your browser data removes all of it."
+        body: "Your browser holds a small amount of information for this site on your own device. For visitors that is a short-lived session identifier used only for the interaction records described above, a note of whether the site was last seen as open so the page still behaves correctly if our server is briefly unreachable, and — if you have played either daily game or marked a maze as completed — that progress, which stays on your device alone unless you sign in. Signing in adds a session cookie so the site knows it is still you: it is marked HttpOnly, which means the page's own scripts cannot read it, it holds nothing but your Discord ID, display name and avatar, and it expires after thirty days. For signed-in administrators there is also an admin session token. None of it is used to follow you across other websites, none of it is sold or shared, and clearing your browser data removes all of it."
     },
     {
         heading: "Who else handles it.",
-        body: "We do not sell, rent, trade or share your personal information, and there is no advertising on this site. A small number of companies necessarily handle it in the course of running the site, and these are all of them. Netlify hosts the site, runs the code behind it and stores the pictures. MongoDB Atlas is the database that everything described above is kept in. Resend delivers a single notification email to us when you send a message through the Contact Us form, carrying that message and whatever name you put on it, so that it is read rather than left sitting in a database. Umami collects the aggregate traffic figures described above. Discord holds your own account and tells us the profile described above when you choose to sign in — signing in sends you to Discord to approve it, which means Discord knows you signed in here; we send them nothing about you beyond the request itself, and no information about you travels the other way except that profile. Each of these is used for the one job named here and for nothing else."
+        body: "We do not sell, rent, trade or share your personal information, and there is no advertising on this site. A small number of companies necessarily handle it in the course of running the site, and these are all of them. Netlify hosts the site, runs the code behind it and stores the pictures. MongoDB Atlas is the database that everything described above is kept in. Resend delivers a single notification email to us when you send a message through the Contact Us form or through Add Maze Info, carrying what you wrote and whatever name you put on it, so that it is read rather than left sitting in a database. Umami collects the aggregate traffic figures described above. Discord holds your own account and tells us the profile described above when you choose to sign in — signing in sends you to Discord to approve it, which means Discord knows you signed in here; we send them nothing about you beyond the request itself, and no information about you travels the other way except that profile. Each of these is used for the one job named here and for nothing else."
     },
     {
         heading: "Data rights and contact.",
@@ -72,7 +76,30 @@ const PRIVACY_SECTIONS = [
    be HTML-escaped by hand.
 
    Both callers pass a container that already sits inside console-styled
-   chrome, so the classes are the console's own either way. */
+   chrome, so the classes are the console's own either way.
+
+   EVERY EM DASH IS BORROWED FROM ROBOTO. Inside the homepage console this
+   text is set in Volter Goldfish, which draws U+2014 as a PICTURE — a
+   musical note (see PICTURE_GLYPHS in js/site.js) — so the policy's
+   asides, and there are dozens, were each punctuated with a little note.
+   The dashes are right (see HOUSE STYLE above), and the policy is shared
+   with privacy.html, which is not in Volter at all, so the words stay as
+   they are and just that one character changes face: the same trick
+   .row-date-dot and .timeline-sep use. On the landing page's modal, which
+   is not Volter either, the span is harmless. */
+function appendPrivacyText(parent, text) {
+    const parts = String(text).split("—");
+    parts.forEach((part, i) => {
+        if (i > 0) {
+            const dash = document.createElement("span");
+            dash.className = "console-dash";
+            dash.textContent = "—";
+            parent.appendChild(dash);
+        }
+        if (part) parent.appendChild(document.createTextNode(part));
+    });
+}
+
 function renderPrivacySections(container) {
     if (!container) return;
     container.innerHTML = "";
@@ -88,7 +115,7 @@ function renderPrivacySections(container) {
         const strong = document.createElement("strong");
         strong.textContent = section.heading;
         p.appendChild(strong);
-        p.appendChild(document.createTextNode(" " + section.body));
+        appendPrivacyText(p, " " + section.body);
         container.appendChild(p);
     });
 }

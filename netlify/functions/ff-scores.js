@@ -1,7 +1,9 @@
 /* /.netlify/functions/ff-scores — the Fallin' Furni leaderboard.
 
    GET             the table, and the caller's own best if they are signed in
-   POST {levels, ms}   records a finished run for the signed-in player
+   POST ?action=start  a signed run token, asked for when Play is pressed
+   POST {levels, ms, points, run}   records a finished run for the signed-in
+                   player, `run` being that token (see THE RUN TOKEN)
 
    Identity is the Discord session from _player.js, the same one the daily
    games use. Signing in is what puts a name on the board; the game itself is
@@ -32,6 +34,8 @@
    A worse run never overwrites a better one, so the table cannot be walked
    backwards by replaying badly. */
 
+const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 const { getDb, ensureUniqueIndex, ensureIndex } = require("./_db");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
@@ -39,6 +43,137 @@ const { SECURITY_HEADERS } = require("./_headers");
 const COLLECTION = "ff_scores";
 const LEVELS = "ff_levels";
 const TOP = 25;
+
+/* ---------------------------------------------------------------- IS IT OPEN
+
+   The board used to take a run whatever the game's own state said. The page
+   hides Play while Fallin' Furni is "coming soon" or in maintenance, but an
+   admin still plays it closed (that is what closing it is for), and a
+   hidden button was never a lock — so test runs went straight onto the
+   public board, and one of them (9,190 points, 17 September) was sitting at
+   the top of it a fortnight before anybody else could play.
+
+   Read here from the same document settings.js writes — `settings`,
+   `_id: "site"` — and with the same default: a site that has never set the
+   field is live, as it always was. Read straight from Mongo rather than
+   through GET /settings, whose edge copy may be twenty seconds old.
+
+   `launchAt` comes with it because the GET needs it too: see `sinceLaunch`. */
+const CLOSED_STATES = ["coming-soon", "maintenance"];
+
+async function readGate(db) {
+    const doc = await db.collection("settings").findOne(
+        { _id: "site" }, { projection: { fallinFurniState: 1, launchAt: 1 } }
+    );
+    const state = (doc && doc.fallinFurniState) || "live";
+    const launch = doc && doc.launchAt ? Date.parse(doc.launchAt) : NaN;
+    return {
+        open: !CLOSED_STATES.includes(state),
+        // An ISO string, or null. settings.js stores launchAt through
+        // toISOString(), and every `at` on this board is written the same way,
+        // so the two compare correctly as strings — which is what lets the
+        // filter below be a plain range query.
+        launchAt: isNaN(launch) ? null : new Date(launch).toISOString(),
+        launchMs: isNaN(launch) ? null : launch
+    };
+}
+
+/* ONLY WHAT WAS PLAYED AFTER LAUNCH is on the board, when there is a launch.
+
+   The pre-launch test runs are still in the collection and are left there:
+   deleting them would be a production write to tidy up a display, and the
+   filter does the same job with nothing to undo. A row older than launchAt
+   is simply never read. Clearing launchAt puts them back, which is the
+   honest behaviour for a site that has not decided when it opens. */
+const sinceLaunch = (gate) => (gate.launchAt ? { at: { $gte: gate.launchAt } } : {});
+const afterLaunch = (gate, row) => Boolean(row) && (!gate.launchAt || String(row.at || "") >= gate.launchAt);
+
+/* ---------------------------------------------------------------- THE RUN TOKEN
+
+   Everything above the physics floor and the points ceiling was a request a
+   person could type: {levels: 50, ms: 404830, points: 13919} passed both,
+   because both are generous on purpose. What the server did NOT know was
+   when the run started, so it could not tell a fifty-level run from a
+   sentence typed into a terminal a second ago.
+
+   Now it does. Pressing Play asks for a token (POST ?action=start); the
+   server signs the moment it was asked and a random run id, and the run's
+   submission has to carry it back. That buys three checks nothing else can:
+
+     - the run cannot claim more time than has actually passed since the
+       token was issued. The page's `ms` is game time — pauses and hidden
+       tabs are taken OUT of it (see gameNow in js/fallinfurni.js) — so an
+       honest run is always at or under the wall-clock gap, and
+       RUN_TOLERANCE_MS covers the start request's own latency, a cold start
+       included, since the page starts its clock as it sends the request and
+       the token is stamped when the function gets round to answering;
+     - a token issued before launch cannot put a run on the board after it;
+     - one token is one entry. Its run id is inserted into ff_run_tokens
+       before the board is touched, and _id is unique, so a second
+       submission with the same token is refused by the database itself
+       rather than by a read-then-write that two requests could both pass.
+
+   Signed with SESSION_SECRET like every other token here, under an audience
+   of its own so it can never be mistaken for a player or admin session
+   (see the audience notes in _auth.js and _player.js).
+
+   STILL NOT PROOF OF PLAY, and not claimed to be: a determined person can
+   ask for a token, wait the length of a plausible run, and submit. What it
+   removes is the instant forgery, which is the one anybody would try. */
+const RUN_AUDIENCE = "mazerats-ffrun";
+const RUN_LIFE_S = 3 * 60 * 60;
+const RUN_TOLERANCE_MS = 15 * 1000;
+const RUN_TOKENS = "ff_run_tokens";
+
+function signRun(player) {
+    if (!process.env.SESSION_SECRET) return null;
+    const claims = { rid: crypto.randomBytes(12).toString("hex"), t: Date.now() };
+    // Bound to the account when there is one, so a token cannot be handed
+    // to somebody else's session. A signed-out start stays unbound: signing
+    // in means leaving the page, which ends the run anyway.
+    if (player) claims.sub = player.id;
+    return jwt.sign(claims, process.env.SESSION_SECRET, {
+        audience: RUN_AUDIENCE, expiresIn: RUN_LIFE_S, algorithm: "HS256"
+    });
+}
+
+// The claims, or null for anything missing, forged, expired or malformed.
+function readRun(token, player) {
+    if (!token || typeof token !== "string" || !process.env.SESSION_SECRET) return null;
+    try {
+        const c = jwt.verify(token, process.env.SESSION_SECRET, {
+            audience: RUN_AUDIENCE, algorithms: ["HS256"]
+        });
+        if (!c || typeof c.rid !== "string" || !/^[0-9a-f]{24}$/.test(c.rid)) return null;
+        if (!Number.isFinite(c.t)) return null;
+        if (c.sub && player && String(c.sub) !== String(player.id)) return null;
+        return c;
+    } catch (e) {
+        return null;
+    }
+}
+
+/* The spent-token list prunes itself. A token is dead three hours after it
+   was issued whatever this collection says, so a row only has to outlive
+   that; an hour's margin on top. Built here rather than through
+   ensureIndex in _db.js, which takes no options and so cannot make a TTL
+   index. Memoised per warm instance the same way. */
+let runTokensIndexed = false;
+async function spendRun(db, claims, player) {
+    const col = db.collection(RUN_TOKENS);
+    if (!runTokensIndexed) {
+        runTokensIndexed = true;
+        try { await col.createIndex({ at: 1 }, { expireAfterSeconds: RUN_LIFE_S + 3600 }); }
+        catch (e) { /* the unique _id is the part that matters */ }
+    }
+    try {
+        await col.insertOne({ _id: claims.rid, at: new Date(), playerId: player.id });
+        return true;
+    } catch (e) {
+        if (e && e.code === 11000) return false;
+        throw e;
+    }
+}
 
 /* ---------------------------------------------------------------- A TOURNAMENT
 
@@ -62,9 +197,15 @@ const TOP = 25;
    ONE ROW PER PLAYER HERE TOO, on the same better-than rule, rather than a
    log of every run. It is the same kind of board, scoped to a week.
 
-   THE DATES ARE UTC INSTANTS and the end is exclusive, so a week reads as
-   "from the 3rd up to the 10th" with no argument about which side midnight
-   falls on. `to` being exclusive also means the last day is whole.
+   THE DATES ARE UTC INSTANTS and the end is exclusive. `from` is the launch
+   itself, 08:00Z on the 3rd — it said 09:00Z while settings.launchAt says
+   08:00Z, so the first hour of the site being open was an hour whose runs
+   reached the all-time board and not this one. `to` is MIDNIGHT AT THE END
+   of Saturday the 10th, not 09:00 on it: the page says "Ends Saturday 10
+   October", and a window that shut at nine that morning made the sentence
+   false for the whole of the day it named. Exclusive, so the last instant
+   inside the window is 23:59:59.999 on the 10th, and that is the instant
+   the page formats (in UTC — see meetEnds in js/fallinfurni.js).
 
    SET `id: null` TO TURN IT OFF. Everything below then behaves exactly as
    it did before this existed: no extra write on POST, no extra read on
@@ -73,8 +214,8 @@ const TOP = 25;
 const TOURNAMENT = {
     id: "launch-week-2026",
     name: "Launch Week",
-    from: "2026-10-03T09:00:00Z",
-    to: "2026-10-10T09:00:00Z"
+    from: "2026-10-03T08:00:00Z",
+    to: "2026-10-11T00:00:00Z"
 };
 const TOURNAMENT_COLLECTION = "ff_tournament";
 
@@ -232,7 +373,8 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("ff-scores: database connection failed", e);
+        return json(503, { error: "Database connection failed" });
     }
     const scores = db.collection(COLLECTION);
     const player = playerFrom(event);
@@ -254,17 +396,28 @@ exports.handler = async (event) => {
            week, is a great many times. */
         await ensureIndex(scores, { points: -1, ms: 1, at: 1 });
 
-        const top = await scores
-            .find({}, { projection: { _id: 0 } })
-            .sort({ points: -1, ms: 1, at: 1 })
-            .limit(TOP)
-            .toArray();
+        let out;
+        // Outside the try so the tournament read below can use it too.
+        let gate = { launchAt: null };
+        try {
+            gate = await readGate(db);
+            const top = await scores
+                .find(sinceLaunch(gate), { projection: { _id: 0 } })
+                .sort({ points: -1, ms: 1, at: 1 })
+                .limit(TOP)
+                .toArray();
 
-        const out = { count: top.length, top: top.map(clean) };
-        if (player) {
-            const mine = await scores.findOne({ playerId: player.id }, { projection: { _id: 0 } });
-            out.you = mine ? clean(mine) : null;
-            out.signedIn = { name: player.name || player.username, id: player.id };
+            out = { count: top.length, top: top.map(clean) };
+            if (player) {
+                const mine = await scores.findOne({ playerId: player.id }, { projection: { _id: 0 } });
+                /* The same cut as the table: a best run from before launch is
+                   not on the board, so it is not "your" place on it either. */
+                out.you = afterLaunch(gate, mine) ? clean(mine) : null;
+                out.signedIn = { name: player.name || player.username, id: player.id };
+            }
+        } catch (e) {
+            console.error("ff-scores: could not read the board", e);
+            return json(503, { error: "The leaderboard could not be read just now." });
         }
 
         /* The tournament board, when there is one running or just finished.
@@ -286,7 +439,7 @@ exports.handler = async (event) => {
                 const meetCol = db.collection(TOURNAMENT_COLLECTION);
                 await ensureIndex(meetCol, { tid: 1, points: -1, ms: 1, at: 1 });
                 const rows = await meetCol
-                    .find({ tid: meet.id }, { projection: { _id: 0 } })
+                    .find({ tid: meet.id, ...sinceLaunch(gate) }, { projection: { _id: 0 } })
                     .sort({ points: -1, ms: 1, at: 1 })
                     .limit(TOP)
                     .toArray();
@@ -294,7 +447,7 @@ exports.handler = async (event) => {
                 if (player) {
                     const mine = await db.collection(TOURNAMENT_COLLECTION)
                         .findOne({ tid: meet.id, playerId: player.id }, { projection: { _id: 0 } });
-                    out.tournament.you = mine ? clean(mine) : null;
+                    out.tournament.you = afterLaunch(gate, mine) ? clean(mine) : null;
                 }
             } catch (e) { /* the all-time board is still worth serving */ }
         }
@@ -303,6 +456,24 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
+
+    /* THE START OF A RUN: a signed token, and nothing written. See THE RUN
+       TOKEN above. Answered for signed-out players too — the token costs
+       nothing to mint, and a player who signs in and plays again gets a
+       fresh one with their Play press anyway.
+
+       A closed game gets no token. The run would be refused at the end for
+       the same reason, and saying so at the start is the same answer
+       sooner. The page treats a missing token as "this run will not be on
+       the board" and plays on regardless. */
+    if ((event.queryStringParameters || {}).action === "start") {
+        let gate;
+        try { gate = await readGate(db); }
+        catch (e) { return json(503, { error: "The leaderboard could not be reached just now." }); }
+        if (!gate.open) return json(200, { token: null, reason: "closed" });
+        const token = signRun(player);
+        return json(200, token ? { token } : { token: null, reason: "unavailable" });
+    }
 
     /* Not signed in is not an error — the game is playable either way, and
        the page needs to be able to say "sign in to be on the board" rather
@@ -320,10 +491,48 @@ exports.handler = async (event) => {
     const points = Math.round(Number(body.points) || 0);
     if (!levels) return json(200, { recorded: false, reason: "no-levels-cleared" });
 
-    const published = await db.collection(LEVELS)
-        .find({ published: true }, { projection: { _id: 0 } })
-        .sort({ order: 1 })
-        .toArray();
+    /* CLOSED MEANS CLOSED TO THE BOARD, admins included. An admin playing a
+       closed game is testing it, and a test is not a result — see IS IT OPEN
+       above. Refused before the token is spent, so nothing about a closed
+       run is written anywhere on this endpoint. (The run log in ff-runs.js
+       still has it; that is analytics and never touches ff_scores.) */
+    let gate;
+    try { gate = await readGate(db); }
+    catch (e) {
+        console.error("ff-scores: could not read the settings", e);
+        return json(503, { error: "The leaderboard could not be updated just now." });
+    }
+    if (!gate.open) return json(200, { recorded: false, reason: "closed" });
+
+    /* The run token. Missing is the start request having failed, which the
+       page treats as "not on the board" without a scene; anything else wrong
+       with it — forged, expired, somebody else's — is the same refusal with
+       a different reason, since a real player can only reach it by pausing
+       a run for three hours. */
+    if (!body.run) return json(200, { recorded: false, reason: "no-run-token" });
+    const claims = readRun(body.run, player);
+    if (!claims) return json(200, { recorded: false, reason: "stale-run" });
+    if (gate.launchMs !== null && claims.t < gate.launchMs) {
+        return json(200, { recorded: false, reason: "closed" });
+    }
+    /* ms is game time, which never runs faster than the wall clock — so a
+       run claiming more of it than has passed since its token was issued
+       did not happen. */
+    if (ms > Date.now() - claims.t + RUN_TOLERANCE_MS) {
+        return json(400, { error: "That run is longer than the time since it started" });
+    }
+
+    let published;
+    try {
+        published = await db.collection(LEVELS)
+            .find({ published: true }, { projection: { _id: 0 } })
+            .sort({ order: 1 })
+            .toArray();
+        await ensureUniqueIndex(scores, "playerId");
+    } catch (e) {
+        console.error("ff-scores: could not read the levels", e);
+        return json(503, { error: "The leaderboard could not be updated just now." });
+    }
 
     if (levels > published.length) {
         return json(400, { error: "More levels than exist" });
@@ -342,8 +551,6 @@ exports.handler = async (event) => {
         return json(400, { error: "That run scores more than those levels can pay" });
     }
 
-    await ensureUniqueIndex(scores, "playerId");
-
     const row = {
         playerId: player.id,
         name: player.name || player.username || "Someone",
@@ -357,14 +564,26 @@ exports.handler = async (event) => {
        would rank below what it replaced. A row from before points existed
        counts as zero, so the owner's next finished run always takes its
        place rather than being refused by a total nobody recorded. */
-    const previous = await scores.findOne({ playerId: player.id });
-    const previousPoints = previous ? Number(previous.points) || 0 : 0;
-    const better = !previous
-        || points > previousPoints
-        || (points === previousPoints && ms < previous.ms);
+    /* SPENT BEFORE THE BOARD IS TOUCHED, after every check that could refuse
+       the run — so a run refused for its numbers does not burn the token,
+       and a token that has been through here once cannot write again. The
+       insert is the lock: two submissions racing with one token both try it
+       and the unique _id lets exactly one through. */
+    try {
+        if (!(await spendRun(db, claims, player))) {
+            return json(200, { recorded: false, reason: "already-submitted" });
+        }
+    } catch (e) {
+        console.error("ff-scores: could not spend a run token", e);
+        return json(503, { error: "The leaderboard could not be updated just now." });
+    }
 
-    if (better) {
-        await scores.updateOne({ playerId: player.id }, { $set: row }, { upsert: true });
+    let better;
+    try {
+        better = await keepBest(scores, { playerId: player.id }, row, gate.launchAt);
+    } catch (e) {
+        console.error("ff-scores: could not record a run", e);
+        return json(503, { error: "The leaderboard could not be updated just now." });
     }
 
     /* And onto the tournament board, judged on its own terms.
@@ -388,24 +607,76 @@ exports.handler = async (event) => {
         try {
             const meetRows = db.collection(TOURNAMENT_COLLECTION);
             await ensureUniqueIndex(meetRows, ["tid", "playerId"]);
-            const prev = await meetRows.findOne({ tid: meet.id, playerId: player.id });
-            const prevPoints = prev ? Number(prev.points) || 0 : 0;
-            const betterHere = !prev
-                || points > prevPoints
-                || (points === prevPoints && ms < prev.ms);
-            if (betterHere) {
-                await meetRows.updateOne(
-                    { tid: meet.id, playerId: player.id },
-                    { $set: { ...row, tid: meet.id } },
-                    { upsert: true }
-                );
-            }
+            await keepBest(meetRows, { tid: meet.id, playerId: player.id }, { ...row, tid: meet.id }, gate.launchAt);
         } catch (e) { /* the run is on the real board either way */ }
     }
 
+    let best = row;
+    if (!better) {
+        best = await scores.findOne({ playerId: player.id }).catch(() => null) || row;
+    }
     return json(200, {
         recorded: better,
         reason: better ? null : "not-your-best",
-        best: clean(better ? row : previous)
+        best: clean(best)
     });
 };
+
+/* "Keep the better run", in ONE operation rather than a read and a write.
+
+   It used to read the player's row, compare in JavaScript, then write — and
+   two runs submitted together (two tabs, a retry that crossed the original)
+   could both read the same old row, both decide they were better, and land
+   in either order. The slower of the two could win, and a player's best run
+   would be quietly replaced by a worse one.
+
+   So the comparison lives in the update's filter: the row is only matched,
+   and therefore only overwritten, if what is stored ranks BELOW this run —
+   fewer points, or the same points on a slower clock. The database applies
+   that test and the write together, so there is no gap for another request
+   to fall into. A row from before points existed counts as zero, as it
+   always did.
+
+   No row matching means one of two things, and the unique index tells them
+   apart: either there is no row yet (the upsert inserts one), or there is a
+   row and it is at least as good (the upsert tries to insert a second, and
+   the index refuses it with 11000). Two FIRST runs racing both try the
+   insert; the loser gets 11000 and asks once more without the upsert, so it
+   still replaces the winner if it beat it.
+
+   Returns whether this run is now the stored one. */
+function betterThan(points, ms) {
+    const or = [
+        { points: { $lt: points } },
+        { points, ms: { $gt: ms } }
+    ];
+    // Missing or null points read as 0 — the same default clean() applies.
+    if (points > 0) or.push({ points: null });
+    else if (points === 0) or.push({ points: null, ms: { $gt: ms } });
+    return { $or: or };
+}
+
+/* `staleBefore`, when given, is launchAt: a stored row from before it is
+   replaced by ANY run, however it scores. Without this the pre-launch test
+   rows — hidden from the board by `sinceLaunch`, but still in the
+   collection — went on deciding whether their owner's real runs were good
+   enough to keep, so a tester whose 9,190 from September was never beaten
+   would have been invisible on the board for good. */
+async function keepBest(col, owner, row, staleBefore) {
+    const better = betterThan(row.points, row.ms);
+    if (staleBefore) better.$or.push({ at: { $lt: staleBefore } });
+    const filter = { ...owner, ...better };
+    try {
+        const r = await col.updateOne(filter, { $set: row }, { upsert: true });
+        return Boolean(r.upsertedCount || r.matchedCount);
+    } catch (e) {
+        if (e && e.code === 11000) {
+            const r = await col.updateOne(filter, { $set: row });
+            return Boolean(r.matchedCount);
+        }
+        throw e;
+    }
+}
+
+module.exports.keepBest = keepBest;
+module.exports.betterThan = betterThan;

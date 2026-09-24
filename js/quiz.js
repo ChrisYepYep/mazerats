@@ -728,9 +728,11 @@
 
     el.again.addEventListener('click', function () {
         /* Same people, same categories, same length — a fresh draw and the
-           scores back to nothing. The questions already asked are not
-           excluded: the bank is a few hundred deep and a shuffle of the
-           whole thing is what a second round should be. */
+           scores back to nothing. The questions already asked ARE excluded:
+           startQuiz draws through drawQuestions, which skips anything in
+           `asked`, so a second round is new questions rather than a reshuffle
+           of the first. When a category runs dry it simply gives fewer, and
+           the setup card's reset is how the bank is opened up again. */
         startQuiz(state.players.slice(), state.cats.slice(), state.length);
     });
 

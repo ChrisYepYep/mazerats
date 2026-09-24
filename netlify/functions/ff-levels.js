@@ -26,7 +26,7 @@
    this payload stays small however large the catalogue grows. */
 
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, isOwner, UNAUTHORIZED, forbidden } = require("./_auth");
+const { isAuthorized, isOwner, isOwnerWrite, UNAUTHORIZED, forbidden } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson } = require("./_cache");
 
@@ -114,7 +114,8 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("ff-levels: database connection failed", e);
+        return json(503, { error: "Database connection failed" });
     }
     const levels = db.collection("ff_levels");
 
@@ -132,8 +133,14 @@ exports.handler = async (event) => {
                 .sort({ order: 1 }).toArray();
             return json(200, { count: all.length, levels: all });
         }
-        const published = await levels.find({ published: true }, { projection: { _id: 0 } })
-            .sort({ order: 1 }).toArray();
+        let published;
+        try {
+            published = await levels.find({ published: true }, { projection: { _id: 0 } })
+                .sort({ order: 1 }).toArray();
+        } catch (e) {
+            console.error("ff-levels: read failed", e);
+            return json(503, { error: "The levels could not be read just now." });
+        }
         /* Cached at the edge like the archive is, and for the same reason:
            this is read on every single load of the game page, it is the
            same answer for everybody, and it changes only when the owner
@@ -148,9 +155,12 @@ exports.handler = async (event) => {
     try { body = JSON.parse(event.body || "{}"); }
     catch { return json(400, { error: "Body is not JSON" }); }
 
+    /* isOwnerWrite on the three writes below, rather than isOwner: these
+       never pass through canWrite, so without it the level editor's saves
+       were the only archive writes missing from the activity log. */
     if (event.httpMethod === "POST") {
         if (!isAuthorized(event)) return UNAUTHORIZED;
-        if (!(await isOwner(event))) return NOT_OWNER;
+        if (!(await isOwnerWrite(event))) return NOT_OWNER;
 
         const level = cleanLevel(body);
         if (!level.name) return json(400, { error: "A level needs a name" });
@@ -172,7 +182,7 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === "PUT") {
         if (!isAuthorized(event)) return UNAUTHORIZED;
-        if (!(await isOwner(event))) return NOT_OWNER;
+        if (!(await isOwnerWrite(event))) return NOT_OWNER;
         if (!body.id) return json(400, { error: "Missing level id" });
 
         const update = cleanLevel(body);
@@ -190,7 +200,7 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === "DELETE") {
         if (!isAuthorized(event)) return UNAUTHORIZED;
-        if (!(await isOwner(event))) return NOT_OWNER;
+        if (!(await isOwnerWrite(event))) return NOT_OWNER;
         const id = (event.queryStringParameters || {}).id;
         if (!id) return json(400, { error: "Missing level id" });
         const result = await levels.deleteOne({ id });

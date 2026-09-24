@@ -119,9 +119,29 @@ const Api = {
         return this._inflight[key];
     },
 
+    // The UTC day the memoised rooms request was made on. See roomsForToday.
+    roomsDay: "",
+
     async getRooms() {
-        return this._once("rooms", () => this._getWithFallback("/.netlify/functions/rooms", "room data",
-            () => typeof DEFAULT_ROOMS !== "undefined" ? DEFAULT_ROOMS : []).then(d => this._unpack(d)));
+        return this._once("rooms", () => {
+            this.roomsDay = new Date().toISOString().slice(0, 10);
+            return this._getWithFallback("/.netlify/functions/rooms", "room data",
+                () => typeof DEFAULT_ROOMS !== "undefined" ? DEFAULT_ROOMS : []).then(d => this._unpack(d));
+        });
+    },
+
+    /* The one exception to "deliberately not invalidated" above: the daily
+       games. They deal a day from the rooms that existed before it, and
+       the server deals the same day from the archive as it is NOW. A tab
+       left open overnight held yesterday's copy, so it dealt today without
+       any room added since, a different day from the server's, and every
+       right answer was scored wrong. A copy fetched on an earlier UTC day
+       is dropped and fetched again; within the day this is getRooms. */
+    roomsForToday() {
+        if (this._inflight.rooms && this.roomsDay !== new Date().toISOString().slice(0, 10)) {
+            delete this._inflight.rooms;
+        }
+        return this.getRooms();
     },
 
     async getEvents() {
@@ -355,10 +375,17 @@ const Api = {
             link.rel = "stylesheet";
             document.head.appendChild(link);
         }
-        const href = "css/theme-" + name + ".css";
+        // Absolute, because 404.html is served at whatever depth the wrong
+        // address was (/maze/a/b), where a relative path points somewhere that
+        // is itself a 404.
+        const href = "/css/theme-" + name + ".css";
         // Compared before assigning: setting href to what it already is makes
-        // the browser re-fetch and re-apply, which flashes.
-        if (!link.getAttribute("href") || link.getAttribute("href").split("?")[0] !== href) {
+        // the browser re-fetch and re-apply, which flashes. Compared as
+        // resolved URLs, not attribute text: the inline loader in each page's
+        // <head> may have written "css/theme-x.css" and this "/css/theme-x.css",
+        // which are the same file and must not count as a change.
+        const current = link.getAttribute("href") ? link.href.split("?")[0] : "";
+        if (current !== new URL(href, location.href).href) {
             link.href = href;
         }
     },
@@ -410,9 +437,9 @@ const Api = {
             // one failed, this must still fall back the way it always did
             // rather than rejecting into every caller on the page.
             ? Promise.resolve(shared).catch(() => null).then(v => v ||
-                ({ landingState: this.lastKnownLandingState() || "coming-soon", aboutText: "", fromCache: true }))
+                ({ landingState: this.lastKnownLandingState() || "coming-soon", fromCache: true }))
             : this._getWithFallback("/.netlify/functions/settings", "site settings",
-                () => ({ landingState: this.lastKnownLandingState() || "coming-soon", aboutText: "", fromCache: true }));
+                () => ({ landingState: this.lastKnownLandingState() || "coming-soon", fromCache: true }));
 
         this._settingsPromise = fetched.then(settings => {
             if (!settings.fromCache && settings.landingState) this.rememberLandingState(settings.landingState);
@@ -436,8 +463,8 @@ const Api = {
         this._settingsPromise = null;
         if (typeof window !== "undefined") window.__mrSettings = null;
     },
-    // updates is a partial object — { landingState } and/or { aboutText } —
-    // the function only touches whichever fields are actually present.
+    // updates is a partial object — { landingState }, { launchAt } and so on
+    // — the function only touches whichever fields are actually present.
     //
     // Drops the shared answer on the way out: whatever this just changed,
     // the copy held by getSiteSettings above is now the old one, and the

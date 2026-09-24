@@ -65,7 +65,11 @@
   # copy that can be edited on its own — see that file's header. The
   # require is static and the bundler would follow it; naming it here is
   # the belt to that braces, because the thing it prevents is silent.
-  included_files = ["netlify/functions/_furnidata.json", "js/featured-days.js"]
+  #
+  # js/dead-ends.js likewise: dead-ends.js and dead-end-leads.js validate
+  # the pieces a flag or a lead may name against the same table the archive
+  # and /warren draw from. Left out, every flag would be refused on save.
+  included_files = ["netlify/functions/_furnidata.json", "js/featured-days.js", "js/dead-ends.js"]
 
 # ------------------------------------------------------------ THE ADMIN PANEL
 #
@@ -375,6 +379,78 @@
 
 [[redirects]]
   from = "/deno.lock"
+  to = "/404.html"
+  status = 404
+  force = true
+
+# And the rest of what publish = "." sweeps in, found by listing the root
+# rather than by remembering. /backups holds exported copies of the archive's
+# own collections; /.claude is the working notes of whoever last edited the
+# repo; /node_modules exists on the build machine because the build command
+# runs npm install, so every dependency's source was servable from the live
+# site. The whole of /netlify rather than only /netlify/functions, since the
+# rule above covers one directory of it by name and nothing else. The dot
+# files are listed singly: none of them is committed with anything secret in
+# it (.env itself is gitignored and never reaches a deploy), but a site does
+# not need to serve its own ignore list either.
+#
+# None of these can catch a real page. The site serves /css, /js, /assets,
+# the .html files at the root, robots.txt, the sitemap and /.netlify/* — the
+# last of which is a different path from /netlify/* by its leading dot, and
+# is where the functions and the image CDN actually answer.
+#
+# force = true on every one, for the reason given above the filename
+# redirects: these paths are real files, and without it the file wins.
+[[redirects]]
+  from = "/backups/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.claude/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/node_modules/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/netlify/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/netlify.toml"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.git/*"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.gitignore"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.gitattributes"
+  to = "/404.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.env"
   to = "/404.html"
   status = 404
   force = true

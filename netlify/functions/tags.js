@@ -20,24 +20,32 @@ const DEFAULT_TAGS = ["FURNI MAZE", "ILLUSION", "FLOATING", "FUNCTIONAL", "LONG-
 // 500. Coerced first, then refused by the ordinary checks below.
 const text = (v) => (typeof v === "string" ? v : "");
 
+const TAG_MAX_LENGTH = 40;
+
 exports.handler = async (event) => {
     let db;
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("tags: database connection failed", e);
+        return json(503, { error: "Database connection failed" });
     }
     const tags = db.collection("tags");
 
     if (event.httpMethod === "GET") {
-        const count = await tags.countDocuments();
-        if (count === 0) {
-            await tags.insertMany(
-                DEFAULT_TAGS.map((label, i) => ({ label, createdAt: new Date(Date.now() + i).toISOString() }))
-            );
+        try {
+            const count = await tags.countDocuments();
+            if (count === 0) {
+                await tags.insertMany(
+                    DEFAULT_TAGS.map((label, i) => ({ label, createdAt: new Date(Date.now() + i).toISOString() }))
+                );
+            }
+            const all = await tags.find({}, { projection: { _id: 0 } }).sort({ createdAt: 1 }).toArray();
+            return json(200, all.map(t => t.label));
+        } catch (e) {
+            console.error("tags: read failed", e);
+            return json(503, { error: "The tag list could not be read just now." });
         }
-        const all = await tags.find({}, { projection: { _id: 0 } }).sort({ createdAt: 1 }).toArray();
-        return json(200, all.map(t => t.label));
     }
 
     if (!isAuthorized(event)) return UNAUTHORIZED;
@@ -58,7 +66,18 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
-        const label = text(body.label).trim();
+        /* A tag is a short word or two on a chip, and it is written into
+           markup in the admin page and on the archive. Characters that only
+           ever matter to HTML are taken out rather than trusted to be
+           escaped at every place that draws one, and the length is capped
+           well above any real tag. Collapsing runs of space keeps
+           "FURNI  MAZE" from becoming a second FURNI MAZE. */
+        const label = text(body.label)
+            .replace(/[<>"'`]/g, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, TAG_MAX_LENGTH)
+            .trim();
         if (!label) return json(400, { error: "A tag needs a label" });
 
         const all = await tags.find({}, { projection: { _id: 0 } }).toArray();

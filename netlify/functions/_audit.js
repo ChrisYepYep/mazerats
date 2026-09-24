@@ -51,7 +51,15 @@ function agentOf(event) {
 
 /* type: "login" | "login-failed" | "session" | "write"
    Anything not given is simply left off the record. */
+/* A backstop on the one field a stranger can fill: a failed login logs the
+   username that was TRIED, and nothing bounded it (auth.js now cuts it too;
+   this makes sure no future caller forgets). */
+const USERNAME_MAX = 60;
+
 async function record(event, type, fields = {}) {
+    if (typeof fields.username === "string" && fields.username.length > USERNAME_MAX) {
+        fields = { ...fields, username: fields.username.slice(0, USERNAME_MAX) };
+    }
     try {
         const db = await getDb();
         await ensureIndexes(db);

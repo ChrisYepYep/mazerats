@@ -7,7 +7,7 @@
    manages the list. */
 const crypto = require("crypto");
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -28,14 +28,17 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("bans: database connection failed", e);
+        return json(500, { error: "Database connection failed" });
     }
     const bans = db.collection("bans");
 
-    if (!isAuthorized(event)) return UNAUTHORIZED;
+    // hasAccount, not just a valid token: the ban list is a list of IP
+    // addresses, and a deleted account's token should not keep reading it.
+    if (!(await hasAccount(event))) return UNAUTHORIZED;
 
     // Reading the ban list is part of viewing the admin page, so it stops at
-    // isAuthorized above. Everything past here changes something.
+    // the check above. Everything past here changes something.
     if (event.httpMethod === "GET") {
         const all = await bans.find({}, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray();
         return json(200, all);

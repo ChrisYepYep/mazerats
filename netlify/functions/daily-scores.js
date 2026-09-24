@@ -47,9 +47,9 @@
    The pictures are public archive data, so a determined player could work
    out a perfect day offline. That is true of Guess the Maze too. A
    leaderboard here is a thing to enjoy, not a thing to defend. */
-const { getDb } = require("./_db");
+const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom } = require("./_player");
-const { today, dayIsOpen, seedFrom, shuffle, daySeed, isHallway } = require("./_daily");
+const { today, dayIsOpen, shuffle, daySeed, isHallway, existedBefore, rangeBounds } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
 
@@ -74,7 +74,11 @@ async function ensureIndexes(col) {
     if (ensured) return;
     // One row per player per day per game — the rule that makes "first
     // submission wins" the database's job rather than a check-then-write.
-    await col.createIndex({ game: 1, day: 1, playerId: 1 }, { unique: true }).catch(() => {});
+    //
+    // Via ensureUniqueIndex, which THROWS on failure. It was a createIndex
+    // with the error swallowed and `ensured` set anyway, so an index that
+    // never got built was remembered as built and the rule failed open.
+    await ensureUniqueIndex(col, ["game", "day", "playerId"]);
     await col.createIndex({ game: 1, day: 1, points: -1 }).catch(() => {});
     await col.createIndex({ game: 1, playerId: 1 }).catch(() => {});
     ensured = true;
@@ -82,15 +86,21 @@ async function ensureIndexes(col) {
 
 /* ---------- dealing the day, exactly as the page deals it ---------- */
 
+/* Read fresh on every submission — there is no cache here to go stale,
+   unlike the answer cache guess-scores.js keeps (see answersFor there). The
+   pool is limited to mazes that existed before the day began, as the page's
+   is; a picture added to an existing maze mid-day still re-deals, for the
+   reason given at existedBefore in _daily.js. */
 async function oddDay(day) {
     const db = await getDb();
     const rooms = await db.collection("rooms")
-        .find({}, { projection: { id: 1, name: 1, tags: 1, gallery: 1 } }).toArray();
+        .find({}, { projection: { id: 1, name: 1, tags: 1, gallery: 1, createdAt: 1 } }).toArray();
 
     const pool = rooms
         // Exactly as js/oddoneout.js builds its pool. A room dropped there
         // and kept here would deal one set of rounds and score another.
         .filter(room => room && room.id && room.name && !isHallway(room))
+        .filter(room => existedBefore(room, day))
         .map(room => ({
             id: room.id,
             name: room.name,
@@ -149,20 +159,20 @@ function scoreOdd(rounds, moves) {
 
 /* ---------- the boards ---------- */
 
-function rangeBounds(kind, todayStr) {
-    const iso = d => d.toISOString().slice(0, 10);
-    if (kind === "week") {
-        const start = new Date(todayStr + "T00:00:00Z");
-        start.setUTCDate(start.getUTCDate() - 6);
-        return { from: iso(start), to: todayStr };
-    }
-    if (kind === "month") return { from: todayStr.slice(0, 8) + "01", to: todayStr };
-    return { from: "0000-01-01", to: "9999-12-31" };
-}
+/* rangeBounds is shared from _daily.js now. This file's own copy made "This
+   week" the last seven days rolling while Guess the Maze's was the calendar
+   week from Monday — two spans under one label, and the combined board
+   (below) summed one of each. Both boards print "Since <weekFrom>" under
+   the tab, so the copy was already honest about whichever it got; now it
+   is the same Monday in every column. */
 
+/* Sorted before grouping so `$last` really is the newest name and avatar —
+   see the matching note on board() in guess-scores.js — and tie-broken on
+   the player id so level rows keep one order between reads. */
 async function board(col, game, from, to) {
     const rows = await col.aggregate([
         { $match: { game, day: { $gte: from, $lte: to } } },
+        { $sort: { day: 1, at: 1 } },
         {
             $group: {
                 _id: "$playerId",
@@ -173,7 +183,7 @@ async function board(col, game, from, to) {
                 avatar: { $last: "$avatar" }
             }
         },
-        { $sort: { points: -1, days: 1 } },
+        { $sort: { points: -1, days: 1, _id: 1 } },
         { $limit: BOARD_SIZE }
     ]).toArray();
     return rows.map(r => ({ id: r._id, name: r.name, avatar: r.avatar, points: r.points, solved: r.solved, days: r.days }));
@@ -194,22 +204,39 @@ async function board(col, game, from, to) {
    needs every row, and this is a leaderboard, not an audit. */
 const COMBINE_DEPTH = 200;
 
+/* Sorted before grouping so `$last` is the newest name, and carrying
+   `lastAt` out of the group so fold() can tell which of a player's two rows
+   (one per collection) is the more recent — see there. */
 async function playerTotals(col, match) {
     return col.aggregate([
         { $match: match },
+        { $sort: { day: 1, at: 1 } },
         {
             $group: {
                 _id: { player: "$playerId", game: "$game" },
                 points: { $sum: "$points" },
                 days: { $sum: 1 },
                 name: { $last: "$name" },
-                avatar: { $last: "$avatar" }
+                avatar: { $last: "$avatar" },
+                lastAt: { $max: "$at" }
             }
         },
-        { $sort: { points: -1 } },
+        { $sort: { points: -1, "_id.player": 1 } },
         { $limit: COMBINE_DEPTH }
     ]).toArray();
 }
+
+/* The daily_scores half of the combined board is restricted to the games
+   that are still played.
+
+   daily_scores still holds every Ratrospect and One Wall row ever
+   submitted — deliberately; see daily-games.js — and the combined board
+   matched on the day alone, so a month or all-time total quietly included
+   points from games that no longer exist. A player who had been good at
+   Ratrospect sat above people who had played everything that is actually
+   on offer, with a "games" pill counting a game nobody can open. GAMES is
+   the list of live games this endpoint serves, so it is the filter. */
+const liveGames = match => Object.assign({ game: { $in: GAMES } }, match);
 
 function fold(...lists) {
     const byPlayer = new Map();
@@ -217,24 +244,34 @@ function fold(...lists) {
         for (const r of list) {
             const id = r._id && r._id.player !== undefined ? r._id.player : r._id;
             if (!id) continue;
-            const seen = byPlayer.get(id) || { id, points: 0, days: 0, games: new Set(), name: "", avatar: "" };
+            const seen = byPlayer.get(id) ||
+                { id, points: 0, days: 0, games: new Set(), name: "", avatar: "", at: "", avatarAt: "" };
             seen.points += r.points || 0;
             seen.days += r.days || 0;
             // guess_scores rows carry no `game` field of their own — the
             // collection IS the game — so the caller labels them.
             seen.games.add((r._id && r._id.game) || r.game || "guess");
-            // Newest name wins, so a Discord rename shows through rather
-            // than the board keeping whatever they were first called.
-            if (r.name) seen.name = r.name;
-            if (r.avatar) seen.avatar = r.avatar;
+            /* Newest name wins, so a Discord rename shows through rather
+               than the board keeping whatever they were first called.
+
+               "Newest" by the rows' own submission times. It used to be
+               whichever list was folded last, which is always the Guess the
+               Maze one — so a player renamed since their last Guess the
+               Maze day kept their old name here however recently they had
+               played Odd One Out. ISO strings compare as times. */
+            const at = r.lastAt || "";
+            if (r.name && at >= seen.at) { seen.name = r.name; seen.at = at; }
+            if (r.avatar && at >= seen.avatarAt) { seen.avatar = r.avatar; seen.avatarAt = at; }
             byPlayer.set(id, seen);
         }
     }
     return [...byPlayer.values()]
         .map(r => ({ id: r.id, name: r.name, avatar: r.avatar, points: r.points, days: r.days, games: r.games.size }))
         // Points first; then more games played, because doing all three is
-        // the thing this board exists to notice.
-        .sort((a, b) => b.points - a.points || b.games - a.games || a.days - b.days)
+        // the thing this board exists to notice; then fewer days; then the
+        // id, only so that rows level on everything keep one order.
+        .sort((a, b) => b.points - a.points || b.games - a.games || a.days - b.days ||
+            (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
         .slice(0, BOARD_SIZE);
 }
 
@@ -252,10 +289,12 @@ async function combinedBoards(db, event, params) {
 
     try {
         const [dToday, gToday, dWeek, gWeek, dMonth, gMonth, dAll, gAll] = await Promise.all([
-            playerTotals(daily, { day }), playerTotals(guess, { day }),
-            playerTotals(daily, span(week.from, week.to)), playerTotals(guess, span(week.from, week.to)),
-            playerTotals(daily, span(month.from, month.to)), playerTotals(guess, span(month.from, month.to)),
-            playerTotals(daily, span(all.from, all.to)), playerTotals(guess, span(all.from, all.to))
+            // daily_scores through liveGames — see there. guess_scores is
+            // one game by construction and needs no filter.
+            playerTotals(daily, liveGames({ day })), playerTotals(guess, { day }),
+            playerTotals(daily, liveGames(span(week.from, week.to))), playerTotals(guess, span(week.from, week.to)),
+            playerTotals(daily, liveGames(span(month.from, month.to))), playerTotals(guess, span(month.from, month.to)),
+            playerTotals(daily, liveGames(span(all.from, all.to))), playerTotals(guess, span(all.from, all.to))
         ]);
 
         /* Eight aggregations across two collections is the most
@@ -285,7 +324,15 @@ exports.handler = async (event) => {
         return json(500, { error: "Database connection failed" });
     }
     const col = db.collection(COLLECTION);
-    await ensureIndexes(col);
+    /* A missing unique index only matters to a WRITE — the boards still read
+       correctly without it — so a GET carries on and anything else is
+       refused rather than allowed to write a second row for the day. */
+    try {
+        await ensureIndexes(col);
+    } catch (e) {
+        console.error("daily-scores: unique index unavailable", e);
+        if (event.httpMethod !== "GET") return json(503, { error: "Scores can't be saved just now. Try again in a minute." });
+    }
 
     const params = event.queryStringParameters || {};
 
@@ -326,13 +373,23 @@ exports.handler = async (event) => {
         // All four spans in one request: they are small, they are read
         // together, and a results panel whose tabs each cost a round trip
         // feels broken in a way four cheap aggregations do not.
-        const [todayRows, weekRows, monthRows, allRows] = await Promise.all([
-            col.find({ game, day }, { projection: { _id: 0, playerId: 1, name: 1, avatar: 1, points: 1, solved: 1, grid: 1 } })
-                .sort({ points: -1, at: 1 }).limit(BOARD_SIZE).toArray(),
-            board(col, game, week.from, week.to),
-            board(col, game, month.from, month.to),
-            board(col, game, all.from, all.to)
-        ]);
+        //
+        // Inside a try, as guess-scores.js has it: a failed query here was
+        // an unhandled rejection, which Netlify answers with its own bare
+        // 502 page rather than JSON the results panel knows how to read.
+        let todayRows, weekRows, monthRows, allRows;
+        try {
+            [todayRows, weekRows, monthRows, allRows] = await Promise.all([
+                col.find({ game, day }, { projection: { _id: 0, playerId: 1, name: 1, avatar: 1, points: 1, solved: 1, grid: 1 } })
+                    .sort({ points: -1, at: 1, playerId: 1 }).limit(BOARD_SIZE).toArray(),
+                board(col, game, week.from, week.to),
+                board(col, game, month.from, month.to),
+                board(col, game, all.from, all.to)
+            ]);
+        } catch (e) {
+            console.error("daily-scores: board read failed", e);
+            return json(500, { error: "Could not read the scores" });
+        }
 
         /* Edge-cached for fifteen seconds — see BOARD_CDN_CACHE in
            _cache.js. Nothing caller-specific is read or returned on this

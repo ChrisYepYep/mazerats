@@ -14,11 +14,35 @@
 
 const { blobStore } = require("./_blobs.js");
 const { SECURITY_HEADERS } = require("./_headers");
+const { isOwnerWrite } = require("./_auth");
 
 const ENDPOINT = "https://furniindex.com/api/mazerats/all";
 const PAGE_SIZE = 100;          // their cap; anything larger is ignored
 const CACHE_KEY = "catalogue.json";
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/* How long FurniIndex gets, per page and for the whole walk.
+
+   This is not only the admin picker's problem. The public /rooms and
+   /events go through _furni-payload.js, which asks for this catalogue on a
+   cold container — and a fetch with no timeout waits as long as FurniIndex
+   cares to take, which is the archive's front page waiting with it. Five
+   seconds a page is generous for 100 rows; the overall cap keeps thirteen
+   slow pages from adding up to a function timeout. */
+const PAGE_TIMEOUT_MS = 5000;
+const REFRESH_BUDGET_MS = 8000;
+/* With NO copy to fall back on there is nothing to protect by giving up
+   early, and the command-line tools (tools/furni-scan-local.js and friends)
+   call getCatalogue with no Blobs store at all — so that case gets the
+   longer walk. _furni-payload.js puts its own, shorter cap on the public
+   path, so the archive never waits on this one. */
+const COLD_BUDGET_MS = 60000;
+
+/* After a refresh fails, how long a stale copy is served without trying
+   again. Without it, every request on a day FurniIndex is down would spend
+   its own five seconds finding that out. */
+const RETRY_AFTER_FAILURE_MS = 60 * 1000;
+let lastFailureAt = 0;
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -26,12 +50,28 @@ const json = (statusCode, data) => ({
     body: JSON.stringify(data)
 });
 
-async function fetchPage(page) {
+async function fetchPage(page, outer) {
     const headers = {};
     if (process.env.FURNIINDEX_API_KEY) {
         headers.Authorization = `Bearer ${process.env.FURNIINDEX_API_KEY}`;
     }
-    const res = await fetch(`${ENDPOINT}?page=${page}&limit=${PAGE_SIZE}`, { headers });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PAGE_TIMEOUT_MS);
+    const onOuterAbort = () => controller.abort();
+    if (outer) {
+        if (outer.aborted) controller.abort();
+        else outer.addEventListener("abort", onOuterAbort, { once: true });
+    }
+    try {
+        return await readPage(page, headers, controller.signal);
+    } finally {
+        clearTimeout(timer);
+        if (outer) outer.removeEventListener("abort", onOuterAbort);
+    }
+}
+
+async function readPage(page, headers, signal) {
+    const res = await fetch(`${ENDPOINT}?page=${page}&limit=${PAGE_SIZE}`, { headers, signal });
     if (res.status === 401) {
         // FurniIndex began requiring the header partway through this being
         // built, so a 401 is nearly always about the key rather than about
@@ -69,12 +109,20 @@ async function fetchPage(page) {
    is the useful one of the three: it is Habbo's own name for the furni
    (`anniv_balloongift_2`), stable across their site and ours, where an
    icon URL is only a CDN path that can be rewritten under us. */
-async function fetchCatalogue() {
-    const first = await fetchPage(1);
-    const all = first.results.slice();
-    for (let page = 2; page <= first.totalPages; page++) {
-        const next = await fetchPage(page);
-        all.push(...next.results);
+async function fetchCatalogue(budgetMs = REFRESH_BUDGET_MS) {
+    const budget = new AbortController();
+    const budgetTimer = setTimeout(() => budget.abort(), budgetMs);
+    const all = [];
+    let first;
+    try {
+        first = await fetchPage(1, budget.signal);
+        all.push(...first.results);
+        for (let page = 2; page <= first.totalPages; page++) {
+            const next = await fetchPage(page, budget.signal);
+            all.push(...next.results);
+        }
+    } finally {
+        clearTimeout(budgetTimer);
     }
     return {
         fetchedAt: Date.now(),
@@ -97,19 +145,42 @@ async function fetchCatalogue() {
     };
 }
 
+/* A day-old catalogue is refreshed, but a refresh that fails is not an
+   outage: the stale copy is served instead, because furni that were right
+   yesterday are right today to within a release or two. Only a forced
+   refresh (the owner asking on purpose) or having no copy at all lets the
+   failure through. */
 async function getCatalogue({ force = false } = {}) {
     const store = blobStore("furni");
-    if (!force) {
-        const cached = await store.get(CACHE_KEY, { type: "json" }).catch(() => null);
-        if (cached && Date.now() - cached.fetchedAt < MAX_AGE_MS) return cached;
+    const cached = await store.get(CACHE_KEY, { type: "json" }).catch(() => null);
+    if (!force && cached && Date.now() - cached.fetchedAt < MAX_AGE_MS) return cached;
+    if (!force && cached && Date.now() - lastFailureAt < RETRY_AFTER_FAILURE_MS) return cached;
+    let fresh;
+    try {
+        fresh = await fetchCatalogue(cached && !force ? REFRESH_BUDGET_MS : COLD_BUDGET_MS);
+    } catch (e) {
+        lastFailureAt = Date.now();
+        if (!force && cached) {
+            console.warn("furni-catalogue: refresh failed, serving the stale copy -", e.message);
+            return cached;
+        }
+        throw e;
     }
-    const fresh = await fetchCatalogue();
-    await store.setJSON(CACHE_KEY, fresh);
+    lastFailureAt = 0;
+    await store.setJSON(CACHE_KEY, fresh).catch(e => {
+        console.warn("furni-catalogue: could not store the refreshed copy -", e.message);
+    });
     return fresh;
 }
 
 exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
+    /* A forced refresh is 13 requests to FurniIndex on an anonymous caller's
+       say-so — a way to spend their goodwill and our function time from
+       outside. Owners only, the same as the furni scans. */
+    if (params.refresh === "1" && !(await isOwnerWrite(event))) {
+        return json(403, { error: "Only an owner can refresh the furni catalogue." });
+    }
     try {
         const catalogue = await getCatalogue({ force: params.refresh === "1" });
         const q = (params.q || "").trim().toLowerCase();
@@ -189,7 +260,13 @@ exports.handler = async (event) => {
             items: (limit > 0) ? items.slice(0, limit) : items
         });
     } catch (err) {
-        return json(502, { error: err.message });
+        /* The detailed reason stays in the function log. Some of these
+           messages are written to diagnose a missing key — its length, and
+           the names of the environment variables this function can see —
+           which is exactly right for whoever reads the log and exactly
+           wrong for a public response. */
+        console.error("furni-catalogue:", err.message);
+        return json(502, { error: "The furni catalogue could not be reached just now." });
     }
 };
 

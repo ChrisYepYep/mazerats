@@ -4,7 +4,7 @@
    are private submissions rather than public site content. */
 const crypto = require("crypto");
 const { getDb } = require("./_db");
-const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { hasAccount, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 
@@ -37,6 +37,22 @@ const DISCORD_MAX = 60;
 // keep reliable in-memory state between invocations.
 const RATE_LIMIT_COUNT = 5;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+
+function countRecent(messages, ip) {
+    const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
+    return messages.countDocuments({ ip, createdAt: { $gte: since } });
+}
+
+/* The index that count runs on. Without it every submission scans the whole
+   collection, and the public can make as many submissions as the cap
+   allows. createIndex is a no-op when the index exists; asked once per warm
+   container, and never allowed to fail a submission. */
+let indexed = false;
+async function ensureIndexes(messages) {
+    if (indexed) return;
+    await messages.createIndex({ ip: 1, createdAt: 1 }).catch(() => {});
+    indexed = true;
+}
 
 function clientIp(event) {
     // Only the Netlify-computed value — never x-forwarded-for, which is
@@ -94,7 +110,8 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("contact: database connection failed", e);
+        return json(503, { error: "Database connection failed" });
     }
     const messages = db.collection("contact_messages");
 
@@ -136,9 +153,9 @@ exports.handler = async (event) => {
                 return json(201, { id: crypto.randomUUID(), username: "", discord: "", message: "", createdAt: new Date().toISOString() });
             }
 
-            const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
-            const recentCount = await messages.countDocuments({ ip, createdAt: { $gte: since } });
-            if (recentCount >= RATE_LIMIT_COUNT) {
+            // A cheap early refusal for the caller already well over the cap.
+            // Not the real check — see after the insert below for that.
+            if (await countRecent(messages, ip) >= RATE_LIMIT_COUNT) {
                 return json(429, { error: "Too many messages sent — please wait a bit before trying again." });
             }
         }
@@ -166,12 +183,33 @@ exports.handler = async (event) => {
             message,
             createdAt: new Date().toISOString()
         };
-        await messages.insertOne({ ...entry, from, ip });
+        /* INSERT FIRST, THEN COUNT — and take it back if it went over.
+
+           Counting before inserting is a check-then-act race: a burst of
+           requests fired together all count the same four earlier messages,
+           all see room for one more, and all get in. Inserting first means
+           every request's own row is already visible to every other
+           request's count, so however they interleave, no more than the cap
+           can come out of the window with their row still standing. Under a
+           real race this can refuse one more than it strictly had to, which
+           is the direction to be wrong in. The email goes only after the
+           check, so a refused message costs nobody an inbox. */
+        try {
+            await ensureIndexes(messages);
+            await messages.insertOne({ ...entry, from, ip });
+            if (ip && await countRecent(messages, ip) > RATE_LIMIT_COUNT) {
+                await messages.deleteOne({ id: entry.id });
+                return json(429, { error: "Too many messages sent — please wait a bit before trying again." });
+            }
+        } catch (e) {
+            console.error("contact: could not save a message", e);
+            return json(503, { error: "Your message could not be saved just now. Please try again in a minute." });
+        }
         await sendNotificationEmail({ username, discord: entry.discord, message, verified: Boolean(player) });
         return json(201, entry);
     }
 
-    if (!isAuthorized(event)) return UNAUTHORIZED;
+    if (!(await hasAccount(event))) return UNAUTHORIZED;
 
     // Reading the messages is part of viewing the admin page, so it stops at
     // isAuthorized above. Deleting one does not.

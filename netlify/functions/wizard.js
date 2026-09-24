@@ -335,7 +335,8 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("wizard: database connection failed", e);
+        return json(500, { error: "Database connection failed" });
     }
     const wizard = db.collection("wizard");
 

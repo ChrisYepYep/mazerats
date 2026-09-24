@@ -15,12 +15,13 @@ const { headersFor } = require("./_headers");
 
 const CACHE = "public, s-maxage=3600, stale-while-revalidate=86400";
 
-function originOf(event) {
-    const headers = event.headers || {};
-    const host = headers["x-forwarded-host"] || headers.host;
-    if (!host) return process.env.URL || "https://mazerats.net";
-    const proto = /^localhost|^127\./.test(host) ? "http" : "https";
-    return `${proto}://${host}`;
+/* The site's address from the deploy's configuration, never from the
+   request's Host or x-forwarded-host — those are the caller's to set, and
+   this answer is cached at the edge for an hour, so one crafted request
+   could have published a sitemap full of somebody else's domain. See the
+   same function in share.js. */
+function originOf() {
+    return String(process.env.URL || "https://mazerats.net").replace(/\/+$/, "");
 }
 
 function esc(str) {
@@ -46,7 +47,7 @@ function url(loc, when, priority) {
 }
 
 exports.handler = async (event) => {
-    const origin = originOf(event);
+    const origin = originOf();
 
     // The pages themselves, which exist whether or not the database answers.
     const entries = [

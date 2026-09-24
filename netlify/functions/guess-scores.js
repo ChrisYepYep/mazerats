@@ -36,7 +36,7 @@ const { SECURITY_HEADERS } = require("./_headers");
    — it was written before _daily.js existed and its day is dealt from its own
    POINTS array — but "is this day still accepting scores" is a rule about the
    clock rather than about the game, and both games want the same answer. */
-const { dayIsOpen, daySeed, isHallway } = require("./_daily");
+const { dayIsOpen, daySeed, isHallway, existedBefore, rangeBounds } = require("./_daily");
 
 const COLLECTION = "guess_scores";
 const ROUNDS = 5;
@@ -65,7 +65,12 @@ async function ensureIndexes(col) {
     // One row per player per day. This is the rule that makes "first
     // submission wins" enforceable by the database rather than by a
     // check-then-write race.
-    await col.createIndex({ day: 1, playerId: 1 }, { unique: true }).catch(() => {});
+    //
+    // Via ensureUniqueIndex, which THROWS on failure. It was a createIndex
+    // with the error swallowed and `ensured` set anyway, so an index that
+    // never got built was remembered as built and the rule failed open —
+    // a second submission for the same day simply inserted a second row.
+    await ensureUniqueIndex(col, ["day", "playerId"]);
     await col.createIndex({ day: 1, points: -1 }).catch(() => {});
     await col.createIndex({ playerId: 1 }).catch(() => {});
     ensured = true;
@@ -96,19 +101,42 @@ function seededRandom(seed) {
 const normalise = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /* The five maze names for a day, worked out exactly as the page works them
-   out. Cached per day on the warm container: it is the same answer for
-   every request all day, and it costs a full read of the archive. */
-const answerCache = { day: "", names: null };
+   out. Cached on the warm container, because it costs a full read of the
+   archive — but for MINUTES, not for the life of the container.
+
+   It used to be kept for as long as the container stayed warm, which could
+   be hours. So a picture added to a maze at noon split the day in two: page
+   loads after the edit dealt a new five (the shuffle runs over every
+   picture, so one new picture moves everything), while this container
+   went on scoring against the morning's five and rejected every correct
+   answer from the afternoon's players — and a cold container elsewhere,
+   reading the archive fresh, did the reverse to the morning's.
+
+   Nothing on this side can make a mid-day gallery edit harmless: the page
+   and the server both deal from whatever the archive holds, and a gallery
+   entry carries no timestamp that would let either of them ignore a new
+   one (see existedBefore in _daily.js, which handles whole new MAZES).
+   What the short life does is stop this cache being the thing that keeps
+   the two sides disagreeing: within a few minutes of an edit the server is
+   scoring the same deal new page loads are dealing, which is about the
+   same lag as the edge cache on /rooms itself (s-maxage=60 in _cache.js).
+   Morning players who finish after that are still scored against the new
+   deal — the honest limit of a game dealt from a live archive, and the
+   reason gallery edits are best made outside the day's busy hours. */
+const ANSWER_TTL_MS = 3 * 60 * 1000;
+const answerCache = { day: "", names: null, at: 0 };
 
 async function answersFor(day) {
-    if (answerCache.day === day && answerCache.names) return answerCache.names;
+    if (answerCache.day === day && answerCache.names && Date.now() - answerCache.at < ANSWER_TTL_MS) {
+        return answerCache.names;
+    }
 
     const db = await getDb();
-    /* tags comes back for isHallway below, and for nothing else. Worth
-       saying because a projection is a list of what this function needs and
-       this one field is needed by a filter rather than by the answer. */
+    /* tags comes back for isHallway below, and createdAt for existedBefore;
+       neither is part of the answer. Worth saying because a projection is a
+       list of what this function needs, and these are needed by filters. */
     const rooms = await db.collection("rooms")
-        .find({}, { projection: { id: 1, name: 1, tags: 1, gallery: 1 } })
+        .find({}, { projection: { id: 1, name: 1, tags: 1, gallery: 1, createdAt: 1 } })
         .toArray();
 
     const pool = [];
@@ -117,6 +145,8 @@ async function answersFor(day) {
         // Exactly as js/guess.js builds its pool — a room dropped there and
         // kept here would deal one set of five and score another.
         if (isHallway(room)) return;
+        // Only mazes catalogued before the day began — see existedBefore.
+        if (!existedBefore(room, day)) return;
         (room.gallery || []).forEach(g => {
             if (g && g.image) pool.push({ maze: room, image: g.image });
         });
@@ -163,6 +193,7 @@ async function answersFor(day) {
 
     answerCache.day = day;
     answerCache.names = chosen.map(c => c.maze.name);
+    answerCache.at = Date.now();
     return answerCache.names;
 }
 
@@ -194,34 +225,30 @@ function scoreRounds(rounds, answers) {
 
 // ---------- the ranges a board can cover ----------
 
-const iso = (d) => d.toISOString().slice(0, 10);
-
-/* Calendar weeks and months in UTC, matching the day the game itself turns
-   over on. Calendar rather than rolling: the point of a shorter board is
-   that everyone starts level again on Monday, and a rolling seven days
-   never starts anyone level. */
-function rangeBounds(kind, todayStr) {
-    const today = new Date(todayStr + "T00:00:00Z");
-    if (kind === "day") return { from: todayStr, to: todayStr };
-    if (kind === "week") {
-        // getUTCDay is 0 for Sunday; shift so weeks run Monday to Sunday.
-        const back = (today.getUTCDay() + 6) % 7;
-        const start = new Date(today);
-        start.setUTCDate(start.getUTCDate() - back);
-        return { from: iso(start), to: todayStr };
-    }
-    if (kind === "month") {
-        return { from: todayStr.slice(0, 8) + "01", to: todayStr };
-    }
-    return { from: "0000-01-01", to: "9999-12-31" };   // all time
-}
+/* rangeBounds now lives in _daily.js and is shared with daily-scores.js.
+   This file's copy was already the calendar week from Monday; Odd One
+   Out's was a rolling seven days, so the same "This week" tab covered two
+   different spans in two columns side by side. See the note there. */
 
 /* One board over a span of days. Grouped per player so a month's board is
    a total rather than a list of days, and ordered by points with fewer days
-   winning ties — someone who scored the same in less play was better at it. */
+   winning ties — someone who scored the same in less play was better at it.
+
+   SORTED BEFORE IT IS GROUPED, which is what makes `$last` mean newest.
+   $group takes documents in whatever order they arrive, and without a sort
+   that is Mongo's natural order — close to insertion order most of the
+   time and promised by nothing — so "newest row wins the name" was really
+   "some row wins the name". Day then submission time, oldest first, so the
+   last one into each group is the player's most recent.
+
+   And a final tiebreak on the player id after points and days, so two
+   players level on both come back in the same order on every read rather
+   than swapping places between refreshes. The page numbers them as a tie
+   either way (Daily.ranks); this only keeps the order still. */
 async function board(col, from, to, limit) {
     const rows = await col.aggregate([
         { $match: { day: { $gte: from, $lte: to } } },
+        { $sort: { day: 1, at: 1 } },
         { $group: {
             _id: "$playerId",
             points: { $sum: "$points" },
@@ -232,7 +259,7 @@ async function board(col, from, to, limit) {
             name: { $last: "$name" },
             avatar: { $last: "$avatar" }
         } },
-        { $sort: { points: -1, days: 1 } },
+        { $sort: { points: -1, days: 1, _id: 1 } },
         { $limit: limit }
     ]).toArray();
     return rows.map(r => ({ id: r._id, name: r.name, avatar: r.avatar, points: r.points, solved: r.solved, days: r.days }));
@@ -246,7 +273,15 @@ exports.handler = async (event) => {
         return json(500, { error: "Database connection failed" });
     }
     const col = db.collection(COLLECTION);
-    await ensureIndexes(col);
+    /* A missing unique index only matters to a WRITE — the board still reads
+       correctly without it — so a GET carries on and anything else is
+       refused rather than allowed to write a second row for the day. */
+    try {
+        await ensureIndexes(col);
+    } catch (e) {
+        console.error("guess-scores: unique index unavailable", e);
+        if (event.httpMethod !== "GET") return json(503, { error: "Scores can't be saved just now. Try again in a minute." });
+    }
 
     // ---------- read the boards ----------
     if (event.httpMethod === "GET") {
@@ -267,7 +302,8 @@ exports.handler = async (event) => {
                 // being grouped, because it carries the grid for the
                 // head-to-head and there is nothing to sum over one day.
                 col.find({ day }, { projection: { _id: 0, playerId: 1, name: 1, avatar: 1, points: 1, solved: 1, grid: 1 } })
-                    .sort({ points: -1, at: 1 })
+                    // playerId last, so two identical rows cannot swap.
+                    .sort({ points: -1, at: 1, playerId: 1 })
                     .limit(BOARD_SIZE)
                     .toArray(),
                 board(col, week.from, week.to, BOARD_SIZE),

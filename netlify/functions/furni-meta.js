@@ -42,6 +42,7 @@
 const { blobStore } = require("./_blobs.js");
 const { SECURITY_HEADERS } = require("./_headers");
 const { fetchFurnidata } = require("./_furnidata.js");
+const { isOwnerWrite } = require("./_auth");
 
 /* The stored copy, required rather than read at run time so the bundler
    carries it into the deployed function. ~1.3MB of JSON, parsed once per
@@ -49,6 +50,7 @@ const { fetchFurnidata } = require("./_furnidata.js");
 const SNAPSHOT = require("./_furnidata.json");
 
 const CACHE_KEY = "furnidata.json";
+const MIN_REFRESH_FRACTION = 0.8;
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -79,6 +81,17 @@ async function getFurniMeta({ force = false } = {}) {
 
     if (force) {
         const fresh = await fetchFurnidata();
+        /* A refreshed copy is stored only if it looks like the whole thing.
+           Whatever is stored here WINS over the committed snapshot from then
+           on (see below), so a truncated download, or a day Origins served
+           half its furnidata, would otherwise quietly take the seats out of
+           Fallin' Furni until somebody noticed and re-ran the tool. Furni are
+           added over time, not removed; a count well below the snapshot's is
+           a broken fetch, not news. */
+        const floor = Math.floor((SNAPSHOT.count || 0) * MIN_REFRESH_FRACTION);
+        if (!fresh || !fresh.items || !(fresh.count >= floor)) {
+            throw new Error(`refreshed furnidata has ${fresh && fresh.count} items, below ${floor}; not stored`);
+        }
         await store.setJSON(CACHE_KEY, fresh).catch(() => { /* served either way */ });
         return fresh;
     }
@@ -90,6 +103,12 @@ async function getFurniMeta({ force = false } = {}) {
 
 exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
+    /* A refresh fetches ~9.6MB from Origins and can replace what every
+       player's seats are decided by, so it is not something an anonymous
+       query string gets to ask for. Owners only, like the furni scans. */
+    if (params.refresh === "1" && !(await isOwnerWrite(event))) {
+        return { ...json(403, { error: "Only an owner can refresh the furni metadata." }), headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" } };
+    }
     try {
         const data = await getFurniMeta({ force: params.refresh === "1" });
 
@@ -107,9 +126,42 @@ exports.handler = async (event) => {
             return json(200, { count: Object.keys(out).length, items: out });
         }
 
+        /* A named handful, the same narrowing furni-catalogue.js has.
+
+           Fallin' Furni needs the records for the classes its published
+           levels place — about 250 — and was downloading all 15,291 of them
+           (1.32MB) on every page load to find them. The editor still asks
+           with no parameter and gets everything, because a builder can pick
+           any furni there is.
+
+           Exact className match, and a name that matches nothing is simply
+           absent: a narrowing, not a lookup. `count` is how many came back,
+           so the caller can tell an answer from an empty one.
+
+           THROUGH THE EDGE, which the full response is not. The answer is
+           the same for everybody who asks for the same list — no session is
+           read — and the list is the same for every player until a level is
+           published, so a launch-day crowd becomes a handful of function
+           runs. An hour, like the browser header already said; the data
+           only changes with a deploy (which clears the edge) or an owner's
+           ?refresh=1, and new furni are not in any published level yet. */
+        const wanted = (params.classes || "").trim();
+        if (wanted) {
+            const keep = new Set(wanted.split(",").map(s => s.trim()).filter(Boolean));
+            const out = {};
+            for (const c of keep) if (Object.prototype.hasOwnProperty.call(data.items, c)) out[c] = data.items[c];
+            const res = json(200, { count: Object.keys(out).length, items: out });
+            res.headers["Netlify-CDN-Cache-Control"] = "public, durable, s-maxage=3600, stale-while-revalidate=86400";
+            return res;
+        }
+
         return json(200, { count: data.count, items: data.items });
     } catch (err) {
-        return json(502, { error: "Could not read furnidata just now." });
+        console.error("furni-meta:", err.message);
+        /* no-store: the helper's hour-long public header went out on this
+           502 too, so one bad moment could be cached in a player's browser
+           for an hour — and without furnidata the game has no seats. */
+        return { ...json(502, { error: "Could not read furnidata just now." }), headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" } };
     }
 };
 

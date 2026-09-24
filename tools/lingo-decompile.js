@@ -109,8 +109,30 @@ const OPS = {
        op_61, op_64 and op_6e. */
 };
 
-// Which operands are indices into which table, so they can be resolved.
-const NAME_OPS = new Set([0x45, 0x49, 0x4a, 0x4b, 0x4c, 0x4f, 0x50, 0x51, 0x52, 0x56, 0x57, 0x59]);
+/* Which operands are indices into which table, so they can be resolved.
+ *
+ * 0x61, 0x67, 0x5f, 0x62, 0x66 and 0x70 were added by comparing two builds of
+ * hh_room.cct. Habbo's 2026-09-17 update inserted names into the table,
+ * shifting every index after the insertion point, so in a handler whose code
+ * is otherwise identical every name operand moves while nothing else does.
+ * Walking such handlers instruction by instruction and resolving each shifted
+ * operand in its own build gives a clean split:
+ *
+ *     op_45  117 shifted operands, 117 resolve to the same name, 0 do not
+ *     op_4a   86 / 86      op_50   15 / 15      op_57  112 / 112
+ *     op_5f    3 / 3       op_61   40 / 40      op_62   12 / 12
+ *     op_66    6 / 6       op_67  324 / 324     op_70   17 / 17
+ *
+ * against, for comparison, the ones that are NOT name indices and score zero:
+ * op_44 (0 of 66 — it indexes the literal table) and op_53 / op_55 (0 of 24
+ * and 0 of 15 — they are jump offsets).
+ *
+ * This matters beyond pretty output: an unresolved name operand makes a
+ * handler whose code never changed look changed, because the raw number moved.
+ * Before 0x5f/0x62/0x66/0x70 were added here, diffing the two builds reported
+ * 702 changed handlers in hh_room.cct, most of them false. */
+const NAME_OPS = new Set([0x45, 0x49, 0x4a, 0x4b, 0x4c, 0x4f, 0x50, 0x51, 0x52,
+    0x56, 0x57, 0x59, 0x5f, 0x61, 0x62, 0x66, 0x67, 0x70]);
 const CONST_OPS = new Set([0x44]);
 
 function namesFrom(buf) {
@@ -340,4 +362,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { castScripts, disassemble, readScript, namesFrom };
+module.exports = { castScripts, disassemble, readScript, namesFrom, render };

@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   718 rules, 1190 declarations, hues 350 (surfaces) / 212 (accents).
+   767 rules, 1273 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -512,12 +512,13 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .chrome-titlebar::before,
 [data-theme="crimson"] .chrome-titlebar::after {
     background-image: url('../assets/img/crimson/title_pattern.png');
+    filter: brightness(1.2);
 }
 
 [data-theme="crimson"] .chrome-titlebar h1,
 [data-theme="crimson"] .chrome-titlebar h2,
 [data-theme="crimson"] .chrome-titlebar .chrome-title-text {
-    color: #ffffff;
+    color: #fafbfb;
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
 }
 
@@ -687,6 +688,20 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     border: none;
     color: var(--amber-bright);
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+[data-theme="crimson"] .clear-filter-btn {
+    background: transparent;
+    border: none;
+    color: var(--amber-bright);
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+[data-theme="crimson"] .clear-filter-btn:hover,
+[data-theme="crimson"] .clear-filter-btn:focus-visible {
+    color: #ffffff;
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.65);
+    outline: none;
 }
 
 [data-theme="crimson"] .featured-refresh-btn:hover,
@@ -1036,6 +1051,15 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     border-color: var(--amber);
 }
 
+[data-theme="crimson"] .gallery-strip img:focus-visible,
+[data-theme="crimson"] .gallery-strip-missing:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="crimson"] .modal-gallery-img:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="crimson"] .gallery-missing-pill {
     background: rgba(0, 0, 0, 0.5);
     border: 1px solid var(--border);
@@ -1326,7 +1350,15 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] body.is-viewer #furni-scan-all-btn,
 [data-theme="crimson"] body.is-viewer #furni-scan-new-btn,
 [data-theme="crimson"] body.is-viewer .admin-floating-actions .admin-action-pill,
-[data-theme="crimson"] body.is-viewer .admin-form-actions button {
+[data-theme="crimson"] body.is-viewer .admin-form-actions button,
+[data-theme="crimson"] body.is-viewer #wiz-admin-inspector [data-act]:not([data-act="centre"]):not([data-act="multi-none"]),
+[data-theme="crimson"] body.is-viewer #wiz-admin-inspector [data-band],
+[data-theme="crimson"] body.is-viewer .admin-wiz-secret-form .btn,
+[data-theme="crimson"] body.is-viewer .admin-wiz-hold-drop,
+[data-theme="crimson"] body.is-viewer .admin-wiz-inline-form [data-clear],
+[data-theme="crimson"] body.is-viewer #recolour-editor .btn[data-role="save"],
+[data-theme="crimson"] body.is-viewer #recolour-editor .btn[data-role="duplicate"],
+[data-theme="crimson"] body.is-viewer #recolour-editor .btn[data-role="delete"] {
     box-shadow: none;
 }
 
@@ -1688,6 +1720,81 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: #eeeeee;
 }
 
+[data-theme="crimson"] .console-note {
+    color: rgba(238, 238, 238, 0.7);
+}
+
+[data-theme="crimson"] .console-select option,
+[data-theme="crimson"] .console-select optgroup {
+    background: #2b2b2b;
+    color: #eeeeee;
+}
+
+[data-theme="crimson"] .console-info-remove {
+    background: transparent;
+    border: 1px solid #eeeeee;
+    color: #eeeeee;
+}
+
+[data-theme="crimson"] .console-info-remove:hover {
+    background: rgba(238, 238, 238, 0.15);
+}
+
+[data-theme="crimson"] .console-link-btn {
+    border: none;
+    background: none;
+    color: #ffffff;
+}
+
+[data-theme="crimson"] .console-missing-name {
+    border: none;
+    background: none;
+    color: #ffffff;
+}
+
+[data-theme="crimson"] .console-missing-name:hover,
+[data-theme="crimson"] .console-missing-name:focus-visible {
+    outline: none;
+}
+
+[data-theme="crimson"] .console-missing-needs,
+[data-theme="crimson"] .console-missing-note {
+    color: #eeeeee;
+}
+
+[data-theme="crimson"] .console-missing-note {
+    color: rgba(238, 238, 238, 0.7);
+}
+
+[data-theme="crimson"] .console-profile-face {
+    border: 1px solid #eeeeee;
+}
+
+[data-theme="crimson"] .console-profile-name,
+[data-theme="crimson"] .console-profile-head {
+    color: #ffffff;
+}
+
+[data-theme="crimson"] .console-profile-since {
+    color: rgba(238, 238, 238, 0.7);
+}
+
+[data-theme="crimson"] .console-profile-line {
+    color: #eeeeee;
+}
+
+[data-theme="crimson"] .console-profile-bar {
+    border: 1px solid #eeeeee;
+}
+
+[data-theme="crimson"] .console-profile-bar span {
+    background: #eeeeee;
+}
+
+[data-theme="crimson"] .console-profile-list {
+    color: #eeeeee;
+}
+
 [data-theme="crimson"] .console-contributor-name {
     color: #eeeeee;
 }
@@ -1742,12 +1849,12 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     background-image: url('../assets/img/crimson/console/cnsl-tab-search-active.png');
 }
 
-[data-theme="crimson"] #about-btn {
-    background-image: url('../assets/img/crimson/console/cnsl-tab-qmark-inactive.png');
+[data-theme="crimson"] #profile-btn {
+    background-image: url('../assets/img/crimson/console/cnsl-tab-profile-inactive.png');
 }
 
-[data-theme="crimson"] #about-btn.active {
-    background-image: url('../assets/img/crimson/console/cnsl-tab-qmark-active.png');
+[data-theme="crimson"] #profile-btn.active {
+    background-image: url('../assets/img/crimson/console/cnsl-tab-profile-active.png');
 }
 
 [data-theme="crimson"] .custom-scrollbar-wrap--console .custom-scrollbar-track-segment {
@@ -2126,10 +2233,6 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .archive-empty {
-    color: var(--parchment-dim);
-}
-
-[data-theme="crimson"] .archive-empty-also {
     color: var(--parchment-dim);
 }
 
@@ -2937,6 +3040,77 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
+[data-theme="crimson"] .modal-incomplete-panel {
+    color: #090607;
+}
+
+[data-theme="crimson"] .incomplete-title {
+    color: #271a1c;
+}
+
+[data-theme="crimson"] .incomplete-list li::before {
+    border: 1px solid #352427;
+}
+
+[data-theme="crimson"] .incomplete-note {
+    color: #1d1415;
+}
+
+[data-theme="crimson"] .incomplete-trail {
+    color: #3f5a24;
+}
+
+[data-theme="crimson"] .incomplete-help {
+    border: 1px solid #352427;
+    background: #cdd0d3;
+    color: #090607;
+}
+
+[data-theme="crimson"] .incomplete-help:hover,
+[data-theme="crimson"] .incomplete-help:focus-visible {
+    background: #e2e4e5;
+    outline: none;
+}
+
+@media (max-width: 999px) {
+    [data-theme="crimson"] .incomplete-pill {
+        border: 1.5px dashed var(--amber);
+        background: transparent;
+        color: var(--amber-bright);
+    }
+}
+
+@media (max-width: 999px) {
+    [data-theme="crimson"] .incomplete-pop:not([hidden]) {
+        border: 1px solid var(--chrome-border);
+        background: #b8bdc2;
+        color: #090607;
+    }
+}
+
+[data-theme="crimson"] button.tag.tag-filter:hover,
+[data-theme="crimson"] button.tag.tag-filter:focus-visible {
+    border-color: var(--amber);
+    color: var(--parchment);
+    outline: none;
+}
+
+[data-theme="crimson"] button.tag.tag-by {
+    background: transparent;
+}
+
+[data-theme="crimson"] .meta-filter {
+    border: none;
+    background: none;
+    color: inherit;
+}
+
+[data-theme="crimson"] .meta-filter:hover,
+[data-theme="crimson"] .meta-filter:focus-visible {
+    color: var(--amber-bright);
+    outline: none;
+}
+
 [data-theme="crimson"] .updatelog-date {
     color: var(--amber-bright);
 }
@@ -3048,6 +3222,63 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 
 [data-theme="crimson"] .ctl-status.is-bad {
     color: var(--danger);
+}
+
+[data-theme="crimson"] body[data-page="admin"] .admin-nav-grid .chrome-nav-btn {
+    text-shadow: none;
+}
+
+[data-theme="crimson"] .admin-nav-count {
+    background: var(--amber);
+    color: #090607;
+}
+
+[data-theme="crimson"] .de-chip {
+    border: 1.5px solid var(--chrome-highlight);
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .de-chip.is-marked {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: #090607;
+}
+
+[data-theme="crimson"] .de-chip.de-status-new {
+    border-color: var(--amber-bright);
+    color: var(--amber-bright);
+}
+
+[data-theme="crimson"] .de-chip.de-status-accepted {
+    border-color: var(--ok, #7fb069);
+    color: var(--ok, #7fb069);
+}
+
+[data-theme="crimson"] .de-chip.de-status-rejected {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+[data-theme="crimson"] .de-lead-who {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .de-shot {
+    border: 1px solid var(--chrome-border);
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .de-check {
+    color: var(--parchment);
+}
+
+[data-theme="crimson"] .de-hint {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .de-flash {
+    color: var(--amber-bright);
 }
 
 [data-theme="crimson"] .ctl-label {
@@ -3368,6 +3599,38 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 
 @media (pointer: coarse) {
     [data-theme="crimson"] .console-close-btn::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="crimson"] .photo-frame-close::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="crimson"] .timeline-open::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="crimson"] .furni-filter-btn::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="crimson"] .gallery-photo-btn::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="crimson"] .modal .chrome-titlebar .modal-share-btn::after,
+    [data-theme="crimson"] .modal .chrome-titlebar .saved-toggle::after,
+    [data-theme="crimson"] .modal .chrome-titlebar .walked-toggle::after {
         background: transparent;
     }
 }

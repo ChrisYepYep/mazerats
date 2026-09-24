@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   718 rules, 1190 declarations, hues 18 (surfaces) / 38 (accents).
+   767 rules, 1273 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -512,12 +512,13 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] .chrome-titlebar::before,
 [data-theme="pumpkin"] .chrome-titlebar::after {
     background-image: url('../assets/img/pumpkin/title_pattern.png');
+    filter: brightness(1.2);
 }
 
 [data-theme="pumpkin"] .chrome-titlebar h1,
 [data-theme="pumpkin"] .chrome-titlebar h2,
 [data-theme="pumpkin"] .chrome-titlebar .chrome-title-text {
-    color: #ffffff;
+    color: #fefdfc;
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
 }
 
@@ -687,6 +688,20 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     border: none;
     color: var(--amber-bright);
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+[data-theme="pumpkin"] .clear-filter-btn {
+    background: transparent;
+    border: none;
+    color: var(--amber-bright);
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+[data-theme="pumpkin"] .clear-filter-btn:hover,
+[data-theme="pumpkin"] .clear-filter-btn:focus-visible {
+    color: #ffffff;
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.65);
+    outline: none;
 }
 
 [data-theme="pumpkin"] .featured-refresh-btn:hover,
@@ -1036,6 +1051,15 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     border-color: var(--amber);
 }
 
+[data-theme="pumpkin"] .gallery-strip img:focus-visible,
+[data-theme="pumpkin"] .gallery-strip-missing:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .modal-gallery-img:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="pumpkin"] .gallery-missing-pill {
     background: rgba(0, 0, 0, 0.5);
     border: 1px solid var(--border);
@@ -1326,7 +1350,15 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] body.is-viewer #furni-scan-all-btn,
 [data-theme="pumpkin"] body.is-viewer #furni-scan-new-btn,
 [data-theme="pumpkin"] body.is-viewer .admin-floating-actions .admin-action-pill,
-[data-theme="pumpkin"] body.is-viewer .admin-form-actions button {
+[data-theme="pumpkin"] body.is-viewer .admin-form-actions button,
+[data-theme="pumpkin"] body.is-viewer #wiz-admin-inspector [data-act]:not([data-act="centre"]):not([data-act="multi-none"]),
+[data-theme="pumpkin"] body.is-viewer #wiz-admin-inspector [data-band],
+[data-theme="pumpkin"] body.is-viewer .admin-wiz-secret-form .btn,
+[data-theme="pumpkin"] body.is-viewer .admin-wiz-hold-drop,
+[data-theme="pumpkin"] body.is-viewer .admin-wiz-inline-form [data-clear],
+[data-theme="pumpkin"] body.is-viewer #recolour-editor .btn[data-role="save"],
+[data-theme="pumpkin"] body.is-viewer #recolour-editor .btn[data-role="duplicate"],
+[data-theme="pumpkin"] body.is-viewer #recolour-editor .btn[data-role="delete"] {
     box-shadow: none;
 }
 
@@ -1688,6 +1720,81 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: #eeeeee;
 }
 
+[data-theme="pumpkin"] .console-note {
+    color: rgba(238, 238, 238, 0.7);
+}
+
+[data-theme="pumpkin"] .console-select option,
+[data-theme="pumpkin"] .console-select optgroup {
+    background: #2b2b2b;
+    color: #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-info-remove {
+    background: transparent;
+    border: 1px solid #eeeeee;
+    color: #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-info-remove:hover {
+    background: rgba(238, 238, 238, 0.15);
+}
+
+[data-theme="pumpkin"] .console-link-btn {
+    border: none;
+    background: none;
+    color: #ffffff;
+}
+
+[data-theme="pumpkin"] .console-missing-name {
+    border: none;
+    background: none;
+    color: #ffffff;
+}
+
+[data-theme="pumpkin"] .console-missing-name:hover,
+[data-theme="pumpkin"] .console-missing-name:focus-visible {
+    outline: none;
+}
+
+[data-theme="pumpkin"] .console-missing-needs,
+[data-theme="pumpkin"] .console-missing-note {
+    color: #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-missing-note {
+    color: rgba(238, 238, 238, 0.7);
+}
+
+[data-theme="pumpkin"] .console-profile-face {
+    border: 1px solid #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-profile-name,
+[data-theme="pumpkin"] .console-profile-head {
+    color: #ffffff;
+}
+
+[data-theme="pumpkin"] .console-profile-since {
+    color: rgba(238, 238, 238, 0.7);
+}
+
+[data-theme="pumpkin"] .console-profile-line {
+    color: #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-profile-bar {
+    border: 1px solid #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-profile-bar span {
+    background: #eeeeee;
+}
+
+[data-theme="pumpkin"] .console-profile-list {
+    color: #eeeeee;
+}
+
 [data-theme="pumpkin"] .console-contributor-name {
     color: #eeeeee;
 }
@@ -1742,12 +1849,12 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     background-image: url('../assets/img/pumpkin/console/cnsl-tab-search-active.png');
 }
 
-[data-theme="pumpkin"] #about-btn {
-    background-image: url('../assets/img/pumpkin/console/cnsl-tab-qmark-inactive.png');
+[data-theme="pumpkin"] #profile-btn {
+    background-image: url('../assets/img/pumpkin/console/cnsl-tab-profile-inactive.png');
 }
 
-[data-theme="pumpkin"] #about-btn.active {
-    background-image: url('../assets/img/pumpkin/console/cnsl-tab-qmark-active.png');
+[data-theme="pumpkin"] #profile-btn.active {
+    background-image: url('../assets/img/pumpkin/console/cnsl-tab-profile-active.png');
 }
 
 [data-theme="pumpkin"] .custom-scrollbar-wrap--console .custom-scrollbar-track-segment {
@@ -2126,10 +2233,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .archive-empty {
-    color: var(--parchment-dim);
-}
-
-[data-theme="pumpkin"] .archive-empty-also {
     color: var(--parchment-dim);
 }
 
@@ -2937,6 +3040,77 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
+[data-theme="pumpkin"] .modal-incomplete-panel {
+    color: #0d0501;
+}
+
+[data-theme="pumpkin"] .incomplete-title {
+    color: #32170c;
+}
+
+[data-theme="pumpkin"] .incomplete-list li::before {
+    border: 1px solid #462010;
+}
+
+[data-theme="pumpkin"] .incomplete-note {
+    color: #251108;
+}
+
+[data-theme="pumpkin"] .incomplete-trail {
+    color: #3f5a24;
+}
+
+[data-theme="pumpkin"] .incomplete-help {
+    border: 1px solid #462010;
+    background: #e8d8bd;
+    color: #0d0501;
+}
+
+[data-theme="pumpkin"] .incomplete-help:hover,
+[data-theme="pumpkin"] .incomplete-help:focus-visible {
+    background: #f2eadb;
+    outline: none;
+}
+
+@media (max-width: 999px) {
+    [data-theme="pumpkin"] .incomplete-pill {
+        border: 1.5px dashed var(--amber);
+        background: transparent;
+        color: var(--amber-bright);
+    }
+}
+
+@media (max-width: 999px) {
+    [data-theme="pumpkin"] .incomplete-pop:not([hidden]) {
+        border: 1px solid var(--chrome-border);
+        background: #dfc79e;
+        color: #0d0501;
+    }
+}
+
+[data-theme="pumpkin"] button.tag.tag-filter:hover,
+[data-theme="pumpkin"] button.tag.tag-filter:focus-visible {
+    border-color: var(--amber);
+    color: var(--parchment);
+    outline: none;
+}
+
+[data-theme="pumpkin"] button.tag.tag-by {
+    background: transparent;
+}
+
+[data-theme="pumpkin"] .meta-filter {
+    border: none;
+    background: none;
+    color: inherit;
+}
+
+[data-theme="pumpkin"] .meta-filter:hover,
+[data-theme="pumpkin"] .meta-filter:focus-visible {
+    color: var(--amber-bright);
+    outline: none;
+}
+
 [data-theme="pumpkin"] .updatelog-date {
     color: var(--amber-bright);
 }
@@ -3048,6 +3222,63 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 [data-theme="pumpkin"] .ctl-status.is-bad {
     color: var(--danger);
+}
+
+[data-theme="pumpkin"] body[data-page="admin"] .admin-nav-grid .chrome-nav-btn {
+    text-shadow: none;
+}
+
+[data-theme="pumpkin"] .admin-nav-count {
+    background: var(--amber);
+    color: #0d0501;
+}
+
+[data-theme="pumpkin"] .de-chip {
+    border: 1.5px solid var(--chrome-highlight);
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .de-chip.is-marked {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: #0d0501;
+}
+
+[data-theme="pumpkin"] .de-chip.de-status-new {
+    border-color: var(--amber-bright);
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .de-chip.de-status-accepted {
+    border-color: var(--ok, #7fb069);
+    color: var(--ok, #7fb069);
+}
+
+[data-theme="pumpkin"] .de-chip.de-status-rejected {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+[data-theme="pumpkin"] .de-lead-who {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .de-shot {
+    border: 1px solid var(--chrome-border);
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .de-check {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .de-hint {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .de-flash {
+    color: var(--amber-bright);
 }
 
 [data-theme="pumpkin"] .ctl-label {
@@ -3368,6 +3599,38 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 @media (pointer: coarse) {
     [data-theme="pumpkin"] .console-close-btn::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="pumpkin"] .photo-frame-close::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="pumpkin"] .timeline-open::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="pumpkin"] .furni-filter-btn::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="pumpkin"] .gallery-photo-btn::after {
+        background: transparent;
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="pumpkin"] .modal .chrome-titlebar .modal-share-btn::after,
+    [data-theme="pumpkin"] .modal .chrome-titlebar .saved-toggle::after,
+    [data-theme="pumpkin"] .modal .chrome-titlebar .walked-toggle::after {
         background: transparent;
     }
 }

@@ -7,6 +7,10 @@
      every write goes through in netlify/functions/ff-levels.js. -->
 <html lang="en">
 <head>
+    <!-- Must sit in the first 1024 bytes of the file, or a browser that is
+         not told the encoding by a header has to guess — and a guess of
+         anything but UTF-8 garbles every dash and heart on the page. -->
+    <meta charset="UTF-8">
     <!-- THE GAME'S OWN MAINTENANCE SWITCH, and the admin pills.
 
          This is NOT the site gate that used to live here. That one held the
@@ -41,7 +45,13 @@
     (function () {
         var TOKEN_KEY = "mazerats_admin_token";
         var LANDING_STATE_KEY = "mazerats_landing_state";   // shared with js/api.js
-        var EDITING = /[?&]edit\b/.test(location.search);
+        /* THE SAME TEST AS js/fallinfurni.js, character for character. This
+           was /[?&]edit\b/, and \b is a word boundary, so `?edit-x` and
+           `?edit.1` matched here while URLSearchParams.has("edit") in the game
+           said no: the head treated the visitor as editing and left Play up
+           on a closed game, and the game then ran as a player's page. Two
+           answers to one question is the bug; one parser is the fix. */
+        var EDITING = new URLSearchParams(location.search).has("edit");
 
         /* ---- THE WAY IN IS HIDDEN UNTIL THE ANSWER IS KNOWN ----
 
@@ -238,7 +248,6 @@
     <link rel="preconnect" href="https://www.habbo.com">
     <link rel="preconnect" href="https://furniindex.com">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
-    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <title>Fallin' Furni — Maze Rats</title>
@@ -473,6 +482,14 @@
                         <span class="ff-countin-n" id="ff-countin-n">3</span>
                     </div>
 
+                    <!-- THE PLAYER'S LINE, while a round is on: a life gone
+                         and how many are left, a room that would not finish
+                         loading. These used to go to the builder's bar below,
+                         which a player never sees. Empty (and invisible) until
+                         there is something to say; it clears itself. Never
+                         takes a tap. -->
+                    <p class="ff-say" id="ff-say" role="status" aria-live="polite" aria-atomic="true"></p>
+
                     <div class="ff-title ff-play-only" id="ff-title" data-state="loading">
                         <div class="ff-title-inner">
                             <h2>Fallin' Furni</h2>
@@ -525,6 +542,11 @@
                             </div>
 
                             <p class="ff-title-load" id="ff-title-load">Building the room…</p>
+                            <!-- Only in the "unreachable" state: the levels
+                                 request failed (no connection, a 500), which
+                                 is not the same as there being none, and is
+                                 the one case a second try can fix. -->
+                            <button type="button" class="ff-title-retry" id="ff-title-retry">Retry</button>
                         </div>
                     </div>
 
@@ -640,6 +662,10 @@
                         <button type="button" id="ff-level-new">New</button>
                         <button type="button" id="ff-save" class="ff-primary">Save</button>
                         <button type="button" id="ff-publish">Publish</button>
+                        <!-- Only shown for a level that is live. Save keeps
+                             a level's published state as it is; this is the
+                             one way to take it out of the run, and it asks. -->
+                        <button type="button" id="ff-unpublish" hidden>Unpublish</button>
                     </div>
                     <!-- Scrapping work is not a Rules setting, which is where
                          Delete used to live and where nobody found it. -->

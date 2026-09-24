@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- The charset comes before even the script below: it has to be inside
+         the first 1024 bytes, and a declaration does not run anything, so
+         it cannot delay what the script is there to do first. -->
+    <meta charset="UTF-8">
     <!-- First thing in the head, and load-bearing.
 
          This page is served at BOTH /wizard and /wizard/<room> (see the
@@ -39,7 +43,6 @@
          afternoon looking for the bug that is stopping the cut-outs from
          showing. -->
     <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
-    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <!-- Unlisted while the map is still being filled in — half its rooms
@@ -177,6 +180,23 @@
                     <span class="wiz-secret-mark" aria-hidden="true"></span>
                     <span class="wiz-secret-count" id="wiz-secret-count">Secrets</span>
                 </p>
+                <!-- EXCEPT ON A TOUCH SCREEN, which has no keyboard to type
+                     at the map with and no hover to read a title by - so on
+                     a phone the clues and the way in were simply not there.
+                     There, and only there, tapping the tally opens this: the
+                     clues in words, and one small line to speak into. It is
+                     still behind the tally rather than on the page, so it is
+                     still something you go looking for. Never shown to a
+                     mouse; see wireTouchSecrets in js/wizard.js. -->
+                <div class="wiz-secret-sheet" id="wiz-secret-sheet" hidden>
+                    <ul class="wiz-secret-clues" id="wiz-secret-clues"></ul>
+                    <form class="wiz-secret-form" id="wiz-secret-form" autocomplete="off">
+                        <input type="text" id="wiz-secret-input" maxlength="60"
+                               placeholder="Speak a word…" aria-label="Speak a word to the map"
+                               autocapitalize="off" autocorrect="off" spellcheck="false">
+                        <button type="submit">Speak</button>
+                    </form>
+                </div>
             </div>
             </div>
         </div>

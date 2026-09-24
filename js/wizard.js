@@ -175,7 +175,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function openRoom(id, { push = true } = {}) {
         const room = roomById(id);
-        if (!room) return;
+        // Hidden is hidden, whoever asks - see roomIdFromPath.
+        if (!room || room.hidden) return;
         hideTooltip();
         // Read before the sheet is marked open below: whether it was ALREADY
         // open decides whether this room is a new place in the history or a
@@ -330,7 +331,20 @@ document.addEventListener("DOMContentLoaded", () => {
         // Slug first, then the raw id — so /wizard/library and /wizard/r039
         // both open the Library, and neither form can be broken by renaming
         // the other.
-        return slugToId.get(raw.toLowerCase()) || (roomById(raw) ? raw : null);
+        const id = slugToId.get(raw.toLowerCase()) || (roomById(raw) ? raw : null);
+        /* NOT A HIDDEN ONE. Rooms a secret is holding back never reach this
+           page at all (see heldBack in netlify/functions/wizard.js), but a
+           room an admin simply marked hidden does - with `hidden: true` on it
+           - and slugs are built for every room, so /wizard/<its-name> used to
+           open its sheet straight past the map that was keeping it back: the
+           search box, the "Leads to" buttons and the drawing all refuse it,
+           and the address bar did not. A room a code has opened arrives with
+           `hidden` cleared, so a found room still links like any other.
+
+           Nobody else needs to see one from here: the admin's editor is its
+           own page with its own revealHidden, and never routes through this. */
+        const room = id && roomById(id);
+        return room && !room.hidden ? id : null;
     }
 
     // ---------- searching ----------
@@ -626,7 +640,85 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? lines.join("\n") + "\n\nSome words are best simply spoken aloud."
                 : "Some words are best simply spoken aloud.";
         }
+
+        /* The same clues again, for the touch sheet (wireTouchSecrets) - a
+           title attribute is invisible to a finger. Written as text nodes:
+           a hint is typed by an admin, and this is the page's public face. */
+        if (secretClues) {
+            secretClues.textContent = "";
+            for (const s of secrets) {
+                if (!s.hint) continue;
+                const li = document.createElement("li");
+                const done = foundIds.has(s.id);
+                li.className = done ? "is-found" : "";
+                li.textContent = (done ? "✓ " : "— ") + s.hint;
+                secretClues.appendChild(li);
+            }
+        }
     }
+
+    /* ---------- speaking a word without a keyboard ----------
+
+       The design above is "type at the map", and a phone has nothing to type
+       with: the on-screen keyboard only comes up for a text field, and there
+       is deliberately no text field. Nor can a finger hover for the title the
+       clues live in. So on a touch screen the puzzle was not hard - it was
+       not there.
+
+       On a COARSE pointer only, then, tapping the tally opens a small sheet
+       under it: the clues, and one line to speak into, which goes to the same
+       tryCodes as the keyboard does - same endpoint, same reveal, same
+       one-request-at-a-time. A mouse never gets it, so the desktop page keeps
+       its "no box" design exactly. Asked at tap time rather than once at
+       load, so a tablet with a keyboard attached answers for whatever is
+       doing the pressing. */
+    const secretSheet = document.getElementById("wiz-secret-sheet");
+    const secretClues = document.getElementById("wiz-secret-clues");
+    const secretForm = document.getElementById("wiz-secret-form");
+    const secretInput = document.getElementById("wiz-secret-input");
+
+    const coarse = () => !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+
+    function setSheet(open) {
+        if (!secretSheet || !secretsEl) return;
+        secretSheet.hidden = !open;
+        secretsEl.classList.toggle("is-open", open);
+        /* The field is NOT focused on open: on a phone that throws the
+           keyboard up over the map before the reader has read a clue. They
+           tap the line when they have a word for it. */
+    }
+
+    function wireTouchSecrets() {
+        if (!secretTally || !secretSheet || !secretForm || !secretInput) return;
+        secretTally.addEventListener("click", () => {
+            if (!coarse() || !secrets.length) return;
+            setSheet(secretSheet.hidden);
+        });
+        secretForm.addEventListener("submit", async e => {
+            e.preventDefault();
+            const guess = secretInput.value.trim();
+            if (guess.length < 3) return;
+            const answer = await tryCodes(guess);
+            if (answer.fresh && answer.fresh.length) {
+                secretInput.value = "";
+                secretInput.blur();       // the keyboard down, so the reveal is seen
+                setSheet(false);
+            } else if (!answer.superseded) {
+                /* A miss says nothing - that is the design - but the field
+                   is left holding the word so a typo can be mended rather
+                   than retyped. The small shake is the only reply. */
+                secretForm.classList.remove("is-miss");
+                void secretForm.offsetWidth;
+                secretForm.classList.add("is-miss");
+            }
+        });
+        // Tapping anywhere else puts it away, like the search results.
+        document.addEventListener("click", e => {
+            if (!secretSheet.hidden && !e.target.closest(".wiz-secrets")) setSheet(false);
+        });
+    }
+
+    wireTouchSecrets();
 
     /* ---------- the flight ----------
 
@@ -1368,19 +1460,53 @@ document.addEventListener("DOMContentLoaded", () => {
        page that opens by performing four reveals at once and landing on
        whichever was last is a page that has forgotten what the reader asked
        for. They are simply drawn, already there. */
-    let asking = false;
+    /* ONE REQUEST AT A TIME - BUT THE LAST WORD IS NEVER LOST.
 
-    async function tryCodes(codes, { quiet = false } = {}) {
-        if (asking) return { ok: false, found: [] };
+       `asking` stops two guesses racing each other to the endpoint and its
+       rate limiter. It used to do that by DROPPING whatever arrived while a
+       request was out, which is exactly the wrong one to drop: somebody who
+       pauses half-way through a word ("sesa…") sends the half, carries on
+       typing, and the whole word lands while the half is still in flight - so
+       the one guess that was right was the one thrown away, and nothing
+       happened until they typed another letter.
+
+       So the latest guess to arrive while asking is kept (a newer one simply
+       replaces it - only the most recent buffer can be the one the reader
+       means) and asked the moment the current request settles. Its caller is
+       handed a promise for THAT answer, so the keyboard path still sees the
+       passage open and clears its buffer as before. A replaced guess resolves
+       as a quiet miss. */
+    let asking = false;
+    let waiting = null;          // { codes, options, resolve } asked next
+
+    function tryCodes(codes, options = {}) {
+        if (asking) {
+            if (waiting) waiting.resolve({ ok: false, found: [], superseded: true });
+            return new Promise(resolve => { waiting = { codes, options, resolve }; });
+        }
+        return askNow(codes, options);
+    }
+
+    function askWaiting() {
+        if (!waiting) return;
+        const w = waiting;
+        waiting = null;
+        askNow(w.codes, w.options).then(w.resolve,
+            () => w.resolve({ ok: false, found: [], failed: true }));
+    }
+
+    async function askNow(codes, { quiet = false } = {}) {
         asking = true;
         let answer;
         try {
             answer = await Api.unlockWizardSecret(codes);
         } catch (err) {
             asking = false;
+            askWaiting();
             return { ok: false, found: [], failed: true };
         }
         asking = false;
+        answer = answer || {};
 
         const fresh = [];
         for (const found of answer.found || []) {
@@ -1416,6 +1542,9 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
         drawSecretCount();
+        // After this answer is fully applied, so the next one is judged
+        // against the passages this one has just opened.
+        askWaiting();
         return { ...answer, fresh };
     }
 

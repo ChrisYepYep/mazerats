@@ -70,6 +70,7 @@
             open: "openGuessGame",
             overlay: "guess-overlay",
             win: "guess-window",
+            close: "guess-close",
             path: "/guess",
             // Where a "still loading" line can be put without disturbing
             // anything the game will later render into.
@@ -80,6 +81,7 @@
             open: "openOddOneOut",
             overlay: "odd-overlay",
             win: "odd-window",
+            close: "odd-close",
             path: "/odd",
             body: "odd-body"
         }
@@ -133,7 +135,52 @@
         overlay.classList.add("open");
         document.body.classList.add("modal-open");
         if (win) win.focus();
+        armClose(name, overlay);
         return overlay;
+    }
+
+    /* A way back out of the empty window.
+
+       The close button, the backdrop and Escape are all wired by the GAME'S
+       mount(), which runs only once the game file has arrived — so the
+       shell opened above had no way out at all until then. On a slow
+       connection that was a window you could not close for however long
+       the download took, and on a failed one it was a window you could not
+       close ever: "Could not load the game" over a dimmed page, and nothing
+       that responded but a reload.
+
+       These are the shell's own, and they step aside the moment the game
+       has loaded (disarm), because from then on the game's own handlers are
+       the ones that know how to close it properly — Guess the Maze puts the
+       focus back on the side menu and tidies the address bar, which this
+       has no business knowing about. Until then they only do what openShell
+       did, in reverse. Even if both sets were ever live at once, both
+       closing the same overlay is harmless: removing a class twice is
+       removing it once. */
+    const armed = {};
+
+    function armClose(name, overlay) {
+        if (armed[name]) return;
+        const closeBtn = document.getElementById(GAMES[name].close);
+        const shut = () => {
+            overlay.classList.remove("open");
+            document.body.classList.remove("modal-open");
+        };
+        const onBackdrop = e => { if (e.target === overlay) shut(); };
+        const onKey = e => { if (e.key === "Escape" && overlay.classList.contains("open")) shut(); };
+        if (closeBtn) closeBtn.addEventListener("click", shut);
+        overlay.addEventListener("click", onBackdrop);
+        document.addEventListener("keydown", onKey);
+        armed[name] = () => {
+            if (closeBtn) closeBtn.removeEventListener("click", shut);
+            overlay.removeEventListener("click", onBackdrop);
+            document.removeEventListener("keydown", onKey);
+            armed[name] = null;
+        };
+    }
+
+    function disarm(name) {
+        if (armed[name]) armed[name]();
     }
 
     function sayLoading(name) {
@@ -145,20 +192,38 @@
         body.appendChild(p);
     }
 
+    // Every one, not the first: a failed line and a "still loading" line
+    // can both be present after a retry.
     function clearLoading(name) {
         const body = document.getElementById(GAMES[name].body);
-        const p = body && body.querySelector(".daily-loading");
-        if (p) p.remove();
+        if (!body) return;
+        body.querySelectorAll(".daily-loading").forEach(p => p.remove());
     }
 
+    /* The failure, with a way to try again in it. It used to be a sentence
+       saying "try again" and nothing to try again WITH — the only retry was
+       closing the window (which could not be done either; see armClose)
+       and asking for the game from the menu. load() already forgets a
+       failed attempt, so pressing this is simply asking again. */
     function sayFailed(name) {
         const body = document.getElementById(GAMES[name].body);
         if (!body) return;
         clearLoading(name);
         const p = document.createElement("p");
         p.className = "daily-loading daily-loading--failed";
-        p.textContent = "Could not load the game. Check your connection and try again.";
+        p.setAttribute("role", "alert");
+        p.textContent = "Could not load the game. Check your connection and try again. ";
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "guess-btn";
+        retry.textContent = "Try again";
+        retry.addEventListener("click", () => {
+            clearLoading(name);
+            window[GAMES[name].open]();
+        });
+        p.appendChild(retry);
         body.appendChild(p);
+        retry.focus({ preventScroll: true });
     }
 
     /* The stub each game's opener is replaced by until the real one exists.
@@ -170,15 +235,23 @@
         const stub = function () {
             if (ready(name)) return window[GAMES[name].open]();
 
-            openShell(name);
+            const overlay = openShell(name);
             const slow = setTimeout(() => sayLoading(name), SLOW_AFTER);
 
             load(name).then(() => {
                 clearTimeout(slow);
                 clearLoading(name);
-                // The game has published its own opener by now; this call is
-                // the real one, and it finds its window already open.
-                if (ready(name)) window[GAMES[name].open]();
+                // The game's mount() has wired its own close by now.
+                disarm(name);
+                /* The game has published its own opener by now; this call is
+                   the real one, and it finds its window already open — unless
+                   the player gave up and closed the empty window while it was
+                   downloading, which they now can. Opening it again behind
+                   their back would be a window they had already dismissed
+                   springing back. */
+                if (ready(name) && (!overlay || overlay.classList.contains("open"))) {
+                    window[GAMES[name].open]();
+                }
             }).catch(() => {
                 clearTimeout(slow);
                 sayFailed(name);

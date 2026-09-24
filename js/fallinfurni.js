@@ -168,7 +168,6 @@
     let game = null;
     let run = null;                  // the published levels, played in order
     let roundEndedAt = 0;            // when the current round finished
-    const ROUND_PAUSE_MS = 1600;     // long enough to read the result
     const sprites = new Map();
 
     // ---- avatar
@@ -1065,6 +1064,9 @@
                `showRoundEnd` is the one place that moves between levels. */
             roundEndedAt = now;
             showRoundEnd(now);
+            // If that was the run's last round, the board is told now rather
+            // than when the button is pressed - see settleRun.
+            settleRun();
             renderHud(now);
             dirty = true;
         }
@@ -1704,11 +1706,60 @@
     /* One furni picker, drawn twice. `current` is whatever that copy has
        selected and `onPick` is what it does about a click; everything else —
        the search box it reads, the icon, the seat badge — is the same. */
+    /* REBUILT ONLY WHEN ITS OWN ANSWER CHANGED.
+
+       renderEditorPanel runs on every editor change - every placed piece,
+       every rotation, every keystroke in any of the three search boxes - and
+       it used to rebuild all three pickers each time: an empty query lists
+       every furni there is, so that was ~7,700 buttons torn down and made
+       again to move one chair, and typing in one box re-listed the other two.
+
+       So each picker remembers the query it was built for and the list it was
+       built from (`Editor.state.placeable`, which is replaced wholesale when
+       the catalogue finishes loading - so the identity check doubles as "has
+       the catalogue arrived"). Same query, same source: the buttons stand, and
+       a change of selection only moves the `is-on` class from one to another.
+
+       The click is delegated for the same reason. A listener per button
+       closed over the `onPick` of the render that made it, and the whole
+       point is that the buttons now outlive the render - so the list holds
+       one listener that calls whichever `onPick` is current. */
+    const pickerCache = new Map();
+
     function renderPicker(listId, queryId, current, onPick) {
         const list = document.getElementById(listId);
         const query = document.getElementById(queryId);
         if (!list || !query) return;
+
+        let c = pickerCache.get(listId);
+        if (!c) {
+            c = { query: null, source: null, current: null, onPick, byClass: new Map() };
+            pickerCache.set(listId, c);
+            list.addEventListener("click", (ev) => {
+                const b = ev.target.closest && ev.target.closest("button.ff-furni");
+                if (b && list.contains(b)) c.onPick(b.dataset.cls);
+            });
+        }
+        c.onPick = onPick;
+
+        const source = Editor.state.placeable;
+        if (c.query === query.value && c.source === source) {
+            if (c.current !== current) {
+                const was = c.current && c.byClass.get(c.current);
+                if (was) was.classList.remove("is-on");
+                const now = current && c.byClass.get(current);
+                if (now) now.classList.add("is-on");
+                c.current = current;
+            }
+            return;
+        }
+        c.query = query.value;
+        c.source = source;
+        c.current = current;
+        c.byClass = new Map();
+
         list.innerHTML = "";
+        const frag = document.createDocumentFragment();
         /* Everything that matches, not a first handful — see the note on
            RoomEditor.search. The list scrolls, and `loading="lazy"` keeps an
            answer of a thousand rows from asking FurniIndex for a thousand
@@ -1716,6 +1767,8 @@
         for (const r of Editor.search(query.value)) {
             const b = document.createElement("button");
             b.type = "button";
+            b.dataset.cls = r.className;
+            c.byClass.set(r.className, b);
             b.className = "ff-furni" + (current === r.className ? " is-on" : "");
             b.title = `${r.name}\n${r.className}\n${r.w}x${r.h}${r.sit ? ", seat" : ""}, ${r.rotations} rotation${r.rotations === 1 ? "" : "s"}`;
             /* Four furni out of 2,607 have no thumbnail anywhere — a grid
@@ -1726,11 +1779,11 @@
                 `<span>${escapeText(r.name)}</span>` +
                 /* Six different furni are called "Bookcase". Where the name
                    does not identify the row, the class does. */
-                (r.ambiguous ? `<em class="ff-cls">${r.className}</em>` : "") +
+                (r.ambiguous ? `<em class="ff-cls">${escapeText(r.className)}</em>` : "") +
                 (r.sit ? '<em class="ff-seat">seat</em>' : "");
-            b.addEventListener("click", () => onPick(r.className));
-            list.appendChild(b);
+            frag.appendChild(b);
         }
+        list.appendChild(frag);
     }
 
     /* ---- THE SPLASH TAB: what falls past the title screen.
@@ -1911,10 +1964,21 @@
         }
         const disc = document.getElementById("ff-level-discard");
         if (disc) disc.textContent = L.id ? "Discard changes" : "Scrap level";
+        syncPublishButtons();
 
         const nameEl = document.getElementById("ff-level-name");
         if (document.activeElement !== nameEl) nameEl.value = L.name || "";
         document.getElementById("ff-level-order").value = L.order || 0;
+    }
+
+    /* Unpublish only exists for a level that is live. Hidden rather than
+       disabled otherwise: for a draft there is nothing to take out, and a dead
+       button beside Publish reads as though Publish might be broken too. */
+    function syncPublishButtons() {
+        if (!Editor || !Editor.state.level) return;
+        const L = Editor.state.level;
+        const unpub = document.getElementById("ff-unpublish");
+        if (unpub) unpub.hidden = !(L.id && L.published);
     }
 
     /* The levels already on the server, for the load dropdown. Needs an admin
@@ -1942,8 +2006,8 @@
                apart rather than both reading "not signed in". */
             const stale = Boolean(Editor.authToken());
             sel.innerHTML = `<option value="">${stale
-                ? "Session expired — no levels listed"
-                : "Not signed in — no levels listed"}</option>`;
+                ? "Session expired - no levels listed"
+                : "Not signed in - no levels listed"}</option>`;
             if (signin) {
                 signin.hidden = false;
                 signin.querySelector(".ff-signin-why").textContent = stale
@@ -2069,7 +2133,11 @@
         const reason = {
             signin: "You are not signed in.",
             expired: "Your admin session has expired.",
-            role: `Signed in as ${verdict.username || "an admin"}${verdict.role ? ` (${verdict.role})` : ""}, which cannot edit levels.`,
+            /* ESCAPED: both come back from the server, but the username is
+               whatever the account was created with, and this string goes into
+               innerHTML below. A name with a tag in it would otherwise be
+               markup on the one screen strangers are shown. */
+            role: `Signed in as ${escapeText(verdict.username || "an admin")}${verdict.role ? ` (${escapeText(verdict.role)})` : ""}, which cannot edit levels.`,
             error: "The server could not confirm who you are."
         }[verdict.why] || "You cannot open the level editor.";
 
@@ -2255,11 +2323,23 @@
            button was the one that did not actually keep your work anywhere
            anybody else could see. Save now means saved; Publish means saved
            and in the run. */
+        /* `publish`: true publishes, false unpublishes, and undefined - plain
+           Save - leaves the level exactly as published as it already was. See
+           RoomEditor.saveServer for why that third case had to exist. The
+           status line names which of the three happened, and for a plain Save
+           whether the level is live, because "Saved" alone never said whether
+           players could now see the change. */
         async function toServer(publish) {
             try {
-                status(publish ? "Publishing…" : "Saving…", "busy");
+                status(publish === true ? "Publishing…"
+                    : publish === false ? "Unpublishing…" : "Saving…", "busy");
                 const saved = await Editor.saveServer(publish);
-                status(`${publish ? "Published" : "Saved"} “${saved.name}”.`, "good");
+                const live = saved.published === true;
+                status(publish === true ? `Published “${saved.name}” - it is in the run.`
+                    : publish === false ? `Unpublished “${saved.name}” - players no longer get it.`
+                        : `Saved “${saved.name}” - ${live ? "published, so players get this version." : "still a draft."}`,
+                    "good");
+                syncPublishButtons();
                 await refreshLevelList();
                 document.getElementById("ff-level-list").value = saved.id;
             } catch (e) {
@@ -2273,8 +2353,18 @@
                 status(`${why} Your work is safe in this browser meanwhile.`, "bad");
             }
         }
-        document.getElementById("ff-save").addEventListener("click", () => toServer(false));
+        document.getElementById("ff-save").addEventListener("click", () => toServer());
         document.getElementById("ff-publish").addEventListener("click", () => toServer(true));
+        /* UNPUBLISH asks first. It is the one button in this bar that changes
+           what players get without changing the level, and a level taken out
+           mid-meet is a run that is suddenly a level shorter. */
+        const unpub = document.getElementById("ff-unpublish");
+        if (unpub) unpub.addEventListener("click", () => {
+            const L = Editor.state.level;
+            if (!L || !L.published) return;
+            if (!window.confirm(`Take “${L.name || "this level"}” out of the run? It stays saved as a draft.`)) return;
+            toServer(false);
+        });
 
         document.getElementById("ff-level-new").addEventListener("click", () => {
             Editor.setLevel({ name: "New level", order: (Editor.state.level.order || 0) + 1 });
@@ -2581,6 +2671,48 @@
         }
     }
 
+    /* SAID TO THE PLAYER, over the room, while a round is on.
+
+       status() above writes to #ff-hint during play - and #ff-hint lives in
+       the builder's bar, which is display:none for a player. So the handful of
+       things a player genuinely needed told mid-run ("A life gone - 2 left",
+       "The room did not finish loading - playing anyway") were being written
+       somewhere nobody could see them.
+
+       This is their line: a small box in the room's bottom edge, in the HUD's
+       own dress, that says one thing and then goes. It is a live region, so a
+       screen reader hears it as well. It goes through status() too, so the
+       builder - who has no use for it, and never sees it - keeps exactly the
+       status line it always had.
+
+       Kept deliberately to the in-round messages. "Round 3 of 10" is already
+       on the readout, and the run's verdict ("Not your best", "On the board")
+       is said on the run-end panel's own board line, which this would only
+       sit on top of. */
+    const SAY_MS = 4500;
+    let sayTimer = 0;
+
+    function tell(text, kind) {
+        status(text, kind);
+        if (Editor) return;
+        const el = document.getElementById("ff-say");
+        if (!el) return;
+        clearTimeout(sayTimer);
+        /* Emptied rather than `hidden` when there is nothing to say - the
+           stylesheet makes an empty one invisible. A live region that is
+           display:none at the moment its text arrives is not in the
+           accessibility tree yet, and is not read out. */
+        el.textContent = text || "";
+        el.className = "ff-say" + (kind ? " is-" + kind : "");
+        if (text) sayTimer = setTimeout(hideSay, SAY_MS);
+    }
+
+    function hideSay() {
+        clearTimeout(sayTimer);
+        const el = document.getElementById("ff-say");
+        if (el) el.textContent = "";
+    }
+
     /* WHICH LOOKUP IS THE CURRENT ONE. Two of them can be in the air at once
        and the answers do not have to come back in the order they were asked.
 
@@ -2731,10 +2863,33 @@
        made. The client-side filter below is unchanged and still runs: the
        server narrowing and this one agree, and keeping both means a server
        that ignores the parameter still produces the right answer. */
+    /* RETURNS WHETHER THE FURNIDATA ARRIVED, and the callers act on it.
+
+       It used to be `.then(r => r.json()).catch(() => ({ items: {} }))`,
+       which turned a 502 — or any answer at all that parsed — into "no furni
+       known". Every piece then came out `sit: false`, the sequence was empty,
+       and an empty sequence is a round already won: a whole run cleared by
+       standing still, on to the board. So the status is checked, and so is
+       the answer: it has to know most of the classes asked for (315 of 321
+       across the fifty published levels; the misses are a handful of
+       library-only pieces furnidata never had). Less than half is a broken
+       answer, not a thin one, and it is treated like no answer.
+
+       ONLY THE CLASSES THE LEVELS USE are asked for now, by name, the same
+       way the catalogue request below already was — 34KB instead of 1.32MB
+       of all 15,291 records. The editor is unaffected: it has its own
+       unfiltered fetch in js/room-editor.js and never comes through here.
+       Sorted, so every player asks the identical URL and the edge copy
+       (see furni-meta.js) serves all of them. If the list ever grows past
+       what a URL comfortably carries, the whole file is asked for instead —
+       slower, never wrong. */
+    const META_QUERY_MAX = 6000;
+    const MIN_META_COVERAGE = 0.5;
+
     async function loadLevelFurni(levels) {
         const wanted = new Set();
         for (const lv of levels) for (const c of Levels.furniUsed(lv)) wanted.add(c);
-        if (!wanted.size) return;
+        if (!wanted.size) return true;
 
         /* Which of them the local library cannot draw. Furni.librarySprite is
            the same lookup urlFor will make at draw time — asked here against
@@ -2745,16 +2900,31 @@
         const catUrl = "/.netlify/functions/furni-catalogue?sprites=1&classes="
             + encodeURIComponent(noArt.join(","));
 
+        const classList = [...wanted].sort().map(encodeURIComponent).join(",");
+        const metaUrl = classList.length <= META_QUERY_MAX
+            ? "/.netlify/functions/furni-meta?classes=" + classList
+            : "/.netlify/functions/furni-meta";
+
         const [cat, meta] = await Promise.all([
+            // The artwork stays forgiving: a missing sprite grid is a piece
+            // drawn late or not at all, not a game with no seats.
             noArt.length
                 ? fetch(catUrl).then(r => r.json()).catch(() => ({ items: [] }))
                 : Promise.resolve({ items: [] }),
-            fetch("/.netlify/functions/furni-meta").then(r => r.json()).catch(() => ({ items: {} }))
+            fetch(metaUrl)
+                .then(r => (r.ok ? r.json() : null))
+                .catch(() => null)
         ]);
         for (const row of cat.items || []) {
             if (wanted.has(row.className)) playerSprites.set(row.className, row.largeImages || []);
         }
-        for (const c of wanted) if (meta.items && meta.items[c]) playerMeta.set(c, meta.items[c]);
+        const items = meta && meta.items && typeof meta.items === "object" ? meta.items : null;
+        if (!items) return false;
+        let known = 0;
+        for (const c of wanted) if (items[c]) known++;
+        if (known < wanted.size * MIN_META_COVERAGE) return false;
+        for (const c of wanted) if (items[c]) playerMeta.set(c, items[c]);
+        return true;
     }
 
     /* How many ways a class turns, for the random facing a drop lands at.
@@ -2850,12 +3020,16 @@
         const load = document.getElementById("ff-title-load");
         if (load && note !== undefined) load.textContent = note || "";
         const play = document.getElementById("ff-title-play");
-        if (play) play.disabled = name === "loading" || gameClosed();
+        /* Unreachable disables Play too: there is nothing to play, and the
+           Retry beside the message is the one button that can change that. */
+        if (play) play.disabled = name === "loading" || name === "unreachable" || gameClosed();
     }
 
     const hideTitle = () => titleState("playing");
     const showTitle = () => {
-        titleState(published && published.length ? "ready" : "empty");
+        // null is a fetch that failed, not an empty game - see prepare().
+        titleState(published === null ? "unreachable"
+            : published.length ? "ready" : "empty");
         renderWho();
         refreshBoard();
     };
@@ -2864,6 +3038,13 @@
        levels, the furni artwork those levels use, and the first room drawn.
        Whatever this cannot do quietly is said on the title screen rather than
        discovered when Play does nothing. */
+    function furniFailed() {
+        published = null;
+        furniLoaded = null;
+        titleState("unreachable", "Couldn't load the furni.");
+        status("Couldn't load the furni - check your connection and press Retry.", "bad");
+    }
+
     async function prepare() {
         renderWho();
         if (window.Account) window.Account.ready().then(renderWho);
@@ -2871,6 +3052,15 @@
 
         titleState("loading", "Fetching levels…");
         published = await Levels.fetchPublished();
+        /* NULL IS "COULD NOT ASK", not "nobody has published anything" - see
+           fetchPublished. The two used to be the same empty list, so a dropped
+           connection told the player the game had no levels in it. This one
+           says what actually happened and offers the Retry that fixes it. */
+        if (published === null) {
+            titleState("unreachable", "Couldn't reach the levels.");
+            status("Couldn't reach the levels - check your connection and press Retry.", "bad");
+            return;
+        }
         if (!published.length) {
             titleState("empty", "");
             status("No levels have been published yet.", "bad");
@@ -2878,7 +3068,17 @@
         }
         titleState("loading", "Loading the furni…");
         furniLoaded = loadLevelFurni(published);
-        await furniLoaded;
+        /* NO FURNIDATA IS NO GAME, and it is said the way no levels is said:
+           the unreachable state, with Retry and Play held down. Played on
+           regardless, every seat was an obstacle and every round won itself
+           (see loadLevelFurni). `published` goes back to null so that every
+           later showTitle() also lands on "unreachable" rather than "ready",
+           and so startRound's own guard fetches both again if it is reached
+           some other way. */
+        if (!(await furniLoaded)) {
+            furniFailed();
+            return;
+        }
 
         /* No room is built here any more. The title screen is the hotel view,
            so what has to be ready is the hotel view and the seats falling past
@@ -3011,14 +3211,22 @@
         box.hidden = false;
     }
 
-    // "Saturday 10 October" — en-GB like every other date the site writes
-    // (see longDate in js/oddoneout.js), and in the reader's own zone,
-    // since this is a deadline somebody is working to rather than a
-    // timestamp.
+    /* "Saturday 10 October" — en-GB like every other date the site writes
+       (see longDate in js/oddoneout.js).
+
+       THE LAST DAY INSIDE THE WINDOW, IN UTC. ff-scores.js now ends the week
+       at midnight UTC after its last day, exclusive, so `to` itself is
+       00:00 on the Sunday. Formatted as it stood, in the reader's own zone,
+       that printed "Sunday 11 October" in Britain (BST is UTC+1) and
+       "Saturday 10 October" further west - the same deadline, two different
+       days. So the day named is the one holding the window's last
+       millisecond, read in UTC, which is the zone the server's dates are
+       written in: every reader is told the same day, and it is true for all
+       of them. */
     function meetEnds(iso) {
-        const d = new Date(iso);
+        const d = new Date(Date.parse(iso) - 1);
         if (isNaN(d.getTime())) return "soon";
-        return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+        return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
     }
 
     const escapeText = (s) => String(s || "").replace(/[<>&"]/g, c => (
@@ -3120,10 +3328,24 @@
     /* Says what became of the run, on the run-end panel. A run that ends is a
        run the player wants ON the board, and the one line that answers that
        was going into the status bar UNDERNEATH the panel covering it. */
+    /* KEPT AS WELL AS WRITTEN. The run is now submitted as its last round
+       ends, while the round-end panel is up and the run-end panel is not yet
+       built - and showRunEnd used to blank this line as it opened, which
+       would now wipe an answer that arrived first. So the verdict is held
+       here, showRunEnd draws whatever is held, and a new run clears it. */
+    let boardLine = null;
+
     function boardSays(text, offerSignIn) {
+        boardLine = text ? { text, offerSignIn } : null;
+        renderBoardLine();
+    }
+
+    function renderBoardLine() {
         const el = document.getElementById("ff-runend-board");
         if (!el) return;
         el.innerHTML = "";
+        if (!boardLine) return;
+        const { text, offerSignIn } = boardLine;
         if (offerSignIn) {
             const btn = document.createElement("button");
             btn.type = "button";
@@ -3160,10 +3382,22 @@
            the middle of a round has that round missing from it, which is the
            one level anybody would most want to see — the player walked out of
            it. So it is taken from the live game and marked as a quit. */
+        /* ONLY A ROUND STILL RUNNING IS A QUIT. The tab can also close on the
+           round-end panel, where the round in hand has already been won or
+           lost but not yet folded into `results` (that happens on the
+           button). Marking it won:false/why:"quit" logged a won final round
+           as a walk-out. An ended round goes in as it ended, timed at the
+           moment it ended - `summary` reads the live clock, which has run on
+           for as long as the panel was up. */
         const levels = (theRun.results || []).slice();
-        if (outcome === "abandoned" && theRun.game) {
+        const g = theRun.game;
+        if (g) {
             try {
-                levels.push({ ...theRun.game.summary(gameNow()), won: false, why: "quit" });
+                if (g.state === Game.WON || g.state === Game.LOST) {
+                    levels.push(g.summary(roundEndedAt || gameNow()));
+                } else if (outcome === "abandoned") {
+                    levels.push({ ...g.summary(gameNow()), won: false, why: "quit" });
+                }
             } catch (e) { /* mid-teardown; the finished rounds are enough */ }
         }
 
@@ -3210,10 +3444,70 @@
         } catch (e) { /* private mode, a blocked beacon, no network */ }
     }
 
-    // The tab closing mid-round is an abandoned run like any other.
-    window.addEventListener("pagehide", () => { if (run) recordRun(run, "abandoned"); });
+    /* The tab closing mid-round is an abandoned run like any other.
 
-    async function submitRun(levelsCleared) {
+       EXCEPT WHEN THE PAGE IS ONLY BEING PUT AWAY. `persisted` is true when
+       the browser is keeping the page whole in its back/forward cache - the
+       player followed a link, or went Back, and pressing Forward will put them
+       straight back into the round, frozen exactly where it was (the tab was
+       hidden, so the clock stopped with it). Reporting that as abandoned set
+       runRecorded, and when the run then really ended the ending was dropped
+       as a duplicate: the log said "quit" about a run that was won.
+
+       So a persisted pagehide records nothing. The cost is a page the browser
+       later evicts from the cache without ever showing it again - that run goes
+       unreported, the same as a crashed tab. One missing row is the lesser
+       fault; a wrong one poisons the panel's numbers for a run that finished. */
+    /* A RUN WHOSE RESULT IS ALREADY SETTLED is not abandoned by closing the
+       tab on it: the last round ended, the panel said so, and the player
+       simply did not press the button. It is logged as what it was. */
+    window.addEventListener("pagehide", (ev) => {
+        if (ev.persisted) return;
+        if (!run) return;
+        const done = run.settled();
+        recordRun(run, done ? (done.result === "finished" ? "won" : "lost") : "abandoned");
+    });
+
+    /* ---- THE RUN TOKEN, asked for when Play is pressed.
+
+       ff-scores.js will only put a run on the board if it comes back with the
+       token issued at its start — that is how the server knows the run took
+       as long as it says (see THE RUN TOKEN there). Asked for without being
+       awaited, so Play is never held up by it, and a failure is simply a
+       null: the game plays exactly the same, and the run goes unentered.
+
+       `runToken` is the promise, not the answer, so a run that ends before
+       the request has come back (it cannot, realistically, but a stalled
+       connection is a stalled connection) still waits for it. */
+    let runToken = null;
+    // Once per run: the board is told when the result settles, and only then.
+    let runSubmitted = false;
+
+    function requestRunToken() {
+        return fetch("/.netlify/functions/ff-scores?action=start", {
+            method: "POST", credentials: "same-origin"
+        })
+            .then(r => (r.ok ? r.json() : null))
+            .then(d => (d && typeof d.token === "string" ? d.token : null))
+            .catch(() => null);
+    }
+
+    /* SUBMITTED THE MOMENT THE RESULT IS KNOWN, not when a button is pressed.
+
+       It used to go from nextRound, so it only happened if the player pressed
+       "Finish the run" or "See how you did". Somebody who read the round-end
+       panel and closed the tab had played a whole run and was not on the
+       board. The tick calls this as every round ends; it does nothing until
+       RoomGame's `settled` says the run cannot go on, and nothing twice. */
+    function settleRun() {
+        if (!run || runSubmitted) return;
+        const done = run.settled();
+        if (!done) return;
+        runSubmitted = true;
+        submitRun(done.cleared, done.points);
+    }
+
+    async function submitRun(levelsCleared, points) {
         if (!runStartedAt) return;
         /* A run that cleared nothing still ENDED, and the player is owed the
            same sentence as anyone else. The board will not take it — it ranks
@@ -3223,19 +3517,30 @@
             boardSays("No levels cleared, so there is nothing to put on the board yet.", false);
             return;
         }
+        /* The same clock as ever — game time since Play, pauses taken out —
+           read as the last round ends rather than at the button, so the time
+           spent reading the round-end panel is no longer counted. */
         const ms = Math.round(gameNow() - runStartedAt);
-        const points = run ? run.score() : 0;
+        // This run's token. If a new run starts while it is out, the answer
+        // below belongs to the old one and is dropped rather than written
+        // over the new run's panel.
+        const tokenFor = runToken;
+        const token = tokenFor ? await tokenFor : null;
         try {
             const res = await fetch("/.netlify/functions/ff-scores", {
                 method: "POST",
                 credentials: "same-origin",
+                // keepalive: this now goes as the last round ends, and the
+                // player may well close the tab on the panel straight after.
+                keepalive: true,
                 headers: { "Content-Type": "application/json" },
                 // No `habbo`: the server stopped storing it (it was never
                 // rendered anywhere, and it was the one field on this request
                 // whose contents came from the page rather than the session).
-                body: JSON.stringify({ levels: levelsCleared, ms, points })
+                body: JSON.stringify({ levels: levelsCleared, ms, points, run: token })
             });
             const data = await res.json().catch(() => ({}));
+            if (runToken !== tokenFor) return;
             if (data.recorded) {
                 const line = `On the board: ${points.toLocaleString()} points, ${levelsCleared} cleared in ${asClock(ms)}.`;
                 status(line, "good");
@@ -3250,8 +3555,42 @@
                    exactly like a leaderboard that failed to save. Say what is
                    still standing instead. */
                 status(`Not your best - ${Number(data.best.points || 0).toLocaleString()} points still stands.`, "busy");
+            } else if (data.reason === "closed") {
+                /* An admin testing the game while it is shut. The server keeps
+                   those runs off the public board; this just says so plainly. */
+                boardSays("The game isn't open yet, so this run stays off the leaderboard.", false);
+            } else if (data.reason === "no-run-token" || data.reason === "stale-run") {
+                /* The start request never came back (or the run outlived its
+                   token, three hours in). Nothing is broken and nothing is
+                   lost from the game, so this is one quiet sentence, not an
+                   error in the status bar. */
+                boardSays("This run couldn't be entered on the leaderboard.", false);
+            } else if (data.reason === "already-submitted") {
+                // Only reachable by a duplicate send; the first answer stands.
+            } else if (res.status === 400 && data.error) {
+                /* REFUSED, and the server says why - a run faster than the
+                   furni can fall, more points than the levels pay. That is
+                   the one answer a player can do nothing about, but it is
+                   still an answer, and silence read as the board being down.
+                   The reason is the server's own sentence, set as text. */
+                const line = `The leaderboard refused this run: ${data.error}.`;
+                status(line, "bad");
+                boardSays(line, false);
+            } else if (!res.ok) {
+                const line = "The leaderboard could not save this run just now - it was not recorded.";
+                status(line, "bad");
+                boardSays(line, false);
             }
-        } catch { /* a leaderboard that will not save is not worth a scene */ }
+        } catch {
+            /* No answer at all: offline, or the request died on the way. Not a
+               scene - but the panel's board line was left blank, which is
+               exactly what a leaderboard that silently lost your run looks
+               like. One plain sentence instead. */
+            if (runToken !== tokenFor) return;
+            const line = "Couldn't reach the leaderboard - this run was not saved.";
+            status(line, "bad");
+            boardSays(line, false);
+        }
     }
 
     /* ---- between rounds
@@ -3262,6 +3601,8 @@
     function showRoundEnd(now) {
         const box = document.getElementById("ff-round");
         if (!box || !game) return;
+        // The round's own line is about the round that just ended.
+        hideSay();
 
         const won = game.state === Game.WON;
         const prog = game.progress();
@@ -3326,6 +3667,13 @@
         if (retrying) document.getElementById("ff-round-title").textContent = "Round lost";
         box.dataset.outcome = won ? "won" : "lost";
         box.hidden = false;
+        /* THE FOCUS GOES WITH THE PANEL, as it does for the pause cover. It
+           was left wherever it was - usually the canvas or the pause button,
+           now underneath this - so a keyboard or screen-reader player had a
+           result on screen and no way of knowing it was there or reaching
+           its button without tabbing through the page. preventScroll for the
+           reason given at the pause cover: the panel sits mid-room. */
+        go.focus({ preventScroll: true });
     }
 
     const hideRoundEnd = () => {
@@ -3348,9 +3696,10 @@
     function showRunEnd(theRun, cleared) {
         const box = document.getElementById("ff-runend");
         if (!box || !theRun) return;
-        // submitRun fills this in when it answers; until then it says nothing
-        // rather than whatever the last run's verdict was.
-        boardSays("", false);
+        // submitRun's verdict, if it has answered already - it is sent as the
+        // last round ends, before this panel exists. Blank until then, and
+        // never the last run's: startRound clears it. See boardLine.
+        renderBoardLine();
         const rows = theRun.results || [];
 
         document.getElementById("ff-runend-title").textContent =
@@ -3429,6 +3778,11 @@
         document.getElementById("ff-runend-points").textContent = (points + bonus).toLocaleString();
 
         box.hidden = false;
+        // Onto its primary button, for the same reason as showRoundEnd - and
+        // this panel replaces that one, whose button just vanished from under
+        // the focus.
+        const again = document.getElementById("ff-runend-again");
+        if (again) again.focus({ preventScroll: true });
     }
 
     function hideRunEndPanel() {
@@ -3459,37 +3813,48 @@
             return;
         }
 
+        // Before advance, which lets go of the round `settled` reads. A no-op
+        // when the tick has already sent it, which it will have.
+        settleRun();
         const what = run.advance(now);
         /* "retry" is a LOST round the run absorbed with a life. The same level
            is put back up, so this is the "next" path with a different sentence
            — the one thing the player needs told is what it cost. */
         if (what === "next" || what === "retry") {
             game = run.game;
+            const earned = what === "next" &&
+                run.livesWon && run.cleared() % Game.LIFE_EVERY === 0;
+            /* Set BEFORE beginLevel, which starts the loader that reads it.
+               loadRoom only takes it after the loader's own await, so after
+               would work today - but "works because of a timing" is how the
+               last three bugs in this file were made. */
+            pendingCallout = what === "retry" ? { kind: "lost" }
+                : earned ? { kind: "won" } : null;
             beginLevel(run.level());
+            /* And in words, on the player's own line, for how many are left -
+               which a "-1" does not say - and for a screen reader, which the
+               callout (a picture of a heart) is hidden from. */
             if (what === "retry") {
-                status(`A life gone - ${run.lives} left. ${run.level().name} again.`, "bad");
+                tell(`A life gone - ${run.lives} left. ${run.level().name} again.`, "bad");
+            } else if (earned) {
+                tell(`${run.progressLabel()} - an extra life for five cleared.`, "good");
             } else {
-                const earned = run.livesWon && run.cleared() % Game.LIFE_EVERY === 0;
-                status(earned
-                    ? `${run.progressLabel()} - an extra life for five cleared.`
-                    : run.progressLabel(), "good");
+                status(run.progressLabel(), "good");
             }
         } else {
-            const cleared = run.cleared();
             if (what === "finished") status("Every round cleared.", "good");
             else status("Run over.", "bad");
-            /* THE PANEL GOES UP FIRST, then the verdict fills into it.
-               submitRun answers the board, and showRunEnd blanks that line so
-               a new run does not show the last one's — so calling them the
-               other way round wiped the answer a hundredth of a second after
-               writing it, and a run that cleared nothing said nothing at all.
+            /* THE BOARD HAS ALREADY BEEN TOLD. settleRun sent the run as its
+               last round ended (see there); the call above, before advance,
+               is only the backstop for a run that got here some other way.
+               The verdict is held in boardLine, so showRunEnd shows it
+               whichever of the two finished first.
 
                The breakdown is shown BEFORE the run is thrown away — it is the
                only thing holding the per-round summaries. The title screen
                comes back when the player closes it. */
             showRunEnd(run, what === "finished");
             recordRun(run, what === "finished" ? "won" : "lost");
-            submitRun(cleared);
             game = null; run = null;
         }
         renderHud(now);
@@ -3512,6 +3877,25 @@
        first furni falls behind the loader; without the pause the round is
        short by however long the load took. */
     let loading = false;
+    /* A tile tapped while `loading` was up - see the canvas click handler.
+       Walked to once the clock is running again, never before. */
+    let queuedTap = null;
+    /* What the next count-in should open with, if anything: a life lost or a
+       life won, set by nextRound as it puts the next room up. See lifeBeat. */
+    let pendingCallout = null;
+
+    /* THE MOMENT THE CLOCK STARTS AGAIN, whichever way the freeze ended - the
+       count-in finishing, or the loader failing and the game going on without
+       it. A queued tap is walked to only when nothing else is still holding
+       the clock (a hidden tab, the rotate gate, the pause cover): walked to
+       while frozen, its step would be stamped on a clock about to be wound back
+       again, which is the very jump the queue exists to prevent. */
+    function releaseQueuedTap() {
+        const t = queuedTap;
+        queuedTap = null;
+        if (!t || frozen() || !game || game.state !== Game.RUNNING) return;
+        walkTo(t.x, t.y);
+    }
 
     const loaderEls = {};
 
@@ -3546,6 +3930,14 @@
     const LOADER_MIN_MS = 420;          // long enough to read, short enough not to grate
     const LOADER_PACE_MS = 1400;
 
+    /* When the loader's freeze opened, while it is open, so the failure path
+       in beginLevel can close it. That path set `loading = false` and never
+       called pauseSpanEnd, so the whole stretch the loader had been up for
+       was left ON the round clock - a room that failed to load cost the
+       player that many seconds of their round, exactly what the freeze is
+       there to prevent. */
+    let loadSpanFrom = 0;
+
     async function loadRoom() {
         const started = performance.now();
         /* A tab already hidden when this begins: close that span here so the
@@ -3553,6 +3945,9 @@
            the loader's, and it runs to the bottom of this function. */
         if (hiddenAt) { pauseSpanEnd(hiddenAt); hiddenAt = 0; }
         loading = true;
+        loadSpanFrom = started;
+        // A tap from the round before is not an instruction for this one.
+        queuedTap = null;
         roomLoader(true, 0);
 
         const urls = spriteUrlsInRoom();
@@ -3592,10 +3987,18 @@
            view you just pressed Play on. */
         dirty = true;
         draw(gameNow());
-        await countIn();
+        /* THE LIFE CALLOUT, if this room is a retry or the reward for a fifth
+           clear, goes up as the count's opening beat - inside the same freeze,
+           so it costs the round nothing either, and BEFORE the 3 rather than
+           over it, so the two never share the screen. */
+        const callout = pendingCallout;
+        pendingCallout = null;
+        await countIn(callout);
 
         loading = false;
         pauseSpanEnd(started);
+        // Closed: a throw from here on must not make the catch close it again.
+        loadSpanFrom = 0;
         /* Still frozen — the player switched away while it loaded, or turned
            the phone upright, or has the round paused. Open a fresh span from
            here so that freeze carries on, rather than leaving the round
@@ -3607,6 +4010,7 @@
         hiddenAt = frozen() ? performance.now() : 0;
         lastPaint = 0;
         dirty = true;
+        releaseQueuedTap();
     }
 
     /* Three, two, one — over a room that is already drawn and standing still.
@@ -3616,23 +4020,70 @@
        to look at them before the first piece falls. It is not a loading
        screen; the loading already happened. */
     const COUNT_MS = 700;
+    /* The life beat is held longer than a number: it is two things to read
+       (the heart, and which way the count went) rather than one digit the
+       player already expects, and it is news rather than ritual. */
+    const LIFE_BEAT_MS = 1100;
 
-    function countIn() {
+    /* ---- A LIFE GONE, A LIFE WON - said over the room, in the count's voice.
+
+       Both used to be one line in the builder's play bar, which a player never
+       sees: a player's first sign of a lost life was the heart missing from the
+       readout, and an extra life was never announced at all. So each is now a
+       beat of its own at the head of the count-in - the same 72px amber, the
+       same hard shadow, the same landing - with the readout's own heart in the
+       readout's own red in front of "+1" or "-1".
+
+       It rides the count-in rather than having an element of its own so that
+       it inherits everything the count already gets right: it sits inside the
+       loader's freeze (so it is never play time - see loadRoom), it is under
+       the pause button and over the room, it takes no taps, it honours reduced
+       motion, and it is gone when the count is. A separate overlay would have
+       had to re-earn each of those, and would have flashed the scrim off and
+       on again between the two.
+
+       "-1" is an ASCII hyphen, not U+2212: Silkscreen is the digits' face and
+       has no minus sign, so the real one would fall back to a system font in
+       the middle of a pixel numeral. The heart is set in the HUD's own face -
+       it is the glyph the readout draws, and U+2665 is on the list of
+       characters checked safe in Volter (see the note at the top of the
+       window's type rules in css/fallinfurni.css). */
+    function lifeBeat(n, callout) {
+        n.textContent = "";
+        const heart = document.createElement("span");
+        heart.className = "ff-countin-heart";
+        heart.textContent = "♥";
+        n.append(heart, callout.kind === "lost" ? "-1" : "+1");
+        n.classList.add(callout.kind === "lost" ? "is-life-lost" : "is-life-won");
+    }
+
+    function countIn(callout) {
         const root = document.getElementById("ff-countin");
         const n = document.getElementById("ff-countin-n");
         if (!root || !n) return Promise.resolve();
 
         const beats = ["3", "2", "1", "Go"];
+        if (callout) beats.unshift(callout);
         return new Promise((resolve) => {
             let i = 0;
             root.hidden = false;
             const step = () => {
+                n.classList.remove("is-life-lost", "is-life-won");
                 if (i >= beats.length) {
                     root.hidden = true;
                     resolve();
                     return;
                 }
                 const word = beats[i++];
+                if (typeof word === "object") {
+                    lifeBeat(n, word);
+                    n.classList.remove("is-go");
+                    n.style.animation = "none";
+                    void n.offsetWidth;
+                    n.style.animation = "";
+                    setTimeout(step, LIFE_BEAT_MS);
+                    return;
+                }
                 n.textContent = word;
                 n.classList.toggle("is-go", word === "Go");
                 /* Restarting the animation needs the element out of the
@@ -3657,32 +4108,6 @@
             else if (f.url) urls.push(f.url);
         }
         return urls;
-    }
-
-    // Resolve once every sprite the room wants has loaded, or after `ms`.
-    function waitForSprites(ms) {
-        /* Every PART's url, not the piece's — a furni in the library is drawn
-           from several files and the room is only finished when they have all
-           arrived. */
-        const urls = [];
-        for (const f of state.furni) {
-            const parts = Furni.partsOf(f, gameNow());
-            if (parts) for (const p of parts) urls.push(p.url);
-            else if (f.url) urls.push(f.url);
-        }
-        if (!urls.length) return Promise.resolve();
-        return new Promise((resolve) => {
-            const started = performance.now();
-            const check = () => {
-                const pending = urls.some(u => {
-                    const s = Furni.sprite(u);
-                    return !s.ready && !s.failed;
-                });
-                if (!pending || performance.now() - started > ms) resolve();
-                else setTimeout(check, 60);
-            };
-            check();
-        });
     }
 
     /* Put the player and the room where the level says, clear the readout, and
@@ -3724,10 +4149,21 @@
             loadRoom().catch((e) => {
                 console.error("Fallin' Furni: the room loader failed", e);
                 loading = false;
+                /* Close the loader's span, as the success path does - see
+                   loadSpanFrom - and, as there, open a fresh one if something
+                   else (a hidden tab, the rotate gate, the pause) is still
+                   holding the clock. */
+                if (loadSpanFrom) { pauseSpanEnd(loadSpanFrom); loadSpanFrom = 0; }
+                hiddenAt = frozen() ? performance.now() : 0;
                 roomLoader(false, 1);
+                // The count, and any life beat at its head, go with it.
+                pendingCallout = null;
+                const count = document.getElementById("ff-countin");
+                if (count) count.hidden = true;
                 lastPaint = 0;
                 dirty = true;
-                status("The room did not finish loading - playing anyway.", "bad");
+                tell("The room did not finish loading - playing anyway.", "bad");
+                releaseQueuedTap();
             });
         }
     }
@@ -3775,18 +4211,35 @@
         if (!published) {
             status("Loading levels…", "busy");
             published = await Levels.fetchPublished();
-            if (published.length) furniLoaded = loadLevelFurni(published);
+            if (published && published.length) furniLoaded = loadLevelFurni(published);
         }
         // See `furniLoaded`: the levels being in says nothing about the
         // furnidata, and a round built without it drops chairs that are not
         // seats. Costs nothing once it has settled.
-        if (furniLoaded) await furniLoaded;
+        // And a furnidata request that FAILED is the same refusal prepare()
+        // gives it - see furniFailed.
+        if (furniLoaded && !(await furniLoaded)) {
+            furniFailed();
+            return;
+        }
+        if (published === null) {
+            status("Couldn't reach the levels - check your connection and press Retry.", "bad");
+            showTitle();
+            return;
+        }
         if (!published.length) {
             status("No levels have been published yet.", "bad");
             showTitle();
             return;
         }
         hideTitle();
+        /* The token first and the clock straight after, so the server's
+           stamp can only ever be LATER than the page's start - the side
+           ff-scores.js's tolerance is written for. Not awaited: see
+           requestRunToken. */
+        runToken = requestRunToken();
+        runSubmitted = false;
+        boardLine = null;
         runStartedAt = gameNow();
         // A new run is a new row: whatever the last one did, this one is
         // unreported until it ends.
@@ -3807,6 +4260,8 @@
         if (paused) { paused = false; freezeChanged(); }
         if (game) game.stop();
         game = null; run = null;
+        hideSay();
+        queuedTap = null;
         if (Editor) syncEditor();
         else {
             // Back to the title, which is the hotel view rather than a room.
@@ -3900,6 +4355,17 @@
             if (!t) return;
             const playing = game && game.state === Game.RUNNING;
             if (Editor && !playing) { editorClick(t, ev); return; }
+            /* NOT WHILE THE ROOM IS LOADING OR COUNTING IN. The count-in lets
+               taps through (it is pointer-events: none so it never eats one),
+               and a walk started then stamped its step with a `gameNow` from
+               BEFORE loadRoom wound the clock back by the whole freeze - so
+               when the round began the step looked seconds old and the avatar
+               jumped up to six tiles down its route in one frame.
+
+               Kept rather than dropped: a player tapping on "1" is telling us
+               where they want to go, so the tile is held and walked to the
+               moment the round actually starts. Only the latest one counts. */
+            if (loading) { queuedTap = t; return; }
             walkTo(t.x, t.y);
         });
 
@@ -4084,6 +4550,13 @@
                    no repaint, no readout, no error — and there is otherwise
                    no way to tell it from one. */
                 get loading() { return loading; },
+                /* The life callout, on demand - "won" or "lost" - played as it
+                   is in a round: the beat, then 3-2-1-Go. Display only: it
+                   touches no clock and no run, so it can be fired over the
+                   title screen to look at the thing without losing a life. */
+                previewLife(kind) {
+                    return countIn({ kind: kind === "lost" ? "lost" : "won" });
+                },
                 setWalkMs(ms) {
                     const n = Number(ms);
                     if (Number.isFinite(n) && n >= 80 && n <= 2000) WALK_MS = n;
@@ -4112,6 +4585,17 @@
            not awaited: the loop is already painting, so the room appears
            behind the title as its pieces arrive. */
         if (!Editor) prepare();
+
+        /* RETRY, for a levels request that failed. prepare() is the whole of
+           "get this page ready to play", so a second try is simply running it
+           again - it resets the title to "loading" first, which also stops a
+           second press landing while the first is still out. */
+        const retry = document.getElementById("ff-title-retry");
+        if (retry && !Editor) retry.addEventListener("click", () => {
+            published = null;
+            status("", "");
+            prepare();
+        });
     }
 
     // init is async now (it may have to ask the server who you are), so its

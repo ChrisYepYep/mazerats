@@ -298,5 +298,41 @@ exports.handler = async (event) => {
      node -e "const {sanitiseHtml} = require('./netlify/functions/article');
               console.log(sanitiseHtml('<p onclick=alert(1)>hi</p>', 'https://origins.habbo.com/'))"
 */
+/* An article as it arrives in an event SAVE, made fit to store.
+
+   The handler above sanitises what it fetches, but it only ever hands the
+   result back to the admin page — the page then sends it on to events.js
+   inside the event, and that is the copy that gets stored and later set as
+   innerHTML in every visitor's modal. So the save path could be given any
+   body at all by anybody holding a token, and the sanitiser was never in
+   the way. Run again here, on the way in, it is the one that counts.
+
+   Idempotent over its own output, so a body that went through extract()
+   comes out the same. The url must be http(s) or it is dropped, as are the
+   hero image and every link inside; the plain-text fields are coerced to
+   short strings, since the page writes some of them into markup too.
+   Anything that is not an object is not an article. */
+const ARTICLE_TEXT_MAX = 500;
+function cleanArticle(article) {
+    if (!article || typeof article !== "object" || Array.isArray(article)) return null;
+    const str = (v) => (typeof v === "string" ? v : "").slice(0, ARTICLE_TEXT_MAX);
+    const url = safeUrl(typeof article.url === "string" ? article.url : "");
+    const base = url || "https://origins.habbo.com/";
+    // Only the fields extract() and the handler produce: nothing else is
+    // rendered, so nothing else has any business being stored.
+    return {
+        url,
+        title: str(article.title),
+        date: str(article.date),
+        category: str(article.category),
+        summary: str(article.summary),
+        image: safeUrl(typeof article.image === "string" ? article.image : "", base),
+        body: sanitiseHtml(typeof article.body === "string" ? article.body : "", base),
+        fetchedAt: str(article.fetchedAt)
+    };
+}
+
 module.exports.extract = extract;
 module.exports.sanitiseHtml = sanitiseHtml;
+module.exports.safeUrl = safeUrl;
+module.exports.cleanArticle = cleanArticle;

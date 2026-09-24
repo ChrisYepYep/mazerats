@@ -81,20 +81,66 @@ window.AdminWizard = (function () {
 
     function $(id) { return document.getElementById(id); }
     function esc(str) { return ctx.escapeHtml(String(str == null ? "" : str)); }
+    /* A stored picture address about to be drawn as an <img>. esc() keeps it
+       inside its attribute but not off a "javascript:" or "data:" scheme, so
+       only http(s) and paths on this site are drawn — the same rule as
+       safeUrl in js/admin.js. Anything else draws nothing. */
+    function safeSrc(url) {
+        const s = String(url || "").trim();
+        if (!s || s.startsWith("//")) return "";
+        if (/^https?:\/\//i.test(s)) return s;
+        const colon = s.indexOf(":"), slash = s.indexOf("/");
+        return colon !== -1 && (slash === -1 || colon < slash) ? "" : s;
+    }
     const round = v => Math.round(v * 1000) / 1000;
     const clamp = v => Math.max(0, Math.min(100, v));
 
     // ---------- loading and saving ----------
 
+    /* Kept in step with MOVABLE in netlify/functions/wizard.js, which
+       refuses anything not on its own list. A field marked as changed here
+       but missing from either list is the worst kind of bug: the unsaved
+       badge clears, and the change is gone. Module-level because load()
+       needs the same list to carry unsaved moves across a reload. */
+    const CARRIED = ["x", "y", "w", "h", "size", "rotation", "align", "points", "z",
+        "opacity", "spacing", "gap", "blend", "flipX", "flipY",
+        "grayscale", "sepia", "brightness", "contrast", "saturate", "blur", "ink",
+        "fromZoom", "toZoom"];
+
+    // The fields one pending record would send, as they stand right now.
+    function carriedOf(record) {
+        const out = {};
+        for (const key of CARRIED) {
+            if (record[key] !== undefined) out[key] = record[key];
+        }
+        return out;
+    }
+
     async function load() {
+        let fresh;
         try {
-            data = await ctx.api.getWizardMapFresh(ctx.token());
+            fresh = await ctx.api.getWizardMapFresh(ctx.token());
         } catch (err) {
             if (err.status === 401) return ctx.lockOut();
             say("Could not load the map — " + (err.message || "try again."), "bad");
             return;
         }
-        pending.clear();
+        data = fresh;
+        /* Unsaved moves survive a reload.
+
+           Saving a room's details, the map settings, adding a secret or
+           deleting one all reload the map — and this used to clear the
+           unsaved pile as it did, so the rooms went back to where the server
+           still had them and half an hour of arranging vanished with the
+           badge quietly returning to nought. The moves are re-applied on top
+           of the fresh records instead, and the pile now points at those.
+           A record that no longer exists simply drops out. */
+        for (const [key, entry] of [...pending]) {
+            const record = find(entry.kind, entry.id);
+            if (!record) { pending.delete(key); continue; }
+            Object.assign(record, JSON.parse(JSON.stringify(carriedOf(entry.record))));
+            pending.set(key, { kind: entry.kind, id: entry.id, record });
+        }
         trailFrom = null;
         view.setData(data);
         view.render();
@@ -168,25 +214,24 @@ window.AdminWizard = (function () {
        anything else along with it — see netlify/functions/wizard.js. */
     async function savePositions() {
         if (!pending.size) return;
-        /* Kept in step with MOVABLE in netlify/functions/wizard.js, which
-           refuses anything not on its own list. A field marked as changed
-           here but missing from either list is the worst kind of bug: the
-           unsaved badge clears, and the change is gone. */
-        const CARRIED = ["x", "y", "w", "h", "size", "rotation", "align", "points", "z",
-            "opacity", "spacing", "gap", "blend", "flipX", "flipY",
-            "grayscale", "sepia", "brightness", "contrast", "saturate", "blur", "ink",
-            "fromZoom", "toZoom"];
-        const items = [...pending.values()].map(({ kind, record }) => {
-            const item = { kind, id: record.id };
-            for (const key of CARRIED) {
-                if (record[key] !== undefined) item[key] = record[key];
-            }
-            return item;
+        /* A snapshot of exactly what is being sent, per record. The request
+           takes a moment, and anything dragged while it is in flight is a
+           NEW change: clearing the whole pile afterwards used to throw that
+           away with the badge showing nought. Only a record whose fields
+           still match what was sent comes off the pile. */
+        const sent = new Map();
+        const items = [...pending].map(([key, { kind, record }]) => {
+            const fields = carriedOf(record);
+            sent.set(key, JSON.stringify(fields));
+            return { kind, id: record.id, ...JSON.parse(JSON.stringify(fields)) };
         });
         els.savePositions.disabled = true;
         try {
             await ctx.api.saveWizardPositions(ctx.token(), items);
-            pending.clear();
+            for (const [key, snapshot] of sent) {
+                const entry = pending.get(key);
+                if (entry && JSON.stringify(carriedOf(entry.record)) === snapshot) pending.delete(key);
+            }
             updateDirty();
             say(`Saved ${items.length === 1 ? "one change" : items.length + " changes"}.`, "good");
         } catch (err) {
@@ -1150,7 +1195,9 @@ window.AdminWizard = (function () {
     }
 
     function num(name, value, step, extra) {
-        return `<input type="number" step="${step}" data-set="${name}" value="${value == null ? "" : value}" ${extra || ""}>`;
+        // value escaped: it is a stored field, and the endpoint keeps what it
+        // is sent rather than coercing it to a number (see the room form).
+        return `<input type="number" step="${step}" data-set="${name}" value="${esc(value == null ? "" : value)}" ${extra || ""}>`;
     }
 
     /* What is selected, and everything worth changing while looking at the
@@ -1455,12 +1502,33 @@ window.AdminWizard = (function () {
     async function onInspectorInput(e) {
         const field = e.target.dataset.set;
         if (!field || !selected) return;
+        // A view-only account sees the inspector greyed out, but the fields
+        // still take typing — which changed the map on screen and piled up
+        // "unsaved changes" the server would only refuse.
+        if (!ctx.canWrite()) return;
         const record = find(selected.kind, selected.id);
         if (!record) return;
 
         // Fields that change what the record IS rather than where it sits.
         // Saved on the spot; positions wait for Save Positions.
         const immediate = ["from", "to", "style", "secret", "exit", "name", "floor", "status", "blend"];
+
+        /* Which of the two events this listener hears is the one to act on.
+
+           It is wired to both "input" and "change", and a <select> fires
+           BOTH for a single pick — so every select saved twice. And the text
+           fields among the immediate ones (a picture's name, a room's floor,
+           a trail's exit) saved on every keystroke, re-rendering the
+           inspector each time and taking the caret out of the box after the
+           first letter. So: selects, files and text fields act on "change"
+           alone (a text field's change is when you leave it or press
+           Enter); numbers and the bend slider stay live on "input", which
+           is what lets a curve or a position be judged under the hand. */
+        const tag = e.target.tagName;
+        const type = (e.target.type || "").toLowerCase();
+        const onChangeOnly = tag === "SELECT" || type === "file" || type === "checkbox" ||
+            (tag === "INPUT" && (type === "text" || type === "")) || tag === "TEXTAREA";
+        if (onChangeOnly ? e.type !== "change" : e.type !== "input") return;
 
         /* Swapping the picture out. Uploaded first and only then written to
            the record, so a failed upload leaves the old picture in place
@@ -1524,11 +1592,21 @@ window.AdminWizard = (function () {
         }
 
         if (immediate.includes(field)) {
+            const kind = selected.kind;
             record[field] = field === "secret" ? e.target.value === "1" : e.target.value;
             if (field === "style" || field === "secret") redrawTrail(record);
             if (field === "blend") view.redrawLayer(record);
-            await saveOne(selected.kind, record);
+            await saveOne(kind, record);
             if (field === "name" || field === "status") { view.render(); restoreSelection(); renderRoomList(); }
+            /* A text field is left alone rather than re-rendered: its change
+               event fires as focus moves on — to the next field, say — and
+               rebuilding the inspector then would throw that field away
+               from under the cursor. Only the heading can have changed. */
+            if (e.target.tagName === "INPUT") {
+                const heading = els.inspector.querySelector(".admin-wiz-inspector-head h4");
+                if (heading && field === "name" && kind === "layer") heading.textContent = record.name || "Untitled picture";
+                return;
+            }
             renderInspector();
             return;
         }
@@ -2544,7 +2622,7 @@ window.AdminWizard = (function () {
         return `
             <div class="admin-wiz-image-field" data-image-field="${name}">
                 <span class="admin-field-label">${label}</span>
-                <div class="admin-wiz-preview">${current ? `<img src="${esc(current)}" alt="">` : ""}</div>
+                <div class="admin-wiz-preview">${safeSrc(current) ? `<img src="${esc(safeSrc(current))}" alt="">` : ""}</div>
                 <input type="hidden" name="${name}" value="${esc(current || "")}">
                 <input type="file" name="${name}File" accept="image/*">
                 ${current ? `<button type="button" class="admin-action-pill" data-clear>Remove</button>` : ""}
@@ -2571,10 +2649,15 @@ window.AdminWizard = (function () {
             </div>
 
             <div class="admin-wiz-inspector-grid">
-                ${field("Size", `<input type="number" name="size" step="0.05" min="0.2" max="6" value="${room.size == null ? 1 : room.size}">`, true)}
-                ${field("Rotation", `<input type="number" name="rotation" step="1" min="-180" max="180" value="${room.rotation || 0}">`, true)}
-                ${field("Appears from", `<input type="number" name="fromZoom" step="0.1" min="1" value="${room.fromZoom == null ? "" : room.fromZoom}" placeholder="always">`, true)}
-                ${field("Hidden past", `<input type="number" name="toZoom" step="0.1" min="1" value="${room.toZoom == null ? "" : room.toZoom}" placeholder="never">`, true)}
+                ${/* Escaped although they are numbers in every row written
+                     through this editor: netlify/functions/wizard.js stores
+                     size and rotation as sent, without coercing them, so the
+                     only thing making them numbers is the client that sent
+                     them. The same goes for the map fields further down. */ ""}
+                ${field("Size", `<input type="number" name="size" step="0.05" min="0.2" max="6" value="${esc(room.size == null ? 1 : room.size)}">`, true)}
+                ${field("Rotation", `<input type="number" name="rotation" step="1" min="-180" max="180" value="${esc(room.rotation || 0)}">`, true)}
+                ${field("Appears from", `<input type="number" name="fromZoom" step="0.1" min="1" value="${esc(room.fromZoom == null ? "" : room.fromZoom)}" placeholder="always">`, true)}
+                ${field("Hidden past", `<input type="number" name="toZoom" step="0.1" min="1" value="${esc(room.toZoom == null ? "" : room.toZoom)}" placeholder="never">`, true)}
             </div>
 
             <label class="admin-field admin-wiz-check">
@@ -2641,8 +2724,7 @@ window.AdminWizard = (function () {
             const numOrNull = v => (v === "" || v == null ? null : Number(v));
             const id = form.dataset.id;
             const existing = find("room", id) || {};
-            await ctx.api.updateWizardItem(ctx.token(), "room", {
-                ...existing, id,
+            const changes = {
                 name,
                 note: (fd.get("note") || "").toString().trim(),
                 fullName: (fd.get("fullName") || "").toString().trim(),
@@ -2655,7 +2737,14 @@ window.AdminWizard = (function () {
                 toZoom: numOrNull(fd.get("toZoom")),
                 hidden: fd.get("hidden") === "on",
                 ...images
-            });
+            };
+            await ctx.api.updateWizardItem(ctx.token(), "room", { ...existing, id, ...changes });
+            /* Written onto the loaded record as well. load() below carries
+               unsaved moves across the reload from the record the pile
+               points at — and size, rotation and the zoom band are among
+               them — so without this a room that was both dragged and
+               edited here had its new size put straight back to the old. */
+            if (find("room", id)) Object.assign(existing, changes);
             openRoomId = null;
             await load();
             say("Saved.", "good");
@@ -2669,6 +2758,10 @@ window.AdminWizard = (function () {
     }
 
     async function addRoom() {
+        // The same guard addSecret has. The button is greyed for a
+        // view-only account, but a click that reached here anyway sent a
+        // create the server refuses, and said so as a failure.
+        if (!ctx.canWrite()) return;
         const box = els.stage.getBoundingClientRect();
         const middle = view.screenToPct(box.left + box.width / 2, box.top + box.height / 2);
         try {
@@ -2705,16 +2798,16 @@ window.AdminWizard = (function () {
             </div>
             <p class="admin-hint">The second sheet is what keeps the paper's grain from going soft
                 up close. Nobody downloads it until they zoom past
-                <strong>${map.backgroundDetailZoom || 2.5}&times;</strong>, so the map still opens on the
+                <strong>${esc(map.backgroundDetailZoom || 2.5)}&times;</strong>, so the map still opens on the
                 small one. Leave it empty and the small sheet is simply scaled up, as it always was.</p>
 
             <div class="admin-wiz-inspector-grid">
-                ${field("Sheet width (px)", `<input type="number" name="width" min="200" value="${map.width}">`, true)}
-                ${field("Sheet height (px)", `<input type="number" name="height" min="200" value="${map.height}">`, true)}
-                ${field("Closest zoom", `<input type="number" name="maxZoom" step="0.5" min="1" value="${map.maxZoom}">`, true)}
-                ${field("Footprint gap", `<input type="number" name="footprintSpacing" step="0.1" min="0" value="${map.footprintSpacing || 0}">`, true)}
-                ${field("Gap from room names", `<input type="number" name="labelGap" step="0.05" min="0" max="6" value="${map.labelGap == null ? 0.34 : map.labelGap}">`, true)}
-                ${field("Big sheet loads at", `<input type="number" name="backgroundDetailZoom" step="0.5" min="1" value="${map.backgroundDetailZoom == null ? 2.5 : map.backgroundDetailZoom}">`, true)}
+                ${field("Sheet width (px)", `<input type="number" name="width" min="200" value="${esc(map.width)}">`, true)}
+                ${field("Sheet height (px)", `<input type="number" name="height" min="200" value="${esc(map.height)}">`, true)}
+                ${field("Closest zoom", `<input type="number" name="maxZoom" step="0.5" min="1" value="${esc(map.maxZoom)}">`, true)}
+                ${field("Footprint gap", `<input type="number" name="footprintSpacing" step="0.1" min="0" value="${esc(map.footprintSpacing || 0)}">`, true)}
+                ${field("Gap from room names", `<input type="number" name="labelGap" step="0.05" min="0" max="6" value="${esc(map.labelGap == null ? 0.34 : map.labelGap)}">`, true)}
+                ${field("Big sheet loads at", `<input type="number" name="backgroundDetailZoom" step="0.5" min="1" value="${esc(map.backgroundDetailZoom == null ? 2.5 : map.backgroundDetailZoom)}">`, true)}
             </div>
             <p class="admin-hint">How near a trail may come to a name, as a percentage of the sheet's
                 width, for every trail that has not been given its own. 0 lets them touch the writing;
@@ -2722,8 +2815,7 @@ window.AdminWizard = (function () {
                 it and set <strong>Gap from names</strong>.</p>
 
             <div class="admin-wiz-band-row">
-                <span class="admin-hint">Opens at
-                    <strong>${map.startZoom ? Math.round(map.startZoom * 100) + "%" : "the whole map"}</strong>${map.startZoom ? `, centred on ${(map.startX || 50).toFixed(0)}% / ${(map.startY || 50).toFixed(0)}%` : ""}.</span>
+                <span class="admin-hint" data-map-start-text>${openingViewHtml(map)}</span>
                 <button type="button" class="admin-action-pill" data-map="start">Open here</button>
                 <button type="button" class="admin-action-pill" data-map="start-clear">Open on the whole map</button>
             </div>
@@ -2741,6 +2833,13 @@ window.AdminWizard = (function () {
                 wrap.querySelector(".admin-wiz-preview").innerHTML = "";
             });
         });
+    }
+
+    // The "Opens at …" line, on its own so the buttons below can repaint
+    // just this rather than the whole form.
+    function openingViewHtml(map) {
+        return `Opens at
+            <strong>${map.startZoom ? Math.round(map.startZoom * 100) + "%" : "the whole map"}</strong>${map.startZoom ? `, centred on ${(Number(map.startX) || 50).toFixed(0)}% / ${(Number(map.startY) || 50).toFixed(0)}%` : ""}.`;
     }
 
     /* The opening view, taken from wherever you happen to be looking.
@@ -2762,7 +2861,12 @@ window.AdminWizard = (function () {
             pendingStart = { startX: null, startY: null, startZoom: null };
         }
         Object.assign(map, pendingStart);
-        renderMapSettings();
+        /* Only the line that describes the opening view is repainted. This
+           used to call renderMapSettings(), which rebuilt the whole form
+           from the stored map — so a title typed or a picture chosen just
+           before pressing "Open here" was silently wiped. */
+        const line = els.mapForm.querySelector("[data-map-start-text]");
+        if (line) line.innerHTML = openingViewHtml(map);
         say("Opening view set. Press Save map settings to keep it.", "");
     }
 
@@ -2832,6 +2936,17 @@ window.AdminWizard = (function () {
 
     function init(context) {
         ctx = context;
+        /* Once only. js/admin.js calls this on every sign-in, including
+           signing back in after the session ran out, and a second run built
+           a second map engine over the same stage with a second copy of
+           every listener — each drag, click and arrow key then acted twice.
+           A repeat call now just takes the new context (session, role) and
+           reloads; the unsaved pile survives, because load() carries it
+           across (see load). */
+        if (view) {
+            load();
+            return;
+        }
         els = {
             editor: $("wiz-admin-editor"),
             stage: $("wiz-admin-stage"),

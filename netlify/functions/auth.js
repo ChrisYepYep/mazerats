@@ -25,9 +25,8 @@
    the collection has zero admins, so it also doubles as a recovery route
    if every admin account is ever deleted. */
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 const { getDb } = require("./_db");
-const { isAuthorized, canWrite, refuseWrite, usernameFromToken, sessionOf, UNAUTHORIZED, READ_ONLY, ROLES, resolveRole } = require("./_auth");
+const { isAuthorized, hasAccount, canWrite, refuseWrite, usernameFromToken, sessionOf, UNAUTHORIZED, READ_ONLY, ROLES, PERMANENT_OWNER, resolveRole, signAdminToken } = require("./_auth");
 const { record, COLLECTION: ACTIVITY } = require("./_audit");
 const { SECURITY_HEADERS } = require("./_headers");
 
@@ -37,9 +36,9 @@ const json = (statusCode, data) => ({
     body: JSON.stringify(data)
 });
 
-function signToken(username) {
-    return jwt.sign({ sub: username }, process.env.SESSION_SECRET, { expiresIn: "12h" });
-}
+// Minted in _auth.js, beside the verifier that has to agree with it about
+// the audience — see ADMIN_AUDIENCE there.
+const signToken = signAdminToken;
 
 function validPassword(password) {
     return typeof password === "string" && password.length >= 8;
@@ -79,6 +78,7 @@ const text = (v) => (typeof v === "string" ? v : "");
 const LOGIN_MAX_PER_IP = 10;
 const LOGIN_MAX_PER_USER = 15;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGGED_NAME_MAX = 60;
 
 function clientIp(event) {
     /* Only the value Netlify computes. x-forwarded-for is client-settable,
@@ -139,7 +139,8 @@ exports.handler = async (event) => {
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        console.error("auth: database connection failed", e);
+        return json(500, { error: "Database connection failed" });
     }
     const admins = db.collection("admins");
 
@@ -155,11 +156,17 @@ exports.handler = async (event) => {
             const username = text(body.username).trim();
             const password = text(body.password);
             if (!username || !password) return json(400, { error: "Username and password are required" });
+            /* The name as it is counted and logged: cut to LOGGED_NAME_MAX.
+               A failed attempt writes whatever was typed into admin_activity,
+               and nothing bounded it, so anybody could park megabytes of
+               "username" in the log, one refused login at a time. The real
+               lookup below still uses the whole name. */
+            const tried = username.slice(0, LOGGED_NAME_MAX);
 
             /* Before the database is asked anything and before bcrypt runs,
                so a throttled attempt is the cheapest response this function
                has rather than its most expensive one. */
-            const throttled = await loginThrottle(db, event, username);
+            const throttled = await loginThrottle(db, event, tried);
             if (throttled) return throttled;
 
             const count = await admins.countDocuments();
@@ -171,7 +178,7 @@ exports.handler = async (event) => {
                        IS the counter loginThrottle reads, and a burst fired
                        faster than the writes land would count nothing and be
                        throttled at nothing. Paid only on a failure. */
-                    await record(event, "login-failed", { username, reason: "bootstrap password" });
+                    await record(event, "login-failed", { username: tried, reason: "bootstrap password" });
                     return json(401, { error: "Invalid username or password" });
                 }
                 const passwordHash = await bcrypt.hash(password, 10);
@@ -190,7 +197,7 @@ exports.handler = async (event) => {
 
                    Awaited for the same reason the bootstrap failure above is:
                    this row is what the next attempt will be counted against. */
-                await record(event, "login-failed", { username, reason: admin ? "wrong password" : "no such account" });
+                await record(event, "login-failed", { username: tried, reason: admin ? "wrong password" : "no such account" });
                 return json(401, { error: "Invalid username or password" });
             }
             const token = signToken(username);
@@ -202,11 +209,14 @@ exports.handler = async (event) => {
             const username = usernameFromToken(event);
             if (!username) return UNAUTHORIZED;
             const admin = await admins.findOne({ username });
+            // A token for an account that has since been deleted is a
+            // signed-out session, not an admin one — see lookUpRole in _auth.js.
+            if (!admin) return UNAUTHORIZED;
             /* Every admin page load verifies its token, so this is a free
                heartbeat: the gap between a session's first and last record is
                how long that person had the admin open. */
             record(event, "session", { username, session: sessionOf(event) });
-            return json(200, { username, role: resolveRole(admin || { username }) });
+            return json(200, { username, role: resolveRole(admin) });
         }
 
         if (body.action === "create") {
@@ -237,7 +247,7 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "GET") {
-        if (!isAuthorized(event)) return UNAUTHORIZED;
+        if (!(await hasAccount(event))) return UNAUTHORIZED;
         const all = await admins.find({}, { projection: { _id: 0, passwordHash: 0 } }).toArray();
         return json(200, all.map(a => ({ ...a, role: resolveRole(a) })));
     }
@@ -292,6 +302,12 @@ exports.handler = async (event) => {
         }
         const username = (event.queryStringParameters || {}).username;
         if (!username) return json(400, { error: "Missing username" });
+        /* The permanent owner is owner by name (resolveRole in _auth.js), so
+           deleting the row does not demote it — it removes the one account
+           the whole role system is built never to lose, and any other owner
+           could do it. The bootstrap route only comes back when EVERY admin
+           is gone, so this would not have been recoverable from the site. */
+        if (username === PERMANENT_OWNER) return json(403, { error: "That account can't be deleted" });
         const count = await admins.countDocuments();
         if (count <= 1) return json(400, { error: "Can't delete the last remaining admin account" });
         const result = await admins.deleteOne({ username });

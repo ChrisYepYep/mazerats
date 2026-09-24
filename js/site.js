@@ -91,6 +91,86 @@ function imgCdn(path, w, h, q) {
     return `/.netlify/images?${params.toString()}`;
 }
 
+/* ---------- Escape closes the top-most layer, and only that ----------
+
+   The archive stacks things: the side menu, the room modal, the actions tab
+   pulled out of it, the lightbox over that, the console, photo frames and
+   furni cards over everything, and the daily games and Your Progress in
+   windows of their own. Each used to bind its own Escape listener and
+   decide for itself whether to act, so one press could close two or three
+   of them at once — the progress window and the modal both went; the
+   console and the room modal argued about which was in front and the
+   console guessed wrong (it sits at z-index 200, the modal's overlay at
+   100, so it IS in front).
+
+   Now there is one listener. Each layer registers how to tell whether it
+   is open, which element it is, and how to close it; on Escape the open
+   ones are compared by where they actually paint and the front one alone
+   is closed. The listener sits on window in the CAPTURE phase and stops the
+   event once it has acted, so any older per-layer listener still bound
+   further down (js/guess.js and js/oddoneout.js keep their own) never sees
+   the same press and closes a second window behind the first.
+
+   "Where it actually paints": every layer here is either a direct child of
+   <body> or inside one, so the body-level ancestor's z-index decides
+   between layers in different subtrees (DOM order breaks a tie, as it does
+   for the browser), and within one subtree the more deeply nested layer —
+   the actions tab inside the room modal — is the one in front. */
+const EscapeLayers = (() => {
+    const layers = [];
+
+    function topAncestor(el) {
+        let node = el;
+        while (node && node.parentElement && node.parentElement !== document.body) node = node.parentElement;
+        return node;
+    }
+
+    function zOf(el) {
+        const z = parseInt(getComputedStyle(el).zIndex, 10);
+        return isNaN(z) ? 0 : z;
+    }
+
+    // True when a paints in front of b.
+    function inFront(a, b) {
+        if (a.contains(b)) return false;
+        if (b.contains(a)) return true;
+        const ta = topAncestor(a), tb = topAncestor(b);
+        if (ta !== tb) {
+            const za = zOf(ta), zb = zOf(tb);
+            if (za !== zb) return za > zb;
+        }
+        return !!(b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+
+    /* layer.elements() returns the element(s) currently open for it — an
+       empty list when it is shut. Several for the photo frames and furni
+       cards, which can be open many at a time and close one per press.
+       layer.close(el) closes that one. */
+    function register(layer) {
+        layers.push(layer);
+    }
+
+    window.addEventListener("keydown", e => {
+        if (e.key !== "Escape" || e.defaultPrevented) return;
+        let best = null;
+        for (const layer of layers) {
+            let open;
+            try { open = layer.elements() || []; } catch (err) { continue; }
+            for (const el of open) {
+                if (!el || !el.isConnected) continue;
+                if (!best || inFront(el, best.el)) best = { el, layer };
+            }
+        }
+        if (!best) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        best.layer.close(best.el);
+    }, true);
+
+    return { register };
+})();
+window.EscapeLayers = EscapeLayers;
+
 // Small "what's coming up" readout in the header — shown on every page that
 // has the #header-events markup (a no-op elsewhere). Rotates through every
 // upcoming event every 10s with the same clone-and-slide technique the maze
@@ -151,61 +231,93 @@ document.addEventListener("DOMContentLoaded", async () => {
     // went on advertising an event that had already finished, and a live one
     // dropped out of it entirely. A live event sorts to the front: it's the
     // one someone can act on right now.
-    const upcoming = events
-        // No longer requires a date. An event with none is upcoming (see
-        // js/event-status.js) and belongs in the ticker — being announced
-        // before it is scheduled is the normal way round.
-        .filter(e => EventStatus.isUpcomingish(e))
-        // Soonest first, with the undated ones after everything scheduled:
-        // they can't be placed on the calendar, and they are the least
-        // urgent thing in the list precisely because no date is set. The
-        // empty string this leans on also can't throw the way a missing
-        // .date would have.
-        .sort((a, b) => {
-            const ad = a.date || "", bd = b.date || "";
-            if (!ad !== !bd) return ad ? -1 : 1;
-            return ad.localeCompare(bd);
-        })
-        .sort((a, b) => (EventStatus.derive(b) === "live" ? 1 : 0) - (EventStatus.derive(a) === "live" ? 1 : 0));
+    //
+    // WORKED OUT AFRESH ON EVERY TURN of the ticker, not once at load. The
+    // list used to be built when the page opened and kept, so a tab left
+    // open across an event's end went on advertising it for as long as the
+    // tab lived — the status logic was right, it just was never asked again.
+    // Re-deriving it every ten seconds costs a filter and a sort over a
+    // few dozen events.
+    function currentUpcoming() {
+        return events
+            // No longer requires a date. An event with none is upcoming (see
+            // js/event-status.js) and belongs in the ticker — being announced
+            // before it is scheduled is the normal way round.
+            .filter(e => EventStatus.isUpcomingish(e))
+            // Soonest first, with the undated ones after everything scheduled:
+            // they can't be placed on the calendar, and they are the least
+            // urgent thing in the list precisely because no date is set. The
+            // empty string this leans on also can't throw the way a missing
+            // .date would have.
+            .sort((a, b) => {
+                const ad = a.date || "", bd = b.date || "";
+                if (!ad !== !bd) return ad ? -1 : 1;
+                return ad.localeCompare(bd);
+            })
+            .sort((a, b) => (EventStatus.derive(b) === "live" ? 1 : 0) - (EventStatus.derive(a) === "live" ? 1 : 0));
+    }
 
     widget.style.display = "block";
+    let upcoming = currentUpcoming();
     let index = 0;
-    slideEl.innerHTML = slideMarkup(upcoming[0]);
+    // What is on screen, by identity rather than by position: when the list
+    // is rebuilt and an event has dropped out of it, "the one after the
+    // current one" has to be found again rather than assumed to be index+1.
+    let showing = upcoming[0] || null;
+    slideEl.innerHTML = slideMarkup(showing);
 
-    if (upcoming.length > 1) {
-        setInterval(() => {
-            const nextIndex = (index + 1) % upcoming.length;
+    // Always armed, even for a list of one or none. A single event that
+    // ends has to be taken down, and one that goes live later has to appear,
+    // and neither happens if the timer only exists when there was already
+    // something to rotate.
+    setInterval(() => {
+        upcoming = currentUpcoming();
+        const at = showing ? upcoming.indexOf(showing) : -1;
+        // Nothing to rotate through: settle on whatever is true now
+        // without an animation, and only touch the DOM if it changed.
+        if (upcoming.length <= 1) {
+            const only = upcoming[0] || null;
+            if (only !== showing) {
+                showing = only;
+                index = 0;
+                slideEl.innerHTML = slideMarkup(showing);
+            }
+            return;
+        }
+        // The current one gone (it ended) means the next is whatever
+        // now sits where it was, which is the start if it was last.
+        const nextIndex = at === -1 ? (index % upcoming.length) : (at + 1) % upcoming.length;
 
-            // Rolling-ticker style — both slides travel upward together (the
-            // outgoing one exits off the top, the incoming one enters from
-            // below) rather than sliding sideways.
-            const outgoing = slideEl.cloneNode(true);
-            outgoing.removeAttribute("id");
-            outgoing.classList.add("header-events-slide-outgoing");
-            outgoing.style.transition = "none";
-            outgoing.style.transform = "translateY(0)";
-            viewport.appendChild(outgoing);
+        // Rolling-ticker style — both slides travel upward together (the
+        // outgoing one exits off the top, the incoming one enters from
+        // below) rather than sliding sideways.
+        const outgoing = slideEl.cloneNode(true);
+        outgoing.removeAttribute("id");
+        outgoing.classList.add("header-events-slide-outgoing");
+        outgoing.style.transition = "none";
+        outgoing.style.transform = "translateY(0)";
+        viewport.appendChild(outgoing);
 
-            slideEl.style.transition = "none";
-            slideEl.style.transform = "translateY(100%)";
-            slideEl.innerHTML = slideMarkup(upcoming[nextIndex]);
+        slideEl.style.transition = "none";
+        slideEl.style.transform = "translateY(100%)";
+        slideEl.innerHTML = slideMarkup(upcoming[nextIndex]);
 
-            // Commits the "start" transforms above before the transition to
-            // their end state is requested below — otherwise both style
-            // writes get coalesced into one paint and neither one visibly
-            // moves (same reflow trick as slideGalleryImage in home.js).
-            void slideEl.offsetWidth;
+        // Commits the "start" transforms above before the transition to
+        // their end state is requested below — otherwise both style
+        // writes get coalesced into one paint and neither one visibly
+        // moves (same reflow trick as slideGalleryImage in home.js).
+        void slideEl.offsetWidth;
 
-            outgoing.style.transition = "";
-            slideEl.style.transition = "";
-            outgoing.style.transform = "translateY(-100%)";
-            slideEl.style.transform = "translateY(0)";
+        outgoing.style.transition = "";
+        slideEl.style.transition = "";
+        outgoing.style.transform = "translateY(-100%)";
+        slideEl.style.transform = "translateY(0)";
 
-            outgoing.addEventListener("transitionend", () => outgoing.remove(), { once: true });
+        outgoing.addEventListener("transitionend", () => outgoing.remove(), { once: true });
 
-            index = nextIndex;
-        }, 10000);
-    }
+        index = nextIndex;
+        showing = upcoming[nextIndex];
+    }, 10000);
 });
 
 // "Fellow Fansites" strip, injected right before .site-footer on every page

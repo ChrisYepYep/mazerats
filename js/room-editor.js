@@ -801,9 +801,20 @@
         return (await res.json()).levels || [];
     }
 
+    /* `publish` is three-valued, on purpose:
+
+         true        Publish - saved AND in the run
+         false       Unpublish - saved and taken OUT of the run
+         undefined   Save - saved, and left exactly as published as it was
+
+       Save used to send `publish === true`, which for plain Save is false - so
+       fixing a typo in a live level and pressing Save quietly pulled it out of
+       every player's run. Nothing said so; the level simply stopped appearing.
+       Taking a level out is now its own button that asks first. */
     async function saveServer(publish) {
         commit();
-        const level = { ...state.level, published: publish === true };
+        const published = typeof publish === "boolean" ? publish : state.level.published === true;
+        const level = { ...state.level, published };
         if (!level.name) throw new Error("Give the level a name first.");
         const headers = { "Content-Type": "application/json", ...authHeaders() };
 

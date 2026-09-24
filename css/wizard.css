@@ -927,6 +927,97 @@
 .wiz-secret-count { white-space: nowrap; }
 .wiz-secrets.is-complete .wiz-secret-count { color: var(--amber-bright); }
 
+/* ---------- the same, for a finger ----------
+
+   A phone cannot type at the map and cannot hover for a title, so on a coarse
+   pointer - and only there - the tally becomes the one thing in this block you
+   can press, and it opens a small sheet under itself: the clues in words and
+   a line to speak into. It is dressed exactly like the search results that
+   drop out of the box beside it, so it reads as the same furniture rather
+   than as a new feature bolted on. See wireTouchSecrets in js/wizard.js.
+
+   Everything outside the media query is the part that must hold whatever the
+   pointer is: the sheet is positioned against the tally and stays hidden. */
+.wiz-secrets { position: relative; }
+
+.wiz-secret-sheet {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    width: min(300px, calc(100vw - 32px));
+    margin-top: 4px;
+    padding: 8px 10px 10px;
+    border: 2px solid var(--chrome-border);
+    border-radius: 6px;
+    background: var(--chrome-fill);
+    color: var(--parchment);
+    font-size: 13px;
+    box-sizing: border-box;
+}
+
+.wiz-secret-sheet[hidden] { display: none; }
+
+.wiz-secret-clues {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+    color: var(--parchment-dim);
+    line-height: 1.4;
+}
+
+.wiz-secret-clues li { padding: 2px 0; }
+.wiz-secret-clues li.is-found { color: var(--amber-bright); }
+.wiz-secret-clues:empty { display: none; }
+
+.wiz-secret-form { display: flex; gap: 6px; margin: 0; }
+
+.wiz-secret-form input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 2px solid var(--chrome-border);
+    border-radius: 6px;
+    background: var(--wood-dark, rgba(0, 0, 0, 0.25));
+    color: var(--parchment);
+    font-family: inherit;
+    /* 16px, not 13: iOS zooms the whole page into any field set smaller than
+       that the moment it is focused, and the map would lurch sideways. */
+    font-size: 16px;
+}
+
+.wiz-secret-form input::placeholder { color: var(--parchment-dim); }
+
+.wiz-secret-form button {
+    padding: 8px 12px;
+    border: 2px solid var(--chrome-border);
+    border-radius: 6px;
+    background: var(--chrome-highlight);
+    color: var(--amber-bright);
+    font-family: inherit;
+    font-size: 13px;
+}
+
+/* A miss is not announced - that is the puzzle - but a word spoken into a
+   field and met with nothing at all reads as a broken button. One small
+   shake of the line is the whole reply. */
+.wiz-secret-form.is-miss { animation: wiz-secret-miss 0.32s ease; }
+
+@keyframes wiz-secret-miss {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wiz-secret-form.is-miss { animation: none; }
+}
+
+@media (pointer: coarse) {
+    /* On a touch screen the tally does open something, so it says so. */
+    .wiz-secret-tally { cursor: var(--cursor-pointer, pointer); }
+    .wiz-secrets.is-open .wiz-secret-tally { border-color: var(--amber); }
+}
+
 
 /* ---------- what happens on the map ---------- */
 
@@ -2106,7 +2197,17 @@ body.is-albus .admin-panel[data-panel="wizard"] .admin-add-btn,
 body.is-albus .admin-panel[data-panel="wizard"] .admin-edit-btn,
 body.is-albus .admin-panel[data-panel="wizard"] .admin-delete-btn,
 body.is-albus .admin-panel[data-panel="wizard"] .admin-action-pill,
-body.is-albus .admin-panel[data-panel="wizard"] .admin-form-actions button {
+body.is-albus .admin-panel[data-panel="wizard"] .admin-form-actions button,
+/* The atlas rules style.css added to the view-only list — the inspector's
+   data-act/data-band buttons and the secret and room forms' own controls.
+   Named with the same id and more classes than the view-only rule (whose
+   two :not()s count as two) so these win on specificity rather than on
+   which stylesheet happens to load last. */
+body.is-albus.is-viewer .admin-panel[data-panel="wizard"] #wiz-admin-inspector [data-act],
+body.is-albus.is-viewer .admin-panel[data-panel="wizard"] #wiz-admin-inspector [data-band],
+body.is-albus .admin-panel[data-panel="wizard"] .admin-wiz-secret-form .btn,
+body.is-albus .admin-panel[data-panel="wizard"] .admin-wiz-hold-drop,
+body.is-albus .admin-panel[data-panel="wizard"] .admin-wiz-inline-form [data-clear] {
     opacity: 1;
     pointer-events: auto;
     cursor: var(--cursor-pointer);

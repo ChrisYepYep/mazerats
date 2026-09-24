@@ -33,14 +33,31 @@
     const STATE_KEY = "mazerats_odd_v1";
     const STATS_KEY = "mazerats_odd_stats_v1";
 
-    const day = () => window.Daily.today();
+    /* THE DAY BEING PLAYED, which is not always today.
 
-    let pool = [];                 // mazes with enough pictures to hide one in
+       This used to be `() => Daily.today()`, read fresh by everything that
+       needed a day — dealing, banking, sharing, submitting. So a round in
+       progress at midnight was re-dealt between one pick and the next: the
+       first picks were made against yesterday's tiles, the rest against
+       today's, and the mixed result went to the server filed under TODAY,
+       where the one-row-per-player-per-day index then refused the player's
+       real go at today once they came back for it.
+
+       Now the day is pinned in state.day when a day's game begins, and
+       everything reads it from there. Crossing midnight changes nothing
+       about a game already under way; the new day starts the next time the
+       window is opened on a finished (or untouched) old one — see open(). */
+    const day = () => (state && state.day) || window.Daily.today();
+
+    let archive = [];              // the rooms as the API returned them
+    let archiveDay = "";           // the UTC day they were fetched on; see open()
+    let pool = [];                 // mazes with enough pictures to hide one in, for state.day
+    let poolDay = "";
     let state = null;
     let stats = null;
     let el = {};
     let showSplash = true;
-    let posted = false;
+    let postedDay = "";            // the day whose result has already been sent this visit
 
     // ---------- the pool ----------
 
@@ -59,10 +76,17 @@
        what that question is about — no palette of its own, nothing
        furnished, no idea being worked out. As the home maze it is a round
        with no answer to find; as the imposter it is the one tile anybody can
-       pick without looking at the other three. See Daily.isHallway. */
-    function buildPool(rooms) {
+       pick without looking at the other three. See Daily.isHallway.
+
+       And only mazes that were in the archive before the day began, so a
+       maze catalogued at lunchtime joins tomorrow's rotation rather than
+       re-dealing today's under everybody already playing it. The server
+       applies the same test before it scores — see existedBefore in
+       js/daily.js and netlify/functions/_daily.js. */
+    function buildPool(rooms, forDay) {
         return (rooms || [])
             .filter(room => room && room.id && room.name && !window.Daily.isHallway(room))
+            .filter(room => window.Daily.existedBefore(room, forDay))
             .map(room => ({
                 id: room.id,
                 name: room.name,
@@ -87,17 +111,21 @@
 
        Everything is drawn from one seeded shuffle per round rather than
        Math.random, so every player gets the same five and a refresh does not
-       reshuffle the day. */
-    function pickDay() {
+       reshuffle the day.
+
+       Every seed is taken for the NAMED day (Daily.daySeedFor) rather than
+       for whatever the clock says now — see the note on day() above. */
+    function pickDay(forDay) {
         const rounds = [];
         const usedHome = new Set();
-        const homes = window.Daily.shuffle(pool, window.Daily.daySeed("odd"));
+        const seedOf = (...parts) => window.Daily.daySeedFor(forDay, ...parts);
+        const homes = window.Daily.shuffle(pool, seedOf("odd"));
 
         for (const home of homes) {
             if (rounds.length >= ROUNDS) break;
             if (usedHome.has(home.id)) continue;
 
-            const seed = window.Daily.daySeed("odd", home.id);
+            const seed = seedOf("odd", home.id);
             const others = pool.filter(m => m.id !== home.id && m.shots.length);
             const related = others.filter(m => shares(home, m));
             const from = related.length ? related : others;
@@ -111,7 +139,7 @@
             const tiles = window.Daily.shuffle(
                 mine.map(image => ({ image, maze: home, odd: false }))
                     .concat([{ image: theirs, maze: imposter, odd: true }]),
-                window.Daily.daySeed("odd:tiles", home.id)
+                seedOf("odd:tiles", home.id)
             );
 
             usedHome.add(home.id);
@@ -120,22 +148,45 @@
         return rounds;
     }
 
+    // Keyed on the pinned day, so it changes only when a new day's game is
+    // actually begun — never because the clock ticked over mid-round.
     let dealtCache = { day: "", rounds: [] };
     function dealt() {
-        if (dealtCache.day !== day()) dealtCache = { day: day(), rounds: pickDay() };
+        const d = day();
+        if (poolDay !== d) { pool = buildPool(archive, d); poolDay = d; }
+        if (dealtCache.day !== d) dealtCache = { day: d, rounds: pickDay(d) };
         return dealtCache.rounds;
     }
 
     // ---------- the state of play ----------
 
+    // Today's, always: a blank day is only ever made to start a new one.
     function blankDay() {
-        return { day: day(), picks: [], done: false };
+        return { day: window.Daily.today(), picks: [], done: false };
     }
 
     function loadState() {
         let saved = null;
         try { saved = JSON.parse(localStorage.getItem(STATE_KEY) || "null"); } catch (e) { saved = null; }
-        state = saved && saved.day === day() && Array.isArray(saved.picks) ? saved : blankDay();
+        const now = window.Daily.today();
+        state = saved && saved.day === now && Array.isArray(saved.picks) ? saved : blankDay();
+    }
+
+    /* Whether the day in memory should give way to today's.
+
+       Yes if it is today's already (nothing to do, but loading again is
+       harmless), finished, or never started. NO if it is an earlier day
+       part-way through: somebody who was on round three at midnight is
+       left to finish the day they started rather than having it swapped
+       for a different five mid-sitting. Their result still goes to the
+       server under the day it was dealt for; within the five-minute grace
+       (dayIsOpen in netlify/functions/_daily.js) it is recorded, and after
+       that it is kept on this device only, which is the honest outcome for
+       a game begun yesterday. The next open after it ends starts today. */
+    function shouldStartToday() {
+        if (!state) return true;
+        if (state.day === window.Daily.today()) return true;
+        return state.done || !state.picks.length;
     }
 
     function saveState() {
@@ -167,6 +218,15 @@
        beside it, which was fine until that game was dropped and its file
        went with it. A cross-reference is only as durable as the file it
        names. */
+    /* The streak as it stands NOW, for the splash. stats.streak is the run
+       as last banked, so a run that ended days ago was still announced as
+       going. Alive only if the last day played is today or yesterday
+       (UTC); otherwise 0 until the next day is banked. */
+    function liveStreak() {
+        const t = window.Daily.today();
+        return stats.lastDay === t || stats.lastDay === window.Daily.dayBefore(t) ? stats.streak : 0;
+    }
+
     function bankDay() {
         if (stats.lastDay === day()) return;
         stats.streak = stats.lastDay === window.Daily.dayBefore(day()) ? stats.streak + 1 : 1;
@@ -193,6 +253,41 @@
         saveState();
         if (state.done) bankDay();
         render();
+        settleFocus();
+    }
+
+    /* Where the keyboard goes after a pick, and what is said out loud.
+
+       render() rewrites the whole body, so the tile that was just pressed
+       no longer exists and focus fell back to <body> — a keyboard player
+       had to Tab from the top of the page to reach the next four pictures,
+       and a screen reader said nothing at all about the pick having
+       happened. The focus now lands on the question for the next round
+       (Tab from there is the first picture, as it should be; landing on a
+       picture would be one keypress from spending it), or on the verdict
+       once the day is over.
+
+       The live region says what a sighted player reads off the screen and
+       no more: the round and the running score. The score moving is how
+       this game tells you a pick was right, so saying the score is
+       saying exactly that much. */
+    function settleFocus() {
+        if (!el.body) return;
+        const target = el.body.querySelector(finished() ? ".daily-verdict" : ".daily-ask");
+        if (target) {
+            target.tabIndex = -1;
+            target.focus({ preventScroll: false });
+        }
+        announce(finished()
+            ? `${verdictFor(state.picks.filter(p => p.right).length)} ${score()} points.`
+            : `Round ${roundNow() + 1} of ${dealt().length}. ${score()} points so far.`);
+    }
+
+    function announce(text) {
+        if (!el.live) return;
+        // Emptied first, so the same words twice in a row are still read.
+        el.live.textContent = "";
+        setTimeout(() => { if (el.live) el.live.textContent = text; }, 30);
     }
 
     // ---------- drawing it ----------
@@ -223,7 +318,16 @@
         if (!el.body) return;
         const rounds = dealt();
         if (!rounds.length) {
-            el.body.innerHTML = `<p class="daily-note">The archive is not answering just now — try again in a moment.</p>`;
+            /* Reached when the archive could not be read — including when
+               js/api.js fell back to its bundled one-maze copy, which open()
+               treats as no archive at all. A button rather than "try again
+               in a moment", because without one the only way to try again
+               was to reload the page. */
+            el.body.innerHTML = `
+                <p class="daily-note">The archive is not answering just now, so there is nothing to deal.</p>
+                <button type="button" class="guess-btn" id="odd-retry">Try again</button>`;
+            const retry = document.getElementById("odd-retry");
+            if (retry) retry.addEventListener("click", () => { archive = []; poolDay = ""; dealtCache = { day: "", rounds: [] }; open(true); });
             return;
         }
         if (finished()) { el.body.innerHTML = resultsHtml(); return wireResults(); }
@@ -257,7 +361,7 @@
                 <button type="button" class="guess-btn guess-btn--lead" id="odd-start">
                     ${started ? "Back to the rooms" : "Show me the first four"} &rsaquo;
                 </button>
-                <p class="guess-splash-foot">${stats.streak > 1 ? escapeHtml(stats.streak + " day streak.") : ""}</p>
+                <p class="guess-splash-foot">${liveStreak() > 1 ? escapeHtml(liveStreak() + " day streak.") : ""}</p>
             </div>`;
     }
 
@@ -284,7 +388,7 @@
 
         return `
             <div class="guess-summary daily-summary">
-                <p class="guess-score daily-verdict">${verdictFor(right)}</p>
+                <p class="guess-score daily-verdict" role="status" aria-live="polite">${verdictFor(right)}</p>
                 <p class="guess-points"><strong>${score()}</strong><span>points</span></p>
                 <p class="guess-next-up">${right} of ${rounds.length} spotted</p>
                 <p class="guess-grid" aria-label="Result grid">${shareGrid()}</p>
@@ -297,7 +401,7 @@
                 <div class="guess-summary-actions">
                     <button type="button" class="guess-btn" id="odd-share">Copy result</button>
                 </div>
-                <p class="daily-note" id="odd-foot">Four more rooms tomorrow.</p>
+                <p class="daily-note" id="odd-foot">Five more rounds tomorrow.</p>
 
                 <div class="guess-boards" id="odd-boards"></div>
             </div>`;
@@ -323,13 +427,20 @@
 
     const shareGrid = () => state.picks.map(p => (p.right ? "🟩" : "🟥")).join("");
 
+    /* The date written the way Guess the Maze writes it on its own share
+       card — "24 Sept 2026" — rather than as the ISO key. Two cards pasted
+       into the same channel from the same menu should not disagree about
+       how to write the day, and "2026-09-24" is a database's way of saying
+       it, not a person's. Same options as copyResult in js/guess.js. */
     function shareText() {
-        return `Odd One Out ${day()} — ${score()}/${dealt().length * POINTS_EACH}\n${shareGrid()}\n${location.origin}/odd`;
+        const when = new Date(day() + "T00:00:00Z")
+            .toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+        return `Odd One Out ${when} — ${score()}/${dealt().length * POINTS_EACH}\n${shareGrid()}\n${location.origin}/odd`;
     }
 
     function wireSplash() {
         const start = document.getElementById("odd-start");
-        if (start) start.addEventListener("click", () => { showSplash = false; render(); });
+        if (start) start.addEventListener("click", () => { showSplash = false; render(); settleFocus(); });
     }
 
     function wireRound() {
@@ -344,11 +455,26 @@
            itself which of those were right — see
            netlify/functions/daily-scores.js for why the page never sends a
            score. */
-        if (!posted) {
-            posted = true;
-            window.Daily.submit("odd", day(), state.picks.map(p => ({ tile: p.tile })));
+        /* The submit is AWAITED before the board is fetched, and that fetch
+           goes past the edge cache (`fresh`). Fired side by side, the board
+           request usually won the race — and even when it did not, the
+           fifteen-second copy at the edge predated the row — so the one
+           person guaranteed to be missing from the board they were shown
+           was the player who had just finished. Once per day per visit: a
+           reopened results card reads the board as normal. */
+        const host = document.getElementById("odd-boards");
+        const forDay = day();
+        if (postedDay !== forDay) {
+            postedDay = forDay;
+            if (host) host.innerHTML = `<p class="guess-board-note">Fetching the scores…</p>`;
+            window.Daily.submit("odd", forDay, state.picks.map(p => ({ tile: p.tile })))
+                .then(() => {
+                    const still = document.getElementById("odd-boards");
+                    window.Daily.boards(still, "odd", { points: score(), day: forDay, fresh: true });
+                });
+        } else {
+            window.Daily.boards(host, "odd", { points: score(), day: forDay });
         }
-        window.Daily.boards(document.getElementById("odd-boards"), "odd", { points: score() });
 
         const share = document.getElementById("odd-share");
         if (share) {
@@ -366,29 +492,65 @@
 
     // ---------- the window ----------
 
-    async function open() {
+    async function open(retrying) {
         if (!el.overlay) return;
         el.overlay.classList.add("open");
         document.body.classList.add("modal-open");
-        el.window.focus();
-        if (!pool.length) {
+        if (!retrying) el.window.focus();
+        /* Rooms read on an earlier UTC day are not the archive today is
+           dealt from (a maze added yesterday joins today, and the server
+           reads the archive as it is now), so a tab left open overnight
+           dealt a different five from the server's. Dropped and read again
+           when today is about to be dealt; an earlier day still being
+           finished keeps the archive it was dealt from. */
+        if (archive.length && archiveDay !== window.Daily.today() && shouldStartToday()) archive = [];
+        if (!archive.length) {
             el.body.innerHTML = `<p class="daily-note">Dealing…</p>`;
             let rooms = [];
-            // Api is a top-level const in js/api.js — a global binding, but not
-            // a property of window. Called bare, as the other games call it.
-            try { rooms = await Api.getRooms(); } catch (e) { rooms = []; }
-            pool = buildPool(rooms);
+            /* Api is a top-level const in js/api.js — a global binding, but
+               not a property of window. Called bare, as the other games call
+               it.
+
+               A retry has to get past Api's own memo first: getRooms keeps
+               the promise for the life of the page, fallback and all, so
+               asking again would hand back the same one-maze copy that
+               failed the first time. Forgetting that one entry is the only
+               way to make the request again without reloading. */
+            if (retrying && typeof Api !== "undefined" && Api._inflight) delete Api._inflight.rooms;
+            try {
+                rooms = await (Api.roomsForToday ? Api.roomsForToday() : Api.getRooms());
+                archiveDay = Api.roomsDay || window.Daily.today();
+            } catch (e) { rooms = []; }
+            /* The bundled fallback is not an archive to deal from. When the
+               live rooms cannot be reached js/api.js quietly hands back the
+               ONE maze in js/rooms-data.js and marks "room data" degraded;
+               a day dealt from that is not the day everybody else is
+               playing, and the server — which reads the real archive —
+               would score it against different rounds entirely. Treated as
+               no archive, which render() turns into a message and a retry. */
+            const degraded = typeof Api !== "undefined" && Api._degraded && Api._degraded.has("room data");
+            archive = degraded ? [] : (rooms || []);
+            poolDay = "";
+            dealtCache = { day: "", rounds: [] };
         }
         /* A day given back by an administrator lands here: the ticket is
            claimed before the stored day is read, so what loads is the fresh
-           day rather than the one being cleared. */
+           day rather than the one being cleared. The in-memory copy goes
+           too, or the check below would keep playing the day just taken
+           away, and so does the note that it was already sent — the replay
+           has to be submitted like any other. */
         if (await window.Daily.claimReset("odd")) {
             try { localStorage.removeItem(STATE_KEY); } catch (e) { /* private mode */ }
+            state = null;
+            postedDay = "";
         }
-        loadState();
+        /* A day already in memory is kept only if it is an earlier day left
+           part-way through — see shouldStartToday. Otherwise the stored day
+           is read, which is today's or a blank one. This is also what moves
+           a tab left open overnight on to the new day. */
+        if (shouldStartToday()) loadState();
         loadStats();
         showSplash = state.picks.length === 0 && !state.done;
-        posted = false;
         render();
     }
 
@@ -406,6 +568,17 @@
             body: document.getElementById("odd-body")
         };
         if (!el.overlay || !el.body) return;
+
+        /* The spoken half of each pick — see settleFocus. Made here and put
+           beside the body rather than in it, because render() rewrites the
+           body wholesale and a live region has to be in the page BEFORE the
+           words arrive for a screen reader to notice them. visually-hidden
+           is the site's own class for this; guess.js uses it for its pips. */
+        el.live = document.createElement("p");
+        el.live.className = "visually-hidden";
+        el.live.setAttribute("role", "status");
+        el.live.setAttribute("aria-live", "polite");
+        (el.window || el.overlay).appendChild(el.live);
 
         el.close.addEventListener("click", close);
         el.overlay.addEventListener("click", e => { if (e.target === el.overlay) close(); });

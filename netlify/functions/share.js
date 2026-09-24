@@ -58,7 +58,17 @@ function requestedId(event) {
     }
     const m = /^\/(maze|event)\/([^/]+)\/?$/.exec(pathname);
     if (!m) return null;
-    return { id: decodeURIComponent(m[2]), isEvent: m[1] === "event" };
+    /* A stray % in a pasted link ("/maze/100%-maze") makes decodeURIComponent
+       throw, and uncaught that was a bare 502 from the function. A link that
+       cannot be decoded names nothing in the archive, so it gets the same
+       not-found page as any other unknown id. */
+    let id;
+    try {
+        id = decodeURIComponent(m[2]);
+    } catch (e) {
+        return null;
+    }
+    return { id, isEvent: m[1] === "event" };
 }
 
 function escapeHtml(str) {
@@ -67,19 +77,22 @@ function escapeHtml(str) {
     }[c]));
 }
 
-/* Where this site is, from the request itself.
-
-   process.env.URL is the deploy's own address and is right in production,
-   but it is absent under `netlify dev` and wrong on a branch deploy, and an
+/* Where this site is, for the absolute addresses a preview needs (an
    og:image has to be absolute — a relative one is simply dropped by every
-   client that reads it. The Host header is what the visitor actually typed,
-   which is the address the preview should point back at. */
-function originOf(event) {
-    const headers = event.headers || {};
-    const host = headers["x-forwarded-host"] || headers.host;
-    if (!host) return process.env.URL || "";
-    const proto = /^localhost|^127\./.test(host) ? "http" : "https";
-    return `${proto}://${host}`;
+   client that reads it).
+
+   From the deploy's own configuration, NOT from the request. This used to
+   read x-forwarded-host and Host, and those are whatever the caller sends:
+   a request crafted with a different host got a page whose canonical,
+   og:url and og:image all pointed at a site of the attacker's choosing —
+   and this page is served with a ten-minute shared cache, so the poisoned
+   copy would go out to whoever pasted the link next. process.env.URL is
+   the site's primary address as Netlify knows it; the literal is for the
+   one place that is not set, which is a local run, where a preview
+   pointing at the live site is harmless. */
+const SITE_FALLBACK = "https://mazerats.net";
+function originOf() {
+    return String(process.env.URL || SITE_FALLBACK).replace(/\/+$/, "");
 }
 
 /* The preview image, at the size previews are cropped to.
@@ -197,7 +210,7 @@ function notFound(origin) {
 }
 
 exports.handler = async (event) => {
-    const origin = originOf(event);
+    const origin = originOf();
     const asked = requestedId(event);
     if (!asked) return notFound(origin);
     const { id, isEvent } = asked;
@@ -216,8 +229,15 @@ exports.handler = async (event) => {
         };
     }
 
-    const record = await db.collection(isEvent ? "events" : "rooms")
-        .findOne({ id }, { projection: { _id: 0 } });
+    let record;
+    try {
+        record = await db.collection(isEvent ? "events" : "rooms")
+            .findOne({ id }, { projection: { _id: 0 } });
+    } catch (e) {
+        // Same answer as a database that would not connect, above.
+        console.error("share: lookup failed", e);
+        return { statusCode: 302, headers: { Location: "/home", "Cache-Control": "no-store" }, body: "" };
+    }
     if (!record) return notFound(origin);
 
     const title = (isEvent ? record.title : record.name) || "Maze Rats";

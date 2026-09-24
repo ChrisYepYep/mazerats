@@ -53,13 +53,29 @@ const MAP_TTL_MS = 10 * 60 * 1000;
 // How long an EMPTY result (the catalogue was unreachable) is held before
 // trying again — far shorter than a good one, but not zero.
 const FAILED_TTL_MS = 60 * 1000;
+// The longest a public request waits for the catalogue before going without.
+const CATALOGUE_WAIT_MS = 6000;
 
 async function catalogueIndex() {
     if (cachedIndex && Date.now() - cachedAt < MAP_TTL_MS) return cachedIndex;
     const smallByLarge = new Map();
     const classByIcon = new Map();
     try {
-        const catalogue = await getCatalogue();
+        /* Capped here as well as inside getCatalogue. That one serves a
+           stale copy when a refresh fails, but with no copy at all (a new
+           Blobs store, a wiped one) it would walk FurniIndex for as long as
+           it takes — and this is the public /rooms and /events, where the
+           archive's front page is the thing waiting. Past the cap the maps
+           come back empty, exactly as for an outright failure below; the
+           walk carries on in the background and stores its result for the
+           next request. */
+        let timer;
+        const cap = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error("catalogue timed out")), CATALOGUE_WAIT_MS);
+        });
+        const pending = getCatalogue();
+        pending.catch(() => { /* reported by the race below, if it matters */ });
+        const catalogue = await Promise.race([pending, cap]).finally(() => clearTimeout(timer));
         for (const item of catalogue.items || []) {
             if (item.icon && item.className) classByIcon.set(item.icon, item.className);
             (item.largeImages || []).forEach((state, si) => state.forEach((url, ri) => {

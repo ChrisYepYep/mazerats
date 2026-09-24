@@ -7,7 +7,9 @@ const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { packRecords } = require("./_furni-payload");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
-const { describe: describeChanges } = require("./_changes");
+const { describe: describeChanges, changedFields } = require("./_changes");
+const { checkRecord } = require("./_url");
+const { cleanArticle } = require("./article");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -15,23 +17,63 @@ const json = (statusCode, data) => ({
     body: JSON.stringify(data)
 });
 
+/* The fields the admin form offers as fixed lists (see js/admin.js), held
+   to those lists here too. The pages write some of these into class names
+   and markup, and the form's <select> was the only thing keeping them tidy —
+   which is no guard at all against a request that did not come from the
+   form. Blank is allowed where the form offers "Not rated" / "Unknown". */
+const DIFFICULTIES = ["", "easy", "medium", "hard", "very-hard", "extreme"];
+const STATUSES = ["open", "closed", "collab", "unknown"];
+const HOTELS = ["", "COM", "ES", "BR"];
+const CHOICES = { difficulty: DIFFICULTIES, status: STATUSES, hotel: HOTELS };
+
 function slugify(text) {
     return (text || "").toLowerCase().trim()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)/g, "") || "room";
 }
 
+/* ---- the edit-conflict check (PUT with _baseUpdatedAt) ----
+
+   updatedAt as one comparable string. Written by this function as an ISO
+   string, but a Date is accepted too, so a record touched by some other
+   tool compares by the instant rather than by how it was stored. */
+function stamp(v) {
+    if (v instanceof Date) return isNaN(v.getTime()) ? "" : v.toISOString();
+    return v ? String(v) : "";
+}
+
+// The record, but only at the version the editor started from. A record
+// never edited since updatedAt existed has none, and "" matches that.
+function versionFilter(id, base) {
+    if (base === null) return { id };
+    if (!base) return { id, updatedAt: { $in: [null, ""] } };
+    const at = new Date(base);
+    return { id, updatedAt: { $in: isNaN(at.getTime()) ? [base] : [base, at] } };
+}
+
+const CONFLICT = "Someone else saved this record since you opened it - reload it to see their changes.";
+
 exports.handler = async (event) => {
     let db;
     try {
         db = await getDb();
     } catch (e) {
-        return json(500, { error: "Database connection failed", detail: e.message });
+        // The reason goes to the function log, not to the public: a driver
+        // error names hosts and settings nobody outside needs to read.
+        console.error("rooms: database connection failed", e);
+        return json(503, { error: "Database connection failed" });
     }
     const rooms = db.collection("rooms");
 
     if (event.httpMethod === "GET") {
-        const all = await rooms.find({}, { projection: { _id: 0 } }).toArray();
+        let all;
+        try {
+            all = await rooms.find({}, { projection: { _id: 0 } }).toArray();
+        } catch (e) {
+            console.error("rooms: read failed", e);
+            return json(503, { error: "The archive could not be read just now." });
+        }
         // ?full=1 is the admin page's route: the records exactly as stored,
         // every reviewer field and hidden detection included, because that is
         // what the admin editor works on.
@@ -86,6 +128,15 @@ exports.handler = async (event) => {
         if (typeof body[field] === "string") body[field] = body[field].trim();
     });
 
+    if (event.httpMethod === "POST" || event.httpMethod === "PUT") {
+        const problem = checkRecord(body, CHOICES);
+        if (problem) return json(400, { error: problem });
+        /* The admin form only attaches articles to events, but the page's
+           renderer does not ask which collection a record came from — so a
+           room carrying one gets the same sanitising events.js gives it. */
+        if (body.article) body.article = cleanArticle(body.article);
+    }
+
     if (event.httpMethod === "POST") {
         if (!body.name) return json(400, { error: "A room needs at least a name" });
 
@@ -113,7 +164,12 @@ exports.handler = async (event) => {
         let id = slugify(body.name);
         let suffix = 2;
         for (let attempt = 0; ; attempt++) {
-            const room = { createdAt, ...body, id };
+            /* createdAt AFTER the body: it is the server's fact, and the
+               daily games now read it (existedBefore in netlify/functions/
+               _daily.js) to keep a maze out of a day that had already been
+               dealt. A body carrying its own could back-date a maze into
+               today's pool and re-deal it for everyone mid-game. */
+            const room = { ...body, createdAt, id };
             delete room._id;
             try {
                 await rooms.insertOne(room);
@@ -131,7 +187,25 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === "PUT") {
         if (!body.id) return json(400, { error: "Missing room id" });
-        const { _id, ...update } = body;
+        // createdAt is written once, on insert, and never by an edit — see
+        // the POST above for what reads it.
+        const { _id, createdAt: _ignored, ...update } = body;
+
+        /* Never a client's change list. The admin form used to send the
+           stored one straight back (it spreads the record it read), and
+           below, a save describeChanges could not describe kept whatever
+           arrived — so the What's New line could be any list a browser
+           cared to send. The server works it out or leaves it alone. */
+        delete update.changes;
+
+        /* The version the editor started from, for the conflict check
+           below. Taken off the update so it is never stored. Absent means a
+           caller that does not take part (nothing else writes this route
+           today, but the check stays opt-in rather than breaking one). */
+        const hasBase = Object.prototype.hasOwnProperty.call(update, "_baseUpdatedAt");
+        const base = hasBase ? stamp(update._baseUpdatedAt) : null;
+        delete update._baseUpdatedAt;
+
         /* When this record last changed, stamped here rather than sent by
            the admin form: it is a fact about the write, and only the server
            can be trusted to know it. What's New on the homepage shows it
@@ -167,15 +241,49 @@ exports.handler = async (event) => {
             previous = await rooms.findOne({ id: body.id });
         } catch (e) { /* the update below reports a missing record on its own */ }
 
-        const changed = describeChanges(previous, update);
-        if (changed) update.changes = changed;
+        /* SOMEBODY ELSE SAVED IT FIRST. Two admins with the same maze open
+           used to be last-save-wins: the second Save wrote the whole record
+           from a copy read before the first, and the first admin's work
+           vanished without a word to either of them. The form now says
+           which version it started from; if the stored one has moved on,
+           the save is refused and the form stays open with its edits.
 
+           Furni scans write straight to the database without touching
+           updatedAt, so a scan never trips this — the form avoids
+           overwriting one by not sending furni it did not change. */
+        if (base !== null && previous && stamp(previous.updatedAt) !== base) {
+            return json(409, { error: CONFLICT, conflict: true });
+        }
+
+        /* A save that changes nothing is still written — the form may have
+           tidied a value's representation (a trimmed name, "" for null) and
+           that is worth keeping — but it does not move updatedAt and does
+           not touch the change list. Otherwise pressing Save on an untouched
+           maze put it at the top of What's New as "Updated" that day.
+           changedFields returns null when it cannot tell, and that is read
+           as an ordinary save: a missed changelog line is the lesser harm. */
+        const moved = changedFields(previous, update);
+        if (moved && moved.length === 0) {
+            delete update.updatedAt;
+            delete update.changes;
+        } else {
+            const changed = describeChanges(previous, update);
+            if (changed) update.changes = changed;
+        }
+
+        // The version condition is in the filter too, so two saves racing
+        // between the read above and this write cannot both pass.
         const result = await rooms.findOneAndUpdate(
-            { id: body.id },
+            versionFilter(body.id, base),
             { $set: update },
             { returnDocument: "after", projection: { _id: 0 } }
         );
-        if (!result) return json(404, { error: "Room not found" });
+        if (!result) {
+            if (base !== null && await rooms.findOne({ id: body.id }, { projection: { _id: 1 } })) {
+                return json(409, { error: CONFLICT, conflict: true });
+            }
+            return json(404, { error: "Room not found" });
+        }
         return json(200, result);
     }
 

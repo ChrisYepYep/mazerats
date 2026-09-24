@@ -195,15 +195,29 @@ window.GifEncode = (function () {
 
         const bytes = [];
         const samples = [];
+        /* EACH FRAME IS KEPT ENCODED, not as pixels.
+
+           write() used to keep a palette index per pixel for every frame and
+           compress the lot in finish(), and its caller kept the frames' full
+           RGBA ImageData alive until then as well - at 900px wide and twenty
+           seconds that was over a gigabyte for a GIF that comes out at tens of
+           megabytes. Once the palette is fixed nothing about a frame's
+           encoding depends on any other frame, so write() now compresses it
+           there and then and keeps only the finished bytes. The caller can let
+           its ImageData go the moment write() returns. */
         const frames = [];
         let palette = null;
         let nearest = null;
+        let bits = 1;
 
         const push = (...v) => bytes.push(...v);
         const pushShort = v => bytes.push(v & 0xff, (v >> 8) & 0xff);
         const pushString = s => { for (let i = 0; i < s.length; i++) bytes.push(s.charCodeAt(i)); };
 
         function study(imageData) {
+            // Studying after the first write would change a table that frames
+            // have already been encoded against.
+            if (palette) return;
             const d = imageData.data;
             for (let i = 0; i < d.length; i += 4 * 7) samples.push([d[i], d[i + 1], d[i + 2]]);
         }
@@ -217,6 +231,9 @@ window.GifEncode = (function () {
             while (size < palette.length) size <<= 1;
             while (palette.length < size) palette.push([0, 0, 0]);
             nearest = nearestFinder(palette);
+            bits = 1;
+            while ((1 << bits) < palette.length) bits++;
+            samples.length = 0;     // done with; they were the size of a frame
         }
 
         function write(imageData) {
@@ -226,13 +243,30 @@ window.GifEncode = (function () {
             for (let i = 0, p = 0; i < d.length; i += 4, p++) {
                 indices[p] = nearest(d[i], d[i + 1], d[i + 2]);
             }
-            frames.push(indices);
+
+            /* The whole frame block, as it will sit in the file: graphic
+               control extension, image descriptor, then the LZW data cut into
+               255-byte sub-blocks and a zero terminator. */
+            const minCodeSize = Math.max(2, bits);
+            const data = lzw(indices, minCodeSize);
+            const blocks = Math.ceil(data.length / 255);
+            const out = new Uint8Array(8 + 10 + 1 + data.length + blocks + 1);
+            let o = 0;
+            out.set([0x21, 0xf9, 4, 0, delay & 0xff, (delay >> 8) & 0xff, 0, 0], o); o += 8;
+            out.set([0x2c, 0, 0, 0, 0,
+                width & 0xff, (width >> 8) & 0xff, height & 0xff, (height >> 8) & 0xff, 0], o); o += 10;
+            out[o++] = minCodeSize;
+            for (let i = 0; i < data.length; i += 255) {
+                const n = Math.min(255, data.length - i);
+                out[o++] = n;
+                for (let j = 0; j < n; j++) out[o++] = data[i + j];
+            }
+            out[o++] = 0;
+            frames.push(out);
         }
 
         function finish() {
             ensurePalette();
-            let bits = 1;
-            while ((1 << bits) < palette.length) bits++;
 
             pushString("GIF89a");
             pushShort(width);
@@ -249,23 +283,11 @@ window.GifEncode = (function () {
             pushShort(loop);
             push(0);
 
-            const minCodeSize = Math.max(2, bits);
-            for (const indices of frames) {
-                push(0x21, 0xf9, 4, 0, delay & 0xff, (delay >> 8) & 0xff, 0, 0);
-                push(0x2c);
-                pushShort(0); pushShort(0);
-                pushShort(width); pushShort(height);
-                push(0);
-                push(minCodeSize);
-                const data = lzw(indices, minCodeSize);
-                for (let i = 0; i < data.length; i += 255) {
-                    const chunk = data.slice(i, i + 255);
-                    push(chunk.length, ...chunk);
-                }
-                push(0);
-            }
-            push(0x3b);
-            return new Blob([new Uint8Array(bytes)], { type: "image/gif" });
+            // The header and table, then every frame exactly as write() left
+            // it, then the trailer - handed to the Blob as parts rather than
+            // joined into one array first.
+            return new Blob([new Uint8Array(bytes), ...frames, new Uint8Array([0x3b])],
+                { type: "image/gif" });
         }
 
         return { study, write, finish, get frameCount() { return frames.length; } };

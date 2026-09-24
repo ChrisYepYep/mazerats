@@ -24,9 +24,10 @@
    arrives with its own totals — and there is no honest answer to that, only
    a choice between double-counting and throwing history away. Derived, the
    question never arises. */
-const { getDb } = require("./_db");
+const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
+const { today } = require("./_daily");
 
 const COLLECTION = "player_state";
 const SCORES = "guess_scores";
@@ -43,11 +44,24 @@ const json = (statusCode, data) => ({
     body: JSON.stringify(data)
 });
 
-let ensured = false;
+/* One document per player. Via ensureUniqueIndex, which THROWS on failure:
+   it was createIndex(...).catch(() => {}) with the flag set anyway, so an
+   index that never got built was remembered as built, and two first saves
+   racing each other could each upsert a document of their own. */
 async function ensureIndexes(col) {
-    if (ensured) return;
-    await col.createIndex({ playerId: 1 }, { unique: true }).catch(() => {});
-    ensured = true;
+    await ensureUniqueIndex(col, "playerId");
+}
+
+/* How far into a day a saved game is, for telling a stale device from a
+   current one. A finished day outranks any unfinished one; otherwise more
+   guesses made, and more rounds closed, is further along. */
+function progressOf(g) {
+    if (!g || !Array.isArray(g.results)) return -1;
+    let n = g.done ? 1e6 : 0;
+    g.results.forEach(r => {
+        n += (Array.isArray(r && r.guesses) ? r.guesses.length : 0) + (r && r.done ? 1 : 0);
+    });
+    return n;
 }
 
 function cleanWalked(list) {
@@ -127,9 +141,16 @@ async function statsFor(db, playerId) {
     const daySet = new Set(days);
     const lastDay = days[days.length - 1];
 
-    // The run ending on the most recent day played.
+    /* The run ending on the most recent day played — but only if that day is
+       today or yesterday. Without the check a player who stopped a week ago
+       was still shown their old run as a current streak; a run that has
+       ended is a best, not a streak. The same rule as gameStats in
+       player-profile.js, so the two pages cannot disagree. */
     let streak = 0;
-    for (let d = lastDay; daySet.has(d); d = yesterdayOf(d)) streak++;
+    const day = today();
+    if (lastDay === day || lastDay === yesterdayOf(day)) {
+        for (let d = lastDay; daySet.has(d); d = yesterdayOf(d)) streak++;
+    }
 
     // And the longest run anywhere in the record.
     let best = 0, run = 0;
@@ -152,7 +173,14 @@ exports.handler = async (event) => {
         return json(500, { error: "Database connection failed" });
     }
     const col = db.collection(COLLECTION);
-    await ensureIndexes(col);
+    /* Only a write can make a second document, so only a write is refused
+       when the unique index cannot be confirmed; a GET reads on regardless. */
+    try {
+        await ensureIndexes(col);
+    } catch (e) {
+        console.error("player-data: unique index unavailable", e);
+        if (event.httpMethod !== "GET") return json(503, { error: "Could not save your progress just now" });
+    }
 
     if (event.httpMethod === "GET") {
         try {
@@ -233,11 +261,30 @@ exports.handler = async (event) => {
                device re-sending its whole list is the normal case, not the
                exception, so without this every sync would append the same ids
                again and fill the cap with copies. */
+            const current = (Object.keys(add).length || "guess" in set)
+                ? (await col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1 } }) || {})
+                : {};
+
+            /* The day's game is never walked BACKWARDS. It used to be
+               replaced outright, so a second device still holding an early
+               copy of today — or yesterday's, or the "nothing in progress"
+               null a rolled-over tab sends — could overwrite a finished day
+               with a less-finished one, and the player's next device would
+               offer them rounds they had already played. The incoming copy
+               is dropped when the stored one is for a LATER day, or for the
+               same day and further along (progressOf); a null only clears a
+               game from a day before today. The response carries the stored
+               copy back, so the stale device catches up. */
+            if ("guess" in set && current.guess) {
+                const held = current.guess;
+                const incoming = set.guess;
+                const stale = incoming === null
+                    ? held.day === today()
+                    : held.day > incoming.day || (held.day === incoming.day && progressOf(held) > progressOf(incoming));
+                if (stale) delete set.guess;
+            }
+
             if (Object.keys(add).length) {
-                const current = await col.findOne(
-                    { playerId: player.id },
-                    { projection: { _id: 0, walked: 1, saved: 1 } }
-                ) || {};
                 const only = (incoming, held) => {
                     const have = new Set(held || []);
                     return incoming.filter(id => !have.has(id));

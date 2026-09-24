@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
-    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <!-- Its own title and description, not the archive's.
@@ -141,8 +141,13 @@
          is off-limits to regular visitors during Coming Soon/Maintenance
          (see js/site.js) — this page isn't, so it's the one place that
          preview has to work entirely on its own. -->
+    <!-- A dialog to assistive technology as well as to the eye, the same way
+         home.html's own room modal is marked up: without the role a screen
+         reader announced nothing when it opened and went on reading the page
+         underneath. tabindex="-1" is so js/welcome.js can move focus onto the
+         window itself when it opens, and hand it back on close. -->
     <div class="modal-overlay" id="event-modal">
-        <div class="modal">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="event-modal-name" tabindex="-1">
             <div class="chrome-titlebar">
                 <h2 id="event-modal-name"></h2>
                 <button class="chrome-close" id="event-modal-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
@@ -242,9 +247,9 @@
          itself comes from js/privacy-content.js, shared with the console
          modal on home.html. -->
     <div class="modal-overlay" id="privacy-modal">
-        <div class="modal">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="privacy-modal-title" tabindex="-1">
             <div class="chrome-titlebar">
-                <h2>Privacy Policy</h2>
+                <h2 id="privacy-modal-title">Privacy Policy</h2>
                 <button class="chrome-close" id="privacy-modal-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
             </div>
             <div class="chrome-frame">

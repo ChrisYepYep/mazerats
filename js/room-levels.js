@@ -389,49 +389,40 @@
         };
     }
 
-    /* Fill a run of levels with a difficulty curve, so a builder sets the two
-       ends and not every number between. Both levers ease rather than step. A
-       single level takes the FIRST setting — one round should be the gentle
-       one, not the hardest. */
-    function curve(levels, from, to) {
-        const a = { ...DEFAULTS.rules, ...(from || {}) };
-        const b = { ...a, ...(to || {}) };
-        const n = levels.length;
-        return levels.map((lv, i) => {
-            const t = n < 2 ? 0 : i / (n - 1);
-            const at = (key) => Math.round(a[key] + (b[key] - a[key]) * t);
-            return {
-                ...lv,
-                rules: {
-                    ...lv.rules,
-                    seconds: at("seconds"),
-                    dropDelayMs: at("dropDelayMs"),
-                    dropSpeedMs: at("dropSpeedMs"),
-                    minDropDistance: at("minDropDistance")
-                }
-            };
-        });
-    }
-
     /* The published levels, in play order. An empty list is a legitimate answer
        — nobody has published one yet — and is returned as one rather than
-       thrown, because the page has something sensible to say about it. */
+       thrown, because the page has something sensible to say about it.
+
+       BUT ONLY A REAL EMPTY LIST IS ONE. This used to turn a dropped
+       connection or a 500 into `[]` as well, so a player whose request simply
+       failed was told "No levels have been published yet" - a statement about
+       the game, confidently wrong, with no way to try again. A failure now
+       comes back as `null`, which the page reads as "could not reach them" and
+       offers a Retry for; `[]` is kept for a 200 that genuinely listed none.
+
+       Null rather than a throw because both callers already branch on the
+       answer, and a thrown error from inside prepare() would have to be caught
+       around code whose other failures are meant to reach the console. */
     async function fetchPublished() {
         try {
             const res = await fetch("/.netlify/functions/ff-levels");
-            if (!res.ok) return [];
+            if (!res.ok) return null;
             const data = await res.json();
             return (data.levels || []).map(l => normalise(l));
         } catch {
-            return [];
+            return null;
         }
     }
 
+    /* `curve` used to be exported from here - a helper for easing a run's
+       difficulty between two settings. Nothing in the repo ever called it (the
+       levels are tuned one by one in the builder), so it went rather than go
+       on looking like part of how the game is balanced. */
     window.RoomLevels = {
         SCHEMA, DEFAULTS, ITEM_DEFAULTS, ROLES, ROLE_LABELS,
         SEAT_ROLES, needsSeat, miscastItems,
         HEIGHT_STEP, MAX_HEIGHT, height,
         normalise, blankZone, furniUsed, totalDrops, schedule,
-        toRoomOpts, fromRoomOpts, curve, fetchPublished
+        toRoomOpts, fromRoomOpts, fetchPublished
     };
 })();

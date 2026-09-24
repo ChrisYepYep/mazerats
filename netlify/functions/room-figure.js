@@ -47,11 +47,20 @@ const RATE_MAX = 12;                        // lookups per address per minute
 const cache = new Map();                    // lowercased name -> { at, value }
 const hits = new Map();                     // address -> timestamps
 
+/* The browser may cache a figure for a few minutes; nothing here is
+   per-visitor, so a shared cache is welcome to it too. That goes for a 200
+   and for a 404 (a name Habbo says does not exist, which is as stable an
+   answer as a figure, over five minutes).
+
+   Nothing else is cached. A 429 is about ONE address and a shared cache
+   would serve it to everybody who asks for that name next; a 502 is Habbo
+   having a bad moment, and caching it would keep the moment going for five
+   minutes after Habbo recovered; a 400 costs nothing to recompute. */
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { ...SECURITY_HEADERS, // The browser may cache a figure for a few minutes; nothing here is
-        // per-visitor, so a shared cache is welcome to it too.
-        "Cache-Control": "public, max-age=300"
+    headers: {
+        ...SECURITY_HEADERS,
+        "Cache-Control": (statusCode === 200 || statusCode === 404) ? "public, max-age=300" : "no-store"
     },
     body: JSON.stringify(data)
 });
@@ -99,7 +108,9 @@ exports.handler = async (event) => {
     const address = event.headers["x-nf-client-connection-ip"] ||
         event.headers["client-ip"] || "unknown";
     if (rateLimited(address)) {
-        return json(429, { error: "Too many lookups just now — give it a minute." });
+        // A hyphen, not an em dash: this sentence is shown inside the game
+        // window, where Volter Goldfish draws U+2014 as a picture.
+        return json(429, { error: "Too many lookups just now - give it a minute." });
     }
 
     const key = `${hotel}:${name.toLowerCase()}`;

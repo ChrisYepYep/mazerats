@@ -158,16 +158,9 @@
        in step. */
     --titlebar-pad: 0px;
 
-    /* With no content the padding alone left a 12px sliver against the
-       31-41px bars everywhere else on the site. The pattern is a 1px on,
-       1px off grid, so any height shows whole rows. */
-    min-height: 22px;
-
-    /* Four pixels more clear bar under the pattern than the site's default
-       3px, so the dots stop short of the game rather than running straight
-       into its top edge. The bar keeps its height; only the pattern inside it
-       is cut. */
-    --titlebar-grip-inset: 7px;
+    /* No height of its own: every bar is the same shape now — eight rows of
+       dots from the window's top and 9px of bar under them (see
+       .chrome-titlebar in style.css) — and that holds with no title too. */
 }
 
 /* NO `font-size: 0` HERE, however tempting. It was, to kill the inline-box
@@ -319,6 +312,27 @@ body.is-editing .ff-title { display: none; }
 }
 
 @keyframes ff-dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+
+/* THE LEVELS COULD NOT BE FETCHED. Said in the danger tone, because unlike
+   "empty" it is not the game's state but a fault - and it carries the one
+   button that can do anything about it. The button is hidden in every other
+   state; it is the Play button's twin in look so it reads as the way on. */
+.ff-title[data-state="unreachable"] .ff-title-load { color: var(--danger); }
+
+.ff-title-retry { display: none; }
+
+.ff-title[data-state="unreachable"] .ff-title-retry {
+    display: inline-block;
+    margin-top: 8px;
+    background: var(--wood-mid);
+    border: 1px solid var(--amber);
+    color: var(--amber-bright);
+    padding: 6px 16px;
+    cursor: pointer;
+}
+
+.ff-title[data-state="unreachable"] .ff-title-retry:hover { background: var(--chrome-highlight); }
+.ff-title-retry[disabled] { opacity: 0.45; cursor: default; }
 
 .ff-title .ff-status { text-align: center; }
 
@@ -589,6 +603,29 @@ body.is-editing #ff-canvas { cursor: pointer; }
     color: var(--amber-bright);
     cursor: pointer;
     line-height: 0;
+}
+
+/* A FINGER-SIZED TARGET ON A SIDEWAYS PHONE, without a bigger button.
+
+   The immersive layout scales the whole window by --ff-fit, which on a phone
+   is ~0.55-0.6 - so this 30px button arrived on the glass at about 17px, half
+   what a thumb can reliably hit, in the one corner a player reaches for in a
+   hurry. Drawing it bigger would put a large box over the room for everybody.
+
+   So the BOX stays as it is and an invisible hit area grows instead: 30px
+   divided by the scale, which is 30 real pixels whatever the scale is. It is
+   anchored to the stage's own corner (the button sits 8px in from it) and
+   grows down and to the left, into the black margin - growing outward would
+   be clipped by .ff-stage's overflow: hidden and gain nothing. Only in the
+   immersive layout: at full size the button is already 30px and needs no
+   help. */
+body.ff-immersive .ff-pause-btn::before {
+    content: "";
+    position: absolute;
+    top: -9px;
+    right: -9px;
+    width: calc(30px / var(--ff-fit, 1) + 9px);
+    height: calc(30px / var(--ff-fit, 1) + 9px);
 }
 
 .ff-pause-btn[hidden] { display: none; }
@@ -1540,10 +1577,95 @@ main.ff-page { width: 100%; }
    not on a fade. */
 .ff-countin-n.is-go { font-size: 46px; color: var(--ok); animation-duration: 0.6s; }
 
+/* ---- A LIFE, as the count's opening beat
+   (see lifeBeat in js/fallinfurni.js)
+
+   Same element, same 72px, same shadow and the same landing as the numbers
+   after it - it is one more beat of the count, not a second overlay. Only the
+   colour and the heart are its own.
+
+   The HEART is set in the readout's face and the readout's red (.ff-hud-lives,
+   #ff6b6b), because it is the same heart: the one that just went missing from
+   the corner, or just arrived there. 72px is exactly eight times Volter's 9px
+   cell, so the bitmap face scales by a whole number and stays square. It sits
+   on the Silkscreen digits' baseline with a small gap rather than a space
+   character - Silkscreen's space is a full cell wide and pushed the sign away
+   from the heart it belongs to.
+
+   The +1 keeps the count's amber: a life won is good news told in the count's
+   own voice. The -1 is the danger red the readout uses for a total gone under,
+   so the loss reads as a loss before it is read at all. The animation is the
+   count's beat stretched to the beat's longer hold (LIFE_BEAT_MS). */
+.ff-countin-heart {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 72px;
+    color: #ff6b6b;
+    margin-right: 0.12em;
+}
+
+.ff-countin-n.is-life-won,
+.ff-countin-n.is-life-lost {
+    display: inline-flex;
+    align-items: baseline;
+    animation-duration: 1.4s;
+}
+
+.ff-countin-n.is-life-won { color: var(--amber-bright); }
+/* The heart's own red rather than --danger: over the count-in's scrim the
+   darker danger red sank into the room and the -1 read as a smudge beside a
+   bright heart. One red for the whole callout reads as one thing, and a loss. */
+.ff-countin-n.is-life-lost { color: #ff6b6b; }
+
 @media (prefers-reduced-motion: reduce) {
     .ff-countin-n { animation: none; }
+    .ff-countin-n.is-life-won,
+    .ff-countin-n.is-life-lost { animation: none; }
     /* The scrim stays — it is there to be readable, not to move. */
     .ff-countin { animation: none; }
+}
+
+/* ---- THE PLAYER'S LINE (see tell() in js/fallinfurni.js)
+
+   The HUD's dress - the same translucent near-black, the same 1px border and
+   8px corner - in the room's bottom edge, which like the two top corners is
+   black margin rather than floor. Centred, and capped short of the room's
+   width so a long sentence wraps rather than running under the bevel.
+
+   Above the count-in's scrim (both are z-index 4; this comes later in the
+   page), so "A life gone - 2 left" reads at full strength while the room
+   behind it is dimmed for the count. Never takes a tap: the floor under it is
+   still somewhere the player might want to walk.
+
+   EMPTY IS INVISIBLE, and is opacity rather than display:none on purpose -
+   it is a live region, and one that is not rendered when its words arrive is
+   not read out. */
+.ff-say {
+    position: absolute;
+    left: 50%;
+    bottom: 10px;
+    transform: translateX(-50%);
+    z-index: 4;
+    max-width: 70%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 5px 10px 6px;
+    background: rgba(10, 7, 4, 0.8);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--parchment);
+    line-height: 1.35;
+    text-align: center;
+    pointer-events: none;
+    transition: opacity 240ms ease-out;
+}
+
+.ff-say:empty { opacity: 0; }
+.ff-say.is-bad { color: var(--danger); }
+.ff-say.is-good { color: var(--ok); }
+.ff-say.is-busy { color: var(--amber); }
+
+@media (prefers-reduced-motion: reduce) {
+    .ff-say { transition: none; }
 }
 
 /* ---- CLOSED FOR MAINTENANCE

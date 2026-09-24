@@ -533,6 +533,38 @@
                 return null;
             },
 
+            /* THE RUN'S RESULT, AS SOON AS IT IS KNOWN — which is when its last
+               round ends, not when the player presses the button after it.
+
+               Returns null while the run can still go on (a round running, a
+               win with a level after it, a loss with a life to spend), and
+               otherwise { result: "finished" | "lost", cleared, points }:
+               exactly what `advance` is about to make of it, worked out
+               WITHOUT advancing. The page needs it because the leaderboard
+               used to be told only from the button, and a player who read
+               their result and closed the tab never reached the board.
+
+               Written next to `advance` because it is `advance`'s arithmetic
+               and must change with it: the round in hand banked, a life back
+               if this win is a fifth, and the life bonus on a finished run.
+               A lost run gets no bonus, as in `advance`. */
+            settled() {
+                const g = this.game;
+                if (!g) return null;
+                const clearedBefore = this.results.filter(r => r.won).length;
+                if (g.state === WON) {
+                    if (this.index + 1 < this.levels.length) return null;
+                    const cleared = clearedBefore + 1;
+                    const lives = this.lives + (cleared % LIFE_EVERY === 0 ? 1 : 0);
+                    return { result: "finished", cleared, points: this.banked + g.score + lives * LIFE_BONUS };
+                }
+                if (g.state === LOST) {
+                    if (this.lives > 1) return null;
+                    return { result: "lost", cleared: clearedBefore, points: this.banked + g.score };
+                }
+                return null;
+            },
+
             progressLabel() {
                 return `Round ${Math.min(this.index + 1, this.levels.length)} of ${this.levels.length}`;
             }

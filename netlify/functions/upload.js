@@ -5,6 +5,7 @@
 const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED } = require("./_auth");
 const { imagesStore } = require("./_images");
 const { SECURITY_HEADERS } = require("./_headers");
+const { isSafeKey } = require("./_keys");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -94,6 +95,11 @@ exports.handler = async (event) => {
     if (event.httpMethod === "DELETE") {
         const key = (event.queryStringParameters || {}).key;
         if (!key) return json(400, { error: "Missing key" });
+        // Validated BEFORE the folder is read off it. folderOfKey trusts the
+        // text before the first "/", and the store resolves the key as a URL
+        // path, so "wizard/../rooms/<maze>/<file>.png" was a wizard-scope
+        // delete of an archive picture. See _keys.js.
+        if (!isSafeKey(key)) return json(400, { error: "Invalid key" });
         // The folder the key names decides who may delete it, exactly as it
         // decided who could write it. A key naming no known folder — or no
         // folder at all — is refused rather than swept up by a default,

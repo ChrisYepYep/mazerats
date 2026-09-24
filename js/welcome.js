@@ -90,6 +90,12 @@ function startCountdown(target) {
        at anyone who leaves it open. */
     async function checkIfOpen() {
         try {
+            // Drop the page's memoised answer first. getSiteSettings keeps
+            // one promise for the life of the page, so without this every
+            // poll re-read the "coming-soon" it got at load and the
+            // countdown never noticed the site opening. Only clears the
+            // cache (and the gate's handshake promise, long since used).
+            Api.forgetSiteSettings();
             const { landingState } = await Api.getSiteSettings();
             if (landingState !== "coming-soon" && landingState !== "maintenance") {
                 location.reload();
@@ -293,6 +299,21 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    // A stored address about to become a clickable link: http(s) only, ""
+    // for anything else, and every caller hides its link on "". The same
+    // rule, and the same reasons, as safeHttpUrl in js/home.js — a
+    // "javascript:" address is a perfectly valid attribute value.
+    function safeHttpUrl(str) {
+        const raw = String(str == null ? "" : str).trim();
+        if (!raw) return "";
+        try {
+            const url = new URL(raw, location.href);
+            return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+        } catch (e) {
+            return "";
+        }
     }
 
     // Escapes first, then links what's left — same order and same trailing-
@@ -540,8 +561,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         return cachedEvents;
     }
 
+    /* Where focus was when the modal opened, so closing it can put focus
+       back there. Without this a keyboard or screen-reader user who opened
+       an event from the header ticker was dropped at the top of the page on
+       close, with no idea where the thing they had been reading went. */
+    let eventTrigger = null;
+
     function closeEventModal() {
         modal.classList.remove("open");
+        const back = eventTrigger;
+        eventTrigger = null;
+        if (back && document.contains(back) && typeof back.focus === "function") {
+            back.focus({ preventScroll: true });
+        }
         // Same replaceState-not-clear approach as home.js's closeModal —
         // drops the hash without adding a back-button entry or re-firing
         // hashchange.
@@ -554,6 +586,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         const events = await ensureEvents();
         const event = events.find(e => e.id === id);
         if (!event) return;
+        // Only on a fresh open: a second event opened over the first (the
+        // ticker moves on underneath) must not replace the real opener with
+        // something inside the modal.
+        if (!modal.classList.contains("open")) eventTrigger = document.activeElement;
 
         nameEl.textContent = event.title || "";
         hostEl.textContent = event.host ? `by ${event.host}` : "";
@@ -600,8 +636,11 @@ document.addEventListener("DOMContentLoaded", async () => {
            tag by tag against a whitelist by netlify/functions/article.js
            before it was ever stored, so what is held is already only the
            handful of elements an article is allowed to be. Nothing is fetched
-           or parsed here.
-        
+           or parsed here. It is sanitised again on SAVE by
+           netlify/functions/events.js, since an event save carries the
+           article back and could otherwise store anything — see the fuller
+           note at the same line in js/home.js.
+
            An article stands in for the event's full details — the admin form
            will not let both be set — so the description above it is the short
            one, and this reads as the piece itself below it. */
@@ -610,7 +649,15 @@ document.addEventListener("DOMContentLoaded", async () => {
             articleTitleEl.textContent = article.title || "";
             articleMetaEl.textContent = [article.date, article.category].filter(Boolean).join("  —  ");
             articleBodyEl.innerHTML = article.body;
-            articleLinkEl.href = article.url || "#";
+            /* The source line goes when there is nowhere for it to point,
+               exactly as home.js does it: an article can be stored without a
+               URL, and "Read it on Habbo Origins" leading to "#" jumped the
+               reader to the top of the page. The paragraph goes too, not just
+               the anchor, or its empty margin stays under the article. */
+            const source = safeHttpUrl(article.url);
+            articleLinkEl.href = source || "#";
+            const sourceLine = articleLinkEl.closest(".modal-article-source");
+            if (sourceLine) sourceLine.hidden = !source;
             articleEl.hidden = false;
         } else {
             // Emptied, not just hidden: an article left in the DOM is a
@@ -627,8 +674,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             linksWrap.style.display = "none";
         }
 
-        if (event.habboLink) {
-            visitLink.href = event.habboLink;
+        const habboLink = safeHttpUrl(event.habboLink);
+        if (habboLink) {
+            visitLink.href = habboLink;
             visitWrap.style.display = "block";
         } else {
             visitWrap.style.display = "none";
@@ -644,9 +692,17 @@ document.addEventListener("DOMContentLoaded", async () => {
             showImage(images, 0);
             if (images.length > 1) {
                 stripEl.style.display = "flex";
-                stripEl.innerHTML = images.map((img, i) => `<img src="${imgCdn(img.image, 110, 110, 55)}" loading="lazy" alt="${escapeHtml(img.label)}" class="${i === 0 ? "active" : ""}">`).join("");
+                // Reachable by keyboard as well as by pointer, the same way
+                // js/home.js's own strip is: tabindex and role="button", with
+                // Enter and Space doing what a click does.
+                stripEl.innerHTML = images.map((img, i) => `<img src="${imgCdn(img.image, 110, 110, 55)}" loading="lazy" alt="${escapeHtml(img.label || `Image ${i + 1}`)}" class="${i === 0 ? "active" : ""}" tabindex="0" role="button">`).join("");
                 stripEl.querySelectorAll("img").forEach((thumb, i) => {
                     thumb.addEventListener("click", () => showImage(images, i));
+                    thumb.addEventListener("keydown", e => {
+                        if (e.key !== "Enter" && e.key !== " ") return;
+                        e.preventDefault();
+                        showImage(images, i);
+                    });
                 });
             } else {
                 stripEl.style.display = "none";
@@ -660,6 +716,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         modal.classList.add("open");
+        // Onto the window itself, so a screen reader announces the dialog by
+        // its title and Tab starts from inside it rather than from the link
+        // that opened it.
+        const win = modal.querySelector(".modal");
+        if (win && !win.contains(document.activeElement)) win.focus({ preventScroll: true });
     }
 
     // A same-page <a href="#event-...">  (see js/site.js's slideMarkup)
@@ -668,7 +729,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     // shared/bookmarked "index.html#event-..." link landing here directly.
     function checkHash() {
         const m = /^#event-(.+)$/.exec(location.hash);
-        if (m) openEventModalById(decodeURIComponent(m[1]));
+        if (!m) return;
+        // A hand-typed or mangled address can carry a bare "%" that is not
+        // an escape, and decodeURIComponent throws on it — which, here at the
+        // top of a listener, took the whole handler down. A hash that does not
+        // decode names no event, so it is ignored like any other unknown one.
+        let id;
+        try { id = decodeURIComponent(m[1]); } catch (e) { return; }
+        openEventModalById(id);
     }
 
     window.addEventListener("hashchange", checkHash);
@@ -695,12 +763,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
     renderPrivacySections(document.getElementById("welcome-privacy-body"));
 
+    // Focus in on open and back out on close, for the same reasons as the
+    // event modal above.
+    let privacyTrigger = null;
+
     function openPrivacyModal() {
+        if (!modal.classList.contains("open")) privacyTrigger = document.activeElement;
         modal.classList.add("open");
+        const win = modal.querySelector(".modal");
+        if (win && !win.contains(document.activeElement)) win.focus({ preventScroll: true });
     }
 
     function closePrivacyModal() {
         modal.classList.remove("open");
+        const back = privacyTrigger;
+        privacyTrigger = null;
+        if (back && document.contains(back) && typeof back.focus === "function") {
+            back.focus({ preventScroll: true });
+        }
         // Drop the hash without a history entry or a re-fired hashchange,
         // same as closeEventModal above.
         if (location.hash === "#privacy") {

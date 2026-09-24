@@ -161,7 +161,64 @@ function isHallway(record) {
         .some(t => String(t).trim().toLowerCase() === HALLWAY_TAG);
 }
 
+/* Was this maze in the archive before the day began?
+ *
+ * A day is dealt from a shuffle of the whole pool, so a maze catalogued at
+ * two in the afternoon re-deals the day for everyone who loads the page after
+ * it: different rounds from the ones the morning's players were shown, and a
+ * server that — depending on which container answers — scores against one
+ * set or the other. So a maze counts towards a day only if it existed when
+ * that day started, and joins the rotation the following midnight.
+ *
+ * Read off createdAt, which rooms.js stamps on insert and never rewrites. It
+ * is not `added` — that is when the maze opened in the hotel, typed by hand
+ * and often years earlier than the record. Records older than the stamp have
+ * no createdAt at all, and those have by definition been there for every day
+ * the games have run, so a missing stamp counts as "always here".
+ *
+ * WHAT THIS CANNOT DO is the same for images inside a maze. A gallery entry
+ * is a bare {image} with no timestamp of its own, and updatedAt moves on
+ * every save of the record — so filtering on it would drop a maze from the
+ * pool the moment it was edited, which is the very re-deal this exists to
+ * prevent. A picture added to an existing maze mid-day still re-deals; see
+ * answersFor in guess-scores.js for how the server copes with that.
+ *
+ * Written twice, like daySeed, and compared by tools/check-daily-parity.js:
+ * a maze kept on one side and dropped on the other is the two sides dealing
+ * different games. Plain string comparison on the ISO date, so no timezone
+ * can move it. */
+function existedBefore(record, day) {
+    const stamp = record && typeof record.createdAt === "string" ? record.createdAt.slice(0, 10) : "";
+    return !stamp || stamp < day;
+}
+
+/* The span each board covers, for every board on the site.
+ *
+ * There used to be two of these and they disagreed: Odd One Out's "This week"
+ * was the last seven days rolling, Guess the Maze's was the calendar week
+ * from Monday — so the combined board, which sums both, added up two
+ * different weeks under one heading, and the same tab meant different things
+ * two columns apart. Both boards print "Since <weekFrom>" under the tab, and
+ * the Guess the Maze copy was written to say Monday; calendar is the one kept.
+ *
+ * Calendar rather than rolling because the point of a shorter board is that
+ * everybody starts level again: on Monday, and on the first of the month. A
+ * rolling seven days never starts anybody level. UTC throughout, matching the
+ * day the games themselves turn over on. */
+function rangeBounds(kind, todayStr) {
+    const iso = d => d.toISOString().slice(0, 10);
+    if (kind === "day") return { from: todayStr, to: todayStr };
+    if (kind === "week") {
+        const start = new Date(todayStr + "T00:00:00Z");
+        // getUTCDay is 0 for Sunday; shifted so weeks run Monday to Sunday.
+        start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
+        return { from: iso(start), to: todayStr };
+    }
+    if (kind === "month") return { from: todayStr.slice(0, 8) + "01", to: todayStr };
+    return { from: "0000-01-01", to: "9999-12-31" };   // all time
+}
+
 module.exports = {
     today, dayIsOpen, seededRandom, seedFrom, shuffle,
-    FEATURED_DAYS, daySeed, isFeaturedDay, isHallway
+    FEATURED_DAYS, daySeed, isFeaturedDay, isHallway, existedBefore, rangeBounds
 };

@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="en" style="visibility:hidden">
 <head>
+    <meta charset="UTF-8">
+    <!-- The charset comes before even the gate. A browser only honours a
+         charset declaration inside the first 1024 bytes of the document;
+         past that it has already guessed an encoding and may re-parse the
+         page once it finds out, and the gate's comment alone runs to
+         thousands of bytes. The declaration used to sit at byte 14,494. It
+         is not a resource and costs nothing to put first, so it does not
+         delay the gate at all. -->
     <!-- Pre-load Coming Soon/Maintenance gate — first thing in <head>, ahead
          of every other resource, so it starts the settings/auth check as
          early as possible. <html>'s own inline visibility:hidden above (set
@@ -273,7 +281,6 @@
          for every icon after it. -->
     <link rel="preconnect" href="https://furniindex.com">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Silkscreen:wght@400;700&family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
-    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <title>Maze Rats — A Habbo Hotel Maze Room Archive</title>
@@ -588,6 +595,10 @@
                     <div class="chrome-frame">
                         <button type="button" class="chrome-frame-minimize-toggle" id="chrome-frame-minimize-toggle" aria-label="Restore the results"><span class="chrome-frame-minimize-arrow" aria-hidden="true"></span></button>
                         <div class="chrome-body">
+                            <!-- One line over the list: a quiet note on the left
+                                 (whichever of the two applies) and "Clear filter" on
+                                 the right. Takes no room when all three are hidden. -->
+                            <div class="list-status">
                             <!-- Only shown on Events > Archive (see updateChrome in js/home.js) -->
                             <span class="events-archive-note" id="events-archive-note" hidden>Events are archived after 2 years.</span>
                             <!-- "12 of 37 walked" — this visitor's own tally, kept
@@ -596,6 +607,11 @@
                                  is ticked: a first-time visitor should meet the
                                  archive, not a scoreboard reading zero. -->
                             <span class="walked-count" id="walked-count" hidden></span>
+                            <!-- Shown whenever the list is narrowed: a search, a
+                                 filter chip from a maze's window, or a furni. Same
+                                 look as "Refresh recommendations". -->
+                            <button type="button" class="clear-filter-btn" id="clear-filter-btn" hidden>Clear filter</button>
+                            </div>
                             <p class="chrome-intro" id="featured-intro"></p>
                             <div class="home-results">
                                 <div class="chrome-list" id="featured-grid"></div>
@@ -734,9 +750,13 @@
                     <div class="console-page" id="console-page-contact">
                         <h3 class="console-page-title">Contact Us</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
+                        <!-- Three reasons: to say something, to add what you know
+                             about a maze (one we have or one we don't), or to
+                             see which ones we most need help with. -->
                         <div class="console-choice">
                             <button type="button" class="console-btn console-choice-btn" id="console-choice-contact">Contact</button>
-                            <button type="button" class="console-btn console-choice-btn" id="console-choice-submit">Maze Submission</button>
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-info">Add Maze Info</button>
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-missing">Missing Pieces</button>
                         </div>
                     </div>
                     <!-- The message form itself, reached from the choice above.
@@ -772,35 +792,27 @@
                         </div>
                         <p class="console-form-status" id="console-contact-status" style="display:none;"></p>
                     </div>
-                    <!-- Also reached from the choice screen. It posts through the
-                         same endpoint the message form does
-                         (netlify/functions/contact.js — honeypot, per-IP rate
-                         limit and admin inbox included), with its fields written
-                         into the message so nothing new is needed server-side. -->
-                    <div class="console-page" id="console-page-submit" style="display:none;">
-                        <h3 class="console-page-title">Submit a Maze</h3>
+                    <!-- Add Maze Info: what somebody knows about a maze or event,
+                         in the archive or not yet. Built by js/console-info.js,
+                         which reads what can be added from js/dead-ends.js and
+                         posts to netlify/functions/dead-end-leads.js. It
+                         replaced the old "Submit a Maze" form, which could only
+                         take a new maze's name and a paragraph. -->
+                    <div class="console-page" id="console-page-info" style="display:none;">
+                        <h3 class="console-page-title">Add Maze Info</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
-                        <!-- No em dash in here: the console is set in Volter
-                             Goldfish, which draws one as a musical note (see
-                             PICTURE_GLYPHS in js/site.js). -->
-                        <p class="console-blurb">Found one we've missed? Tell us what you know. The name is enough to start with.</p>
-                        <label class="console-field-label" for="console-submit-name">Maze name:</label>
-                        <input type="text" class="console-input console-input-line" id="console-submit-name" placeholder="The Little Maze">
-                        <label class="console-field-label" for="console-submit-builder">Who built it:</label>
-                        <input type="text" class="console-input console-input-line" id="console-submit-builder" placeholder="Origins username">
-                        <label class="console-field-label" for="console-submit-notes">Anything else:</label>
-                        <textarea class="console-input console-input-message" id="console-submit-notes" placeholder="Opening date, mechanics, what you love about this maze…"></textarea>
-                        <label class="console-field-label" for="console-submit-username">Your Origins username:</label>
-                        <input type="text" class="console-input console-input-line" id="console-submit-username" placeholder="So we can credit you">
-                        <input type="text" class="console-hp-field" id="console-submit-hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
-                        <div class="console-contact-actions">
-                            <button type="button" class="console-btn console-btn-cancel" id="console-submit-back">Back</button>
-                            <button type="button" class="console-btn console-btn-send" id="console-submit-send">Send</button>
-                        </div>
-                        <p class="console-form-status" id="console-submit-status" style="display:none;"></p>
+                        <div id="console-info-body"></div>
+                    </div>
+                    <!-- Missing Pieces: every maze and event an admin has marked
+                         as missing something, and a way to help with each.
+                         Also built by js/console-info.js. -->
+                    <div class="console-page" id="console-page-missing" style="display:none;">
+                        <h3 class="console-page-title">Missing Pieces</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <div id="console-missing-body"></div>
                     </div>
                     <div class="console-page console-page-thanks" id="console-page-thanks" style="display:none;">
-                        <p class="console-thanks-message">We'll be in touch for more details, thanks!</p>
+                        <p class="console-thanks-message" id="console-thanks-message">We'll be in touch for more details, thanks!</p>
                         <button type="button" class="console-btn console-btn-ok" id="console-thanks-ok">OK</button>
                     </div>
                     <div class="console-page" id="console-page-people" style="display:none;">
@@ -823,19 +835,26 @@
                             <a href="/privacy" target="_blank" rel="noopener">Open the full policy as a page &rsaquo;</a>
                         </p>
                     </div>
-                    <div class="console-page" id="console-page-about" style="display:none;">
-                        <h3 class="console-page-title">About</h3>
+                    <!-- Profile: what signing in with Discord is FOR, in one
+                         place. Signed in, the player's archive progress, daily
+                         game streaks and places, their best Fallin' Furni run
+                         and what they have sent in; signed out, what they
+                         would get. Built by js/console-profile.js from
+                         netlify/functions/player-profile.js. It replaced the
+                         About page. -->
+                    <div class="console-page" id="console-page-profile" style="display:none;">
+                        <h3 class="console-page-title">Profile</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
-                        <p class="console-blurb console-about-blurb" id="console-about-blurb"></p>
+                        <div id="console-profile-body"></div>
                     </div>
                 </div>
                 <div class="console-screen-shadow" aria-hidden="true"></div>
             </div>
             <div class="console-buttons" id="console-buttons">
                 <button type="button" class="console-tab-btn" id="contact-btn" data-page="contact" aria-label="Contact Us"><span class="console-tab-label">CONTACT</span></button>
-                <button type="button" class="console-tab-btn" id="people-btn" data-page="people" aria-label="Contributors"><span class="console-tab-label">SOURCE</span></button>
+                <button type="button" class="console-tab-btn" id="people-btn" data-page="people" aria-label="Source: contributors"><span class="console-tab-label">SOURCE</span></button>
                 <button type="button" class="console-tab-btn" id="privacy-btn" data-page="privacy" aria-label="Privacy Policy"><span class="console-tab-label">PRIVACY</span></button>
-                <button type="button" class="console-tab-btn" id="about-btn" data-page="about" aria-label="About"><span class="console-tab-label">ABOUT</span></button>
+                <button type="button" class="console-tab-btn" id="profile-btn" data-page="profile" aria-label="Profile"><span class="console-tab-label">PROFILE</span></button>
             </div>
         </div>
     </div>
@@ -1017,6 +1036,23 @@
         </div>
     </div>
 
+    <!-- Leaderboards: every daily board in one window, opened from the side
+         menu and from the console's Profile page. The games each show their
+         own board when a day is finished; this is the place to look without
+         playing first. Filled by js/leaderboards.js from the same endpoints
+         the games read, so the two can never disagree. -->
+    <div class="modal-overlay progress-overlay boards-overlay" id="boards-overlay">
+        <div class="modal progress-window boards-window" id="boards-window" role="dialog" aria-modal="true" aria-labelledby="boards-title" tabindex="-1">
+            <div class="chrome-titlebar">
+                <h2 id="boards-title">Leaderboards</h2>
+                <button class="chrome-close" id="boards-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+            </div>
+            <div class="chrome-frame">
+                <div class="progress-body boards-body" id="boards-body"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Room detail modal -->
     <div class="modal-overlay" id="room-modal">
         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-name" tabindex="-1">
@@ -1042,6 +1078,21 @@
                         aria-expanded="false" aria-controls="modal-actions-panel"
                         aria-label="Actions for this room">
                     <span class="side-spine-label" aria-hidden="true">Actions</span>
+                    <span class="side-spine-arrow" aria-hidden="true">&#9654;</span>
+                </button>
+            </div>
+            <!-- INCOMPLETE: a second tab under Actions, only on a record an
+                 admin has marked as a Dead End. The same drawer, so it slides
+                 and hides at the same widths; its card lists what is missing
+                 and holds "I can help". Filled by renderModalDeadEnd in
+                 js/home.js. Below 1000px a pill in the meta row does this
+                 job instead. -->
+            <div class="modal-actions-drawer modal-incomplete-drawer" id="modal-incomplete-drawer" hidden>
+                <div class="modal-actions-panel modal-incomplete-panel" id="modal-incomplete-panel"></div>
+                <button type="button" class="side-spine modal-actions-spine modal-incomplete-spine" id="modal-incomplete-spine"
+                        aria-expanded="false" aria-controls="modal-incomplete-panel"
+                        aria-label="What this record is missing">
+                    <span class="side-spine-label" aria-hidden="true">Incomplete</span>
                     <span class="side-spine-arrow" aria-hidden="true">&#9654;</span>
                 </button>
             </div>
@@ -1189,10 +1240,17 @@
          of those checks silently did nothing. A shared service belongs with
          site.js, not among the things that consume it. -->
     <script src="js/account.js?v=2"></script>
+    <!-- What a record can be missing — shared with /warren and the
+         Dead Ends functions, so it loads before home.js asks it. -->
+    <script src="js/dead-ends.js?v=2"></script>
     <script src="js/home.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>
     <script src="js/letter-jump.js?v=2"></script>
     <script src="js/console.js?v=2"></script>
+    <!-- The console's Add Maze Info form and Missing Pieces list. After
+         console.js, whose page switching it uses (window.MazeConsole). -->
+    <script src="js/console-info.js?v=2"></script>
+    <script src="js/console-profile.js?v=2"></script>
     <!-- After site.js, which is where imgCdn and compareNames live. -->
     <!-- The two daily games, and the day rules they share. daily.js
          first: both games read it as they set themselves up. -->
@@ -1212,6 +1270,9 @@
     <script src="js/featured-days.js?v=2"></script>
     <script src="js/daily.js?v=2"></script>
     <script src="js/daily-loader.js?v=2"></script>
+    <!-- After daily.js: the window draws its rows with Daily.ranks and the
+         same row markup the games' own boards use. -->
+    <script src="js/leaderboards.js?v=2"></script>
     <script src="js/track.js?v=2"></script>
 </body>
 </html>
