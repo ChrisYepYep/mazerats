@@ -33,7 +33,7 @@
    endpoint here asks for, which is what lets an atlas-only account exist
    at all. See WRITE_SCOPES in _auth.js. */
 const { getDb } = require("./_db");
-const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED } = require("./_auth");
+const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED } = require("./_auth");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
 
@@ -340,6 +340,20 @@ exports.handler = async (event) => {
     }
     const wizard = db.collection("wizard");
 
+    /* Everything past the connect in one catch. Only the connect was
+       guarded, so a read that failed — the public map, an unlock, the
+       editor's copy — or a write was an unhandled rejection and Netlify's
+       bare 502, which the atlas page cannot read. The reason goes to the
+       log, not into the reply. */
+    try {
+        return await route(event, wizard);
+    } catch (e) {
+        console.error("wizard: request failed", e);
+        return json(500, { error: "The atlas could not be reached just now" });
+    }
+};
+
+async function route(event, wizard) {
     if (event.httpMethod === "GET") {
         const all = await wizard.find({}, { projection: { _id: 0 } }).toArray();
         const of = kind => all.filter(d => d.kind === kind);
@@ -358,7 +372,9 @@ exports.handler = async (event) => {
            written. Handled before the public payload is built so there is no
            chance of the filtered version being served to it by accident. */
         if ((event.queryStringParameters || {}).fresh === "1") {
-            if (!isAuthorized(event)) return UNAUTHORIZED;
+            // A live account, not only a signed token: this copy carries
+            // every secret's code. See hasAccount in _auth.js.
+            if (!(await hasAccount(event))) return UNAUTHORIZED;
             return cachedJson(event, {
                 map: { ...MAP_DEFAULTS, ...(all.find(d => d.kind === "map") || {}) },
                 layers: of("layer").sort((a, b) => (a.z || 0) - (b.z || 0)),
@@ -731,4 +747,4 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
-};
+}

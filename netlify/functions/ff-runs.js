@@ -360,11 +360,20 @@ async function report(db, event) {
     const range = RANGES[asked] ? asked : "30d";
     const since = RANGES[range]();
 
-    const rows = await db.collection(COLLECTION)
-        .find(since ? { at: { $gte: since } } : {}, { projection: { _id: 0 } })
-        .sort({ at: -1 })
-        .limit(MAX_ROWS)
-        .toArray();
+    /* The one read, caught like the write in `record` is: a raw throw here
+       reached Netlify as an HTML error page, which the admin panel could not
+       parse and reported as something other than what it was. */
+    let rows;
+    try {
+        rows = await db.collection(COLLECTION)
+            .find(since ? { at: { $gte: since } } : {}, { projection: { _id: 0 } })
+            .sort({ at: -1 })
+            .limit(MAX_ROWS)
+            .toArray();
+    } catch (e) {
+        console.error("ff-runs: could not read the runs", e);
+        return json(503, { error: "The run log could not be read just now." });
+    }
 
     /* ---- the headline */
     const finished = rows.filter(r => r.outcome !== "abandoned");
@@ -379,13 +388,19 @@ async function report(db, event) {
        so the days are generated from the range rather than from the data. */
     const byDay = [];
     if (rows.length) {
+        const MAX_DAYS = 120;
         const first = since || new Date(rows[rows.length - 1].at);
         const day = new Date(first); day.setUTCHours(0, 0, 0, 0);
         const counts = new Map();
         for (const r of rows) counts.set(new Date(r.at).toISOString().slice(0, 10), (counts.get(new Date(r.at).toISOString().slice(0, 10)) || 0) + 1);
         const end = new Date(); end.setUTCHours(0, 0, 0, 0);
-        // Capped so "all" on an old database cannot return a thousand bars.
-        for (let i = 0; day <= end && i < 120; i++) {
+        /* Capped so "all" on an old database cannot return a thousand bars -
+           and the cap keeps the NEWEST days. It used to count 120 up from the
+           oldest row, so once there was more history than that, "all" was
+           the only range that did not show this week. */
+        const earliest = new Date(end); earliest.setUTCDate(earliest.getUTCDate() - (MAX_DAYS - 1));
+        if (day < earliest) day.setTime(earliest.getTime());
+        for (let i = 0; day <= end && i < MAX_DAYS; i++) {
             const key = day.toISOString().slice(0, 10);
             byDay.push({ label: key, n: counts.get(key) || 0 });
             day.setUTCDate(day.getUTCDate() + 1);
@@ -476,11 +491,18 @@ async function report(db, event) {
        A signed-in run keys on the session even when a habbo name was typed as
        well: the checked identity wins, and one person is one row rather than
        two halves of themselves. The habbo name is carried along so the panel
-       can show who a signed-in player says they are in the hotel. */
+       can show who a signed-in player says they are in the hotel.
+
+       A SIGNED-IN PLAYER IS THEIR ACCOUNT ID, labelled with their name. A
+       Discord display name is neither unique nor fixed: two accounts called
+       the same thing were one row, and one account that renamed itself was
+       two. The id is both. `rows` is newest first, so the name kept is the
+       one they go by now. A row from before playerId was stored falls back
+       to its name, under a prefix so it cannot collide with an id. */
     const players = new Map();
     for (const r of rows) {
         const kind = r.player ? "player" : (r.habbo ? "habbo" : "none");
-        const key = kind === "player" ? "p:" + r.player
+        const key = kind === "player" ? "p:" + (r.playerId || "name:" + r.player)
             : kind === "habbo" ? "h:" + r.habbo
             : "";
         let e = players.get(key);
@@ -534,11 +556,20 @@ async function report(db, event) {
         let e = addresses.get(key);
         if (!e) {
             e = { ip: r.ip || null, runs: 0, anon: 0, cleared: 0, bestPoints: 0,
-                  first: r.at, last: r.at, touch: 0, players: new Map(), habbos: new Map() };
+                  first: r.at, last: r.at, touch: 0, players: new Map(), playerNames: new Map(),
+                  habbos: new Map() };
             addresses.set(key, e);
         }
         e.runs++;
-        if (r.player) bump(e.players, r.player); else e.anon++;
+        /* Counted by ACCOUNT, as byPlayer is, and labelled by name. Keyed on
+           the name, two accounts sharing a display name on one address - the
+           exact thing `shared` is here to flag - counted as one, and one
+           account that renamed itself counted as two. Newest name kept. */
+        if (r.player) {
+            const pk = r.playerId || "name:" + r.player;
+            bump(e.players, pk);
+            if (!e.playerNames.has(pk)) e.playerNames.set(pk, r.player);
+        } else e.anon++;
         /* Habbo names are tallied for EVERY run that carries one, signed in or
            not. An address whose signed-in account and signed-out runs all give
            the same habbo name is one person being consistent; the same address
@@ -559,7 +590,7 @@ async function report(db, event) {
         /* NAMES, not a count of them, because the count is the boring half.
            Capped at eight per address: past that the row is a public wifi
            point and the list has stopped being a lead. */
-        players: rank(e.players, 8),
+        players: rank(e.players, 8).map(p => ({ label: e.playerNames.get(p.label) || p.label, n: p.n })),
         named: e.players.size,
         // The same list for the name typed into the game, capped the same way.
         habbos: rank(e.habbos, 8),

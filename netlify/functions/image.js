@@ -2,7 +2,7 @@
    Netlify Blobs. Public (the site needs to display them to every visitor). */
 const { imagesStore } = require("./_images");
 const { headersFor } = require("./_headers");
-const { isAuthorized } = require("./_auth");
+const { hasAccount } = require("./_auth");
 const { isSafeKey } = require("./_keys");
 
 /* Keys under tips/ are pictures sent in by the public and not yet looked at
@@ -36,7 +36,12 @@ exports.handler = async (event) => {
     if (!isSafeKey(key)) return refuse(400, "Invalid key");
 
     const isPrivate = key.startsWith(PRIVATE_PREFIX);
-    if (isPrivate && !isAuthorized(event)) return refuse(404, "Not found");
+    /* hasAccount rather than isAuthorized: a token outliving its account
+       (deleted, or its password reset) must not keep reading unreviewed
+       uploads. It costs one indexed lookup, paid only on tips/ keys — which
+       only the admin page ever asks for — so the public image path never
+       touches the database. */
+    if (isPrivate && !(await hasAccount(event))) return refuse(404, "Not found");
 
     const store = imagesStore();
     let result;

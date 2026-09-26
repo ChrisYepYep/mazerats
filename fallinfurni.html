@@ -974,9 +974,15 @@
                     <div class="console-page" id="console-page-contact">
                         <h3 class="console-page-title">Contact Us</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
+                        <!-- Three reasons: to say something, to add what you know
+                             about a maze (one we have or one we don't), or to
+                             see which ones we most need help with. The same
+                             three as home.html's console, which js/console.js
+                             expects on every page that carries one. -->
                         <div class="console-choice">
                             <button type="button" class="console-btn console-choice-btn" id="console-choice-contact">Contact</button>
-                            <button type="button" class="console-btn console-choice-btn" id="console-choice-submit">Maze Submission</button>
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-info">Add Maze Info</button>
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-missing">Missing Pieces</button>
                         </div>
                     </div>
                     <!-- The message form itself, reached from the choice above.
@@ -1012,35 +1018,28 @@
                         </div>
                         <p class="console-form-status" id="console-contact-status" style="display:none;"></p>
                     </div>
-                    <!-- Also reached from the choice screen. It posts through the
-                         same endpoint the message form does
-                         (netlify/functions/contact.js — honeypot, per-IP rate
-                         limit and admin inbox included), with its fields written
-                         into the message so nothing new is needed server-side. -->
-                    <div class="console-page" id="console-page-submit" style="display:none;">
-                        <h3 class="console-page-title">Submit a Maze</h3>
+                    <!-- Add Maze Info: what somebody knows about a maze or event,
+                         in the archive or not yet. Built by js/console-info.js,
+                         which reads what can be added from js/dead-ends.js and
+                         posts to netlify/functions/dead-end-leads.js. It
+                         replaced the old "Submit a Maze" form. This page has
+                         no archive of its own, so js/fallinfurni.js lends the
+                         form its list of mazes (see its window.MissingPieces). -->
+                    <div class="console-page" id="console-page-info" style="display:none;">
+                        <h3 class="console-page-title">Add Maze Info</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
-                        <!-- No em dash in here: the console is set in Volter
-                             Goldfish, which draws one as a musical note (see
-                             PICTURE_GLYPHS in js/site.js). -->
-                        <p class="console-blurb">Found one we've missed? Tell us what you know. The name is enough to start with.</p>
-                        <label class="console-field-label" for="console-submit-name">Maze name:</label>
-                        <input type="text" class="console-input console-input-line" id="console-submit-name" placeholder="The Little Maze">
-                        <label class="console-field-label" for="console-submit-builder">Who built it:</label>
-                        <input type="text" class="console-input console-input-line" id="console-submit-builder" placeholder="Origins username">
-                        <label class="console-field-label" for="console-submit-notes">Anything else:</label>
-                        <textarea class="console-input console-input-message" id="console-submit-notes" placeholder="Opening date, mechanics, what you love about this maze…"></textarea>
-                        <label class="console-field-label" for="console-submit-username">Your Origins username:</label>
-                        <input type="text" class="console-input console-input-line" id="console-submit-username" placeholder="So we can credit you">
-                        <input type="text" class="console-hp-field" id="console-submit-hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
-                        <div class="console-contact-actions">
-                            <button type="button" class="console-btn console-btn-cancel" id="console-submit-back">Back</button>
-                            <button type="button" class="console-btn console-btn-send" id="console-submit-send">Send</button>
-                        </div>
-                        <p class="console-form-status" id="console-submit-status" style="display:none;"></p>
+                        <div id="console-info-body"></div>
+                    </div>
+                    <!-- Missing Pieces: every maze and event an admin has marked
+                         as missing something, and a way to help with each.
+                         Also built by js/console-info.js. -->
+                    <div class="console-page" id="console-page-missing" style="display:none;">
+                        <h3 class="console-page-title">Missing Pieces</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <div id="console-missing-body"></div>
                     </div>
                     <div class="console-page console-page-thanks" id="console-page-thanks" style="display:none;">
-                        <p class="console-thanks-message">We'll be in touch for more details, thanks!</p>
+                        <p class="console-thanks-message" id="console-thanks-message">We'll be in touch for more details, thanks!</p>
                         <button type="button" class="console-btn console-btn-ok" id="console-thanks-ok">OK</button>
                     </div>
                     <div class="console-page" id="console-page-people" style="display:none;">
@@ -1063,19 +1062,23 @@
                             <a href="/privacy" target="_blank" rel="noopener">Open the full policy as a page &rsaquo;</a>
                         </p>
                     </div>
-                    <div class="console-page" id="console-page-about" style="display:none;">
-                        <h3 class="console-page-title">About</h3>
+                    <!-- Profile: what signing in with Discord is FOR, in one
+                         place. Built by js/console-profile.js from
+                         netlify/functions/player-profile.js. It replaced the
+                         About page. -->
+                    <div class="console-page" id="console-page-profile" style="display:none;">
+                        <h3 class="console-page-title">Profile</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
-                        <p class="console-blurb console-about-blurb" id="console-about-blurb"></p>
+                        <div id="console-profile-body"></div>
                     </div>
                 </div>
                 <div class="console-screen-shadow" aria-hidden="true"></div>
             </div>
             <div class="console-buttons" id="console-buttons">
+                <button type="button" class="console-tab-btn" id="profile-btn" data-page="profile" aria-label="Profile"><span class="console-tab-label">PROFILE</span></button>
                 <button type="button" class="console-tab-btn" id="contact-btn" data-page="contact" aria-label="Contact Us"><span class="console-tab-label">CONTACT</span></button>
-                <button type="button" class="console-tab-btn" id="people-btn" data-page="people" aria-label="Contributors"><span class="console-tab-label">SOURCE</span></button>
+                <button type="button" class="console-tab-btn" id="people-btn" data-page="people" aria-label="Source: contributors"><span class="console-tab-label">SOURCE</span></button>
                 <button type="button" class="console-tab-btn" id="privacy-btn" data-page="privacy" aria-label="Privacy Policy"><span class="console-tab-label">PRIVACY</span></button>
-                <button type="button" class="console-tab-btn" id="about-btn" data-page="about" aria-label="About"><span class="console-tab-label">ABOUT</span></button>
             </div>
         </div>
     </div>
@@ -1146,9 +1149,18 @@
     <script src="js/privacy-content.js?v=2"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/site.js?v=2"></script>
+    <!-- Before console.js and the console's pages, which ask it who is
+         signed in while they set themselves up (see home.html). -->
+    <script src="js/account.js?v=2"></script>
+    <!-- What a record can be missing; console-info.js draws its form and
+         list from it and does nothing at all without it. -->
+    <script src="js/dead-ends.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>
     <script src="js/console.js?v=2"></script>
-    <script src="js/account.js?v=2"></script>
+    <!-- The console's Add Maze Info, Missing Pieces and Profile pages, as on
+         home.html. After console.js, whose window.MazeConsole they use. -->
+    <script src="js/console-info.js?v=2"></script>
+    <script src="js/console-profile.js?v=2"></script>
     <script src="js/room-patterns.js"></script>
     <script src="js/furni-library.js"></script>
     <script src="js/furni-offsets.js"></script>

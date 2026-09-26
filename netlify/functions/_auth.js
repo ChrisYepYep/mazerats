@@ -31,10 +31,40 @@ const { SECURITY_HEADERS } = require("./_headers");
    twelve hours regardless. */
 const ADMIN_AUDIENCE = "mazerats-admin";
 
-function signAdminToken(username) {
-    return jwt.sign({ sub: username }, process.env.SESSION_SECRET, {
+/* `version` is the account's stored tokenVersion (see tokenIsCurrent below),
+   carried in the token as `tv` so a password change can retire every token
+   minted before it. Absent when the account has none, which is what every
+   token issued before this existed looks like too. */
+function signAdminToken(username, version) {
+    const payload = { sub: username };
+    if (version !== undefined && version !== null) payload.tv = String(version);
+    return jwt.sign(payload, process.env.SESSION_SECRET, {
         expiresIn: "12h", audience: ADMIN_AUDIENCE, algorithm: "HS256"
     });
+}
+
+/* ---- A SESSION ENDS WHEN THE PASSWORD DOES.
+
+   A JWT cannot be taken back, so without this a password reset changed
+   nothing for twelve hours: whoever had the old token — the very person the
+   reset was meant to shut out — kept every power it carried. The same went
+   for an account deleted and then created again under the same name, whose
+   new row answered for the old row's tokens.
+
+   So each account row keeps a tokenVersion, every token carries the version
+   it was minted under, and the two must be equal. auth.js gives the row a
+   fresh random version on every password change and on every account it
+   creates; tokens minted before that carry the old one and stop working at
+   their next request.
+
+   Rows written before this existed have no tokenVersion, and neither do the
+   tokens already out in the wild — undefined equals undefined, so everybody
+   signed in at deploy time stays signed in until their password changes. */
+function tokenIsCurrent(admin, payload) {
+    if (!admin || !payload) return false;
+    const stored = admin.tokenVersion === undefined || admin.tokenVersion === null ? null : String(admin.tokenVersion);
+    const carried = payload.tv === undefined || payload.tv === null ? null : String(payload.tv);
+    return stored === carried;
 }
 
 /* A valid, unexpired admin token — which is NOT the same as a live account.
@@ -152,11 +182,16 @@ async function roleOf(event) {
 }
 
 async function lookUpRole(event) {
-    const username = usernameFromToken(event);
+    const payload = tokenPayload(event);
+    const username = payload && payload.sub;
     if (!username) return null;
     try {
         const db = await getDb();
         const admin = await db.collection("admins").findOne({ username });
+        /* A token minted before the account's last password change is a
+           signed-out session, exactly as one for a deleted account is. See
+           tokenIsCurrent above. */
+        if (admin && !tokenIsCurrent(admin, payload)) return null;
         /* No row, no role. This used to be resolveRole(admin || { username }),
            which read a missing account as "admin" — so a deleted account kept
            full write access for the rest of its token's life, and any token
@@ -253,7 +288,7 @@ async function refuseWrite(event) {
 
 module.exports = {
     isAuthorized, hasAccount, usernameFromToken, sessionOf, UNAUTHORIZED,
-    ADMIN_AUDIENCE, signAdminToken,
+    ADMIN_AUDIENCE, signAdminToken, tokenPayload, tokenIsCurrent,
     PERMANENT_OWNER, ROLES, resolveRole, roleOf, isOwner, isOwnerWrite, canWrite,
     forbidden, READ_ONLY, OUT_OF_SCOPE, refuseWrite, WRITE_SCOPES
 };

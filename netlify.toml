@@ -204,6 +204,9 @@
   status = 301
   force = true
 
+# Unlike the rest, no file stands behind this one any more: glyphs.html was
+# folded into the homepage as the Alt Codes window. Kept so an old link or
+# bookmark still lands on the sheet rather than on a 404.
 [[redirects]]
   from = "/glyphs.html"
   to = "/glyphs"
@@ -240,6 +243,23 @@
 [[redirects]]
   from = "/guess"
   to = "/home.html"
+  status = 200
+
+# The Guides window (js/guides.js): /guides is the homepage with the window
+# open, and one guide is /guides?g=<id>.
+[[redirects]]
+  from = "/guides"
+  to = "/home.html"
+  status = 200
+
+# A shared guide link, on the same terms as /maze/:id below: the share
+# function writes the guide's own title and thumbnail for a chat client,
+# then sends a browser on to /guides?g=<id>. It cannot be home.html itself,
+# which loads its scripts and styles by relative paths that only resolve
+# from one level deep. The id is read off the path, as for mazes.
+[[redirects]]
+  from = "/guides/:id"
+  to = "/.netlify/functions/share"
   status = 200
 
 # The other daily game, on the same terms and for the same reason: a result
@@ -304,20 +324,18 @@
   to = "/wizard.html"
   status = 200
 
-# The picture-glyph sheet, at a clean /glyphs like every other page.
+# The Alt Codes window (js/glyphs.js): /glyphs is the homepage with the
+# picture-glyph sheet open, on the same terms as /guides above.
 #
-# It was written as an internal reference and reached only by typing
-# glyphs.html, which is why it never had one. It is not internal any more —
-# the archive's side menu offers it as "Alt Codes" (see js/home.js), so it
-# is a page of the site that visitors are invited to open, and it should
-# have an address that looks like one.
+# It was a page of its own, glyphs.html, opened in a new tab from the
+# archive's side menu. It is a window over the archive now, and the file is
+# gone; the /glyphs.html redirect further up still sends an old link here.
 #
-# Still noindex, in its own markup and in robots.txt: useful to somebody
-# naming a room, meaningless in a search result. Being linked and being
-# indexed are different questions and this only changes the first.
+# Still not indexed: robots.txt disallows /glyphs. Useful to somebody
+# naming a room, meaningless in a search result.
 [[redirects]]
   from = "/glyphs"
-  to = "/glyphs.html"
+  to = "/home.html"
   status = 200
 
 # publish = "." above means the whole repo root — including this directory

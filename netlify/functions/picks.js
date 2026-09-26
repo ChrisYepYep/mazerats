@@ -103,12 +103,16 @@ exports.handler = async (event) => {
             } catch (e) {
                 return json(400, { error: "Invalid request body" });
             }
+            // `null` parses, and reading a field off it throws.
+            if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
             const weekOf = text(body.weekOf);
             const type = text(body.type);
             const recordId = text(body.id).trim();
             const citation = text(body.citation).trim();
             if (!isMonday(weekOf)) return json(400, { error: "weekOf must be a Monday, as YYYY-MM-DD" });
-            if (!COLLECTION_OF[type] || !recordId) return json(400, { error: "Pick a maze or an event" });
+            // An own key only: "constructor" or "toString" found something on
+            // the prototype, passed, and became a collection name.
+            if (!Object.prototype.hasOwnProperty.call(COLLECTION_OF, type) || !recordId) return json(400, { error: "Pick a maze or an event" });
             if (citation.length > CITATION_MAX) return json(400, { error: `Keep the citation under ${CITATION_MAX} characters` });
 
             const exists = await db.collection(COLLECTION_OF[type]).countDocuments({ id: recordId }, { limit: 1 });

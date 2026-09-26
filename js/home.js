@@ -730,8 +730,25 @@ document.addEventListener("DOMContentLoaded", () => {
             parts.push(chip("diff", diffLabel, diffLabel, `difficulty-${cssToken(n.difficulty)}`, `Every ${String(diffLabel).toLowerCase()} ${kind}`));
         }
         (n.tags || []).forEach(t => parts.push(chip("tag", t, t, "", `Everything tagged ${t}`)));
-        creatorNames(n.owner).forEach(name => parts.push(chip("by", name, `More by ${name}`, "tag-by", `Everything by ${name}`)));
+        creatorNames(n.owner)
+            .filter(name => othersBy(n, name) > 0)
+            .forEach(name => parts.push(chip("by", name, `More by ${name}`, "tag-by", `Everything by ${name}`)));
         return parts.join("");
+    }
+
+    /* How many OTHER mazes (or events, for an event) carry this builder's
+       name, matched the way the "by" filter matches them (keyMatches), so a
+       chip is only offered when pressing it would find something. A builder
+       with one maze in the archive had a "More by" chip that led back to the
+       very maze it was pressed in. */
+    function othersBy(n, name) {
+        const value = String(name).toLowerCase();
+        const pool = n.isEvent ? EVENTS : ROOMS;
+        return pool.filter(raw => {
+            if (raw.id === n.id) return false;
+            const owner = n.isEvent ? raw.host : raw.creator;
+            return String(owner || "").toLowerCase().split(",").some(b => b.trim().includes(value));
+        }).length;
     }
 
     /* A chip in a maze's window was pressed: close the window and show the
@@ -1218,7 +1235,8 @@ document.addEventListener("DOMContentLoaded", () => {
            only place a break can happen.
 
            Held apart with markup, not a non-breaking space: U+00A0 in Volter
-           Goldfish is 60% wider than a normal one (glyphs.html), so a date
+           Goldfish is 60% wider than a normal one (see the Alt Codes window,
+           js/glyphs.js), so a date
            spaced with them comes out visibly gappier than the name beside it.
 
            Splitting on the spaced dash is safe because it is the only place
@@ -1916,6 +1934,44 @@ document.addEventListener("DOMContentLoaded", () => {
         return updated > archived ? updated : archived;
     }
 
+    /* Guides, in the same log as the archive (see js/guides.js and
+       netlify/functions/guides.js). A guide is "added" on the day it was
+       first published and "updated" on a later day's edit, the same rule a
+       maze follows; drafts never appear. Built in the log's own shape, with
+       its search text ready-made, because normalize() is for archive records
+       and a guide has none of their fields. */
+    function guideLogItems() {
+        const list = window.Guides && Guides.loaded() ? Guides.list() : [];
+        return list.filter(g => g.publishedAt).map(g => {
+            const updated = !!(g.updatedAt && g.updatedAt.slice(0, 10) > g.publishedAt.slice(0, 10));
+            const n = {
+                isGuide: true,
+                id: g.id,
+                name: g.title,
+                // The same fallback the Guides window uses (js/guide-text.js).
+                thumb: typeof GuideText !== "undefined" ? GuideText.thumbOf(g) : (g.thumb || ""),
+                category: g.category || "",
+                archivedAt: g.publishedAt,
+                updatedAt: g.updatedAt || "",
+                changes: Array.isArray(g.changes) ? g.changes : [],
+                activityAt: updated ? g.updatedAt : g.publishedAt,
+                activity: updated ? "updated" : "added",
+                _haystack: [g.title, g.category, g.summary, "guide"].join(" ").toLowerCase()
+            };
+            return { n, at: n.activityAt, own: "" };
+        });
+    }
+
+    // The guides arrive on their own request; a log already on screen
+    // redraws to include them.
+    if (window.Guides) Guides.onLoad(() => { if (showWhatsNew) render(); });
+
+    // The Guides row's second line in the side menu.
+    function guidesState() {
+        const n = window.Guides && Guides.loaded() ? Guides.list().length : 0;
+        return n ? `${n} ${n === 1 ? "guide" : "guides"} to how mazes work` : "How furni mazes work";
+    }
+
     function whatsNewItems() {
         const wrap = (item, isEvent) => {
             const n = normalize(item, isEvent);
@@ -1953,7 +2009,7 @@ document.addEventListener("DOMContentLoaded", () => {
         };
         const rooms = ROOMS.map(r => wrap(r, false));
         const events = EVENTS.map(e => wrap(e, true));
-        return rooms.concat(events)
+        return rooms.concat(events, guideLogItems())
             .filter(x => x.at)
             /* Most recent activity first — added or edited, whichever came
                last — and among everything sharing the backfill date with
@@ -2053,6 +2109,9 @@ document.addEventListener("DOMContentLoaded", () => {
         "links": "Links updated",
         "text": "Changes made to texts",
         "details": "Details updated",
+        // A guide's own (netlify/functions/guides.js); "text" above is shared.
+        "sections": "Sections rewritten",
+        "images": "Pictures updated",
     };
 
     /* ONE LINE, however much was done. An edit that touched five things
@@ -2165,9 +2224,10 @@ document.addEventListener("DOMContentLoaded", () => {
                                             : `<span class="updatelog-thumb is-blank" aria-hidden="true"></span>`}
                                         <span class="updatelog-what">
                                             <span class="updatelog-name">${escapeHtml(n.name || "")}</span>
-                                            <span class="updatelog-meta">${escapeHtml(
-                                                (n.isEvent ? "Event" : isHallway(n) ? "Hallway" : "Maze")
-                                                + (n.owner ? ` · ${n.owner}` : "")
+                                            <span class="updatelog-meta">${escapeHtml(n.isGuide
+                                                ? "Guide" + (n.category ? ` · ${n.category}` : "")
+                                                : (n.isEvent ? "Event" : isHallway(n) ? "Hallway" : "Maze")
+                                                    + (n.owner ? ` · ${n.owner}` : "")
                                             )}</span>
                                             ${n.activity === "updated" ? changeLineHtml(n) : ""}
                                         </span>
@@ -2180,7 +2240,8 @@ document.addEventListener("DOMContentLoaded", () => {
         grid.querySelectorAll(".updatelog-entry").forEach(btn => {
             btn.addEventListener("click", () => {
                 const n = currentItems[Number(btn.dataset.logIndex)];
-                if (n) openModal(n);
+                if (n && n.isGuide) { if (window.Guides) Guides.open(n.id); }
+                else if (n) openModal(n);
             });
         });
     }
@@ -3169,12 +3230,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!skipSlide && oldSrc) {
                 slideGalleryImage(oldSrc, modalGalleryImg.alt, newSrc, newAlt, direction);
             } else {
+                cancelGallerySlide();
                 modalGalleryImg.style.transition = "none";
                 modalGalleryImg.style.transform = "translateX(0)";
                 modalGalleryImg.src = newSrc;
                 modalGalleryImg.alt = newAlt;
             }
         } else {
+            cancelGallerySlide();
             modalGalleryImg.style.transition = "none";
             modalGalleryImg.style.transform = "translateX(0)";
             modalGalleryImg.removeAttribute("src");
@@ -3210,8 +3273,11 @@ document.addEventListener("DOMContentLoaded", () => {
             // than show the lightbox's own broken/blank image.
             if (!g.image) closeLightbox();
             else {
-                lightboxImg.src = modalGalleryImg.src;
-                lightboxImg.alt = modalGalleryImg.alt;
+                // The target picture itself, not modalGalleryImg.src: a slide
+                // only assigns that once its preload lands, so copying it here
+                // left the lightbox one image behind the arrows.
+                lightboxImg.src = imgCdn(g.image, 900, null, 78);
+                lightboxImg.alt = newAlt;
                 lightboxCounter.textContent = position ? `${label} — ${position}` : label;
             }
         }
@@ -3317,6 +3383,20 @@ document.addEventListener("DOMContentLoaded", () => {
         preload.onerror = startSlide;
         preload.src = newSrc;
         if (preload.complete) startSlide();
+    }
+
+    // Called by every path that sets the picture without sliding (the
+    // instant swap, a room with no screenshot, a gallery-less event, and
+    // closing the window). Bumping the seq is what makes a preload still in
+    // flight from the previous picture — or the previous maze — give up when
+    // it lands, instead of sliding maze A's room into maze B's window; and a
+    // half-finished outgoing clone is removed so it can't hang over the new one.
+    function cancelGallerySlide() {
+        slideRequestSeq++;
+        if (slideOutgoingEl) {
+            slideOutgoingEl.remove();
+            slideOutgoingEl = null;
+        }
     }
 
     // ---------- Related Images ----------
@@ -5350,9 +5430,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function openLightbox() {
         if (!activeGallery || !activeGallery.length) return;
         stopAutoAdvance();
-        lightboxImg.src = modalGalleryImg.src;
-        lightboxImg.alt = modalGalleryImg.alt;
         const g = activeGallery[activeIndex];
+        // From the active room rather than modalGalleryImg.src, which still
+        // holds the previous picture while a slide's preload is in flight.
+        lightboxImg.src = g.image ? imgCdn(g.image, 900, null, 78) : modalGalleryImg.src;
+        lightboxImg.alt = modalGalleryImg.alt;
         lightboxCounter.textContent = g.kind === "room" ? `${galleryCounter.textContent} — ${galleryPosition.textContent}` : galleryCounter.textContent;
         if (!lightboxOverlay.classList.contains("open")) lightboxTriggerEl = document.activeElement;
         lightboxOverlay.classList.add("open");
@@ -5796,10 +5878,25 @@ document.addEventListener("DOMContentLoaded", () => {
        naming the other in a comment. */
     const actionsFitDrawer = window.matchMedia("(min-width: 1000px)");
 
-    // Falls back to the titlebar whenever the drawer is not usable, which
-    // covers the narrow layout and a page where the markup is absent.
+    /* Below 1000px the actions sit in a bar along the foot of the window,
+       each with its word: Save, Completed, Share. They used to be three
+       unlabelled 24px glyphs in the titlebar, which nobody could read, and
+       which squeezed the maze's name. Made here rather than in home.html:
+       it is only ever a place for the node below to move to. */
+    const actionsBar = (() => {
+        const win = modalTitlebar && modalTitlebar.closest(".modal");
+        if (!win) return null;
+        const bar = document.createElement("div");
+        bar.className = "modal-actions-bar";
+        win.appendChild(bar);
+        return bar;
+    })();
+
+    // The tab's panel when the drawer fits; otherwise the bar, or the
+    // titlebar as a last resort on a page without the window's markup.
     function actionsHost() {
-        return (actionsFitDrawer.matches && actionsPanel) ? actionsPanel : modalTitlebar;
+        if (actionsFitDrawer.matches && actionsPanel) return actionsPanel;
+        return actionsBar || modalTitlebar;
     }
 
     function actionsOpen() {
@@ -5815,6 +5912,22 @@ document.addEventListener("DOMContentLoaded", () => {
         if (open && incompleteDrawer && incompleteDrawer.classList.contains("is-open")) {
             incompleteDrawer.classList.remove("is-open");
             if (incompleteSpine) incompleteSpine.setAttribute("aria-expanded", "false");
+        }
+        /* The Actions card is taller than its ACTIONS spine, and the
+           INCOMPLETE tab is placed against the spine, so the open card came
+           down over the top of it. While the card is out, the tab steps down
+           to clear it by the same 8px gap it keeps from the spine, and goes
+           back when the card is put away. Measured rather than fixed, since
+           the card's height is its words. */
+        if (incompleteDrawer) {
+            let push = 0;
+            if (open) {
+                const cardBottom = actionsDrawer.offsetTop + actionsDrawer.offsetHeight;
+                // From where the tab rests, not where a previous push left it.
+                const pushed = parseFloat(incompleteDrawer.style.getPropertyValue("--push")) || 0;
+                push = Math.max(0, cardBottom + 8 - (incompleteDrawer.offsetTop - pushed));
+            }
+            incompleteDrawer.style.setProperty("--push", push + "px");
         }
     }
 
@@ -6138,6 +6251,9 @@ document.addEventListener("DOMContentLoaded", () => {
             setGalleryImageOperable(true);
         } else {
             activeGallery = null;
+            // A slide still preloading from the last maze would otherwise
+            // land its room in this gallery-less window.
+            cancelGallerySlide();
             // No gallery, no lightbox (openLightbox returns at once), so the
             // picture stops being a button rather than being one that does
             // nothing.
@@ -6222,6 +6338,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // that is fading out from under it.
         setActionsOpen(false);
         stopAutoAdvance();
+        // A slide still preloading must not finish into a closed (or
+        // about-to-be-reused) window.
+        cancelGallerySlide();
         closeLightbox();
         // These belong to the maze/event being viewed — leaving them
         // floating over the page after its maze has been closed strands
@@ -6809,16 +6928,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function renderModalDeadEnd(n) {
         const gaps = gapsOfItem(n);
-        const pill = document.getElementById("modal-incomplete-pill");
-        const pop = document.getElementById("modal-incomplete-pop");
+        const strip = document.getElementById("modal-incomplete-strip");
         setIncompleteOpen(false);
-        if (pop) pop.hidden = true;
 
         if (!gaps.length) {
             if (incompleteDrawer) incompleteDrawer.hidden = true;
             if (incompletePanel) incompletePanel.innerHTML = "";
-            if (pill) pill.remove();
-            if (pop) pop.remove();
+            if (strip) strip.remove();
             if (!deadEnds.loaded) loadDeadEnds();
             return;
         }
@@ -6829,30 +6945,28 @@ document.addEventListener("DOMContentLoaded", () => {
             incompleteDrawer.hidden = false;
         }
 
-        /* The narrow version. Rebuilt with the meta row, which openModal
-           rewrites on every open, so it is added here each time rather than
-           kept. The CSS shows whichever of the two fits the width. */
-        if (!pill) {
-            const b = document.createElement("button");
-            b.type = "button";
-            b.id = "modal-incomplete-pill";
-            b.className = "incomplete-pill";
-            b.setAttribute("aria-expanded", "false");
-            b.setAttribute("aria-controls", "modal-incomplete-pop");
-            b.textContent = "Incomplete";
-            modalMeta.appendChild(b);
-            const box = document.createElement("div");
-            box.id = "modal-incomplete-pop";
-            box.className = "incomplete-pop";
-            box.hidden = true;
-            modalMeta.appendChild(box);
-            b.addEventListener("click", ev => {
-                ev.stopPropagation();
-                box.hidden = !box.hidden;
-                b.setAttribute("aria-expanded", box.hidden ? "false" : "true");
-            });
-        }
-        document.getElementById("modal-incomplete-pop").innerHTML = card;
+        /* The narrow version: a strip across the foot of the meta row that
+           says what is missing in a word each and offers the form, with
+           nothing to open. It used to be an INCOMPLETE pill that unfolded
+           the tab's card inside the row, pushing the window down and running
+           off its right edge. The full sentences are in the Add Maze Info
+           form the button opens.
+
+           Rebuilt with the meta row, which openModal rewrites on every open,
+           so it is added here each time rather than kept. The CSS shows
+           whichever of the two, strip or tab, fits the width. */
+        const words = [...new Set(gaps.map(key => {
+            const p = DeadEnds.piece(key);
+            return p && p.word ? p.word : key;
+        }))];
+        const bar = strip || document.createElement("div");
+        bar.id = "modal-incomplete-strip";
+        bar.className = "incomplete-strip";
+        bar.innerHTML = `
+            <span class="incomplete-strip-label">Missing</span>
+            <span class="incomplete-strip-words">${words.map(escapeHtml).join(" · ")}</span>
+            <button type="button" class="incomplete-strip-help" data-lead>I can help ›</button>`;
+        if (!strip) modalMeta.appendChild(bar);
     }
 
     if (incompleteDrawer && incompleteSpine) {
@@ -6962,18 +7076,63 @@ document.addEventListener("DOMContentLoaded", () => {
         const onPhone = window.innerWidth <= FEATURED_PHONE_MAX;
 
         return [
-            /* A heading rather than a row: there are two games now, and left
-               in a flat list they read as two more places to go rather than
-               as the pair of things that are new every morning. Rows below a
-               heading belong to it until the next one. */
-            { heading: "Daily" },
+            /* ARCHIVE: the archive's own tools, folded like GAMES and above
+               it, since the archive is what the site is for. */
+            { group: "Archive" },
+            {
+                name: "What's New",
+                state: fresh ? "Lately added and changed" : "Nothing new just now",
+                badge: fresh ? String(fresh) : "",
+                on: showWhatsNew,
+                run: toggleWhatsNew
+            },
+            {
+                // How-to guides, in a window of their own (js/guides.js).
+                name: "Guides",
+                state: guidesState(),
+                badge: "",
+                on: false,
+                run: () => { if (window.Guides) Guides.open(); }
+            },
+            {
+                name: "Missing Pieces",
+                state: de === null ? "Help finish the archive"
+                    : de ? `${de} ${de === 1 ? "record needs" : "records need"} your help`
+                        : "Every record is complete",
+                badge: "",
+                on: false,
+                // The console's list, not a view of the archive: each entry
+                // leads straight into the Add Maze Info form beside it.
+                run: () => { if (window.MazeConsole) MazeConsole.openMissing(); }
+            },
+            {
+                name: "Your Progress",
+                state: `${f.walkedHere.length} of ${f.walkable.length} completed`
+                    + (f.toWalk.length ? ` · ${f.toWalk.length} saved` : ""),
+                badge: "",
+                on: false,
+                run: openProgress
+            },
+            /* GAMES: a row that folds open, holding every game and the
+               boards. Rows below it belong to it until the next heading.
+               The games used to sit open under a plain "Daily" heading,
+               which with Fallin' Furni and the leaderboards among them
+               made the menu a long list before it reached the archive. */
+            { group: "Games" },
             {
                 name: "Guess the Maze",
+                // A tag beside the name, since inside the GAMES fold there is
+                // no "Daily" heading any more to say which games reset each
+                // morning. See .side-menu-tag.
+                tag: "Daily",
                 state: !g ? "Today's five rooms"
                     : g.finished ? `Done — ${g.points} points`
                         : g.started ? `${g.done} of ${g.total} rooms done`
                             : "Not played today",
-                badge: g && g.finished ? String(g.points) : "",
+                /* No points badge: the line below already says "Done — N
+                   points", and at the side menu's width the badge pushed the
+                   DAILY tag onto a line of its own. */
+                badge: "",
                 on: false,
                 // Opened through the hook js/guess.js publishes: the game
                 // owns its own window, and the menu only asks for it.
@@ -6981,11 +7140,12 @@ document.addEventListener("DOMContentLoaded", () => {
             },
             {
                 name: "Odd One Out",
+                tag: "Daily",
                 state: !o ? "Spot the room that does not belong"
                     : o.finished ? `Done — ${o.points} points`
                         : o.started ? `${o.done} of ${o.total} rounds done`
                             : "Not played today",
-                badge: o && o.finished ? String(o.points) : "",
+                badge: "",
                 on: false,
                 run: () => { if (typeof window.openOddOneOut === "function") window.openOddOneOut(); }
             },
@@ -7028,69 +7188,53 @@ document.addEventListener("DOMContentLoaded", () => {
                    The row looks exactly like the ones around it and the
                    WORDS do the work. See the note by .side-menu-state in
                    css/style.css for the two treatments that were tried and
-                   removed. */
-                run: () => { window.location.href = "/fallinfurni"; }
-            },
-            {
-                // Every board in one window (js/leaderboards.js), so the
-                // scores can be looked at without finishing a game first.
-                name: "Leaderboards",
-                state: "Who's on top today",
-                badge: "",
-                on: false,
-                run: () => { if (window.Leaderboards) Leaderboards.open(); }
-            },
-            { heading: "The archive" },
-            {
-                name: "What's New",
-                state: fresh ? "Lately added and changed" : "Nothing new just now",
-                badge: fresh ? String(fresh) : "",
-                on: showWhatsNew,
-                run: toggleWhatsNew
-            },
-            {
-                name: "Missing Pieces",
-                state: de === null ? "Help finish the archive"
-                    : de ? `${de} ${de === 1 ? "record needs" : "records need"} your help`
-                        : "Every record is complete",
-                badge: "",
-                on: false,
-                // The console's list, not a view of the archive: each entry
-                // leads straight into the Add Maze Info form beside it.
-                run: () => { if (window.MazeConsole) MazeConsole.openMissing(); }
-            },
-            {
-                name: "Your Progress",
-                state: `${f.walkedHere.length} of ${f.walkable.length} completed`
-                    + (f.toWalk.length ? ` · ${f.toWalk.length} saved` : ""),
-                badge: "",
-                on: false,
-                run: openProgress
-            },
-            {
-                /* The one entry here that leaves the site rather than
-                   opening something on it.
+                   removed.
 
-                   It belongs in this menu even so: the menu is the list of
-                   things the archive can do for you, and looking up the
-                   character behind a name like "ª Funky Maze ª" is one of
-                   them — the sheet is the only place on the site that
-                   answers it. A new tab, so the archive, the list and
-                   wherever you had scrolled to are all still here when you
-                   come back with the character you went for. */
+                   While it is COMING SOON, though, the press does something
+                   better than a door: a load of seats falls down the page
+                   (js/furni-rain.js), a taste of the game where the page
+                   could only say it was not open yet. In maintenance, and
+                   once it is live, the row goes to the game as before. */
+                run: () => {
+                    if (ffClosedState === "coming-soon" && window.FurniRain) window.FurniRain.start();
+                    else window.location.href = "/fallinfurni";
+                }
+            },
+            {
+                /* Every board in one window (js/leaderboards.js), so the
+                   scores can be looked at without finishing a game first.
+                   Opens on "All dailies", the board of every game added
+                   together, which is not shown at the end of a game any
+                   more: this window is its home. */
+                name: "Leaderboards",
+                state: "Every game, added together",
+                badge: "",
+                on: false,
+                run: () => { if (window.Leaderboards) Leaderboards.open("all"); }
+            },
+            // The end of the GAMES fold: what follows sits on its own, at
+            // the foot of the menu.
+            { endGroup: true },
+            {
+                /* Outside both folds, at the foot of the menu: it is a
+                   reference sheet rather than part of the archive or a game.
+                   Looking up the character behind a name like "ª Funky Maze
+                   ª" is one of the things the site answers, in a window of
+                   its own at /glyphs (js/glyphs.js). It used to be a separate
+                   page opened in a new tab. */
                 name: "Alt Codes",
                 state: "Type the pictures in Habbo names",
                 badge: "",
                 on: false,
-                run: () => window.open("/glyphs", "_blank", "noopener")
+                run: () => { if (window.Glyphs) Glyphs.open(); }
             }
         ].filter(e => !(onPhone && e.name === "Alt Codes"));
         /* The sheet is a reference table of several hundred characters
            beside the key combinations that type them, and a key combination
            is a thing a phone does not have. Offering it there is a tab that
            opens onto a page you cannot use for the one thing it is for, so
-           on a phone the menu simply does not carry it. The page itself is
-           untouched and still answers to its own address. */
+           on a phone the menu simply does not carry it. The window still
+           opens at /glyphs on a phone, for a link somebody was sent. */
     }
 
     /* The daily games were briefly offered a second time, as a row of buttons
@@ -7115,6 +7259,19 @@ document.addEventListener("DOMContentLoaded", () => {
            is the whole unit that slides, and the panel is only revealed by
            having been pulled clear of the window. */
         const isOpen = () => drawer.classList.contains("is-open");
+
+        /* Whether each fold (ARCHIVE, GAMES) is open. Shut on every page
+           load, so the menu always opens short; kept only for the life of
+           the page, so a fold opened and the menu closed and reopened is
+           still open. It was remembered in the browser at first, which meant
+           a fold opened once came back open after every reload. The old
+           stored values are cleared so nobody is left with one. */
+        const folds = new Map();
+        const foldOpen = group => folds.get(group) === true;
+        const rememberFold = (group, open) => { folds.set(group, open); };
+        try {
+            ["archive", "games"].forEach(g => localStorage.removeItem("mazerats_menu_" + g + "_open"));
+        } catch (e) { /* private mode */ }
 
         function render() {
             /* A heading is not a row: it carries no state, no badge and no
@@ -7142,16 +7299,57 @@ document.addEventListener("DOMContentLoaded", () => {
             if (window.DailyGames) window.DailyGames.preloadAll();
 
             const entries = sideMenuEntries();
-            menu.innerHTML = entries.map((e, i) => e.heading
-                ? `<p class="side-menu-heading">${escapeHtml(e.heading)}</p>`
-                : `
+            const row = (e, i) => `
                 <button type="button" class="side-menu-item${e.on ? " is-on" : ""}" data-i="${i}">
                     <span class="side-menu-name">
-                        <span>${escapeHtml(e.name)}</span>
+                        <span>${escapeHtml(e.name)}${e.tag ? `<span class="side-menu-tag">${escapeHtml(e.tag)}</span>` : ""}</span>
                         ${e.badge ? `<span class="side-menu-badge">${escapeHtml(e.badge)}</span>` : ""}
                     </span>
                     <span class="side-menu-state">${escapeHtml(e.state)}</span>
-                </button>`).join("");
+                </button>`;
+            /* A group's rows go inside a fold under its button, up to the
+               next heading, group or end marker. The fold is inert while
+               shut, so its rows are out of the tab order as well as out of
+               sight. */
+            let html = "";
+            for (let i = 0; i < entries.length; i++) {
+                const e = entries[i];
+                if (e.endGroup) continue;
+                if (e.heading) { html += `<p class="side-menu-heading">${escapeHtml(e.heading)}</p>`; continue; }
+                if (!e.group) { html += row(e, i); continue; }
+                const open = foldOpen(e.group);
+                let inner = "";
+                while (i + 1 < entries.length && !entries[i + 1].heading && !entries[i + 1].group && !entries[i + 1].endGroup) {
+                    i++;
+                    inner += row(entries[i], i);
+                }
+                const id = "side-menu-fold-" + e.group.toLowerCase();
+                html += `
+                <button type="button" class="side-menu-group" aria-expanded="${open}" aria-controls="${id}" data-group="${escapeHtml(e.group)}">
+                    <span class="side-menu-group-arrow" aria-hidden="true"></span>
+                    <span>${escapeHtml(e.group)}</span>
+                </button>
+                <div class="side-menu-fold${open ? " is-open" : ""}" id="${id}"${open ? "" : " inert"}>
+                    <div class="side-menu-fold-inner">${inner}</div>
+                </div>`;
+            }
+            menu.innerHTML = html;
+
+            menu.querySelectorAll(".side-menu-group").forEach(btn => {
+                btn.addEventListener("click", e => {
+                    // Opening the fold is not choosing anything: the menu
+                    // stays where it is.
+                    e.stopPropagation();
+                    const open = btn.getAttribute("aria-expanded") !== "true";
+                    rememberFold(btn.dataset.group, open);
+                    const fold = document.getElementById(btn.getAttribute("aria-controls"));
+                    btn.setAttribute("aria-expanded", String(open));
+                    if (fold) {
+                        fold.classList.toggle("is-open", open);
+                        fold.toggleAttribute("inert", !open);
+                    }
+                });
+            });
 
             menu.querySelectorAll(".side-menu-item").forEach(btn => {
                 btn.addEventListener("click", () => {
@@ -7194,7 +7392,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const open = !isOpen();
             setOpen(open);
             if (open) {
-                const first = menu.querySelector(".side-menu-item");
+                // The first thing that can take focus: the GAMES button,
+                // or a row if the menu ever opens with no group in it.
+                const first = menu.querySelector(".side-menu-group, .side-menu-item");
                 if (first) first.focus({ preventScroll: true });
             }
         });
@@ -7445,7 +7645,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     document.addEventListener("keydown", e => {
         if (!modalOverlay.classList.contains("open")) return;
-        if (activeGallery) {
+        /* The arrows only belong to the gallery while the visitor is in
+           the window (or its lightbox) — not while typing in a field, and
+           not while focus is in something drawn over it, like the console
+           (z 200) whose forms were flipping the rooms behind them with
+           every cursor move. EscapeLayers keeps its ordering to itself, so
+           where focus is stands in for "what is on top". Focus on <body>
+           (nothing focused, e.g. after a click on plain page) still counts
+           as the window, as it did before. */
+        const focusEl = document.activeElement;
+        const typing = focusEl && (focusEl.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(focusEl.tagName));
+        const inWindow = !focusEl || focusEl === document.body
+            || modalOverlay.contains(focusEl) || lightboxOverlay.contains(focusEl);
+        if (activeGallery && !typing && inWindow) {
             if (e.key === "ArrowLeft") { showGalleryImage(activeIndex - 1); restartAutoAdvance(); }
             if (e.key === "ArrowRight") { showGalleryImage(activeIndex + 1); restartAutoAdvance(); }
         }

@@ -24,9 +24,10 @@
    first real admin, with the "owner" role. This path only ever fires once
    the collection has zero admins, so it also doubles as a recovery route
    if every admin account is ever deleted. */
+const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
-const { getDb } = require("./_db");
-const { isAuthorized, hasAccount, canWrite, refuseWrite, usernameFromToken, sessionOf, UNAUTHORIZED, READ_ONLY, ROLES, PERMANENT_OWNER, resolveRole, signAdminToken } = require("./_auth");
+const { getDb, ensureUniqueIndex } = require("./_db");
+const { isAuthorized, hasAccount, canWrite, refuseWrite, usernameFromToken, sessionOf, tokenPayload, tokenIsCurrent, UNAUTHORIZED, READ_ONLY, ROLES, PERMANENT_OWNER, resolveRole, signAdminToken } = require("./_auth");
 const { record, COLLECTION: ACTIVITY } = require("./_audit");
 const { SECURITY_HEADERS } = require("./_headers");
 
@@ -74,7 +75,8 @@ const text = (v) => (typeof v === "string" ? v : "");
    CPU that an anonymous caller can ask for as often as they like, so an
    unthrottled login is not only a guessing game left running, it is a way to
    spend the site's compute budget from outside. The check below happens
-   BEFORE any hashing, so a refused attempt costs one indexed count. */
+   BEFORE any hashing, so a refused attempt costs an insert, two indexed
+   counts and a delete — and no bcrypt. */
 const LOGIN_MAX_PER_IP = 10;
 const LOGIN_MAX_PER_USER = 15;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -88,28 +90,77 @@ function clientIp(event) {
     return (event.headers || {})["x-nf-client-connection-ip"] || null;
 }
 
-/* Null when the request is under the cap; otherwise the 429 to return.
+/* Claims a place under the cap, or returns the 429 to send instead.
+
+   INSERT FIRST, THEN COUNT — the contact.js pattern. This used to count the
+   failures and write its own row only after bcrypt had answered, which is a
+   check-then-act race with a 45ms gap in the middle: a burst of attempts
+   fired together all counted the same nine earlier failures, all saw room
+   for one more, and all got their guess. The cap held for a patient
+   attacker and not at all for a parallel one.
+
+   Now every attempt writes its row BEFORE it counts, presumed a failure, so
+   each request's row is already visible to every other request's count. The
+   k-th row to land counts at least k, so however a burst interleaves no more
+   than the cap get past this point. The caller then settles the row: a
+   success deletes it (a correct password never counted against anybody, and
+   still does not), a failure fills in the reason. A refused attempt takes
+   its row straight back out, so hammering a locked account does not keep
+   extending its own lockout — the same as before, when a refusal wrote
+   nothing. Under a real race this can refuse one more than it strictly had
+   to, which is the direction to be wrong in.
 
    A missing IP skips only the IP half — the username half still applies, so
    an unidentifiable caller is throttled per account rather than not at all.
-   Failing open on the whole check would make the header its own bypass. */
+   Failing open on the whole check would make the header its own bypass.
+
+   Returns { refused } or { settle(reason) }: settle(null) is a success and
+   removes the row, settle("…") records the failure. Throws if the database
+   does — the caller answers 503 rather than letting an attempt through
+   unthrottled. */
 async function loginThrottle(db, event, username) {
     const since = new Date(Date.now() - LOGIN_WINDOW_MS);
     const ip = clientIp(event);
     const activity = db.collection(ACTIVITY);
 
+    // The same shape _audit.js's record() writes, so the activity page reads
+    // it as any other failed sign-in.
+    const { insertedId } = await activity.insertOne({
+        at: new Date(),
+        type: "login-failed",
+        ip,
+        agent: ((event.headers || {})["user-agent"] || "").slice(0, 180),
+        username,
+        reason: "checking"
+    });
+
     const [byIp, byUser] = await Promise.all([
         ip ? activity.countDocuments({ type: "login-failed", ip, at: { $gte: since } },
-            { limit: LOGIN_MAX_PER_IP }) : Promise.resolve(0),
+            { limit: LOGIN_MAX_PER_IP + 1 }) : Promise.resolve(0),
         activity.countDocuments({ type: "login-failed", username, at: { $gte: since } },
-            { limit: LOGIN_MAX_PER_USER })
+            { limit: LOGIN_MAX_PER_USER + 1 })
     ]);
 
-    if (byIp < LOGIN_MAX_PER_IP && byUser < LOGIN_MAX_PER_USER) return null;
+    // Strictly more than the cap, because the count includes this attempt's
+    // own row: ten earlier failures plus this one is eleven, and refused.
+    if (byIp > LOGIN_MAX_PER_IP || byUser > LOGIN_MAX_PER_USER) {
+        await activity.deleteOne({ _id: insertedId }).catch(() => {});
+        return {
+            refused: {
+                statusCode: 429,
+                headers: { ...SECURITY_HEADERS, "Retry-After": String(Math.ceil(LOGIN_WINDOW_MS / 1000)) },
+                body: JSON.stringify({ error: "Too many sign-in attempts. Try again in a few minutes." })
+            }
+        };
+    }
+
+    /* Settling cannot fail the sign-in. If it does not land, the row simply
+       stays as a failure marked "checking" — which still counts, so the
+       throttle errs towards stricter rather than looser. */
     return {
-        statusCode: 429,
-        headers: { ...SECURITY_HEADERS, "Retry-After": String(Math.ceil(LOGIN_WINDOW_MS / 1000)) },
-        body: JSON.stringify({ error: "Too many sign-in attempts. Try again in a few minutes." })
+        settle: (reason) => (reason
+            ? activity.updateOne({ _id: insertedId }, { $set: { reason } })
+            : activity.deleteOne({ _id: insertedId })).catch(() => {})
     };
 }
 
@@ -128,6 +179,139 @@ async function passwordMatches(password, admin) {
     const hash = (admin && admin.passwordHash) || DUMMY_HASH;
     const ok = await bcrypt.compare(password, hash);
     return Boolean(admin) && ok;
+}
+
+/* A fresh tokenVersion for an account row — see tokenIsCurrent in _auth.js.
+   Random rather than a counter, so an account deleted and then created again
+   under the same name can never land back on a version its old tokens
+   carry. */
+const newTokenVersion = () => crypto.randomUUID();
+
+/* One username, one row — enforced by Mongo rather than by the findOne
+   check in front of the insert, which two creates arriving together could
+   both pass. Via ensureUniqueIndex, memoised per warm instance.
+
+   If the index cannot be built (duplicates already stored would stop it)
+   the create carries on under the findOne check alone, as it always has,
+   rather than leaving nobody able to add an account; the log says why. */
+async function ensureUsernameIndex(admins) {
+    try {
+        await ensureUniqueIndex(admins, "username");
+    } catch (e) {
+        console.error("auth: unique index on admins.username unavailable", e);
+    }
+}
+
+const TAKEN = () => json(409, { error: "That username already exists" });
+
+async function handlePost(event, body, db, admins) {
+    if (body.action === "login") {
+        const username = text(body.username).trim();
+        const password = text(body.password);
+        if (!username || !password) return json(400, { error: "Username and password are required" });
+        /* The name as it is counted and logged: cut to LOGGED_NAME_MAX.
+           A failed attempt writes whatever was typed into admin_activity,
+           and nothing bounded it, so anybody could park megabytes of
+           "username" in the log, one refused login at a time. The real
+           lookup below still uses the whole name. */
+        const tried = username.slice(0, LOGGED_NAME_MAX);
+
+        /* Before the accounts are asked anything and before bcrypt runs,
+           so a throttled attempt is the cheapest response this function
+           has rather than its most expensive one. */
+        const attempt = await loginThrottle(db, event, tried);
+        if (attempt.refused) return attempt.refused;
+
+        const count = await admins.countDocuments();
+        if (count === 0) {
+            if (!process.env.ADMIN_PASSWORD || password !== process.env.ADMIN_PASSWORD) {
+                /* AWAITED. The row IS the counter loginThrottle reads; see
+                   there. Paid only on a failure. */
+                await attempt.settle("bootstrap password");
+                return json(401, { error: "Invalid username or password" });
+            }
+            await attempt.settle(null);
+            await ensureUsernameIndex(admins);
+            const passwordHash = await bcrypt.hash(password, 10);
+            const newAdmin = { username, passwordHash, role: "owner", tokenVersion: newTokenVersion(), createdAt: new Date().toISOString() };
+            try {
+                await admins.insertOne(newAdmin);
+            } catch (e) {
+                if (e && e.code === 11000) return TAKEN();
+                throw e;
+            }
+            record(event, "login", { username, role: "owner", note: "first account, bootstrapped" });
+            return json(200, { token: signToken(username, newAdmin.tokenVersion), username, role: resolveRole(newAdmin) });
+        }
+
+        const admin = await admins.findOne({ username });
+        // Runs a hash either way — see DUMMY_HASH above for why.
+        if (!(await passwordMatches(password, admin))) {
+            /* Logged with the username that was TRIED, which is the point:
+               a run of failures against a real account is the thing worth
+               noticing. The password itself is never recorded.
+
+               Awaited: this row is what the next attempt is counted
+               against, and the reason is what the activity page shows. */
+            await attempt.settle(admin ? "wrong password" : "no such account");
+            return json(401, { error: "Invalid username or password" });
+        }
+        // A correct password never counts towards anybody's cap.
+        await attempt.settle(null);
+        const token = signToken(username, admin.tokenVersion);
+        record(event, "login", { username, role: resolveRole(admin), session: sessionOf({ headers: { "x-admin-token": token } }) });
+        return json(200, { token, username, role: resolveRole(admin) });
+    }
+
+    if (body.action === "verify") {
+        const payload = tokenPayload(event);
+        const username = payload && payload.sub;
+        if (!username) return UNAUTHORIZED;
+        const admin = await admins.findOne({ username });
+        // A token for an account that has since been deleted, or minted
+        // before its password last changed, is a signed-out session, not an
+        // admin one — see lookUpRole and tokenIsCurrent in _auth.js.
+        if (!admin || !tokenIsCurrent(admin, payload)) return UNAUTHORIZED;
+        /* Every admin page load verifies its token, so this is a free
+           heartbeat: the gap between a session's first and last record is
+           how long that person had the admin open. */
+        record(event, "session", { username, session: sessionOf(event) });
+        return json(200, { username, role: resolveRole(admin) });
+    }
+
+    if (body.action === "create") {
+        if (!isAuthorized(event)) return UNAUTHORIZED;
+        if (!(await canWrite(event))) return READ_ONLY;
+        const username = text(body.username).trim();
+        const password = text(body.password);
+        // Anything unrecognised lands on "admin" rather than being taken
+        // at face value, so a bad value can't create an account whose
+        // powers nothing has defined.
+        const role = ROLES.includes(body.role) ? body.role : "admin";
+        if (!username || !validPassword(password)) {
+            return json(400, { error: "Username and an 8+ character password are required" });
+        }
+        if (role === "owner") {
+            const requester = await admins.findOne({ username: usernameFromToken(event) });
+            if (resolveRole(requester) !== "owner") {
+                return json(403, { error: "Only an owner can grant owner privileges" });
+            }
+        }
+        await ensureUsernameIndex(admins);
+        // The quick answer for the ordinary case; the index is the real one.
+        if (await admins.findOne({ username })) return TAKEN();
+        const passwordHash = await bcrypt.hash(password, 10);
+        try {
+            await admins.insertOne({ username, passwordHash, role, tokenVersion: newTokenVersion(), createdAt: new Date().toISOString() });
+        } catch (e) {
+            // Duplicate key: another create for the same name landed first.
+            if (e && e.code === 11000) return TAKEN();
+            throw e;
+        }
+        return json(201, { username, role });
+    }
+
+    return json(400, { error: "Unknown action" });
 }
 
 exports.handler = async (event) => {
@@ -152,103 +336,25 @@ exports.handler = async (event) => {
             return json(400, { error: "Invalid request body" });
         }
 
-        if (body.action === "login") {
-            const username = text(body.username).trim();
-            const password = text(body.password);
-            if (!username || !password) return json(400, { error: "Username and password are required" });
-            /* The name as it is counted and logged: cut to LOGGED_NAME_MAX.
-               A failed attempt writes whatever was typed into admin_activity,
-               and nothing bounded it, so anybody could park megabytes of
-               "username" in the log, one refused login at a time. The real
-               lookup below still uses the whole name. */
-            const tried = username.slice(0, LOGGED_NAME_MAX);
-
-            /* Before the database is asked anything and before bcrypt runs,
-               so a throttled attempt is the cheapest response this function
-               has rather than its most expensive one. */
-            const throttled = await loginThrottle(db, event, tried);
-            if (throttled) return throttled;
-
-            const count = await admins.countDocuments();
-            if (count === 0) {
-                if (!process.env.ADMIN_PASSWORD || password !== process.env.ADMIN_PASSWORD) {
-                    /* AWAITED, unlike every other call to record(). The audit
-                       log is fire-and-forget everywhere else because nothing
-                       should be able to hold up a save — but here the record
-                       IS the counter loginThrottle reads, and a burst fired
-                       faster than the writes land would count nothing and be
-                       throttled at nothing. Paid only on a failure. */
-                    await record(event, "login-failed", { username: tried, reason: "bootstrap password" });
-                    return json(401, { error: "Invalid username or password" });
-                }
-                const passwordHash = await bcrypt.hash(password, 10);
-                const newAdmin = { username, passwordHash, role: "owner", createdAt: new Date().toISOString() };
-                await admins.insertOne(newAdmin);
-                record(event, "login", { username, role: "owner", note: "first account, bootstrapped" });
-                return json(200, { token: signToken(username), username, role: resolveRole(newAdmin) });
-            }
-
-            const admin = await admins.findOne({ username });
-            // Runs a hash either way — see DUMMY_HASH above for why.
-            if (!(await passwordMatches(password, admin))) {
-                /* Logged with the username that was TRIED, which is the point:
-                   a run of failures against a real account is the thing worth
-                   noticing. The password itself is never recorded.
-
-                   Awaited for the same reason the bootstrap failure above is:
-                   this row is what the next attempt will be counted against. */
-                await record(event, "login-failed", { username: tried, reason: admin ? "wrong password" : "no such account" });
-                return json(401, { error: "Invalid username or password" });
-            }
-            const token = signToken(username);
-            record(event, "login", { username, role: resolveRole(admin), session: sessionOf({ headers: { "x-admin-token": token } }) });
-            return json(200, { token, username, role: resolveRole(admin) });
+        /* The whole of the POST inside one try. This is the one handler here
+           anybody on the internet can reach without signing in, and a
+           database that failed mid-login (the throttle insert, the account
+           read) used to throw straight out as an unhandled rejection —
+           Netlify's bare 502, or a stack trace. A plain 503 in JSON is what
+           the login form knows how to show. */
+        try {
+            return await handlePost(event, body, db, admins);
+        } catch (e) {
+            console.error("auth: POST failed", e);
+            return json(503, { error: "Sign-in is unavailable just now. Please try again in a minute." });
         }
-
-        if (body.action === "verify") {
-            const username = usernameFromToken(event);
-            if (!username) return UNAUTHORIZED;
-            const admin = await admins.findOne({ username });
-            // A token for an account that has since been deleted is a
-            // signed-out session, not an admin one — see lookUpRole in _auth.js.
-            if (!admin) return UNAUTHORIZED;
-            /* Every admin page load verifies its token, so this is a free
-               heartbeat: the gap between a session's first and last record is
-               how long that person had the admin open. */
-            record(event, "session", { username, session: sessionOf(event) });
-            return json(200, { username, role: resolveRole(admin) });
-        }
-
-        if (body.action === "create") {
-            if (!isAuthorized(event)) return UNAUTHORIZED;
-            if (!(await canWrite(event))) return READ_ONLY;
-            const username = text(body.username).trim();
-            const password = text(body.password);
-            // Anything unrecognised lands on "admin" rather than being taken
-            // at face value, so a bad value can't create an account whose
-            // powers nothing has defined.
-            const role = ROLES.includes(body.role) ? body.role : "admin";
-            if (!username || !validPassword(password)) {
-                return json(400, { error: "Username and an 8+ character password are required" });
-            }
-            if (role === "owner") {
-                const requester = await admins.findOne({ username: usernameFromToken(event) });
-                if (resolveRole(requester) !== "owner") {
-                    return json(403, { error: "Only an owner can grant owner privileges" });
-                }
-            }
-            if (await admins.findOne({ username })) return json(409, { error: "That username already exists" });
-            const passwordHash = await bcrypt.hash(password, 10);
-            await admins.insertOne({ username, passwordHash, role, createdAt: new Date().toISOString() });
-            return json(201, { username, role });
-        }
-
-        return json(400, { error: "Unknown action" });
     }
 
     if (event.httpMethod === "GET") {
         if (!(await hasAccount(event))) return UNAUTHORIZED;
-        const all = await admins.find({}, { projection: { _id: 0, passwordHash: 0 } }).toArray();
+        // tokenVersion stays server-side with the hash: it is nothing a
+        // viewer needs, and half of what a forged session would.
+        const all = await admins.find({}, { projection: { _id: 0, passwordHash: 0, tokenVersion: 0 } }).toArray();
         return json(200, all.map(a => ({ ...a, role: resolveRole(a) })));
     }
 
@@ -277,6 +383,13 @@ exports.handler = async (event) => {
         const requesterUsername = usernameFromToken(event);
         const scope = username === requesterUsername ? "self" : "site";
         if (!(await canWrite(event, scope))) return await refuseWrite(event);
+        /* The permanent owner's password is theirs alone. "Only an owner can
+           reset another admin's password" let any other owner set it, sign in
+           as ChrisYepYep, and hold the one account the role system is built
+           never to lose — the same reason DELETE below refuses to remove it. */
+        if (username === PERMANENT_OWNER && requesterUsername !== PERMANENT_OWNER) {
+            return json(403, { error: "Only that account can change its own password" });
+        }
         if (username !== requesterUsername) {
             const requester = await admins.findOne({ username: requesterUsername });
             if (resolveRole(requester) !== "owner") {
@@ -284,13 +397,23 @@ exports.handler = async (event) => {
             }
         }
         const passwordHash = await bcrypt.hash(password, 10);
+        /* A new tokenVersion with the new password, which signs out every
+           session the account had — see tokenIsCurrent in _auth.js. A reset
+           is usually BECAUSE somebody else has the old password, and a reset
+           that left their session running for twelve hours reset nothing. */
+        const tokenVersion = newTokenVersion();
         const result = await admins.findOneAndUpdate(
             { username },
-            { $set: { passwordHash } },
-            { returnDocument: "after", projection: { _id: 0, passwordHash: 0 } }
+            { $set: { passwordHash, tokenVersion } },
+            { returnDocument: "after", projection: { _id: 0, passwordHash: 0, tokenVersion: 0 } }
         );
         if (!result) return json(404, { error: "Admin not found" });
-        return json(200, { ...result, role: resolveRole(result) });
+        /* Changing your OWN password signs out the session you did it from
+           too, so the reply carries a replacement token minted under the new
+           version. A page that does not pick it up simply asks its user to
+           sign in again with the password they have just chosen. */
+        const fresh = username === requesterUsername ? { token: signToken(username, tokenVersion) } : {};
+        return json(200, { ...result, role: resolveRole(result), ...fresh });
     }
 
     if (event.httpMethod === "DELETE") {

@@ -101,8 +101,27 @@ async function getFurniMeta({ force = false } = {}) {
     return SNAPSHOT;
 }
 
+/* ANY answer to ?refresh=1 is private to the owner who asked, and is never
+   stored by anybody. Every success path below goes out with the public
+   hour-long header, and the ?classes= one with an edge-cache header too — so
+   an owner's refresh could be kept by the CDN under a URL with refresh=1 in
+   it, and the next caller asking the same URL would be handed that stored
+   answer without any owner check ever running. The refusal is the same:
+   cached, it would stand in for the owner's next attempt. So whatever comes
+   back for a refresh, success or refusal, leaves here as no-store. */
+function uncached(res) {
+    const headers = { ...res.headers, "Cache-Control": "no-store" };
+    delete headers["Netlify-CDN-Cache-Control"];
+    return { ...res, headers };
+}
+
 exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
+    if (params.refresh === "1") return uncached(await respond(event, params));
+    return respond(event, params);
+};
+
+async function respond(event, params) {
     /* A refresh fetches ~9.6MB from Origins and can replace what every
        player's seats are decided by, so it is not something an anonymous
        query string gets to ask for. Owners only, like the furni scans. */
@@ -113,8 +132,12 @@ exports.handler = async (event) => {
         const data = await getFurniMeta({ force: params.refresh === "1" });
 
         // A single lookup, for the editor resolving one furni it just picked.
+        // An own property only: `?className=constructor` or `__proto__` read
+        // straight off the prototype and answered 200 with a function's
+        // worth of nothing.
         if (params.className) {
-            const hit = data.items[params.className];
+            const hit = Object.prototype.hasOwnProperty.call(data.items, params.className)
+                ? data.items[params.className] : null;
             return hit ? json(200, { className: params.className, ...hit })
                 : json(404, { error: "No furni by that class name." });
         }
@@ -163,6 +186,6 @@ exports.handler = async (event) => {
            for an hour — and without furnidata the game has no seats. */
         return { ...json(502, { error: "Could not read furnidata just now." }), headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" } };
     }
-};
+}
 
 module.exports.getFurniMeta = getFurniMeta;

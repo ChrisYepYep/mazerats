@@ -58,23 +58,43 @@ const TOP = 25;
    field is live, as it always was. Read straight from Mongo rather than
    through GET /settings, whose edge copy may be twenty seconds old.
 
-   `launchAt` comes with it because the GET needs it too: see `sinceLaunch`. */
+   The launch comes with it because the GET needs it too: see `sinceLaunch`.
+
+   WHICH LAUNCH. Fallin' Furni opens after the site does, so it has a date
+   of its own, settings.ffLaunchAt, set in /warren beside its switch. The
+   board is cut at that when it is set, and at the SITE's launchAt when it
+   is not — so the pre-launch test runs stay hidden from the moment the
+   site opens, even before anybody has decided when the game does. Neither
+   date opens the game; fallinFurniState alone does that, by hand.
+
+   `ffLaunchAt` is also returned on its own, because Launch Week hangs off
+   the game's date and only the game's: a week that started with the site
+   would be half over before anybody could play in it. See A TOURNAMENT. */
 const CLOSED_STATES = ["coming-soon", "maintenance"];
+
+// An ISO string, or null for missing or unparseable. settings.js stores
+// both dates through toISOString(), and every `at` on this board is written
+// the same way, so they compare correctly as strings — which is what lets
+// the filter below be a plain range query.
+function isoOrNull(value) {
+    const ms = value ? Date.parse(value) : NaN;
+    return isNaN(ms) ? null : new Date(ms).toISOString();
+}
 
 async function readGate(db) {
     const doc = await db.collection("settings").findOne(
-        { _id: "site" }, { projection: { fallinFurniState: 1, launchAt: 1 } }
+        { _id: "site" }, { projection: { fallinFurniState: 1, launchAt: 1, ffLaunchAt: 1 } }
     );
     const state = (doc && doc.fallinFurniState) || "live";
-    const launch = doc && doc.launchAt ? Date.parse(doc.launchAt) : NaN;
+    const ffLaunchAt = isoOrNull(doc && doc.ffLaunchAt);
+    const launchAt = ffLaunchAt || isoOrNull(doc && doc.launchAt);
     return {
         open: !CLOSED_STATES.includes(state),
-        // An ISO string, or null. settings.js stores launchAt through
-        // toISOString(), and every `at` on this board is written the same way,
-        // so the two compare correctly as strings — which is what lets the
-        // filter below be a plain range query.
-        launchAt: isNaN(launch) ? null : new Date(launch).toISOString(),
-        launchMs: isNaN(launch) ? null : launch
+        // The effective launch for this board: the game's own, else the site's.
+        launchAt,
+        launchMs: launchAt ? Date.parse(launchAt) : null,
+        // The game's own, or null. Only Launch Week reads this.
+        ffLaunchAt
     };
 }
 
@@ -177,8 +197,8 @@ async function spendRun(db, claims, player) {
 
 /* ---------------------------------------------------------------- A TOURNAMENT
 
-   A window of days with a board of its own. There is one because the site
-   opens on the 3rd of October and an all-time leaderboard is a poor thing
+   A window of days with a board of its own. There is one because the game
+   opens to everybody at once and an all-time leaderboard is a poor thing
    to arrive at: the top of it was set weeks ago by somebody who has had the
    game to themselves, and a newcomer's first good run lands at position
    eleven. A week-long board that starts empty is a board everybody is at
@@ -197,27 +217,52 @@ async function spendRun(db, claims, player) {
    ONE ROW PER PLAYER HERE TOO, on the same better-than rule, rather than a
    log of every run. It is the same kind of board, scoped to a week.
 
-   THE DATES ARE UTC INSTANTS and the end is exclusive. `from` is the launch
-   itself, 08:00Z on the 3rd — it said 09:00Z while settings.launchAt says
-   08:00Z, so the first hour of the site being open was an hour whose runs
-   reached the all-time board and not this one. `to` is MIDNIGHT AT THE END
-   of Saturday the 10th, not 09:00 on it: the page says "Ends Saturday 10
-   October", and a window that shut at nine that morning made the sentence
-   false for the whole of the day it named. Exclusive, so the last instant
-   inside the window is 23:59:59.999 on the 10th, and that is the instant
-   the page formats (in UTC — see meetEnds in js/fallinfurni.js).
+   NO DATES IN HERE. It used to be written in: 3 to 11 October, the site's
+   launch week. Then the game's launch moved to a week or two after the
+   site's, with no date yet, and a hard-coded week would have run and ended
+   while the game was still closed. So the window hangs off
+   settings.ffLaunchAt (see readGate), and moves when that does.
 
-   SET `id: null` TO TURN IT OFF. Everything below then behaves exactly as
-   it did before this existed: no extra write on POST, no extra read on
-   GET, and the page draws one board. The id is part of the row key, so
-   changing it starts a fresh board rather than adding to the old one. */
-const TOURNAMENT = {
-    id: "launch-week-2026",
-    name: "Launch Week",
-    from: "2026-10-03T08:00:00Z",
-    to: "2026-10-11T00:00:00Z"
-};
+   THE DATES ARE UTC INSTANTS and the end is exclusive. `from` is the game's
+   launch itself, to the minute — an hour's gap between the two was once an
+   hour whose runs reached the all-time board and not this one. `to` is
+   MIDNIGHT AT THE END OF THE SEVENTH DAY, counting the launch day as day
+   one, not seven days to the minute: the page says "Ends <that day>", and a
+   window that shut at the launch hour that morning made the sentence false
+   for the whole of the day it named. Exclusive, so the last instant inside
+   the window is 23:59:59.999 on the seventh day, and that is the instant
+   the page formats (in UTC — see meetEnds in js/fallinfurni.js). Launching
+   08:00Z on Saturday the 17th, it ends as Friday the 23rd does.
+
+   NO ffLaunchAt, NO TOURNAMENT. Everything below then behaves exactly as it
+   did before this existed: no extra write on POST, no extra read on GET,
+   and the page draws one board. The id carries the launch DATE and is part
+   of the row key, so moving the launch to another day starts a fresh board
+   rather than adding to the old one — nudging it by an hour on the same
+   day does not, and the rows from before the new hour are cut by
+   `sinceLaunch` anyway. */
+const TOURNAMENT_NAME = "Launch Week";
+const TOURNAMENT_DAYS = 7;
 const TOURNAMENT_COLLECTION = "ff_tournament";
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// The window from the gate, or null. Not "is it showing" — see below.
+function launchWeek(gate) {
+    const from = gate && gate.ffLaunchAt ? Date.parse(gate.ffLaunchAt) : NaN;
+    // A date that cannot be read must not take the leaderboard down with it.
+    if (isNaN(from)) return null;
+    const launchDay = Math.floor(from / DAY_MS) * DAY_MS;      // 00:00Z that day
+    const to = launchDay + TOURNAMENT_DAYS * DAY_MS;
+    const fromIso = new Date(from).toISOString();
+    return {
+        id: "launch-week-" + fromIso.slice(0, 10),
+        name: TOURNAMENT_NAME,
+        from: fromIso,
+        to: new Date(to).toISOString(),
+        fromMs: from,
+        toMs: to
+    };
+}
 
 /* How long the finished board stays up after the window closes.
 
@@ -227,16 +272,34 @@ const TOURNAMENT_COLLECTION = "ff_tournament";
    all-time board is the only one again. */
 const RESULT_LINGERS_MS = 14 * 24 * 60 * 60 * 1000;
 
-function tournamentWindow(now = Date.now()) {
-    if (!TOURNAMENT.id) return null;
-    const from = Date.parse(TOURNAMENT.from);
-    const to = Date.parse(TOURNAMENT.to);
-    // A mistyped date must not take the leaderboard down with it.
-    if (isNaN(from) || isNaN(to) || to <= from) return null;
-    const running = now >= from && now < to;
-    const showing = running || (now >= to && now - to < RESULT_LINGERS_MS);
+function tournamentWindow(gate, now = Date.now()) {
+    const week = launchWeek(gate);
+    if (!week) return null;
+    const running = now >= week.fromMs && now < week.toMs;
+    const showing = running || (now >= week.toMs && now - week.toMs < RESULT_LINGERS_MS);
     if (!showing) return null;
-    return { id: TOURNAMENT.id, name: TOURNAMENT.name, from: TOURNAMENT.from, to: TOURNAMENT.to, running };
+    return { id: week.id, name: week.name, from: week.from, to: week.to, running };
+}
+
+/* WHICH TOURNAMENT A RUN BELONGS TO, decided by when it STARTED — the run
+   token's `t`, stamped by this server when Play was pressed.
+
+   It used to be decided by when the run was submitted. A run started at
+   23:50 on the last night and finished at 00:10 was played almost entirely
+   inside the week and was dropped from its board; a run begun a minute
+   before the window opened and finished inside it was counted, having been
+   started before anybody else could. Both wrong for the same reason.
+
+   A run started inside [from, to) counts however late it finishes, up to
+   the longest a run can last: its token dies RUN_LIFE_S after issue, and
+   readRun has already refused a dead one, so the explicit bound below only
+   says the same thing where the next reader will look for it. */
+function tournamentFor(gate, startedAt, now = Date.now()) {
+    const week = launchWeek(gate);
+    if (!week || !Number.isFinite(startedAt)) return null;
+    if (startedAt < week.fromMs || startedAt >= week.toMs) return null;
+    if (now >= week.toMs + RUN_LIFE_S * 1000) return null;
+    return { id: week.id };
 }
 
 const json = (statusCode, data) => ({
@@ -398,7 +461,7 @@ exports.handler = async (event) => {
 
         let out;
         // Outside the try so the tournament read below can use it too.
-        let gate = { launchAt: null };
+        let gate = { launchAt: null, ffLaunchAt: null };
         try {
             gate = await readGate(db);
             const top = await scores
@@ -433,7 +496,7 @@ exports.handler = async (event) => {
            job is to let somebody play a game: if the tournament collection
            is unreachable the all-time board should still be served, not a
            500. */
-        const meet = tournamentWindow();
+        const meet = tournamentWindow(gate);
         if (meet) {
             try {
                 const meetCol = db.collection(TOURNAMENT_COLLECTION);
@@ -583,6 +646,14 @@ exports.handler = async (event) => {
         better = await keepBest(scores, { playerId: player.id }, row, gate.launchAt);
     } catch (e) {
         console.error("ff-scores: could not record a run", e);
+        /* NOTHING WAS RECORDED, so the token is handed back. It was spent a
+           moment ago, and left spent, the page's retry of this very run came
+           back "already-submitted" and the run was lost to a database hiccup
+           rather than to anything the player did. If this delete fails too,
+           the token stays spent: that loses one run, which is the old
+           behaviour, never a second entry. */
+        try { await db.collection(RUN_TOKENS).deleteOne({ _id: claims.rid }); }
+        catch (e2) { console.error("ff-scores: could not release a run token", e2); }
         return json(503, { error: "The leaderboard could not be updated just now." });
     }
 
@@ -595,15 +666,17 @@ exports.handler = async (event) => {
        block above — which is the obvious thing to write — would silently
        drop the runs the tournament exists to collect.
 
-       `running`, not `showing`: the fortnight the finished board lingers
-       for is a fortnight nobody can add to it.
+       IN IT BY WHEN THE RUN STARTED, not when it was sent: see
+       tournamentFor. The fortnight the finished board lingers for is a
+       fortnight nobody can add to it, except the runs already under way as
+       the window shut.
 
        Written after the main row and in its own try. A tournament is a
        nice-to-have on top of a leaderboard; if this collection is having a
        bad afternoon the player's real score has already been recorded and
        the response below is still the truth about it. */
-    const meet = tournamentWindow();
-    if (meet && meet.running) {
+    const meet = tournamentFor(gate, claims.t);
+    if (meet) {
         try {
             const meetRows = db.collection(TOURNAMENT_COLLECTION);
             await ensureUniqueIndex(meetRows, ["tid", "playerId"]);
@@ -656,7 +729,8 @@ function betterThan(points, ms) {
     return { $or: or };
 }
 
-/* `staleBefore`, when given, is launchAt: a stored row from before it is
+/* `staleBefore`, when given, is the board's launch (gate.launchAt — the
+   game's own date, else the site's; see readGate): a stored row from before it is
    replaced by ANY run, however it scores. Without this the pre-launch test
    rows — hidden from the board by `sinceLaunch`, but still in the
    collection — went on deciding whether their owner's real runs were good

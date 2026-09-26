@@ -82,6 +82,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const launchAtSave = document.getElementById("launch-at-save");
     const launchAtClear = document.getElementById("launch-at-clear");
     const launchAtStatus = document.getElementById("launch-at-status");
+    // Fallin' Furni's own launch date, beside its switch. The same controls
+    // as the site countdown above, saving settings.ffLaunchAt instead.
+    const ffLaunchAtEl = document.getElementById("ff-launch-at");
+    const ffLaunchAtInput = document.getElementById("ff-launch-at-input");
+    const ffLaunchAtSave = document.getElementById("ff-launch-at-save");
+    const ffLaunchAtClear = document.getElementById("ff-launch-at-clear");
+    const ffLaunchAtStatus = document.getElementById("ff-launch-at-status");
 
     // Fallin' Furni's own live/maintenance switch, in the game's rail group.
     const ffToggleEl = document.getElementById("ff-state-toggle");
@@ -188,7 +195,13 @@ document.addEventListener("DOMContentLoaded", () => {
         selfPasswordBtn.disabled = true;
         sayPassword("Saving…", true);
         try {
-            await Api.resetAdminPassword(adminToken, currentUsername, next);
+            const changed = await Api.resetAdminPassword(adminToken, currentUsername, next);
+            // A password change retires every session this account had,
+            // this one included, so the reply carries a replacement.
+            if (changed && changed.token) {
+                adminToken = changed.token;
+                writeToken(adminToken);
+            }
             // Cleared on success, so a new password is never left sitting in
             // a field on an unattended screen.
             selfPasswordInput.value = "";
@@ -323,6 +336,8 @@ document.addEventListener("DOMContentLoaded", () => {
             dateLabel: "Date opened",
             statusOptions: [["open", "Open"], ["closed", "Closed"], ["collab", "Collab"], ["unknown", "Unknown"]],
             getAll: () => workingRooms,
+            // The stored records as they are now — see refreshAfterConflict.
+            getFull: () => Api.getRoomsFull(adminToken),
             create: item => Api.createRoom(adminToken, item),
             update: item => Api.updateRoom(adminToken, item),
             remove: id => Api.deleteRoom(adminToken, id),
@@ -338,6 +353,7 @@ document.addEventListener("DOMContentLoaded", () => {
             subtitleLabel: "Host (Habbo username)",
             statusOptions: [["upcoming", "Upcoming"], ["past", "Past"], ["archive", "Archive"]],
             getAll: () => workingEvents,
+            getFull: () => Api.getEventsFull(adminToken),
             create: item => Api.createEvent(adminToken, item),
             update: item => Api.updateEvent(adminToken, item),
             remove: id => Api.deleteEvent(adminToken, id),
@@ -394,6 +410,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (adminRailEl) adminRailEl.style.display = "none";
         landingToggleEl.style.display = "none";
         if (launchAtEl) launchAtEl.style.display = "none";
+        if (ffLaunchAtEl) ffLaunchAtEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
         loginModal.classList.add("open");
@@ -419,6 +436,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (adminRailEl) adminRailEl.style.display = "none";
         landingToggleEl.style.display = "none";
         if (launchAtEl) launchAtEl.style.display = "none";
+        if (ffLaunchAtEl) ffLaunchAtEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
         loginModal.classList.add("open");
@@ -1072,6 +1090,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         landingToggleEl.style.display = "flex";
         if (launchAtEl) launchAtEl.style.display = "flex";
+        if (ffLaunchAtEl) ffLaunchAtEl.style.display = "flex";
         if (ffToggleEl) ffToggleEl.style.display = "block";
         if (themeToggleEl) themeToggleEl.style.display = "flex";
         /* The glyph palette used to be shown here, when it was a docked
@@ -1287,6 +1306,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return result;
     }
 
+    /* For the panels that live in files of their own (js/admin-guides.js):
+       the same upload, shrinking included, so a guide picture that is too
+       big is handled exactly as a maze picture is. */
+    window.AdminUpload = (prefix, file, folder) => uploadImageFile(prefix, file, folder);
+
     function blobKeyFromUrl(url) {
         const m = /\/\.netlify\/functions\/image\?key=([^&]+)/.exec(url || "");
         return m ? decodeURIComponent(m[1]) : null;
@@ -1375,6 +1399,45 @@ document.addEventListener("DOMContentLoaded", () => {
     function noteUpload(formEl, url) {
         const key = blobKeyFromUrl(url);
         if (key && formEl && formEl._sessionUploads) formEl._sessionUploads.add(key);
+    }
+
+    /* Every upload the maze/event form makes goes through here, for two
+       reasons that both come down to an upload outliving the moment it was
+       started in.
+
+       Counted, so Save can refuse while one is still in flight (see
+       uploadsPending). Pressed half-way through a batch of gallery files,
+       Save used to write the record with the pictures that had landed so
+       far and close the form — and the rest kept arriving, into a draft
+       that no longer belonged to anything, and sat in storage for good.
+
+       Tied to the form's opening, so an upload that lands after the form
+       was closed, or reopened on a different record, is not written into
+       whatever the form now holds. openForm gives every opening a fresh
+       _openSession object; if the one this upload started under is not
+       the one there now, the picture belongs to an edit that has gone —
+       it is deleted again and the caller told to stop (a batch loop stops
+       at the first such file rather than uploading the rest). */
+    async function formUpload(formEl, prefix, file) {
+        const session = formEl && formEl._openSession;
+        if (!session) return uploadImageFile(prefix, file);
+        session.uploads++;
+        let result;
+        try {
+            result = await uploadImageFile(prefix, file);
+        } finally {
+            session.uploads--;
+        }
+        if (formEl._openSession !== session) {
+            const key = blobKeyFromUrl(result && result.url);
+            if (key && adminToken) deleteImageSafe(key);
+            throw Object.assign(new Error("The form was closed before this upload finished, so it was not kept."), { stale: true });
+        }
+        return result;
+    }
+
+    function uploadsPending(formEl) {
+        return !!(formEl && formEl._openSession && formEl._openSession.uploads > 0);
     }
 
     /* After a successful save: the queued keys this form may delete, plus
@@ -1662,7 +1725,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     status.textContent = "Uploading…";
                     status.style.display = "block";
                     try {
-                        const { url } = await uploadImageFile(uploadPrefix, file);
+                        const { url } = await formUpload(formEl, uploadPrefix, file);
                         noteUpload(formEl, url);
                         queueImageDelete(formEl, draft[i].image);
                         draft[i].image = url;
@@ -1694,7 +1757,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     status.textContent = files.length > 1
                         ? `Uploading ${f + 1} of ${files.length}…`
                         : "Uploading…";
-                    const { url } = await uploadImageFile(uploadPrefix, files[f]);
+                    const { url } = await formUpload(formEl, uploadPrefix, files[f]);
                     noteUpload(formEl, url);
                     // Named after the file to start with — a real name beats
                     // an empty box, and it's editable in the row right away.
@@ -2190,7 +2253,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!file) return;
             status.textContent = "Uploading…";
             try {
-                const { url } = await uploadImageFile(uploadPrefix, file);
+                const { url } = await formUpload(formEl, uploadPrefix, file);
                 noteUpload(formEl, url);
                 // The thumbnail it replaces goes on the after-save list.
                 queueImageDelete(formEl, textInput.value);
@@ -2240,7 +2303,7 @@ document.addEventListener("DOMContentLoaded", () => {
             status.style.display = "block";
             status.textContent = "Uploading…";
             try {
-                const { url } = await uploadImageFile(uploadPrefix, file);
+                const { url } = await formUpload(formEl, uploadPrefix, file);
                 noteUpload(formEl, url);
                 queueImageDelete(formEl, textInput.value);
                 textInput.value = url;
@@ -2428,7 +2491,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 subStatus.style.display = "block";
                 subStatus.textContent = "Uploading…";
                 try {
-                    const { url } = await uploadImageFile(uploadPrefix, file);
+                    const { url } = await formUpload(formEl, uploadPrefix, file);
                     noteUpload(formEl, url);
                     items.push({ image: url, label });
                     render();
@@ -2791,7 +2854,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         status.style.display = "block";
                         status.textContent = "Uploading…";
                         try {
-                            const { url } = await uploadImageFile(uploadPrefix, file);
+                            const { url } = await formUpload(formEl, uploadPrefix, file);
                             noteUpload(formEl, url);
                             // Replacing used to leave the old picture in
                             // storage for good; it goes on the after-save
@@ -2933,7 +2996,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     subStatus.style.display = "block";
                     subStatus.textContent = "Uploading…";
                     try {
-                        const { url } = await uploadImageFile(uploadPrefix, file);
+                        const { url } = await formUpload(formEl, uploadPrefix, file);
                         noteUpload(formEl, url);
                         draft[i].oldVersions.push({ image: url, label });
                         renderGalleryList();
@@ -2986,7 +3049,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 for (let n = 0; n < files.length; n++) {
                     const file = files[n];
                     status.textContent = files.length > 1 ? `Uploading ${n + 1} of ${files.length}…` : "Uploading…";
-                    const { url } = await uploadImageFile(uploadPrefix, file);
+                    const { url } = await formUpload(formEl, uploadPrefix, file);
                     noteUpload(formEl, url);
                     const label = explicitLabel || deriveGalleryLabel(file.name);
                     draft.push({ image: url, label, bonus: false, runThrough: false, oldVersions: [] });
@@ -3376,9 +3439,11 @@ document.addEventListener("DOMContentLoaded", () => {
        a word. Cancel already asked first (requestCloseForm); this asks the
        same question on the way in. */
     async function requestOpenForm(key, editId) {
+        if (refuseWhileSaving(key)) return;
         if (isFormDirty(key)) {
             const ok = await showConfirmDialog("Discard your unsaved changes to the entry you have open? Anything you have added or edited since opening it will be lost.");
             if (!ok) return;
+            if (refuseWhileSaving(key)) return;
         }
         // Whatever the form being replaced uploaded and never saved.
         discardFormUploads(key);
@@ -3411,6 +3476,11 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl._sessionUploads = new Set();
         cfg.formEl._storedKeys = imageKeysOf(item);
         cfg.formEl._saveAmbiguous = false;
+        // This opening, as distinct from the last one on the same element:
+        // an upload still in flight from before is recognised as stale by
+        // it, and it counts this opening's uploads — see formUpload.
+        cfg.formEl._openSession = { uploads: 0 };
+        cfg.formEl._saving = false;
 
         /* When the record was last saved, as this form first saw it. Sent
            back with the save so the server can refuse it (409) if somebody
@@ -3784,6 +3854,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
         activeFormKey = key;
         floatingActionsEl.classList.add("open");
+        syncFloatingBusy();
+    }
+
+    /* The floating Save/Cancel, greyed while the form they act on is
+       saving. submitForm and refuseWhileSaving already refuse a second
+       press; this is so the buttons look it, rather than appearing to do
+       nothing. Follows whichever form is active — the other collection's
+       form can be mid-save while this one is open. */
+    function syncFloatingBusy() {
+        const busy = !!(activeFormKey && COLLECTIONS[activeFormKey].formEl._saving);
+        floatingSaveBtn.disabled = busy;
+        floatingCancelBtn.disabled = busy;
     }
 
     /* ---------- losing work by accident ----------
@@ -3830,13 +3912,40 @@ document.addEventListener("DOMContentLoaded", () => {
         return formSnapshot(formEl) !== formEl._openSnapshot;
     }
 
+    /* The form's own error line, scrolled into view — Save and Cancel are
+       pressed from a floating bar, often far below where it sits. */
+    function formNotice(formEl, message) {
+        const errorEl = formEl && formEl.querySelector(".admin-form-error");
+        if (!errorEl) return;
+        errorEl.textContent = message;
+        errorEl.style.display = "block";
+        errorEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    /* No closing (or swapping) a form while its save is in flight.
+
+       Cancel pressed mid-save threw the form away — deleting everything it
+       had uploaded, as a discard should — and then the save landed, and the
+       record it had just written pointed at pictures that were gone. The
+       save is left to finish; it closes the form itself when it lands, or
+       leaves it open with the reason if it does not. */
+    function refuseWhileSaving(key) {
+        const formEl = COLLECTIONS[key] && COLLECTIONS[key].formEl;
+        if (!formEl || !formEl._saving) return false;
+        formNotice(formEl, "Still saving — wait for it to finish.");
+        return true;
+    }
+
     // Cancel, from the form's own button or the floating one. The prompt is
     // skipped entirely when nothing has been touched, so the ordinary
     // "opened it to look, closing it again" path is unchanged.
     async function requestCloseForm(key) {
+        if (refuseWhileSaving(key)) return;
         if (isFormDirty(key)) {
             const ok = await showConfirmDialog("Discard your unsaved changes to this entry? Anything you have added or edited since opening it will be lost.");
             if (!ok) return;
+            // The dialog is awaited: a Save pressed behind it is possible.
+            if (refuseWhileSaving(key)) return;
         }
         // Asked even when the form reads as clean: an image uploaded and
         // then removed again leaves the drafts as they were, but the upload
@@ -3869,12 +3978,14 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl._pendingDeletes = null;
         cfg.formEl._sessionUploads = null;
         cfg.formEl._storedKeys = null;
+        cfg.formEl._openSession = null;
         cfg.formEl._rawDate = "";
         cfg.addBtn.style.display = "inline-block";
 
         if (activeFormKey === key) {
             activeFormKey = null;
             floatingActionsEl.classList.remove("open");
+            syncFloatingBusy();
         }
     }
 
@@ -3988,6 +4099,13 @@ document.addEventListener("DOMContentLoaded", () => {
         e.preventDefault();
         const cfg = COLLECTIONS[key];
         const form = cfg.formEl;
+        /* One save at a time. The form's own Save is disabled while one is
+           in flight, but the floating Save calls requestSubmit(), which does
+           not care that the submit button is disabled — so a second press
+           sent a second POST, and a new maze was created twice ("foo" and
+           "foo-2"). Everything from here to the flag being set below is
+           synchronous, so nothing can slip in between. */
+        if (form._saving) return;
         const data = Object.fromEntries(new FormData(form).entries());
         const items = cfg.getAll();
         const editId = form.dataset.editId || null;
@@ -4191,8 +4309,19 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        submitBtn.disabled = true;
-        submitBtn.textContent = "Saving…";
+        // Not while a picture is still on its way up — see formUpload.
+        if (uploadsPending(form)) {
+            refuse("A picture is still uploading — wait for it to finish, then save.");
+            return;
+        }
+
+        const saving = on => {
+            form._saving = on;
+            submitBtn.disabled = on;
+            submitBtn.textContent = on ? "Saving…" : "Save";
+            syncFloatingBusy();
+        };
+        saving(true);
 
         try {
             if (editId !== null) {
@@ -4218,12 +4347,16 @@ document.addEventListener("DOMContentLoaded", () => {
             renderList(key);
             flushPendingDeletes(pendingDeletes, sessionUploads, storedKeys);
         } catch (err) {
-            if (err.status === 401) { lockOut(); return; }
+            // Save usable again BEFORE the login goes up: signing back in
+            // returns to this same form, and a button still reading
+            // "Saving…" and disabled left it with no way to save at all.
+            if (err.status === 401) { saving(false); lockOut(); return; }
             /* Somebody else saved this record after this form opened. Said
                plainly and the form kept open, so nothing typed is lost —
                but not saved over their work either. */
             if (err.status === 409) {
-                refuse("Someone else saved this record since you opened it - reload it to see their changes. (Your edits are still here: copy anything you need before reopening it.)");
+                refuse("Someone else saved this record since you opened it. Your edits are still here: copy anything you need before reopening it.");
+                await refreshAfterConflict(key, editId);
             } else {
                 // A dropped connection or a server error can arrive AFTER
                 // the write landed, so from here on nothing this form
@@ -4231,8 +4364,39 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (!err.status || err.status >= 500) form._saveAmbiguous = true;
                 refuse(err.message || "Something went wrong saving this.");
             }
-            submitBtn.disabled = false;
-            submitBtn.textContent = "Save";
+        } finally {
+            saving(false);
+        }
+    }
+
+    /* After a 409, the loaded copy of the record is the stale one — and
+       openForm reads the loaded copy. Reopening used to fetch nothing, so
+       the form came back with the same old updatedAt and every retry was
+       refused again, for good, until the whole page was reloaded. The
+       archive is re-read here (the same full read the panel loads with)
+       and the one record swapped in place, so the next opening starts from
+       the version that is actually stored. Best effort: if the read fails
+       the message already said what happened, and a page reload still
+       works. */
+    async function refreshAfterConflict(key, editId) {
+        const cfg = COLLECTIONS[key];
+        let fresh;
+        try {
+            fresh = await cfg.getFull();
+        } catch (err) {
+            if (err.status === 401) lockOut();
+            return;
+        }
+        const record = (fresh || []).find(i => i.id === editId);
+        const items = cfg.getAll();
+        const idx = items.findIndex(i => i.id === editId);
+        if (record && idx !== -1) items[idx] = record;
+        else if (record) items.push(record);
+        else if (idx !== -1) items.splice(idx, 1);
+        renderList(key);
+        const errorEl = cfg.formEl.querySelector(".admin-form-error");
+        if (record && errorEl && cfg.formEl.dataset.editId === editId) {
+            errorEl.textContent += " Reopening it now will show their changes.";
         }
     }
 
@@ -4242,6 +4406,17 @@ document.addEventListener("DOMContentLoaded", () => {
         const item = items.find(i => i.id === id);
         if (!item) return; // already gone (e.g. deleted from another click before this one's confirm dialog closed)
         const title = item[cfg.fieldMap.title] || "this entry";
+        /* Refused while this record is open in the form, rather than
+           closing the form for it. Deleting underneath an open edit left a
+           form whose Save could only fail (the record is gone) holding
+           uploads nobody would ever clean up — and if a save was in flight,
+           it could land after the delete had already swept the record's
+           pictures. Closing it first is one click, and it is the admin who
+           decides whether what they had typed there is worth keeping. */
+        if (cfg.formEl.classList.contains("is-open") && cfg.formEl.dataset.editId === id) {
+            alert(`"${title}" is open for editing. Save or cancel that first, then delete it.`);
+            return;
+        }
         if (!confirm(`Delete "${title}"? This is permanent and affects the live site immediately.`)) return;
         try {
             await cfg.remove(item.id);
@@ -4279,6 +4454,12 @@ document.addEventListener("DOMContentLoaded", () => {
        and its corner of blob storage; "Albus" is who holds it. */
     const ROLE_LABELS = { owner: "Owner", admin: "Admin", viewer: "View only", wizard: "Albus" };
 
+    /* The account the server will never delete (PERMANENT_OWNER in
+       netlify/functions/_auth.js; auth.js answers 403 for it). Its row
+       offered Delete anyway, which could only ever fail — so it is not
+       offered. Kept in step with the server by hand. */
+    const PERMANENT_OWNER = "ChrisYepYep";
+
     function renderAdminsList() {
         adminsListEl.innerHTML = "";
         if (!workingAdmins.length) {
@@ -4301,7 +4482,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <div class="admin-row-actions">
                     ${(isSelf || canDelete) ? `<button type="button" class="btn admin-reset-btn">Reset Password</button>` : ""}
-                    ${canDelete ? `<button type="button" class="btn admin-delete-btn" ${workingAdmins.length <= 1 ? "disabled" : ""}>Delete</button>` : ""}
+                    ${canDelete && admin.username !== PERMANENT_OWNER ? `<button type="button" class="btn admin-delete-btn" ${workingAdmins.length <= 1 ? "disabled" : ""}>Delete</button>` : ""}
                 </div>
             `;
             // Only an owner can reset someone else's password (also enforced
@@ -4394,7 +4575,13 @@ document.addEventListener("DOMContentLoaded", () => {
             if (adminsFormEl.dataset.mode === "create") {
                 await Api.createAdmin(adminToken, data.username.trim(), data.password, data.role);
             } else {
-                await Api.resetAdminPassword(adminToken, adminsFormEl.dataset.username, data.password);
+                const changed = await Api.resetAdminPassword(adminToken, adminsFormEl.dataset.username, data.password);
+                // An owner resetting their own row from this list: keep them
+                // signed in with the replacement token (see saveOwnPassword).
+                if (changed && changed.token) {
+                    adminToken = changed.token;
+                    writeToken(adminToken);
+                }
             }
             closeAdminsForm();
             await loadAdmins();
@@ -4564,6 +4751,12 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
         `;
         contributorsFormEl.dataset.id = isEdit ? contributor.id : "";
+        /* The version this form started from, sent back with the save so
+           the server can refuse it if the row has moved on since — as the
+           maze form does (see openForm). Accepting a Missing Pieces lead
+           with "credit" writes to these rows too, and used to be saved
+           straight over by a form opened before it. */
+        contributorsFormEl._baseUpdatedAt = contributor.updatedAt || "";
 
         paintContributorTotal();
 
@@ -4647,18 +4840,28 @@ document.addEventListener("DOMContentLoaded", () => {
             const id = contributorsFormEl.dataset.id;
             const record = { username, count, types, mazes, events, extra };
             if (id) {
-                await Api.updateContributor(adminToken, { id, ...record });
+                await Api.updateContributor(adminToken, { id, ...record, _baseUpdatedAt: contributorsFormEl._baseUpdatedAt || "" });
             } else {
                 await Api.createContributor(adminToken, record);
             }
             closeContributorsForm();
             await loadContributors();
         } catch (err) {
-            if (err.status === 401) { lockOut(); return; }
-            errorEl.textContent = err.message || "Something went wrong saving this.";
-            errorEl.style.display = "block";
             submitBtn.disabled = false;
             submitBtn.textContent = "Save";
+            if (err.status === 401) { lockOut(); return; }
+            if (err.status === 409) {
+                /* The list is re-read so the next Edit starts from the row
+                   as it now is — otherwise it would open the same stale
+                   copy and be refused again. The form stays open, so
+                   nothing ticked here is lost before it has been seen. */
+                errorEl.textContent = "Someone else changed this contributor since you opened it (a credited Missing Pieces lead does this too). Your ticks are still here: note anything you need, then Cancel and Edit again to see the current version.";
+                errorEl.style.display = "block";
+                await loadContributors();
+                return;
+            }
+            errorEl.textContent = err.message || "Something went wrong saving this.";
+            errorEl.style.display = "block";
         }
     });
 
@@ -4802,7 +5005,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const homeLink = document.createElement("a");
         homeLink.className = "header-badge header-state-pill header-state-link";
-        homeLink.href = "home.html";
+        homeLink.href = "/home";
         homeLink.textContent = "Home";
 
         brandGroup.appendChild(pill);
@@ -4866,12 +5069,56 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (launchAtSave) launchAtSave.addEventListener("click", () => saveLaunchAt(launchAtInput.value));
-    if (launchAtClear) launchAtClear.addEventListener("click", () => { launchAtInput.value = ""; saveLaunchAt(""); });
+    // The field is emptied by saveLaunchAt once the clear has saved, not
+    // before: blanked up front, a refused clear (a viewer's 403, a dropped
+    // connection) left the field reading "no launch date" while the stored
+    // one was still counting down.
+    if (launchAtClear) launchAtClear.addEventListener("click", () => saveLaunchAt(""));
+
+    /* ---------- Fallin' Furni's own launch date ----------
+
+       The same field, the same UTC conversion and the same save-then-show
+       order as the site countdown above, writing settings.ffLaunchAt. Kept
+       as its own function rather than a flag on saveLaunchAt because the
+       two say different things once saved: this one does not open anything,
+       and the status line says so, since "Fallin' Furni launches at 08:00"
+       is exactly the sentence that gets read as "it will open itself". */
+    function showFfLaunchAtStatus(text) {
+        if (!ffLaunchAtStatus) return;
+        ffLaunchAtStatus.textContent = text;
+        ffLaunchAtStatus.style.display = text ? "block" : "none";
+    }
+
+    async function saveFfLaunchAt(value) {
+        const iso = localFieldToIso(value);
+        if (iso === null) { showFfLaunchAtStatus("That is not a date I can read."); return; }
+        const controls = [ffLaunchAtInput, ffLaunchAtSave, ffLaunchAtClear].filter(Boolean);
+        controls.forEach(c => c.disabled = true);
+        showFfLaunchAtStatus("");
+        try {
+            await Api.updateSiteSettings(adminToken, { ffLaunchAt: iso });
+            ffLaunchAtInput.value = isoToLocalField(iso);
+            showFfLaunchAtStatus(iso
+                ? "Boards count and Launch Week starts from " + new Date(iso).toUTCString().replace(" GMT", " UTC") +
+                  ". The game still opens only when its switch is on Live."
+                : "No date — no Launch Week, and the boards count from the site's launch.");
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            showFfLaunchAtStatus(err.message || "Couldn't save the Fallin' Furni launch date.");
+        } finally {
+            controls.forEach(c => c.disabled = false);
+        }
+    }
+
+    if (ffLaunchAtSave) ffLaunchAtSave.addEventListener("click", () => saveFfLaunchAt(ffLaunchAtInput.value));
+    // Emptied by saveFfLaunchAt once the clear has saved, not before — the
+    // same reason as the site countdown's Clear above.
+    if (ffLaunchAtClear) ffLaunchAtClear.addEventListener("click", () => saveFfLaunchAt(""));
 
     async function loadLandingState() {
         try {
             // One read, every switch: they all live in the same settings document.
-            const { landingState, fallinFurniState, theme, launchAt, fromCache } = await Api.getSiteSettings();
+            const { landingState, fallinFurniState, theme, launchAt, ffLaunchAt, fromCache } = await Api.getSiteSettings();
             /* The stand-in getSiteSettings answers with during an outage
                (fromCache, see js/api.js) has a GUESSED landing state and no
                Fallin' Furni state or palette at all. Lighting buttons from it
@@ -4884,13 +5131,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
             if (launchAtInput) launchAtInput.value = isoToLocalField(launchAt);
+            if (ffLaunchAtInput) ffLaunchAtInput.value = isoToLocalField(ffLaunchAt);
             landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
             renderDevModeLink(landingState);
             const ff = fallinFurniState || "live";
             ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
             // getSiteSettings has already applied the palette to this page —
             // this only lights the button that matches what is stored.
-            const palette = theme === "purple" ? "purple" : "classic";
+            // Whatever is stored, if a button offers it. This used to know
+            // only purple, so with Pumpkin, Witching Hour or Crimson on the
+            // site the panel lit Classic — the one palette that was not on.
+            const offered = Array.from(themeToggleBtns).some(btn => btn.dataset.themeState === theme);
+            const palette = offered ? theme : "classic";
             themeToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.themeState === palette));
         } catch (e) {
             // best-effort — the toggles just won't show anything highlighted
@@ -5341,6 +5593,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // Floating Save/Cancel just proxy to whichever maze/event form is
     // currently open — requestSubmit() runs the same validation + submit
     // event as clicking that form's own (still-present) Save button.
+    // requestSubmit() ignores that button being disabled mid-save, which
+    // is why submitForm keeps its own _saving flag (and syncFloatingBusy
+    // greys these two meanwhile).
     floatingSaveBtn.addEventListener("click", () => {
         if (!activeFormKey) return;
         COLLECTIONS[activeFormKey].formEl.requestSubmit();
@@ -5424,7 +5679,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 // lives for the page, so a copy of the token taken here went
                 // stale the moment the session was renewed, and every save
                 // after signing back in failed.
-                () => adminToken
+                () => adminToken,
+                // And the same way back to the sign-in box on a 401, rather
+                // than a bare "Unauthorized" in the editor's status line.
+                lockOut
             ).catch(e => {
                 recolourMounted = false;
                 document.getElementById("recolour-editor").innerHTML =
@@ -5854,6 +6112,13 @@ document.addEventListener("DOMContentLoaded", () => {
             // left as an unhandled rejection behind a half-drawn page.
             enterAdmin().catch(err => showLoadBanner("Something went wrong opening the panel: " +
                 ((err && err.message) || "unknown error") + ". Reload the page to try again."));
+        }, () => {
+            /* The check itself failed — the server was unreachable or
+               erroring, which says nothing about the session. The token is
+               KEPT (lockOut would wipe it) and the login box, which is
+               already up, says to reload; signing in again works too. */
+            loginError.textContent = "Couldn't reach the server to check your session. Reload the page to try again — you are still signed in.";
+            loginError.style.display = "block";
         });
     }
 });

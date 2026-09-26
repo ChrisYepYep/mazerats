@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   767 rules, 1273 declarations, hues 18 (surfaces) / 38 (accents).
+   836 rules, 1384 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -418,17 +418,13 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .walked-toggle-tick {
-    border: 1px solid currentColor;
+    background-color: currentColor;
 }
 
 [data-theme="pumpkin"] .walked-toggle.is-walked {
     color: var(--ok);
     border-color: var(--ok);
     background: rgba(111, 143, 79, 0.14);
-}
-
-[data-theme="pumpkin"] .walked-toggle.is-walked .walked-toggle-tick::after {
-    border: solid currentColor;
 }
 
 [data-theme="pumpkin"] .walked-toggle:hover,
@@ -1346,7 +1342,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] body.is-viewer .btn-enter-mini,
 [data-theme="pumpkin"] body.is-viewer #sidebar-add-room-btn,
 [data-theme="pumpkin"] body.is-viewer #sidebar-add-event-btn,
-[data-theme="pumpkin"] body.is-viewer #about-save-btn,
 [data-theme="pumpkin"] body.is-viewer #furni-scan-all-btn,
 [data-theme="pumpkin"] body.is-viewer #furni-scan-new-btn,
 [data-theme="pumpkin"] body.is-viewer .admin-floating-actions .admin-action-pill,
@@ -1358,7 +1353,13 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] body.is-viewer .admin-wiz-inline-form [data-clear],
 [data-theme="pumpkin"] body.is-viewer #recolour-editor .btn[data-role="save"],
 [data-theme="pumpkin"] body.is-viewer #recolour-editor .btn[data-role="duplicate"],
-[data-theme="pumpkin"] body.is-viewer #recolour-editor .btn[data-role="delete"] {
+[data-theme="pumpkin"] body.is-viewer #recolour-editor .btn[data-role="delete"],
+[data-theme="pumpkin"] body.is-viewer #launch-at-save,
+[data-theme="pumpkin"] body.is-viewer #launch-at-clear,
+[data-theme="pumpkin"] body.is-viewer #ff-launch-at-save,
+[data-theme="pumpkin"] body.is-viewer #ff-launch-at-clear,
+[data-theme="pumpkin"] body.is-viewer .admin-daily-actions .admin-action-pill,
+[data-theme="pumpkin"] body.is-viewer .admin-panel[data-panel="deadends"] .de-write {
     box-shadow: none;
 }
 
@@ -1825,36 +1826,36 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: #4e1c06;
 }
 
-[data-theme="pumpkin"] #contact-btn {
-    background-image: url('../assets/img/pumpkin/console/cnsl-tab-contact-inactive.png');
-}
-
-[data-theme="pumpkin"] #contact-btn.active {
-    background-image: url('../assets/img/pumpkin/console/cnsl-tab-contact-active.png');
-}
-
-[data-theme="pumpkin"] #people-btn {
-    background-image: url('../assets/img/pumpkin/console/cnsl-tab-people-inactive.png');
-}
-
-[data-theme="pumpkin"] #people-btn.active {
-    background-image: url('../assets/img/pumpkin/console/cnsl-tab-people-active.png');
-}
-
-[data-theme="pumpkin"] #privacy-btn {
-    background-image: url('../assets/img/pumpkin/console/cnsl-tab-search-inactive.png');
-}
-
-[data-theme="pumpkin"] #privacy-btn.active {
-    background-image: url('../assets/img/pumpkin/console/cnsl-tab-search-active.png');
-}
-
 [data-theme="pumpkin"] #profile-btn {
-    background-image: url('../assets/img/pumpkin/console/cnsl-tab-profile-inactive.png');
+    background-image: url('../assets/img/pumpkin/console/cnsl-tab-site-profile-inactive.png');
 }
 
 [data-theme="pumpkin"] #profile-btn.active {
-    background-image: url('../assets/img/pumpkin/console/cnsl-tab-profile-active.png');
+    background-image: url('../assets/img/pumpkin/console/cnsl-tab-site-profile-active.png');
+}
+
+[data-theme="pumpkin"] #contact-btn {
+    background-image: url('../assets/img/pumpkin/console/cnsl-tab-site-contact-inactive.png');
+}
+
+[data-theme="pumpkin"] #contact-btn.active {
+    background-image: url('../assets/img/pumpkin/console/cnsl-tab-site-contact-active.png');
+}
+
+[data-theme="pumpkin"] #people-btn {
+    background-image: url('../assets/img/pumpkin/console/cnsl-tab-site-people-inactive.png');
+}
+
+[data-theme="pumpkin"] #people-btn.active {
+    background-image: url('../assets/img/pumpkin/console/cnsl-tab-site-people-active.png');
+}
+
+[data-theme="pumpkin"] #privacy-btn {
+    background-image: url('../assets/img/pumpkin/console/cnsl-tab-site-privacy-inactive.png');
+}
+
+[data-theme="pumpkin"] #privacy-btn.active {
+    background-image: url('../assets/img/pumpkin/console/cnsl-tab-site-privacy-active.png');
 }
 
 [data-theme="pumpkin"] .custom-scrollbar-wrap--console .custom-scrollbar-track-segment {
@@ -2385,6 +2386,26 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: #4f3224;
 }
 
+[data-theme="pumpkin"] .side-menu-group {
+    background: none;
+    border: 0;
+    color: #0a0604;
+}
+
+[data-theme="pumpkin"] .side-menu-group:hover,
+[data-theme="pumpkin"] .side-menu-group:focus-visible {
+    background: rgba(10, 6, 4, 0.1);
+    outline: none;
+}
+
+[data-theme="pumpkin"] .side-menu-group:focus-visible {
+    outline: 2px solid #351c12;
+}
+
+[data-theme="pumpkin"] .side-menu-fold + .side-menu-item::before {
+    color: rgba(10, 6, 4, 0.32);
+}
+
 [data-theme="pumpkin"] .side-menu-item + .side-menu-item::before {
     color: rgba(10, 6, 4, 0.32);
 }
@@ -2411,8 +2432,19 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: #2a1a14;
 }
 
+[data-theme="pumpkin"] .side-menu-tag {
+    background: #2c180f;
+    color: #fcfcfa;
+}
+
 [data-theme="pumpkin"] .side-menu-badge {
     color: #452517;
+}
+
+@media (max-width: 999px) {
+    [data-theme="pumpkin"] .modal-actions-bar:not(:empty) {
+        background: rgba(11, 4, 1, 0.55);
+    }
 }
 
 @media (max-width: 900px) {
@@ -2780,6 +2812,10 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--amber-bright);
 }
 
+[data-theme="pumpkin"] .guess-board-time {
+    color: var(--parchment-dim);
+}
+
 [data-theme="pumpkin"] .guess-board-empty,
 [data-theme="pumpkin"] .guess-board-note {
     color: var(--parchment-dim);
@@ -2853,17 +2889,13 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .saved-toggle-mark {
-    border: 1px solid currentColor;
+    background-color: currentColor;
 }
 
 [data-theme="pumpkin"] .saved-toggle.is-saved {
     border-color: var(--amber-bright);
     background: rgba(81, 32, 10, 0.32);
     color: var(--amber-bright);
-}
-
-[data-theme="pumpkin"] .saved-toggle.is-saved .saved-toggle-mark {
-    background: var(--amber-bright);
 }
 
 [data-theme="pumpkin"] .modal-meta-actions .saved-toggle.is-saved {
@@ -2877,22 +2909,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     background: linear-gradient(#55220c, #401807);
     border-color: var(--amber-bright);
     color: #ffffff;
-}
-
-[data-theme="pumpkin"] .modal-meta-actions .saved-toggle .saved-toggle-mark::after {
-    border-bottom-color: #1f100a;
-}
-
-[data-theme="pumpkin"] .modal-meta-actions .saved-toggle.is-saved .saved-toggle-mark::after {
-    border-bottom-color: #3b1708;
-}
-
-[data-theme="pumpkin"] .modal-meta-actions .saved-toggle:hover .saved-toggle-mark::after {
-    border-bottom-color: #27160e;
-}
-
-[data-theme="pumpkin"] .modal-meta-actions .saved-toggle.is-saved:hover .saved-toggle-mark::after {
-    border-bottom-color: #491c09;
 }
 
 [data-theme="pumpkin"] .saved-note {
@@ -2929,6 +2945,325 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] .saved-note-go:focus-visible,
 [data-theme="pumpkin"] .saved-note-close:focus-visible {
     outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .guides-body {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .guides-note,
+[data-theme="pumpkin"] .guides-intro {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .guides-textbtn {
+    background: none;
+    border: 0;
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .guides-textbtn:hover,
+[data-theme="pumpkin"] .guides-textbtn:focus-visible {
+    color: var(--parchment);
+    outline: none;
+}
+
+[data-theme="pumpkin"] .guides-cat {
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--border);
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .guides-cat:hover,
+[data-theme="pumpkin"] .guides-cat:focus-visible {
+    border-color: var(--amber);
+    color: var(--parchment);
+    outline: none;
+}
+
+[data-theme="pumpkin"] .guides-cat.is-on {
+    background: linear-gradient(#471b08, #351406);
+    border-color: var(--amber-bright);
+    color: #ffffff;
+}
+
+[data-theme="pumpkin"] .guides-pill {
+    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.28);
+    color: var(--amber);
+}
+
+[data-theme="pumpkin"] .guides-card {
+    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.22);
+    color: inherit;
+}
+
+[data-theme="pumpkin"] .guides-card:hover,
+[data-theme="pumpkin"] .guides-card:focus-visible {
+    border-color: var(--amber);
+    background: rgba(81, 32, 10, 0.22);
+    outline: none;
+}
+
+[data-theme="pumpkin"] .guide-thumb {
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="pumpkin"] .guide-thumb::after {
+    border: 1px solid var(--chrome-border);
+    box-shadow: inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight),
+        inset -1px 0 0 rgba(0, 0, 0, 0.45),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="pumpkin"] .guides-card-title {
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .guides-card-summary {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .guides-card-meta {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .guide-title {
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .guide-summary {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .guide-date {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .guide-contents,
+[data-theme="pumpkin"] .guide-more {
+    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.22);
+}
+
+[data-theme="pumpkin"] .guide-contents-title {
+    color: var(--amber);
+}
+
+[data-theme="pumpkin"] .guide-section-title {
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .guide-section-title:focus {
+    outline: none;
+}
+
+[data-theme="pumpkin"] .guide-figure {
+    border: 1px solid var(--chrome-border);
+    box-shadow: inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight),
+        inset -1px 0 0 rgba(0, 0, 0, 0.45),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        2px 2px 0 rgba(0, 0, 0, 0.45);
+    background: #240e04;
+}
+
+[data-theme="pumpkin"] .guide-figure.is-zoomable:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="pumpkin"] #guides-title:focus,
+[data-theme="pumpkin"] .guide-title:focus {
+    outline: none;
+}
+
+[data-theme="pumpkin"] .guide-body {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .guide-body strong,
+[data-theme="pumpkin"] .guide-summary strong {
+    color: #faf7f2;
+}
+
+[data-theme="pumpkin"] .guide-link {
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .guide-link:hover,
+[data-theme="pumpkin"] .guide-link:focus-visible {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .guide-tip {
+    background: rgba(81, 32, 10, 0.18);
+}
+
+[data-theme="pumpkin"] .guides-copied {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .guides-starter {
+    border: 1px dashed var(--amber);
+    background: rgba(81, 32, 10, 0.16);
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .guides-admin-status {
+    border: 1px solid var(--border);
+}
+
+[data-theme="pumpkin"] .guides-admin-status.is-live {
+    color: #b9d99a;
+    border-color: var(--ok);
+}
+
+[data-theme="pumpkin"] .guides-admin-status.is-draft {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .guides-edit-section {
+    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="pumpkin"] .guides-edit-section-num {
+    color: var(--amber);
+}
+
+[data-theme="pumpkin"] .guides-pic img {
+    border: 1px solid var(--border);
+    background: #240e04;
+}
+
+[data-theme="pumpkin"] .guides-pic-empty {
+    border: 1px dashed var(--border);
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .guides-pic-status {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .guides-preview {
+    border: 1px solid var(--amber);
+    background: var(--frame-bg);
+}
+
+[data-theme="pumpkin"] .glyphs-body {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .glyphs-intro {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .glyphs-intro strong {
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .glyphs-sample {
+    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.28);
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .glyphs-how {
+    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.22);
+}
+
+[data-theme="pumpkin"] .glyphs-how ol {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .glyphs-how strong {
+    color: #faf7f2;
+}
+
+[data-theme="pumpkin"] .glyphs-how-note {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .glyphs-how kbd {
+    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.28);
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .glyphs-how-title,
+[data-theme="pumpkin"] .glyphs-group-title {
+    color: var(--amber-bright);
+    text-shadow: 2px 2px 0 var(--bg-black);
+}
+
+[data-theme="pumpkin"] .glyphs-count {
+    text-shadow: none;
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .glyphs-note {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .glyphs-note code,
+[data-theme="pumpkin"] .glyphs-foot code {
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .glyphs-cell {
+    background: var(--chrome-row);
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .glyphs-cell.is-pic {
+    background: var(--chrome-row-featured);
+}
+
+[data-theme="pumpkin"] .glyphs-cell:hover {
+    background: var(--wood-mid);
+}
+
+[data-theme="pumpkin"] .glyphs-cell.is-pic:hover {
+    background: #3c1605;
+}
+
+[data-theme="pumpkin"] .glyphs-cell:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .glyphs-glyph {
+    color: #ffffff;
+}
+
+[data-theme="pumpkin"] .glyphs-alt {
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .glyphs-uni {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .glyphs-name {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .glyphs-done {
+    background: #4a5f38;
+    color: #ffffff;
+}
+
+[data-theme="pumpkin"] .glyphs-cell.is-copied {
+    border-color: var(--ok);
+}
+
+[data-theme="pumpkin"] .glyphs-foot {
+    color: var(--parchment-dim);
 }
 
 [data-theme="pumpkin"] .progress-face {
@@ -3073,18 +3408,38 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 @media (max-width: 999px) {
-    [data-theme="pumpkin"] .incomplete-pill {
+    [data-theme="pumpkin"] .incomplete-strip {
         border: 1.5px dashed var(--amber);
-        background: transparent;
+        background: rgba(11, 4, 1, 0.55);
+        color: var(--parchment-dim);
+    }
+}
+
+@media (max-width: 999px) {
+    [data-theme="pumpkin"] .incomplete-strip-label {
         color: var(--amber-bright);
     }
 }
 
 @media (max-width: 999px) {
-    [data-theme="pumpkin"] .incomplete-pop:not([hidden]) {
-        border: 1px solid var(--chrome-border);
-        background: #dfc79e;
+    [data-theme="pumpkin"] .incomplete-strip-words {
+        color: var(--parchment);
+    }
+}
+
+@media (max-width: 999px) {
+    [data-theme="pumpkin"] .incomplete-strip-help {
+        border: 1px solid #462010;
+        background: #e8d8bd;
         color: #0d0501;
+    }
+}
+
+@media (max-width: 999px) {
+    [data-theme="pumpkin"] .incomplete-strip-help:hover,
+    [data-theme="pumpkin"] .incomplete-strip-help:focus-visible {
+        background: #f2eadb;
+        outline: none;
     }
 }
 
@@ -3401,11 +3756,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 [data-theme="pumpkin"] .daily-loading--failed {
     color: var(--danger);
-}
-
-[data-theme="pumpkin"] .daily-sheet {
-    background: #1b0e08;
-    scrollbar-color: var(--wood-dark) #1b0e08;
 }
 
 [data-theme="pumpkin"] .daily-eyebrow {

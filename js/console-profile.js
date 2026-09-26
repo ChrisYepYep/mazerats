@@ -83,7 +83,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function archiveBlock() {
         const ap = window.ArchiveProgress;
-        const f = ap ? ap.figures() : null;
+        /* Only the homepage has the archive (js/home.js). Elsewhere, such as
+           Fallin' Furni's page, "Loading..." would never end, so the block
+           just points there. */
+        if (!ap) {
+            return `
+            ${head("The archive")}
+            <p class="console-blurb">Your progress is kept on the archive page.</p>
+            <button type="button" class="console-btn console-profile-btn" data-act="progress">Your Progress</button>`;
+        }
+        const f = ap.figures();
         if (!f || !f.total) {
             return `${head("The archive")}<p class="console-blurb">Loading...</p>`;
         }
@@ -224,6 +233,8 @@ document.addEventListener("DOMContentLoaded", () => {
            whatever opened it), then the window opens and takes focus. */
         else if (act === "progress" && window.ArchiveProgress) { Console.close(); window.ArchiveProgress.open(); }
         else if (act === "boards" && window.Leaderboards) { Console.close(); window.Leaderboards.open(); }
+        // Off the homepage neither window exists, so both buttons go there.
+        else if (act === "progress" || act === "boards") location.href = "/home";
         else if (act === "info") Console.openInfo(null);
     });
 });

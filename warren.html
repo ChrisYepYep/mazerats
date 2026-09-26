@@ -147,6 +147,7 @@
                                     <button type="button" class="chrome-nav-btn ctl-btn active" data-panel="rooms" role="tab" aria-selected="true"><span class="chrome-nav-btn-label">Mazes</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="events" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Events</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="deadends" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Missing Pieces</span><span class="admin-nav-count" id="dead-end-nav-count" hidden></span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="guides" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Guides</span></button>
                                 </div>
                             </div>
                             <div class="ctl-card">
@@ -238,6 +239,37 @@
                                 </div>
                                 </div>
                                 <p class="ctl-status" id="ff-state-status" style="display:none;"></p>
+                            </div>
+
+                            <!-- Fallin' Furni's own launch date, beside its
+                                 switch and separate from the site's countdown
+                                 below, because the game opens later than the
+                                 site does.
+
+                                 It does NOT open the game: the switch above
+                                 does that, by hand, and a date that flipped it
+                                 on its own would open a game nobody had
+                                 checked that morning. What it decides is when
+                                 the game's leaderboards start counting and
+                                 when Launch Week runs (from this moment to the
+                                 end of its seventh day — see A TOURNAMENT in
+                                 netlify/functions/ff-scores.js). Empty means
+                                 no date yet: no Launch Week, and the boards
+                                 count from the site's launch instead.
+
+                                 UTC, and the same conversion both ways, as the
+                                 site countdown below. -->
+                            <div class="ctl-card" id="ff-launch-at" style="display:none;"
+                                 title="When Fallin' Furni's leaderboards start counting and Launch Week begins. It does not open the game.">
+                                <span class="ctl-label">Fallin' Furni launch (UTC)</span>
+                                <div class="ctl-seg">
+                                    <input type="datetime-local" id="ff-launch-at-input" class="ctl-input"
+                                           aria-label="Fallin' Furni launch date and time, in UTC">
+                                    <button type="button" class="ctl-btn" id="ff-launch-at-save">Save</button>
+                                    <button type="button" class="ctl-btn" id="ff-launch-at-clear">Clear</button>
+                                </div>
+                                <p class="admin-hint">The game still opens only when its switch is set to Live. This date is when its leaderboards start counting and when Launch Week begins.</p>
+                                <p class="ctl-status" id="ff-launch-at-status" style="display:none;"></p>
                             </div>
 
                             <div class="ctl-card" id="landing-toggle" style="display:none;"
@@ -423,7 +455,7 @@
                                 <form class="admin-form" id="events-form"></form>
                             </section>
 
-                            <!-- ---------- Console: Contributors & About ---------- -->
+                            <!-- ---------- Console: Contributors ---------- -->
                             <section class="admin-panel" data-panel="console" hidden>
                                 <header class="admin-panel-head">
                                     <div>
@@ -462,6 +494,24 @@
                                  js/admin-dead-ends.js; the rules for what a
                                  record can be missing are js/dead-ends.js,
                                  shared with the archive and the server. -->
+                            <!-- ---------- Guides ----------
+                                 The homepage's Guides window, written here.
+                                 Everything in this panel is js/admin-guides.js;
+                                 the store is netlify/functions/guides.js. -->
+                            <section class="admin-panel" data-panel="guides" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Guides</h3>
+                                        <p class="admin-hint">How-to guides, read in the Guides window on the homepage (/guides). A guide is a title, a summary and a list of sections, each with its own text and picture. Drafts are only visible here; publishing puts a guide on the site and in What's New.</p>
+                                    </div>
+                                    <button class="admin-action-pill admin-pill-solid admin-add-btn" id="guides-add-btn" type="button">+ New Guide</button>
+                                </header>
+                                <div id="guides-starter"></div>
+                                <div class="chrome-list" id="guides-list"></div>
+                                <form class="admin-form" id="guides-form" novalidate></form>
+                                <div class="guides-preview" id="guides-preview" hidden></div>
+                            </section>
+
                             <section class="admin-panel" data-panel="deadends" hidden>
                                 <header class="admin-panel-head">
                                     <div>
@@ -1021,6 +1071,10 @@
     <script src="js/admin.js?v=2"></script>
     <script src="js/dead-ends.js?v=2"></script>
     <script src="js/admin-dead-ends.js?v=2"></script>
+    <!-- The Guides panel: the text format, the starter guide, the editor. -->
+    <script src="js/guide-text.js?v=2"></script>
+    <script src="js/guides-starter.js?v=2"></script>
+    <script src="js/admin-guides.js?v=2"></script>
     <script src="js/password-field.js?v=2"></script>
     <script src="js/glyph-palette.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>

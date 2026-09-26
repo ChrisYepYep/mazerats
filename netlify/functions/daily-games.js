@@ -33,9 +33,12 @@
    from a signed-out browser is anonymous by construction and cannot be
    addressed by anybody, including us. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
+// Points here are totals, the day's score plus its speed bonus, as every
+// public board and the Profile count them (see _speed.js).
+const { TOTAL, totalOf } = require("./_speed");
 
 const SCORES = "guess_scores";
 const RESETS = "daily_resets";
@@ -112,6 +115,20 @@ exports.handler = async (event) => {
         return json(500, { error: "Database connection failed" });
     }
 
+    /* Everything past the connect in one catch. Only the connect was
+       guarded, so any read or write below that failed — the player's ticket
+       check, the admin's list, a reset — was an unhandled rejection and
+       Netlify's bare 502, which neither the games nor the admin panel can
+       read. The reason goes to the log, as above, not into the reply. */
+    try {
+        return await route(event, db, scores, resets);
+    } catch (e) {
+        console.error("daily-games: request failed", e);
+        return json(500, { error: "The daily games could not be reached just now" });
+    }
+};
+
+async function route(event, db, scores, resets) {
     const params = event.queryStringParameters || {};
 
     /* ---------- the player's half ----------
@@ -140,7 +157,9 @@ exports.handler = async (event) => {
 
     // ---------- everything below is the admin's half ----------
 
-    if (!isAuthorized(event)) return UNAUTHORIZED;
+    // A live account, not only a signed token: this lists players by name
+    // and Discord id. See hasAccount in _auth.js.
+    if (!(await hasAccount(event))) return UNAUTHORIZED;
 
     if (event.httpMethod === "GET") {
         /* The players worth listing are the ones the site has actually seen
@@ -164,7 +183,7 @@ exports.handler = async (event) => {
         const knownDaily = await db.collection("daily_scores").aggregate([
             { $match: { game: { $in: liveDaily } } },
             { $sort: { day: 1, at: 1 } },
-            { $group: { _id: "$playerId", name: { $last: "$name" }, avatar: { $last: "$avatar" }, days: { $sum: 1 }, points: { $sum: "$points" }, lastDay: { $max: "$day" } } },
+            { $group: { _id: "$playerId", name: { $last: "$name" }, avatar: { $last: "$avatar" }, days: { $sum: 1 }, points: { $sum: TOTAL }, lastDay: { $max: "$day" } } },
             { $sort: { lastDay: -1, _id: 1 } },
             { $limit: 200 }
         ]).toArray();
@@ -177,7 +196,7 @@ exports.handler = async (event) => {
                     name: { $last: "$name" },
                     avatar: { $last: "$avatar" },
                     days: { $sum: 1 },
-                    points: { $sum: "$points" },
+                    points: { $sum: TOTAL },
                     lastDay: { $max: "$day" }
                 }
             },
@@ -247,7 +266,7 @@ exports.handler = async (event) => {
                     name: g.name,
                     scored: true,
                     playedToday: Boolean(todayRow),
-                    todayPoints: todayRow ? todayRow.points : null,
+                    todayPoints: todayRow ? totalOf(todayRow) : null,
                     days: rows.length,
                     resetWaiting: waiting.includes(g.key),
                     rows
@@ -263,7 +282,7 @@ exports.handler = async (event) => {
                    say which game each row was, which is a report rather than
                    the thing this panel is for. */
                 recent: (perGame.find(g => g.key === "guess") || { rows: [] }).rows
-                    .slice(0, 8).map(r => ({ day: r.day, points: r.points, solved: r.solved }))
+                    .slice(0, 8).map(r => ({ day: r.day, points: totalOf(r), solved: r.solved }))
             };
         }
 
@@ -347,4 +366,4 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
-};
+}

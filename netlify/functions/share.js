@@ -1,6 +1,6 @@
 /* /.netlify/functions/share — the page a shared link actually points at.
 
-   Reached as /maze/<id> or /event/<id> (see the rewrites in netlify.toml,
+   Reached as /maze/<id>, /event/<id> or /guides/<id> (see the rewrites in netlify.toml,
    which are 200s rather than redirects so the tags below are served at the
    URL that was pasted).
 
@@ -46,8 +46,9 @@ const CACHE = "public, s-maxage=600, stale-while-revalidate=86400";
    dev proxy produces, and it is a useful way to test the function. */
 function requestedId(event) {
     const params = event.queryStringParameters || {};
-    if (params.maze) return { id: params.maze, isEvent: false };
-    if (params.event) return { id: params.event, isEvent: true };
+    if (params.maze) return { id: params.maze, kind: "maze" };
+    if (params.event) return { id: params.event, kind: "event" };
+    if (params.guide) return { id: params.guide, kind: "guide" };
 
     // event.rawUrl is the address as it was requested; event.path is the
     // same path on its own. Either can be absent depending on how the
@@ -56,7 +57,7 @@ function requestedId(event) {
     if (event.rawUrl) {
         try { pathname = new URL(event.rawUrl).pathname; } catch (e) { /* keep event.path */ }
     }
-    const m = /^\/(maze|event)\/([^/]+)\/?$/.exec(pathname);
+    const m = /^\/(maze|event|guides)\/([^/]+)\/?$/.exec(pathname);
     if (!m) return null;
     /* A stray % in a pasted link ("/maze/100%-maze") makes decodeURIComponent
        throw, and uncaught that was a bare 502 from the function. A link that
@@ -68,7 +69,7 @@ function requestedId(event) {
     } catch (e) {
         return null;
     }
-    return { id, isEvent: m[1] === "event" };
+    return { id, kind: m[1] === "guides" ? "guide" : m[1] };
 }
 
 function escapeHtml(str) {
@@ -109,6 +110,31 @@ function previewImage(origin, thumb) {
     return `${origin}/.netlify/images?${params.toString()}`;
 }
 
+/* A guide's preview image: its own thumbnail at its own shape.
+
+   Not the 1200x630 crop a room gets. A guide's thumbnail is drawn for the
+   guide, often square, and cover-cropping a square to 1200x630 cuts away
+   most of it. So it is only capped in width, and the preview shows it
+   whole; with no size stated, clients read the shape off the image.
+
+   The address is built from the thumbnail's own address, and an uploaded
+   picture's key carries the moment it was uploaded. So a new thumbnail is a
+   new image address, and nothing that cached the old picture can stand in
+   for the new one. */
+function guideImage(origin, thumb) {
+    if (!thumb) return `${origin}/assets/img/og-thumbnail.png`;
+    const params = new URLSearchParams({ url: thumb, w: "1200", q: "85" });
+    return `${origin}/.netlify/images?${params.toString()}`;
+}
+
+// The same rule the site uses (GuideText.thumbOf in js/guide-text.js): the
+// guide's own thumbnail, else its first section picture, else none.
+function guideThumb(guide) {
+    if (guide.thumb) return guide.thumb;
+    const withPic = (guide.sections || []).find(s => s && s.image);
+    return withPic ? withPic.image : "";
+}
+
 // One line of prose about the thing, for the preview's body text. Falls
 // back through what a record actually tends to have.
 function describe(record, isEvent) {
@@ -134,7 +160,7 @@ function describe(record, isEvent) {
    script (a preview bot that renders, a text browser, a reader mode) should
    still land on something that makes sense rather than a blank page with
    tags in its head. */
-function page({ title, description, image, canonical, target }) {
+function page({ title, description, image, canonical, target, sized = true }) {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -147,9 +173,9 @@ function page({ title, description, image, canonical, target }) {
 <meta property="og:type" content="article">
 <meta property="og:title" content="${escapeHtml(title)}">
 <meta property="og:description" content="${escapeHtml(description)}">
-<meta property="og:image" content="${escapeHtml(image)}">
+<meta property="og:image" content="${escapeHtml(image)}">${sized ? `
 <meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
+<meta property="og:image:height" content="630">` : ""}
 <meta property="og:url" content="${escapeHtml(canonical)}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${escapeHtml(title)}">
@@ -209,11 +235,49 @@ function notFound(origin) {
     };
 }
 
+/* A shared guide: /guides/<id>. Published guides only, since a draft is not
+   public anywhere else either. A guide that is gone, or a database that is
+   down, sends the visitor to the Guides window at that address instead of
+   to a page about the archive, since the window says plainly when a guide
+   isn't there and lists the ones that are. */
+async function guidePage(origin, id) {
+    const app = `/guides?g=${encodeURIComponent(id)}`;
+    const away = { statusCode: 302, headers: { Location: app, "Cache-Control": "no-store" }, body: "" };
+    let guide;
+    try {
+        const db = await getDb();
+        guide = await db.collection("guides")
+            .findOne({ id, status: "published" }, { projection: { _id: 0, title: 1, summary: 1, thumb: 1, sections: 1 } });
+    } catch (e) {
+        console.error("share: guide lookup failed", e);
+        return away;
+    }
+    if (!guide) return away;
+
+    const summary = String(guide.summary || "").replace(/\s+/g, " ").trim();
+    const description = !summary ? "A guide in the Maze Rats archive of Habbo Origins."
+        : summary.length > 200 ? summary.slice(0, 197).replace(/\s+\S*$/, "") + "…" : summary;
+    return {
+        statusCode: 200,
+        headers: { ...SHARE_HEADERS, "Cache-Control": CACHE },
+        body: page({
+            title: guide.title || "Guides",
+            description,
+            image: guideImage(origin, guideThumb(guide)),
+            sized: false,
+            canonical: `${origin}/guides/${encodeURIComponent(id)}`,
+            target: app
+        })
+    };
+}
+
 exports.handler = async (event) => {
     const origin = originOf();
     const asked = requestedId(event);
     if (!asked) return notFound(origin);
-    const { id, isEvent } = asked;
+    const { id, kind } = asked;
+    const isEvent = kind === "event";
+    if (kind === "guide") return guidePage(origin, id);
 
     let db;
     try {

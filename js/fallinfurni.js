@@ -3211,13 +3211,15 @@
         box.hidden = false;
     }
 
-    /* "Saturday 10 October" — en-GB like every other date the site writes
-       (see longDate in js/oddoneout.js).
+    /* "Friday 23 October" — en-GB like every other date the site writes
+       (see longDate in js/oddoneout.js). The date is the server's: the week
+       follows settings.ffLaunchAt (see launchWeek in ff-scores.js), so
+       nothing here names a day of its own.
 
-       THE LAST DAY INSIDE THE WINDOW, IN UTC. ff-scores.js now ends the week
-       at midnight UTC after its last day, exclusive, so `to` itself is
-       00:00 on the Sunday. Formatted as it stood, in the reader's own zone,
-       that printed "Sunday 11 October" in Britain (BST is UTC+1) and
+       THE LAST DAY INSIDE THE WINDOW, IN UTC. ff-scores.js ends the week at
+       midnight UTC after its seventh day, exclusive, so `to` itself is 00:00
+       on the day after. Formatted as it stood, in the reader's own zone,
+       that once printed "Sunday 11 October" in Britain (BST is UTC+1) and
        "Saturday 10 October" further west - the same deadline, two different
        days. So the day named is the one holding the window's last
        millisecond, read in UTC, which is the zone the server's dates are
@@ -3507,7 +3509,9 @@
         submitRun(done.cleared, done.points);
     }
 
-    async function submitRun(levelsCleared, points) {
+    // `endedAt` is the game-clock moment the run's last round ended, for a
+    // caller that runs later than that (Quit, pressed on the round-end panel).
+    async function submitRun(levelsCleared, points, endedAt) {
         if (!runStartedAt) return;
         /* A run that cleared nothing still ENDED, and the player is owed the
            same sentence as anyone else. The board will not take it — it ranks
@@ -3520,7 +3524,7 @@
         /* The same clock as ever — game time since Play, pauses taken out —
            read as the last round ends rather than at the button, so the time
            spent reading the round-end panel is no longer counted. */
-        const ms = Math.round(gameNow() - runStartedAt);
+        const ms = Math.round((endedAt || gameNow()) - runStartedAt);
         // This run's token. If a new run starts while it is out, the answer
         // below belongs to the old one and is dropped rather than written
         // over the new run's panel.
@@ -4507,7 +4511,22 @@
         document.getElementById("ff-round-quit").addEventListener("click", () => {
             // Abandoning a run still records how far it got — including the
             // round just won, which `run.index` has not counted yet.
-            if (run) { recordRun(run, "abandoned"); submitRun(run.cleared()); }
+            /* Through the same once-per-run guard as settleRun, with the
+               run's real score. This used to send no points at all - the
+               server stored 0 against the run's one-use token, and the
+               answer then threw on `points.toLocaleString()` and said the
+               board could not be reached - and it sent again for a run
+               settleRun had already put on the board. Timed at the round's
+               end, as settleRun's is, not at the moment Quit was pressed. */
+            if (run) {
+                // A run already settled was not abandoned, as in pagehide.
+                const done = run.settled();
+                recordRun(run, done ? (done.result === "finished" ? "won" : "lost") : "abandoned");
+                if (!runSubmitted) {
+                    runSubmitted = true;
+                    submitRun(run.cleared(), run.score(), roundEndedAt || 0);
+                }
+            }
             hideRoundEnd();
             stopRound();
         });
@@ -4596,6 +4615,95 @@
             status("", "");
             prepare();
         });
+    }
+
+    /* ------------------------------------------ THE CONSOLE'S ARCHIVE, LENT
+
+       The console on this page is the same as the homepage's, and its Add
+       Maze Info form and Missing Pieces list (js/console-info.js) read the
+       archive through window.MissingPieces - which js/home.js provides, and
+       this page does not load. Without it the form could only offer "a maze
+       that isn't listed" and the list sat on "Loading..." forever.
+
+       So a small stand-in, with the same shape as home.js's. Nothing is
+       fetched until somebody opens one of those two pages (ready() and
+       archiveReady() are the only things that ask), so a player who never
+       touches the console pays nothing for it. The flags are the same
+       edge-cached read home.js makes. A maze's name in the list cannot open
+       its window here - there is no archive window on this page - so it goes
+       to the homepage's address for that window instead, which opens it. */
+    if (!window.MissingPieces) {
+        let records = null;             // [{ type, id, name }] once read
+        let flags = null;               // Map "type:id" -> flag, once read
+        const trail = new Map();        // Map "type:id" -> leads waiting
+        let archiveReq = null;
+        let flagsReq = null;
+        const listeners = [];
+        const byName = (a, b) => (typeof compareNames === "function"
+            ? compareNames(a.name, b.name) : String(a.name).localeCompare(String(b.name)));
+
+        const archiveReady = () => {
+            if (!archiveReq) {
+                archiveReq = Promise.all([Api.getRooms(), Api.getEvents()])
+                    .then(([rooms, events]) => {
+                        records = [
+                            ...(rooms || []).map(r => ({ type: "maze", id: r.id, name: r.name || r.id })),
+                            ...(events || []).map(e => ({ type: "event", id: e.id, name: e.title || e.id }))
+                        ].filter(r => r.id).sort(byName);
+                    })
+                    // A failed read is asked again next time, not remembered.
+                    .catch(() => { archiveReq = null; });
+            }
+            return archiveReq;
+        };
+
+        const loadFlags = () => {
+            if (!flagsReq) {
+                flagsReq = fetch("/.netlify/functions/dead-ends", { headers: { Accept: "application/json" } })
+                    .then(res => { if (!res.ok) throw new Error(String(res.status)); return res.json(); })
+                    .then(data => {
+                        flags = new Map((data.flags || []).map(f => [`${f.type}:${f.id}`, f]));
+                        (data.trail || []).forEach(t => trail.set(`${t.type}:${t.id}`, t.leads));
+                        listeners.forEach(fn => { try { fn(); } catch (e) { /* a listener's own problem */ } });
+                    })
+                    .catch(() => { flagsReq = null; });
+            }
+            return flagsReq;
+        };
+
+        const gapsOf = (type, id) => (typeof DeadEnds === "undefined" || !flags
+            ? [] : DeadEnds.gapsOf(type, flags.get(`${type}:${id}`) || null));
+
+        window.MissingPieces = {
+            ready: () => Promise.all([archiveReady(), loadFlags()]),
+            loaded: () => !!records && !!flags,
+            archiveReady,
+            archiveLoaded: () => !!records,
+            records: () => (records || []).slice(),
+            // Oldest mark first, as on the homepage, so old asks do not sink.
+            missing() {
+                if (!records || !flags) return [];
+                return records
+                    .map(r => ({ r, pieces: gapsOf(r.type, r.id), flag: flags.get(`${r.type}:${r.id}`) || null }))
+                    .filter(e => e.pieces.length)
+                    .sort((a, b) => String(a.flag.markedAt || "").localeCompare(String(b.flag.markedAt || ""))
+                        || byName(a.r, b.r))
+                    .map(e => ({
+                        type: e.r.type, id: e.r.id, name: e.r.name, pieces: e.pieces,
+                        note: (e.flag && e.flag.note) || "",
+                        waiting: trail.get(`${e.r.type}:${e.r.id}`) || 0
+                    }));
+            },
+            gapsOf,
+            noteLead(type, id) {
+                const k = `${type}:${id}`;
+                trail.set(k, (trail.get(k) || 0) + 1);
+            },
+            openRecord(type, id) {
+                location.href = `/home#${type === "event" ? "event" : "maze"}-${encodeURIComponent(id)}`;
+            },
+            onChange(fn) { if (typeof fn === "function") listeners.push(fn); }
+        };
     }
 
     // init is async now (it may have to ask the server who you are), so its

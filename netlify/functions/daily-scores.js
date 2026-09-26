@@ -4,6 +4,12 @@
                                     all-time tables
    POST {game, day, moves}          records the signed-in player's finished
                                     day
+   POST {game, day, action: "start"}
+                                    starts the signed-in player's clock for
+                                    the day's speed bonus — see _speed.js
+   POST {game, day, action: "mark", round}
+                                    marks the end of one round, for the
+                                    same bonus — see _speed.js
 
    Guess the Maze has had a board since it was built (guess-scores.js); this
    is the same idea for the games beside it.
@@ -52,10 +58,16 @@ const { playerFrom } = require("./_player");
 const { today, dayIsOpen, shuffle, daySeed, isHallway, existedBefore, rangeBounds } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
+const speed = require("./_speed");
 
 const COLLECTION = "daily_scores";
 const BOARD_SIZE = 10;
-const POINTS_EACH = 100;
+/* Ten a right pick, so a perfect day is 50, as in Guess the Maze. It was
+   100 (a 500 day) until just before launch; the rows scored that way are
+   all test days from before launch day, which the launch cut hides from
+   every board (see launchDay below), so they were left as they are rather
+   than rescored. Must stay in step with POINTS_EACH in js/oddoneout.js. */
+const POINTS_EACH = 10;
 const ROUNDS = 5;              // five moves a day
 
 // Still a list, still checked against. See the note at the top of the file
@@ -159,6 +171,46 @@ function scoreOdd(rounds, moves) {
 
 /* ---------- the boards ---------- */
 
+/* THE BOARDS START ON LAUNCH DAY.
+
+   Everything played before the site opened — the owner's test runs, the
+   friends who were shown it early — is still in the collections, and every
+   span reached back over it: the all-time board opened with weeks of
+   rehearsal already on it, and a first-day player started behind people who
+   had been playing a game nobody else could see. Fallin' Furni's board has
+   cut at launch since it was built (sinceLaunch in ff-scores.js); these did
+   not.
+
+   The same setting, settings.launchAt, cut by DAY rather than by instant:
+   a daily row is filed against the day it was played, not the moment, so
+   the launch day counts whole. The UTC date of launchAt, because days are
+   UTC everywhere in the daily games. No launchAt, no cut — clearing it puts
+   the history back, as it does for Fallin' Furni.
+
+   Filtered on read, never deleted, for the same reason ff-scores.js gives:
+   nothing to undo. Exported so guess-scores.js and player-profile.js cut at
+   exactly the same place — three boards that disagreed about where the
+   season starts would be worse than none cutting at all. */
+async function launchDay(db) {
+    const doc = await db.collection("settings").findOne({ _id: "site" }, { projection: { launchAt: 1 } });
+    const ms = doc && doc.launchAt ? Date.parse(doc.launchAt) : NaN;
+    return isNaN(ms) ? null : new Date(ms).toISOString().slice(0, 10);
+}
+
+// A span's first day, moved up to launch day if it started before it.
+const fromLaunch = (from, launch) => (launch && from < launch ? launch : from);
+
+/* A real calendar day, not only the right shape. "2026-13-45" passes the
+   pattern, and rangeBounds turned it into an Invalid Date whose
+   toISOString() THREW — outside any try, so the caller got Netlify's bare
+   502. Round-tripped through Date: a day that does not exist comes back as
+   some other day, or as nothing. */
+function isRealDay(day) {
+    if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+    const d = new Date(day + "T00:00:00Z");
+    return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === day;
+}
+
 /* rangeBounds is shared from _daily.js now. This file's own copy made "This
    week" the last seven days rolling while Guess the Maze's was the calendar
    week from Monday — two spans under one label, and the combined board
@@ -168,7 +220,12 @@ function scoreOdd(rounds, moves) {
 
 /* Sorted before grouping so `$last` really is the newest name and avatar —
    see the matching note on board() in guess-scores.js — and tie-broken on
-   the player id so level rows keep one order between reads. */
+   the player id so level rows keep one order between reads.
+
+   Ranked on rounds right first and the total (base points plus speed
+   bonus) second, and `points` in the answer IS that total — the same rule
+   and the same shape as board() in guess-scores.js, where the reasoning is
+   written out (RIGHT ANSWERS FIRST). */
 async function board(col, game, from, to) {
     const rows = await col.aggregate([
         { $match: { game, day: { $gte: from, $lte: to } } },
@@ -177,16 +234,35 @@ async function board(col, game, from, to) {
             $group: {
                 _id: "$playerId",
                 points: { $sum: "$points" },
+                bonus: { $sum: "$bonus" },
                 solved: { $sum: "$solved" },
                 days: { $sum: 1 },
                 name: { $last: "$name" },
                 avatar: { $last: "$avatar" }
             }
         },
-        { $sort: { points: -1, days: 1, _id: 1 } },
+        { $addFields: { total: speed.TOTAL } },
+        { $sort: { solved: -1, total: -1, days: 1, _id: 1 } },
         { $limit: BOARD_SIZE }
     ]).toArray();
-    return rows.map(r => ({ id: r._id, name: r.name, avatar: r.avatar, points: r.points, solved: r.solved, days: r.days }));
+    return rows.map(r => ({
+        id: r._id, name: r.name, avatar: r.avatar,
+        points: r.total, base: r.points, bonus: r.bonus || 0,
+        solved: r.solved, days: r.days
+    }));
+}
+
+/* One day's own board, a row per player: rounds right first, then the
+   total, then the faster time (an untimed day after every timed one —
+   NO_TIME in _speed.js), then who submitted first, then the id. As
+   dayBoard in guess-scores.js. */
+async function dayBoard(col, match) {
+    return col.aggregate([
+        { $match: match },
+        { $addFields: { total: speed.TOTAL, msOrder: { $ifNull: ["$ms", speed.NO_TIME] } } },
+        { $sort: { solved: -1, total: -1, msOrder: 1, at: 1, playerId: 1 } },
+        { $limit: BOARD_SIZE }
+    ]).toArray();
 }
 
 /* ---------- the combined board ----------
@@ -206,7 +282,12 @@ const COMBINE_DEPTH = 200;
 
 /* Sorted before grouping so `$last` is the newest name, and carrying
    `lastAt` out of the group so fold() can tell which of a player's two rows
-   (one per collection) is the more recent — see there. */
+   (one per collection) is the more recent — see there.
+
+   The bonus is summed beside the points, and the rounds right beside both,
+   and the depth cut is taken in the same order fold() then ranks in —
+   rounds right, then the total — so the COMBINE_DEPTH players read from
+   each side are the top by the rule the board is drawn by. */
 async function playerTotals(col, match) {
     return col.aggregate([
         { $match: match },
@@ -215,13 +296,16 @@ async function playerTotals(col, match) {
             $group: {
                 _id: { player: "$playerId", game: "$game" },
                 points: { $sum: "$points" },
+                bonus: { $sum: "$bonus" },
+                solved: { $sum: "$solved" },
                 days: { $sum: 1 },
                 name: { $last: "$name" },
                 avatar: { $last: "$avatar" },
                 lastAt: { $max: "$at" }
             }
         },
-        { $sort: { points: -1, "_id.player": 1 } },
+        { $addFields: { total: speed.TOTAL } },
+        { $sort: { solved: -1, total: -1, "_id.player": 1 } },
         { $limit: COMBINE_DEPTH }
     ]).toArray();
 }
@@ -245,8 +329,12 @@ function fold(...lists) {
             const id = r._id && r._id.player !== undefined ? r._id.player : r._id;
             if (!id) continue;
             const seen = byPlayer.get(id) ||
-                { id, points: 0, days: 0, games: new Set(), name: "", avatar: "", at: "", avatarAt: "" };
-            seen.points += r.points || 0;
+                { id, points: 0, solved: 0, days: 0, games: new Set(), name: "", avatar: "", at: "", avatarAt: "" };
+            // Each game's total — base points and speed bonus — so the
+            // combined board adds up the same numbers the game boards show,
+            // and each game's rounds right, which rank before them.
+            seen.points += speed.totalOf(r);
+            seen.solved += r.solved || 0;
             seen.days += r.days || 0;
             // guess_scores rows carry no `game` field of their own — the
             // collection IS the game — so the caller labels them.
@@ -266,32 +354,40 @@ function fold(...lists) {
         }
     }
     return [...byPlayer.values()]
-        .map(r => ({ id: r.id, name: r.name, avatar: r.avatar, points: r.points, days: r.days, games: r.games.size }))
-        // Points first; then more games played, because doing all three is
-        // the thing this board exists to notice; then fewer days; then the
-        // id, only so that rows level on everything keep one order.
-        .sort((a, b) => b.points - a.points || b.games - a.games || a.days - b.days ||
+        .map(r => ({ id: r.id, name: r.name, avatar: r.avatar, points: r.points, solved: r.solved, days: r.days, games: r.games.size }))
+        // Rounds right across both games first, then points (see RIGHT
+        // ANSWERS FIRST in guess-scores.js); then more games played,
+        // because doing both is the thing this board exists to notice; then
+        // fewer days; then the id, only so that rows level on everything
+        // keep one order.
+        .sort((a, b) => b.solved - a.solved || b.points - a.points || b.games - a.games || a.days - b.days ||
             (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
         .slice(0, BOARD_SIZE);
 }
 
 async function combinedBoards(db, event, params) {
     const day = String(params.day || today()).slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json(400, { error: "Bad day" });
+    if (!isRealDay(day)) return json(400, { error: "Bad day" });
 
     const daily = db.collection(COLLECTION);
     const guess = db.collection("guess_scores");
-    const week = rangeBounds("week", day);
-    const month = rangeBounds("month", day);
-    const all = rangeBounds("all", day);
-
-    const span = (from, to) => ({ day: { $gte: from, $lte: to } });
 
     try {
+        // Inside the try with everything else that can fail — see isRealDay.
+        const week = rangeBounds("week", day);
+        const month = rangeBounds("month", day);
+        const all = rangeBounds("all", day);
+
+        // Every span starts no earlier than launch day — see launchDay.
+        const launch = await launchDay(db);
+        const span = (from, to) => ({ day: { $gte: fromLaunch(from, launch), $lte: to } });
+        // A day before launch has no board at all; asked by span, it is empty.
+        const oneDay = span(day, day);
+
         const [dToday, gToday, dWeek, gWeek, dMonth, gMonth, dAll, gAll] = await Promise.all([
             // daily_scores through liveGames — see there. guess_scores is
             // one game by construction and needs no filter.
-            playerTotals(daily, liveGames({ day })), playerTotals(guess, { day }),
+            playerTotals(daily, liveGames(oneDay)), playerTotals(guess, oneDay),
             playerTotals(daily, liveGames(span(week.from, week.to))), playerTotals(guess, span(week.from, week.to)),
             playerTotals(daily, liveGames(span(month.from, month.to))), playerTotals(guess, span(month.from, month.to)),
             playerTotals(daily, liveGames(span(all.from, all.to))), playerTotals(guess, span(all.from, all.to))
@@ -364,11 +460,7 @@ exports.handler = async (event) => {
 
         if (!GAMES.includes(game)) return json(400, { error: "Unknown game" });
         const day = String(params.day || today()).slice(0, 10);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json(400, { error: "Bad day" });
-
-        const week = rangeBounds("week", day);
-        const month = rangeBounds("month", day);
-        const all = rangeBounds("all", day);
+        if (!isRealDay(day)) return json(400, { error: "Bad day" });
 
         // All four spans in one request: they are small, they are read
         // together, and a results panel whose tabs each cost a round trip
@@ -377,14 +469,22 @@ exports.handler = async (event) => {
         // Inside a try, as guess-scores.js has it: a failed query here was
         // an unhandled rejection, which Netlify answers with its own bare
         // 502 page rather than JSON the results panel knows how to read.
+        // rangeBounds too, which can throw on a day it cannot read.
+        let week, month, all;
         let todayRows, weekRows, monthRows, allRows;
         try {
+            week = rangeBounds("week", day);
+            month = rangeBounds("month", day);
+            all = rangeBounds("all", day);
+            // Every span from launch day on — see launchDay. A day before it
+            // has no board at all.
+            const launch = await launchDay(db);
+            const before = Boolean(launch) && day < launch;
             [todayRows, weekRows, monthRows, allRows] = await Promise.all([
-                col.find({ game, day }, { projection: { _id: 0, playerId: 1, name: 1, avatar: 1, points: 1, solved: 1, grid: 1 } })
-                    .sort({ points: -1, at: 1, playerId: 1 }).limit(BOARD_SIZE).toArray(),
-                board(col, game, week.from, week.to),
-                board(col, game, month.from, month.to),
-                board(col, game, all.from, all.to)
+                before ? [] : dayBoard(col, { game, day }),
+                board(col, game, fromLaunch(week.from, launch), week.to),
+                board(col, game, fromLaunch(month.from, launch), month.to),
+                board(col, game, fromLaunch(all.from, launch), all.to)
             ]);
         } catch (e) {
             console.error("daily-scores: board read failed", e);
@@ -398,9 +498,13 @@ exports.handler = async (event) => {
             date: day,
             weekFrom: week.from,
             monthFrom: month.from,
+            /* `points` is the total, as on every board; `ms` the time taken,
+               null when the day was never timed. */
             day: todayRows.map(r => ({
                 id: r.playerId, name: r.name, avatar: r.avatar,
-                points: r.points, solved: r.solved,
+                points: speed.totalOf(r), base: r.points || 0, bonus: r.bonus || 0,
+                ms: Number.isFinite(r.ms) ? r.ms : null,
+                solved: r.solved,
                 grid: Array.isArray(r.grid) ? r.grid : null
             })),
             week: weekRows,
@@ -410,6 +514,9 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
+        // Before anything slow: the time taken is the player's, not the
+        // time this function spends re-dealing the day.
+        const arrived = Date.now();
         const player = playerFrom(event);
         // Signed out is not an error: the game posts unconditionally and
         // there is simply no name to put on a row.
@@ -427,7 +534,49 @@ exports.handler = async (event) => {
         // has not happened cannot have been played.
         if (!dayIsOpen(day)) return json(400, { error: "That day is not open" });
 
-        const moves = Array.isArray(body.moves) ? body.moves.slice(0, ROUNDS) : null;
+        /* ---------- the day's clock starting ----------
+
+           Sent by the game (Daily.start in js/daily.js) when a signed-in
+           player first goes into a round. Recorded once and never moved —
+           see _speed.js. Every call after the first writes nothing, so the
+           most any number of them can store is one row per player per game
+           per open day, which is why this has no rate limit of its own. */
+        if (body.action === "start") {
+            if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
+            try {
+                await speed.recordStart(db, ensureUniqueIndex, game, day, player.id);
+            } catch (e) {
+                console.error("daily-scores: could not record a start", e);
+                return json(503, { started: false });
+            }
+            return json(200, { started: true });
+        }
+
+        /* ---------- a round ending ----------
+
+           Sent by the game (Daily.mark in js/daily.js) the moment a pick is
+           made. Written once, never moved, and only in order — see
+           recordMark in _speed.js. Checked against ROUNDS rather than the
+           day as dealt, so no archive read is needed here: a thin day's
+           mark for a round it never had has no pick to be right, and is
+           never read. */
+        if (body.action === "mark") {
+            if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
+            const round = speed.markRound(body.round, ROUNDS);
+            if (round == null) return json(400, { error: "Bad round" });
+            let outcome;
+            try {
+                outcome = await speed.recordMark(db, game, day, player.id, round);
+            } catch (e) {
+                console.error("daily-scores: could not record a mark", e);
+                return json(503, { marked: false });
+            }
+            if (outcome === "marked") return json(200, { marked: true });
+            if (outcome === "already") return json(200, { marked: false, reason: "already" });
+            return json(409, { marked: false, reason: outcome });
+        }
+
+        const moves =Array.isArray(body.moves) ? body.moves.slice(0, ROUNDS) : null;
         if (!moves || !moves.length) return json(400, { error: "Bad moves" });
 
         /* One game in the switch, and the switch kept: `game` has already
@@ -443,15 +592,40 @@ exports.handler = async (event) => {
         }
         if (!scored) return json(400, { error: "Bad moves" });
 
+        /* The speed bonus, from the start and the round marks on file — see
+           _speed.js. Only the picks scored right just above earn any, and
+           only for rounds the day was really dealt (the grid's length). None
+           on file, or none readable just now, is no bonus rather than a day
+           that fails to record. */
+        let clock = null;
+        try {
+            clock = await speed.clockFor(db, game, day, player.id);
+        } catch (e) {
+            console.error("daily-scores: could not read the day's clock", e);
+        }
+        const { bonus, ms, roundSecs } = speed.dayBonus(clock, scored.grid.map(g => g > 0), arrived);
+
         try {
             await col.insertOne({
                 game, day,
                 playerId: player.id,
                 name: player.name,
                 avatar: player.avatar,
+                // Still the base score; the boards add `bonus` to it. `ms`
+                // (the whole day) and `roundSecs` (each round) only when
+                // there was a clock to read.
                 points: scored.points,
+                bonus,
+                ...(ms == null ? {} : { ms, roundSecs }),
                 solved: scored.solved,
                 grid: scored.grid,
+                /* How many rounds this day actually had. Usually five, but a
+                   day dealt from a thin pool has fewer, and a player may send
+                   fewer moves than there were rounds — so the Profile's
+                   "rounds played" counted five a day and overstated both.
+                   Rows written before this have no field; player-profile.js
+                   reads those as five, which is what they almost all were. */
+                rounds: scored.grid.length,
                 at: new Date().toISOString()
             });
         } catch (e) {
@@ -466,3 +640,8 @@ exports.handler = async (event) => {
 
     return json(405, { error: "Method not allowed" });
 };
+
+// For guess-scores.js and player-profile.js — see launchDay and isRealDay.
+module.exports.launchDay = launchDay;
+module.exports.fromLaunch = fromLaunch;
+module.exports.isRealDay = isRealDay;

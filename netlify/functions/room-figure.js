@@ -46,6 +46,33 @@ const RATE_MAX = 12;                        // lookups per address per minute
 
 const cache = new Map();                    // lowercased name -> { at, value }
 const hits = new Map();                     // address -> timestamps
+const CACHE_MAX = 1000;                     // names remembered per warm instance
+
+/* Into the cache, keeping it bounded.
+
+   Every distinct name anybody typed used to stay in here for the life of
+   the instance — misses included, and a miss is free to invent: a script
+   walking "a1", "a2", "a3"… grew the map without limit on a container that
+   can stay warm for hours. So past CACHE_MAX, expired entries go first, and
+   if that is not enough the oldest go, in the order they were written
+   (a Map iterates in insertion order, which is why a re-set deletes first:
+   a refreshed name moves to the back rather than keeping its old place).
+
+   Losing an expired entry costs one thing — the stale figure served when
+   Habbo is down — and only for a name nobody has asked about in an hour. */
+function remember(key, entry) {
+    cache.delete(key);
+    cache.set(key, entry);
+    if (cache.size <= CACHE_MAX) return;
+    const now = Date.now();
+    for (const [k, v] of cache) {
+        if (now - v.at >= (v.value ? CACHE_TTL_MS : MISS_TTL_MS)) cache.delete(k);
+    }
+    for (const k of cache.keys()) {
+        if (cache.size <= CACHE_MAX) break;
+        cache.delete(k);
+    }
+}
 
 /* The browser may cache a figure for a few minutes; nothing here is
    per-visitor, so a shared cache is welcome to it too. That goes for a 200
@@ -124,7 +151,7 @@ exports.handler = async (event) => {
     try {
         const user = await fetchUser(hotel, name);
         if (!user || !user.figureString) {
-            cache.set(key, { at: Date.now(), value: null });
+            remember(key, { at: Date.now(), value: null });
             return json(404, { error: "No Origins habbo by that name." });
         }
         // Only what the room needs to draw somebody.
@@ -133,7 +160,7 @@ exports.handler = async (event) => {
             figureString: user.figureString,
             motto: user.motto || ""
         };
-        cache.set(key, { at: Date.now(), value });
+        remember(key, { at: Date.now(), value });
         return json(200, value);
     } catch (err) {
         // A stale answer beats no answer when Habbo is the thing that is down.

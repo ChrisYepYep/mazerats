@@ -33,8 +33,8 @@
 
    THE WINDOW IS THE RIGHT SIZE BEFORE THE GAME ARRIVES. It is, and not by
    luck: both windows are already in home.html's markup, and both size
-   themselves from CSS rather than from content — .daily-sheet stands at
-   clamp(430px, 66vh, 560px) and .guess-deck has a fixed height of its own.
+   themselves from CSS rather than from content — both are a .guess-deck,
+   which stands at a fixed height of its own (.odd-deck names a taller one).
    So the overlay opens at exactly the size it will be, empty, and the game
    fills it in. Nothing resizes under the pointer.
 
@@ -83,7 +83,7 @@
             win: "odd-window",
             close: "odd-close",
             path: "/odd",
-            body: "odd-body"
+            body: "odd-deck"
         }
     };
 

@@ -28,6 +28,8 @@ const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { today } = require("./_daily");
+const { launchDay } = require("./daily-scores");
+const { totalOf } = require("./_speed");
 
 const COLLECTION = "player_state";
 const SCORES = "guess_scores";
@@ -116,13 +118,25 @@ function yesterdayOf(iso) {
     return d.toISOString().slice(0, 10);
 }
 
+// May a saved game be for this day? Today or yesterday, UTC — see the PUT.
+function guessDayOpen(day) {
+    const now = today();
+    return day === now || day === yesterdayOf(now);
+}
+
 /* Everything the results panel wants to say about a player, counted from
    the rows that were actually recorded. The streak walks backwards from the
    most recent day rather than being kept as a number, so it cannot drift
    out of step with the days it is meant to describe. */
 async function statsFor(db, playerId) {
+    /* From launch day on, as the boards and the Profile count (see launchDay
+       in daily-scores.js). Without it a player who tested before launch saw
+       their test days in this panel while the Profile said they had played
+       one day. No launch date set means nothing is cut. */
+    const launch = await launchDay(db);
+    const query = launch ? { playerId, day: { $gte: launch } } : { playerId };
     const rows = await db.collection(SCORES)
-        .find({ playerId }, { projection: { _id: 0, day: 1, points: 1, solved: 1 } })
+        .find(query, { projection: { _id: 0, day: 1, points: 1, bonus: 1, solved: 1 } })
         .sort({ day: 1 })
         .toArray();
 
@@ -130,11 +144,15 @@ async function statsFor(db, playerId) {
         return { days: 0, points: 0, solved: 0, rounds: 0, bestDay: 0, streak: 0, best: 0, lastDay: "" };
     }
 
+    /* Points and best day are TOTALS — base points plus the speed bonus
+       (see _speed.js) — so the all-time figure here is the one the boards
+       and the Profile show for the same days. An older row has no bonus
+       and adds none. */
     let points = 0, solved = 0, bestDay = 0;
     rows.forEach(r => {
-        points += r.points || 0;
+        points += totalOf(r);
         solved += r.solved || 0;
-        bestDay = Math.max(bestDay, r.points || 0);
+        bestDay = Math.max(bestDay, totalOf(r));
     });
 
     const days = rows.map(r => r.day);
@@ -228,7 +246,19 @@ exports.handler = async (event) => {
             // rolled over, there is nothing in progress".
             const g = body.guess === null ? null : cleanGuess(body.guess);
             if (body.guess !== null && g === null) return json(400, { error: "Bad game state" });
-            set.guess = g;
+            /* Only today's game, or yesterday's. Any other day was accepted,
+               and a later day always wins the merge below — so a game filed
+               against 2099-01-01 sat there for good, and every real day's
+               save after it was dropped as stale. The page only ever saves
+               the day it dealt (js/guess.js keeps state.day), which is today
+               or, for a sitting that crossed midnight, yesterday.
+
+               Out of range is IGNORED rather than refused. This field shares
+               a coalesced PUT with the walked and saved lists (js/account.js),
+               and a 400 would throw away the ticks sent alongside it; a
+               device whose clock has run a day ahead loses only a copy of a
+               game it still has in localStorage. */
+            if (g === null || guessDayOpen(g.day)) set.guess = g;
         }
 
         try {
@@ -275,7 +305,11 @@ exports.handler = async (event) => {
                same day and further along (progressOf); a null only clears a
                game from a day before today. The response carries the stored
                copy back, so the stale device catches up. */
-            if ("guess" in set && current.guess) {
+            /* Unless the stored copy is from a day that has not happened —
+               one written before the day was checked (see the PUT above).
+               It is no game at all, and letting it win would block every
+               real save for as long as the clock takes to catch up. */
+            if ("guess" in set && current.guess && !(String(current.guess.day) > today())) {
                 const held = current.guess;
                 const incoming = set.guess;
                 const stale = incoming === null

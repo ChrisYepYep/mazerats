@@ -136,7 +136,8 @@ exports.handler = async (event) => {
             fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
             theme: (doc && doc.theme) || DEFAULT_THEME,
             palette: (doc && doc.palette) || null,
-            launchAt: (doc && doc.launchAt) || ""
+            launchAt: (doc && doc.launchAt) || "",
+            ffLaunchAt: (doc && doc.ffLaunchAt) || ""
         }, { cdn: GATE_CDN_CACHE });
     }
 
@@ -194,6 +195,19 @@ exports.handler = async (event) => {
                 return json(400, { error: "launchAt must be a date, or empty to clear it" });
             }
             update.launchAt = when;
+        }
+        /* FALLIN' FURNI'S OWN LAUNCH, separate from the site's because the
+           game opens later than the site does. It does not open the game —
+           fallinFurniState still does that, by hand — it only says when the
+           game's leaderboards start counting and when Launch Week begins
+           (see readGate in ff-scores.js). Same shape and same rules as
+           launchAt: an ISO instant, or "" for "no date yet". */
+        if (body.ffLaunchAt !== undefined) {
+            const when = cleanLaunchAt(body.ffLaunchAt);
+            if (when === null) {
+                return json(400, { error: "ffLaunchAt must be a date, or empty to clear it" });
+            }
+            update.ffLaunchAt = when;
         }
         if (body.lobbyFurni !== undefined) {
             if (!Array.isArray(body.lobbyFurni)) {

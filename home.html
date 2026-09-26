@@ -163,7 +163,9 @@
                 pill.textContent = "Dev Mode";
                 var adminLink = document.createElement("a");
                 adminLink.className = "header-badge header-state-pill header-state-link";
-                adminLink.href = "warren.html";
+                // The panel's clean address (netlify.toml rewrites it to
+                // warren.html), as every other link on the site is written.
+                adminLink.href = "/warren";
                 adminLink.textContent = "Admin";
                 brandGroup.appendChild(pill);
                 brandGroup.appendChild(adminLink);
@@ -851,10 +853,10 @@
                 <div class="console-screen-shadow" aria-hidden="true"></div>
             </div>
             <div class="console-buttons" id="console-buttons">
+                <button type="button" class="console-tab-btn" id="profile-btn" data-page="profile" aria-label="Profile"><span class="console-tab-label">PROFILE</span></button>
                 <button type="button" class="console-tab-btn" id="contact-btn" data-page="contact" aria-label="Contact Us"><span class="console-tab-label">CONTACT</span></button>
                 <button type="button" class="console-tab-btn" id="people-btn" data-page="people" aria-label="Source: contributors"><span class="console-tab-label">SOURCE</span></button>
                 <button type="button" class="console-tab-btn" id="privacy-btn" data-page="privacy" aria-label="Privacy Policy"><span class="console-tab-label">PRIVACY</span></button>
-                <button type="button" class="console-tab-btn" id="profile-btn" data-page="profile" aria-label="Profile"><span class="console-tab-label">PROFILE</span></button>
             </div>
         </div>
     </div>
@@ -947,10 +949,20 @@
     <!-- ---------- Odd One Out ----------
 
          Four rooms, three of them the same maze. Built by js/oddoneout.js,
-         which owns the board, the results and everything between, which is
-         why the body is empty here: the board, the results and the splash
-         are the same box at different moments, and markup for all three
-         would be markup for two of them being hidden at any time.
+         in the same deck of sheets Guess the Maze uses above: the splash,
+         one sheet per round, and the results, with whatever has not been
+         reached yet waiting along the bottom edge on its own labelled tab.
+         The two games sit side by side in one menu, and a day that reads as
+         a stack of pages in one of them and as a box that keeps rewriting
+         itself in the other made them look like they came from two sites.
+
+         The classes are Guess the Maze's, not copies of them, so the deck
+         behaves identically — including on a phone, where the narrow-layout
+         rules for .guess-deck and .guess-sheet-tab put the tabs away. Only
+         the sheets' contents are empty here: the round sheets are cloned
+         from the template below by js/oddoneout.js, as many as the day
+         deals (usually five, sometimes fewer), and every sheet is filled in
+         by that file.
 
          A third window stood above this one until Ratrospect was dropped.
          Nothing of it is left — see js/daily-loader.js for the roster as it
@@ -961,9 +973,38 @@
                 <h2 id="odd-title">Odd One Out</h2>
                 <button class="chrome-close" id="odd-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
             </div>
-            <div class="chrome-frame daily-frame"><div class="daily-sheet daily-body odd-body" id="odd-body"></div></div>
+            <div class="chrome-frame daily-frame">
+                <div class="guess-deck odd-deck" id="odd-deck">
+                    <!-- The rules, and where a day that could not be dealt
+                         says so. Never tucked, so it carries no tab. -->
+                    <section class="guess-sheet guess-sheet--intro" data-kind="intro" aria-label="How to play">
+                        <div class="guess-sheet-inner"></div>
+                    </section>
+
+                    <!-- The round sheets go here, one per round dealt. -->
+
+                    <!-- Hidden until there is a day to have results for: a
+                         "Results" tab under "the archive is not answering"
+                         would be a promise about nothing. -->
+                    <section class="guess-sheet guess-sheet--results" data-kind="results" aria-label="Today's results" hidden>
+                        <div class="guess-sheet-tab" aria-hidden="true"><span class="guess-sheet-tab-label">Results</span></div>
+                        <div class="guess-sheet-inner"></div>
+                    </section>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- One round of Odd One Out, cloned per round dealt (see buildRounds in
+         js/oddoneout.js). The tab is the same not-a-button edge of a page
+         as Guess the Maze's; the four pictures are written into the inner
+         box when the round comes up. -->
+    <template id="odd-round-template">
+        <section class="guess-sheet guess-sheet--round" data-kind="round">
+            <div class="guess-sheet-tab" aria-hidden="true"><span class="guess-sheet-tab-label"></span></div>
+            <div class="guess-sheet-inner"></div>
+        </section>
+    </template>
 
     <!-- One room, cloned five times (see js/guess.js's buildDeck). Ids would
          have to be made unique per clone and then looked up by number, so
@@ -1053,6 +1094,37 @@
         </div>
     </div>
 
+    <!-- Guides: how furni mazes work, read in a window over the archive.
+         The list of guides and the reader both draw into #guides-body; see
+         js/guides.js. /guides and /guides?g=<id> open it (netlify.toml). -->
+    <div class="modal-overlay progress-overlay guides-overlay" id="guides-overlay">
+        <div class="modal progress-window guides-window" id="guides-window" role="dialog" aria-modal="true" aria-labelledby="guides-title" tabindex="-1">
+            <div class="chrome-titlebar">
+                <h2 id="guides-title">Guides</h2>
+                <button class="chrome-close" id="guides-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+            </div>
+            <div class="chrome-frame">
+                <div class="guides-body" id="guides-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alt Codes: every character Volter Goldfish draws, with the Alt code
+         that types it, click to copy. Once a page of its own (glyphs.html);
+         js/glyphs.js draws the sheet into #glyphs-body the first time it
+         opens. /glyphs opens it (netlify.toml). -->
+    <div class="modal-overlay progress-overlay glyphs-overlay" id="glyphs-overlay">
+        <div class="modal progress-window glyphs-window" id="glyphs-window" role="dialog" aria-modal="true" aria-labelledby="glyphs-title" tabindex="-1">
+            <div class="chrome-titlebar">
+                <h2 id="glyphs-title">Alt Codes</h2>
+                <button class="chrome-close" id="glyphs-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+            </div>
+            <div class="chrome-frame">
+                <div class="glyphs-body" id="glyphs-body"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- Room detail modal -->
     <div class="modal-overlay" id="room-modal">
         <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-name" tabindex="-1">
@@ -1085,8 +1157,8 @@
                  admin has marked as a Dead End. The same drawer, so it slides
                  and hides at the same widths; its card lists what is missing
                  and holds "I can help". Filled by renderModalDeadEnd in
-                 js/home.js. Below 1000px a pill in the meta row does this
-                 job instead. -->
+                 js/home.js. Below 1000px a "Missing" strip in the meta row
+                 does this job instead. -->
             <div class="modal-actions-drawer modal-incomplete-drawer" id="modal-incomplete-drawer" hidden>
                 <div class="modal-actions-panel modal-incomplete-panel" id="modal-incomplete-panel"></div>
                 <button type="button" class="side-spine modal-actions-spine modal-incomplete-spine" id="modal-incomplete-spine"
@@ -1251,6 +1323,13 @@
          console.js, whose page switching it uses (window.MazeConsole). -->
     <script src="js/console-info.js?v=2"></script>
     <script src="js/console-profile.js?v=2"></script>
+    <!-- The Guides window. guide-text.js first: guides.js renders with it. -->
+    <script src="js/guide-text.js?v=2"></script>
+    <script src="js/guides.js?v=2"></script>
+    <!-- The Alt Codes window. Needs nothing but site.js's EscapeLayers. -->
+    <script src="js/glyphs.js?v=2"></script>
+    <!-- The seats that fall when Fallin' Furni is pressed while Coming Soon. -->
+    <script src="js/furni-rain.js?v=2"></script>
     <!-- After site.js, which is where imgCdn and compareNames live. -->
     <!-- The two daily games, and the day rules they share. daily.js
          first: both games read it as they set themselves up. -->

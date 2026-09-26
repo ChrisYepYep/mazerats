@@ -55,6 +55,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // including the very showPage("privacy") call that hash triggers.
         if (name !== "privacy") clearPrivacyHash();
         Object.entries(pages).forEach(([key, el]) => {
+            // A page missing from this page's HTML is skipped rather than
+            // thrown on, which would stop every tab from switching at all.
+            if (!el) return;
             // The thanks page uses a flex column (see .console-page-thanks)
             // so its OK button can be pinned to the bottom — an inline
             // style here would otherwise beat that rule outright regardless
@@ -68,7 +71,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // page was showing before, and the browser clamps that straight to
         // the new page's own max scroll, landing it scrolled to the bottom
         // instead of a fresh page starting at the top.
-        screenScroll.scrollTop = 0;
+        if (screenScroll) screenScroll.scrollTop = 0;
         // For the pages other files build, which want to fill themselves
         // each time they are shown rather than once at load.
         document.dispatchEvent(new CustomEvent("console:page", { detail: { name } }));
@@ -164,20 +167,19 @@ document.addEventListener("DOMContentLoaded", () => {
             opener = active && active !== document.body && !modal.contains(active) ? active : null;
         }
         modal.style.display = "block";
-        // Lands on Contact by default — otherwise the tab buttons' own
+        // Lands on Profile by default, the first tab — otherwise the tab buttons' own
         // .active state (only ever changed by clicking one) could disagree
         // with which page is actually showing after a close/reopen that
         // happened to follow a click on a different tab. openPrivacyFromHash
         // below passes "privacy" instead, landing there directly rather
-        // than flashing through Contact first (which would also clear the
+        // than flashing through Profile first (which would also clear the
         // #privacy hash immediately via showPage's own cleanup, before the
         // privacy page ever actually showed).
-        showPage(defaultPage || "contact");
+        showPage(defaultPage || "profile");
         if (!hasBeenDragged) positionConsoleDefault();
-        if (!dataLoaded) {
-            dataLoaded = true;
-            loadContributors();
-        }
+        // loadContributors sets dataLoaded itself, and only on a list that
+        // actually arrived — so a failed read is asked again on the next open.
+        if (!dataLoaded) loadContributors();
     }
 
     // Something the opener can no longer take: gone from the page, hidden,
@@ -320,6 +322,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const sendBtn = document.getElementById("console-contact-send");
     const statusEl = document.getElementById("console-contact-status");
     const thanksOkBtn = document.getElementById("console-thanks-ok");
+    // The message page's form, whole. A page without it (or with half of
+    // it) skips wiring the form rather than throwing here — which would
+    // stop this handler before MazeConsole below is ever assigned, and take
+    // the Add Maze Info and Missing Pieces pages down with it.
+    const contactFormReady = !!(messageInput && usernameInput && discordInput && hpInput
+        && cancelBtn && sendBtn && statusEl);
 
     function showStatus(text, isError) {
         statusEl.textContent = text;
@@ -362,7 +370,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Back to the choice screen, and empties the form on the way — coming
     // back to a half-written message you had already abandoned is worse
     // than starting again.
-    cancelBtn.addEventListener("click", () => {
+    if (contactFormReady) cancelBtn.addEventListener("click", () => {
         messageInput.value = "";
         usernameInput.value = "";
         discordInput.value = "";
@@ -384,7 +392,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // CONTACT_NOTIFY_EMAIL configured, forwarded on as an email — that
     // recipient address lives only in Netlify's own environment variables,
     // never in this file or anywhere else client-side.
-    sendBtn.addEventListener("click", async () => {
+    if (contactFormReady) sendBtn.addEventListener("click", async () => {
         const message = messageInput.value.trim();
         if (!message) {
             messageInput.focus();
@@ -409,7 +417,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const thanksMessageEl = document.getElementById("console-thanks-message");
     const THANKS_DEFAULT = thanksMessageEl ? thanksMessageEl.textContent : "";
-    thanksOkBtn.addEventListener("click", () => showPage("contact"));
+    if (thanksOkBtn) thanksOkBtn.addEventListener("click", () => showPage("contact"));
 
     /* The console, for the rest of the page. js/console-info.js fills the
        Add Maze Info and Missing Pieces pages and assigns openInfo and
@@ -502,8 +510,33 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
     }
 
+    /* A failed read is not an empty list. Api.getContributors falls back to
+       [] and records "contributor data" in Api._degraded, and this used to
+       take that [] at its word: "No contributors listed yet." for the rest
+       of the visit, with dataLoaded already set so nothing ever asked
+       again. Now a failure says so, in the Missing Pieces page's words
+       (js/console-info.js), with a Retry — and dataLoaded stays unset, so
+       reopening the console asks again too. */
+    let contributorsAsking = false;
+
     async function loadContributors() {
-        const contributors = await Api.getContributors();
+        if (!contributorsListEl || contributorsAsking) return;
+        contributorsAsking = true;
+        let contributors;
+        try {
+            contributors = await Api.getContributors();
+        } finally {
+            contributorsAsking = false;
+        }
+        const failed = !Array.isArray(contributors)
+            || (Api._degraded && Api._degraded.has("contributor data"));
+        if (failed) {
+            contributorsListEl.innerHTML = `
+                <p class="console-blurb">The list couldn't be reached just now.</p>
+                <button type="button" class="console-btn" data-contributors-retry>Retry</button>`;
+            return;
+        }
+        dataLoaded = true;
         if (!contributors.length) {
             contributorsListEl.innerHTML = '<p class="console-empty-page" style="height:auto;padding:14px 0;">No contributors listed yet.</p>';
             return;
@@ -518,6 +551,14 @@ document.addEventListener("DOMContentLoaded", () => {
         contributorsListEl.innerHTML = sorted
             .map(contributorHtml)
             .join('<div class="console-dotline"></div>');
+    }
+
+    if (contributorsListEl) {
+        contributorsListEl.addEventListener("click", e => {
+            if (!e.target.closest("[data-contributors-retry]")) return;
+            contributorsListEl.innerHTML = '<p class="console-blurb">Loading...</p>';
+            loadContributors();
+        });
     }
 
 // ---------- privacy page ----------

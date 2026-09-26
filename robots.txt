@@ -10,8 +10,9 @@ Allow: /
 # The Volter Goldfish picture-glyph sheet, offered in the archive's side
 # menu as "Alt Codes". Linked, and deliberately not indexed: it is a tool
 # for somebody part-way through naming a room, and it would be a baffling
-# thing to land on from a search. Both addresses, since it answers to the
-# clean one now as well (see netlify.toml).
+# thing to land on from a search. It is a window on the homepage now, and
+# /glyphs is the homepage with it open; /glyphs.html only redirects there
+# (see netlify.toml), and is listed for the links that still point at it.
 Disallow: /glyphs
 Disallow: /glyphs.html
 

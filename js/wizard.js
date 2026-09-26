@@ -327,7 +327,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function roomIdFromPath() {
         const m = /^\/wizard\/(.+?)\/?$/.exec(location.pathname);
         if (!m) return null;
-        const raw = decodeURIComponent(m[1]);
+        // A malformed escape (/wizard/%E0) throws a URIError, which used to
+        // escape from here and leave the map never drawn. An address that
+        // does not decode names no room.
+        let raw;
+        try { raw = decodeURIComponent(m[1]); } catch (e) { return null; }
         // Slug first, then the raw id — so /wizard/library and /wizard/r039
         // both open the Library, and neither form can be broken by renaming
         // the other.

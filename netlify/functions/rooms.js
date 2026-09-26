@@ -3,7 +3,7 @@
    require the x-admin-token header to carry a valid session token from
    logging in on the admin page (see auth.js and _auth.js). */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { isAuthorized, hasAccount, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { packRecords } = require("./_furni-payload");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
@@ -90,7 +90,11 @@ exports.handler = async (event) => {
         // the edge. js/api.js unpacks it.
         const params = event.queryStringParameters || {};
         if (params.full === "1") {
-            if (!isAuthorized(event)) return UNAUTHORIZED;
+            // hasAccount, not isAuthorized: a signed token for an account
+            // that has since been deleted, or whose password has been reset,
+            // is not a reviewer any more. One indexed lookup, on an admin-only
+            // route the public payload below never takes.
+            if (!(await hasAccount(event))) return UNAUTHORIZED;
             return cachedJson(event, all, { cache: false });
         }
         return cachedJson(event, await packRecords(all));
@@ -110,6 +114,13 @@ exports.handler = async (event) => {
     try {
         body = JSON.parse(event.body || "{}");
     } catch (e) {
+        return json(400, { error: "Invalid request body" });
+    }
+    /* A body that parses is not yet an object. `null`, a number or an array
+       are all valid JSON, and the trim just below reads fields off whatever
+       arrived — so `null` was an unhandled throw rather than a refusal. Same
+       check events.js makes. */
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
         return json(400, { error: "Invalid request body" });
     }
 
@@ -138,7 +149,9 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
-        if (!body.name) return json(400, { error: "A room needs at least a name" });
+        // A string, because slugify below calls string methods on it: a
+        // name sent as a number or an object was a 500, not a refusal.
+        if (!body.name || typeof body.name !== "string") return json(400, { error: "A room needs at least a name" });
 
         await ensureUniqueIndex(rooms, "id");
 
@@ -186,7 +199,10 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "PUT") {
-        if (!body.id) return json(400, { error: "Missing room id" });
+        /* A string, not merely truthy. An object here goes into the filter
+           below as a query — {"id":{"$ne":""}} would match whichever room
+           Mongo found first and overwrite it. */
+        if (!body.id || typeof body.id !== "string") return json(400, { error: "Missing room id" });
         // createdAt is written once, on insert, and never by an edit — see
         // the POST above for what reads it.
         const { _id, createdAt: _ignored, ...update } = body;

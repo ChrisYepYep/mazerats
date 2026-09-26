@@ -85,8 +85,9 @@
 
    The same Volter file a fourth time, restricted by unicode-range to the
    24 codepoints where the font draws a picture instead of the character
-   Unicode assigns to that slot. glyphs.html is the reference sheet and
-   marks them `is-pic`; this list is taken from it.
+   Unicode assigns to that slot. The Alt Codes window (js/glyphs.js, at
+   /glyphs) is the reference sheet and lists them as its "Picture glyphs";
+   this list is taken from it.
 
    THE PROBLEM THIS SOLVES. Habbo room names are typed with Alt codes, so
    several mazes in the archive carry these characters — "ª Funky Maze ª",
@@ -1694,16 +1695,23 @@ body[data-page="home"] .hero { padding-top: 18px; }
     transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
 }
 
-/* The box that gets ticked. Drawn here rather than shipped as a sprite:
-   it is a 9px square and an ✓, and the archive already pays for enough
-   image requests. */
+/* The box that gets ticked, as a 9x9 pixel mask painted in the button's
+   own colour: an empty box, then a filled box with a two-pixel tick cut out
+   of it, so the button's face shows through as the tick. It used to be a
+   bordered square with a rotated half-border for the tick, which came out
+   thin and blurred at this size. Inline SVG, so it costs no request. */
 .walked-toggle-tick {
     display: inline-block;
+    flex: 0 0 auto;
     width: 9px;
     height: 9px;
-    border: 1px solid currentColor;
-    border-radius: 1px;
-    position: relative;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h9v1h-9zM0 1h1v1h-1zM8 1h1v1h-1zM0 2h1v1h-1zM8 2h1v1h-1zM0 3h1v1h-1zM8 3h1v1h-1zM0 4h1v1h-1zM8 4h1v1h-1zM0 5h1v1h-1zM8 5h1v1h-1zM0 6h1v1h-1zM8 6h1v1h-1zM0 7h1v1h-1zM8 7h1v1h-1zM0 8h9v1h-9z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h9v1h-9zM0 1h1v1h-1zM8 1h1v1h-1zM0 2h1v1h-1zM8 2h1v1h-1zM0 3h1v1h-1zM8 3h1v1h-1zM0 4h1v1h-1zM8 4h1v1h-1zM0 5h1v1h-1zM8 5h1v1h-1zM0 6h1v1h-1zM8 6h1v1h-1zM0 7h1v1h-1zM8 7h1v1h-1zM0 8h9v1h-9z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+.walked-toggle.is-walked .walked-toggle-tick {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h9v1h-9zM0 1h9v1h-9zM0 2h6v1h-6zM8 2h1v1h-1zM0 3h5v1h-5zM7 3h2v1h-2zM0 4h1v1h-1zM2 4h2v1h-2zM6 4h3v1h-3zM0 5h1v1h-1zM5 5h4v1h-4zM0 6h2v1h-2zM4 6h5v1h-5zM0 7h9v1h-9zM0 8h9v1h-9z'/%3E%3C/svg%3E");
+            mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 9' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h9v1h-9zM0 1h9v1h-9zM0 2h6v1h-6zM8 2h1v1h-1zM0 3h5v1h-5zM7 3h2v1h-2zM0 4h1v1h-1zM2 4h2v1h-2zM6 4h3v1h-3zM0 5h1v1h-1zM5 5h4v1h-4zM0 6h2v1h-2zM4 6h5v1h-5zM0 7h9v1h-9zM0 8h9v1h-9z'/%3E%3C/svg%3E");
 }
 
 .walked-toggle.is-walked {
@@ -1712,17 +1720,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
     background: rgba(111, 143, 79, 0.14);
 }
 
-.walked-toggle.is-walked .walked-toggle-tick::after {
-    content: "";
-    position: absolute;
-    left: 2px;
-    top: 0;
-    width: 3px;
-    height: 6px;
-    border: solid currentColor;
-    border-width: 0 1.5px 1.5px 0;
-    transform: rotate(45deg);
-}
 
 .walked-toggle:hover,
 .walked-toggle:focus-visible {
@@ -2691,9 +2688,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
    and had been an invisible one on every Open Mazes row for as long as the
    date has been on it.
 
-   Worth checking any punctuation bound for a Volter string against
-   glyphs.html first: the bullet and the pipe are drawn as a blob and a
-   heart in this font, and neither is what it looks like in the source.
+   Worth checking any punctuation bound for a Volter string against the
+   Alt Codes window (/glyphs) first: the bullet and the pipe are drawn as
+   a blob and a heart in this font, and neither is what it looks like in
+   the source.
 
    Its own element rather than .row-date::before, and emitted with no space
    in front of it, so it is welded to the end of the name and a line can
@@ -2838,7 +2836,8 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-size: 0.6rem;
     letter-spacing: 0.5px;
     text-transform: uppercase;
-    padding: 3px 8px;
+    /* The left side carries the trailing letter-spacing too (see .tag). */
+    padding: 3px 8px 3px 8.5px;
     border-radius: 12px;
     font-family: 'Roboto', sans-serif;
     font-weight: 700;
@@ -2909,7 +2908,11 @@ body[data-page="home"] .hero { padding-top: 18px; }
     /* Asymmetric — measured (via Range.getBoundingClientRect on the text
        node) to actually centre the text; this font/size combo sits ~2px
        high with even padding despite align-items:center. */
-    padding: 2.5px 6px 0.5px;
+    /* 6.4px on the left: letter-spacing is added after EVERY letter,
+       the last one included, so the label carries 0.4px of empty space
+       on its right and sat that far left of centre. On a phone's dense
+       screen that is more than a whole device pixel. */
+    padding: 2.5px 6px 0.5px 6.4px;
     border: 1.5px solid var(--chrome-highlight);
     border-radius: 10px;
     color: var(--parchment-dim);
@@ -6680,7 +6683,6 @@ body.is-viewer .admin-ban-btn,
 body.is-viewer .btn-enter-mini,
 body.is-viewer #sidebar-add-room-btn,
 body.is-viewer #sidebar-add-event-btn,
-body.is-viewer #about-save-btn,
 body.is-viewer #furni-scan-all-btn,
 body.is-viewer #furni-scan-new-btn,
 body.is-viewer .admin-floating-actions .admin-action-pill,
@@ -6702,7 +6704,20 @@ body.is-viewer .admin-wiz-inline-form [data-clear],
    wizard.css's exception. Previewing, exporting and the rest stay live. */
 body.is-viewer #recolour-editor .btn[data-role="save"],
 body.is-viewer #recolour-editor .btn[data-role="duplicate"],
-body.is-viewer #recolour-editor .btn[data-role="delete"] {
+body.is-viewer #recolour-editor .btn[data-role="delete"],
+/* Three more that were missed for the same reason — plain .ctl-btn and
+   .admin-action-pill buttons, which the named classes above never caught,
+   so a view-only account pressed them and got a 403 for its trouble.
+   The launch countdown's Save and Clear; the daily games' "Reset today"
+   and "Call it off"; and every Missing Pieces button that writes, which
+   js/admin-dead-ends.js marks .de-write (Copy and "Sign in again" do
+   not). */
+body.is-viewer #launch-at-save,
+body.is-viewer #launch-at-clear,
+body.is-viewer #ff-launch-at-save,
+body.is-viewer #ff-launch-at-clear,
+body.is-viewer .admin-daily-actions .admin-action-pill,
+body.is-viewer .admin-panel[data-panel="deadends"] .de-write {
     opacity: 0.4;
     cursor: not-allowed;
     /* Blocks the pointer. The keyboard route (tab to it, press Enter) is
@@ -8410,7 +8425,9 @@ body[data-page="admin"] .search-box input {
     cursor: var(--cursor-pointer);
 }
 
-#profile-btn { width: 48px; }
+/* The last tab is 2px wider: its image carries the strip's right-hand
+   outline. PRIVACY is last now that PROFILE leads (see below). */
+#privacy-btn { width: 48px; }
 
 .console-tab-label {
     position: absolute;
@@ -8429,16 +8446,23 @@ body[data-page="admin"] .search-box input {
     color: #996600;
 }
 
-#contact-btn { background-image: url('../assets/img/console/cnsl-tab-contact-inactive.png'); }
-#contact-btn.active { background-image: url('../assets/img/console/cnsl-tab-contact-active.png'); }
-#people-btn { background-image: url('../assets/img/console/cnsl-tab-people-inactive.png'); }
-#people-btn.active { background-image: url('../assets/img/console/cnsl-tab-people-active.png'); }
-/* Still the "search" sprite pair — no dedicated privacy icon exists yet,
-   only the tab's own label/id/content changed to Privacy Policy. */
-#privacy-btn { background-image: url('../assets/img/console/cnsl-tab-search-inactive.png'); }
-#privacy-btn.active { background-image: url('../assets/img/console/cnsl-tab-search-active.png'); }
-#profile-btn { background-image: url('../assets/img/console/cnsl-tab-profile-inactive.png'); }
-#profile-btn.active { background-image: url('../assets/img/console/cnsl-tab-profile-active.png'); }
+/* The tab strip in its order: PROFILE, CONTACT, SOURCE, PRIVACY.
+
+   The strip was drawn as one picture and cut into tiles, so each tile holds
+   half of the divider beside it and the last one holds the strip's right
+   edge. Moving a button would have moved its edges with it. So these
+   cnsl-tab-site-* images keep every slot's background where it was drawn
+   and only the icons have moved between them. They were built from the
+   original cnsl-tab-* tiles, which stay for tools/dev-console.ps1. The
+   privacy tab still shows the magnifier; there is no privacy icon yet. */
+#profile-btn { background-image: url('../assets/img/console/cnsl-tab-site-profile-inactive.png'); }
+#profile-btn.active { background-image: url('../assets/img/console/cnsl-tab-site-profile-active.png'); }
+#contact-btn { background-image: url('../assets/img/console/cnsl-tab-site-contact-inactive.png'); }
+#contact-btn.active { background-image: url('../assets/img/console/cnsl-tab-site-contact-active.png'); }
+#people-btn { background-image: url('../assets/img/console/cnsl-tab-site-people-inactive.png'); }
+#people-btn.active { background-image: url('../assets/img/console/cnsl-tab-site-people-active.png'); }
+#privacy-btn { background-image: url('../assets/img/console/cnsl-tab-site-privacy-inactive.png'); }
+#privacy-btn.active { background-image: url('../assets/img/console/cnsl-tab-site-privacy-active.png'); }
 
 
 /* ---- console's own custom scrollbar — same mechanism as
@@ -10821,6 +10845,87 @@ body[data-page="admin"] #activity-sessions {
 .side-menu-heading + .side-menu-item { margin-top: 0; }
 .side-menu-heading + .side-menu-item::before { content: none; }
 
+/* GAMES: a heading you can press, which folds its rows open beneath it.
+   Set like the headings, in the chrome's small caps, but in the rows' own
+   ink and a size up, because this one does something. The arrow points
+   right while shut and turns a quarter to point down when open. */
+.side-menu-group {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 7px;
+    background: none;
+    border: 0;
+    border-radius: 3px;
+    color: #1a0f04;
+    font-family: 'Silkscreen', monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    text-align: left;
+    cursor: var(--cursor-pointer);
+    transition: background-color 0.12s ease-out;
+}
+.side-menu-group:hover,
+.side-menu-group:focus-visible {
+    background: rgba(26, 15, 4, 0.1);
+    outline: none;
+}
+.side-menu-group:focus-visible { outline: 2px solid #6b4b18; outline-offset: -1px; }
+.side-menu-group-arrow {
+    flex: 0 0 auto;
+    width: 0;
+    height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 5px solid currentColor;
+    transition: transform 0.2s ease-out;
+}
+.side-menu-group[aria-expanded="true"] .side-menu-group-arrow { transform: rotate(90deg); }
+
+/* The fold. Grid rows from 0fr to 1fr, so it opens to exactly the height
+   of what is in it, whatever that is, without measuring anything. Its rows
+   are indented a little under the GAMES they belong to. */
+.side-menu-fold {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.22s ease-out;
+}
+.side-menu-fold.is-open { grid-template-rows: 1fr; }
+.side-menu-fold-inner {
+    min-height: 0;
+    overflow: hidden;
+    /* 6px, not more: "GUESS THE MAZE" and its DAILY tag need the width. */
+    padding-left: 6px;
+}
+.side-menu-fold.is-open .side-menu-fold-inner { padding-top: 4px; }
+/* After a fold: the next group button sits a little apart from it, and a
+   loose row (Alt Codes, at the foot) gets the hashed rule and the space
+   every row has above it. */
+.side-menu-fold + .side-menu-heading { margin-top: 14px; }
+.side-menu-fold + .side-menu-group { margin-top: 4px; }
+.side-menu-fold + .side-menu-item { margin-top: 11px; }
+.side-menu-fold + .side-menu-item::before {
+    content: "------------------------------------------------";
+    position: absolute;
+    top: -10px;
+    left: -6px;
+    right: -6px;
+    height: 8px;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.55rem;
+    line-height: 1;
+    letter-spacing: 1px;
+    color: rgba(26, 15, 4, 0.32);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .side-menu-fold,
+    .side-menu-group-arrow { transition: none; }
+}
+
 /* Between each pair, never before the first or after the last — a rule at
    either end would be closing off nothing. Drawn as characters rather than
    a border so it is genuinely hashed rather than dashed, matching
@@ -10922,6 +11027,23 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.62rem;
     line-height: 1.3;
     color: #4f3f25;
+}
+
+/* "DAILY", beside the names of the games that reset each morning. A solid
+   pill in the menu's dark ink with cream letters: it was outlined in the
+   headings' muted brown at first, which on the cream card was too faint to
+   read at 9px. Volter at its one crisp size. */
+.side-menu-tag {
+    display: inline-block;
+    margin-left: 5px;
+    padding: 1px 3px 0;
+    border-radius: 3px;
+    background: #5a3f17;
+    color: #f6ead2;
+    font-size: 0.5625rem;
+    line-height: 1.2;
+    letter-spacing: 0;
+    vertical-align: 1px;
 }
 
 .side-menu-badge {
@@ -11055,58 +11177,55 @@ body[data-page="admin"] #activity-sessions {
 /* Under 1000px there is no longer room beside the modal for the panel to
    open into — it is 600px wide and centred, so the space either side runs
    out before the panel does, and an opened tab would push the overlay into
-   a horizontal scroll. Below that width the actions go back into the
-   titlebar as the glyph-only row further down, which needs no room beside
-   the window at all.
+   a horizontal scroll. Below that width the actions go into a bar along
+   the foot of the window instead, which needs no room beside it at all.
 
-   js/home.js moves the node itself at this same width; this only hides the
-   empty tab it leaves behind. */
+   js/home.js moves the node itself at this same width (actionsBar); the
+   bar is hidden wherever the tab is used. */
+.modal-actions-bar { display: none; }
+
 @media (max-width: 999px) {
     .modal-actions-drawer { display: none; }
 
-    /* The titlebar row, as it has always been on a phone — and now on every
-       width that cannot fit the tab.
-
-       It drops its words and keeps its glyphs: the chain and the tick box.
-       Three labelled buttons want 242px of each end of the bar and leave the
-       room's name nowhere to go, which is the whole reason the tab exists.
-       The labels are hidden from sight, not from a screen reader — each
-       button carries its own aria-label and title, so the hover name and the
-       announced name both survive. */
-    /* Measured, not guessed: the three glyphs and their gaps end 92px from
-       the bar's left edge, and 10px past that is the same stand-off the row
-       itself starts with. 78px was the old value and it was measured when
-       there were TWO of them — the same arithmetic that put the labelled
-       trio underneath the title on a desktop was quietly clipping the first
-       character or two of a long name here. */
-    .modal .chrome-titlebar { --titlebar-pad: 102px; }
-    /* :not(.is-ec) because an EC event has no Completed toggle either, so
-       this matched it too — and beat its own rule below, which asks for
-       more. Specificity, not order: :not() and :has() take the specificity
-       of their most specific argument, so ".modal-meta-actions
-       .walked-toggle" makes this four class-level components against
-       .modal.is-ec's three, and moving either rule would not have helped.
-       Excluding EC here leaves its own rule to apply unopposed. */
-    .modal:not(.is-ec):not(:has(.modal-meta-actions .walked-toggle)) .chrome-titlebar { --titlebar-pad: 52px; }
-    /* An EC event's Share sits at the same end as the close button (see
-       .modal.is-ec's own rule), so that end has to hold both — 42px of
-       stand-off plus the glyph-only button the labels above collapse it
-       to. Measured at 820px: the glyph starts 67px from the bar's right
-       edge, so 52px let a long name's box run 15px underneath it. */
-    .modal.is-ec .chrome-titlebar { --titlebar-pad: 76px; }
-    .modal .chrome-titlebar .modal-meta-actions { gap: 4px; }
-    .modal .chrome-titlebar .modal-share-btn,
-    .modal .chrome-titlebar .saved-toggle,
-    .modal .chrome-titlebar .walked-toggle { padding: 4px 7px; }
-    .modal .chrome-titlebar .modal-share-label,
-    .modal .chrome-titlebar .saved-toggle-label,
-    .modal .chrome-titlebar .walked-toggle-label {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        margin: -1px;
-        overflow: hidden;
-        clip-path: inset(50%);
+    /* Save, Completed and Share, each with its word, as wide as the window
+       shares out. They were three unlabelled glyphs in the titlebar, which
+       read as a row of symbols, and which took 102px from each end of the
+       bar that a long maze name now has. With the titlebar holding only the
+       close button, the 40px rule above (actions not in the titlebar)
+       applies here too. 48px tall: an easy thumb, and the same height
+       whichever of the three a record offers. */
+    .modal-actions-bar:not(:empty) {
+        display: flex;
+        padding: 8px 12px 10px;
+        margin: 0 -2px;
+        border-top: 1px solid var(--chrome-border);
+        background: rgba(20, 13, 6, 0.55);
+    }
+    .modal-actions-bar .modal-meta-actions {
+        display: flex;
+        flex: 1 1 auto;
+        gap: 6px;
+        min-width: 0;
+    }
+    .modal-actions-bar .modal-walked { display: contents; }
+    .modal-actions-bar .modal-share-btn,
+    .modal-actions-bar .saved-toggle,
+    .modal-actions-bar .walked-toggle {
+        flex: 1 1 0;
+        min-width: 0;
+        flex-direction: column;
+        justify-content: center;
+        gap: 6px;
+        min-height: 48px;
+        margin: 0;
+        padding: 6px 4px;
+    }
+    .modal-actions-bar .modal-share-label,
+    .modal-actions-bar .saved-toggle-label,
+    .modal-actions-bar .walked-toggle-label {
+        font-size: 0.62rem;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
         white-space: nowrap;
     }
 }
@@ -11398,16 +11517,17 @@ body[data-page="admin"] #activity-sessions {
 
    Guess the Maze puts this class on .guess-sheet-inner, which is already a
    flex column — so align-items and gap below found a flex container and did
-   what they say. Odd One Out builds its splash as a plain
-   <div class="guess-splash"> inside .daily-sheet, where there was no flex
-   container of its own: align-items had nothing to align, and the rules
-   list — which sets its own max-width and zero side margins — sat hard
-   against the left edge under a centred title. Same markup, same class, two
-   different layouts, because the container came from somewhere else.
+   what they say. Odd One Out used to build its splash as a plain
+   <div class="guess-splash"> inside a box with no flex container of its
+   own: align-items had nothing to align, and the rules list — which sets
+   its own max-width and zero side margins — sat hard against the left edge
+   under a centred title. Same markup, same class, two different layouts,
+   because the container came from somewhere else.
 
-   Saying it here costs Guess the Maze nothing (it restates what
-   .guess-sheet-inner already sets) and gives the other the container
-   the rest of this rule has always assumed. */
+   Odd One Out now stands in the same deck and puts the class on its
+   sheet's inner box too, so both games reach this the same way; saying it
+   here still costs nothing (it restates what .guess-sheet-inner already
+   sets) and keeps the rule honest about what it assumes. */
 .guess-splash {
     display: flex;
     flex-direction: column;
@@ -11966,12 +12086,14 @@ body[data-page="admin"] #activity-sessions {
     /* Taller deck, and the picture goes above the board rather than beside
        it — it is still the thing being read, so it keeps the full width and
        is capped against the viewport instead of against its column. */
-    /* --tuck was 14px. It is the height of the strip each waiting sheet
-       shows along the bottom, and with five of them still to come that is
-       five times whatever it says — 70px of the live sheet's foot reserved
-       on the round that needs the room most. 11px still clears the 9px
-       label inside it and gives 15px of that back. */
-    .guess-deck { --deck-h: clamp(500px, 78vh, 680px); --tuck: 11px; }
+    /* No tabs on a phone: --tuck 0 puts every waiting sheet wholly below
+       the deck, out of sight, and the live sheet reserves nothing at its
+       foot for them. Even at 11px each, the five still to come took 55px
+       of the room that needs it most, and on a phone the round counter in
+       the sheet's own head already says how far through the day you are.
+       A desktop keeps the stack of tabs along the bottom. */
+    .guess-deck { --deck-h: clamp(500px, 78vh, 680px); --tuck: 0px; }
+    .guess-sheet-tab { display: none; }
     .guess-sheet-inner { padding: 13px 13px calc(12px + var(--tucked) * var(--tuck)); }
     /* Sized by its content rather than squeezed into the sheet's height.
        Stacked, the picture and the board together want more room than a
@@ -12256,31 +12378,14 @@ body[data-page="admin"] #activity-sessions {
     margin-top: 4px;
 }
 
-/* ---------- two boards, side by side ----------
+/* ---------- a game's own board, on its results card ----------
 
-   The game's own board on the left, the day added up across all three on
-   the right. They are the same width because neither is the footnote: one
-   asks who is best at this game and the other asks who turned up, and a
-   player can lead one while being nowhere on the other.
-
-   auto-fit with a 260px floor rather than a media query, so the pair
-   answers to the space it is actually given. That matters here more than
-   usual — this markup appears inside three different windows at three
-   different widths, and Guess the Maze's is a 900px deck while the other
-   two are 720px. Below roughly 540px of room the two stack, which is what
-   a phone gets. */
-.guess-boards-pair {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 14px;
-    align-items: start;
-    width: 100%;
-}
-
+   One board: this game's. It used to share the card with a second, the
+   day's scores across every game, in two columns that made the card twice
+   as busy; that board lives in the Leaderboards window now. */
 /* Each column keeps the measure a list of ten names wants, rather than
    stretching to half of whatever the window happens to be. */
-.guess-boards-own,
-.guess-boards-all {
+.guess-boards-own {
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -12399,6 +12504,16 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.75rem;
     color: var(--amber-bright);
     font-variant-numeric: tabular-nums;
+}
+/* The time a day took, small, beside its total: only on a single day's
+   board (scoreCell in js/daily.js, timeOf in js/leaderboards.js). The
+   games themselves never show a clock. */
+.guess-board-time {
+    margin-left: 4px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    color: var(--parchment-dim);
 }
 
 .guess-board-empty,
@@ -12550,29 +12665,23 @@ body[data-page="admin"] #activity-sessions {
     outline-offset: 1px;
 }
 
-/* A bookmark rather than a tick, drawn rather than set as a glyph so it
-   stays crisp at 9px and matches the pixel chrome. The notch is a triangle
-   cut out of the bottom edge by a border trick — same approach as the
-   caret in the admin furni list. */
+/* A bookmark ribbon, as a 7x10 pixel mask painted in the button's own
+   colour: an outline until the maze is saved, then filled. It used to be a
+   bordered box with its notch cut by a triangle in the colour of whatever
+   sat behind it, which had to be restated for every button and state, and
+   read as a "∏" wherever it was not. Inline SVG, so it costs no request. */
 .saved-toggle-mark {
     display: inline-block;
-    width: 8px;
+    flex: 0 0 auto;
+    width: 7px;
     height: 10px;
-    border: 1px solid currentColor;
-    border-bottom-width: 0;
-    position: relative;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 10' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM0 2h1v1h-1zM6 2h1v1h-1zM0 3h1v1h-1zM6 3h1v1h-1zM0 4h1v1h-1zM6 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM0 6h1v1h-1zM3 6h1v1h-1zM6 6h1v1h-1zM0 7h1v1h-1zM2 7h1v1h-1zM4 7h1v1h-1zM6 7h1v1h-1zM0 8h2v1h-2zM5 8h2v1h-2zM0 9h1v1h-1zM6 9h1v1h-1z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 10' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM0 2h1v1h-1zM6 2h1v1h-1zM0 3h1v1h-1zM6 3h1v1h-1zM0 4h1v1h-1zM6 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM0 6h1v1h-1zM3 6h1v1h-1zM6 6h1v1h-1zM0 7h1v1h-1zM2 7h1v1h-1zM4 7h1v1h-1zM6 7h1v1h-1zM0 8h2v1h-2zM5 8h2v1h-2zM0 9h1v1h-1zM6 9h1v1h-1z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
 }
-
-.saved-toggle-mark::after {
-    content: "";
-    position: absolute;
-    left: -1px;
-    bottom: -4px;
-    width: 0;
-    height: 0;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-bottom: 4px solid var(--bg-panel);
+.saved-toggle.is-saved .saved-toggle-mark {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 10' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h7v7h-7zM0 7h3v1h-3zM4 7h3v1h-3zM0 8h2v1h-2zM5 8h2v1h-2zM0 9h1v1h-1zM6 9h1v1h-1z'/%3E%3C/svg%3E");
+            mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 10' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h7v7h-7zM0 7h3v1h-3zM4 7h3v1h-3zM0 8h2v1h-2zM5 8h2v1h-2zM0 9h1v1h-1zM6 9h1v1h-1z'/%3E%3C/svg%3E");
 }
 
 /* On: filled in the archive's amber, the same "this is selected" the walked
@@ -12581,10 +12690,6 @@ body[data-page="admin"] #activity-sessions {
     border-color: var(--amber-bright);
     background: rgba(120, 90, 45, 0.32);
     color: var(--amber-bright);
-}
-
-.saved-toggle.is-saved .saved-toggle-mark {
-    background: var(--amber-bright);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -12607,13 +12712,6 @@ body[data-page="admin"] #activity-sessions {
     border-color: var(--amber-bright);
     color: #ffffff;
 }
-
-/* The notch is cut by a wedge in the button's own colour, so it has to
-   follow the button rather than stay the panel's background. */
-.modal-meta-actions .saved-toggle .saved-toggle-mark::after { border-bottom-color: #34291c; }
-.modal-meta-actions .saved-toggle.is-saved .saved-toggle-mark::after { border-bottom-color: #5b4622; }
-.modal-meta-actions .saved-toggle:hover .saved-toggle-mark::after { border-bottom-color: #413425; }
-.modal-meta-actions .saved-toggle.is-saved:hover .saved-toggle-mark::after { border-bottom-color: #6d5529; }
 
 /* ---------- where a saved maze went ----------
 
@@ -12739,6 +12837,745 @@ body[data-page="admin"] #activity-sessions {
 .saved-note-close:focus-visible {
     outline: 2px solid var(--amber-bright);
     outline-offset: 2px;
+}
+
+/* ---------- guides (js/guides.js) ----------
+
+   How-to guides, read in a window over the archive. Wider than Your
+   Progress because it is for reading: a guide is paragraphs and pictures,
+   and a 520px column makes both cramped. The measure is still held to a
+   comfortable line length inside it. */
+/* Two classes, because the window also wears .progress-window for its
+   chrome, and that rule (further down) sets the narrower width. */
+.progress-window.guides-window { width: min(760px, 94vw); max-width: min(760px, 94vw); }
+
+.guides-body {
+    padding: 18px 20px 22px;
+    max-height: clamp(380px, 76vh, 760px);
+    overflow-y: auto;
+    scrollbar-color: var(--wood-dark) var(--frame-bg);
+    color: var(--parchment);
+}
+
+.guides-note,
+.guides-intro {
+    margin: 0 0 14px;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--parchment-dim);
+}
+
+/* A button that reads as a link: Back, Copy link, Retry, the contents. */
+.guides-textbtn {
+    padding: 0;
+    background: none;
+    border: 0;
+    font: inherit;
+    color: var(--amber-bright);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: var(--cursor-pointer);
+    text-align: left;
+}
+.guides-textbtn:hover,
+.guides-textbtn:focus-visible { color: var(--parchment); outline: none; }
+
+/* The category filter: the same small switch the leaderboards use. */
+.guides-cats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0 0 14px;
+}
+.guides-cat {
+    padding: 3px 8px;
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--parchment-dim);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    cursor: var(--cursor-pointer);
+}
+.guides-cat:hover,
+.guides-cat:focus-visible { border-color: var(--amber); color: var(--parchment); outline: none; }
+.guides-cat.is-on {
+    background: linear-gradient(#6b5327, #52401d);
+    border-color: var(--amber-bright);
+    color: #fff8ec;
+}
+
+.guides-pill {
+    display: inline-block;
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.28);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--amber);
+}
+
+/* ---- the list ---- */
+.guides-cards {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+}
+
+/* A card is the room shot beside the words, the same row shape the
+   archive's own lists use, so a guide reads as another thing to open. */
+.guides-card {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 14px;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.22);
+    color: inherit;
+    text-decoration: none;
+    cursor: var(--cursor-pointer);
+}
+.guides-card:hover,
+.guides-card:focus-visible {
+    border-color: var(--amber);
+    background: rgba(120, 90, 45, 0.22);
+    outline: none;
+}
+
+/* ---- a guide's thumbnail: the frame IS the picture's edge ----
+
+   No backing and no padding: the frame wraps the picture exactly, so a
+   square picture shows as a square and a wide one as a wide one. The
+   outline, the top-left highlight and the bottom-right inner shadow are
+   drawn by ::after, laid ON TOP of the picture — inset shadows on the
+   element itself would be painted beneath the image and hidden by it. The
+   solid 2px shadow is cast outside, as the section pictures' is. Used on
+   the Guides list's cards and beside a guide's introduction. */
+.guide-thumb {
+    position: relative;
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    line-height: 0;
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+.guide-thumb img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    image-rendering: auto;
+}
+.guide-thumb::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--chrome-border);
+    border-radius: inherit;
+    box-shadow:
+        inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight),
+        inset -1px 0 0 rgba(0, 0, 0, 0.45),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+}
+
+/* On a card: at most 150px either way, centred in its column. */
+.guides-card-thumb { justify-self: center; }
+.guides-card-thumb img { max-width: 150px; max-height: 150px; }
+/* A guide with no picture anywhere: its card is words only. */
+.guides-card.no-thumb { grid-template-columns: minmax(0, 1fr); }
+
+.guides-card-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+    min-width: 0;
+}
+.guides-card-title {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 1rem;
+    color: var(--amber-bright);
+}
+.guides-card-summary {
+    font-size: 0.78rem;
+    line-height: 1.5;
+    color: var(--parchment);
+}
+.guides-card-meta {
+    font-size: 0.7rem;
+    color: var(--parchment-dim);
+}
+
+/* ---- the reader ---- */
+.guides-crumbs {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 14px;
+    font-size: 0.78rem;
+}
+
+.guide-head { margin: 0 0 18px; }
+
+/* The guide's thumbnail to the right of its introduction, in the same
+   column width and frame as the section pictures below, so the head of the
+   guide lines up with the body. */
+.guide-head.has-thumb {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 250px;
+    column-gap: 20px;
+    align-items: start;
+}
+.guide-head-thumb { margin: 0 0 0 auto; border-radius: 8px; }
+.guide-head-thumb img { max-height: 250px; }
+.guide-title {
+    margin: 6px 0 8px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 1.45rem;
+    line-height: 1.2;
+    color: var(--amber-bright);
+}
+.guide-summary { font-size: 0.9rem; line-height: 1.6; color: var(--parchment); }
+.guide-summary p { margin: 0 0 8px; }
+.guide-date { margin: 6px 0 0; font-size: 0.72rem; color: var(--parchment-dim); }
+
+.guide-contents,
+.guide-more {
+    margin: 0 0 20px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.22);
+    font-size: 0.8rem;
+}
+.guide-contents-title {
+    margin: 0 0 8px;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--amber);
+}
+/* Two columns of contents where there is room: a fifteen-section guide's
+   list would otherwise be a screen of its own before the guide starts. */
+.guide-contents ol {
+    margin: 0;
+    padding-left: 20px;
+    columns: 2;
+    column-gap: 28px;
+    line-height: 1.75;
+}
+.guide-contents li { break-inside: avoid; }
+.guide-more ul { margin: 0; padding-left: 18px; line-height: 1.75; }
+
+.guide-section {
+    padding: 18px 0 4px;
+    border-top: 1px solid rgba(0, 0, 0, 0.35);
+}
+.guide-section-title {
+    margin: 0 0 12px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 800;
+    font-size: 1.05rem;
+    color: var(--amber-bright);
+}
+.guide-section-title:focus { outline: none; }
+
+/* A section with a picture sets it in a column to the right of its text,
+   under the heading, so the room sits beside the words that describe it
+   instead of pushing them apart. The markup keeps heading, picture, text
+   in that order (so a phone, which stacks them, shows the room before the
+   explanation); the grid places them. */
+.guide-section:has(> .guide-figure) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 250px;
+    grid-template-areas:
+        "head head"
+        "body fig";
+    column-gap: 20px;
+    align-items: start;
+}
+.guide-section:has(> .guide-figure) > .guide-section-title { grid-area: head; }
+.guide-section:has(> .guide-figure) > .guide-figure { grid-area: fig; margin: 2px 0 12px; }
+.guide-section:has(> .guide-figure) > .guide-body { grid-area: body; }
+
+/* The room shot, at its own pixel size: these are small pixel-art
+   screenshots, and scaling them by anything but a whole number smears
+   every edge. Centred on a dark plate so the room reads as a picture of
+   somewhere rather than a sticker on the page. */
+.guide-figure {
+    margin: 0 0 14px;
+    padding: 6px;
+    /* Framed the way the site's own panels are (see .chrome-frame): the
+       black outline, a 1px highlight on the top and left, a 1px inner
+       shadow on the right and bottom, and a solid 2px shadow cast down
+       and to the right. The guide cards' covers wear the same frame. */
+    border: 1px solid var(--chrome-border);
+    /* The maze gallery viewport's radius (.gallery-viewport), so a room
+       in a guide is framed like a room in the archive. */
+    border-radius: 8px;
+    box-shadow:
+        inset 0 1px 0 var(--chrome-highlight),
+        inset 1px 0 0 var(--chrome-highlight),
+        inset -1px 0 0 rgba(0, 0, 0, 0.45),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.45),
+        2px 2px 0 rgba(0, 0, 0, 0.45);
+    /* A deep brown rather than the panels' near-black, so the plate reads
+       as part of the wooden window instead of a hole in it. The card
+       covers and the /warren previews use the same colour. */
+    background: #3a2715;
+    text-align: center;
+}
+/* Shown smaller than the screenshot's own size in the side column, so it
+   is scaled smoothly: nearest-neighbour shrinking by an odd amount drops
+   whole rows of pixels and the room looks broken. */
+.guide-img {
+    display: block;
+    margin: 0 auto;
+    width: 100%;
+    max-width: 398px;
+    height: auto;
+    image-rendering: auto;
+    /* The frame's 8px less its 6px padding, so the picture's corners run
+       parallel to the frame's. */
+    border-radius: 2px;
+}
+/* Clicking the picture shows it at its own pixel size across the section,
+   and clicking again puts it back (js/guides.js toggles .is-big). */
+.guide-figure.is-zoomable .guide-img { cursor: zoom-in; }
+/* The figure is a tab stop too (Enter or Space zooms), so it shows where
+   the keyboard is, as the maze gallery's picture does. */
+.guide-figure.is-zoomable:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
+}
+/* The headings take focus from the code when a view is drawn, so a screen
+   reader starts there; that is not a place to draw a ring. */
+#guides-title:focus,
+.guide-title:focus { outline: none; }
+.guide-section.is-big:has(> .guide-figure) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "head" "fig" "body";
+}
+.guide-section.is-big > .guide-figure { padding: 10px; }
+.guide-section.is-big .guide-img {
+    width: auto;
+    max-width: 100%;
+    image-rendering: pixelated;
+    cursor: zoom-out;
+}
+
+.guide-body {
+    max-width: 62ch;
+    font-size: 0.88rem;
+    line-height: 1.65;
+    color: var(--parchment);
+}
+.guide-body p { margin: 0 0 12px; }
+.guide-body ul,
+.guide-body ol { margin: 0 0 12px; padding-left: 22px; }
+.guide-body li { margin-bottom: 4px; }
+.guide-body strong,
+.guide-summary strong { color: #efe4cc; }
+
+.guide-link { color: var(--amber-bright); text-underline-offset: 2px; }
+.guide-link:hover,
+.guide-link:focus-visible { color: var(--parchment); }
+
+/* A tip: set apart so it can be skipped, and so a skim still finds it. */
+.guide-tip {
+    margin: 0 0 12px;
+    padding: 9px 12px;
+    border-left: 3px solid var(--amber);
+    border-radius: 0 4px 4px 0;
+    background: rgba(120, 90, 45, 0.18);
+    font-size: 0.84rem;
+    line-height: 1.55;
+}
+
+.guides-copied { margin: 10px 0 0; min-height: 1em; font-size: 0.75rem; color: var(--parchment-dim); }
+
+/* ---- the Guides panel in /warren (js/admin-guides.js) ---- */
+.admin-stage .admin-form > .guides-wide { grid-column: 1 / -1; }
+
+.guides-starter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px 16px;
+    margin: 0 0 14px;
+    padding: 12px 14px;
+    border: 1px dashed var(--amber);
+    border-radius: 6px;
+    background: rgba(120, 90, 45, 0.16);
+    font-size: 0.8rem;
+    color: var(--parchment);
+}
+.guides-starter p { margin: 0; flex: 1 1 320px; }
+
+.guides-admin-status {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 0 6px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    /* The row sets this in Volter Goldfish, which only draws cleanly at its
+       own 9px size; at 0.7rem (11.2px) every letter smeared between pixels. */
+    font-size: 0.5625rem;
+    line-height: 1.5;
+}
+.guides-admin-status.is-live { color: #b9d99a; border-color: var(--ok); }
+.guides-admin-status.is-draft { color: var(--parchment-dim); }
+
+.guides-edit-sections { display: flex; flex-direction: column; gap: 12px; }
+.guides-edit-sections > [data-sections] { display: flex; flex-direction: column; gap: 12px; }
+
+.guides-edit-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.2);
+}
+.guides-edit-section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.guides-edit-section-num {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--amber);
+}
+.guides-edit-section-tools { display: flex; gap: 6px; }
+
+.guides-pic {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.guides-pic img {
+    max-width: 260px;
+    max-height: 200px;
+    object-fit: contain;
+    image-rendering: pixelated;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: #3a2715;
+}
+.guides-pic-empty {
+    display: grid;
+    place-items: center;
+    width: 200px;
+    height: 90px;
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    font-size: 0.72rem;
+    color: var(--parchment-dim);
+}
+.guides-pic-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.guides-pic-upload { cursor: var(--cursor-pointer); }
+.guides-pic-status { font-size: 0.72rem; color: var(--parchment-dim); }
+
+/* The preview borrows the reader's own box, without its height cap: it is
+   read in the page, not in a window. */
+.guides-preview {
+    margin-top: 16px;
+    border: 1px solid var(--amber);
+    border-radius: 6px;
+    background: var(--frame-bg);
+}
+.guides-preview .guides-body { max-height: none; }
+.guides-preview-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px 0;
+}
+
+@media (max-width: 640px) {
+    .guides-body { padding: 14px 12px 18px; max-height: calc(100vh - 110px); }
+    .guides-card { grid-template-columns: 96px 1fr; gap: 10px; }
+    .guides-card-thumb img { max-width: 96px; max-height: 96px; }
+    /* One column on a phone: heading, the room, then the words. */
+    .guide-section:has(> .guide-figure) {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "head" "fig" "body";
+    }
+    .guide-section:has(> .guide-figure) > .guide-figure { max-width: 320px; margin: 0 auto 12px; }
+    .guide-title { font-size: 1.2rem; }
+    /* On a phone the thumbnail goes under the introduction, at the size the
+       section pictures use there. */
+    .guide-head.has-thumb { grid-template-columns: minmax(0, 1fr); row-gap: 12px; }
+    .guide-head-thumb { margin: 0 auto; }
+    .guide-head-thumb img { max-width: min(320px, 100%); }
+    .guide-contents ol { columns: 1; }
+}
+
+/* ---------- alt codes (js/glyphs.js) ----------
+
+   Every character Volter Goldfish draws, with the Alt code that types it,
+   in a window over the archive. It was glyphs.html, a standalone page with
+   a small palette of its own; as a window it wears the site's, so it
+   follows the theme like everything else. As wide as the Guides window:
+   it is a grid of tiles, and the width is what lets a row hold enough of
+   them to compare. */
+.progress-window.glyphs-window { width: min(760px, 94vw); max-width: min(760px, 94vw); }
+
+.glyphs-body {
+    padding: 18px 20px 22px;
+    max-height: clamp(380px, 76vh, 760px);
+    overflow-y: auto;
+    scrollbar-color: var(--wood-dark) var(--frame-bg);
+    color: var(--parchment);
+}
+
+.glyphs-intro {
+    margin: 0 0 14px;
+    max-width: 66ch;
+    font-size: 0.84rem;
+    line-height: 1.6;
+    color: var(--parchment);
+}
+.glyphs-intro strong { color: var(--amber-bright); font-weight: 500; }
+
+/* The example is set in the font the window is about, so the thing being
+   described is on screen in the first sentence describing it. A pill,
+   because it stands for a room name, and at Volter's own 9px — the only
+   size it draws cleanly — since the sentence around it is larger. */
+.glyphs-sample {
+    display: inline-block;
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.28);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.5;
+    color: var(--amber-bright);
+    white-space: nowrap;
+    vertical-align: 1px;
+}
+
+/* The instructions, boxed off from the explanation above them, in the
+   same panel the guides' cards use. Two numbered steps rather than a
+   sentence with "or" in the middle: they are two different actions and
+   one of them has a trap in it (the number row is not the keypad), which
+   wants a line to itself. */
+.glyphs-how {
+    margin: 0 0 22px;
+    padding: 12px 14px;
+    max-width: 66ch;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.22);
+}
+.glyphs-how ol {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: var(--parchment-dim);
+}
+.glyphs-how li + li { margin-top: 5px; }
+.glyphs-how strong { color: #efe4cc; font-weight: 500; }
+.glyphs-how-note {
+    margin: 10px 0 0;
+    font-size: 0.72rem;
+    line-height: 1.55;
+    color: var(--parchment-dim);
+}
+.glyphs-how kbd {
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.28);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    color: var(--parchment);
+}
+
+/* The headings in the bold cut asked for by its own family name, as Your
+   Progress does (see .progress-head-text h3 for why not weight 700). */
+.glyphs-how-title,
+.glyphs-group-title {
+    margin: 0 0 8px;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--amber-bright);
+    text-shadow: 2px 2px 0 var(--bg-black);
+}
+.glyphs-group { margin: 0 0 24px; }
+.glyphs-group-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.glyphs-count {
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.68rem;
+    letter-spacing: 0;
+    text-transform: none;
+    text-shadow: none;
+    color: var(--parchment-dim);
+    font-variant-numeric: tabular-nums;
+}
+.glyphs-note {
+    margin: 0 0 12px;
+    max-width: 66ch;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    color: var(--parchment-dim);
+}
+.glyphs-note code,
+.glyphs-foot code {
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.35);
+    font-size: 0.85em;
+    color: var(--amber-bright);
+}
+
+.glyphs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 8px;
+}
+
+/* A tile is the /warren palette's chip, grown to hold its labels: the
+   chrome row's fill, the fine black edge, the hard offset shadow. The
+   pictures sit on the featured row's lighter fill, so the 24 that are the
+   point of the sheet stand out from the letters below them. */
+.glyphs-cell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+    padding: 10px 4px 8px;
+    background: var(--chrome-row);
+    border: 1px solid var(--chrome-border);
+    border-radius: 4px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    font: inherit;
+    color: var(--parchment);
+    cursor: var(--cursor-pointer);
+    transition: background 0.12s, transform 0.12s;
+}
+.glyphs-cell.is-pic { background: var(--chrome-row-featured); }
+.glyphs-cell:hover { background: var(--wood-mid); transform: translateY(-1px); }
+.glyphs-cell.is-pic:hover { background: #5c3d1f; }
+.glyphs-cell:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+/* Mapped in the font but drawing nothing (js/glyphs.js measures each). */
+.glyphs-cell.is-blank { opacity: 0.42; }
+
+/* 36px, four times Volter's 9px: the font is drawn on a nine-pixel em, so
+   only whole multiples of 9 put every one of its pixels on a whole number
+   of screen pixels. The old page's 34px smeared the edges of every
+   picture, which is the one thing this sheet has to show clearly. */
+.glyphs-glyph {
+    display: flex;
+    align-items: center;
+    height: 40px;
+    font-family: 'Volter Goldfish', monospace;
+    font-size: 36px;
+    line-height: 1;
+    color: #fff8ec;
+    white-space: pre;
+}
+
+.glyphs-alt {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.4;
+    color: var(--amber-bright);
+}
+/* No Alt code reaches it: a dash, and in Roboto — Volter draws U+2014 as
+   a pair of musical notes. */
+.glyphs-alt.is-none { font-family: 'Roboto', sans-serif; font-size: 0.7rem; line-height: 1.1; }
+.glyphs-uni {
+    font-size: 0.6rem;
+    color: var(--parchment-dim);
+    font-variant-numeric: tabular-nums;
+}
+.glyphs-name {
+    max-width: 100%;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.4;
+    color: var(--parchment);
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+/* "Copied", over the tile's labels for a moment after a press, so the
+   confirmation is where the eye already is. The glyph stays showing
+   above it: it is what was copied. */
+.glyphs-done {
+    position: absolute;
+    left: 3px;
+    right: 3px;
+    bottom: 3px;
+    top: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    background: #4a5f38;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    color: #fff8ec;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s;
+}
+.glyphs-cell.is-copied { border-color: var(--ok); }
+.glyphs-cell.is-copied .glyphs-done { opacity: 1; }
+
+.glyphs-foot {
+    margin: 0;
+    padding-top: 14px;
+    max-width: 66ch;
+    border-top: 1px solid var(--border);
+    font-size: 0.72rem;
+    line-height: 1.55;
+    color: var(--parchment-dim);
+}
+
+@media (max-width: 640px) {
+    .glyphs-body { padding: 14px 12px 18px; max-height: calc(100vh - 110px); }
+    /* Three to a row at 375px: the window's inside is about 300px there,
+       and 96px tiles with their gaps come to 304. */
+    .glyphs-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .glyphs-cell,
+    .glyphs-done { transition: none; }
+    .glyphs-cell:hover { transform: none; }
 }
 
 /* ---------- your progress ----------
@@ -13018,6 +13855,11 @@ body[data-page="admin"] #activity-sessions {
 .modal-incomplete-drawer {
     --spine-top: 136px;
     --menu-w: 196px;
+    /* --push: how far it steps down while the Actions card is out, set by
+       setActionsOpen in js/home.js. Slides with the card's own easing. */
+    top: calc(var(--spine-top) + var(--push, 0px));
+    transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+                top 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .modal-incomplete-drawer[hidden] { display: none; }
 
@@ -13088,38 +13930,63 @@ body[data-page="admin"] #activity-sessions {
 .incomplete-help:hover,
 .incomplete-help:focus-visible { background: #e6cfae; outline: none; }
 
-/* The narrow version: a pill in the meta row, beside the status badge, and
-   the same card opening under the row when it is pressed. Hidden wherever
-   the tab can be shown. */
-.incomplete-pill,
-.incomplete-pop { display: none; }
+/* The narrow version: a strip across the foot of the meta row, saying what
+   is missing in a word each, with the Add Maze Info button at its end.
+   Nothing opens and nothing moves. Hidden wherever the tab can be shown. */
+.incomplete-strip { display: none; }
 
 @media (max-width: 999px) {
-    .incomplete-pill {
-        display: inline-flex;
+    .incomplete-strip {
+        display: flex;
         align-items: center;
-        padding: 2px 8px 1px;
+        gap: 8px;
+        flex-basis: 100%;
+        min-width: 0;
+        padding: 5px 5px 5px 10px;
         border: 1.5px dashed var(--amber);
-        border-radius: 10px;
-        background: transparent;
-        color: var(--amber-bright);
-        font-family: inherit;
-        font-size: 0.56rem;
-        letter-spacing: 0.4px;
+        border-radius: 6px;
+        background: rgba(20, 13, 6, 0.55);
+        color: var(--parchment-dim);
+        font-size: 0.7rem;
+        line-height: 1.3;
+    }
+    /* The photo-frame button hangs down the row's right edge, absolutely
+       placed (.gallery-photos), so the strip stops short of it when it is
+       there: its 22px and an 8px gap. */
+    .modal-meta-items:has(> .gallery-photos) > .incomplete-strip { margin-right: 30px; }
+    .incomplete-strip-label {
+        flex: 0 0 auto;
+        font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+        font-size: 0.5625rem;
+        letter-spacing: 0.1em;
         text-transform: uppercase;
+        color: var(--amber-bright);
+    }
+    .incomplete-strip-words {
+        flex: 1 1 auto;
+        min-width: 0;
+        color: var(--parchment);
+    }
+    /* The card's own button, in the strip's colours. 26px tall, the
+       phone-sized minimum used for the site's other small controls. */
+    .incomplete-strip-help {
+        flex: 0 0 auto;
+        min-height: 26px;
+        padding: 0 10px;
+        border: 1px solid #6b5431;
+        border-radius: 4px;
+        background: #d6bb96;
+        color: #1a0f04;
+        font-family: inherit;
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        white-space: nowrap;
         cursor: var(--cursor-pointer);
     }
-    .incomplete-pop:not([hidden]) {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        flex-basis: 100%;
-        padding: 9px 10px 10px;
-        border: 1px solid var(--chrome-border);
-        border-radius: 5px;
-        background: #c9ad84;
-        color: #1a0f04;
-    }
+    .incomplete-strip-help:hover,
+    .incomplete-strip-help:focus-visible { background: #e6cfae; outline: none; }
 }
 
 /* The window's filters: the same chips, pressable. A pointer and a lift on
@@ -14176,18 +15043,15 @@ textarea.ctl-input.de-note {
    any ordinary connection nobody sees it at all.
 
    Centred in the window rather than sat at the top of it, because the
-   window is already at full height by the time this exists (the sheet
-   below stands at a fixed --daily-h) and a line of text in the corner of
+   window is already at full height by the time this exists (the deck
+   stands at a fixed --deck-h) and a line of text in the corner of
    a 500px empty box reads as a broken game rather than a loading one.
 
-   Absolutely centred rather than margin:auto, because the three boxes it
-   is dropped into are not laid out alike: .daily-sheet is a flex column
-   (where auto margins would work) and .guess-deck is a positioned box full
-   of absolutely positioned sheets (where they would not).
-
-   .guess-deck is already `position: relative`; .daily-sheet has been given
-   it below purely so this can inset against it, which changes nothing
-   about how it lays out. */
+   Absolutely centred rather than margin:auto, because the box it is
+   dropped into — a .guess-deck, in both games now — is a positioned box
+   full of absolutely positioned sheets, where auto margins would do
+   nothing. .guess-deck is already `position: relative`, so this insets
+   against it. */
 .daily-loading {
     position: absolute;
     inset: 0;
@@ -14219,49 +15083,57 @@ textarea.ctl-input.de-note {
     .daily-loading { animation: none; }
 }
 
-/* The window holds a frame, and the frame holds one darker sheet — which is
-   what Guess the Maze does, and most of why that window looks finished. The
-   game sits ON something rather than floating in the window's own colour,
-   and the sheet is where the scrolling happens, so the frame keeps its edges
-   while the content moves inside them. */
+/* The window holds a frame, and the frame holds the deck — the same deck of
+   sheets Guess the Maze stands in, class for class (.guess-deck and the
+   rules under it). The game sits ON something rather than floating in the
+   window's own colour, and each sheet is where its own scrolling happens,
+   so the frame keeps its edges while the content moves inside them. */
 .daily-frame {
     flex: 1;
     min-height: 0;
     display: flex;
 }
 
-/* A FIXED height, and it is the point of this rule rather than a detail of
-   it. The sheet holds four quite different things over a day — the rules,
-   the board, what just happened, the result — and sized to its contents the
-   window grew and shrank between every one of them, jumping under the
-   cursor mid-game. Guess the Maze solved this the same way and for the same
-   reason: its deck is a clamp, not a measurement.
+/* What Odd One Out's deck needs that Guess the Maze's does not say.
 
-   The clamp rather than a flat number so a short window still fits it, and
-   the content scrolls inside a frame that never moves. */
-.daily-sheet {
-    /* Named rather than written straight onto height, because Odd One Out
-       has to do arithmetic with it to size its pictures against the height
-       they have to fit in (see .odd-grid) — and a second copy of this clamp
-       would be a second thing to keep in step. Guess the Maze names its
-       deck height as --deck-h for exactly the same reason. */
-    --daily-h: clamp(430px, 66vh, 560px);
-    height: var(--daily-h);
-    /* Only so .daily-loading can inset against it while the game is being
-       fetched (see js/daily-loader.js). Nothing else here depends on it. */
-    position: relative;
-    /* Fills the frame across as well as standing to a fixed height: the
-       frame is a flex row, and without this the sheet is only as wide as
-       its widest line, leaving the rest of the window bare. */
+   A FIXED height, as .guess-deck has, and for the same two reasons: the
+   sheets are absolutely positioned and "tucked" is a percentage of this
+   box, and the day holds quite different things — the rules, the four
+   pictures, the result — which sized to their contents made the window
+   grow and shrink under the cursor mid-game.
+
+   Taller than Guess the Maze's, because the two-by-two grid is sized
+   against it (see .odd-grid) and on round 1 the five tabs still waiting
+   along the bottom take 75px of it. This is the 560px the round used to
+   have with those added back, near enough, so the pictures are not
+   noticeably smaller for having the day's shape drawn under them.
+
+   The frame is a flex row, and a deck whose every child is absolutely
+   positioned has no width of its own to offer one — hence flex and
+   min-width, or the deck is a column 0px wide. */
+.odd-deck {
+    --deck-h: clamp(460px, 70vh, 610px);
     flex: 1 1 auto;
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    overflow-y: auto;
-    padding: 16px;
-    background: #2e2418;
-    scrollbar-color: var(--wood-dark) #2e2418;
+}
+
+/* .guess-sheet is display: flex, which beats the [hidden] attribute's own
+   display: none — so the results sheet, hidden until there is a day to
+   have results for, stayed on screen with its tab. Said outright here. */
+.odd-deck .guess-sheet[hidden] { display: none; }
+
+/* The round and the results were written for a flex column with a 14px
+   gap between its lines (the one box this game used to draw into), and a
+   .guess-sheet-inner has no gap of its own. The splash is left out: it
+   sets its own tighter one, and the two games' splashes should match. */
+.odd-deck .guess-sheet-inner:not(.guess-splash) { gap: 14px; }
+
+/* A phone has no tabs (see .guess-deck in the narrow-layout block), so
+   there is nothing to add back: the height the round had before the deck,
+   exactly. Restated here rather than left to that block, because the rule
+   above comes later in the file and would otherwise beat it. */
+@media (max-width: 760px) {
+    .odd-deck { --deck-h: clamp(430px, 66vh, 560px); }
 }
 
 /* ---------- one pixel face per window ----------
@@ -14386,13 +15258,16 @@ textarea.ctl-input.de-note {
    whose whole question is "compare these four" showed you two and a half of
    them and asked you to scroll between them.
 
-   The sheet's height is fixed and deliberate (see --daily-h), so the square
+   The deck's height is fixed and deliberate (see .odd-deck), so the square
    can simply be told what is left of it: everything but the head, the
    question, the note under it, the three gaps between those and the sheet's
    own padding. 150px covers that with a little to spare for the two lines
-   of prose wrapping to three on a narrow window. min() against the full
-   width keeps it honest the other way, on a window short enough that the
-   height is no longer the thing running out first.
+   of prose wrapping to three on a narrow window. The third term is the
+   tabs still waiting along the bottom, which the sheet reserves at its
+   foot (see .guess-sheet-inner) — five on round 1, one on round 5, none on
+   a phone — as .guess-picture takes them off for Guess the Maze. min()
+   against the full width keeps it honest the other way, on a window short
+   enough that the height is no longer the thing running out first.
 
    Centred rather than stretched, so the four sit as a block in the middle
    of the sheet instead of hugging its left edge. */
@@ -14400,7 +15275,7 @@ textarea.ctl-input.de-note {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;
-    width: min(100%, calc(var(--daily-h) - 150px));
+    width: min(100%, calc(var(--deck-h) - 150px - var(--tucked) * var(--tuck)));
     aspect-ratio: 1;
     margin-inline: auto;
 }
@@ -14839,6 +15714,7 @@ textarea.ctl-input.de-note {
     .chrome-nav-btn,
     .chrome-tab,
     .side-menu-item,
+    .side-menu-group,
     .guess-btn {
         min-height: 44px;
     }
@@ -14981,12 +15857,32 @@ textarea.ctl-input.de-note {
        rather than beside it, and every pixel it takes is a pixel of maze
        list it covers. 24 is the WCAG minimum and it clears the panel's own
        15px track without reaching into the rows. */
+    /* 25 wide and pulled 5px out each side, so the bigger box is centred
+       on the 15px track. At 24 it grew rightwards from the track's left
+       edge, which put the arrow 4.5px right of the bar it belongs to, on a
+       half pixel, so it was blurred as well. */
     .custom-scrollbar-arrow {
         min-height: 26px;
-        min-width: 24px;
+        min-width: 25px;
+        margin: 0 -5px;
         background-size: 15px 15px;
         background-position: center;
         background-repeat: no-repeat;
+    }
+    /* The console's arrows are stretched to fill their box (see
+       .custom-scrollbar-wrap--console), which on a phone meant filling all
+       25x26 of it. They are kept at the 15x14 they are on a desktop. */
+    .custom-scrollbar-wrap--console .custom-scrollbar-arrow-up,
+    .custom-scrollbar-wrap--console .custom-scrollbar-arrow-down {
+        background-size: 15px 14px;
+    }
+    /* A sideways bar is 15px tall, so there the box is pulled out above and
+       below instead, 25 tall and centred on it, and its sprite is the
+       rotated 14x15 one. */
+    .custom-scrollbar--horizontal .custom-scrollbar-arrow {
+        min-height: 25px;
+        margin: -5px 0;
+        background-size: 14px 15px;
     }
 
     /* The Privacy Policy link, which js/site.js appends onto the end of the
@@ -15350,4 +16246,41 @@ body[data-page="admin"] .btn-enter-mini.active {
     background: var(--chrome-fill);
     border-color: var(--amber);
     color: var(--parchment);
+}
+
+/* ---------- Fallin' Furni, Coming Soon: the seats that fall ----------
+
+   js/furni-rain.js drops them when the side menu's Fallin' Furni row is
+   pressed before the game opens. A fixed layer over everything that takes
+   no clicks, so nothing underneath stops working while they fall. Above the
+   windows (320 is the furni card) so they fall in front of whatever is open. */
+.furni-rain {
+    position: fixed;
+    inset: 0;
+    z-index: 400;
+    overflow: hidden;
+    pointer-events: none;
+}
+.furni-rain-piece {
+    position: absolute;
+    top: 0;
+    image-rendering: pixelated;
+    transform: translateY(-110%);
+    animation-name: furniRainFall;
+    /* Gathering speed as it goes, like something dropped. */
+    animation-timing-function: cubic-bezier(0.45, 0, 0.9, 0.6);
+    animation-fill-mode: both;
+}
+@keyframes furniRainFall {
+    from { transform: translateY(-110%); }
+    to   { transform: translateY(var(--fall, 110vh)); }
+}
+/* Reduced motion: the pieces appear where they are and fade away. */
+.furni-rain-piece.is-still {
+    transform: none;
+    animation: furniRainFade 1.6s ease-in-out both;
+}
+@keyframes furniRainFade {
+    0%, 100% { opacity: 0; }
+    25%, 70% { opacity: 1; }
 }

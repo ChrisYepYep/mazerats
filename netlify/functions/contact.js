@@ -38,6 +38,10 @@ const DISCORD_MAX = 60;
 const RATE_LIMIT_COUNT = 5;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 
+// How long the notification email may take before it is given up on. See
+// sendNotificationEmail.
+const EMAIL_TIMEOUT_MS = 5000;
+
 function countRecent(messages, ip) {
     const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
     return messages.countDocuments({ ip, createdAt: { $gte: since } });
@@ -82,9 +86,18 @@ async function sendNotificationEmail({ username, discord, message, verified }) {
     }
     const from = process.env.CONTACT_FROM_EMAIL || "Maze Rats <onboarding@resend.dev>";
 
+    /* Bounded, as habbo.js bounds its fetches. The message is already saved
+       when this runs and the reply waits on it, so a Resend that hung used
+       to hold the request open until the platform killed it — and the sender
+       saw a failure for a message that had in fact arrived, and sent it
+       again. Aborted, it lands in the catch below like any other failed
+       notification, and the sender gets their 201. */
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), EMAIL_TIMEOUT_MS);
     try {
         const res = await fetch("https://api.resend.com/emails", {
             method: "POST",
+            signal: controller.signal,
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json"
@@ -102,6 +115,8 @@ async function sendNotificationEmail({ username, discord, message, verified }) {
         if (!res.ok) console.warn("contact.js: email notification failed", res.status, await res.text());
     } catch (e) {
         console.warn("contact.js: email notification failed", e.message);
+    } finally {
+        clearTimeout(timer);
     }
 }
 
@@ -142,21 +157,30 @@ exports.handler = async (event) => {
 
         const ip = clientIp(event);
         if (ip) {
-            // A banned address gets the same silent, normal-looking success the
-            // honeypot returns above, for the same reason: an explicit "you are
-            // banned" (or even a 429, which the rate limit below does send) tells
-            // whoever it is that they've been noticed and is an invitation to come
-            // back from a different address. Nothing is written and no email goes
-            // out. Bans are managed in bans.js.
-            const banned = await db.collection("bans").countDocuments({ ip }, { limit: 1 });
-            if (banned) {
-                return json(201, { id: crypto.randomUUID(), username: "", discord: "", message: "", createdAt: new Date().toISOString() });
-            }
+            /* Both reads in a try, like the insert below. A database that
+               answered the connect and then failed here threw straight out
+               of the handler — Netlify's bare 502, with nothing the form
+               knows how to show. */
+            try {
+                // A banned address gets the same silent, normal-looking success the
+                // honeypot returns above, for the same reason: an explicit "you are
+                // banned" (or even a 429, which the rate limit below does send) tells
+                // whoever it is that they've been noticed and is an invitation to come
+                // back from a different address. Nothing is written and no email goes
+                // out. Bans are managed in bans.js.
+                const banned = await db.collection("bans").countDocuments({ ip }, { limit: 1 });
+                if (banned) {
+                    return json(201, { id: crypto.randomUUID(), username: "", discord: "", message: "", createdAt: new Date().toISOString() });
+                }
 
-            // A cheap early refusal for the caller already well over the cap.
-            // Not the real check — see after the insert below for that.
-            if (await countRecent(messages, ip) >= RATE_LIMIT_COUNT) {
-                return json(429, { error: "Too many messages sent — please wait a bit before trying again." });
+                // A cheap early refusal for the caller already well over the cap.
+                // Not the real check — see after the insert below for that.
+                if (await countRecent(messages, ip) >= RATE_LIMIT_COUNT) {
+                    return json(429, { error: "Too many messages sent — please wait a bit before trying again." });
+                }
+            } catch (e) {
+                console.error("contact: could not check the sender", e);
+                return json(503, { error: "Your message could not be saved just now. Please try again in a minute." });
             }
         }
 

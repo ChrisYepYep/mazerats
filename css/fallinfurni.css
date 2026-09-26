@@ -1315,7 +1315,7 @@ main.ff-page { width: 100%; }
     color: #241606;
 }
 
-/* "Ends Saturday 10 October", or the standing on an empty first morning.
+/* "Ends <the week's last day>", or the standing on an empty first morning.
    Roboto rather than Silkscreen: it is a sentence, and the pixel face is
    for labels. */
 .ff-meet-note {

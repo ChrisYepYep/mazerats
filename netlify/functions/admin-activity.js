@@ -68,15 +68,25 @@ exports.handler = async (event) => {
     }
 
     const asked = ((event.queryStringParameters || {}).range || "7d");
-    const range = RANGES[asked] ? asked : "7d";
+    // An own key only: `?range=constructor` found Object's constructor on
+    // the prototype, called it, and the window became `{ at: { $gte: {} } }`.
+    const range = Object.prototype.hasOwnProperty.call(RANGES, asked) ? asked : "7d";
     const since = RANGES[range]();
     const window = since ? { at: { $gte: since } } : {};
 
-    const rows = await db.collection(COLLECTION)
-        .find(window, { projection: { _id: 0 } })
-        .sort({ at: -1 })
-        .limit(MAX_EVENTS)
-        .toArray();
+    // In a try, so a failed read is JSON the panel can show rather than an
+    // unhandled rejection and Netlify's bare 502.
+    let rows;
+    try {
+        rows = await db.collection(COLLECTION)
+            .find(window, { projection: { _id: 0 } })
+            .sort({ at: -1 })
+            .limit(MAX_EVENTS)
+            .toArray();
+    } catch (e) {
+        console.error("admin-activity: read failed", e);
+        return json(500, { error: "Could not read the activity log" });
+    }
 
     /* Group into sessions. A session is one username plus one JWT issued-at,
        so it survives page reloads and ends when the token does. Records with
@@ -126,7 +136,21 @@ exports.handler = async (event) => {
         { $match: window },
         {
             $facet: {
-                totals: [{ $group: { _id: null, events: { $sum: 1 }, sessions: { $addToSet: "$session" } } }],
+                /* Counted, not collected. This was one $group gathering every
+                   distinct session id into a single array with $addToSet —
+                   and a $facet's whole output is ONE document, capped at
+                   16MB, so a busy stretch of "all" would eventually have
+                   failed the aggregation outright (and, through the catch
+                   below, shown zero visitors). Grouping by session and
+                   counting the groups returns one number however many there
+                   are. The $match drops the empty ids the old
+                   filter(Boolean) dropped. */
+                totals: [{ $group: { _id: null, events: { $sum: 1 } } }],
+                sessions: [
+                    { $match: { session: { $nin: [null, "", 0, false] } } },
+                    { $group: { _id: "$session" } },
+                    { $count: "n" },
+                ],
                 byName: [{ $group: { _id: "$name", n: { $sum: 1 } } }, { $sort: { n: -1 } }],
                 topMazes: [
                     { $match: { name: "maze-open", label: { $ne: null } } },
@@ -145,11 +169,11 @@ exports.handler = async (event) => {
     ]).toArray().catch(() => []);
 
     const f = site[0] || {};
-    const totals = (f.totals || [])[0] || { events: 0, sessions: [] };
+    const totals = (f.totals || [])[0] || { events: 0 };
     const visitors = {
         keepDays: SITE_KEEP_DAYS,
         events: totals.events,
-        sessions: (totals.sessions || []).filter(Boolean).length,
+        sessions: ((f.sessions || [])[0] || { n: 0 }).n,
         byName: (f.byName || []).map(r => ({ name: r._id, n: r.n })),
         topMazes: (f.topMazes || []).map(r => ({ label: r._id, n: r.n })),
         topFurni: (f.topFurni || []).map(r => ({ label: r._id, n: r.n })),

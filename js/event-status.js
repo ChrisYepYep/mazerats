@@ -13,6 +13,7 @@
        start and end both more than ARCHIVE_YEARS old  -> archive
        end in the past                                 -> past
        started but not yet ended                       -> live
+       (no end date = the end of the start's UTC day)
        start still in the future                       -> upcoming
 
    The stored status is not the source of truth here — it survives only as
@@ -58,9 +59,21 @@
         // Past forever with nothing to age it out.
         if (!startIso) return "upcoming";
         const start = new Date(startIso);
-        // No end date means the event is treated as ending the moment it
-        // starts, so a one-off with only a start still ages out normally.
-        const end = new Date(endIso || startIso);
+        /* No end date means the event runs to the end of the UTC day it
+           starts on. It used to be treated as ending the moment it started,
+           which meant an event with only a start went straight from
+           Upcoming to Past and never once showed LIVE. The end of that day
+           rather than some fixed duration because every listing already
+           frames events by their UTC date ("12 Oct 2026, 19:00 UTC", see
+           formatEventDuration in home.js/welcome.js), so "on that day" is
+           what a start-only event reads as. It still ages out normally. */
+        let end;
+        if (endIso) {
+            end = new Date(endIso);
+        } else {
+            end = new Date(start);
+            if (!isNaN(end)) end.setUTCHours(23, 59, 59, 999);
+        }
         if (isNaN(start) || isNaN(end)) return fallback || "upcoming";
 
         const now = Date.now();

@@ -56,7 +56,7 @@ window.AdminRecolour = (function () {
     /* `shell` is the container admin.js hands over; `root` is the part this
        redraws. They are kept apart so the status line is not wiped by the
        render that happens one line after something is said into it. */
-    let shell = null, root = null, statusEl = null, token = null;
+    let shell = null, root = null, statusEl = null, token = null, signedOut = null;
 
     let sayTimer = null;
     function say(msg, kind) {
@@ -361,8 +361,26 @@ window.AdminRecolour = (function () {
             body: body ? JSON.stringify(body) : undefined
         });
         const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data.error || ("Save failed (" + r.status + ")"));
+        if (!r.ok) {
+            const err = new Error(data.error || ("Save failed (" + r.status + ")"));
+            err.status = r.status;
+            throw err;
+        }
         return data;
+    }
+
+    /* Every failed request lands here. A 401 is the twelve-hour session
+       running out, and used to show as a bare "Unauthorized" in the status
+       line with nothing to do about it; it goes to admin.js's lockOut
+       instead (handed over at mount), which puts the sign-in box up. The
+       palette stays in memory, so a sign-in and a second Save keeps it. */
+    function failed(e) {
+        if (e && e.status === 401 && typeof signedOut === "function") {
+            say("Your session has expired — sign in again, then save.", "bad");
+            signedOut();
+            return;
+        }
+        say(e.message, "bad");
     }
 
     async function refresh() {
@@ -386,7 +404,7 @@ window.AdminRecolour = (function () {
             await refresh();
             render();
             say('Saved "' + saved.name + '".', "good");
-        } catch (e) { say(e.message, "bad"); }
+        } catch (e) { failed(e); }
     }
 
     async function duplicate() {
@@ -402,7 +420,7 @@ window.AdminRecolour = (function () {
             await refresh();
             render();
             say('Copied to "' + made.name + '". Editing the copy now.', "good");
-        } catch (e) { say(e.message, "bad"); }
+        } catch (e) { failed(e); }
     }
 
     async function remove() {
@@ -416,7 +434,7 @@ window.AdminRecolour = (function () {
             await refresh();
             render();
             say("Deleted.", "good");
-        } catch (e) { say(e.message, "bad"); }
+        } catch (e) { failed(e); }
     }
 
     function loadPreset(id) {
@@ -528,17 +546,33 @@ window.AdminRecolour = (function () {
         return typeof token === "function" ? (token() || "") : (token || "");
     }
 
-    async function mount(container, adminToken) {
+    // onSignedOut is admin.js's lockOut — see failed().
+    async function mount(container, adminToken, onSignedOut) {
         shell = container;
         token = adminToken;
+        signedOut = onSignedOut || null;
         shell.innerHTML = '<div class="rc-status"></div><div class="rc-body"></div>';
         statusEl = shell.querySelector(".rc-status");
         root = shell.querySelector(".rc-body");
         state.catalogue = Recolour.rescan();
-        try { await refresh(); } catch (e) { say("Could not load saved palettes: " + e.message, "bad"); }
+        try { await refresh(); } catch (e) {
+            if (e.status === 401) failed(e);
+            else say("Could not load saved palettes: " + e.message, "bad");
+        }
         render();
         return state.catalogue;
     }
+
+    /* The browser's "leave site?" prompt for a palette with unsaved edits —
+       the same guard the maze form and the guide editor have. A palette is
+       a long job of small colour changes, and closing the tab, a Back, or
+       the reload a dev server does on every save used to throw the lot
+       away without a word. Only "Load another palette" asked first. */
+    window.addEventListener("beforeunload", e => {
+        if (!state.dirty) return;
+        e.preventDefault();
+        e.returnValue = "";
+    });
 
     return { mount, state, render };
 })();

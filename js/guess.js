@@ -109,7 +109,10 @@
        or retiring those rows, which is a decision about the leaderboard
        rather than about local storage. */
     const STATE_KEY = "mazerats_guess_v4";
-    const STATS_KEY = "mazerats_guess_stats_v3";
+    /* v4: the rounds went from 100 points to 10 (see POINTS), so a running
+       record counted on the old scale starts again rather than carrying
+       totals nobody can now match a day against. */
+    const STATS_KEY = "mazerats_guess_stats_v4";
 
     /* Each wrong guess widens the view around the same centre, so the reveal
        reads as stepping back from one spot rather than as being shown a
@@ -126,12 +129,14 @@
        away rather than halving, so a third-view save is still clearly
        worth more than a miss.
 
-       500 is still a perfect day, which is a number a player can hold in
-       their head and the number the two games next door also add up to —
-       and the same array is used by the server to score a submitted day
-       (see netlify/functions/guess-scores.js), so the two can never
-       disagree about what a round was worth. Change one, change both. */
-    const POINTS = [100, 60, 30];
+       Ten a round, so 50 is a perfect day — the same as Odd One Out next
+       door, and small enough that the speed bonus (up to 37 for each room
+       named right, a point for every second under 37 it took; added on the
+       board, see netlify/functions/_speed.js) is worth playing for. The same
+       array is kept by the server to score a submitted day (see
+       netlify/functions/guess-scores.js), so the two can never disagree
+       about what a round was worth. Change one, change both. */
+    const POINTS = [10, 6, 3];
 
     function pointsFor(result) {
         if (!result || !result.done || !result.won) return 0;
@@ -647,6 +652,9 @@
         result.guesses.push({ name, correct });
         if (correct) { result.done = true; result.won = true; }
         else if (result.guesses.length >= TRIES) { result.done = true; result.won = false; }
+        // Before bankDay, so the last room's mark is already on its way
+        // when the day is submitted. See markRound.
+        if (result.done) markRound(state.round);
 
         if (result.done && state.round === ROUNDS - 1) {
             state.done = true;
@@ -914,6 +922,7 @@
             submitIfOwed();
             loadBoards();
         }
+        if (next === "round") startClock();
         if (!el.overlay.classList.contains("open")) return;
 
         const live = sheets[liveIndex()];
@@ -1011,7 +1020,7 @@
                 </p>
                 <!-- Says what the round was worth AND what it could have
                      been, because the second half is the part that teaches
-                     the scoring: "+45, 100 on the first view" explains the
+                     the scoring: "+6, 10 on the first view" explains the
                      whole system in one line, once. -->
                 <p class="guess-reveal-points ${result.won ? "is-won" : "is-lost"}">
                     ${result.won
@@ -1285,6 +1294,30 @@
         return day === yesterdayOf(t) && Date.now() - Date.parse(t + "T00:00:00Z") < DAY_GRACE_MS;
     }
 
+    /* The speed bonus's clock, started by the server the first time a
+       signed-in player goes into a room of the day (see Daily.start and
+       netlify/functions/_speed.js). Only before any guess has been made:
+       a day part-played before signing in has no clock and no bonus,
+       rather than a clock that timed only the rooms that were left. Nothing
+       here or anywhere in the game shows a time; the bonus lands on the
+       board. */
+    function startClock() {
+        if (!state || state.done || !dayStillOpen(state.day)) return;
+        if (state.results.some(r => r.guesses.length)) return;
+        if (window.Daily && Daily.start) Daily.start("guess", state.day, BOARDS_URL);
+    }
+
+    /* The end of a room, for the same bonus: the server writes down when it
+       heard (Daily.mark), and the room's time is the gap from the mark
+       before. Called only from submitGuess, at the moment a room is named
+       or its guesses run out — never from a finished day being shown
+       again, which marks nothing. Right or wrong, every room is marked,
+       because the next room's time is measured from it. */
+    function markRound(i) {
+        if (!state || !dayStillOpen(state.day)) return;
+        if (window.Daily && Daily.mark) Daily.mark("guess", state.day, i, BOARDS_URL);
+    }
+
     function submitIfOwed() {
         if (!state || !state.done || postedDay === state.day) return;
         if (!window.Account || !Account.current) return;
@@ -1311,6 +1344,8 @@
                 answer: winning ? winning.name : null
             };
         });
+        // The last room's mark has to land first, or it earns no bonus.
+        if (window.Daily && Daily.settled) await Daily.settled("guess", forDay);
         let sent = false;
         try {
             const res = await fetch(BOARDS_URL, {
@@ -1340,9 +1375,6 @@
             renderSummary();
         }
         loadBoards(true);
-        // And the combined column, which was drawn from a read made before
-        // this day's row existed. The one other time it is fetched.
-        refreshCombined(true);
     }
 
     /* The four spans a board can cover. Today first, because that is the
@@ -1394,23 +1426,22 @@
                     : `<span class="guess-board-face is-blank" aria-hidden="true"></span>`}
                 <span class="guess-board-name">${escapeHtml(row.name || "Someone")}</span>
                 ${miniGrid(row.grid)}
-                <span class="guess-board-score">${row.points}</span>
+                ${scoreCell(row)}
             </li>`).join("");
     }
 
-    /* Splits the board area into this game's board and the combined one, and
-       hands the second column to js/daily.js.
+    /* The total, and on the day's board the time taken beside it — drawn
+       by the same Daily.scoreCell as the column next to this one, so the
+       two boards cannot write a time differently. The plain total is the
+       fallback only for a page somehow without js/daily.js. */
+    function scoreCell(row) {
+        if (window.Daily && Daily.scoreCell) return Daily.scoreCell(row);
+        return `<span class="guess-board-score">${escapeHtml(row.points)}</span>`;
+    }
 
-       Guess the Maze keeps its own board code and its own endpoint — it came
+    /* Guess the Maze keeps its own board code and its own endpoint — it came
        first, is scored by netlify/functions/guess-scores.js against its own
-       POINTS array, and its rows carry a grid the game beside it does not.
-       What it does NOT need its own copy of is the day added up across every
-       game, so that half is drawn by the shared renderer in js/daily.js.
-
-       Built once and remembered: renderBoards runs again on every range
-       switch, and rebuilding the pair each time would throw the combined
-       board away and re-fetch it for a press that has nothing to do with
-       it. */
+       POINTS array, and its rows carry a grid the game beside it does not. */
     /* ONE boards element for the day, built once and moved rather than
        rebuilt.
 
@@ -1422,9 +1453,11 @@
        done that was a request to the most expensive read on the site every
        time anything on the card changed. Now the element outlives the
        markup around it: renderSummary drops a slot where it goes and swaps
-       this in, and the combined board inside it is fetched once per day —
-       again only when the day is thrown away (forgetDeal) or a fresh
-       submission needs the player to see themselves (refreshCombined). */
+       this in.
+
+       This game's board only. The board of every game added together sat
+       beside it and made the card two boards wide; it lives in the
+       Leaderboards window now (js/leaderboards.js, "All dailies"). */
     let boardsHost = null;
     let boardPanel = null;
     function boardsElement() {
@@ -1432,19 +1465,9 @@
         boardsHost = document.createElement("div");
         boardsHost.className = "guess-boards";
         boardsHost.id = "guess-boards";
-        boardsHost.innerHTML = `
-            <div class="guess-boards-pair">
-                <div class="guess-boards-own"></div>
-                <div class="guess-boards-all"></div>
-            </div>`;
+        boardsHost.innerHTML = `<div class="guess-boards-own"></div>`;
         boardPanel = boardsHost.querySelector(".guess-boards-own");
-        refreshCombined(false);
         return boardsHost;
-    }
-
-    function refreshCombined(fresh) {
-        if (!boardsHost || !window.Daily || !Daily.combinedBoard) return;
-        Daily.combinedBoard(boardsHost.querySelector(".guess-boards-all"), { day: state.day, fresh });
     }
 
     function boardColumns() {

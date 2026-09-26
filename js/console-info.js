@@ -195,7 +195,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 return signedIn()
                     ? `<input type="file" class="console-input console-file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="${esc(DeadEnds.leadKindLabel(kindKey, type))}">
                        <p class="console-note">PNG, JPG, GIF or WebP, 4MB each.</p>`
-                    : `<p class="console-note">Sign in with Discord to send images, so they can be answered for.
+                    : `<p class="console-note" data-signin-note>Sign in with Discord to send images, so they can be answered for.
                        <button type="button" class="console-link-btn" data-signin>Sign in</button></p>`;
             case "textarea":
                 return `<textarea class="console-input console-input-message console-info-value" maxlength="${DeadEnds.LEAD_ITEM_MAX}"${ph}${name}></textarea>`;
@@ -289,9 +289,16 @@ document.addEventListener("DOMContentLoaded", () => {
             const keep = DeadEnds.isLeadKind(type, sel.value) ? sel.value : "";
             const had = sel.value;
             sel.innerHTML = kindOptions(type, keep);
-            // A label that reads differently for the new type ("Add photos"
-            // for an event) means a different input too; redraw it.
-            if (keep !== had || keep === "images") row.querySelector(".console-info-input").innerHTML = keep ? kindInputHtml(keep, type) : "";
+            if (keep !== had) {
+                row.querySelector(".console-info-input").innerHTML = keep ? kindInputHtml(keep, type) : "";
+                return;
+            }
+            /* The same kind kept. An image row's label reads differently for
+               the new type ("Add photos" for an event), but only its name
+               changes. It used to be redrawn outright, which emptied the
+               picker and threw away the pictures already chosen. */
+            const picker = keep === "images" && row.querySelector(".console-file");
+            if (picker) picker.setAttribute("aria-label", DeadEnds.leadKindLabel(keep, type));
         });
         syncNewName();
     }
@@ -377,7 +384,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!kind) continue;
             const valueEl = row.querySelector(".console-info-value");
             const fileEl = row.querySelector(".console-file");
-            const files = fileEl ? Array.from(fileEl.files || []) : [];
+            // A hidden picker is one kept through a sign-out (see the
+            // Account.onChange below): its files can't be sent signed out.
+            const files = fileEl && fileEl.style.display !== "none" ? Array.from(fileEl.files || []) : [];
             const value = valueEl ? valueEl.value.trim() : "";
             if (!value && !files.length) continue;
             const tooBig = files.find(f => f.size > DeadEnds.IMAGE_MAX_BYTES);
@@ -455,15 +464,53 @@ document.addEventListener("DOMContentLoaded", () => {
     Console.openInfo = openInfo;
     Console.openMissing = openMissing;
 
-    // A sign-in or sign-out while the form is open changes the note under
-    // the username and what the image rows offer.
+    /* A sign-in or sign-out while the form is open changes the note under
+       the username and what the image rows offer — and only that. The
+       image rows used to be rebuilt from scratch on every change, which
+       threw away the pictures already chosen (and fired on a session
+       re-read that changed nothing at all). Now a row is only touched when
+       what it shows no longer matches the account, and a picker is hidden
+       on sign-out rather than removed, so signing straight back in finds
+       the same files still chosen. */
+    function syncImageRow(row) {
+        const holder = row.querySelector(".console-info-input");
+        const picker = holder.querySelector(".console-file");
+        const prompt = holder.querySelector("[data-signin-note]");
+        // The "PNG, JPG…" line that sits right after the picker.
+        const hint = picker && picker.nextElementSibling && !picker.nextElementSibling.hasAttribute("data-signin-note")
+            ? picker.nextElementSibling : null;
+        if (signedIn()) {
+            if (!picker) { holder.innerHTML = kindInputHtml("images", currentType()); return; }
+            // Inline display rather than [hidden]: .console-input sets
+            // display:block, which beats the attribute's UA rule.
+            picker.style.display = "";
+            if (hint) hint.hidden = false;
+            if (prompt) prompt.remove();
+        } else {
+            if (!picker) {
+                if (!prompt) holder.innerHTML = kindInputHtml("images", currentType());
+                return;
+            }
+            picker.style.display = "none";
+            if (hint) hint.hidden = true;
+            // kindInputHtml gives the signed-out prompt alone; only its
+            // paragraph is wanted here, beside the kept picker.
+            if (!prompt) {
+                const tmp = document.createElement("div");
+                tmp.innerHTML = kindInputHtml("images", currentType());
+                const p = tmp.querySelector("[data-signin-note]");
+                if (p) holder.appendChild(p);
+            }
+        }
+    }
+
     if (window.Account) {
         Account.onChange(() => {
             const note = document.getElementById("ci-habbo-note");
             if (note) note.innerHTML = identityNote();
             infoBody.querySelectorAll(".console-info-item").forEach(row => {
                 const kind = row.querySelector(".console-info-kind").value;
-                if (kind === "images") row.querySelector(".console-info-input").innerHTML = kindInputHtml(kind, currentType());
+                if (kind === "images") syncImageRow(row);
             });
         });
     }

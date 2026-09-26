@@ -15,13 +15,16 @@
 
    RANKS ARE COMPETITION RANKS, as the boards number them (see ranks in
    js/daily.js): a player's place is one more than the number of players
-   with strictly more points, so two players level share a place. They are
+   strictly ahead of them, so two players level share a place. Ahead means
+   what it means on the boards (RIGHT ANSWERS FIRST in guess-scores.js):
+   more rounds right, or as many right and more points. They are
    worked out over every player, not only the ten a board shows — being
    27th is still worth knowing when the board stops at 10. */
 const { getDb } = require("./_db");
 const { playerFrom } = require("./_player");
 const { today } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
+const { totalOf } = require("./_speed");
 
 const ROUNDS = 5;
 // The live games daily_scores serves; a row from a dropped game is history,
@@ -45,13 +48,22 @@ function yesterdayOf(iso) {
    game keeps its rows in. The current streak is only current if it reaches
    today or yesterday: a run that ended last week is a best, not a streak. */
 function gameStats(rows, day) {
-    const out = { days: rows.length, points: 0, solved: 0, rounds: rows.length * ROUNDS, bestDay: 0, streak: 0, best: 0, playedToday: false };
+    const out = { days: rows.length, points: 0, solved: 0, rounds: 0, bestDay: 0, streak: 0, best: 0, playedToday: false };
     if (!rows.length) return out;
 
     rows.forEach(r => {
-        out.points += r.points || 0;
+        /* The day's total — base points plus the speed bonus (_speed.js) —
+           as the boards count it, so "Points" here and a player's figure on
+           the board are the same number. A row from before the bonus has
+           none and adds nothing. Best day is the best total, likewise. */
+        out.points += totalOf(r);
         out.solved += r.solved || 0;
-        out.bestDay = Math.max(out.bestDay, r.points || 0);
+        /* The rounds each row says it had, not five a day. An Odd One Out
+           day can have fewer (see `rounds` where daily-scores.js inserts);
+           Guess the Maze rows, and Odd One Out rows from before the field,
+           carry none and were five. */
+        out.rounds += Number.isInteger(r.rounds) && r.rounds >= 0 ? r.rounds : ROUNDS;
+        out.bestDay = Math.max(out.bestDay, totalOf(r));
     });
 
     const days = rows.map(r => r.day);
@@ -71,14 +83,17 @@ function gameStats(rows, day) {
     return out;
 }
 
-// Points per player across a collection, as a Map of id -> total.
+/* What the boards rank on, per player across a collection, as a Map of
+   id -> { solved, points }: rounds right, and the total — base points and
+   speed bonus, summed apart and added here ($sum reads an old row's
+   missing bonus as nothing). */
 async function totals(col, match) {
     const rows = await col.aggregate([
         { $match: match },
-        { $group: { _id: "$playerId", points: { $sum: "$points" } } }
+        { $group: { _id: "$playerId", points: { $sum: "$points" }, bonus: { $sum: "$bonus" }, solved: { $sum: "$solved" } } }
     ]).toArray();
     const map = new Map();
-    rows.forEach(r => { if (r._id) map.set(r._id, r.points || 0); });
+    rows.forEach(r => { if (r._id) map.set(r._id, { solved: r.solved || 0, points: totalOf(r) }); });
     return map;
 }
 
@@ -96,26 +111,43 @@ async function totals(col, match) {
    they just earned show at once; at worst their place is a few minutes
    behind somebody else's. */
 const TOTALS_TTL_MS = 5 * 60 * 1000;
-let totalsCache = null;             // { at, promise }
+let totalsCache = null;             // { at, launch, promise }
 
-function boardTotals(guessCol, dailyCol) {
-    if (totalsCache && Date.now() - totalsCache.at < TOTALS_TTL_MS) return totalsCache.promise;
+/* `launch` is the launch day (see launchDay in daily-scores.js), or null.
+   The totals are everybody's from that day on, as the boards count them, so
+   a rank here is a place on the board the player can actually go and look
+   at. Part of the cache's key: a launchAt changed in settings is not
+   answered from totals worked out under the old one. */
+function boardTotals(guessCol, dailyCol, launch) {
+    if (totalsCache && totalsCache.launch === launch && Date.now() - totalsCache.at < TOTALS_TTL_MS) return totalsCache.promise;
+    const since = launch ? { day: { $gte: launch } } : {};
     const promise = Promise.all([
-        totals(guessCol, {}),
-        totals(dailyCol, { game: { $in: DAILY_GAMES } })
+        totals(guessCol, since),
+        totals(dailyCol, { ...since, game: { $in: DAILY_GAMES } })
     ]).then(([guess, odd]) => {
         // Both dailies added together, as the combined board adds them.
         const combined = new Map(guess);
-        odd.forEach((p, k) => combined.set(k, (combined.get(k) || 0) + p));
+        odd.forEach((p, k) => combined.set(k, addUp(combined.get(k), p)));
         return { guess, odd, combined };
     });
-    const entry = { at: Date.now(), promise };
+    const entry = { at: Date.now(), launch, promise };
     totalsCache = entry;
     promise.catch(() => { if (totalsCache === entry) totalsCache = null; });
     return promise;
 }
 
-const sumPoints = (rows) => rows.reduce((t, r) => t + (r.points || 0), 0);
+// Two { solved, points } added together; either may be missing.
+const addUp = (a, b) => ({
+    solved: ((a && a.solved) || 0) + ((b && b.solved) || 0),
+    points: ((a && a.points) || 0) + ((b && b.points) || 0)
+});
+
+// Rounds right and the total (base points and speed bonus) from a player's
+// own rows, as totals() counts them for everybody else.
+const sumPoints = (rows) => rows.reduce((t, r) => addUp(t, { solved: r.solved || 0, points: totalOf(r) }), addUp());
+
+// Ahead on the boards: more rounds right, or as many and more points.
+const ahead = (p, mine) => p.solved > mine.solved || (p.solved === mine.solved && p.points > mine.points);
 
 /* Where `id` stands in a Map of everybody's totals, given their own `mine`
    (null if they have no rows, and so no place). Their entry in the map is
@@ -123,8 +155,8 @@ const sumPoints = (rows) => rows.reduce((t, r) => t + (r.points || 0), 0);
 function placeIn(map, id, mine) {
     if (mine == null) return null;
     let above = 0;
-    map.forEach((p, k) => { if (k !== id && p > mine) above++; });
-    return { rank: above + 1, of: map.size + (map.has(id) ? 0 : 1), points: mine };
+    map.forEach((p, k) => { if (k !== id && ahead(p, mine)) above++; });
+    return { rank: above + 1, of: map.size + (map.has(id) ? 0 : 1), points: mine.points };
 }
 
 exports.handler = async (event) => {
@@ -146,12 +178,45 @@ exports.handler = async (event) => {
     const ffCol = db.collection("ff_scores");
 
     try {
-        const rowShape = { projection: { _id: 0, day: 1, points: 1, solved: 1 } };
+        /* The launch, read first because it decides which rows count below.
+
+           Only runs from launch onwards, as the public board counts them (see
+           sinceLaunch in ff-scores.js). The pre-launch test runs are still in
+           the collection; without this the owner's profile showed a 9,190
+           test run as their best, ranked against a board that no longer
+           lists it. settings.launchAt and every `at` are ISO strings, so
+           they compare as strings.
+
+           And the daily games from launch DAY onwards, as their boards now
+           count them (see launchDay in daily-scores.js — the same UTC date
+           of the same setting, worked out here from the one read rather than
+           a second). Days, points, streaks and places alike: a profile that
+           counted rehearsal days the boards do not would rank a player
+           somewhere no board shows them.
+
+           Fallin' Furni has a launch of its own, settings.ffLaunchAt, since
+           the game opens after the site does, and its board is cut at that
+           when it is set and at the site's launchAt when it is not (see
+           readGate in ff-scores.js). The same rule here, from the same
+           read, or the profile would count runs the board has cut. The
+           daily games, and the totals cache keyed on their launch day,
+           stay on the site's date: the game's date is nothing to them. */
+        const settings = await db.collection("settings").findOne({ _id: "site" }, { projection: { launchAt: 1, ffLaunchAt: 1 } });
+        const launchMs = settings && settings.launchAt ? Date.parse(settings.launchAt) : NaN;
+        const ffOwnMs = settings && settings.ffLaunchAt ? Date.parse(settings.ffLaunchAt) : NaN;
+        const ffLaunchMs = isNaN(ffOwnMs) ? launchMs : ffOwnMs;
+        const since = isNaN(ffLaunchMs) ? {} : { at: { $gte: new Date(ffLaunchMs).toISOString() } };
+        const launch = isNaN(launchMs) ? null : new Date(launchMs).toISOString().slice(0, 10);
+        const fromLaunch = launch ? { day: { $gte: launch } } : {};
+
+        // `rounds` for Odd One Out rows that record it, and `bonus` for the
+        // total — see gameStats.
+        const rowShape = { projection: { _id: 0, day: 1, points: 1, bonus: 1, solved: 1, rounds: 1 } };
         const [profile, guessRows, oddRows, board, ffMine, leadCounts] = await Promise.all([
             db.collection("players").findOne({ id }, { projection: { _id: 0, joinedAt: 1 } }),
-            guessCol.find({ playerId: id }, rowShape).sort({ day: 1 }).toArray(),
-            dailyCol.find({ playerId: id, game: "odd" }, rowShape).sort({ day: 1 }).toArray(),
-            boardTotals(guessCol, dailyCol),
+            guessCol.find({ playerId: id, ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
+            dailyCol.find({ playerId: id, game: "odd", ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
+            boardTotals(guessCol, dailyCol, launch),
             ffCol.findOne({ playerId: id }, { projection: { _id: 0, points: 1, levels: 1, ms: 1, at: 1 } }),
             db.collection("dead_end_leads").aggregate([
                 { $match: { "from.id": id } },
@@ -162,17 +227,9 @@ exports.handler = async (event) => {
         // Their own totals, fresh from their own rows; null means no place.
         const myGuess = guessRows.length ? sumPoints(guessRows) : null;
         const myOdd = oddRows.length ? sumPoints(oddRows) : null;
-        const myCombined = myGuess == null && myOdd == null ? null : (myGuess || 0) + (myOdd || 0);
+        const myCombined = myGuess == null && myOdd == null ? null : addUp(myGuess, myOdd);
 
-        /* Only runs from launch onwards, as the public board counts them (see
-           sinceLaunch in ff-scores.js). The pre-launch test runs are still in
-           the collection; without this the owner's profile showed a 9,190
-           test run as their best, ranked against a board that no longer
-           lists it. settings.launchAt and every `at` are ISO strings, so
-           they compare as strings. */
-        const settings = await db.collection("settings").findOne({ _id: "site" }, { projection: { launchAt: 1 } });
-        const launchMs = settings && settings.launchAt ? Date.parse(settings.launchAt) : NaN;
-        const since = isNaN(launchMs) ? {} : { at: { $gte: new Date(launchMs).toISOString() } };
+        // Fallin' Furni from its launch instant — see `since` above.
         const ffCounts = ffMine && (!since.at || String(ffMine.at || "") >= since.at.$gte);
 
         let ff = null;

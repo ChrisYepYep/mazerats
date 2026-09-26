@@ -282,7 +282,19 @@ const Api = {
             headers: { "Content-Type": "application/json", "x-admin-token": token },
             body: JSON.stringify({ action: "verify" })
         });
-        if (!res.ok) return null;
+        /* Only a refusal means signed out. Any failure used to answer null,
+           and the admin page read null as "session expired" and wiped the
+           stored token — so a database blip (503) or a cold function
+           falling over (500) signed the admin out of a session that was
+           perfectly good. Everything else throws, like a dropped connection
+           already did, and the caller says "try again" with the token kept. */
+        if (res.status === 401 || res.status === 403) return null;
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            const err = new Error(data.error || `Couldn't check the session: ${res.status}`);
+            err.status = res.status;
+            throw err;
+        }
         return res.json(); // { username }
     },
 
@@ -395,7 +407,7 @@ const Api = {
        This endpoint answers with under a kilobyte and it was being asked
        three times on every page load, by callers that had no idea the
        others existed: the gate script in home.html's <head>, this method
-       (for js/site.js, js/welcome.js and the console's About page), and
+       (for js/site.js and js/welcome.js, among others), and
        js/palette-wear.js with a raw fetch of its own. Fallin' Furni managed
        four. Three cold-startable function calls, in parallel, for one
        answer that cannot have changed between them.

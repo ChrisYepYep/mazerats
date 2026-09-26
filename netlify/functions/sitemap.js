@@ -14,6 +14,13 @@ const { getDb } = require("./_db");
 const { headersFor } = require("./_headers");
 
 const CACHE = "public, s-maxage=3600, stale-while-revalidate=86400";
+/* What the pages-only fallback goes out with when the database could not be
+   read. It used to take CACHE like a full answer, so one bad minute at the
+   cluster was stored at the edge for an hour and then served stale for a
+   day on top — a sitemap with no mazes in it, handed to every crawler that
+   asked, long after the database was back. A minute, and no stale serving,
+   so the next crawl after recovery gets the whole archive. */
+const FALLBACK_CACHE = "public, max-age=60, s-maxage=60";
 
 /* The site's address from the deploy's configuration, never from the
    request's Host or x-forwarded-host — those are the caller's to set, and
@@ -78,6 +85,7 @@ exports.handler = async (event) => {
         url(`${origin}/privacy`, "", "0.3")
     ];
 
+    let cache = CACHE;
     try {
         const db = await getDb();
         const [rooms, events] = await Promise.all([
@@ -90,15 +98,28 @@ exports.handler = async (event) => {
         events.forEach(e => {
             if (e.id) entries.push(url(`${origin}/event/${encodeURIComponent(e.id)}`, lastmod(e.date), "0.5"));
         });
+        /* The Guides window and each published guide. Read on their own so a guides
+           collection that does not exist yet costs the archive's entries
+           nothing. */
+        const guides = await db.collection("guides")
+            .find({ status: "published" }, { projection: { id: 1, updatedAt: 1, _id: 0 } }).toArray()
+            .catch(() => []);
+        if (guides.length) entries.push(url(`${origin}/guides`, "", "0.6"));
+        guides.forEach(g => {
+            // The share address, as mazes are listed at /maze/<id>: it is the
+            // canonical js/guides.js names, and the one with the guide's own tags.
+            if (g.id) entries.push(url(`${origin}/guides/${encodeURIComponent(g.id)}`, lastmod(g.updatedAt), "0.6"));
+        });
     } catch (e) {
         // A sitemap listing the pages is worth more than a 500. The archive's
         // own entries come back on the next crawl.
         console.warn("sitemap.js: database unavailable, serving pages only", e.message);
+        cache = FALLBACK_CACHE;
     }
 
     return {
         statusCode: 200,
-        headers: headersFor("application/xml; charset=utf-8", { "Cache-Control": CACHE }),
+        headers: headersFor("application/xml; charset=utf-8", { "Cache-Control": cache }),
         body: '<?xml version="1.0" encoding="UTF-8"?>\n' +
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
             entries.join("\n") + "\n</urlset>\n"

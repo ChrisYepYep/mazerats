@@ -1,7 +1,12 @@
 /* /.netlify/functions/guess-scores — the daily game's leaderboards.
 
-   GET  ?day=YYYY-MM-DD   today's top scorers and the all-time table
-   POST {day, rounds}     records the signed-in player's finished day
+   GET  ?day=YYYY-MM-DD           today's top scorers and the all-time table
+   POST {day, rounds}             records the signed-in player's finished day
+   POST {day, action: "start"}    starts the signed-in player's clock for the
+                                  day's speed bonus — see _speed.js
+   POST {day, action: "mark", round}
+                                  marks the end of one round, for the same
+                                  bonus — see _speed.js
 
    ----------------------------------------------------------------------
    How much this trusts the page
@@ -37,6 +42,11 @@ const { SECURITY_HEADERS } = require("./_headers");
    POINTS array — but "is this day still accepting scores" is a rule about the
    clock rather than about the game, and both games want the same answer. */
 const { dayIsOpen, daySeed, isHallway, existedBefore, rangeBounds } = require("./_daily");
+/* Where the boards start, and what counts as a day, from daily-scores.js so
+   the two games and the combined board cut at the same place. See launchDay
+   and isRealDay there. */
+const { launchDay, fromLaunch, isRealDay } = require("./daily-scores");
+const speed = require("./_speed");
 
 const COLLECTION = "guess_scores";
 const ROUNDS = 5;
@@ -46,8 +56,14 @@ const ROUNDS = 5;
    because there is no fourth view. The length is load-bearing beyond the
    scoring — scoreRounds below rejects a claimed `tries` outside it, so a day
    submitted by an older page, or a crafted one claiming four, scores that
-   round nothing rather than reading past the end of this array. */
-const POINTS = [100, 60, 30];
+   round nothing rather than reading past the end of this array.
+
+   Ten a round, so a perfect day is 50. It was 100/60/30 (a 500 day) until
+   just before launch; the rows scored that way are all test days from
+   before launch day, which the launch cut already hides from every board
+   (see launchDay in daily-scores.js), so they were left as they are rather
+   than rescored. */
+const POINTS = [10, 6, 3];
 const BOARD_SIZE = 10;
 
 const json = (statusCode, data) => ({
@@ -230,9 +246,22 @@ function scoreRounds(rounds, answers) {
    Out's was a rolling seven days, so the same "This week" tab covered two
    different spans in two columns side by side. See the note there. */
 
-/* One board over a span of days. Grouped per player so a month's board is
-   a total rather than a list of days, and ordered by points with fewer days
-   winning ties — someone who scored the same in less play was better at it.
+/* RIGHT ANSWERS FIRST, ON EVERY DAILY BOARD. Rounds answered correctly
+   decide the order, and the total (points plus speed bonus) only orders
+   players level on those. The bonus can be worth far more than a round (up
+   to 37 a round against 10 — see _speed.js), so ranked on the total alone
+   a fast day with four right would sit above a slower day with all five;
+   ranked this way, speed separates players who got the same number right
+   and never lifts anybody over someone who got more right. The same order
+   is kept by the day board below, by board() and the combined board in
+   daily-scores.js, by the Profile's places (player-profile.js), and by
+   Daily.ranks in js/daily.js, which only numbers two rows as a tie when
+   both their rounds right and their total match.
+
+   One board over a span of days. Grouped per player so a month's board is
+   a total rather than a list of days, and ordered by rounds right, then
+   points, with fewer days winning ties — someone who scored the same in
+   less play was better at it.
 
    SORTED BEFORE IT IS GROUPED, which is what makes `$last` mean newest.
    $group takes documents in whatever order they arrive, and without a sort
@@ -241,10 +270,19 @@ function scoreRounds(rounds, answers) {
    "some row wins the name". Day then submission time, oldest first, so the
    last one into each group is the player's most recent.
 
-   And a final tiebreak on the player id after points and days, so two
-   players level on both come back in the same order on every read rather
-   than swapping places between refreshes. The page numbers them as a tie
-   either way (Daily.ranks); this only keeps the order still. */
+   And a final tiebreak on the player id after rounds, points and days, so
+   two players level on all three come back in the same order on every read
+   rather than swapping places between refreshes. The page numbers them as
+   a tie either way (Daily.ranks); this only keeps the order still.
+
+   POINTS ARE THE TOTAL — base points plus the speed bonus (see _speed.js).
+   The two are summed separately and added after the group, because $sum
+   reads a missing field as nothing, so a row from before the bonus simply
+   adds none. What goes out as `points` is the total, since that is the
+   number a board shows and Daily.ranks ties on; `base` and `bonus` go
+   beside it for anything that wants the split. No time on a span's rows:
+   a month of times added up says nothing a reader could use, and days that
+   were never timed would count as instant. */
 async function board(col, from, to, limit) {
     const rows = await col.aggregate([
         { $match: { day: { $gte: from, $lte: to } } },
@@ -252,6 +290,7 @@ async function board(col, from, to, limit) {
         { $group: {
             _id: "$playerId",
             points: { $sum: "$points" },
+            bonus: { $sum: "$bonus" },
             solved: { $sum: "$solved" },
             days: { $sum: 1 },
             // Newest row wins the name, so a Discord rename shows through
@@ -259,10 +298,48 @@ async function board(col, from, to, limit) {
             name: { $last: "$name" },
             avatar: { $last: "$avatar" }
         } },
-        { $sort: { points: -1, days: 1, _id: 1 } },
+        { $addFields: { total: speed.TOTAL } },
+        { $sort: { solved: -1, total: -1, days: 1, _id: 1 } },
         { $limit: limit }
     ]).toArray();
-    return rows.map(r => ({ id: r._id, name: r.name, avatar: r.avatar, points: r.points, solved: r.solved, days: r.days }));
+    return rows.map(r => ({
+        id: r._id, name: r.name, avatar: r.avatar,
+        points: r.total, base: r.points, bonus: r.bonus || 0,
+        solved: r.solved, days: r.days
+    }));
+}
+
+/* One day's board: a row per player rather than a total, because it
+   carries each player's grid and time.
+
+   Ordered by rounds right, then total (see RIGHT ANSWERS FIRST above),
+   then the faster time, then who submitted first, then the id so two
+   identical rows cannot swap. An aggregation rather than a find, because
+   the total is a sum and the time needs a fallback: a day with no time on
+   file (an old row, or a day never started signed in) sorts after every
+   timed one at the same total — see NO_TIME in _speed.js. */
+async function dayBoard(col, match, limit) {
+    return col.aggregate([
+        { $match: match },
+        { $addFields: { total: speed.TOTAL, msOrder: { $ifNull: ["$ms", speed.NO_TIME] } } },
+        { $sort: { solved: -1, total: -1, msOrder: 1, at: 1, playerId: 1 } },
+        { $limit: limit }
+    ]).toArray();
+}
+
+/* A day's row as the page gets it. `points` is the total, as on every
+   board; `ms` is the time taken, for the small figure beside it, and null
+   when there is none to show. */
+function dayRow(r) {
+    return {
+        id: r.playerId, name: r.name, avatar: r.avatar,
+        points: speed.totalOf(r), base: r.points || 0, bonus: r.bonus || 0,
+        ms: Number.isFinite(r.ms) ? r.ms : null,
+        solved: r.solved,
+        // Older rows predate the grid being stored; an empty one
+        // simply renders as no grid rather than as a wrong one.
+        grid: Array.isArray(r.grid) ? r.grid : null
+    };
 }
 
 exports.handler = async (event) => {
@@ -286,12 +363,16 @@ exports.handler = async (event) => {
     // ---------- read the boards ----------
     if (event.httpMethod === "GET") {
         const day = ((event.queryStringParameters || {}).day || todayIso()).slice(0, 10);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json(400, { error: "Bad day" });
+        // A real calendar day, not only the right shape — see isRealDay.
+        if (!isRealDay(day)) return json(400, { error: "Bad day" });
 
         try {
             const week = rangeBounds("week", day);
             const month = rangeBounds("month", day);
             const all = rangeBounds("all", day);
+            // Every span from launch day on; a day before it has no board.
+            const launch = await launchDay(db);
+            const before = Boolean(launch) && day < launch;
 
             /* All four boards in one request rather than one per tab. They
                are small, they are read together, and a results panel whose
@@ -301,14 +382,10 @@ exports.handler = async (event) => {
                 // The day's own board keeps its per-player rows rather than
                 // being grouped, because it carries the grid for the
                 // head-to-head and there is nothing to sum over one day.
-                col.find({ day }, { projection: { _id: 0, playerId: 1, name: 1, avatar: 1, points: 1, solved: 1, grid: 1 } })
-                    // playerId last, so two identical rows cannot swap.
-                    .sort({ points: -1, at: 1, playerId: 1 })
-                    .limit(BOARD_SIZE)
-                    .toArray(),
-                board(col, week.from, week.to, BOARD_SIZE),
-                board(col, month.from, month.to, BOARD_SIZE),
-                board(col, all.from, all.to, BOARD_SIZE)
+                before ? [] : dayBoard(col, { day }, BOARD_SIZE),
+                board(col, fromLaunch(week.from, launch), week.to, BOARD_SIZE),
+                board(col, fromLaunch(month.from, launch), month.to, BOARD_SIZE),
+                board(col, fromLaunch(all.from, launch), all.to, BOARD_SIZE)
             ]);
 
             // "date" is the day these are FOR; "day" is the board itself.
@@ -317,13 +394,7 @@ exports.handler = async (event) => {
                 date: day,
                 weekFrom: week.from,
                 monthFrom: month.from,
-                day: todayRows.map(r => ({
-                    id: r.playerId, name: r.name, avatar: r.avatar,
-                    points: r.points, solved: r.solved,
-                    // Older rows predate the grid being stored; an empty one
-                    // simply renders as no grid rather than as a wrong one.
-                    grid: Array.isArray(r.grid) ? r.grid : null
-                })),
+                day: todayRows.map(dayRow),
                 week: weekRows,
                 month: monthRows,
                 allTime: allRows
@@ -335,6 +406,10 @@ exports.handler = async (event) => {
 
     // ---------- record a finished day ----------
     if (event.httpMethod === "POST") {
+        /* The moment the request arrived, taken before anything slow — the
+           archive read in answersFor can take a second or two, and that is
+           the server's time, not the player's. */
+        const arrived = Date.now();
         const player = playerFrom(event);
         // Not an error worth shouting about: the page submits optimistically
         // and simply is not listed when signed out.
@@ -353,6 +428,50 @@ exports.handler = async (event) => {
         // dayIsOpen in _daily.js for why the grace period exists. A day that
         // has not happened cannot have been played.
         if (!dayIsOpen(day)) return json(400, { error: "That day is not open" });
+
+        /* ---------- the day's clock starting ----------
+
+           Sent by the page when a signed-in player first goes into a room.
+           Recorded once and never moved (see _speed.js); every later call
+           is a no-op, so it needs no rate limit of its own — the most any
+           number of calls can ever write is one row per player per open
+           day. The answer says nothing about the time, because nothing in
+           the game shows one. */
+        if (body.action === "start") {
+            if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
+            try {
+                await speed.recordStart(db, ensureUniqueIndex, "guess", day, player.id);
+            } catch (e) {
+                console.error("guess-scores: could not record a start", e);
+                return json(503, { started: false });
+            }
+            return json(200, { started: true });
+        }
+
+        /* ---------- a round ending ----------
+
+           Sent by the page the moment a room is named or its guesses run
+           out. Written once, never moved, and only in order — each round
+           needs the one before it marked, and round 0 needs the start; see
+           recordMark in _speed.js. Like the start, the most any number of
+           calls can write is one mark per round, so no rate limit of its
+           own. The answer names no time. */
+        if (body.action === "mark") {
+            if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
+            const round = speed.markRound(body.round, ROUNDS);
+            if (round == null) return json(400, { error: "Bad round" });
+            let outcome;
+            try {
+                outcome = await speed.recordMark(db, "guess", day, player.id, round);
+            } catch (e) {
+                console.error("guess-scores: could not record a mark", e);
+                return json(503, { marked: false });
+            }
+            if (outcome === "marked") return json(200, { marked: true });
+            if (outcome === "already") return json(200, { marked: false, reason: "already" });
+            return json(409, { marked: false, reason: outcome });
+        }
+
         if (!Array.isArray(body.rounds) || body.rounds.length !== ROUNDS) {
             return json(400, { error: "Bad rounds" });
         }
@@ -366,13 +485,32 @@ exports.handler = async (event) => {
 
         const { points, solved, grid } = scoreRounds(body.rounds, answers);
 
+        /* The speed bonus, from the start and the round marks on file —
+           see _speed.js. Only the rounds scored right just above earn any;
+           a round with no mark earns none. No start on file is no bonus,
+           and so is a clock that cannot be read just now: a day that fails
+           to record over a lookup would be worse than a day recorded
+           without its extra points. */
+        let clock = null;
+        try {
+            clock = await speed.clockFor(db, "guess", day, player.id);
+        } catch (e) {
+            console.error("guess-scores: could not read the day's clock", e);
+        }
+        const { bonus, ms, roundSecs } = speed.dayBonus(clock, grid.map(g => g > 0), arrived);
+
         try {
             await col.insertOne({
                 day,
                 playerId: player.id,
                 name: player.name,
                 avatar: player.avatar,
+                // `points` is still the base score, as it always was; the
+                // boards add `bonus` to it. `ms` (the whole day) and
+                // `roundSecs` (each round) only when there was a clock.
                 points,
+                bonus,
+                ...(ms == null ? {} : { ms, roundSecs }),
                 solved,
                 grid,
                 at: new Date().toISOString()

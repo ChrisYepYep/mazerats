@@ -10,7 +10,7 @@
 */
 
 const { getDb } = require("./_db.js");
-const { isAuthorized, UNAUTHORIZED } = require("./_auth.js");
+const { hasAccount, UNAUTHORIZED } = require("./_auth.js");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -20,7 +20,10 @@ const json = (statusCode, data) => ({
 });
 
 exports.handler = async (event) => {
-    if (!isAuthorized(event)) return UNAUTHORIZED;
+    /* A live account, not just a signed token (see hasAccount in _auth.js).
+       One more indexed findOne beside the one this already makes, on a poll
+       that only runs while a scan does. */
+    if (!(await hasAccount(event))) return UNAUTHORIZED;
     try {
         const db = await getDb();
         const doc = await db.collection("furni_scans").findOne({ _id: "current" });
@@ -35,6 +38,8 @@ exports.handler = async (event) => {
             ...progress
         });
     } catch (err) {
-        return json(500, { error: err.message });
+        // The reason to the log; a driver error is nobody else's business.
+        console.error("furni-scan-status: read failed", err);
+        return json(500, { error: "Could not read the scan progress" });
     }
 };

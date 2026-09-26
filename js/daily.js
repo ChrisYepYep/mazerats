@@ -179,20 +179,38 @@ window.Daily = (function () {
        afternoon must not be the reason somebody cannot play — so anything
        going wrong here is read as "no reset waiting", which is true far more
        often than not. */
+    // Each request gets the same 10s cap api.js's _getWithFallback gives its
+    // first attempt. Without one a stalled request never settled, so the
+    // game waiting on this sat on "Dealing…" (or never started) for good;
+    // an abort throws into the catch below and reads as "no reset waiting".
+    // The timer is cleared only after the body is read, since res.json()
+    // can stall just as well as the headers.
+    const CLAIM_TIMEOUT_MS = 10000;
+    async function fetchWithTimeout(url, init, readBody) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), CLAIM_TIMEOUT_MS);
+        try {
+            const res = await fetch(url, Object.assign({}, init, { signal: controller.signal }));
+            const body = readBody && res.ok ? await res.json() : null;
+            return { res, body };
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
     async function claimReset(game) {
         try {
-            const res = await fetch("/.netlify/functions/daily-games?mine=1", { credentials: "same-origin" });
+            const { res, body } = await fetchWithTimeout("/.netlify/functions/daily-games?mine=1", { credentials: "same-origin" }, true);
             if (!res.ok) return false;
-            const body = await res.json();
             if (!body || !Array.isArray(body.games) || !body.games.includes(game)) return false;
             // Spend it BEFORE clearing, so a failure here cannot leave a
             // ticket that wipes the player's day again on every open.
-            const spent = await fetch("/.netlify/functions/daily-games?mine=1", {
+            const { res: spent } = await fetchWithTimeout("/.netlify/functions/daily-games?mine=1", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "same-origin",
                 body: JSON.stringify({ game })
-            });
+            }, false);
             // fetch only throws on a network failure; a 4xx/5xx came back
             // as "spent" all the same, so the day was cleared while the
             // ticket stayed, to clear it again on the next open.
@@ -224,6 +242,8 @@ window.Daily = (function () {
        board underneath is the confirmation. Signed out it still posts and
        is told, politely, that there is no name to put on a row. */
     async function submit(game, day, moves) {
+        // The last pick's mark first, or that round earns no bonus. See mark.
+        await settled(game, day);
         try {
             const res = await fetch(SCORES_URL, {
                 method: "POST",
@@ -236,6 +256,119 @@ window.Daily = (function () {
             // The local record is already kept; there is nothing to say.
             return null;
         }
+    }
+
+    /* Starts the clock for the day's speed bonus. The server keeps the time
+       — the page never sends one and never shows one — so all this does is
+       say "a signed-in player has just gone into today's first round", and
+       the server writes down when it heard. Only the first call for a day
+       ever counts there (see netlify/functions/_speed.js), so a reload or a
+       second device changes nothing.
+
+       Each game calls it on the way into its first round and only while no
+       round has been played: a day already under way before sign-in has no
+       clock on file and so no bonus, and starting one half-way through
+       would time only the rounds left.
+
+       Signed out it sends nothing; there is nobody to time. Once per game
+       and day per visit, unless the request fell over, in which case the
+       next call tries again. `url` is for Guess the Maze, which keeps its
+       own endpoint; every other game starts through this one. Silent and
+       never throws, like submit. */
+    const startSent = new Set();
+    async function start(game, day, url) {
+        const key = game + ":" + day;
+        if (startSent.has(key) || !window.Account) return;
+        try { await Account.ready(); } catch (e) { return; }
+        if (!Account.current) return;
+        startSent.add(key);
+        try {
+            const res = await fetch(url || SCORES_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({ game, day, action: "start" })
+            });
+            // A refusal (a closed day, say) will be refused again; only a
+            // server that could not answer is worth another go.
+            if (res.status >= 500) startSent.delete(key);
+        } catch (e) {
+            startSent.delete(key);
+        }
+    }
+
+    /* Marks the end of one round, for the speed bonus. As with start, the
+       server writes down when it heard, and only the first mark for a round
+       ever counts (see netlify/functions/_speed.js) — so this is called
+       once, at the moment a round is over in live play, and never when a
+       finished day is only being shown again.
+
+       Once per round per visit. A request that fell over (no connection,
+       or a server that could not answer) is tried once more straight away:
+       later would stamp a later time, and a round timed late is only ever
+       worth less. A refusal is not retried. Silent and never throws.
+
+       The last round's mark and the day's submission leave together, and
+       the server needs the mark first or that round earns nothing — so
+       each mark in flight is kept, and settled() below lets a submission
+       wait for them. */
+    const markSent = new Set();
+    const marksInFlight = new Map();
+    function mark(game, day, round, url) {
+        const key = game + ":" + day + ":" + round;
+        if (markSent.has(key) || !window.Account) return Promise.resolve();
+        markSent.add(key);
+        const send = () => fetch(url || SCORES_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ game, day, action: "mark", round })
+        }).then(res => res.status < 500, () => false);
+        const job = (async () => {
+            try { await Account.ready(); } catch (e) { return; }
+            if (!Account.current) return;
+            if (!(await send())) await send();
+        })().catch(() => {});
+        const dayKey = game + ":" + day;
+        if (!marksInFlight.has(dayKey)) marksInFlight.set(dayKey, new Set());
+        marksInFlight.get(dayKey).add(job);
+        job.then(() => marksInFlight.get(dayKey).delete(job));
+        return job;
+    }
+
+    /* Waits for a day's marks still on their way, but never for long: a
+       mark that is stuck costs that round its bonus, and a submission that
+       never leaves would cost the whole day. */
+    const MARK_WAIT_MS = 4000;
+    function settled(game, day) {
+        const jobs = [...(marksInFlight.get(game + ":" + day) || [])];
+        if (!jobs.length) return Promise.resolve();
+        return Promise.race([
+            Promise.all(jobs),
+            new Promise(resolve => setTimeout(resolve, MARK_WAIT_MS))
+        ]);
+    }
+
+    /* A time taken, as a board writes it: "1:42", or "1:02:05" past the
+       hour. Only ever drawn on a single day's board, small, beside the
+       total it helped earn. Published so Guess the Maze writes it the
+       same way. */
+    function clock(ms) {
+        if (!Number.isFinite(ms) || ms < 0) return "";
+        const s = Math.floor(ms / 1000);
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const ss = String(s % 60).padStart(2, "0");
+        return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+    }
+
+    /* The score cell: the total, and on a single day's board the time
+       beside it in smaller type. Only a day's rows carry `ms` (see
+       daily-scores.js), so a week or a month shows the total alone. */
+    function scoreCell(row) {
+        const t = clock(row.ms);
+        return `<span class="guess-board-score">${escapeHtml(row.points)}${t
+            ? ` <span class="guess-board-time" title="Time taken">${t}</span>` : ""}</span>`;
     }
 
     const RANGES = [
@@ -264,8 +397,8 @@ window.Daily = (function () {
     /* How many of the day's games a row's points came from.
 
        Only ever drawn on the combined board, where it is the thing that
-       stops the ranking being misread: without it, a player on 500 and a
-       player on 1400 look like one is four times better, when in fact one
+       stops the ranking being misread: without it, a player on 60 and a
+       player on 180 look like one is three times better, when in fact one
        played a single game well and the other played both.
 
        Out of DAILY_GAME_COUNT, not a written-in 3: it said "/3" long after
@@ -285,15 +418,24 @@ window.Daily = (function () {
        Numbered by position, two players on the same points were first and
        second, and which was which came down to the order the database
        handed them back in — a ranking nobody earned. Standard competition
-       ranking instead: equal points, equal place, and the next place along
-       skips by however many shared the last. The list is already sorted by
-       points, so a row only has to look at the one above it.
+       ranking instead: level players share a place, and the next place
+       along skips by however many shared the last. The list is already
+       sorted, so a row only has to look at the one above it.
+
+       LEVEL MEANS LEVEL ON WHAT THE BOARD RANKS BY. The daily boards put
+       rounds right first and points second (see board() in
+       netlify/functions/guess-scores.js), so two rows only tie when both
+       their `solved` and their points match — a 4-right day on more points
+       sits below a 5-right day, and must not share its place. A board
+       whose rows carry no `solved` (Fallin' Furni's) ties on points alone,
+       as it always did.
 
        Published so Guess the Maze numbers its own board the same way. */
     function ranks(list) {
         const out = [];
+        const level = (a, b) => a.points === b.points && (a.solved == null ? null : a.solved) === (b.solved == null ? null : b.solved);
         (list || []).forEach((row, i) => {
-            out.push(i > 0 && row.points === list[i - 1].points ? out[i - 1] : i + 1);
+            out.push(i > 0 && level(row, list[i - 1]) ? out[i - 1] : i + 1);
         });
         return out;
     }
@@ -309,39 +451,9 @@ window.Daily = (function () {
                     : `<span class="guess-board-face is-blank" aria-hidden="true"></span>`}
                 <span class="guess-board-name">${escapeHtml(row.name || "Someone")}</span>
                 ${row.games ? gamesPill(row.games) : miniGrid(row.grid)}
-                <span class="guess-board-score">${row.points}</span>
+                ${scoreCell(row)}
             </li>`).join("");
     }
-
-    /* ---------- the day across every game ----------
-
-       Drawn beside a game's own board rather than instead of it, and it
-       answers a different question: the board on the left is who is best at
-       this game, and this one is who turned up. A player who is nowhere near
-       the top of either single board can lead this one by playing both every
-       morning, which is exactly the habit worth rewarding.
-
-       Not named for a number. It said "All three games" and listed them by
-       name underneath, which was two things to remember to change when
-       Ratrospect was dropped and exactly one of them obvious — the count is
-       in the heading, and a heading that is quietly wrong is worse than one
-       that says less. It now names no total at all, so the next game to
-       arrive or leave changes the wording in one place rather than three.
-
-       Published so Guess the Maze can use it too — that game keeps its own
-       board code and its own endpoint (see netlify/functions/guess-scores.js),
-       and the combined figures come from neither of them. One renderer, every
-       game, one shape on screen.
-
-       Never throws, and never takes the game's own board down with it: a
-       second board that cannot be reached says so in its own column and
-       leaves the first alone. */
-    const COMBINED_EMPTY = {
-        day: "Nobody has finished a game today yet.",
-        week: "No scores this week yet.",
-        month: "No scores this month yet.",
-        allTime: "No scores recorded yet."
-    };
 
     /* Past the fifteen-second edge cache, for the one fetch that needs it.
 
@@ -357,51 +469,6 @@ window.Daily = (function () {
         return fresh ? `${base}&fresh=${Date.now()}` : base;
     }
 
-    function combinedBoard(host, opts) {
-        if (!host) return;
-        const o = opts || {};
-        const forDay = o.day || today();
-        let data = null;
-        let range = "day";
-
-        const me = () => (window.Account && Account.current ? Account.current.id : null);
-
-        function draw() {
-            if (!data) {
-                host.innerHTML = `<p class="guess-board-note">Fetching the scores…</p>`;
-                return;
-            }
-            if (data === "failed") {
-                host.innerHTML = `<p class="guess-board-note">The combined board could not be reached just now.</p>`;
-                return;
-            }
-            const tabs = RANGES.map(r => `
-                <button type="button" class="guess-board-range${r.key === range ? " is-on" : ""}"
-                        data-range="${r.key}" aria-pressed="${r.key === range}">${escapeHtml(r.label)}</button>`).join("");
-
-            host.innerHTML = `
-                <div class="guess-board">
-                    <p class="guess-board-title">Every game</p>
-                    <div class="guess-board-ranges" role="group" aria-label="Which span the combined board covers">${tabs}</div>
-                    <p class="guess-board-span">Guess the Maze and Odd One Out added together</p>
-                    <ol class="guess-board-list">${rows(data[range], me(), COMBINED_EMPTY[range] || COMBINED_EMPTY.day)}</ol>
-                </div>`;
-
-            host.querySelectorAll(".guess-board-range").forEach(btn => {
-                btn.addEventListener("click", () => { range = btn.dataset.range; draw(); });
-            });
-        }
-
-        draw();
-        fetch(boardUrl(`${SCORES_URL}?game=all&day=${encodeURIComponent(forDay)}`, o.fresh), {
-            headers: { Accept: "application/json" },
-            credentials: "same-origin"
-        })
-            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
-            .then(body => { data = body; draw(); })
-            .catch(() => { data = "failed"; draw(); });
-    }
-
     /* Draws the board into a host element and keeps it there: one fetch
        brings all four spans, so the tabs are a redraw rather than a round
        trip. Never throws — a board that will not load is a disappointment,
@@ -413,25 +480,15 @@ window.Daily = (function () {
         let data = null;
         let range = "day";
 
-        /* Two columns: this game's board, and the same day across all three.
-           The host is split here rather than in each game's markup so that
-           adding a fourth game means nothing new to lay out — and so the two
-           boards cannot drift apart in how they are framed.
-
-           The game's own board keeps the original host element's identity by
-           being drawn into the first column; everything below still writes
-           into `panel` exactly as it used to write into `host`. */
-        host.innerHTML = `
-            <div class="guess-boards-pair">
-                <div class="guess-boards-own"></div>
-                <div class="guess-boards-all"></div>
-            </div>`;
+        /* This game's board only. The board of every game added together
+           sat beside it and made the card two boards wide; it lives in the
+           Leaderboards window now (js/leaderboards.js, "All dailies"). */
+        host.innerHTML = `<div class="guess-boards-own"></div>`;
         const panel = host.querySelector(".guess-boards-own");
         /* The day the board is FOR is the day that was played, which the
            game passes in — not today(), which a round finished a minute past
            midnight has already moved on from. */
         const forDay = o.day || today();
-        combinedBoard(host.querySelector(".guess-boards-all"), { day: forDay, fresh: o.fresh });
 
         const me = () => (window.Account && Account.current ? Account.current.id : null);
 
@@ -511,11 +568,8 @@ window.Daily = (function () {
             .some(t => String(t).trim().toLowerCase() === HALLWAY_TAG);
     }
 
-    // combinedBoard is published so Guess the Maze can draw the same second
-    // column beside its own board — that game keeps its own board code and
-    // its own endpoint, and this is the one piece all three share.
     return {
         today, seededRandom, seedFrom, daySeed, daySeedFor, isFeaturedDay, shuffle, dayBefore,
-        claimReset, submit, boards, combinedBoard, ranks, isHallway, existedBefore
+        claimReset, submit, start, mark, settled, clock, scoreCell, boards, ranks, isHallway, existedBefore
     };
 })();

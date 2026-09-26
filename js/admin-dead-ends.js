@@ -48,6 +48,7 @@
     let trail = new Map();          // "type:id" -> waiting lead count
     let records = [];               // [{ type, id, name, raw }]
     let openEditor = null;          // "type:id" of the record being edited
+    let editorDraft = null;         // its unsaved ticks and note — see editor()
     const imageUrls = new Map();    // quarantined key -> promise of an object URL
 
     function token() {
@@ -302,13 +303,16 @@
             info.appendChild(rv);
         }
 
+        /* Every one of these writes, so each carries de-write: the class
+           css/style.css greys for a view-only (or Albus) account, which the
+           server refuses anyway. Copy and "Sign in again" do not carry it. */
         const actions = document.createElement("div");
         actions.className = "admin-row-actions";
-        if (lead.status !== "accepted") actions.appendChild(button("Accept…", () => toggleAccept(row, lead)));
-        if (lead.status === "new") actions.appendChild(button("Reject", () => reject(lead)));
-        if (lead.status !== "new") actions.appendChild(button("Reopen", () => review(lead, { status: "new" })));
-        if (lead.ip) actions.appendChild(button("Ban IP", () => ban(lead.ip), lead.ip));
-        actions.appendChild(button("Delete", () => remove(lead), "", "admin-delete-btn"));
+        if (lead.status !== "accepted") actions.appendChild(button("Accept…", () => toggleAccept(row, lead), "", "de-write"));
+        if (lead.status === "new") actions.appendChild(button("Reject", () => reject(lead), "", "de-write"));
+        if (lead.status !== "new") actions.appendChild(button("Reopen", () => review(lead, { status: "new" }), "", "de-write"));
+        if (lead.ip) actions.appendChild(button("Ban IP", () => ban(lead.ip), lead.ip, "de-write"));
+        actions.appendChild(button("Delete", () => remove(lead), "", "admin-delete-btn de-write"));
 
         row.appendChild(info);
         row.appendChild(actions);
@@ -420,7 +424,7 @@
             <label class="de-check"><input type="checkbox" data-f="credit"${creditName && !alreadyCredited ? " checked" : ""}> Credit as a contributor${alreadyCredited ? ` — already credited as ${escapeHtml(alreadyCredited)}` : ""}</label>
             <input type="text" class="ctl-input" data-f="creditName" maxlength="60" placeholder="Name to credit" value="${escapeHtml(creditName)}">
             <input type="text" class="ctl-input" data-f="note" maxlength="500" placeholder="Note (optional, admins only)">
-            <div class="ctl-actions"><button type="button" class="ctl-btn" data-f="go">Accept</button></div>`;
+            <div class="ctl-actions"><button type="button" class="ctl-btn de-write" data-f="go">Accept</button></div>`;
         const go = form.querySelector('[data-f="go"]');
         go.addEventListener("click", async () => {
             const pick = (f) => form.querySelector(`[data-f="${f}"]`);
@@ -576,11 +580,14 @@
 
         const actions = document.createElement("div");
         actions.className = "admin-row-actions";
+        // Both lead only to a write (the editor's Save, or the clear), so
+        // both are greyed for a view-only account — see de-write above.
         actions.appendChild(button(flag ? "Edit" : "Mark…", () => {
             openEditor = openEditor === k ? null : k;
+            editorDraft = null;
             renderRecords();
-        }));
-        if (flag) actions.appendChild(button("Clear", () => clearFlag(rec), "", "admin-delete-btn"));
+        }, "", "de-write"));
+        if (flag) actions.appendChild(button("Clear", () => clearFlag(rec), "", "admin-delete-btn de-write"));
 
         row.appendChild(info);
         row.appendChild(actions);
@@ -598,7 +605,17 @@
        through twenty boxes. A record that HAS been marked opens exactly as
        it was saved, and the suggestions stay out of it. */
     function editor(rec, flag) {
-        const ticked = new Set(flag ? flag.pieces : DeadEnds.suggested(rec.raw, rec.type));
+        /* The list is rebuilt from scratch on every renderRecords — each
+           keystroke in the search box, Refresh, and the reload after any
+           accept, reject or delete — and the editor with it. Built from the
+           flag each time, it threw away whatever had been ticked and typed
+           so far. What the admin has done to it is kept in editorDraft
+           instead (for this record only; opening another, Cancel and Save
+           all drop it) and wins over the stored flag when it is rebuilt. */
+        const k = keyOf(rec.type, rec.id);
+        const draft = editorDraft && editorDraft.key === k ? editorDraft : null;
+        const ticked = new Set(draft ? draft.pieces : flag ? flag.pieces : DeadEnds.suggested(rec.raw, rec.type));
+        const noteText = draft ? draft.note : flag ? flag.note : "";
         const form = document.createElement("div");
         form.className = "de-editor";
         form.innerHTML = `
@@ -608,14 +625,24 @@
                 <label class="de-check" title="${escapeHtml(p.ask)}"><input type="checkbox" data-mark="${p.key}"${ticked.has(p.key) ? " checked" : ""}> ${escapeHtml(p.label)}</label>`).join("")}
             </div>
             <span class="ctl-label">What exactly (shown to visitors)</span>
-            <textarea class="ctl-input de-note" maxlength="${DeadEnds.NOTE_MAX}" rows="2" placeholder="e.g. The secret room behind the bookcase in room 12">${escapeHtml(flag ? flag.note : "")}</textarea>
+            <textarea class="ctl-input de-note" maxlength="${DeadEnds.NOTE_MAX}" rows="2" placeholder="e.g. The secret room behind the bookcase in room 12">${escapeHtml(noteText)}</textarea>
             <div class="ctl-actions">
-                <button type="button" class="ctl-btn" data-f="save">Save</button>
+                <button type="button" class="ctl-btn de-write" data-f="save">Save</button>
                 <button type="button" class="ctl-btn" data-f="cancel">Cancel</button>
             </div>
             <p class="ctl-status" data-f="status"></p>`;
 
-        form.querySelector('[data-f="cancel"]').addEventListener("click", () => { openEditor = null; renderRecords(); });
+        const remember = () => {
+            editorDraft = {
+                key: k,
+                pieces: Array.from(form.querySelectorAll("[data-mark]")).filter(i => i.checked).map(i => i.dataset.mark),
+                note: form.querySelector(".de-note").value
+            };
+        };
+        form.addEventListener("change", remember);
+        form.addEventListener("input", remember);
+
+        form.querySelector('[data-f="cancel"]').addEventListener("click", () => { openEditor = null; editorDraft = null; renderRecords(); });
         form.querySelector('[data-f="save"]').addEventListener("click", async () => {
             const status = form.querySelector('[data-f="status"]');
             const body = {
@@ -635,6 +662,7 @@
             try {
                 await call(FLAGS_URL, "PUT", body);
                 openEditor = null;
+                editorDraft = null;
                 await reloadFlags();
             } catch (err) {
                 if (sessionGone(err)) return;

@@ -39,6 +39,8 @@ const STATE_COOKIE = "mr_oauth";
 const STATE_TTL = 10 * 60;                 // ten minutes to finish a login
 const STATE_AUDIENCE = "mazerats-oauth-state";
 const DISCORD_API = "https://discord.com/api/v10";
+// The token exchange and the profile read together — see the callback.
+const DISCORD_TIMEOUT_MS = 5000;
 
 const json = (statusCode, data, extra) => ({
     statusCode,
@@ -220,10 +222,19 @@ exports.handler = async (event) => {
         // Both halves, and they must match. Either one alone proves nothing.
         if (!cookieNonce || cookieNonce !== claims.nonce) return fail("failed");
 
+        /* Both calls to Discord share one deadline, as habbo.js bounds its
+           own. Unbounded, a Discord that accepted the connection and then
+           said nothing held this function open until the platform killed
+           it, and the visitor was left on a blank error page halfway
+           through signing in instead of being sent home with "failed" —
+           which is what an abort now does, through the catch below. */
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), DISCORD_TIMEOUT_MS);
         let user;
         try {
             const tokenRes = await fetch(`${DISCORD_API}/oauth2/token`, {
                 method: "POST",
+                signal: controller.signal,
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
                 body: new URLSearchParams({
                     client_id: process.env.DISCORD_CLIENT_ID,
@@ -237,12 +248,15 @@ exports.handler = async (event) => {
             const grant = await tokenRes.json();
 
             const meRes = await fetch(`${DISCORD_API}/users/@me`, {
+                signal: controller.signal,
                 headers: { Authorization: `Bearer ${grant.access_token}` }
             });
             if (!meRes.ok) return fail("failed");
             user = await meRes.json();
         } catch (e) {
             return fail("failed");
+        } finally {
+            clearTimeout(timer);
         }
         if (!user || !user.id) return fail("failed");
 

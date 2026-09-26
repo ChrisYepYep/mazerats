@@ -113,8 +113,28 @@
                     : `<span class="guess-board-face is-blank" aria-hidden="true"></span>`}
                 <span class="guess-board-name">${esc(row.name || "Someone")}</span>
                 ${extra(row)}
-                <span class="guess-board-score">${esc(row.points)}</span>
+                <span class="guess-board-score">${esc(row.points)}${timeOf(row)}</span>
             </li>`).join("");
+    }
+
+    /* The time a day took, small, beside its total — only on a single day's
+       board, where the daily endpoints send `ms` (a week's or a month's rows
+       carry none, so they show the total alone). Fallin' Furni's rows carry
+       an `ms` of their own, a run's length, which this board has never
+       shown and does not start to here. Written as Daily.clock writes it
+       when that is on the page; the copy below is for when it is not, since
+       js/daily.js only arrives with a game. */
+    function timeOf(row) {
+        const g = GAMES.find(x => x.key === game);
+        if (!g || g.ff || range !== "day" || !Number.isFinite(row.ms) || row.ms < 0) return "";
+        let t;
+        if (window.Daily && Daily.clock) t = Daily.clock(row.ms);
+        else {
+            const s = Math.floor(row.ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+            const ss = String(s % 60).padStart(2, "0");
+            t = h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+        }
+        return ` <span class="guess-board-time" title="Time taken">${esc(t)}</span>`;
     }
 
     // Out of the daily games in GAMES (the ones with a play button), so it

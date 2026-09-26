@@ -1,6 +1,6 @@
 /* /.netlify/functions/events — CRUD API for events. Mirrors rooms.js. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { isAuthorized, hasAccount, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
 const { packRecords } = require("./_furni-payload");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
@@ -78,7 +78,8 @@ exports.handler = async (event) => {
         // the edge. js/api.js unpacks it.
         const params = event.queryStringParameters || {};
         if (params.full === "1") {
-            if (!isAuthorized(event)) return UNAUTHORIZED;
+            // A live account, not just a signed token — see rooms.js.
+            if (!(await hasAccount(event))) return UNAUTHORIZED;
             return cachedJson(event, all, { cache: false });
         }
         return cachedJson(event, await packRecords(all));
@@ -115,7 +116,8 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
-        if (!body.title) return json(400, { error: "An event needs at least a title" });
+        // A string, because slugify below calls string methods on it.
+        if (!body.title || typeof body.title !== "string") return json(400, { error: "An event needs at least a title" });
 
         await ensureUniqueIndex(events, "id");
 
@@ -148,7 +150,9 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "PUT") {
-        if (!body.id) return json(400, { error: "Missing event id" });
+        // A string, not merely truthy — an object would be a query operator
+        // in the filter below. See the same check in rooms.js.
+        if (!body.id || typeof body.id !== "string") return json(400, { error: "Missing event id" });
         // createdAt is set once, on insert — never by an edit.
         const { _id, createdAt: _ignored, ...update } = body;
         // Never a client-sent change list — see the same line in rooms.js.

@@ -512,8 +512,20 @@ async function handleReview(event, db) {
                     ? (lead.type === "event" ? "Event Images" : "Room Images")
                     : "Historical Data";
                 const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-                const existing = await contributors.findOne({ username: { $regex: `^${escaped}$`, $options: "i" } });
-                if (existing) {
+                /* A read-modify-write on somebody else's row, so it is made
+                   conditional on the row being as it was read — the same
+                   updatedAt check contributors.js makes of the admin form.
+                   Without it, an admin saving this contributor between the
+                   read and the write lost their save (or this credit lost
+                   to theirs). A row that moved is simply read again; the
+                   credit is additive, so re-applying it to the newer row is
+                   always right. updatedAt is stamped too, so a contributor
+                   form opened before this accept is refused on Save instead
+                   of quietly writing the credit away. */
+                let existing = null;
+                for (let attempt = 0; attempt < 5; attempt++) {
+                    existing = await contributors.findOne({ username: { $regex: `^${escaped}$`, $options: "i" } });
+                    if (!existing) break;
                     const list = Array.isArray(existing[listField]) ? existing[listField] : [];
                     if (!isNew && list.indexOf(lead.recordId) === -1) list.push(lead.recordId);
                     const types = Array.isArray(existing.types) ? existing.types : [];
@@ -522,7 +534,17 @@ async function handleReview(event, db) {
                     const events = listField === "events" ? list : (existing.events || []);
                     let extra = existing.extra != null ? existing.extra : Math.max(0, (existing.count || 0) - (existing.mazes || []).length - (existing.events || []).length);
                     if (isNew) extra += 1;
-                    await contributors.updateOne({ id: existing.id }, { $set: { [listField]: list, types, extra, count: mazes.length + events.length + extra } });
+                    // null matches a row with no updatedAt at all, as well
+                    // as one holding null — Mongo's own rule for equality.
+                    const was = existing.updatedAt == null ? null : existing.updatedAt;
+                    const res = await contributors.updateOne(
+                        { id: existing.id, updatedAt: was },
+                        { $set: { [listField]: list, types, extra, count: mazes.length + events.length + extra, updatedAt: new Date().toISOString() } }
+                    );
+                    if (res.modifiedCount || res.matchedCount) break;
+                    if (attempt === 4) throw new Error("The contributor kept changing while the credit was being added - try again.");
+                }
+                if (existing) {
                     out.credited = existing.username;
                 } else {
                     await ensureUniqueIndex(contributors, "id");
