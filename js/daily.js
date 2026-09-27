@@ -1,24 +1,54 @@
-/* What a "day" is, and how a day picks the same things for everybody.
+/* What a "day" is for the daily games, and the requests they share.
 
-   Two games now deal a set from the archive once a day, and both need the
-   same three answers: when the day turns over, how a date becomes a seed,
-   and what a seeded shuffle does with it. Written once here because the
-   moment there are two copies there are two day boundaries, and the first
-   anyone hears about that is somebody in Discord saying their five rooms
-   are not your five rooms.
+   THE DAY IS NO LONGER DEALT HERE. It used to be: this file carried the
+   seed arithmetic and the shuffle, both games dealt their day in the
+   browser from the edge-cached /rooms list, and the server re-dealt it at
+   submission to check what came back. That made the answers readable from
+   the page, made tomorrow's rooms visible to anybody who set their device's
+   clock forward, and scored correct picks as wrong whenever the archive was
+   edited mid-day. The day is now dealt once on the server, stored, and
+   handed to the page without its answers (netlify/functions/_deal.js);
+   each pick is sent as it is made and the server says whether it was right.
 
-   None of this is security. A determined reader can work out today's answers
-   from the page — that is true of every daily game that ships its own data —
-   and the point is reproducibility, not secrecy. */
+   What is left here is the calendar, corrected to the server's clock, and
+   the requests both games make: the deal, each move, the finished day, and
+   the boards. */
 window.Daily = (function () {
     "use strict";
+
+    /* How far this device's clock is from the server's, in ms, as last
+       measured. Every deal reply carries the server's `now`, and the
+       difference is kept (and remembered, so the menu is right before a game
+       has been opened this visit). A device whose clock is wrong by a day no
+       longer thinks it is a different day from everybody else — which,
+       while the day was read off the device alone, broke the game for an
+       honest player with a wrong clock and showed tomorrow's rooms to a
+       dishonest one. The server decides which day is open either way; this
+       only makes the page agree with it. */
+    const OFFSET_KEY = "mazerats_clock_offset";
+    let clockOffset = 0;
+    try { clockOffset = Number(localStorage.getItem(OFFSET_KEY)) || 0; } catch (e) { clockOffset = 0; }
+
+    function setServerNow(ms) {
+        if (!Number.isFinite(ms)) return;
+        clockOffset = ms - Date.now();
+        // Under a minute is network latency, not a wrong clock; not worth a
+        // write, and storing it would only move today() by jitter.
+        if (Math.abs(clockOffset) < 60000) clockOffset = 0;
+        try { localStorage.setItem(OFFSET_KEY, String(clockOffset)); } catch (e) { /* private mode */ }
+    }
+
+    // The server's idea of now, as near as this page can tell.
+    function now() {
+        return Date.now() + clockOffset;
+    }
 
     /* The date in UTC, so the day turns over at the same instant for
        everybody rather than at each player's local midnight. Two people
        comparing grids in a channel are then always talking about the same
        puzzle, whichever side of the world they are on. */
     function today() {
-        return new Date().toISOString().slice(0, 10);
+        return new Date(now()).toISOString().slice(0, 10);
     }
 
     // mulberry32 — small, fast, and good enough that consecutive days do not
@@ -33,131 +63,14 @@ window.Daily = (function () {
         };
     }
 
-    // FNV-1a. Any string in, one stable number out.
-    function seedFrom(str) {
-        let h = 2166136261;
-        for (let i = 0; i < str.length; i++) {
-            h ^= str.charCodeAt(i);
-            h = Math.imul(h, 16777619);
-        }
-        return h >>> 0;
-    }
-
-    /* A shuffle that depends only on the seed and the order it was handed.
-
-       That second half is the part that bites: the shuffle draws one number
-       per entry in sequence, so which items come out depends on what order
-       they went in. A list left in the order the database returned it is not
-       a stable order — rewriting a document can move it — and an admin
-       saving an edit at noon would quietly deal a different set for the rest
-       of the day. Every caller sorts its pool by something of its own first,
-       and this leaves that order alone. */
-    function shuffle(list, seed) {
-        const rand = seededRandom(seed);
-        return list
-            .map(item => ({ item, k: rand() }))
-            .sort((a, b) => a.k - b.k)
-            .map(o => o.item);
-    }
-
-    /* ---------- A DAY WORTH ARRIVING ON ----------
-
-       Every day's puzzle is derived from its own date, which is exactly
-       right 364 days a year: nobody chooses it, everybody gets the same
-       one, and there is nothing to maintain. It is wrong for precisely one
-       day — the day the site opens, when more people will play their first
-       ever round than on any other day, and the round they get is whatever
-       the 3rd of October happens to hash to.
-
-       So a date here can be given a SALT, which is stirred into every seed
-       the three games derive for that day. It does not choose the mazes;
-       it rerolls them. Change the salt, deploy, look at what the games
-       deal, and keep the one you like.
-
-       WHY A SALT AND NOT A HAND-PICKED LIST. A list means a new data shape,
-       an admin screen to edit it, validation for maze ids that might have
-       been renamed since, and three games each needing to be taught to
-       accept an override — a fair amount of machinery, all of it capable
-       of dealing a broken day if any part of it is wrong. A salt cannot
-       produce an invalid round, because it produces exactly the same kind
-       of round the other 364 days produce. It is one line, it is reviewed
-       like code, and the worst it can do is deal a day somebody did not
-       prefer.
-
-       CHANGE IT BEFORE THE DAY, NOT DURING IT. The salt is part of the
-       seed, so changing it mid-day re-deals the puzzle under anyone already
-       playing and orphans the scores already submitted. It is committed
-       code and only moves on a deploy, which makes that hard to do by
-       accident — but it is the one rule.
-
-       An empty table is the normal state. Once launch day has passed this
-       can go back to being empty, or keep an entry for the next occasion.
-
-       THE TABLE ITSELF LIVES IN js/featured-days.js, which the server
-       reads too — it used to be written out here and again in
-       netlify/functions/_daily.js, and two copies of it is precisely the
-       thing that deals one puzzle in the browser and checks a different
-       one on the server. One file, both sides. See that file's header.
-
-       The `|| {}` is not a fallback so much as a floor: a page that loaded
-       daily.js without featured-days.js would apply no salt and desync
-       from the server, so the pairing is asserted at build time by
-       tools/check-daily-parity.js rather than papered over here. This
-       keeps the failure to "no featured days" instead of a TypeError. */
-    const FEATURED_DAYS = (typeof globalThis !== "undefined" && globalThis.FEATURED_DAYS) || {};
-
-    function saltFor(iso) {
-        const salt = FEATURED_DAYS[iso];
-        return salt ? ":" + salt : "";
-    }
-
-    /* The seed a game should use for a given day, salt included.
-
-       Every seed the three games derive goes through here rather than
-       calling seedFrom with a hand-built string, so a featured day reaches
-       all of them and none can be forgotten. `parts` is whatever else that
-       particular seed is made of — a round index, a maze id — and the day
-       and the salt are added here. */
-    function daySeed(...parts) {
-        return daySeedFor(today(), ...parts);
-    }
-
-    /* The same seed for a NAMED day rather than whatever today is.
-
-       What a game should actually deal from. daySeed reads the clock every
-       time it is called, which is fine for a round started and finished
-       inside one day and wrong for the one that crosses midnight: Odd One
-       Out was re-dealt under the player between one pick and the next, so
-       rounds one to three came from yesterday, four and five from today, and
-       the mixed result was filed under today — where the unique index then
-       refused the player's real go at today. A game pins the day it started
-       on and passes it here for every draw.
-
-       Built exactly as daySeed builds it, and as daySeed(day, ...parts)
-       does on the server (netlify/functions/_daily.js), which already took
-       the day as its first argument; tools/check-daily-parity.js compares
-       this one's numbers against the server's too. */
-    function daySeedFor(day, ...parts) {
-        return seedFrom(parts.join(":") + ":" + day + saltFor(day));
-    }
-
-    /* Whether a maze was in the archive before a given day began — the
-       browser's half of existedBefore in netlify/functions/_daily.js, which
-       has the full reasoning. In short: a maze catalogued mid-day joins the
-       rotation at the next midnight rather than re-dealing the day under
-       everybody already playing it. createdAt is stamped by the server on
-       insert and never rewritten; a record older than the stamp has none
-       and counts as always having been there. */
-    function existedBefore(record, day) {
-        const stamp = record && typeof record.createdAt === "string" ? record.createdAt.slice(0, 10) : "";
-        return !stamp || stamp < day;
-    }
-
-    // Whether today is one of the featured days, for anything that wants to
-    // say so out loud.
-    function isFeaturedDay() {
-        return Boolean(FEATURED_DAYS[today()]);
-    }
+    /* The seed arithmetic, the shuffle, the featured-day salt and the
+       archive filters (existedBefore, isHallway) that used to follow here
+       are gone from the browser: they existed so the page could deal the
+       day, and the page no longer does. Their one copy is on the server —
+       netlify/functions/_daily.js and _deal.js — where the featured-day
+       salt (js/featured-days.js) is still applied, now under a secret. What
+       stays is seededRandom above, which Guess the Maze uses to choose
+       where to crop a picture from the seed the deal hands it. */
 
     // Yesterday's key, for deciding whether a streak survived.
     function dayBefore(iso) {
@@ -229,33 +142,112 @@ window.Daily = (function () {
        subtly different boards would be several things to keep in step for
        no gain to anybody reading them.
 
-       What each game passes in is what it DID — which gap a card went into,
-       which tile was picked. Never a score: the server derives the day and
-       works the points out for itself. See netlify/functions/daily-scores.js. */
+       What each game passes in is what it DID — which tile was picked,
+       which name was guessed. Never a score: the server judges each move
+       against the day it dealt and works the points out for itself. See
+       netlify/functions/daily-scores.js. */
     const SCORES_URL = "/.netlify/functions/daily-scores";
 
     const escapeHtml = str => String(str == null ? "" : str)
         .replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+    /* Every request the games make, with the same 10s cap as the reset
+       claim above. The submit, the boards and the moves all used to be a
+       bare fetch, so a request the network swallowed never settled: the
+       board said "Fetching the scores…" for good, and Guess the Maze's
+       submitIfOwed never ran again because the POST it was waiting on never
+       finished. An abort is a failure like any other now.
+
+       Answers { status, body }: status 0 for no answer at all (offline,
+       timed out), and the body parsed whenever there is one, errors
+       included, because a refusal's reason is worth reading. Never throws. */
+    const REQUEST_TIMEOUT_MS = CLAIM_TIMEOUT_MS;
+    async function request(url, init) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        try {
+            const res = await fetch(url, Object.assign({ credentials: "same-origin" }, init, { signal: controller.signal }));
+            let body = null;
+            try { body = await res.json(); } catch (e) { body = null; }
+            return { status: res.status, body };
+        } catch (e) {
+            return { status: 0, body: null };
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    const post = (url, data) => request(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+    });
+
+    /* The day's deal, from the server: the pictures to play (and for Guess
+       the Maze the names offered), never the answers. `day` is only passed
+       to carry on with a day begun before midnight; without it the server
+       says which day it is. The reply's `now` corrects this page's clock
+       (setServerNow). `url` is Guess the Maze's own endpoint.
+
+       Answers the reply's body, or null when the server could not be
+       reached or would not deal — the games then say so and offer a retry,
+       as they did when the archive could not be read. */
+    async function deal(game, day, url) {
+        const qs = url ? `?deal=1` : `?game=${encodeURIComponent(game)}&deal=1`;
+        const { status, body } = await request((url || SCORES_URL) + qs + (day ? `&day=${encodeURIComponent(day)}` : ""), {
+            headers: { Accept: "application/json" }
+        });
+        if (body && Number.isFinite(body.now)) setServerNow(body.now);
+        return status === 200 && body && Array.isArray(body.rounds) ? body : null;
+    }
+
+    /* One move — a tile picked, a name guessed — sent the moment it is made,
+       and the server's verdict back. `data` is the game's own part of it
+       ({ tile } or { guess }), `anon` a day begun signed out (see the note
+       at the POST in daily-scores.js).
+
+       A signed-in player's move waits for the day's start to have landed,
+       or the server would find no clock and time nothing. A move the server
+       calls too fast (MIN_MOVE_MS in netlify/functions/_speed.js) is sent
+       again once the time it names has passed — a genuinely quick player
+       loses nothing but that fraction of a second. A request that fell over
+       is tried once more straight away.
+
+       Answers { status, body } like request: 200 with the verdict, or
+       whatever the last attempt got. */
+    async function move(game, day, round, data, opts) {
+        const o = opts || {};
+        const key = game + ":" + day;
+        if (!o.anon && startsInFlight.has(key)) await startsInFlight.get(key);
+        const payload = Object.assign({ game, day, action: "move", round }, data, o.anon ? { anon: true } : {});
+        let reply = { status: 0, body: null };
+        for (let attempt = 0; attempt < 4; attempt++) {
+            reply = await post(o.url || SCORES_URL, payload);
+            if (reply.status === 429 && reply.body && reply.body.retryInMs > 0) {
+                await new Promise(resolve => setTimeout(resolve, Math.min(reply.body.retryInMs, 3000) + 50));
+                continue;
+            }
+            if (reply.status === 0 && attempt === 0) continue;
+            break;
+        }
+        return reply;
+    }
+
     /* Posts a finished day. Silent by design — whether a score reached a
        board is not something to interrupt somebody's result with, and the
        board underneath is the confirmation. Signed out it still posts and
-       is told, politely, that there is no name to put on a row. */
+       is told, politely, that there is no name to put on a row.
+
+       `moves` is only read by the server for a day played signed out (it
+       scores a signed-in day from the moves it recorded). Answers
+       { ok, body, retry }: `ok` when the day is on file (just now, or
+       already), `retry` when it is worth sending again later — no answer,
+       or a server that could not answer — as opposed to a refusal that
+       will only be refused again. */
     async function submit(game, day, moves) {
-        // The last pick's mark first, or that round earns no bonus. See mark.
-        await settled(game, day);
-        try {
-            const res = await fetch(SCORES_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "same-origin",
-                body: JSON.stringify({ game, day, moves })
-            });
-            return res.ok ? await res.json() : null;
-        } catch (e) {
-            // The local record is already kept; there is nothing to say.
-            return null;
-        }
+        const { status, body } = await post(SCORES_URL, { game, day, moves });
+        const ok = status === 200 && body && (body.recorded || body.reason === "already");
+        return { ok: Boolean(ok), body, retry: !ok && (status === 0 || status >= 500 || status === 429) };
     }
 
     /* Starts the clock for the day's speed bonus. The server keeps the time
@@ -274,79 +266,29 @@ window.Daily = (function () {
        and day per visit, unless the request fell over, in which case the
        next call tries again. `url` is for Guess the Maze, which keeps its
        own endpoint; every other game starts through this one. Silent and
-       never throws, like submit. */
+       never throws, like submit.
+
+       Kept while in flight, so a move made before the start has landed
+       waits for it (see move) — the round marks that used to follow it are
+       gone: a round's end is now the move that finished it, recorded with
+       the pick. */
     const startSent = new Set();
-    async function start(game, day, url) {
+    const startsInFlight = new Map();
+    function start(game, day, url) {
         const key = game + ":" + day;
-        if (startSent.has(key) || !window.Account) return;
-        try { await Account.ready(); } catch (e) { return; }
-        if (!Account.current) return;
+        if (startSent.has(key) || !window.Account) return Promise.resolve();
         startSent.add(key);
-        try {
-            const res = await fetch(url || SCORES_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "same-origin",
-                body: JSON.stringify({ game, day, action: "start" })
-            });
+        const job = (async () => {
+            try { await Account.ready(); } catch (e) { startSent.delete(key); return; }
+            if (!Account.current) { startSent.delete(key); return; }
+            const { status } = await post(url || SCORES_URL, { game, day, action: "start" });
             // A refusal (a closed day, say) will be refused again; only a
             // server that could not answer is worth another go.
-            if (res.status >= 500) startSent.delete(key);
-        } catch (e) {
-            startSent.delete(key);
-        }
-    }
-
-    /* Marks the end of one round, for the speed bonus. As with start, the
-       server writes down when it heard, and only the first mark for a round
-       ever counts (see netlify/functions/_speed.js) — so this is called
-       once, at the moment a round is over in live play, and never when a
-       finished day is only being shown again.
-
-       Once per round per visit. A request that fell over (no connection,
-       or a server that could not answer) is tried once more straight away:
-       later would stamp a later time, and a round timed late is only ever
-       worth less. A refusal is not retried. Silent and never throws.
-
-       The last round's mark and the day's submission leave together, and
-       the server needs the mark first or that round earns nothing — so
-       each mark in flight is kept, and settled() below lets a submission
-       wait for them. */
-    const markSent = new Set();
-    const marksInFlight = new Map();
-    function mark(game, day, round, url) {
-        const key = game + ":" + day + ":" + round;
-        if (markSent.has(key) || !window.Account) return Promise.resolve();
-        markSent.add(key);
-        const send = () => fetch(url || SCORES_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "same-origin",
-            body: JSON.stringify({ game, day, action: "mark", round })
-        }).then(res => res.status < 500, () => false);
-        const job = (async () => {
-            try { await Account.ready(); } catch (e) { return; }
-            if (!Account.current) return;
-            if (!(await send())) await send();
-        })().catch(() => {});
-        const dayKey = game + ":" + day;
-        if (!marksInFlight.has(dayKey)) marksInFlight.set(dayKey, new Set());
-        marksInFlight.get(dayKey).add(job);
-        job.then(() => marksInFlight.get(dayKey).delete(job));
+            if (status === 0 || status >= 500) startSent.delete(key);
+        })().catch(() => { startSent.delete(key); });
+        startsInFlight.set(key, job);
+        job.then(() => { if (startsInFlight.get(key) === job) startsInFlight.delete(key); });
         return job;
-    }
-
-    /* Waits for a day's marks still on their way, but never for long: a
-       mark that is stuck costs that round its bonus, and a submission that
-       never leaves would cost the whole day. */
-    const MARK_WAIT_MS = 4000;
-    function settled(game, day) {
-        const jobs = [...(marksInFlight.get(game + ":" + day) || [])];
-        if (!jobs.length) return Promise.resolve();
-        return Promise.race([
-            Promise.all(jobs),
-            new Promise(resolve => setTimeout(resolve, MARK_WAIT_MS))
-        ]);
     }
 
     /* A time taken, as a board writes it: "1:42", or "1:02:05" past the
@@ -533,43 +475,23 @@ window.Daily = (function () {
         }
 
         draw();
-        fetch(boardUrl(`${SCORES_URL}?game=${encodeURIComponent(game)}&day=${encodeURIComponent(forDay)}`, o.fresh), {
-            headers: { Accept: "application/json" },
-            credentials: "same-origin"
-        })
-            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
-            .then(body => { data = body; draw(); })
-            .catch(() => { data = "failed"; draw(); });
+        // Through request(), so a stalled read ends in "could not be
+        // reached" after ten seconds rather than "Fetching…" for good.
+        request(boardUrl(`${SCORES_URL}?game=${encodeURIComponent(game)}&day=${encodeURIComponent(forDay)}`, o.fresh), {
+            headers: { Accept: "application/json" }
+        }).then(({ status, body }) => {
+            data = status === 200 && body ? body : "failed";
+            draw();
+        });
     }
 
-    /* A hallway is not a maze, and none of the games may deal one.
-
-       The archive has always known this — js/home.js leaves hallways out of
-       the maze count, the walked tally and the featured rows — but it knew
-       it only for itself, and the games build their pools straight from the
-       rooms the API returns. So "Origins Maze Rats Hallway" was a round of
-       Guess the Maze with nothing in it to guess, and one of the five names
-       offered against rooms that really were mazes.
-
-       Here rather than in each game because all three need it, and matched
-       against the server's own copy in netlify/functions/_daily.js: the
-       browser deals the day and the server re-derives it to score what comes
-       back, so a room excluded on one side and not the other is the two
-       sides playing different games. Same reason daySeed is written twice.
-
-       The archive keeps its own copy in js/home.js and that is deliberate —
-       home.js does not load daily.js's answer for anything else, and the
-       archive's counts must not start depending on the games' module. Two
-       readings of one tag, which is a tag neither of them defines. */
-    const HALLWAY_TAG = "hallway";
-
-    function isHallway(record) {
-        return (record && Array.isArray(record.tags) ? record.tags : [])
-            .some(t => String(t).trim().toLowerCase() === HALLWAY_TAG);
-    }
+    /* isHallway lived here too, for the games to keep hallways out of the
+       day they dealt. The server deals now, and its copy (isHallway in
+       netlify/functions/_daily.js) is the one that decides; js/home.js keeps
+       the archive's own reading of the tag, as it always did. */
 
     return {
-        today, seededRandom, seedFrom, daySeed, daySeedFor, isFeaturedDay, shuffle, dayBefore,
-        claimReset, submit, start, mark, settled, clock, scoreCell, boards, ranks, isHallway, existedBefore
+        today, now, setServerNow, seededRandom, dayBefore, request,
+        claimReset, deal, move, submit, start, clock, scoreCell, boards, ranks
     };
 })();

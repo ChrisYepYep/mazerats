@@ -4,7 +4,7 @@
    requires an admin session, same as rooms.js/events.js. There's no
    edit/delete here — only adding new tags was asked for. */
 const { getDb } = require("./_db");
-const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -48,6 +48,20 @@ exports.handler = async (event) => {
         }
     }
 
+    /* The write half inside one try, as the GET above is: the lookup and
+       insert had nothing around them, so a database that dropped mid-save
+       answered with Lambda's stack trace — and canWrite now throws when the
+       account lookup cannot be made (lookUpRole in _auth.js), which has to
+       reach the admin page as a 503, not the 401 that signs it out. */
+    try {
+        return await write(event, tags);
+    } catch (e) {
+        console.error("tags: write failed", e);
+        return AUTH_UNAVAILABLE;
+    }
+};
+
+async function write(event, tags) {
     if (!isAuthorized(event)) return UNAUTHORIZED;
     // canWrite, not isAuthorized: a viewer is a real logged-in account and
     // passes isAuthorized quite correctly — it just isn't allowed to change
@@ -64,6 +78,8 @@ exports.handler = async (event) => {
     } catch (e) {
         return json(400, { error: "Invalid request body" });
     }
+    // "null" or a bare number parses without complaint and has no fields.
+    if (!body || typeof body !== "object") body = {};
 
     if (event.httpMethod === "POST") {
         /* A tag is a short word or two on a chip, and it is written into
@@ -89,4 +105,4 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
-};
+}

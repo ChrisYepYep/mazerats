@@ -185,12 +185,25 @@ window.AdminWizard = (function () {
        on after a refresh and a lock nobody trusted. */
     async function setRecordLocked(kind, record, next) {
         if (!record) return;
+        /* Put back if the save fails, as toggleHidden does. It was drawn
+           first and saved second and never undone, so a refused save left a
+           padlock showing open on something the server still had locked (or
+           the other way round) until the next reload quietly flipped it. */
+        const was = record.locked;
         record.locked = !!next;
         drawHandles();
         renderInspector();
         renderRoomList();
         const ok = await saveOne(kind, record);
-        if (ok) say(next ? "Locked." : "Unlocked.", next ? "" : "good");
+        if (!ok) {
+            if (was === undefined) delete record.locked;
+            else record.locked = was;
+            drawHandles();
+            renderInspector();
+            renderRoomList();
+            return;
+        }
+        say(next ? "Locked." : "Unlocked.", next ? "" : "good");
     }
 
     function markMoved(kind, id) {
@@ -252,6 +265,26 @@ window.AdminWizard = (function () {
             say("Could not save — " + (err.message || "try again."), "bad");
             return false;
         }
+    }
+
+    /* A picture this panel uploaded and no longer wants, out of storage.
+
+       The atlas's own copy of deleteImageSafe in js/admin.js — fire and
+       forget, but a 401 still locks out rather than failing silently — plus
+       one check that one does not need: whether anything else on the map
+       still draws it. A layer can be duplicated, and the duplicate points at
+       the same file; deleting "the old picture" of one would blank the other.
+       The key is read out of the URL the same way admin.js's blobKeyFromUrl
+       does, and anything that is not one of ours (an outside URL pasted into
+       a field) is left alone. */
+    function dropUpload(url) {
+        const m = /\/\.netlify\/functions\/image\?key=([^&]+)/.exec(url || "");
+        if (!m) return;
+        const key = decodeURIComponent(m[1]);
+        if (JSON.stringify(data || {}).includes(JSON.stringify(url).slice(1, -1))) return;
+        ctx.api.deleteImage(ctx.token(), key).catch(err => {
+            if (err.status === 401) ctx.lockOut();
+        });
     }
 
     let sayTimer = null;
@@ -1537,11 +1570,28 @@ window.AdminWizard = (function () {
             const file = e.target.files && e.target.files[0];
             if (!file) return;
             e.target.value = "";
+            /* The save's answer is checked now, and the old picture put back
+               when it says no. saveOne reports a failure by returning false
+               rather than throwing, and this ignored it: the record kept the
+               new URL, the map drew the new picture, "Picture replaced." was
+               said over the top of saveOne's own error — and the server still
+               had the old one, which is what came back on the next reload. */
+            const previous = record.image;
             try {
                 say("Uploading…", "");
                 const uploaded = await ctx.uploadImage(record.name || "layer", file);
                 record.image = uploaded.url;
-                await saveOne("layer", record);
+                if (!(await saveOne("layer", record))) {
+                    record.image = previous;
+                    // The upload nothing points at any more.
+                    dropUpload(uploaded.url);
+                    return;
+                }
+                /* And the picture it replaced, out of storage — the same
+                   clean-up the maze and event forms do with deleteImageSafe
+                   in js/admin.js. Only once the record has let go of it, and
+                   only if nothing else on the map still draws it. */
+                if (previous && previous !== record.image) dropUpload(previous);
                 view.setData(data);
                 view.render();
                 restoreSelection();
@@ -1813,6 +1863,44 @@ window.AdminWizard = (function () {
             : "Back on the public map.", "good");
     }
 
+    /* The shared "Are you sure?" (showConfirmDialog in js/admin.js), made to
+       behave like a dialog while the map is underneath it.
+
+       On its own it takes no keys at all: focus stays wherever it was, so
+       the arrow keys went on nudging the very room the dialog was asking
+       about, Delete opened a second dialog over the first, and Escape — which
+       admin.js's own handler leaves alone because "a dialog is open" —
+       did nothing. So, for as long as it is up: the map's key handler stands
+       down (see dialogOpen in the keydown in init), focus goes to No, which
+       is the answer that loses nothing if Enter is pressed by reflex, and
+       Escape presses No. Caught on the capture phase so it is answered here
+       and does not also collapse the expanded editor behind it. */
+    let dialogOpen = false;
+
+    async function askFirst(message) {
+        dialogOpen = true;
+        const answer = ctx.confirm(message);        // the overlay is in the page now
+        const overlays = document.querySelectorAll(".modal-overlay.open");
+        const overlay = overlays[overlays.length - 1];
+        const no = overlay && overlay.querySelector('[data-choice="no"]');
+        if (no) no.focus();
+        const onKey = e => {
+            if (e.key !== "Escape" || !no) return;
+            e.preventDefault();
+            e.stopPropagation();
+            no.click();
+        };
+        document.addEventListener("keydown", onKey, true);
+        try {
+            return await answer;
+        } finally {
+            document.removeEventListener("keydown", onKey, true);
+            dialogOpen = false;
+            // Back to the map, so the arrow keys carry on where they were.
+            if (els.stage && els.stage.focus) els.stage.focus({ preventScroll: true });
+        }
+    }
+
     async function deleteSelected() {
         const record = find(selected.kind, selected.id);
         if (!record) return;
@@ -1820,7 +1908,7 @@ window.AdminWizard = (function () {
             : selected.kind === "path" ? `the trail ${trailTitle(record)}`
                 : `the picture "${record.name || "untitled"}"`;
         const extra = selected.kind === "room" ? " Every trail that runs to it goes too." : "";
-        if (!await ctx.confirm(`Delete ${esc(what)}?${extra} This cannot be undone.`)) return;
+        if (!await askFirst(`Delete ${esc(what)}?${extra} This cannot be undone.`)) return;
         const kind = selected.kind, id = selected.id;
         try {
             await ctx.api.deleteWizardItem(ctx.token(), kind, id);
@@ -3034,6 +3122,8 @@ window.AdminWizard = (function () {
         els.stage.addEventListener("click", onMapClick);
         els.stage.addEventListener("dblclick", onMapDoubleClick);
         document.addEventListener("keydown", e => {
+            // Nothing reaches the map while it is being asked about.
+            if (dialogOpen) return;
             if (els.editor.hidden || $("wiz-admin-stage") == null) return;
             const panel = document.querySelector('.admin-panel[data-panel="wizard"]');
             if (!panel || panel.hidden) return;

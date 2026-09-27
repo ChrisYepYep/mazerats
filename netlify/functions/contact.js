@@ -4,7 +4,7 @@
    are private submissions rather than public site content. */
 const crypto = require("crypto");
 const { getDb } = require("./_db");
-const { hasAccount, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { hasAccount, canWrite, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE } = require("./_auth");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 
@@ -70,6 +70,13 @@ function clientIp(event) {
     return event.headers["x-nf-client-connection-ip"] || null;
 }
 
+// ", @handle, id 1234" — the parts of a signed-in sender that actually
+// identify them. The handle is absent on a session minted before it was
+// carried; the id never is.
+function signedInAs(from) {
+    return `${from.username ? `, @${from.username}` : ""}, id ${from.id}`;
+}
+
 // Best-effort — a missing API key/recipient (not yet configured in the
 // Netlify dashboard) or a failed request just skips the notification
 // rather than failing the whole submission, since the message is already
@@ -77,7 +84,7 @@ function clientIp(event) {
 // CONTACT_NOTIFY_EMAIL are env vars set in Netlify's own dashboard, never
 // committed to the repo — so the destination address stays server-side
 // only and is never shipped to the client.
-async function sendNotificationEmail({ username, discord, message, verified }) {
+async function sendNotificationEmail({ username, discord, message, verified, sender }) {
     const apiKey = process.env.RESEND_API_KEY;
     const to = process.env.CONTACT_NOTIFY_EMAIL;
     if (!apiKey || !to) {
@@ -108,8 +115,11 @@ async function sendNotificationEmail({ username, discord, message, verified }) {
                 subject: `New Maze Rats contact message${username ? ` from ${username}` : ""}`,
                 // "(signed in)" is the useful half: it says the Discord name
                 // came from Discord rather than from a text field anyone
-                // could have typed anything into.
-                text: `${username ? `Origins username: ${username}\n` : ""}${discord ? `Discord: ${discord}${verified ? " (signed in)" : ""}\n` : ""}${username || discord ? "\n" : ""}${message}`
+                // could have typed anything into. It carries the unique
+                // handle and the id with it, because the display name alone
+                // is not unique — "Chris (signed in)" proved only that SOME
+                // Chris had signed in. See signPlayer in _player.js.
+                text: `${username ? `Origins username: ${username}\n` : ""}${discord ? `Discord: ${discord}${verified ? ` (signed in${sender ? signedInAs(sender) : ""})` : ""}\n` : ""}${username || discord ? "\n" : ""}${message}`
             })
         });
         if (!res.ok) console.warn("contact.js: email notification failed", res.status, await res.text());
@@ -137,6 +147,9 @@ exports.handler = async (event) => {
         } catch (e) {
             return json(400, { error: "Invalid request body" });
         }
+        // "null" parses without complaint, and body.website then throws
+        // out of the handler with a stack trace — on the public POST.
+        if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
 
         // Honeypot — a field real visitors never see or fill (hidden off-
         // screen in home.html, see .console-hp-field), so anything that
@@ -195,7 +208,7 @@ exports.handler = async (event) => {
            exactly as it always has. */
         const player = playerFrom(event);
         const from = player
-            ? { id: player.id, name: player.name, verified: true }
+            ? { id: player.id, name: player.name, username: player.username || null, verified: true }
             : null;
 
         const entry = {
@@ -229,10 +242,25 @@ exports.handler = async (event) => {
             console.error("contact: could not save a message", e);
             return json(503, { error: "Your message could not be saved just now. Please try again in a minute." });
         }
-        await sendNotificationEmail({ username, discord: entry.discord, message, verified: Boolean(player) });
+        await sendNotificationEmail({ username, discord: entry.discord, message, verified: Boolean(player), sender: from });
         return json(201, entry);
     }
 
+    /* The admin half inside one try. The read and the delete had nothing
+       around them, so a database that dropped mid-request answered with
+       Lambda's stack trace; and hasAccount/canWrite now throw when the
+       account lookup cannot be made (lookUpRole in _auth.js), which must
+       reach the admin page as a 503 it retries — the 401 it used to be
+       read as a dead session and signed the admin out. */
+    try {
+        return await manage(event, messages);
+    } catch (e) {
+        console.error("contact: admin request failed", e);
+        return AUTH_UNAVAILABLE;
+    }
+};
+
+async function manage(event, messages) {
     if (!(await hasAccount(event))) return UNAUTHORIZED;
 
     // Reading the messages is part of viewing the admin page, so it stops at
@@ -256,4 +284,4 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
-};
+}

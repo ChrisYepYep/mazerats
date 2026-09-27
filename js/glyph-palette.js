@@ -190,8 +190,28 @@ document.addEventListener("DOMContentLoaded", () => {
     const FIELD = 'input[type="text"], input:not([type]), textarea';
     let lastField = null;
 
+    /* Not every text field is one to type a glyph into.
+
+       js/password-field.js turns each password input into a type="text"
+       field (marked data-password-field) that draws a mask over a value it
+       keeps to itself — so it matched FIELD, and a glyph "inserted" there
+       was written into the drawing of bullets rather than the password,
+       then overwritten, or adopted as a real character by the module's
+       fallback. Read-only and disabled fields are refused for the plain
+       reason that they are not to be typed into: the article link locks
+       itself read-only while Full details is in use, and setting .value
+       from here went straight past that. Checked again at the moment of
+       inserting, because a field can be locked after it was focused. */
+    function typeable(el) {
+        return !!(el && el.matches && el.matches(FIELD)
+            && !el.matches("[data-password-field]")
+            && !el.readOnly && !el.disabled);
+    }
+
     document.addEventListener("focusin", (e) => {
-        if (e.target.matches && e.target.matches(FIELD)) lastField = e.target;
+        if (e.target && e.target.matches && e.target.matches(FIELD)) {
+            lastField = typeable(e.target) ? e.target : null;
+        }
     });
 
     let statusTimer;
@@ -216,7 +236,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const el = lastField;
         // A field from a form that has since been closed and re-rendered is
         // detached from the page; writing into it would go nowhere visible.
-        if (!el || !document.body.contains(el)) {
+        if (!el || !document.body.contains(el) || !typeable(el)) {
             copy(ch);
             return;
         }

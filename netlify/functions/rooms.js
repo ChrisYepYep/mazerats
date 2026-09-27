@@ -10,6 +10,7 @@ const { SECURITY_HEADERS } = require("./_headers");
 const { describe: describeChanges, changedFields } = require("./_changes");
 const { checkRecord } = require("./_url");
 const { cleanArticle } = require("./article");
+const { assignSlugs, settleSlug, idFor, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -26,12 +27,6 @@ const DIFFICULTIES = ["", "easy", "medium", "hard", "very-hard", "extreme"];
 const STATUSES = ["open", "closed", "collab", "unknown"];
 const HOTELS = ["", "COM", "ES", "BR"];
 const CHOICES = { difficulty: DIFFICULTIES, status: STATUSES, hotel: HOTELS };
-
-function slugify(text) {
-    return (text || "").toLowerCase().trim()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/(^-|-$)/g, "") || "room";
-}
 
 /* ---- the edit-conflict check (PUT with _baseUpdatedAt) ----
 
@@ -54,7 +49,57 @@ function versionFilter(id, base) {
 
 const CONFLICT = "Someone else saved this record since you opened it - reload it to see their changes.";
 
-exports.handler = async (event) => {
+/* ---- furni, patched rather than replaced (see the PUT below) ---- */
+
+// { image: record | null }, or null for no patch, or false for a body that
+// is not one. Keys are image references, so any string a picture field
+// could hold; values are the stored per-picture record or null to drop it.
+const MAX_FURNI_PATCH = 500;
+function cleanFurniPatch(p) {
+    if (p === undefined || p === null) return null;
+    if (typeof p !== "object" || Array.isArray(p)) return false;
+    const keys = Object.keys(p);
+    if (!keys.length) return null;
+    if (keys.length > MAX_FURNI_PATCH) return false;
+    for (const k of keys) {
+        if (!k || k.length > 2048 || k === "__proto__" || k === "constructor" || k === "prototype") return false;
+        const v = p[k];
+        if (v !== null && (typeof v !== "object" || Array.isArray(v))) return false;
+    }
+    return p;
+}
+
+function mergeFurni(stored, patch) {
+    const next = Object.assign(Object.create(null), stored && typeof stored === "object" ? stored : {});
+    Object.keys(patch).forEach(k => {
+        if (patch[k] === null) delete next[k];
+        else next[k] = patch[k];
+    });
+    return { ...next };
+}
+
+/* Read the stored furni, merge, write back only if nobody else wrote it in
+   between (furniRev), and try again if they did. Image references contain
+   dots, so the per-picture keys cannot be addressed with a dotted $set path
+   — hence read-merge-write rather than an atomic per-key update. A record
+   that has never had a furniRev matches as revision 0. Returns the new
+   { furni, furniRev }, or null if it could not get a turn. */
+async function applyFurniPatch(rooms, id, patch) {
+    for (let attempt = 0; attempt < 6; attempt++) {
+        const doc = await rooms.findOne({ id }, { projection: { _id: 0, furni: 1, furniRev: 1 } });
+        if (!doc) return null;
+        const rev = Number(doc.furniRev) || 0;
+        const furni = mergeFurni(doc.furni, patch);
+        const res = await rooms.updateOne(
+            { id, furniRev: rev ? rev : { $in: [0, null] } },
+            { $set: { furni, furniRev: rev + 1 } }
+        );
+        if (res.matchedCount === 1) return { furni, furniRev: rev + 1 };
+    }
+    return null;
+}
+
+async function handle(event) {
     let db;
     try {
         db = await getDb();
@@ -74,6 +119,13 @@ exports.handler = async (event) => {
             console.error("rooms: read failed", e);
             return json(503, { error: "The archive could not be read just now." });
         }
+        /* Every maze's address, worked out here so the page and the share
+           function can never disagree about it (see _slugs.js). Written
+           over the stored slug: a maze saved before addresses existed has
+           none stored, and one whose stored slug clashes gets the one the
+           share function will actually answer to. */
+        const slugs = assignSlugs(all, "maze");
+        all.forEach(r => { r.slug = slugs.get(r.id) || r.id; });
         // ?full=1 is the admin page's route: the records exactly as stored,
         // every reviewer field and hidden detection included, because that is
         // what the admin editor works on.
@@ -97,6 +149,8 @@ exports.handler = async (event) => {
             if (!(await hasAccount(event))) return UNAUTHORIZED;
             return cachedJson(event, all, { cache: false });
         }
+        // Old addresses are the share function's business, not the page's.
+        all.forEach(r => { delete r.slugAliases; delete r.slugManual; delete r.furniRev; });
         return cachedJson(event, await packRecords(all));
     }
 
@@ -149,11 +203,16 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
-        // A string, because slugify below calls string methods on it: a
+        // A string, because the address is made from it with string methods: a
         // name sent as a number or an object was a 500, not a refusal.
         if (!body.name || typeof body.name !== "string") return json(400, { error: "A room needs at least a name" });
 
         await ensureUniqueIndex(rooms, "id");
+
+        // Its address: the one typed in the editor, else its name's.
+        const everyRoom = () => rooms.find({}, { projection: SLUG_FIELDS }).toArray();
+        const slugProblem = settleSlug(await everyRoom(), "maze", null, body);
+        if (slugProblem) return json(400, { error: slugProblem });
 
         // Attempt-and-retry-on-collision rather than check-then-insert —
         // a findOne() check beforehand can't stop two near-simultaneous
@@ -174,8 +233,11 @@ exports.handler = async (event) => {
            Kept out of the collision retry below so every attempt carries
            the same timestamp. */
         const createdAt = new Date().toISOString();
-        let id = slugify(body.name);
-        let suffix = 2;
+        /* The id is the settled address, or the nearest thing to it that
+           nothing already answers to — see idFor in _slugs.js for the
+           maze it once took the address of. A collision (two saves racing)
+           re-reads the collection and asks again. */
+        let id = idFor(await everyRoom(), "maze", body.slug);
         for (let attempt = 0; ; attempt++) {
             /* createdAt AFTER the body: it is the server's fact, and the
                daily games now read it (existedBefore in netlify/functions/
@@ -190,7 +252,7 @@ exports.handler = async (event) => {
                 return json(201, clean);
             } catch (e) {
                 if (e.code === 11000 && attempt < 50) {
-                    id = `${slugify(body.name)}-${suffix++}`;
+                    id = idFor(await everyRoom(), "maze", body.slug);
                     continue;
                 }
                 throw e;
@@ -213,6 +275,30 @@ exports.handler = async (event) => {
            arrived — so the What's New line could be any list a browser
            cared to send. The server works it out or leaves it alone. */
         delete update.changes;
+
+        /* FURNI ARRIVES AS A PATCH, never as the whole object.
+
+           A maze's furni is written by two things that do not know about each
+           other: this form, and the furni scan (tools/furni-scan-local.js),
+           which writes straight to the database and can run for fifteen
+           minutes. Each used to write the WHOLE furni object from its own
+           copy, so whichever landed second erased the other's work — hand-
+           added pieces saved during a scan vanished when the scan reached
+           that maze, and a form opened before a scan wiped the scan's results
+           the moment it changed anything.
+
+           So the form now sends only the pictures it changed ({ image: record }
+           to set one, { image: null } to drop one), and they are merged into
+           whatever is stored NOW, guarded by furniRev so a scan writing the
+           same maze at the same moment makes one of the two retry rather
+           than lose. The scan does the same (see applyFurniPatch below and
+           the scan tool). A whole `furni` or a client's furniRev is never
+           taken from a body. */
+        const furniPatch = cleanFurniPatch(update.furniPatch);
+        if (furniPatch === false) return json(400, { error: "Invalid furni changes" });
+        delete update.furniPatch;
+        delete update.furni;
+        delete update.furniRev;
 
         /* The version the editor started from, for the conflict check
            below. Taken off the update so it is never stored. Absent means a
@@ -271,6 +357,22 @@ exports.handler = async (event) => {
             return json(409, { error: CONFLICT, conflict: true });
         }
 
+        /* Its address, which follows a new name and keeps the old one as an
+           alias (see _slugs.js). Only when the record exists: a PUT for a
+           missing id is answered 404 below. */
+        if (previous) {
+            const slugProblem = settleSlug(await rooms.find({}, { projection: SLUG_FIELDS }).toArray(), "maze", previous, update);
+            if (slugProblem) return json(400, { error: slugProblem });
+        } else {
+            /* Not settled, so not stored: a body's own address fields are
+               only ever the form echoing the record back, and written raw
+               they would bypass every check settleSlug makes. */
+            delete update.slug;
+            delete update.slugAliases;
+            delete update.slugManual;
+            delete update._slugAuto;
+        }
+
         /* A save that changes nothing is still written — the form may have
            tidied a value's representation (a trimmed name, "" for null) and
            that is worth keeping — but it does not move updatedAt and does
@@ -278,12 +380,17 @@ exports.handler = async (event) => {
            maze put it at the top of What's New as "Updated" that day.
            changedFields returns null when it cannot tell, and that is read
            as an ordinary save: a missed changelog line is the lesser harm. */
-        const moved = changedFields(previous, update);
+        // Judged with the furni as it will be, so a furni-only save still
+        // reads as a change and What's New still says "furni".
+        const judged = furniPatch && previous
+            ? { ...update, furni: mergeFurni(previous.furni, furniPatch) }
+            : update;
+        const moved = changedFields(previous, judged);
         if (moved && moved.length === 0) {
             delete update.updatedAt;
             delete update.changes;
         } else {
-            const changed = describeChanges(previous, update);
+            const changed = describeChanges(previous, judged);
             if (changed) update.changes = changed;
         }
 
@@ -300,7 +407,12 @@ exports.handler = async (event) => {
             }
             return json(404, { error: "Room not found" });
         }
-        return json(200, result);
+        if (!furniPatch) return json(200, result);
+        const merged = await applyFurniPatch(rooms, body.id, furniPatch);
+        if (!merged) {
+            return json(503, { error: "The maze saved, but its furni changes didn't go through - save again to retry them." });
+        }
+        return json(200, { ...result, furni: merged.furni, furniRev: merged.furniRev });
     }
 
     if (event.httpMethod === "DELETE") {
@@ -312,4 +424,18 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
+}
+
+/* A write that fails at the database — a slow or unreachable cluster, a
+   lost connection mid-save — used to throw straight out of the handler,
+   which Netlify answers with a bare 502 and an HTML body the admin page
+   cannot read, or with Lambda's own error JSON and its stack trace. Caught
+   once here, so every route answers with something the form can show. */
+exports.handler = async (event) => {
+    try {
+        return await handle(event);
+    } catch (e) {
+        console.error("rooms: request failed", e);
+        return json(503, { error: "The archive couldn't be saved just now. Try again in a minute." });
+    }
 };

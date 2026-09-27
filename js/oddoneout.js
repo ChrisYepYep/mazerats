@@ -23,14 +23,29 @@
    it is hiding in — same theme, same sort of build — and only falls back to
    any other maze when nothing shares a tag. The round is then decided by
    how the two builders differ inside the same idea, which is the whole
-   point of the game. */
+   point of the game.
+
+   ----------------------------------------------------------------------
+   Who deals it
+
+   The server, once a day, and it keeps what it dealt (see
+   netlify/functions/_deal.js, where the choosing above now lives). This
+   page used to deal the day itself from the archive, with every round's
+   imposter marked in memory — so the answers were in the page, tomorrow's
+   rounds were a device clock away, and an edit to the archive mid-day
+   re-dealt the rounds under the server that scored them. Now the page is
+   handed four pictures a round and nothing more, and each pick is sent the
+   moment it is made (Daily.move); the server says whether it was right. */
 (function () {
     "use strict";
 
     const ROUNDS = 5;
-    const PER_ROUND = 4;           // three from the maze, one from elsewhere
     const POINTS_EACH = 10;        // a perfect day is 50, as in Guess the Maze; must match daily-scores.js
-    const STATE_KEY = "mazerats_odd_v1";
+    /* v2: a day is now the server's deal and a pick is its verdict. A v1
+       day was dealt by this page, and its tile numbers point into rounds
+       the server never dealt — so it is not read at all rather than
+       migrated. */
+    const STATE_KEY = "mazerats_odd_v2";
     // v2: rounds went from 100 points to 10, so the old record starts again.
     const STATS_KEY = "mazerats_odd_stats_v2";
 
@@ -50,127 +65,42 @@
        window is opened on a finished (or untouched) old one — see open(). */
     const day = () => (state && state.day) || window.Daily.today();
 
-    let archive = [];              // the rooms as the API returned them
-    let archiveDay = "";           // the UTC day they were fetched on; see open()
-    let pool = [];                 // mazes with enough pictures to hide one in, for state.day
-    let poolDay = "";
+    /* The deal being played, as the server handed it: { day, rounds }, each
+       round four { image }s and nothing saying which is the imposter. null
+       until it has arrived, or when it could not be had. */
+    let deal = null;
     let state = null;
     let stats = null;
     let el = {};
     let showSplash = true;
-    let postedDay = "";            // the day whose result has already been sent this visit
+    let submitting = false;        // a finished day on its way to the server
+    let picking = false;           // a pick on its way to be judged
 
-    // ---------- the pool ----------
+    /* Entrance and finish pictures, hallways, and mazes catalogued during
+       the day are all kept out of the deal — by the server now, which deals
+       it (netlify/functions/_deal.js has the reasons, moved there with the
+       dealing from here). */
 
-    /* Every maze with at least three gallery shots, because three is what a
-       round needs from the home maze.
-
-       Entrance and finish pictures are left out for the same reason Guess
-       the Maze leaves them out: the entrance is the thumbnail the archive
-       lists the maze under, and it is the picture most likely to carry the
-       maze's name on a wall. A round that can be won by having scrolled the
-       archive is not a round about style.
-
-       HALLWAYS ARE OUT, here as in Guess the Maze and on the server that
-       scores this (netlify/functions/daily-scores.js). This game asks which
-       of four rooms was built by somebody else, and a corridor has none of
-       what that question is about — no palette of its own, nothing
-       furnished, no idea being worked out. As the home maze it is a round
-       with no answer to find; as the imposter it is the one tile anybody can
-       pick without looking at the other three. See Daily.isHallway.
-
-       And only mazes that were in the archive before the day began, so a
-       maze catalogued at lunchtime joins tomorrow's rotation rather than
-       re-dealing today's under everybody already playing it. The server
-       applies the same test before it scores — see existedBefore in
-       js/daily.js and netlify/functions/_daily.js. */
-    function buildPool(rooms, forDay) {
-        return (rooms || [])
-            .filter(room => room && room.id && room.name && !window.Daily.isHallway(room))
-            .filter(room => window.Daily.existedBefore(room, forDay))
-            .map(room => ({
-                id: room.id,
-                name: room.name,
-                by: room.creator || "",
-                tags: (room.tags || []).map(t => String(t).toLowerCase()),
-                shots: (room.gallery || []).map(g => g && g.image).filter(Boolean)
-            }))
-            .filter(maze => maze.shots.length >= PER_ROUND - 1)
-            // Sorted before the day's shuffle — see Daily.shuffle for why the
-            // order going in decides what comes out.
-            .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-    }
-
-    const shares = (a, b) => a.tags.some(t => t && b.tags.includes(t));
-
-    /* The day's five rounds.
-
-       Each round takes a home maze, three of its pictures, and one picture
-       from an imposter — preferring an imposter that shares a tag, and
-       taking any other maze when none does. A maze is used as home once at
-       most: five rounds of the same builder is one round asked five times.
-
-       Everything is drawn from one seeded shuffle per round rather than
-       Math.random, so every player gets the same five and a refresh does not
-       reshuffle the day.
-
-       Every seed is taken for the NAMED day (Daily.daySeedFor) rather than
-       for whatever the clock says now — see the note on day() above. */
-    function pickDay(forDay) {
-        const rounds = [];
-        const usedHome = new Set();
-        const seedOf = (...parts) => window.Daily.daySeedFor(forDay, ...parts);
-        const homes = window.Daily.shuffle(pool, seedOf("odd"));
-
-        for (const home of homes) {
-            if (rounds.length >= ROUNDS) break;
-            if (usedHome.has(home.id)) continue;
-
-            const seed = seedOf("odd", home.id);
-            const others = pool.filter(m => m.id !== home.id && m.shots.length);
-            const related = others.filter(m => shares(home, m));
-            const from = related.length ? related : others;
-            const imposter = window.Daily.shuffle(from, seed)[0];
-            if (!imposter) continue;
-
-            const mine = window.Daily.shuffle(home.shots, seed).slice(0, PER_ROUND - 1);
-            if (mine.length < PER_ROUND - 1) continue;
-            const theirs = window.Daily.shuffle(imposter.shots, seed)[0];
-
-            const tiles = window.Daily.shuffle(
-                mine.map(image => ({ image, maze: home, odd: false }))
-                    .concat([{ image: theirs, maze: imposter, odd: true }]),
-                seedOf("odd:tiles", home.id)
-            );
-
-            usedHome.add(home.id);
-            rounds.push({ home, imposter, tiles });
-        }
-        return rounds;
-    }
-
-    // Keyed on the pinned day, so it changes only when a new day's game is
-    // actually begun — never because the clock ticked over mid-round.
-    let dealtCache = { day: "", rounds: [] };
     function dealt() {
-        const d = day();
-        if (poolDay !== d) { pool = buildPool(archive, d); poolDay = d; }
-        if (dealtCache.day !== d) dealtCache = { day: d, rounds: pickDay(d) };
-        return dealtCache.rounds;
+        return deal && deal.day === day() ? deal.rounds : [];
     }
 
     // ---------- the state of play ----------
 
-    // Today's, always: a blank day is only ever made to start a new one.
-    function blankDay() {
-        return { day: window.Daily.today(), picks: [], done: false };
+    /* A blank day for the day being dealt. `mode` is settled by the first
+       pick — "account" when somebody is signed in to have their picks
+       recorded, "anon" when not — and a day keeps the mode it began in
+       (see choose). `posted` is whether the finished day reached the
+       server, kept WITH the day so a submission that failed is tried again
+       on the next open rather than forgotten with the visit. */
+    function blankDay(forDay) {
+        return { day: forDay || window.Daily.today(), picks: [], done: false, mode: null, posted: false };
     }
 
-    function loadState() {
+    function readSaved() {
         let saved = null;
         try { saved = JSON.parse(localStorage.getItem(STATE_KEY) || "null"); } catch (e) { saved = null; }
-        const now = window.Daily.today();
-        state = saved && saved.day === now && Array.isArray(saved.picks) ? saved : blankDay();
+        return saved && typeof saved.day === "string" && Array.isArray(saved.picks) ? saved : null;
     }
 
     /* Whether the day in memory should give way to today's.
@@ -182,15 +112,36 @@
        for a different five mid-sitting. Their result still goes to the
        server under the day it was dealt for; within the five-minute grace
        (dayIsOpen in netlify/functions/_daily.js) it is recorded, and after
-       that it is kept on this device only, which is the honest outcome for
-       a game begun yesterday. The next open after it ends starts today. */
-    function shouldStartToday() {
-        if (!state) return true;
-        if (state.day === window.Daily.today()) return true;
-        return state.done || !state.picks.length;
+       that the server no longer deals that day at all, so the next open
+       starts today. */
+    function shouldStartToday(s) {
+        if (!s) return true;
+        if (s.day === window.Daily.today()) return true;
+        return s.done || !s.picks.length;
     }
 
+    /* How far on a saved day is: picks made, and a finished day past any
+       unfinished one. What decides which of two copies of the same day
+       wins. */
+    const progressOf = s => (s ? s.picks.length + (s.done ? 1 : 0) : -1);
+
+    /* Saved, but not over a copy another tab has taken further.
+
+       Two tabs of the game used to overwrite each other's day: each saved
+       its own state whole, so the tab picking second wrote its day over the
+       first's, picks and all. Now the stored copy is read first, and if it
+       is the same day and further on than this one it is adopted rather
+       than overwritten — see also the `storage` listener in mount(), which
+       brings a tab that is only watching up to date. `posted` is kept if
+       either copy has it. A signed-in player's picks are the server's to
+       settle anyway (the first recorded pick per round wins); this keeps
+       the page's copy from contradicting them. */
     function saveState() {
+        const stored = readSaved();
+        if (stored && state && stored.day === state.day && progressOf(stored) > progressOf(state)) {
+            state = Object.assign(stored, { posted: Boolean(stored.posted || state.posted) });
+            return;
+        }
         try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
     }
 
@@ -242,28 +193,91 @@
     const roundNow = () => state.picks.length;
     const finished = () => state.done || roundNow() >= dealt().length;
 
-    function choose(tileIndex) {
-        if (finished()) return;
-        const round = dealt()[roundNow()];
-        if (!round) return;
-        const tile = round.tiles[tileIndex];
-        if (!tile) return;
+    const signedIn = () => Boolean(window.Account && Account.current);
 
-        state.picks.push({ tile: tileIndex, right: Boolean(tile.odd) });
-        /* The round's end, for the speed bonus: the server writes down when
-           it heard, and the round's time is the gap from the mark before
-           (Daily.mark, and netlify/functions/_speed.js). Only here, as the
-           pick is made — a finished day shown again marks nothing — and
-           right or wrong alike, because the next round is timed from it.
-           Before bankDay, so the last one is on its way before the day is
-           submitted; Daily.submit waits for it. A day already closed is
-           refused by the server, as its submission is. */
-        if (window.Daily.mark) window.Daily.mark("odd", day(), state.picks.length - 1);
+    /* A pick, sent to be judged. The page does not know which tile is the
+       imposter any more (see the note at the top), so a pick is a question
+       to the server, and the round moves on when the answer comes back.
+
+       For a signed-in player the server also RECORDS it, with the time it
+       arrived — the round's end, for the speed bonus — and the first pick
+       recorded for a round is the one that stands: if another tab or device
+       got there first, the answer says so (`already`) and names that pick,
+       and that is what this page shows. The day is scored from those
+       records, never from anything this page sends later.
+
+       The mode is settled by the day's first pick and kept: a day begun
+       signed out stays unrecorded even after signing in (it is sent with
+       `anon`, and filed with no bonus once it is finished — see scoreClaim
+       in netlify/functions/daily-scores.js), because a day half recorded
+       and half not could not be scored from either half.
+
+       While a pick is on its way the others are ignored; a pick that could
+       not be judged (no connection, a server having a moment) leaves the
+       round as it was, says so, and can simply be made again. */
+    async function choose(tileIndex) {
+        if (finished() || picking) return;
+        const index = roundNow();
+        const round = dealt()[index];
+        if (!round || !round.tiles[tileIndex]) return;
+        if (!state.mode) state.mode = signedIn() ? "account" : "anon";
+
+        const forDay = day();
+        picking = true;
+        setPicking(index, tileIndex, true);
+        const reply = await window.Daily.move("odd", forDay, index, { tile: tileIndex }, { anon: state.mode === "anon" });
+        picking = false;
+        setPicking(index, tileIndex, false);
+        // The day was replaced while the pick was out (a reset, a new day).
+        if (!state || state.day !== forDay || roundNow() !== index) return;
+
+        const body = reply.body || {};
+        if (reply.status !== 200 || typeof body.right !== "boolean") {
+            /* Refused because the day has closed — a round begun before
+               midnight and picked after the grace. With nothing played yet
+               the day is simply swapped for today's (see refreshDay);
+               part-way through, it is the honest end of a day begun
+               yesterday, and the picks made so far stay on this device. */
+            if (reply.status === 400 && !state.picks.length) return refreshDay().then(() => { render(); settleFocus(); });
+            /* The server's record and this page's disagree (a round out of
+               order, a day reset elsewhere): read the day again, which
+               brings the recorded picks with it. */
+            if (reply.status === 409) return refreshDay().then(() => { render(); settleFocus(); });
+            pickFailed(index);
+            return;
+        }
+        // Answered but not recorded while this day was meant to be: the
+        // sign-in lapsed. The day carries on unrecorded rather than stalling.
+        if (state.mode === "account" && !body.recorded) state.mode = "anon";
+
+        const pick = body.already && Number.isInteger(body.tile)
+            ? { tile: body.tile, right: body.right }
+            : { tile: tileIndex, right: body.right };
+        state.picks.push(pick);
         if (state.picks.length >= dealt().length) state.done = true;
         saveState();
         if (state.done) bankDay();
         render();
         settleFocus();
+    }
+
+    // The pressed tile, while its pick is being judged — and every tile in
+    // the round unpressable until it is.
+    function setPicking(index, tileIndex, on) {
+        const sheet = roundSheets[index];
+        if (!sheet) return;
+        sheet.inner.setAttribute("aria-busy", on ? "true" : "false");
+        sheet.inner.querySelectorAll(".odd-tile").forEach(btn => {
+            btn.classList.toggle("is-picking", on && Number(btn.dataset.tile) === tileIndex);
+        });
+    }
+
+    function pickFailed(index) {
+        const sheet = roundSheets[index];
+        const note = sheet && sheet.inner.querySelector(".odd-pick-note");
+        const text = "That pick did not reach the server, so it has not counted. Try it again.";
+        if (note) { note.textContent = text; note.hidden = false; }
+        announce(text);
     }
 
     /* Where the keyboard goes after a pick, and what is said out loud.
@@ -473,16 +487,15 @@
         const rounds = dealt();
         if (builtFor !== rounds) buildRounds(rounds);
         if (!rounds.length) {
-            /* Reached when the archive could not be read — including when
-               js/api.js fell back to its bundled one-maze copy, which open()
-               treats as no archive at all. A button rather than "try again
-               in a moment", because without one the only way to try again
-               was to reload the page. */
+            /* Reached when the day's deal could not be had — the server not
+               answering, or answering with nothing to deal. A button rather
+               than "try again in a moment", because without one the only way
+               to try again was to reload the page. */
             introMessage(`
                 <p class="daily-note">The archive is not answering just now, so there is nothing to deal.</p>
                 <button type="button" class="guess-btn" id="odd-retry">Try again</button>`);
             const retry = document.getElementById("odd-retry");
-            if (retry) retry.addEventListener("click", () => { archive = []; poolDay = ""; dealtCache = { day: "", rounds: [] }; open(true); });
+            if (retry) retry.addEventListener("click", () => { deal = null; open(true); });
             return;
         }
 
@@ -508,7 +521,7 @@
            been made: a day begun signed out has no clock and no bonus
            rather than one that timed only the rounds left. No time is shown
            anywhere in the game. */
-        if (!state.picks.length && window.Daily.start) window.Daily.start("odd", day());
+        if (!state.picks.length && state.mode !== "anon" && window.Daily.start) window.Daily.start("odd", day());
         view = "round";
         const sheet = roundSheets[roundNow()];
         if (sheet) sheet.inner.innerHTML = roundHtml(rounds[roundNow()]);
@@ -559,6 +572,7 @@
             </div>
             <p class="daily-ask">Three of these are the same maze. Which one is not?</p>
             <div class="odd-grid">${tiles}</div>
+            <p class="daily-note odd-pick-note" hidden></p>
             <p class="daily-note">Go on the building rather than the room: the floor, the palette,
                 how densely it is furnished.</p>`;
     }
@@ -619,34 +633,64 @@
         return `Odd One Out ${when} — ${score()}/${dealt().length * POINTS_EACH}\n${shareGrid()}\n${location.origin}/odd`;
     }
 
+    /* "Show me the first four". If the day has turned since the window was
+       opened and nothing has been played, today's deal is fetched first:
+       a window opened at 23:55 and started at 00:10 used to play
+       yesterday's rounds, whose picks were then refused (after the grace)
+       or never recorded — a whole sitting that silently did not count. A
+       day already under way is left to finish, as shouldStartToday says. */
     function wireSplash() {
         const start = document.getElementById("odd-start");
-        if (start) start.addEventListener("click", () => { showSplash = false; render(); settleFocus(); });
+        if (!start) return;
+        start.addEventListener("click", async () => {
+            if (state && !state.picks.length && !state.done && state.day !== window.Daily.today()) {
+                start.disabled = true;
+                await refreshDay();
+            }
+            showSplash = false;
+            render();
+            settleFocus();
+        });
     }
 
     function wireResults() {
-        /* The run as it was played: which tile was picked each round, in
-           order. The server deals the same five rounds and works out for
-           itself which of those were right — see
-           netlify/functions/daily-scores.js for why the page never sends a
-           score. */
-        /* The submit is AWAITED before the board is fetched, and that fetch
+        /* The finished day, filed. For a day played signed in the server
+           scores it from the picks it recorded as they were made, and the
+           tiles sent here are ignored; for a day played signed out they are
+           what it has to go on — see netlify/functions/daily-scores.js.
+           Signed out, nothing is sent: there is no name to put on a row, and
+           the day stays owed so that signing in files it.
+
+           The submit is AWAITED before the board is fetched, and that fetch
            goes past the edge cache (`fresh`). Fired side by side, the board
            request usually won the race — and even when it did not, the
            fifteen-second copy at the edge predated the row — so the one
            person guaranteed to be missing from the board they were shown
-           was the player who had just finished. Once per day per visit: a
-           reopened results card reads the board as normal. */
+           was the player who had just finished.
+
+           OWED UNTIL IT LANDS. This used to note the day as sent before
+           sending it, and Daily.submit swallowed every failure — so a
+           submission that fell over was never tried again that visit, and
+           a finished day never reached the board. Now `posted` is set only
+           once the server has the day (or has refused it for good), and is
+           saved with the day, so a failure is retried on the next open. */
         const host = document.getElementById("odd-boards");
         const forDay = day();
-        if (postedDay !== forDay) {
-            postedDay = forDay;
+        if (!state.posted && signedIn()) {
             if (host) host.innerHTML = `<p class="guess-board-note">Fetching the scores…</p>`;
-            window.Daily.submit("odd", forDay, state.picks.map(p => ({ tile: p.tile })))
-                .then(() => {
-                    const still = document.getElementById("odd-boards");
-                    window.Daily.boards(still, "odd", { points: score(), day: forDay, fresh: true });
-                });
+            if (!submitting) {
+                submitting = true;
+                window.Daily.submit("odd", forDay, state.picks.map(p => ({ tile: p.tile })))
+                    .then(res => {
+                        submitting = false;
+                        if (state && state.day === forDay && (res.ok || !res.retry)) {
+                            state.posted = true;
+                            saveState();
+                        }
+                        const still = document.getElementById("odd-boards");
+                        window.Daily.boards(still, "odd", { points: score(), day: forDay, fresh: res.ok });
+                    });
+            }
         } else {
             window.Daily.boards(host, "odd", { points: score(), day: forDay });
         }
@@ -680,64 +724,74 @@
         el.overlay.classList.add("open");
         document.body.classList.add("modal-open");
         if (!retrying && el.window) el.window.focus();
-        /* Rooms read on an earlier UTC day are not the archive today is
-           dealt from (a maze added yesterday joins today, and the server
-           reads the archive as it is now), so a tab left open overnight
-           dealt a different five from the server's. Dropped and read again
-           when today is about to be dealt; an earlier day still being
-           finished keeps the archive it was dealt from. */
-        if (archive.length && archiveDay !== window.Daily.today() && shouldStartToday()) archive = [];
-        if (!archive.length) {
-            settled(() => introMessage(`<p class="daily-note">Dealing…</p>`));
-            let rooms = [];
-            /* Api is a top-level const in js/api.js — a global binding, but
-               not a property of window. Called bare, as the other games call
-               it.
-
-               A retry has to get past Api's own memo first: getRooms keeps
-               the promise for the life of the page, fallback and all, so
-               asking again would hand back the same one-maze copy that
-               failed the first time. Forgetting that one entry is the only
-               way to make the request again without reloading. */
-            if (retrying && typeof Api !== "undefined" && Api._inflight) delete Api._inflight.rooms;
-            try {
-                rooms = await (Api.roomsForToday ? Api.roomsForToday() : Api.getRooms());
-                archiveDay = Api.roomsDay || window.Daily.today();
-            } catch (e) { rooms = []; }
-            /* The bundled fallback is not an archive to deal from. When the
-               live rooms cannot be reached js/api.js quietly hands back the
-               ONE maze in js/rooms-data.js and marks "room data" degraded;
-               a day dealt from that is not the day everybody else is
-               playing, and the server — which reads the real archive —
-               would score it against different rounds entirely. Treated as
-               no archive, which render() turns into a message and a retry. */
-            const degraded = typeof Api !== "undefined" && Api._degraded && Api._degraded.has("room data");
-            archive = degraded ? [] : (rooms || []);
-            poolDay = "";
-            dealtCache = { day: "", rounds: [] };
-        }
+        if (!deal || deal.day !== day()) settled(() => introMessage(`<p class="daily-note">Dealing…</p>`));
+        // Whether somebody is signed in decides what a pick does, so it is
+        // known before anything is dealt. A failure reads as signed out.
+        if (window.Account) { try { await Account.ready(); } catch (e) { /* signed out */ } }
         /* A day given back by an administrator lands here: the ticket is
            claimed before the stored day is read, so what loads is the fresh
            day rather than the one being cleared. The in-memory copy goes
-           too, or the check below would keep playing the day just taken
-           away, and so does the note that it was already sent — the replay
-           has to be submitted like any other. */
+           too, or the day just taken away would be played on — and with it
+           the note that it was sent, since the replay has to be filed like
+           any other. The server's recorded picks went with the reset
+           (daily-games.js), so the deal below brings none back. */
         if (await window.Daily.claimReset("odd")) {
             try { localStorage.removeItem(STATE_KEY); } catch (e) { /* private mode */ }
             state = null;
-            postedDay = "";
         }
-        /* A day already in memory is kept only if it is an earlier day left
-           part-way through — see shouldStartToday. Otherwise the stored day
-           is read, which is today's or a blank one. This is also what moves
-           a tab left open overnight on to the new day. */
-        if (shouldStartToday()) loadState();
+        await refreshDay();
         loadStats();
         showSplash = state.picks.length === 0 && !state.done;
         /* Straight onto the right sheet — the splash, the round in hand, or
            the results — with the rest already stacked around it. Only the
            moves made while the window is open slide. */
         settled(render);
+    }
+
+    /* The day to play, from the server, and the state of play that goes
+       with it.
+
+       WHICH DAY is the server's to say. A day in memory or in storage that
+       is an earlier day part-way through is asked for by name, so it can be
+       finished; the server deals it only while the midnight grace lasts
+       (dayIsOpen in netlify/functions/_daily.js), and after that the answer
+       is today's. Otherwise the server's today is asked for, whatever this
+       device's clock says — which is also what moves a tab left open
+       overnight on to the new day.
+
+       THE STATE is this device's copy of that day if it has one, and a
+       blank one if not. For a signed-in player the server's record then
+       wins wherever it is further on: picks made on another device, or on
+       this one before a reload, come back with the deal, so a reload can
+       neither lose a round nor offer it again. And a day the server
+       already has on file is marked as posted.
+
+       Leaves `deal` null when the day could not be had, which render()
+       turns into a message and a retry. */
+    async function refreshDay() {
+        const saved = readSaved();
+        const carry = [state, saved].find(s => s && !shouldStartToday(s)) || null;
+        let reply = carry ? await window.Daily.deal("odd", carry.day) : null;
+        if (!reply) reply = await window.Daily.deal("odd");
+        if (!reply) {
+            deal = null;
+            if (!state) state = saved && saved.day === window.Daily.today() ? saved : blankDay();
+            return;
+        }
+        deal = { day: reply.day, rounds: reply.rounds };
+        const mine = [state, saved].filter(s => s && s.day === reply.day)
+            .sort((a, b) => progressOf(b) - progressOf(a))[0];
+        state = mine || blankDay(reply.day);
+        if (!("posted" in state)) state.posted = false;
+
+        const recorded = Array.isArray(reply.progress) ? reply.progress : [];
+        if (recorded.length && recorded.length >= state.picks.length) {
+            state.picks = recorded.map(p => ({ tile: p.tile, right: Boolean(p.right) }));
+            state.mode = "account";
+            state.done = state.picks.length >= deal.rounds.length;
+        }
+        if (reply.filed) state.posted = true;
+        saveState();
     }
 
     function close() {
@@ -796,6 +850,24 @@
         el.overlay.addEventListener("click", e => { if (e.target === el.overlay) close(); });
         document.addEventListener("keydown", e => {
             if (e.key === "Escape" && el.overlay.classList.contains("open")) close();
+        });
+
+        /* Another tab playing the same day. `storage` fires in every OTHER
+           tab when one saves, so a tab left open on round 2 hears that the
+           other has reached round 4 and moves with it, instead of offering
+           rounds already played and then saving its older copy over the
+           newer one (see saveState). Only the same day, and only forwards. */
+        window.addEventListener("storage", e => {
+            if (e.key !== STATE_KEY || !state) return;
+            const other = readSaved();
+            if (!other || other.day !== state.day || progressOf(other) <= progressOf(state)) return;
+            if (picking) return;           // this tab's own pick settles it
+            const wasDone = state.done;
+            state = other;
+            // Re-read first: the other tab has probably banked the day
+            // already, and bankDay's guard only sees it in fresh stats.
+            if (state.done && !wasDone) { loadStats(); bankDay(); }
+            if (el.overlay.classList.contains("open")) render();
         });
 
         if (location.pathname === "/odd") open();

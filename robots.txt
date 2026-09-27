@@ -36,6 +36,15 @@ Disallow: /wizard.html
 
 # Project tooling and the function endpoints. Both already 404 at the edge
 # (see netlify.toml); this saves the crawl.
+#
+# EXCEPT the image CDN. Every share preview's picture is a
+# /.netlify/images?url=… address (see netlify/functions/share.js), and so is
+# every thumbnail in the archive. X's card crawler and LinkedIn's obey this
+# file, so with /.netlify/ disallowed whole, every maze link posted there
+# unfurled with no picture, and no room screenshot could be indexed. The
+# longer, more specific Allow wins over the Disallow for the crawlers that
+# matter (Google, Bing, X, LinkedIn all follow the longest-match rule).
+Allow: /.netlify/images
 Disallow: /tools/
 Disallow: /.netlify/
 

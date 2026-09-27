@@ -26,7 +26,10 @@
    this payload stays small however large the catalogue grows. */
 
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, isOwner, isOwnerWrite, UNAUTHORIZED, forbidden } = require("./_auth");
+const {
+    isAuthorized, isOwner, isOwnerWrite, UNAUTHORIZED, forbidden,
+    isAuthUnavailable, AUTH_UNAVAILABLE
+} = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson } = require("./_cache");
 
@@ -47,10 +50,18 @@ const json = (statusCode, data) => ({
     body: JSON.stringify(data)
 });
 
+/* A LEVEL ID IS AT MOST 64 CHARACTERS. The run log (ff-runs.js) and the
+   leaderboard (ff-scores.js) both refuse longer ids now, so they cannot be
+   used to stuff the log — and an id this file let through at any length
+   would be a level whose runs could never be logged or scored. Every id
+   published so far is eight characters. */
+const MAX_ID = 64;
+
 function slugify(text) {
-    return (text || "").toLowerCase().trim()
+    return ((text || "").toLowerCase().trim()
         .replace(/[^a-z0-9]+/g, "-")
-        .replace(/(^-|-$)/g, "") || "level";
+        .slice(0, MAX_ID)
+        .replace(/(^-|-$)/g, "")) || "level";
 }
 
 /* Stored levels are trusted no more than any other request body. Only the
@@ -64,7 +75,7 @@ function cleanLevel(body) {
         return out;
     };
     return {
-        id: String(body.id || "").trim(),
+        id: String(body.id || "").trim().slice(0, MAX_ID),
         name: String(body.name || "").trim(),
         order: Number.isFinite(Number(body.order)) ? Number(body.order) : 0,
         published: body.published === true,
@@ -109,7 +120,21 @@ function cleanLevel(body) {
     };
 }
 
+/* THE OWNER CHECKS THROW when the accounts cannot be read (see
+   authUnavailableError in _auth.js), rather than answering "not an owner" —
+   which the editor would have shown as a refusal and the admin page as a
+   dead session. Caught once, here, around every guard in the handler: a
+   503 the editor retries, never a 403 or a 401 it would act on. */
 exports.handler = async (event) => {
+    try {
+        return await handle(event);
+    } catch (e) {
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        throw e;
+    }
+};
+
+async function handle(event) {
     let db;
     try {
         db = await getDb();
@@ -209,4 +234,4 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
-};
+}

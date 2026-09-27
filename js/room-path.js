@@ -204,8 +204,21 @@
 
                        Two furni touching corner to corner still seal the gap
                        between them, which is the room-blocking trick players
-                       actually use. One does not. */
-                    if (blocked(cur.x + d.dx, cur.y) && blocked(cur.x, cur.y + d.dy)) continue;
+                       actually use. One does not.
+
+                       AND A HOLE IN THE FLOOR COUNTS AS BLOCKED here, the
+                       same as furni. `blocked` only knows about furni, so a
+                       diagonal whose two side tiles were both OFF the floor
+                       passed this test — and on the Library, whose walls
+                       step in and out around the bookcases, that let the
+                       figure walk through the corner of a wall between two
+                       floor tiles that only touch at a point. A rectangle
+                       never has such a pair, which is why it only showed on
+                       the painted rooms. The same rule is in
+                       js/room-drop.js (see `sealedCorner`), which has to
+                       agree with this about what is reachable. */
+                    const side = (x, y) => !inside(x, y) || blocked(x, y);
+                    if (side(cur.x + d.dx, cur.y) && side(cur.x, cur.y + d.dy)) continue;
                 }
 
                 const tentative = g.get(ck) + stepCost(d.dx, d.dy);

@@ -85,7 +85,9 @@ const GROUPS = [
    stamps written by the save itself, and this module's own output. Without
    the last two every edit would report a "details" change caused by the
    previous edit's bookkeeping. */
-const IGNORED = new Set(["id", "_id", "createdAt", "updatedAt", "changes"]);
+// The address too: a maze that moved to a new link has not changed in any
+// way What's New should report.
+const IGNORED = new Set(["id", "_id", "createdAt", "updatedAt", "changes", "slug", "slugAliases"]);
 
 // Anything real that is not in a group above still deserves to be reported,
 // or a change quietly goes unmentioned. It lands here.

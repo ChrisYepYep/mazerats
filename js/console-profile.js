@@ -191,7 +191,20 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!force && data && Date.now() - readAt < FRESH_MS) return;
         if (reading) return reading;
         failed = false;
-        reading = fetch(PROFILE_URL, { credentials: "same-origin", headers: { Accept: "application/json" } })
+        /* On a 10s leash, as js/api.js's _getWithFallback puts the public
+           reads. A request that hung never settled, so `reading` stayed set
+           and every later open returned the same dead promise above — the
+           page could not even try again. An abort lands in the catch like
+           any other failure and draws the existing "couldn't load" state.
+           The timer is left to run out rather than cleared on the headers,
+           so a stalled body is covered too. */
+        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        if (controller) setTimeout(() => controller.abort(), 10000);
+        reading = fetch(PROFILE_URL, {
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+            signal: controller ? controller.signal : undefined
+        })
             .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
             .then(body => { data = body; readAt = Date.now(); })
             .catch(() => { failed = true; })

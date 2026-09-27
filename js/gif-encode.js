@@ -36,10 +36,28 @@ window.GifEncode = (function () {
 
        Colours are sampled rather than counted exhaustively — every 7th
        pixel, which for a 720px frame is still tens of thousands of samples
-       and is indistinguishable in the result. */
+       and is indistinguishable in the result.
+
+       SAMPLES ARE A FLAT Uint8Array OF r,g,b, AND BOXES ARE RANGES OF AN
+       INDEX ARRAY. This used to be an array of [r,g,b] arrays, every box its
+       own sliced copy, and every split re-measured every box from scratch.
+       At 900px and 240 frames that was about six million little arrays,
+       sorted and rescanned 255 times, all synchronously inside the first
+       write(): 23 seconds of a frozen tab in a node test, and the browser
+       could not so much as repaint the progress bar. Now the samples are
+       capped (see study()), a box is [start, end) of one shared Uint32Array
+       of sample numbers, it is measured once when it is made and the
+       measurement kept, and a split is a stable counting sort on one
+       channel — the same order Array.sort gave, found in two linear passes
+       rather than n log n comparisons. */
     function buildPalette(samples, maxColours, populationWeight) {
         const pop = Number(populationWeight) || 0;
-        let boxes = [{ colours: samples }];
+        const n = samples.length / 3;
+        const order = new Uint32Array(n);
+        for (let i = 0; i < n; i++) order[i] = i;
+        const scratch = new Uint32Array(n);
+        const counts = new Uint32Array(257);
+        let boxes = [makeBox(samples, order, 0, n)];
         while (boxes.length < maxColours) {
             /* Split the box with the longest side: that is the one whose
                colours are least alike, so it is the one worth halving.
@@ -59,44 +77,61 @@ window.GifEncode = (function () {
             let widest = 0;
             for (let i = 0; i < boxes.length; i++) {
                 const box = boxes[i];
-                if (box.colours.length < 2) continue;
-                const range = boxRange(box);
+                const count = box.end - box.start;
+                if (count < 2) continue;
                 const score = pop
-                    ? range.size * Math.pow(box.colours.length, pop)
-                    : range.size;
+                    ? box.size * Math.pow(count, pop)
+                    : box.size;
                 if (score > widest) { widest = score; target = i; }
             }
             if (target === -1) break;
             const box = boxes[target];
-            const axis = boxRange(box).axis;
-            box.colours.sort((a, b) => a[axis] - b[axis]);
-            const mid = box.colours.length >> 1;
+            sortBox(samples, order, scratch, counts, box.start, box.end, box.axis);
+            const mid = box.start + ((box.end - box.start) >> 1);
             boxes.splice(target, 1,
-                { colours: box.colours.slice(0, mid) },
-                { colours: box.colours.slice(mid) });
+                makeBox(samples, order, box.start, mid),
+                makeBox(samples, order, mid, box.end));
         }
         return boxes.map(box => {
             let r = 0, g = 0, b = 0;
-            for (const c of box.colours) { r += c[0]; g += c[1]; b += c[2]; }
-            const n = box.colours.length || 1;
-            return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+            for (let k = box.start; k < box.end; k++) {
+                const s = order[k] * 3;
+                r += samples[s]; g += samples[s + 1]; b += samples[s + 2];
+            }
+            const count = (box.end - box.start) || 1;
+            return [Math.round(r / count), Math.round(g / count), Math.round(b / count)];
         });
     }
 
-    function boxRange(box) {
-        let lo = [255, 255, 255], hi = [0, 0, 0];
-        for (const c of box.colours) {
-            for (let i = 0; i < 3; i++) {
-                if (c[i] < lo[i]) lo[i] = c[i];
-                if (c[i] > hi[i]) hi[i] = c[i];
-            }
+    // A box over order[start..end), measured once, here, and never again.
+    function makeBox(samples, order, start, end) {
+        let lo0 = 255, lo1 = 255, lo2 = 255, hi0 = 0, hi1 = 0, hi2 = 0;
+        for (let k = start; k < end; k++) {
+            const s = order[k] * 3;
+            const c0 = samples[s], c1 = samples[s + 1], c2 = samples[s + 2];
+            if (c0 < lo0) lo0 = c0; if (c0 > hi0) hi0 = c0;
+            if (c1 < lo1) lo1 = c1; if (c1 > hi1) hi1 = c1;
+            if (c2 < lo2) lo2 = c2; if (c2 > hi2) hi2 = c2;
         }
-        const spread = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
         // Weighted the way the eye weights them, so a box that is wide in
         // green splits before one equally wide in blue.
-        const weighted = [spread[0] * 1.0, spread[1] * 1.2, spread[2] * 0.8];
+        const weighted = end > start
+            ? [(hi0 - lo0) * 1.0, (hi1 - lo1) * 1.2, (hi2 - lo2) * 0.8]
+            : [0, 0, 0];
         const axis = weighted.indexOf(Math.max(...weighted));
-        return { axis, size: weighted[axis] };
+        return { start, end, axis, size: weighted[axis] };
+    }
+
+    // Stable counting sort of order[start..end) by one channel, in place.
+    function sortBox(samples, order, scratch, counts, start, end, axis) {
+        counts.fill(0);
+        for (let k = start; k < end; k++) counts[samples[order[k] * 3 + axis] + 1]++;
+        for (let v = 1; v < 257; v++) counts[v] += counts[v - 1];
+        for (let k = start; k < end; k++) {
+            const idx = order[k];
+            scratch[start + counts[samples[idx * 3 + axis]]++] = idx;
+        }
+        order.set(scratch.subarray(start, end), start);
     }
 
     /* Nearest entry, with a cache. Without the cache this is the whole cost
@@ -194,7 +229,30 @@ window.GifEncode = (function () {
         const maxColours = Math.min(256, Math.max(8, opts.colours || 256));
 
         const bytes = [];
-        const samples = [];
+        /* A RESERVOIR, not a list. study() used to push every 7th pixel of
+           every studied frame, which for a 900px recording of twenty seconds
+           was about six million samples — and the palette was then built from
+           all of them in one synchronous go (see buildPalette). A hundred
+           thousand is far more than 256 boxes need to find their medians, so
+           that is where it stops: once full, each new candidate replaces a
+           random one with the odds that keep every pixel studied equally
+           likely to be in the pool (reservoir sampling), so the last frames
+           of a zoom count as much as the first. The random numbers are a
+           seeded generator rather than Math.random so the same recording
+           comes out as the same file. */
+        const SAMPLE_CAP = 100000;
+        let samples = new Uint8Array(SAMPLE_CAP * 3);
+        let sampled = 0;       // how many are in the pool
+        let offered = 0;       // how many have ever been offered to it
+        let seed = 0x9e3779b9;
+        const random = () => {
+            // mulberry32
+            seed = (seed + 0x6d2b79f5) | 0;
+            let t = seed;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
         /* EACH FRAME IS KEPT ENCODED, not as pixels.
 
            write() used to keep a palette index per pixel for every frame and
@@ -219,12 +277,24 @@ window.GifEncode = (function () {
             // have already been encoded against.
             if (palette) return;
             const d = imageData.data;
-            for (let i = 0; i < d.length; i += 4 * 7) samples.push([d[i], d[i + 1], d[i + 2]]);
+            for (let i = 0; i < d.length; i += 4 * 7) {
+                let slot = sampled;
+                if (sampled < SAMPLE_CAP) sampled++;
+                else {
+                    slot = Math.floor(random() * (offered + 1));
+                    if (slot >= SAMPLE_CAP) { offered++; continue; }
+                }
+                offered++;
+                samples[slot * 3] = d[i];
+                samples[slot * 3 + 1] = d[i + 1];
+                samples[slot * 3 + 2] = d[i + 2];
+            }
         }
 
         function ensurePalette() {
             if (palette) return;
-            palette = buildPalette(samples.length ? samples : [[0, 0, 0]],
+            // An unstudied encoder gets one black sample, as it always did.
+            palette = buildPalette(sampled ? samples.subarray(0, sampled * 3) : new Uint8Array(3),
                 maxColours, opts.populationWeight);
             // A GIF's table is a power of two, padded out with black.
             let size = 2;
@@ -233,7 +303,7 @@ window.GifEncode = (function () {
             nearest = nearestFinder(palette);
             bits = 1;
             while ((1 << bits) < palette.length) bits++;
-            samples.length = 0;     // done with; they were the size of a frame
+            samples = null;         // done with
         }
 
         function write(imageData) {

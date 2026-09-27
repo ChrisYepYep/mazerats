@@ -114,6 +114,16 @@ function displayName(user) {
     return String(name).slice(0, 40);
 }
 
+/* And the unique handle, which displayName above deliberately passes over.
+   Kept beside it because a display name identifies nobody — see signPlayer
+   in _player.js. Discord's usernames are at most 32 characters of a narrow
+   alphabet (plus "#1234" on the oldest accounts), so 40 is slack. */
+function uniqueName(user) {
+    const handle = typeof user.username === "string" ? user.username : "";
+    const withTag = user.discriminator && user.discriminator !== "0" ? `${handle}#${user.discriminator}` : handle;
+    return withTag.slice(0, 40) || null;
+}
+
 function avatarUrl(user) {
     if (!user.avatar) return null;
     const ext = String(user.avatar).startsWith("a_") ? "gif" : "png";
@@ -261,7 +271,9 @@ exports.handler = async (event) => {
         if (!user || !user.id) return fail("failed");
 
         /* What is kept: the Discord id, the name and avatar to draw a
-           leaderboard row with, and two timestamps. Not the access token —
+           leaderboard row with, the unique username (so an admin reading a
+           signed-in message can tell one "Chris" from another — see
+           contact.js), and two timestamps. Not the access token —
            it is used here to read the profile and then dropped, because
            nothing on this site acts on anyone's behalf on Discord, and a
            stored token would be a credential worth stealing for no benefit
@@ -269,6 +281,7 @@ exports.handler = async (event) => {
         const player = {
             id: String(user.id),
             name: displayName(user),
+            username: uniqueName(user),
             avatar: avatarUrl(user)
         };
         try {
@@ -279,7 +292,7 @@ exports.handler = async (event) => {
             await players.updateOne(
                 { id: player.id },
                 {
-                    $set: { name: player.name, avatar: player.avatar, seenAt: now },
+                    $set: { name: player.name, username: player.username, avatar: player.avatar, seenAt: now },
                     $setOnInsert: { id: player.id, joinedAt: now }
                 },
                 { upsert: true }

@@ -1,55 +1,69 @@
-/* /.netlify/functions/share — the page a shared link actually points at.
+/* /.netlify/functions/share — the archive page, at a maze's, event's or
+   guide's own address.
 
-   Reached as /maze/<id>, /event/<id> or /guides/<id> (see the rewrites in netlify.toml,
-   which are 200s rather than redirects so the tags below are served at the
-   URL that was pasted).
+   Reached as /maze/<slug>, /event/<slug> or /guides/<slug> (see the
+   rewrites in netlify.toml, which are 200s rather than redirects so the page
+   is served at the address that was pasted).
 
-   The problem it solves: this archive is shared in Discord, and every link
-   into it unfurled with the same site-wide thumbnail and the same site-wide
-   title, because home.html is one page and its <meta> tags are written once
-   at build time. A maze has no URL of its own to hang tags on, and the
-   crawler that reads them does not run the JavaScript that would open the
-   maze anyway.
+   ONE ADDRESS FOR PEOPLE AND FOR PREVIEWS. This used to answer with a small
+   stand-in page carrying the record's preview tags and a redirect on to
+   /home#maze-<id>, so the address a visitor ended up looking at was never
+   the one they had been sent. Now it answers with home.html itself, with
+   that record's title, description, picture and canonical written into its
+   <head>. A chat client's preview crawler reads the tags and stops; a
+   browser runs the page, which reads the address and opens the window (see
+   "addresses" in js/home.js and js/guides.js). The page carries
+   <base href="/"> so it works at any depth.
 
-   So this hands the crawler a small, complete document about ONE maze —
-   its name, its builder, its own screenshot — and hands a real browser
-   straight on to the archive with that maze open. Both get what they came
-   for, and neither pays for the other.
+   The address is the record's SLUG, which follows its name (_slugs.js). An
+   older address — its id, or a slug from before a rename — answers with a
+   301 to the current one, so a link shared before either change keeps
+   working and search engines move their entry across.
 
    The image is asked for at 1200x630 through Netlify's image CDN: that is
    the size every chat client and social preview crops to, and asking for it
    here means the 3MB original is never what gets sent to a preview bot. */
+const fs = require("fs");
+const path = require("path");
 const { getDb } = require("./_db");
+const { resolveSlug, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 
-// How long a preview may be reused. Chat clients cache aggressively on
-// their own; this mostly keeps a link pasted twenty times in one channel
-// from hitting the database twenty times.
-const CACHE = "public, s-maxage=600, stale-while-revalidate=86400";
+/* How long a page may be reused. Chat clients cache aggressively on their
+   own; this mostly keeps a link pasted twenty times in one channel from
+   hitting the database twenty times. The browser revalidates every time, as
+   it does for home.html served as a file. */
+const CACHE = "public, max-age=0, must-revalidate, s-maxage=600, stale-while-revalidate=86400";
 
-/* Which maze or event was asked for, read off the request path.
+const PATH_KINDS = { maze: "maze", event: "event", guides: "guide" };
+const PREFIX = { maze: "maze", event: "event", guide: "guides" };
 
-   netlify.toml rewrites /maze/:id to "…/share?maze=:id", and under
-   `netlify dev` that placeholder arrives exactly as written. In production
-   it does not: the deployed rewrite hands the function the ORIGINAL
-   request's query string — which for a pasted /maze/<id> link is empty —
-   so every shared link reached this file with no id at all and was answered
-   with the "Not in the archive" page. A link into the archive therefore
-   unfurled with the site-wide thumbnail and dropped the visitor on the
-   homepage, which is the whole thing the share function exists to stop.
-   (Verified against the live site: /.netlify/functions/share?maze=alt-maze
-   answered 200 with the maze's own tags, while /maze/alt-maze answered the
-   not-found page from the same deploy.)
+/* Which record was asked for, read off the request path.
 
-   The path is the one thing that survives a rewrite intact, so it is what
-   the id is taken from now. The query string is still read first, so a
-   direct call to the function keeps working — that is the form the local
-   dev proxy produces, and it is a useful way to test the function. */
-function requestedId(event) {
+   netlify.toml rewrites /maze/:id to this function, and in production the
+   deployed rewrite hands it the ORIGINAL request's query string — which for
+   a pasted /maze/<slug> link is empty. The path is the one thing that
+   survives a rewrite intact, so it is what the slug is taken from. (Reading
+   a ?maze= query once left every shared link on the not-found page.)
+
+   The query string is read only when the path names nothing, so a direct
+   call to the function (/.netlify/functions/share?maze=x) still works as a
+   way to test it. It used to be read FIRST, which let
+   /maze/hallway?maze=<another> serve another maze's title, picture and
+   canonical at Hallway's address — and cache that at the edge for whoever
+   pasted the link next. */
+function requestedSlug(event) {
+    const fromPath = slugFromPath(event);
+    if (fromPath !== undefined) return fromPath;
     const params = event.queryStringParameters || {};
-    if (params.maze) return { id: params.maze, kind: "maze" };
-    if (params.event) return { id: params.event, kind: "event" };
-    if (params.guide) return { id: params.guide, kind: "guide" };
+    if (params.maze) return { slug: params.maze, kind: "maze" };
+    if (params.event) return { slug: params.event, kind: "event" };
+    if (params.guide) return { slug: params.guide, kind: "guide" };
+    return null;
+}
 
+// { slug, kind } for a record address, null for one that cannot be decoded,
+// undefined for a path that is not a record address at all.
+function slugFromPath(event) {
     // event.rawUrl is the address as it was requested; event.path is the
     // same path on its own. Either can be absent depending on how the
     // function is invoked, so both are tried before giving up.
@@ -58,18 +72,27 @@ function requestedId(event) {
         try { pathname = new URL(event.rawUrl).pathname; } catch (e) { /* keep event.path */ }
     }
     const m = /^\/(maze|event|guides)\/([^/]+)\/?$/.exec(pathname);
-    if (!m) return null;
+    if (!m) return undefined;
     /* A stray % in a pasted link ("/maze/100%-maze") makes decodeURIComponent
        throw, and uncaught that was a bare 502 from the function. A link that
        cannot be decoded names nothing in the archive, so it gets the same
-       not-found page as any other unknown id. */
-    let id;
+       not-found page as any other unknown address. */
     try {
-        id = decodeURIComponent(m[2]);
+        return { slug: decodeURIComponent(m[2]), kind: PATH_KINDS[m[1]] };
     } catch (e) {
         return null;
     }
-    return { id, kind: m[1] === "guides" ? "guide" : m[1] };
+}
+
+// The request's query string for a redirect, without maze/event/guide.
+function carriedQuery(event) {
+    const params = new URLSearchParams();
+    const q = event.queryStringParameters || {};
+    Object.keys(q).forEach(k => {
+        if (k !== "maze" && k !== "event" && k !== "guide" && q[k] != null) params.append(k, q[k]);
+    });
+    const s = params.toString();
+    return s ? "?" + s : "";
 }
 
 function escapeHtml(str) {
@@ -82,19 +105,124 @@ function escapeHtml(str) {
    og:image has to be absolute — a relative one is simply dropped by every
    client that reads it).
 
-   From the deploy's own configuration, NOT from the request. This used to
-   read x-forwarded-host and Host, and those are whatever the caller sends:
-   a request crafted with a different host got a page whose canonical,
-   og:url and og:image all pointed at a site of the attacker's choosing —
-   and this page is served with a ten-minute shared cache, so the poisoned
-   copy would go out to whoever pasted the link next. process.env.URL is
-   the site's primary address as Netlify knows it; the literal is for the
-   one place that is not set, which is a local run, where a preview
-   pointing at the live site is harmless. */
+   From the deploy's own configuration, NOT from the request. Host and
+   x-forwarded-host are whatever the caller sends: a request crafted with a
+   different host would get a page whose canonical, og:url and og:image all
+   pointed at a site of the attacker's choosing — and this page is cached at
+   the edge, so the poisoned copy would go out to whoever pasted the link
+   next. The literal is for the one place URL is not set, a local run. */
 const SITE_FALLBACK = "https://mazerats.net";
 function originOf() {
     return String(process.env.URL || SITE_FALLBACK).replace(/\/+$/, "");
 }
+
+/* ---------- the page itself ----------
+
+   home.html as deployed, read once per warm function. netlify.toml lists it
+   under included_files, which bundles it beside the function; where exactly
+   depends on the bundler, so the likely places are all tried. Failing all of
+   them, the deploy's own copy is fetched over HTTP — DEPLOY_URL rather than
+   URL, so a deploy preview serves its own page and not production's. */
+let pageCache = null;
+async function archivePage() {
+    // Under `netlify dev` the file is the working copy, being edited: read
+    // it fresh each time rather than serving whatever it said at start-up.
+    if (pageCache && !process.env.NETLIFY_DEV) return pageCache;
+    const places = [
+        path.resolve(__dirname, "..", "..", "home.html"),
+        path.resolve(process.cwd(), "home.html"),
+        process.env.LAMBDA_TASK_ROOT ? path.resolve(process.env.LAMBDA_TASK_ROOT, "home.html") : ""
+    ].filter(Boolean);
+    for (const p of places) {
+        try {
+            pageCache = fs.readFileSync(p, "utf8");
+            return pageCache;
+        } catch (e) { /* the next place */ }
+    }
+    const site = String(process.env.DEPLOY_URL || originOf()).replace(/\/+$/, "");
+    const res = await fetch(`${site}/home`, { headers: { "User-Agent": "mazerats-share" } });
+    if (!res.ok) throw new Error(`share: home.html fetch answered ${res.status}`);
+    pageCache = await res.text();
+    return pageCache;
+}
+
+/* The page's head, rewritten to be about one record.
+
+   The archive's own tags are removed and a set about the record goes in
+   their place, right after <base>. The title, canonical and og:url keep the
+   archive's values in data-archive: the page puts those back when the
+   window is closed (PageMeta in js/site.js), since after that the page IS
+   the archive again. */
+const ARCHIVE_TAGS = [
+    /<title>[\s\S]*?<\/title>\s*/i,
+    /<meta\s+name="description"[^>]*>\s*/gi,
+    /<link\s+rel="canonical"[^>]*>\s*/gi,
+    /<meta\s+property="og:[^"]*"[^>]*>\s*/gi,
+    /<meta\s+name="twitter:[^"]*"[^>]*>\s*/gi
+];
+
+function tagOf(html, re) {
+    const m = re.exec(html);
+    return m ? m[1] : "";
+}
+
+function withTags(html, t) {
+    const archive = {
+        title: tagOf(html, /<title>([\s\S]*?)<\/title>/i),
+        canonical: tagOf(html, /<link\s+rel="canonical"\s+href="([^"]*)"/i),
+        ogUrl: tagOf(html, /<meta\s+property="og:url"\s+content="([^"]*)"/i)
+    };
+    // Already escaped as page text; only a quote could break the attribute.
+    Object.keys(archive).forEach(k => { archive[k] = archive[k].replace(/"/g, "&quot;"); });
+    let out = html;
+    ARCHIVE_TAGS.forEach(re => { out = out.replace(re, ""); });
+    const e = escapeHtml;
+    const block = [
+        `<title data-archive="${archive.title}">${e(t.title)} — Maze Rats</title>`,
+        `<meta name="description" content="${e(t.description)}">`,
+        `<link rel="canonical" href="${e(t.canonical)}" data-archive="${archive.canonical}">`,
+        `<meta property="og:site_name" content="Maze Rats">`,
+        `<meta property="og:type" content="article">`,
+        `<meta property="og:title" content="${e(t.title)}">`,
+        `<meta property="og:description" content="${e(t.description)}">`,
+        `<meta property="og:image" content="${e(t.image)}">`,
+        ...(t.sized ? [`<meta property="og:image:width" content="1200">`, `<meta property="og:image:height" content="630">`] : []),
+        `<meta property="og:url" content="${e(t.canonical)}" data-archive="${archive.ogUrl}">`,
+        `<meta name="twitter:card" content="summary_large_image">`,
+        `<meta name="twitter:title" content="${e(t.title)}">`,
+        `<meta name="twitter:description" content="${e(t.description)}">`,
+        `<meta name="twitter:image" content="${e(t.image)}">`,
+        /* Which record this page is about, by id. The page opens the window
+           from the address, matching it against the archive it loads — but
+           that list is edge-cached for a minute and the offline copy has no
+           addresses at all, so a maze renamed a moment ago (or any maze, on
+           the offline copy) could not be found by its new address and the
+           visitor was left on the plain archive. The id never changes, so
+           the page falls back to it (see openFromAddress in js/home.js). */
+        ...(t.record ? [`<meta name="mazerats:record" content="${e(t.record)}">`] : [])
+    ].map(line => "    " + line).join("\n");
+    const at = /<base\s[^>]*>/i.exec(out) || /<head[^>]*>/i.exec(out);
+    if (!at) return out;
+    const cut = at.index + at[0].length;
+    return out.slice(0, cut) + "\n" + block + out.slice(cut);
+}
+
+/* home.html is served as a file with the headers netlify.toml gives every
+   path, but custom headers are not applied to a function's response — so
+   this carries them itself. The policy is the site's own, word for word:
+   the page is the same page and needs exactly what it always has.
+   tools/check-share-headers.js fails the build if the two drift apart. */
+const PAGE_HEADERS = {
+    "Content-Type": "text/html; charset=utf-8",
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+};
+
+/* ---------- what a record's preview says ---------- */
 
 /* The preview image, at the size previews are cropped to.
 
@@ -106,7 +234,12 @@ function originOf() {
    image in a chat client. */
 function previewImage(origin, thumb) {
     if (!thumb) return `${origin}/assets/img/og-thumbnail.png`;
-    const params = new URLSearchParams({ url: thumb, w: "1200", h: "630", fit: "cover", q: "80" });
+    /* fm=jpg: without it the CDN answers a client that does not ask for
+       WebP — which is most preview bots — with a PNG, and a room screenshot
+       at 1200x630 came back at 1.8MB. Chat apps drop preview images much
+       over half a megabyte, so shared links unfurled with no picture. As a
+       JPEG the same image is about 245KB. */
+    const params = new URLSearchParams({ url: thumb, w: "1200", h: "630", fit: "cover", fm: "jpg", q: "80" });
     return `${origin}/.netlify/images?${params.toString()}`;
 }
 
@@ -123,7 +256,8 @@ function previewImage(origin, thumb) {
    for the new one. */
 function guideImage(origin, thumb) {
     if (!thumb) return `${origin}/assets/img/og-thumbnail.png`;
-    const params = new URLSearchParams({ url: thumb, w: "1200", q: "85" });
+    // As a JPEG, for the same reason as previewImage above.
+    const params = new URLSearchParams({ url: thumb, w: "1200", fm: "jpg", q: "85" });
     return `${origin}/.netlify/images?${params.toString()}`;
 }
 
@@ -133,6 +267,13 @@ function guideThumb(guide) {
     if (guide.thumb) return guide.thumb;
     const withPic = (guide.sections || []).find(s => s && s.image);
     return withPic ? withPic.image : "";
+}
+
+// Long enough to say something, short enough that no client truncates it
+// mid-word in a way that changes the meaning.
+function clip(text) {
+    const t = String(text || "").replace(/\s+/g, " ").trim();
+    return t.length > 200 ? t.slice(0, 197).replace(/\s+\S*$/, "") + "…" : t;
 }
 
 // One line of prose about the thing, for the preview's body text. Falls
@@ -145,166 +286,23 @@ function describe(record, isEvent) {
     const tail = isEvent
         ? "An event in the Maze Rats archive of Habbo Origins."
         : "A maze in the Maze Rats archive of Habbo Origins.";
-    const parts = [who, what || tail].filter(Boolean);
-    const text = parts.join(" ").replace(/\s+/g, " ");
-    // Long enough to say something, short enough that no client truncates
-    // it mid-word in a way that changes the meaning.
-    return text.length > 200 ? text.slice(0, 197).replace(/\s+\S*$/, "") + "…" : text;
+    return clip([who, what || tail].filter(Boolean).join(" "));
 }
 
-/* The document itself.
-
-   A real browser never reads any of this: the redirect below fires first.
-   It is written as a proper page regardless — with the name and the picture
-   in the body — because a client that follows the link without running
-   script (a preview bot that renders, a text browser, a reader mode) should
-   still land on something that makes sense rather than a blank page with
-   tags in its head. */
-function page({ title, description, image, canonical, target, sized = true }) {
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${escapeHtml(title)} — Maze Rats</title>
-<meta name="description" content="${escapeHtml(description)}">
-<link rel="canonical" href="${escapeHtml(canonical)}">
-<meta property="og:site_name" content="Maze Rats">
-<meta property="og:type" content="article">
-<meta property="og:title" content="${escapeHtml(title)}">
-<meta property="og:description" content="${escapeHtml(description)}">
-<meta property="og:image" content="${escapeHtml(image)}">${sized ? `
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">` : ""}
-<meta property="og:url" content="${escapeHtml(canonical)}">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${escapeHtml(title)}">
-<meta name="twitter:description" content="${escapeHtml(description)}">
-<meta name="twitter:image" content="${escapeHtml(image)}">
-<meta http-equiv="refresh" content="0; url=${escapeHtml(target)}">
-<style>
-body{margin:0;background:#120c07;color:#e6d9c2;font-family:system-ui,sans-serif;
-     display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center}
-main{padding:32px;max-width:640px}
-img{max-width:100%;height:auto;border-radius:4px}
-a{color:#e6b866}
-</style>
-</head>
-<body>
-<main>
-<h1>${escapeHtml(title)}</h1>
-<p>${escapeHtml(description)}</p>
-<p><a href="${escapeHtml(target)}">Open it in the Maze Rats archive</a></p>
-<img src="${escapeHtml(image)}" alt="">
-</main>
-<script>location.replace(${JSON.stringify(target)});</script>
-</body>
-</html>`;
-}
-
-/* This one serves a real HTML document rather than JSON, so it cannot take
-   the shared `default-src 'none'` — the page carries an inline redirect
-   script and an Open Graph image, and that policy would block both. It gets
-   a policy naming exactly what it uses instead, plus the same nosniff and
-   framing protection every other response now carries.
-
-   `frame-ancestors 'none'` matters more here than anywhere else on the site:
-   this is the page link previews fetch, so it is the one an attacker would
-   most like to put in an iframe. */
-const SHARE_HEADERS = {
-    "Content-Type": "text/html; charset=utf-8",
-    "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
-    "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Content-Security-Policy":
-        "default-src 'none'; img-src 'self' https:; style-src 'unsafe-inline'; " +
-        "script-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
-};
-
-function notFound(origin) {
-    return {
-        statusCode: 404,
-        headers: SHARE_HEADERS,
-        body: page({
-            title: "Not in the archive",
-            description: "That maze or event isn't in the Maze Rats archive — it may have been renamed since the link was made.",
-            image: `${origin}/assets/img/og-thumbnail.png`,
-            canonical: `${origin}/home`,
-            target: "/home"
-        })
-    };
-}
-
-/* A shared guide: /guides/<id>. Published guides only, since a draft is not
-   public anywhere else either. A guide that is gone, or a database that is
-   down, sends the visitor to the Guides window at that address instead of
-   to a page about the archive, since the window says plainly when a guide
-   isn't there and lists the ones that are. */
-async function guidePage(origin, id) {
-    const app = `/guides?g=${encodeURIComponent(id)}`;
-    const away = { statusCode: 302, headers: { Location: app, "Cache-Control": "no-store" }, body: "" };
-    let guide;
-    try {
-        const db = await getDb();
-        guide = await db.collection("guides")
-            .findOne({ id, status: "published" }, { projection: { _id: 0, title: 1, summary: 1, thumb: 1, sections: 1 } });
-    } catch (e) {
-        console.error("share: guide lookup failed", e);
-        return away;
-    }
-    if (!guide) return away;
-
-    const summary = String(guide.summary || "").replace(/\s+/g, " ").trim();
-    const description = !summary ? "A guide in the Maze Rats archive of Habbo Origins."
-        : summary.length > 200 ? summary.slice(0, 197).replace(/\s+\S*$/, "") + "…" : summary;
-    return {
-        statusCode: 200,
-        headers: { ...SHARE_HEADERS, "Cache-Control": CACHE },
-        body: page({
-            title: guide.title || "Guides",
-            description,
-            image: guideImage(origin, guideThumb(guide)),
-            sized: false,
-            canonical: `${origin}/guides/${encodeURIComponent(id)}`,
-            target: app
-        })
-    };
-}
-
-exports.handler = async (event) => {
-    const origin = originOf();
-    const asked = requestedId(event);
-    if (!asked) return notFound(origin);
-    const { id, kind } = asked;
-    const isEvent = kind === "event";
-    if (kind === "guide") return guidePage(origin, id);
-
-    let db;
-    try {
-        db = await getDb();
-    } catch (e) {
-        // The database being down is not a reason to hand back a broken
-        // preview: send the sharer's link on to the archive, which has its
-        // own offline copy to fall back to.
+function tagsFor(kind, record, origin, slug) {
+    const canonical = `${origin}/${PREFIX[kind]}/${encodeURIComponent(slug)}`;
+    const recordRef = `${kind}:${record.id}`;
+    if (kind === "guide") {
         return {
-            statusCode: 302,
-            headers: { Location: "/home" },
-            body: ""
+            title: record.title || "Guides",
+            description: clip(record.summary) || "A guide in the Maze Rats archive of Habbo Origins.",
+            image: guideImage(origin, guideThumb(record)),
+            sized: false,
+            canonical,
+            record: recordRef
         };
     }
-
-    let record;
-    try {
-        record = await db.collection(isEvent ? "events" : "rooms")
-            .findOne({ id }, { projection: { _id: 0 } });
-    } catch (e) {
-        // Same answer as a database that would not connect, above.
-        console.error("share: lookup failed", e);
-        return { statusCode: 302, headers: { Location: "/home", "Cache-Control": "no-store" }, body: "" };
-    }
-    if (!record) return notFound(origin);
-
-    const title = (isEvent ? record.title : record.name) || "Maze Rats";
+    const isEvent = kind === "event";
     // The same fallback chain the site's own cards use (see normalize in
     // js/home.js): the thumbnail, then the entrance shot, then the first
     // room in the gallery.
@@ -312,16 +310,98 @@ exports.handler = async (event) => {
         || (record.entrance && record.entrance.image)
         || (record.gallery && record.gallery[0] && record.gallery[0].image)
         || "";
-
     return {
-        statusCode: 200,
-        headers: { ...SHARE_HEADERS, "Cache-Control": CACHE },
-        body: page({
-            title,
-            description: describe(record, isEvent),
-            image: previewImage(origin, thumb),
-            canonical: `${origin}/${isEvent ? "event" : "maze"}/${encodeURIComponent(id)}`,
-            target: `/home#${isEvent ? "event" : "maze"}-${encodeURIComponent(id)}`
-        })
+        title: (isEvent ? record.title : record.name) || "Maze Rats",
+        description: describe(record, isEvent),
+        image: previewImage(origin, thumb),
+        sized: true,
+        canonical,
+        record: recordRef
     };
+}
+
+/* ---------- answering ---------- */
+
+async function pageResponse(statusCode, tags, cache) {
+    let html;
+    try {
+        html = await archivePage();
+    } catch (e) {
+        // No page to serve at all: the archive at its own address is the
+        // best that can be done, and it handles an unknown record itself.
+        console.error("share: archive page unavailable", e);
+        return { statusCode: 302, headers: { Location: "/home", "Cache-Control": "no-store" }, body: "" };
+    }
+    return {
+        statusCode,
+        headers: { ...PAGE_HEADERS, "Cache-Control": cache },
+        body: tags ? withTags(html, tags) : html
+    };
+}
+
+const COLLECTION = { maze: "rooms", event: "events", guide: "guides" };
+// A draft guide is not public anywhere else, so it has no page here. Its
+// address still counts when the addresses are worked out, as it does in
+// the API, or the two could name a guide differently.
+const isPublic = (kind, r) => kind !== "guide" || (r && r.status === "published");
+
+exports.handler = async (event) => {
+    const origin = originOf();
+    const asked = requestedSlug(event);
+    const notFound = {
+        title: "Not in the archive",
+        description: "That isn't in the Maze Rats archive — it may have been removed.",
+        image: `${origin}/assets/img/og-thumbnail.png`,
+        sized: true,
+        canonical: `${origin}/home`
+    };
+    // Short-cached: a record that is being added right now should not sit
+    // behind a cached not-found for ten minutes.
+    const MISS_CACHE = "public, max-age=0, must-revalidate, s-maxage=60";
+    if (!asked) return pageResponse(404, notFound, MISS_CACHE);
+    const { slug, kind } = asked;
+
+    let found, record;
+    try {
+        const coll = (await getDb()).collection(COLLECTION[kind]);
+        const all = await coll.find({}, { projection: { ...SLUG_FIELDS, status: 1 } }).toArray();
+        found = resolveSlug(all, kind, slug);
+        if (found && !isPublic(kind, found.record)) found = null;
+        if (found && found.current) {
+            record = await coll.findOne({ id: found.record.id }, { projection: { _id: 0 } });
+        }
+    } catch (e) {
+        /* The database being down is not a reason to turn the visitor away:
+           the page itself works from its own offline copy, and opens the
+           record from the address if it can. Served as the plain archive,
+           and not cached, so the tags come back as soon as the database
+           does. */
+        console.error("share: lookup failed", e);
+        return pageResponse(200, null, "no-store");
+    }
+    if (!found) return pageResponse(404, notFound, MISS_CACHE);
+
+    // An older address — the id, or a slug from before a rename.
+    if (!found.current) {
+        return {
+            statusCode: 301,
+            /* NOT cached at the edge. A cached redirect outlives the rename
+               it describes: rename A to B and back inside the cache's life
+               and the edge still sends /maze/a to /maze/b while /maze/b now
+               sends to /maze/a — a redirect loop for everyone until it
+               expires. The lookup behind this is one small read.
+
+               The query string goes along (less the function's own test
+               parameters): /warren's View link carries ?fresh=1, and a
+               redirect that dropped it showed the admin the CDN's stale copy
+               of the guide they had just saved. */
+            headers: { Location: `/${PREFIX[kind]}/${encodeURIComponent(found.slug)}${carriedQuery(event)}`, "Cache-Control": "no-store" },
+            body: ""
+        };
+    }
+    if (!record) return pageResponse(404, notFound, MISS_CACHE);
+    return pageResponse(200, tagsFor(kind, record, origin, found.slug), CACHE);
 };
+
+// For tools/check-share-headers.js and the local tests.
+exports._test = { withTags, PAGE_HEADERS, requestedSlug };

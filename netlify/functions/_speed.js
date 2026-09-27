@@ -10,12 +10,25 @@
 
    The server, never the page. When a signed-in player opens a day's game,
    the game says so (a POST with action "start" to its own scores endpoint),
-   and the moment that arrives is written here. Then, as each round ends —
-   the room named or its guesses spent, the pick made — the game says that
-   too (action "mark", with the round's number), and that moment is written
-   beside the start. Every one of those times is read off the server's own
-   clock. The page never sends a time, so there is no number in any request
-   to edit.
+   and the moment that arrives is written here. Then each MOVE — the tile
+   picked, each name guessed — is sent as it is made (action "move"), judged
+   here against the day's stored deal (_deal.js) at that moment, and written
+   beside the start with the time it arrived. A round's end (its "mark") is
+   the move that finished it. Every one of those times is read off the
+   server's own clock. The page never sends a time, so there is no number in
+   any request to edit.
+
+   THE MOVE CARRIES THE PICK, and that is the fix for the hole the old shape
+   had. A mark used to carry nothing but a round number, and the picks came
+   later in the day's submission — so a script could mark all five rounds a
+   few milliseconds apart, earn the full 185, and choose its answers
+   afterwards, at leisure, from a page that had the answers in it anyway.
+   Now there is no mark without a pick, the pick is judged when it lands,
+   and what is judged is what is scored: the day's score is built from the
+   rows written here and nothing in the submission counts. A move faster
+   than MIN_MOVE_MS after its round began is refused (and the page simply
+   sends it again once that has passed), so the fastest a round can ever be
+   is a human's fastest, not a script's.
 
    FIRST WRITE WINS. One row per (game, day, player), under a unique index,
    written with $setOnInsert — so reopening the game, reloading, or opening
@@ -24,31 +37,36 @@
    at the rooms, closing the window and "starting" again once you know the
    answers.
 
-   The marks follow the same rule, and one more. A round's mark is written
-   with a conditional update that only matches while that round has no
-   mark yet, so once written it can never be moved. And it is only taken
-   when the round before it already has one (round 0 needs the start), so
-   the marks can only ever be laid down in order: a request cannot mark
-   round 4 first, or mark round 2 early and round 1 after it, to squeeze
-   one round's time into another.
+   The moves follow the same rule, and one more. A move is written with a
+   conditional update that only matches while the round is still open and
+   nothing has changed under it since it was read, so the FIRST recorded
+   move per round wins: a reload, a second tab or a second device cannot
+   re-pick a round, and cannot re-roll one either, because the deal does not
+   change. And a round's first move is only taken once the round before it
+   is over (round 0 needs the start), so the rounds can only ever be played
+   in order: a request cannot finish round 4 first, or finish round 2 early
+   and round 1 after it, to squeeze one round's time into another.
 
    Signed out, nothing is recorded, because there is nobody to record it
-   against. A day submitted with no start on file gets no bonus at all —
-   which covers a day played signed out and then signed in for, and is
-   also the fair answer: a clock that never started cannot say how fast
-   anybody was. A round with no mark earns nothing either, rather than a
-   guess at how long it took.
+   against; the move is judged and the verdict sent back, and that is all.
+   A day whose first signed-in move arrives with no start on file (the start
+   request failed, say) is written as untimed, `noClock`, and earns no bonus
+   — a clock that never started cannot say how fast anybody was. A round
+   with no mark earns nothing either, rather than a guess at how long it
+   took.
 
    This is exactly as trustworthy as the rest of the scoring (see the notes
    at the top of guess-scores.js and daily-scores.js): the pictures are
-   public and a day can be worked out in private before it is ever opened
-   signed in.
+   public, and a player who plays the day signed out in a private window
+   first knows the answers when they play it signed in. What it no longer
+   allows is knowing them from the page, or choosing them after the clock
+   has stopped.
 
    ----------------------------------------------------------------------
    HOW BIG IT IS
 
-   Per round, and only for a round got RIGHT — as the server scored it at
-   submission, not as the page claimed. A wrong answer earns no bonus
+   Per round, and only for a round got RIGHT — as the server judged it when
+   the move arrived, not as the page claimed. A wrong answer earns no bonus
    however fast it was, so guessing quickly is never worth more than
    thinking.
 
@@ -111,7 +129,18 @@ function roundBonusFor(ms) {
 
 // Where a round's mark lives on the start row: marks.r0, marks.r1 ... A map
 // rather than an array, so writing one round can never pad or shift another.
+// The round's moves live beside it under the same key: moves.r0, moves.r1.
 const markKey = round => "r" + round;
+
+/* The least time a round's first move may follow the round's beginning (the
+   start, for round 0; the end of the round before, for the rest). About the
+   quickest a person can look at four pictures, or one, and press something —
+   and far slower than a script, which is the point: marking five rounds a
+   few milliseconds apart was worth the whole 185. A move that arrives
+   sooner is refused with how long is left, and the page sends it again
+   once that has passed, so a genuinely quick player loses nothing but the
+   difference. */
+const MIN_MOVE_MS = 1200;
 
 /* One unique index, and a TTL so the collection cleans up after itself: a
    start is only ever read on the day it was written (a day stops taking
@@ -147,54 +176,204 @@ async function recordStart(db, ensureUniqueIndex, game, day, playerId) {
     }
 }
 
-/* Records the end of one round, and never moves it. One update whose filter
-   carries both rules — this round not marked yet, the round before it
-   marked already — so the check and the write are a single atomic step and
-   two marks racing for the same round cannot both land. No upsert: a mark
-   needs the start's row to go on, so a day never started gets none.
-
-   The answer says which it was. "marked" wrote it; "already" is the rule
-   working, like a second start; "out-of-order" and "no-start" are a mark
-   that was refused. A round number outside the game's 0..rounds-1 is the
-   caller's to refuse before this is called — see markRound. */
-async function recordMark(db, game, day, playerId, round) {
-    const col = db.collection(COLLECTION);
-    const key = "marks." + markKey(round);
-    const filter = { game, day, playerId, [key]: { $exists: false } };
-    if (round > 0) filter["marks." + markKey(round - 1)] = { $exists: true };
-    const res = await col.updateOne(filter, { $set: { [key]: new Date() } });
-    if (res && res.matchedCount) return "marked";
-    // Nothing matched: work out why, for the answer. Nothing is written here.
-    const row = await col.findOne({ game, day, playerId });
-    if (!row) return "no-start";
-    if (row.marks && row.marks[markKey(round)]) return "already";
-    return "out-of-order";
-}
-
-/* The round a mark request names, or null if it is not one of the game's
+/* The round a move request names, or null if it is not one of the game's
    0..rounds-1. A number only: "", null and true would all pass as 0 or 1
    through Number(), and none of them is a round. */
 function markRound(value, rounds) {
     return typeof value === "number" && Number.isInteger(value) && value >= 0 && value < rounds ? value : null;
 }
 
-/* The day's start and marks as recorded, or null if it was never started
-   signed in. The EARLIEST row is read rather than any row, so even a
-   duplicate that slipped in while the unique index was missing could not
-   start the clock later. */
-async function clockFor(db, game, day, playerId) {
+/* The player's row for the day, EARLIEST first, so even a duplicate that
+   slipped in while the unique index was missing could not start the clock
+   later. null if there is none. */
+async function progressFor(db, game, day, playerId) {
     const rows = await db.collection(COLLECTION)
-        .find({ game, day, playerId }, { projection: { _id: 0, at: 1, marks: 1 } })
+        .find({ game, day, playerId }, { projection: { _id: 0 } })
         .sort({ at: 1 }).limit(1).toArray();
-    const at = rows[0] && rows[0].at ? new Date(rows[0].at).getTime() : NaN;
+    return rows[0] || null;
+}
+
+const timeOf = v => (v == null ? NaN : new Date(v).getTime());
+
+/* The day's start and marks, from a row as progressFor reads it, or null if
+   there is no clock to read — no row, or an untimed one (see noClock at
+   rowForMove). Pure. */
+function clockOf(row) {
+    if (!row || row.noClock) return null;
+    const at = timeOf(row.at);
     if (!Number.isFinite(at)) return null;
     const marks = {};
-    const raw = (rows[0] && rows[0].marks) || {};
+    const raw = row.marks || {};
     for (const k of Object.keys(raw)) {
-        const t = new Date(raw[k]).getTime();
+        const t = timeOf(raw[k]);
         if (Number.isFinite(t)) marks[k] = t;
     }
     return { at, marks };
+}
+
+async function clockFor(db, game, day, playerId) {
+    return clockOf(await progressFor(db, game, day, playerId));
+}
+
+/* The moves recorded for each round, from a row, as an array the length of
+   the day: the stored move, or null for a round with none. Pure. The day's
+   score is built from this and from nothing else. */
+function movesOf(row, rounds) {
+    const moves = (row && row.moves) || {};
+    return Array.from({ length: rounds }, (_, i) => moves[markKey(i)] || null);
+}
+
+/* When round `round` began, in ms: the start for round 0, the round
+   before's mark for the rest. NaN if it has not. */
+function roundBeganAt(row, round) {
+    return round === 0 ? timeOf(row.at) : timeOf(row.marks && row.marks[markKey(round - 1)]);
+}
+
+/* The row a move goes on, making an untimed one if a signed-in player's
+   first move arrives with no start on file.
+
+   That happens when the start request failed (a dropped connection as the
+   first pictures came up), and refusing the move would leave the player
+   unable to play the day signed in at all. Written with `noClock`, which
+   clockOf reads as no clock: the day is scored, and earns no bonus, exactly
+   as a day with no start always has. Only for round 0 — a later round with
+   no row means the row was taken away (an administrator's reset), and the
+   page should not be carrying on from where it was. $setOnInsert, so a
+   start that lands at the same moment keeps its own time and no flag. */
+async function rowForMove(col, ensureUniqueIndex, game, day, playerId, round) {
+    let row = await col.findOne({ game, day, playerId });
+    if (row || round !== 0) return row;
+    await ensureIndexes(col, ensureUniqueIndex);
+    try {
+        await col.updateOne(
+            { game, day, playerId },
+            { $setOnInsert: { game, day, playerId, at: new Date(), noClock: true } },
+            { upsert: true }
+        );
+    } catch (e) {
+        if (!(e && e.code === 11000)) throw e;
+    }
+    return col.findOne({ game, day, playerId });
+}
+
+/* Whether the round may take its FIRST move yet: the round before must be
+   over, and MIN_MOVE_MS must have passed since this one began. An untimed
+   row's round 0 has no real beginning to measure from, so it is only held
+   to the order. Returns null when the move may go ahead. */
+function gateFor(row, round, now) {
+    if (round > 0 && !(row.marks && row.marks[markKey(round - 1)])) return { error: "out-of-order" };
+    if (round === 0 && row.noClock) return null;
+    const began = roundBeganAt(row, round);
+    if (!Number.isFinite(began)) return { error: "out-of-order" };
+    const wait = began + MIN_MOVE_MS - now;
+    return wait > 0 ? { error: "too-fast", retryInMs: Math.ceil(wait) } : null;
+}
+
+/* Records an Odd One Out pick: judged against the stored deal now, written
+   once, never moved. `round` is the stored deal's round (the caller checks
+   the number) and `tile` the index picked in it.
+
+   The answer is one of:
+     { moved: true, tile, right }     written now
+     { already: true, tile, right }   the round was picked before — by a
+                                      reload, another tab, another device —
+                                      and THAT pick stands and is returned,
+                                      so the page can show what counts
+     { error: "no-start" | "out-of-order" | "too-fast" | "bad-move", ... }
+
+   The write's filter carries every rule at once — this round not picked,
+   not marked, the round before marked — so two picks racing for one round
+   cannot both land, and whichever lands first is the one that counts. */
+async function recordOddPick(db, ensureUniqueIndex, day, playerId, round, tile, dealRound, now) {
+    const game = "odd";
+    const col = db.collection(COLLECTION);
+    if (!dealRound || !Number.isInteger(tile) || tile < 0 || tile >= dealRound.tiles.length) return { error: "bad-move" };
+    const key = markKey(round);
+    const row = await rowForMove(col, ensureUniqueIndex, game, day, playerId, round);
+    if (!row) return { error: "no-start" };
+    const stored = row.moves && row.moves[key];
+    if (stored) return { already: true, tile: stored.tile, right: Boolean(stored.right) };
+    const gate = gateFor(row, round, now);
+    if (gate) return gate;
+
+    const right = Boolean(dealRound.tiles[tile].odd);
+    const at = new Date(now);
+    const filter = { game, day, playerId, ["moves." + key]: { $exists: false }, ["marks." + key]: { $exists: false } };
+    if (round > 0) filter["marks." + markKey(round - 1)] = { $exists: true };
+    const res = await col.updateOne(filter, { $set: { ["moves." + key]: { tile, right, at }, ["marks." + key]: at } });
+    if (res && res.matchedCount) return { moved: true, tile, right };
+    // Lost a race: whatever landed first is the answer.
+    const again = await col.findOne({ game, day, playerId });
+    const won = again && again.moves && again.moves[key];
+    if (won) return { already: true, tile: won.tile, right: Boolean(won.right) };
+    return { error: "out-of-order" };
+}
+
+const normalise = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/* Records one Guess the Maze guess: judged against the stored deal now and
+   appended to the round's guesses, which the SERVER counts — `tries` used
+   to be a number the page reported, and claiming one try was worth ten
+   points a round. The round ends on the right name or on the `tries`th
+   guess, and its mark is the moment that guess arrived.
+
+   The answer is the round as it now stands, { guesses, done, won, tries },
+   with `moved`, `already` (the round was over before this guess — the
+   stored round is what counts) or `repeat` (a name already tried this
+   round, which costs nothing and changes nothing); or an error as for
+   recordOddPick. `name` must be one of the five offered — anything else is
+   a bad move, not a wrong guess.
+
+   Written with the round's guesses AS READ in the filter, so a guess from a
+   second tab landing in between makes this one miss; it then reads again
+   and has another go, a few times at most. */
+async function recordGuess(db, ensureUniqueIndex, day, playerId, round, name, dealRound, tries, now) {
+    const game = "guess";
+    const col = db.collection(COLLECTION);
+    if (!dealRound || typeof name !== "string") return { error: "bad-move" };
+    const offered = dealRound.options.find(o => normalise(o) === normalise(name) && normalise(o));
+    if (!offered) return { error: "bad-move" };
+    const key = markKey(round);
+    const view = (m, flag) => Object.assign({ [flag]: true }, {
+        guesses: m.guesses.slice(), done: Boolean(m.done), won: Boolean(m.won), tries: m.guesses.length
+    });
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+        const row = await rowForMove(col, ensureUniqueIndex, game, day, playerId, round);
+        if (!row) return { error: "no-start" };
+        const cur = (row.moves && row.moves[key]) || null;
+        if (cur && cur.done) return view(cur, "already");
+        if (cur && cur.guesses.some(g => normalise(g) === normalise(offered))) return view(cur, "repeat");
+        if (!cur) {
+            const gate = gateFor(row, round, now);
+            if (gate) return gate;
+        }
+
+        const won = normalise(offered) === normalise(dealRound.name);
+        const guesses = (cur ? cur.guesses : []).concat(offered);
+        const done = won || guesses.length >= tries;
+        const at = new Date(now);
+        const next = { guesses, done, won, tries: guesses.length, at: cur ? cur.at : at };
+        const filter = {
+            game, day, playerId,
+            ["moves." + key + ".guesses"]: cur ? cur.guesses : { $exists: false },
+            ["marks." + key]: { $exists: false }
+        };
+        if (round > 0) filter["marks." + markKey(round - 1)] = { $exists: true };
+        const set = { ["moves." + key]: next };
+        if (done) set["marks." + key] = at;
+        const res = await col.updateOne(filter, { $set: set });
+        if (res && res.matchedCount) return view(next, "moved");
+    }
+    return { error: "busy" };
+}
+
+/* A player's day taken away, for an administrator's reset (daily-games.js):
+   the start, every mark and every move, so the day given back really does
+   start again rather than finding its rounds already played. */
+async function forgetDay(db, game, day, playerId) {
+    const res = await db.collection(COLLECTION).deleteMany({ game, day, playerId });
+    return (res && res.deletedCount) || 0;
 }
 
 /* The bonus, the day's time and each round's seconds, from a clock (as
@@ -225,13 +404,15 @@ function dayBonus(clock, right, now) {
     return { bonus, ms: Math.max(0, end - clock.at), roundSecs };
 }
 
-/* The start and mark requests' bodies are a game name, a day, a word and
-   perhaps a round number. Anything much bigger than that is not one, and
-   is refused before it is parsed — the same shape-and-size rule the other
-   endpoints that take a POST from the page keep. */
+/* The start and move requests' bodies are a game name, a day, a word, a
+   round number and a tile or one maze's name. Anything much bigger than
+   that is not one, and is refused before it is parsed — the same
+   shape-and-size rule the other endpoints that take a POST from the page
+   keep. */
 const MAX_START_BODY = 512;
 
 module.exports = {
-    COLLECTION, ROUND_BONUS_SECONDS, NO_TIME, TOTAL, MAX_START_BODY,
-    totalOf, roundBonusFor, markRound, recordStart, recordMark, clockFor, dayBonus
+    COLLECTION, ROUND_BONUS_SECONDS, NO_TIME, TOTAL, MAX_START_BODY, MIN_MOVE_MS,
+    totalOf, roundBonusFor, markRound, recordStart, progressFor, clockOf, clockFor, movesOf,
+    recordOddPick, recordGuess, forgetDay, dayBonus, normalise
 };

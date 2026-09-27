@@ -11,7 +11,7 @@
    Admin-only and write-gated: it takes a URL and fetches it, which is the
    shape of an open proxy if left standing in the road. The allowlist below
    is the real guard; the auth check is the fence around it. */
-const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -244,7 +244,16 @@ function extract(html, base) {
 exports.handler = async (event) => {
     if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
     if (!isAuthorized(event)) return UNAUTHORIZED;
-    if (!(await canWrite(event))) return READ_ONLY;
+    /* canWrite throws when the account lookup cannot be made (lookUpRole
+       in _auth.js): answered as a 503 to retry, not a stack trace and not
+       the 401 that would sign the admin page out. */
+    let allowed;
+    try {
+        allowed = await canWrite(event);
+    } catch (e) {
+        return AUTH_UNAVAILABLE;
+    }
+    if (!allowed) return READ_ONLY;
 
     let body;
     try {

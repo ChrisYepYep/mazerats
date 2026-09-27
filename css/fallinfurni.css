@@ -180,6 +180,12 @@
     border: 1px solid var(--chrome-border);
     border-radius: 8px;
     overflow: hidden;
+    /* A room is tapped, fast and often. Left to the browser's default a
+       quick second tap is read as the start of a double-tap zoom, so it
+       lands late or not at all — the 300ms wait mobile browsers keep for
+       exactly that. `manipulation` keeps panning and pinch-zoom and drops
+       only the double-tap, so every tap walks. On #ff-canvas as well. */
+    touch-action: manipulation;
 }
 
 /* The bevel that makes the panel read as SUNK into the window: a 1px
@@ -352,7 +358,16 @@ body.is-editing .ff-title { display: none; }
        write an inline `pointer` over every tile, which beat this rule
        outright. Both are gone. */
     cursor: default;
+    touch-action: manipulation;         /* see .ff-stage */
 }
+
+/* The canvas takes the focus now — the arrow keys walk (see the keydown
+   handler in js/fallinfurni.js) — so a keyboard player has to be able to
+   see that it has it. Inset, because the stage clips anything outside the
+   canvas; and only for the keyboard, so a click does not draw a frame
+   round the room. */
+#ff-canvas:focus { outline: none; }
+#ff-canvas:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
 
 /* The builder is a tool rather than a room, so there a tile you can click
    says so the way the rest of the page does. */
@@ -812,6 +827,11 @@ body.is-editing button.ff-edit-only { display: inline-block; }
 .ff-narrow { width: 62px; flex: 0 0 auto; }
 
 .ff-btn-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+/* `display: flex` above outranks the browser's own [hidden] rule, so a row
+   marked hidden — the builder's held-piece row with nothing held, for one —
+   still showed, empty. The same restatement every other hidden panel in
+   this file has. */
+.ff-btn-row[hidden] { display: none; }
 .ff-btn-row .ff-select { margin-bottom: 0; }
 
 .ff-btn-row button,

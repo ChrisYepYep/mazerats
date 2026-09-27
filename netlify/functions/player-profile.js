@@ -113,14 +113,16 @@ async function totals(col, match) {
 const TOTALS_TTL_MS = 5 * 60 * 1000;
 let totalsCache = null;             // { at, launch, promise }
 
-/* `launch` is the launch day (see launchDay in daily-scores.js), or null.
+/* `launch` is the launch instant as an ISO string (see launchCut in
+   daily-scores.js), or null.
    The totals are everybody's from that day on, as the boards count them, so
    a rank here is a place on the board the player can actually go and look
    at. Part of the cache's key: a launchAt changed in settings is not
    answered from totals worked out under the old one. */
 function boardTotals(guessCol, dailyCol, launch) {
     if (totalsCache && totalsCache.launch === launch && Date.now() - totalsCache.at < TOTALS_TTL_MS) return totalsCache.promise;
-    const since = launch ? { day: { $gte: launch } } : {};
+    // `launch` is the launch instant (ISO), cut the way the boards cut it.
+    const since = launch ? { day: { $gte: launch.slice(0, 10) }, at: { $gte: launch } } : {};
     const promise = Promise.all([
         totals(guessCol, since),
         totals(dailyCol, { ...since, game: { $in: DAILY_GAMES } })
@@ -206,8 +208,11 @@ exports.handler = async (event) => {
         const ffOwnMs = settings && settings.ffLaunchAt ? Date.parse(settings.ffLaunchAt) : NaN;
         const ffLaunchMs = isNaN(ffOwnMs) ? launchMs : ffOwnMs;
         const since = isNaN(ffLaunchMs) ? {} : { at: { $gte: new Date(ffLaunchMs).toISOString() } };
-        const launch = isNaN(launchMs) ? null : new Date(launchMs).toISOString().slice(0, 10);
-        const fromLaunch = launch ? { day: { $gte: launch } } : {};
+        /* The launch INSTANT, as the boards now cut (launchCut in
+           daily-scores.js): from launch day, and on that day only what was
+           played after the doors opened at launchAt. */
+        const launch = isNaN(launchMs) ? null : new Date(launchMs).toISOString();
+        const fromLaunch = launch ? { day: { $gte: launch.slice(0, 10) }, at: { $gte: launch } } : {};
 
         // `rounds` for Odd One Out rows that record it, and `bonus` for the
         // total — see gameStats.

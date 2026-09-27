@@ -19,7 +19,7 @@
    and EVENTS (the raw log, newest first). */
 
 const { getDb } = require("./_db");
-const { isAuthorized, isOwner, UNAUTHORIZED, forbidden } = require("./_auth");
+const { isAuthorized, isOwner, UNAUTHORIZED, forbidden, AUTH_UNAVAILABLE } = require("./_auth");
 const { COLLECTION, KEEP_DAYS } = require("./_audit");
 const { COLLECTION: SITE_EVENTS, KEEP_DAYS: SITE_KEEP_DAYS } = require("./track");
 const { SECURITY_HEADERS } = require("./_headers");
@@ -57,7 +57,16 @@ const RANGES = {
 exports.handler = async (event) => {
     if (event.httpMethod !== "GET") return json(405, { error: "Method not allowed" });
     if (!isAuthorized(event)) return UNAUTHORIZED;
-    if (!(await isOwner(event))) return forbidden("Only an owner can read the activity log.");
+    /* isOwner throws when the account lookup cannot be made (lookUpRole in
+       _auth.js). A 503 to retry — this used to come back as the 403, which
+       told an owner they were not one. */
+    let owner;
+    try {
+        owner = await isOwner(event);
+    } catch (e) {
+        return AUTH_UNAVAILABLE;
+    }
+    if (!owner) return forbidden("Only an owner can read the activity log.");
 
     let db;
     try {

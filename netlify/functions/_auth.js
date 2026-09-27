@@ -151,12 +151,19 @@ function resolveRole(admin) {
    Owners and admins carry every scope by being listed with every scope
    rather than a "*": a wildcard makes adding a fourth area a silent grant
    to every existing account, and the whole point of the list is that
-   widening someone's powers has to be typed out on purpose. */
+   widening someone's powers has to be typed out on purpose.
+
+   A viewer carries "self" and nothing else. It used to carry nothing, which
+   meant a viewer whose password had leaked — or who simply wanted a better
+   one — had to ask an owner to reset it, and the owner then knew it. Their
+   own password is not "changing the site"; it is the one thing on here
+   that is theirs. The only guard that asks for "self" is auth.js's PUT, and
+   only when the row it changes is the caller's own. */
 const WRITE_SCOPES = {
     owner: ["site", "wizard", "self"],
     admin: ["site", "wizard", "self"],
     wizard: ["wizard", "self"],
-    viewer: []
+    viewer: ["self"]
 };
 
 /* Unlike isAuthorized, these can't be answered from the token alone: the
@@ -201,10 +208,47 @@ async function lookUpRole(event) {
            stored row first. */
         return admin ? resolveRole(admin) : null;
     } catch (e) {
-        // A database that can't be reached is not permission to proceed.
-        return null;
+        /* A database that can't be reached is not permission to proceed —
+           but it is not "no such account" either, and this used to say it
+           was. Returning null here made hasAccount false, the caller
+           answered 401, and js/admin.js reads a 401 as a dead session and
+           wipes the token: a two-second Atlas blip signed every admin out
+           mid-edit, unsaved work and all.
+
+           So it throws, tagged, and the handler answers 503 (see
+           AUTH_UNAVAILABLE below), which the admin page treats as "try
+           again" and leaves the session alone. Still fails closed: a
+           thrown guard lets nothing through. Not memoised by roleOf, so a
+           retry within the same request would ask again. */
+        console.error("_auth: role lookup failed", e);
+        throw authUnavailableError(e);
     }
 }
+
+/* The tag on a role lookup that could not be answered, and the reply for
+   it. Handlers catch around their guards (usually around the whole body)
+   and answer with AUTH_UNAVAILABLE when isAuthUnavailable(e) — or with any
+   JSON 503 at all: the one thing that matters is that it is not a 401 or a
+   403, both of which the admin page would act on as the truth.
+
+   A handler that does not catch it still does not sign anybody out: the
+   platform answers a 500-class error, never a 401. */
+function authUnavailableError(cause) {
+    const err = new Error("Account lookup unavailable");
+    err.authUnavailable = true;
+    err.cause = cause;
+    return err;
+}
+
+function isAuthUnavailable(e) {
+    return Boolean(e && e.authUnavailable);
+}
+
+const AUTH_UNAVAILABLE = {
+    statusCode: 503,
+    headers: { ...SECURITY_HEADERS, "Retry-After": "5" },
+    body: JSON.stringify({ error: "The database is unavailable just now. Please try again in a moment." })
+};
 
 async function isOwner(event) {
     return (await roleOf(event)) === "owner";
@@ -290,5 +334,6 @@ module.exports = {
     isAuthorized, hasAccount, usernameFromToken, sessionOf, UNAUTHORIZED,
     ADMIN_AUDIENCE, signAdminToken, tokenPayload, tokenIsCurrent,
     PERMANENT_OWNER, ROLES, resolveRole, roleOf, isOwner, isOwnerWrite, canWrite,
-    forbidden, READ_ONLY, OUT_OF_SCOPE, refuseWrite, WRITE_SCOPES
+    forbidden, READ_ONLY, OUT_OF_SCOPE, refuseWrite, WRITE_SCOPES,
+    AUTH_UNAVAILABLE, isAuthUnavailable
 };

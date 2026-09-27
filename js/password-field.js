@@ -70,6 +70,19 @@
         return i;
     }
 
+    /* Each enhanced field's own read and clear, keyed by the visible input.
+
+       FormData never needed these — it reads the hidden partner by name —
+       but a field read directly was reading the MASK. The self-service
+       password box in the account tab is not in a form, admin.js read its
+       .value, and "••••••••" is what got saved as the new password: eight
+       bullets, which then locked the account out of its own password. Set
+       the value to "" from outside, likewise, and only the drawing was
+       cleared; the real string stayed in here and came back on the next
+       keystroke. So both go through the module, which is the only thing
+       that knows the real value. */
+    const controllers = new WeakMap();
+
     function enhance(input) {
         if (!input || input.dataset[ENHANCED_FLAG]) return;
         input.dataset[ENHANCED_FLAG] = "true";
@@ -222,21 +235,45 @@
             render(real.length);
         });
 
+        // Back to empty and masked: the real value, the drawing, the hidden
+        // partner and the eye all at once.
+        function clear() {
+            real = "";
+            revealed = false;
+            renderToggle();
+            render(0);
+        }
+
         const form = input.closest("form");
         if (form) {
             // A form reset blanks the visible field but would otherwise
             // leave the real value sitting behind it.
-            form.addEventListener("reset", () => {
-                real = "";
-                revealed = false;
-                renderToggle();
-                render(0);
-            });
+            form.addEventListener("reset", clear);
         }
+
+        controllers.set(input, { value: () => real, clear });
 
         renderToggle();
         render(null);
     }
+
+    /* The public half — see `controllers` above. Both accept a field that was
+       never enhanced (password-field.js failed to load, or the field is a
+       plain one) and fall back to its own value, so a caller never has to ask
+       which kind it has. */
+    window.PasswordField = {
+        value(input) {
+            if (!input) return "";
+            const c = controllers.get(input);
+            return c ? c.value() : (input.value || "");
+        },
+        clear(input) {
+            if (!input) return;
+            const c = controllers.get(input);
+            if (c) c.clear();
+            else input.value = "";
+        }
+    };
 
     function enhanceWithin(root) {
         if (!root || root.nodeType !== 1) return;

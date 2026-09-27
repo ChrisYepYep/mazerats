@@ -9,8 +9,10 @@
    as before (see sideMenuEntries in js/home.js).
 
    The pictures are FurniIndex's own in-game renders, the same host the
-   archive's furni icons come from, at their native size and scaled up by
-   whole pixels so they stay crisp. Nothing is asked of this site's server.
+   archive's furni icons come from — the large ones (-lrg), at their own
+   size on every screen. They used to be doubled again on a desktop, which
+   made the seats far too big; the small renders (-sml) were tried next
+   and read as too small. Nothing is asked of this site's server.
 
    Purely decoration: the layer takes no clicks, is hidden from screen
    readers, and removes each piece when it has fallen. With reduced motion
@@ -19,7 +21,11 @@
     "use strict";
 
     const HOST = "https://furniindex.com/image/furni/furni-";
-    // [FurniIndex name, the views of it], seats only: things you can sit on.
+    /* [FurniIndex name, the views of it], seats only: things you can sit on.
+       The name is the one the LARGE renders use, which is not always the
+       small renders' name: Throne's large render is furni-throne-1-s1-r1-lrg
+       and its small one furni-throne-s1-r1-sml (the catalogue's largeImages
+       are the authority). */
     const SEATS = [
         ["amberwood-bench", ["s1-r1","s1-r2"]],
         ["amberwood-stool", ["s1-r1"]],
@@ -115,9 +121,8 @@
         const still = reduceMotion();
         const phone = window.innerWidth < 700;
         const count = still ? 10 : phone ? 22 : 40;
-        // Whole-pixel scale only: 2x on a desktop, 1x on a phone, where 2x
-        // sofas would be most of the screen.
-        const scale = phone ? 1 : 2;
+        // The large render at its own size, on every screen.
+        const scale = 1;
         for (let i = 0; i < count; i++) {
             const [slug, views] = pick(SEATS);
             const delay = still ? i * 60 : between(0, 1800);

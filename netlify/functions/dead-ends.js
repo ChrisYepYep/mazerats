@@ -27,7 +27,7 @@
                          answer.
      DELETE ?type=&id=   canWrite. The record is no longer a dead end. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY, isAuthUnavailable, AUTH_UNAVAILABLE } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson } = require("./_cache");
 const DeadEnds = require("../../js/dead-ends.js");
@@ -179,7 +179,23 @@ exports.handler = async (event) => {
 
         return json(405, { error: "Method not allowed" });
     } catch (e) {
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
         console.error("dead-ends: request failed", e);
         return json(500, { error: "Something went wrong reading the dead ends." });
+    }
+};
+
+/* The account checks above (hasAccount, canWrite and the rest) throw when
+   the database cannot say who is asking, rather than answering "nobody" —
+   answering nobody signed admins out over a blip (see _auth.js). Caught
+   here, so that moment is a readable "try again" instead of the platform's
+   own error page and stack trace. Anything else still fails as it did. */
+const handleRequest = exports.handler;
+exports.handler = async (event) => {
+    try {
+        return await handleRequest(event);
+    } catch (e) {
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        throw e;
     }
 };

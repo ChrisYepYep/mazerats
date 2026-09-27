@@ -14,27 +14,46 @@
     <meta name="theme-color" content="#120c07">
     <meta name="robots" content="noindex, nofollow">
     <title>Admin — Maze Rats</title>
+    <!-- Bitmap copies of the MZ mark below, for the browsers that take no SVG
+         favicon (Safari, until recently) and for a phone's home screen, which
+         asks for a 180px picture of its own and showed a blank tile without
+         one. Absolute paths, so a page served at /maze/x still finds them. -->
+    <link rel="icon" href="/assets/icons/favicon.ico" sizes="32x32">
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
-    <!-- The palette, before the stylesheets rather than after, so <html> already
-         carries data-theme when the CSS is applied and there is no brown frame
-         on screen for a moment first.
+    <!-- The palette. The theme's stylesheet has a fixed slot straight AFTER
+         style.css (the empty link below), and this script only gives it an
+         address. It used to create the link and append it itself, which, run
+         from above style.css, put the theme BEFORE style.css on every repeat
+         visit, while js/api.js appends it after: one page, cascaded two ways
+         depending on which of them got there first.
+
+         A link the parser made also holds up the first paint once it has an
+         href, where one made by script does not, so the theme is in place
+         before anything is drawn and there is no brown frame for a moment
+         first. <html> gets data-theme in the same breath.
 
          Read from localStorage because the real answer lives in the database and
          arrives later: js/site.js fetches the site settings, applies whatever they
          say and writes it here for next time. The cached value is therefore the
          PREVIOUS visit's answer, which is right almost always and self-corrects
          within one page load when it is not. A first-ever visitor has nothing
-         cached and gets classic, which is the default anyway.
+         cached and gets classic, which is the default anyway. Classic leaves the
+         slot empty — a stylesheet link with no href loads nothing — and
+         js/api.js removes it outright.
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);var l=document.createElement("link");l.id="theme-css";l.rel="stylesheet";l.href="css/theme-"+t+".css";document.head.appendChild(l);}catch(e){}})();</script>
     <link rel="stylesheet" href="css/style.css?v=2">
+    <link id="theme-css" rel="stylesheet">
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
     <!-- The atlas panel's map, and the editor around it. Shared with
          wizard.html rather than duplicated, so the editor's parchment and
          the page's parchment are the same parchment. -->
     <link rel="stylesheet" href="css/wizard.css?v=2">
-    <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
+    <!-- No Umami here. The admin page is not traffic worth counting, and the
+         session token lives in this page's storage, where a third-party
+         script would be able to read it. js/track.js skips this page too. -->
 </head>
 <body data-page="admin">
 
@@ -114,9 +133,20 @@
                          form here would submit on Enter in the field below.
                          The button does the work; Enter is wired to it in
                          js/admin.js the same way. -->
+                    <!-- The current password is asked for as well: the
+                         server refuses a change to your OWN password without
+                         it (403, "Your current password is wrong."), so a
+                         session left signed in on an unattended screen cannot
+                         be used to take the account over. -->
+                    <div class="ctl-row">
+                        <input type="password" id="self-password-current" class="ctl-input"
+                               autocomplete="current-password" placeholder="Current password"
+                               aria-label="Current password">
+                    </div>
                     <div class="ctl-row">
                         <input type="password" id="self-password" class="ctl-input"
-                               autocomplete="new-password" placeholder="New password">
+                               autocomplete="new-password" placeholder="New password"
+                               aria-label="New password (at least 8 characters)">
                         <button type="button" class="ctl-btn" id="self-password-btn">Save</button>
                     </div>
                     <p class="ctl-status" id="self-password-status" style="display:none;"></p>
@@ -418,10 +448,10 @@
                                 </header>
                                 <div class="archive-controls">
                                     <div class="search-box">
-                                        <input type="text" id="rooms-search" placeholder="Search by name, builder, or tag...">
+                                        <input type="text" id="rooms-search" placeholder="Search by name, builder, or tag..." aria-label="Search mazes by name, builder, or tag">
                                     </div>
                                     <div class="sort-box">
-                                        <select id="rooms-sort">
+                                        <select id="rooms-sort" aria-label="Sort mazes">
                                             <option value="name">Sort by: Maze Name</option>
                                             <option value="date">Sort by: Opening Date</option>
                                             <option value="difficulty-asc">Sort by: Difficulty (Easy-Hard)</option>
@@ -444,7 +474,7 @@
                                 </header>
                                 <div class="archive-controls">
                                     <div class="sort-box">
-                                        <select id="events-sort">
+                                        <select id="events-sort" aria-label="Sort events">
                                             <option value="date-desc">Sort by: Event Start Date (Newest First)</option>
                                             <option value="date-asc">Sort by: Event Start Date (Oldest First)</option>
                                             <option value="name">Sort by: Event Name</option>
@@ -695,7 +725,7 @@
                                     </header>
                                     <div class="archive-controls">
                                         <div class="search-box">
-                                            <input type="text" id="wiz-rooms-search" placeholder="Search by name, note, or floor...">
+                                            <input type="text" id="wiz-rooms-search" placeholder="Search by name, note, or floor..." aria-label="Search rooms on the atlas">
                                         </div>
                                     </div>
                                     <!-- Each row opens its own form inside itself — see
@@ -1064,10 +1094,11 @@
     <script src="js/admin-wizard.js?v=2"></script>
     <!-- The GIF maker, and the GIF encoder underneath it. Only the admin
          page has any use for either, so neither is on the public map. -->
-    <script src="js/gif-encode.js?v=2"></script>
+    <script src="js/gif-encode.js?v=3"></script>
     <script src="js/wizard-gif.js?v=2"></script>
     <script src="js/recolour.js?v=2"></script>
     <script src="js/admin-recolour.js?v=2"></script>
+    <script src="js/admin-address.js?v=2"></script>
     <script src="js/admin.js?v=2"></script>
     <script src="js/dead-ends.js?v=2"></script>
     <script src="js/admin-dead-ends.js?v=2"></script>

@@ -16,6 +16,22 @@
     --danger: #a1462f;
     --ok: #6f8f4f;
     --unknown: #7a6e5a;
+    /* TEXT-ONLY VERSIONS OF THE TWO STATUS COLOURS.
+
+       --danger and --unknown were chosen as border and accent colours and
+       then used for the small uppercase labels too, where they measured
+       3.1:1 and 3.8:1 on the status badge's own dark fill and 2.65:1 and
+       3.2:1 on a row — short of the 4.5:1 that 10px bold type needs. These
+       are the same two colours lifted until they clear it: --danger-text
+       6.1:1 on the badge, 5.3:1 on --chrome-row, 4.7:1 on --chrome-fill;
+       --unknown-text 6.3:1, 5.4:1 and 4.8:1. (tools/themes.js holds
+       --danger-text as information, like --danger, and maps --unknown-text
+       as text.)
+
+       --danger itself stays as it is for the borders and fills, where it is
+       a colour to be seen rather than read. */
+    --danger-text: #d67a60;
+    --unknown-text: #a0937c;
     --border: rgba(201, 151, 79, 0.35);
     --shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
 
@@ -146,6 +162,29 @@
 
 * { box-sizing: border-box; }
 
+/* THE hidden ATTRIBUTE MEANS HIDDEN, whatever else the element is.
+
+   [hidden] is only display: none in the browser's own stylesheet, so any
+   author rule that sets display beats it — and this file sets display on
+   classes everywhere. #activity-nav-btn is a .ctl-btn (inline-flex), the
+   furni sidebar is a .ctl-card (flex), the scan's local actions are
+   .ctl-actions: each of them stayed on screen with hidden set, and the
+   script that set it had every reason to think it was gone. !important
+   is the only thing that outranks an author rule regardless of its
+   specificity, which is exactly the promise the attribute makes. */
+[hidden] { display: none !important; }
+
+/* A window is open: the page behind it stops scrolling.
+
+   Nine windows set body.modal-open and nothing ever styled it, so a wheel
+   or a swipe that reached the end of a window's own list carried on and
+   scrolled the archive underneath it. overflow: hidden on body is passed
+   up to the viewport, which is what actually scrolls here. */
+body.modal-open { overflow: hidden; }
+/* Set by the focus trap in js/site.js whenever any dialog is open — the
+   maze window included, which never set modal-open. */
+html.has-open-dialog body { overflow: hidden; }
+
 /* Site-wide scrollbar treatment — every scrolling element (this page
    scroll, .home-results, .modal-overlay, .gallery-strip, .room-desc-box,
    admin textareas) shares this same thin, rounded, low-contrast thumb
@@ -156,6 +195,65 @@ html {
     scroll-behavior: smooth;
     scrollbar-width: thin;
     scrollbar-color: var(--wood-dark) var(--frame-bg);
+    /* The scrollbar's space is kept when body.modal-open hides it (see
+       above). Without this the page widened by the bar's 10px the moment a
+       window opened and shifted everything right, then back on close.
+       Phones use overlay scrollbars, which take no gutter either way. */
+    scrollbar-gutter: stable;
+}
+
+/* REDUCED MOTION, for the movements that had no opt-out of their own.
+
+   Many rules further down already carry a reduced-motion block beside
+   them; these are the big ones that were missed — whole pictures and
+   panels sliding across the screen, which is exactly the kind of movement
+   the setting exists for:
+
+     · the header's event ticker rolling to the next event
+     · the maze window's picture sliding to the next picture
+     · the Featured Mazes list sliding its old picks out
+     · a window growing in and out (modalIn / modalOut)
+     · the lightbox zooming open
+     · the search row sliding open and shut under the tabs
+     · the page gliding to an anchor rather than jumping to it
+
+   CUT TO 1ms, NOT SWITCHED OFF. Every one of these is finished by script:
+   the ticker's and the gallery's outgoing clones are removed on
+   transitionend, and the closing window waits for animationend. With
+   transition: none those events never fire at all, and the clones would
+   pile up on top of the picture. A 1ms run still fires them, a frame
+   later, with nothing visible in between. !important because most of
+   these transitions are also written inline by the scripts that run them,
+   and an inline style outranks any ordinary rule. */
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+
+    .header-events-slide,
+    .header-events-slide-outgoing,
+    .modal-gallery-img,
+    .gallery-slide-outgoing,
+    .old-version-layer,
+    #featured-frame-list,
+    .featured-frame-list-outgoing,
+    #search-wrap {
+        transition-duration: 1ms !important;
+    }
+
+    .modal,
+    .modal-overlay.closing .modal,
+    .lightbox-img {
+        animation-duration: 1ms !important;
+    }
+
+    /* The picture tray's pop-in and pop-out. It had a reduced-motion rule
+       of its own beside it, one class short of the .is-open / .is-closing
+       rules that set the animation, so it never won; and it left the
+       stagger delays in, so the icons still arrived one after another. */
+    .gallery-photos .gallery-photo-btn,
+    .gallery-photo-icon {
+        animation-duration: 1ms !important;
+        animation-delay: 0ms !important;
+    }
 }
 
 html::-webkit-scrollbar { width: 10px; }
@@ -1940,9 +2038,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
     min-width: 0;
     appearance: none;
     -webkit-appearance: none;
-    background: transparent; /* see the identical note on .chrome-tab — buttons
-        have an opaque UA background by default that shows through the
-        border-image's transparent corners otherwise. */
+    background: transparent; /* buttons have an opaque UA background by
+        default, and it shows through the border-image's transparent corners
+        as solid white squares instead of the pill's rounded shape. */
     border: none;
     color: #f5ecd8;
     font-family: 'Silkscreen', monospace;
@@ -2858,12 +2956,14 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 .status-open { color: var(--ok); }
-.status-closed { color: var(--danger); }
-.status-unknown { color: var(--unknown); }
+/* The -text tokens, not the plain ones: see their note in :root. The border
+   is currentColor, so it lifts with the label, which is fine at 1px. */
+.status-closed { color: var(--danger-text); }
+.status-unknown { color: var(--unknown-text); }
 .status-collab { color: var(--amber-bright); }
 .status-upcoming { color: var(--ok); }
-.status-past { color: var(--unknown); }
-.status-archive { color: var(--danger); }
+.status-past { color: var(--unknown-text); }
+.status-archive { color: var(--danger-text); }
 
 /* LIVE is the one status that's time-critical rather than descriptive — an
    event happening right now. Brighter than --danger (which Archive already
@@ -2956,33 +3056,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-bottom: 2px solid var(--chrome-border);
 }
 
-.chrome-tab {
-    flex: 1;
-    appearance: none;
-    -webkit-appearance: none;
-    background: transparent; /* buttons have a default opaque UA background —
-        without this it shows through the border-image's transparent corners
-        as solid white squares instead of the pill's actual rounded shape. */
-    border-style: solid;
-    border-width: 10px;
-    border-image-source: url('../assets/img/btn_inactive.png');
-    border-image-slice: 10 fill;
-    border-image-width: 10px;
-    border-image-repeat: stretch;
-    color: #3a2812;
-    font-family: 'Silkscreen', monospace;
-    font-weight: 700;
-    font-size: 0.68rem;
-    letter-spacing: 0.5px;
-    padding: 1px 4px;
-    cursor: var(--cursor-pointer);
-    outline: none;
-}
-
-.chrome-tab.active {
-    border-image-source: url('../assets/img/btn_active.png');
-    color: #241505;
-}
+/* .chrome-tab itself is gone: no page and no script had rendered one since
+   the tabs became .chrome-nav-btn, and its outline: none was a focus-ring
+   hazard waiting for someone to reuse the class. */
 
 /* ---------- archive controls ---------- */
 
@@ -3301,6 +3377,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-shadow: 0 0 6px rgba(255, 248, 236, 0.65);
     outline: none;
 }
+/* A glow is a colour change, and a colour change alone is not a focus
+   indicator anyone can rely on — the site's ring, as everywhere else. */
+.clear-filter-btn:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 
 /* A thumb-sized target without moving the words: the hit area grows down
    and left into the empty line around them. */
@@ -3703,6 +3782,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
        lets the overlay scroll the whole card when it's taller than the
        viewport, while still centering it when it comfortably fits. */
     overflow-y: auto;
+    /* A scroll that reaches the end of the overlay stops there instead of
+       being handed on to the page behind it — the half of the scroll lock
+       body.modal-open cannot do, since not every window sets that class. */
+    overscroll-behavior: contain;
     scrollbar-color: var(--wood-dark) var(--frame-bg);
 }
 
@@ -4395,6 +4478,9 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: var(--amber-bright);
     outline: none;
 }
+/* The colour shift alone was the only sign of keyboard focus; the ring
+   is the site's usual one. */
+.gallery-photo-more:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
 /* Gone once the tail is out — its whole job is to say there is more. Held
    away through the fold-back too, so it doesn't reappear and shunt the row
@@ -4404,9 +4490,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: none;
 }
 
-/* Exactly the artwork's own 175x194. Fixed, and above both the room modal
-   (100) and the lightbox (200), since the whole point is that it can be
-   dragged anywhere on the page and left there while browsing continues. */
+/* Exactly the artwork's own 175x194. Fixed, so it can be dragged anywhere
+   on the screen and left there while the room is looked through.
+
+   It lives INSIDE the room window's overlay now (#room-modal, z-index 100),
+   not on <body>, and the 300 below is ranked only within that overlay: it
+   puts a frame above the room window itself, and nothing more. The lightbox
+   (200) is a sibling of the overlay, so it now opens OVER any frames rather
+   than under them — which is the right way round for the picture someone
+   has just asked to see full size. Fixed still means the viewport: the
+   overlay has no transform or filter to become their containing block.
+   .furni-card (320) is in the same position and follows the same rules. */
 .photo-frame {
     position: fixed;
     z-index: 300;
@@ -4852,6 +4946,13 @@ body[data-page="home"] .hero { padding-top: 18px; }
     outline: none;
 }
 
+/* A lift and an amber border read as "under the pointer", not as "where the
+   keyboard is": the site's usual ring, so tabbing along the row can be seen. */
+.furni-icon-btn:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
+}
+
 /* The card itself. Its box is the artwork's own geometry: the border widths
    are the header band (19px), the folded-corner margin (14px) and the side
    borders, with border-image painting them unscaled — so the X, the header
@@ -5255,6 +5356,46 @@ body[data-page="home"] .hero { padding-top: 18px; }
     max-width: none;
 }
 
+/* The slideshow's pause button (#gallery-pause): the same pill, in the one
+   corner of the picture nothing else uses — top-left, opposite the
+   position counter. Without this it took .gallery-counter's own spot,
+   bottom-centre, on top of the room-name pill. js/home.js shows it only
+   for two or more pictures, and never under reduced motion.
+
+   Its label is ❚❚ / ▶ (U+275A, U+25B6). Neither is in Roboto, so both
+   come from the system's symbol face — Segoe UI Symbol on Windows, Apple
+   Symbols on a Mac or iPhone, which is why they are named here rather
+   than left to chance. font-variant-emoji asks for the plain glyph: iOS
+   otherwise likes to draw ▶ as the blue emoji button, which is a
+   different size and colour from the word beside it. */
+.gallery-pause {
+    top: 10px;
+    left: 10px;
+    bottom: auto;
+    right: auto;
+    transform: none;
+    max-width: none;
+    font-family: 'Roboto', 'Segoe UI Symbol', 'Apple Symbols', sans-serif;
+    font-variant-emoji: text;
+    cursor: var(--cursor-pointer);
+    z-index: 3;
+}
+
+/* The same states as .old-versions-pill, its neighbour on the picture —
+   plus the site's focus ring, since a colour change alone is not one. */
+.gallery-pause:hover,
+.gallery-pause:focus-visible {
+    color: #fff8ec;
+}
+.gallery-pause:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+
+/* Filled while paused, like .old-versions-pill.is-showing: the pill that
+   stopped the slideshow reads as the one to press to start it again. */
+.gallery-pause.is-paused {
+    background: var(--amber);
+    color: #2a1e0f;
+}
+
 /* A little flag sitting directly above the room-label pill, for rooms the
    admin has marked optional/bonus — same pill shape as .gallery-counter,
    just amber instead of neutral. */
@@ -5430,6 +5571,12 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .old-versions-pill:hover,
 .old-versions-pill:focus-visible {
     color: #fff8ec;
+}
+
+/* A colour change alone is too faint to find with the keyboard. */
+.old-versions-pill:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
 }
 
 /* Filled in while an older version is up, so the control that opened it
@@ -6494,6 +6641,13 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: none;
 }
 
+/* js/admin.js focuses the chosen panel (tabindex -1, never a Tab stop) so
+   focus follows the choice out of the Nav menu. It is a landing point for
+   focus, not a control, and a ring round the whole working area said
+   otherwise — the section button that was pressed already shows where
+   you are. */
+.admin-panel:focus { outline: none; }
+
 /* The live-database warning sits above the panels and applies to all of
    them, so it needs the gap the old per-section windows used to get
    from .admin-section's own top margin. */
@@ -6727,6 +6881,17 @@ body.is-viewer .admin-panel[data-panel="deadends"] .de-write {
     /* The hover glow and the amber border would otherwise still fire on the
        row around it and read as "this one is available". */
     box-shadow: none;
+}
+
+/* ...except a viewer's OWN password form. A view-only account may change
+   its own password (js/admin.js marks that form data-self="true"), and the
+   .admin-form-actions line above greyed its Save out along with every
+   other form's, leaving the one thing a viewer is allowed to do
+   unpressable. The id and attribute outrank that rule. */
+body.is-viewer #admins-form[data-self="true"] .admin-form-actions button {
+    opacity: 1;
+    cursor: var(--cursor-pointer);
+    pointer-events: auto;
 }
 
 .admin-field {
@@ -7141,6 +7306,51 @@ body[data-page="admin"] .search-box input {
     margin: 0;
 }
 
+/* The Address field (js/admin-address.js): the fixed part of the address
+   beside the editable slug, so it reads as the link it makes. */
+.admin-address-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+.admin-address-prefix {
+    flex: none;
+    color: var(--parchment-dim);
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+/* A 120px basis rather than auto. auto is the input's own ~20-character
+   width, which with the prefix beside it came to more than a 280px grid
+   column, so the row wrapped and "mazerats.net/maze/" sat on a line by
+   itself above the slug it belongs to. At 120px the pair fits a phone's
+   single column too, and the input still grows into whatever is spare. */
+.admin-address-row input {
+    flex: 1 1 120px;
+    min-width: 0;
+}
+
+/* The whole row of the editor's grid, not one 280px column of it (see
+   .admin-stage .admin-form.is-open). The field is a prefix, a slug of up
+   to 80 characters and a note under both; squeezed into one column it
+   wrapped every part of that. 1 / -1 rather than span 2, because the grid
+   is auto-fit — on a phone it has ONE column, and span 2 there would
+   invent a second, implicit one hanging off the edge of the form. */
+.admin-stage .admin-form > .admin-address-field { grid-column: 1 / -1; }
+.admin-address-field.is-clash input { border-color: #c0392b; }
+.admin-address-note { line-height: 1.5; }
+.admin-address-note strong { color: #e8a08e; }
+.admin-address-follow {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--amber);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
 /* Splits one admin-section's .chrome-body into multiple logical groups
    (Contributors, About) without needing a separate chrome-window each —
    same base heading style used everywhere else (h1-h4), just sized down
@@ -7281,6 +7491,20 @@ body[data-page="admin"] .search-box input {
     height: 1px;
     opacity: 0;
     pointer-events: none;
+}
+
+/* The input is invisible but still takes Tab, so keyboard focus landed on
+   a 1px transparent box and nothing on screen changed. The ring goes on
+   the label around it instead — the surface a mouse user would click.
+   :focus-visible inside :has() rather than plain :focus-within, so a
+   mouse click that opens the picker does not leave a ring behind it.
+   The same for the gallery's empty-slot thumbs and the guide editor's
+   picture buttons, which hide their inputs the same way. */
+.admin-dropzone:has(input[type="file"]:focus-visible),
+.admin-gallery-thumb:has(input[type="file"]:focus-visible),
+.guides-pic-upload:has(input[type="file"]:focus-visible) {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
 }
 
 /* Room-by-room gallery editor */
@@ -8641,7 +8865,6 @@ body[data-page="admin"] .search-box input {
     /* Through the variable, so the grips still reach past it to the frame.
        The title keeps its 9px here: it is already the small size. */
     .chrome-titlebar { --titlebar-pad: 34px; }
-    .chrome-tab { font-size: 0.56rem; letter-spacing: 0; border-width: 8px; }
     .chrome-window { width: 100%; }
     .chrome-nav-btn { width: auto; flex: 1; font-size: 0.6rem; padding: 9px 6px; }
     .chrome-nav-btn::before { border-width: 8px; }
@@ -8931,6 +9154,10 @@ html[data-gate-peek] body > *:not(.site-loader) {
 
 body[data-page="admin"] {
     height: 100vh;
+    /* The visible viewport on a phone, not the toolbar-retracted one — with
+       overflow: hidden below, anything past 100dvh could not even be
+       scrolled to. Browsers without dvh keep the line above. */
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -9054,6 +9281,7 @@ body[data-page="admin"] #contact-messages-list,
 body[data-page="admin"] #bans-list,
 body[data-page="admin"] #contributors-list {
     max-height: calc(100vh - 330px);
+    max-height: calc(100dvh - 330px);
 }
 
 /* ---------- forms ---------- */
@@ -11203,9 +11431,20 @@ body[data-page="admin"] #activity-sessions {
     }
     .modal-actions-bar .modal-meta-actions {
         display: flex;
+        /* Wraps so the Share fallback below can take a line of its own. */
+        flex-wrap: wrap;
         flex: 1 1 auto;
         gap: 6px;
         min-width: 0;
+    }
+    /* The address field Share leaves behind when the clipboard refuses
+       (see renderShareButton). It is inserted straight after the Share
+       button, so in this bar it was a fourth flex item squeezing the three
+       buttons to make room for itself. Its own full-width line under them
+       instead, last whatever order they come in. */
+    .modal-actions-bar .modal-share-fallback {
+        flex: 1 1 100%;
+        order: 99;
     }
     .modal-actions-bar .modal-walked { display: contents; }
     .modal-actions-bar .modal-share-btn,
@@ -11268,9 +11507,17 @@ body[data-page="admin"] #activity-sessions {
            below reaches back out to 44px — invisible, and free to overlap the
            titlebar because the only thing under it there is the window's own
            name, which is text rather than a control. So the target a thumb
-           finds is exactly the size it was; only the drawn box changed. */
-        --spine-w: 30px;
-        --spine-top: 16px;
+           finds is exactly the size it was; only the drawn box changed.
+
+           AND NOW 24px, CENTRED ON THE GRAB BAR. Measured on a 375px phone,
+           the "bar" is two pieces: the window's 14px top border and the 16px
+           title strip under it, 30px in all. At 30px and 16px down, the
+           handle started inside the strip and hung 16px past it, over the
+           corner of the Events tab. At 24px and 3px down it sits within the
+           grab bar with 3px to spare above and below, and the 44px reach
+           beneath is unchanged. */
+        --spine-w: 24px;
+        --spine-top: 3px;
         --menu-w: 210px;
     }
 
@@ -11844,7 +12091,12 @@ body[data-page="admin"] #activity-sessions {
     outline: none;
 }
 
-.guess-option:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
+/* Stated with the same :not(:disabled) as the rule above. Without it this
+   was the LESS specific of the two, so its ring lost to that rule's
+   outline: none on every option that could still be picked — which is
+   every option a keyboard user could reach. */
+.guess-option:focus-visible,
+.guess-option:focus-visible:not(:disabled) { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
 /* A name already tried stays exactly where it was, struck through. Removing
    it would reorder the four still standing under the cursor between
@@ -12879,6 +13131,8 @@ body[data-page="admin"] #activity-sessions {
 }
 .guides-textbtn:hover,
 .guides-textbtn:focus-visible { color: var(--parchment); outline: none; }
+/* A colour change is not a focus indicator on its own; the usual ring. */
+.guides-textbtn:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 
 /* The category filter: the same small switch the leaderboards use. */
 .guides-cats {
@@ -13296,7 +13550,11 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment-dim);
 }
 .guides-pic-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.guides-pic-upload { cursor: var(--cursor-pointer); }
+/* relative so the visually hidden input inside (.admin-gallery-thumb-file,
+   position: absolute) sits within the label rather than wherever the
+   nearest positioned ancestor happens to be. Its focus ring is with the
+   other upload labels — see .admin-dropzone:has(...). */
+.guides-pic-upload { position: relative; cursor: var(--cursor-pointer); }
 .guides-pic-status { font-size: 0.72rem; color: var(--parchment-dim); }
 
 /* The preview borrows the reader's own box, without its height cap: it is
@@ -13316,7 +13574,12 @@ body[data-page="admin"] #activity-sessions {
 }
 
 @media (max-width: 640px) {
-    .guides-body { padding: 14px 12px 18px; max-height: calc(100vh - 110px); }
+    /* The dvh line is the one that counts on a phone: 100vh there is the
+       viewport with the toolbars RETRACTED, so the window's bottom edge sat
+       under Safari's address bar. Browsers without dvh keep the vh line.
+       Same pairing as .modal:has(.room-desc-box). */
+    .guides-body { padding: 14px 12px 18px; max-height: calc(100vh - 110px);
+                   max-height: calc(100dvh - 110px); }
     .guides-card { grid-template-columns: 96px 1fr; gap: 10px; }
     .guides-card-thumb img { max-width: 96px; max-height: 96px; }
     /* One column on a phone: heading, the room, then the words. */
@@ -13566,7 +13829,9 @@ body[data-page="admin"] #activity-sessions {
 }
 
 @media (max-width: 640px) {
-    .glyphs-body { padding: 14px 12px 18px; max-height: calc(100vh - 110px); }
+    /* dvh second, for the reason given at .guides-body. */
+    .glyphs-body { padding: 14px 12px 18px; max-height: calc(100vh - 110px);
+                   max-height: calc(100dvh - 110px); }
     /* Three to a row at 375px: the window's inside is about 300px there,
        and 96px tiles with their gaps come to 304. */
     .glyphs-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
@@ -14018,6 +14283,8 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
 }
 .meta-filter:hover,
 .meta-filter:focus-visible { color: var(--amber-bright); outline: none; }
+/* The colour alone was the only focus signal; the usual ring. */
+.meta-filter:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 
 
 .updatelog {
@@ -14271,8 +14538,15 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
 
 /* The tab lights up with its own panel, so the thing you are pointing at and
    the thing that opened are visibly one control. */
+/* :has(:focus-visible) rather than :focus-within, here and on the panel
+   below. :focus-within also matched after a CLICK — a tapped tab button or
+   a pressed section pill keeps focus — so a panel the script had closed
+   (is-open removed) stayed open for as long as that focus sat inside it,
+   and on a phone that was until the next tap somewhere else. focus-visible
+   is only set by the keyboard, and by typing into a field, which are the
+   two cases the panel does need to hold itself open for. */
 .admin-tab:hover .admin-tab-btn,
-.admin-tab:focus-within .admin-tab-btn,
+.admin-tab:has(:focus-visible) .admin-tab-btn,
 .admin-tab.is-open .admin-tab-btn {
     color: var(--parchment);
     background: var(--chrome-fill);
@@ -14307,12 +14581,37 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
 }
 
 .admin-tab:hover .admin-drop,
-.admin-tab:focus-within .admin-drop,
+.admin-tab:has(:focus-visible) .admin-drop,
 .admin-tab.is-open .admin-drop {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
     transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s;
+}
+
+/* Escape's dismissal (js/admin.js puts .is-dismissed on the tab and hands
+   focus back to its button). The script's own note pointed here, and there
+   was no rule here: focus returned by script after a key press is
+   focus-visible, so the panel Escape had just "closed" stayed open over
+   the page. More specific than the rules that open it, so it wins until
+   focus leaves the tab or the button is pressed again — both of which
+   clear the class — except while the pointer is on the tab or the tab has
+   been clicked open (.is-open), which are fresh requests to see it.
+   The button goes back to its closed look with it. */
+.admin-tab.is-dismissed:not(:hover):not(.is-open) .admin-drop {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.18s;
+}
+
+.admin-tab.is-dismissed:not(:hover):not(.is-open) .admin-tab-btn {
+    color: var(--parchment-dim);
+    background: var(--chrome-highlight);
+    border-radius: 0 0 5px 5px;
+    box-shadow:
+        inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+        2px 2px 0 rgba(0, 0, 0, 0.35);
 }
 
 /* ---- NAV: the sections, as a grid rather than a column of slabs. */
@@ -14362,7 +14661,9 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
    "Witching Hour" wastes half of it. */
 .ctl-seg-themes .btn-enter-mini { flex: 0 0 auto; }
 
-.ctl-status.is-bad { color: var(--danger); }
+/* --danger-text, not --danger: an error message is text, and --danger is a
+   border colour at about 2.5:1 against these panels. */
+.ctl-status.is-bad { color: var(--danger-text); }
 
 /* The palette is a panel now, so it is capped and scrolls rather than running
    off the bottom of the window the way a full-height column never could. */
@@ -14370,6 +14671,40 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
 .admin-drop-glyphs .glyph-palette-list {
     max-height: 340px;
     overflow-y: auto;
+}
+
+/* WARREN RENDERED ZOOMED OUT ON A PHONE, and a CLOSED panel was why.
+
+   A closed panel is visibility: hidden, not display: none (see .admin-drop),
+   so it still takes up its box — and a hidden box still counts towards how
+   wide the page is. The Glyphs tab is the last in the row, about 325px in
+   on a 375px phone, so its 300px panel reached to 625px. The browser
+   widened the page to fit it and then zoomed the whole thing out to show
+   that width, invisible panel and all.
+
+   Two changes. On a narrow screen the Glyphs panel hangs from the right of
+   the tab row rather than from its own tab, and is never wider than the
+   row — the same bar-anchored treatment Nav and Control already get. And
+   the row clips anything that still pokes out sideways, so no panel added
+   later can do this again: clip, not hidden, because hidden would make the
+   row a scroll box and cut the panels off at its BOTTOM edge too, where
+   they are meant to hang. Only the horizontal axis is clipped.
+
+   The clip would also cut off a TAB that ran past the edge, and on a phone
+   with a long Habbo name in the user tab the row is wider than the screen
+   (that name is the tab's label). So the row wraps there, and the tabs
+   give up a little of their side padding first so it seldom needs to. */
+.admin-tabs { overflow-x: clip; }
+
+@media (max-width: 720px) {
+    .admin-tabs { flex-wrap: wrap; }
+    .admin-tab-btn { padding-left: 10px; padding-right: 10px; }
+    .admin-tab[data-menu="glyphs"] { position: static; }
+    .admin-drop-glyphs {
+        left: auto;
+        right: 12px;
+        width: min(300px, calc(100% - 24px));
+    }
 }
 
 /* ---- NAV, in CONTROL's own language.
@@ -15712,7 +16047,6 @@ textarea.ctl-input.de-note {
 
     .view-switch-btn,
     .chrome-nav-btn,
-    .chrome-tab,
     .side-menu-item,
     .side-menu-group,
     .guess-btn {
@@ -16055,6 +16389,113 @@ textarea.ctl-input.de-note {
         transform: translateY(-50%);
         background: transparent;
     }
+
+    /* --- fields iOS would zoom into ---
+
+       Safari on an iPhone zooms the whole page in on any field whose text
+       is under 16px the moment it is focused, and leaves it zoomed after
+       the keyboard goes away. The archive's search (12.5px) and sort
+       (11.8px) did it on every visit.
+
+       These two are ordinary Roboto fields and simply go to 16px. The
+       vertical padding comes down by the same 2px a side that the larger
+       line adds, so the controls row keeps its height; the sort box gets
+       a little more width so "Sort by: Maze Owner" still fits at the new
+       size (the row wraps on a phone anyway, so nothing is pushed). */
+    .search-box input {
+        font-size: 16px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
+
+    .sort-box select {
+        font-size: 16px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        max-width: 196px;
+    }
+
+    /* THE CONSOLE'S FIELDS ARE DRAWN AT 16px AND SHRUNK BACK TO 9px.
+
+       They cannot simply be 16px. The console is a fixed 204px pixel screen
+       and its fields are set in Volter, a 9px bitmap face: at 16px the
+       letters are 1.78 screen pixels per font pixel, which is neither crisp
+       nor small, the placeholder sentence no longer fits its box, and the
+       Send button moves a long scroll further away.
+
+       So each field is laid out at 16/9 of its size, with 16px text, and
+       then scaled by 9/16 (0.5625) from its top-left corner. What is painted
+       is exactly the 9px field that was there before — the text is
+       rasterised at its final size, so Volter lands back on whole pixels —
+       while the font-size Safari checks is 16px, so it never zooms. A
+       transform does not move anything around it, so the extra layout
+       height is handed back with a negative bottom margin (the old margin,
+       plus the old height, minus the new one). The extra width needs
+       nothing: a block's width overflowing its parent is not scrolled to,
+       because overflow is measured from the scaled box.
+
+       Only the fields that take typing, and the selects (Safari zooms on
+       those too). The file picker opens a sheet and never zooms. */
+    .console-input:not(.console-file) {
+        font-size: 16px;
+        transform: scale(0.5625);
+        transform-origin: 0 0;
+        border-width: calc(1px / 0.5625);
+        width: calc(100% / 0.5625);
+    }
+
+    /* The single-line fields: 20px, or 24px for the two the block above
+       enlarged for thumbs. min-height is cleared because it would be read
+       in the unscaled units and undo the arithmetic. */
+    .console-input.console-input-line {
+        height: calc(20px / 0.5625);
+        padding: 0 calc(6px / 0.5625);
+        margin-bottom: calc(8px + 20px - 20px / 0.5625);
+    }
+
+    .console-input.console-input-username,
+    .console-input.console-input-discord {
+        min-height: 0;
+        height: calc(24px / 0.5625);
+        padding: 0 calc(6px / 0.5625);
+        margin-bottom: calc(8px + 24px - 24px / 0.5625);
+    }
+
+    .console-input.console-select {
+        height: calc(20px / 0.5625);
+        padding: 0 calc(4px / 0.5625);
+        margin-bottom: calc(8px + 20px - 20px / 0.5625);
+    }
+
+    /* The contact form's message box: a fixed 183 x 58, no margin. */
+    .console-input.console-input-message {
+        width: calc(183px / 0.5625);
+        height: calc(58px / 0.5625);
+        padding: calc(8px / 0.5625) calc(8px / 0.5625) 0;
+        margin-bottom: calc(58px - 58px / 0.5625);
+    }
+
+    /* The Info form's message box: full width, 8px under it. */
+    .console-info-input .console-input.console-input-message {
+        width: calc(100% / 0.5625);
+        margin-bottom: calc(8px + 58px - 58px / 0.5625);
+    }
+
+    /* The kind picker shares a flex row with the remove button, where a
+       percentage width would be of the row and the button would be pushed
+       out past the scaled box. So it is sized as a flex basis — the row
+       less the 20px button and 4px gap, at 16/9 — and a negative right
+       margin gives back the difference, putting the button where it was.
+       When the button is hidden the picker has the whole row. */
+    .console-info-item-head .console-input.console-select {
+        flex: 0 0 calc(100% / 0.5625);
+        margin-right: calc(100% - 100% / 0.5625);
+    }
+
+    .console-info-item-head:has(.console-info-remove:not([hidden])) .console-input.console-select {
+        flex-basis: calc((100% - 24px) / 0.5625);
+        margin-right: calc((100% - 24px) - (100% - 24px) / 0.5625);
+    }
 }
 
 /* ---------------------------------------------------------------- RECOLOUR
@@ -16073,7 +16514,7 @@ textarea.ctl-input.de-note {
 
 .rc-status { min-height: 20px; margin: 0 0 8px; font-size: 0.82rem; color: var(--parchment-dim); }
 .rc-status.is-good { color: var(--ok); }
-.rc-status.is-bad  { color: var(--danger); }
+.rc-status.is-bad  { color: var(--danger-text); } /* --danger was 2.65:1 here */
 
 .rc-bar {
     display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
@@ -16136,7 +16577,7 @@ textarea.ctl-input.de-note {
     border: 1px solid var(--border); border-radius: 3px; width: 100%; }
 .rc-alpha { width: 64px; }
 .rc-alpha-none { display: block; width: 64px; }
-.rc-warn { font-size: 0.68rem; color: var(--danger); white-space: nowrap; }
+.rc-warn { font-size: 0.68rem; color: var(--danger-text); white-space: nowrap; }
 .rc-revert { background: none; border: 1px solid var(--border); color: var(--parchment-dim);
     border-radius: 3px; width: 26px; height: 24px; cursor: pointer; font-size: 0.9rem; line-height: 1; }
 .rc-revert:hover:not([disabled]) { color: var(--amber-bright); border-color: var(--amber); }

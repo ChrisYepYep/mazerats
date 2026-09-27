@@ -7,6 +7,7 @@ const { SECURITY_HEADERS } = require("./_headers");
 const { describe: describeChanges, changedFields } = require("./_changes");
 const { checkRecord } = require("./_url");
 const { cleanArticle } = require("./article");
+const { assignSlugs, settleSlug, idFor, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -21,12 +22,6 @@ const CHOICES = {
     hotel: ["", "COM", "ES", "BR"],
     ecSeason: ["", "s1", "s2"]
 };
-
-function slugify(text) {
-    return (text || "").toLowerCase().trim()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/(^-|-$)/g, "") || "event";
-}
 
 // The edit-conflict check, as in rooms.js — see the notes there.
 function stamp(v) {
@@ -43,7 +38,7 @@ function versionFilter(id, base) {
 
 const CONFLICT = "Someone else saved this record since you opened it - reload it to see their changes.";
 
-exports.handler = async (event) => {
+async function handle(event) {
     let db;
     try {
         db = await getDb();
@@ -62,6 +57,9 @@ exports.handler = async (event) => {
             console.error("events: read failed", e);
             return json(503, { error: "The archive could not be read just now." });
         }
+        // Every event's address — see the same step in rooms.js.
+        const slugs = assignSlugs(all, "event");
+        all.forEach(r => { r.slug = slugs.get(r.id) || r.id; });
         // ?full=1 is the admin page's route: the records exactly as stored,
         // every reviewer field and hidden detection included, because that is
         // what the admin editor works on.
@@ -82,6 +80,7 @@ exports.handler = async (event) => {
             if (!(await hasAccount(event))) return UNAUTHORIZED;
             return cachedJson(event, all, { cache: false });
         }
+        all.forEach(r => { delete r.slugAliases; delete r.slugManual; });
         return cachedJson(event, await packRecords(all));
     }
 
@@ -106,6 +105,13 @@ exports.handler = async (event) => {
         if (!body || typeof body !== "object" || Array.isArray(body)) {
             return json(400, { error: "Invalid request body" });
         }
+        /* "live" is a status the pages work out from the dates (see
+           js/event-status.js), never one that is stored — but the /warren
+           form fills its status field by the same rule, so an event saved
+           while it was running arrived as "live" and was refused. That was
+           every edit to the launch event from 08:00 on launch day. Stored
+           as "upcoming", which is what the dates then override anyway. */
+        if (body.status === "live") body.status = "upcoming";
         const problem = checkRecord(body, CHOICES);
         if (problem) return json(400, { error: problem });
         /* The stored article is set as innerHTML in every visitor's event
@@ -116,10 +122,14 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
-        // A string, because slugify below calls string methods on it.
+        // A string, because the address is made from it with string methods.
         if (!body.title || typeof body.title !== "string") return json(400, { error: "An event needs at least a title" });
 
         await ensureUniqueIndex(events, "id");
+
+        const everyEvent = () => events.find({}, { projection: SLUG_FIELDS }).toArray();
+        const slugProblem = settleSlug(await everyEvent(), "event", null, body);
+        if (slugProblem) return json(400, { error: slugProblem });
 
         // Attempt-and-retry-on-collision rather than check-then-insert —
         // see the identical comment in rooms.js for why (a findOne() check
@@ -129,8 +139,8 @@ exports.handler = async (event) => {
         // is scheduled for — see the same field in rooms.js for why the two
         // have to be told apart.
         const createdAt = new Date().toISOString();
-        let id = slugify(body.title);
-        let suffix = 2;
+        // The settled address, or the nearest free thing — see rooms.js.
+        let id = idFor(await everyEvent(), "event", body.slug);
         for (let attempt = 0; ; attempt++) {
             // The server's timestamp wins, as in rooms.js.
             const item = { ...body, createdAt, id };
@@ -141,7 +151,7 @@ exports.handler = async (event) => {
                 return json(201, clean);
             } catch (e) {
                 if (e.code === 11000 && attempt < 50) {
-                    id = `${slugify(body.title)}-${suffix++}`;
+                    id = idFor(await everyEvent(), "event", body.slug);
                     continue;
                 }
                 throw e;
@@ -180,6 +190,18 @@ exports.handler = async (event) => {
             return json(409, { error: CONFLICT, conflict: true });
         }
 
+        // Its address — see the same step in rooms.js.
+        if (previous) {
+            const slugProblem = settleSlug(await events.find({}, { projection: SLUG_FIELDS }).toArray(), "event", previous, update);
+            if (slugProblem) return json(400, { error: slugProblem });
+        } else {
+            // Not settled, so not stored — see the same step in rooms.js.
+            delete update.slug;
+            delete update.slugAliases;
+            delete update.slugManual;
+            delete update._slugAuto;
+        }
+
         // A save that changes nothing does not move updatedAt or the change
         // list — see the same block in rooms.js.
         const moved = changedFields(previous, update);
@@ -214,4 +236,18 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
+}
+
+/* A write that fails at the database — a slow or unreachable cluster, a
+   lost connection mid-save — used to throw straight out of the handler,
+   which Netlify answers with a bare 502 and an HTML body the admin page
+   cannot read, or with Lambda's own error JSON and its stack trace. Caught
+   once here, so every route answers with something the form can show. */
+exports.handler = async (event) => {
+    try {
+        return await handle(event);
+    } catch (e) {
+        console.error("events: request failed", e);
+        return json(503, { error: "The archive couldn't be saved just now. Try again in a minute." });
+    }
 };

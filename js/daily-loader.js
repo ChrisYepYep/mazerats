@@ -66,7 +66,11 @@
 
     const GAMES = {
         guess: {
-            src: "js/guess.js?v=2",
+            /* v=3: the games now play a deal the server hands them and ask
+               it to judge each move, against endpoints that no longer take
+               the old "mark" — a copy of either file cached from before
+               would deal its own day and have every move refused. */
+            src: "js/guess.js?v=3",
             open: "openGuessGame",
             overlay: "guess-overlay",
             win: "guess-window",
@@ -77,7 +81,7 @@
             body: "guess-deck"
         },
         odd: {
-            src: "js/oddoneout.js?v=2",
+            src: "js/oddoneout.js?v=3",
             open: "openOddOneOut",
             overlay: "odd-overlay",
             win: "odd-window",

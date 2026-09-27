@@ -108,7 +108,14 @@
        in this key alone. Genuinely levelling the two scales means rescoring
        or retiring those rows, which is a decision about the leaderboard
        rather than about local storage. */
-    const STATE_KEY = "mazerats_guess_v4";
+    /* v5: the day became the server's deal (netlify/functions/_deal.js),
+       and a round's answer is only known once the server has said so. A
+       v4 day was dealt by this page, from a different seed, and carries
+       names the server never offered — so, as before, it is dropped rather
+       than migrated. `v` inside the saved day says the same thing to the
+       account's mirror of it (see adoptAccountDay). */
+    const STATE_KEY = "mazerats_guess_v5";
+    const STATE_VERSION = 5;
     /* v4: the rounds went from 100 points to 10 (see POINTS), so a running
        record counted on the old scale starts again rather than carrying
        totals nobody can now match a day against. */
@@ -149,14 +156,18 @@
 
     let el = {};          // the window's shared elements, filled by mount()
     let sheets = [];      // the deck, in order: intro, 5 rooms, results
-    let ROOMS = [];
-    let roomsDay = "";    // the UTC day ROOMS was fetched on; see start()
-    let pool = [];
+    /* The day's deal as the server handed it: { day, rounds }, each round
+       { image, options, crop } — the picture, the five names offered, and
+       the seed for where to cut. Nothing in it says which name is right;
+       a round's answer arrives in the verdict that ends it and is kept in
+       state.results[i].answer. null until it has arrived. */
+    let deal = null;
     let state = null;     // this day's play
-    let stats = null;     // the running record across days
-    let rounds = [];      // { maze, image, cx, cy, img } per round, once ready
+    let stats = null;     // the running record across days, as SHOWN — see shownStats
+    let rounds = [];      // { image, cx, cy, img } per round, once ready
     let preparing = {};   // round index -> true while its picture is loading
     let dealGen = 0;      // bumped whenever the deal is thrown away; see forgetDeal
+    let guessing = false; // a guess on its way to be judged
 
     /* Which sheet is up. Not saved: the splash is where the window opens
        every time, including part-way through a day, because it is the one
@@ -165,19 +176,21 @@
        explanation is a worse first second than one click. */
     let view = "intro";   // "intro" | "round" | "results"
 
-    // ---------- a stable random, one set of rooms per day ----------
+    // ---------- the day, and a stable random for the crop ----------
 
-    /* The same five rooms for everyone, everywhere, without a server
-       deciding. The date in UTC is the seed, so the day turns over at the
-       same instant for every player rather than at each player's local
-       midnight — two people comparing grids in a Discord channel are then
-       always talking about the same rooms. */
+    /* The same five rooms for everyone, everywhere — dealt by the server
+       now (see the header of netlify/functions/_deal.js for why the page
+       stopped dealing them). The day is UTC, so it turns over at the same
+       instant for every player; read through Daily.today, which is
+       corrected to the server's clock, so a device whose clock is wrong
+       agrees with everybody else about which day it is. */
     function today() {
-        return new Date().toISOString().slice(0, 10);
+        return window.Daily && Daily.today ? Daily.today() : new Date().toISOString().slice(0, 10);
     }
 
     // mulberry32 — small, fast, and good enough that consecutive days do not
-    // visibly rhyme. The point is reproducibility, not cryptography.
+    // visibly rhyme. The point is reproducibility, not cryptography. Only
+    // the crop draws from it now, from the seed each round is dealt with.
     function seededRandom(seed) {
         let a = seed >>> 0;
         return function () {
@@ -188,120 +201,21 @@
         };
     }
 
-    /* The local copy of seedFrom is gone.
+    // ---------- the day's five rooms ----------
 
-       It was a duplicate of window.Daily.seedFrom — identical FNV-1a, same
-       constants — from before js/daily.js existed. Every caller here now
-       goes through Daily.daySeed instead, so that a featured day (see
-       FEATURED_DAYS in js/daily.js) rerolls this game along with the other
-       two, and a second hashing function sitting unused beside it is a
-       thing somebody would eventually reach for again and quietly opt out
-       of that. */
+    /* Chosen by the server now: five pictures from five different mazes,
+       entrance shots and hallways left out, only mazes catalogued before
+       the day began — all of it moved to dealGuess in
+       netlify/functions/_deal.js, with the notes on why each rule exists.
 
-    // ---------- choosing the day's five rooms ----------
-
-    /* Every room picture in the archive, as one flat pool.
-
-       Entrance shots are left out on purpose: they are the image most likely
-       to carry the maze's name on a wall or a sign, and they are also the
-       thumbnail on the archive's own rows, so they are the one picture a
-       regular visitor could recognise without ever having walked the maze. */
-    /* Hallways are not in it, and the same test runs on the server before
-       it derives the answers (netlify/functions/guess-scores.js). The
-       archive lists the hallway and should — it is part of the history —
-       but it is a corridor between mazes, so a round asking which maze a
-       picture of it came from has no answer, and offering its name as one
-       of the five is offering something that cannot be right. See
-       Daily.isHallway. */
-    /* And only mazes that were in the archive before the day being dealt
-       began. A maze catalogued at lunchtime used to join the pool the
-       moment it was saved — and because the day is one shuffle of the whole
-       pool, one new maze re-dealt all five rooms for everybody who loaded
-       the page after it. It now joins at the next midnight. The server
-       applies the same test before it scores; see existedBefore in
-       js/daily.js and netlify/functions/_daily.js. */
-    function buildPool(forDay) {
-        const out = [];
-        ROOMS.forEach(room => {
-            if (!room.name || !room.id) return;
-            if (window.Daily.isHallway(room)) return;
-            if (!window.Daily.existedBefore(room, forDay)) return;
-            (room.gallery || []).forEach(g => {
-                if (g && g.image) out.push({ maze: room, image: g.image });
-            });
-        });
-        return out.sort(poolOrder);
-    }
-
-    /* The pool is put in a fixed order before the day's shuffle runs, and
-       this is not tidiness — it is what makes the day's five REPRODUCIBLE.
-
-       The shuffle draws one random number per pool entry in sequence, so
-       which five come out depends on what order the pool was in. Left as it
-       arrived, that order is MongoDB's natural order, which is not promised
-       to be stable: rewriting a document can move it. An admin saving an
-       edit at noon would then quietly deal a different five for the rest of
-       the day — and the server, which derives the same day independently to
-       check submitted scores (netlify/functions/guess-scores.js), would
-       start rejecting correct answers.
-
-       Sorted on id then image, both plain string comparisons rather than
-       localeCompare, so the browser and Node cannot disagree about the
-       order the way two locales could. */
-    function poolOrder(a, b) {
-        if (a.maze.id !== b.maze.id) return a.maze.id < b.maze.id ? -1 : 1;
-        if (a.image !== b.image) return a.image < b.image ? -1 : 1;
-        return 0;
-    }
-
-    /* The day's five, drawn so that no maze appears twice.
-
-       Five rounds all from the same maze would be five chances at one
-       answer, which is both easier and duller than five different ones.
-       Falls back to allowing repeats only if the archive is too small to
-       fill five rounds otherwise, which it is not today and might be on a
-       fresh install. */
-    function pickDay(forDay) {
-        // Through Daily.daySeedFor so a featured day (see FEATURED_DAYS in
-        // js/daily.js) rerolls this game along with the other two — and for
-        // the NAMED day, never the clock's; see picks() below.
-        const rand = seededRandom(window.Daily.daySeedFor(forDay, "guess"));
-        const pool = buildPool(forDay);
-        const shuffled = pool
-            .map(p => ({ p, k: rand() }))
-            .sort((a, b) => a.k - b.k)
-            .map(o => o.p);
-
-        const chosen = [];
-        const usedMazes = new Set();
-        for (const item of shuffled) {
-            if (chosen.length >= ROUNDS) break;
-            if (usedMazes.has(item.maze.id)) continue;
-            usedMazes.add(item.maze.id);
-            chosen.push(item);
-        }
-        for (const item of shuffled) {
-            if (chosen.length >= ROUNDS) break;
-            if (!chosen.includes(item)) chosen.push(item);
-        }
-        return chosen;
-    }
-
-    // Worked out once a day rather than on every render — renderSummary used
-    // to call pickDay() once per answer row, which re-shuffled the whole
-    // pool five times to read five values off it.
-    /* KEYED ON state.day, NOT today(). This cache used to reset itself
-       whenever the clock's day changed, which at midnight meant a player
-       part-way through was quietly handed a different five: the answer
-       names, the options and the next picture all moved to the new day
-       while state.day, the pictures already prepared and the day submitted
-       to the server stayed on the old one. The day being played is pinned
-       in state.day when it begins, and every draw is made for that day. */
-    let picksCache = { day: "", picks: [] };
+       KEYED ON state.day, NOT today(). A deal is only ever the deal for the
+       day being played, pinned in state.day when it begins, so a player
+       part-way through at midnight is never quietly handed a different five
+       — the answer names, the options and the next picture all moving to
+       the new day while the pictures already prepared and the day submitted
+       stayed on the old one. */
     function picks() {
-        const forDay = state ? state.day : today();
-        if (picksCache.day !== forDay) picksCache = { day: forDay, picks: pickDay(forDay) };
-        return picksCache.picks;
+        return deal && state && deal.day === state.day ? deal.rounds : [];
     }
 
     // ---------- reading the picture ----------
@@ -454,28 +368,53 @@
 
     // ---------- what is remembered ----------
 
-    function blankDay() {
+    /* `mode` is settled by the day's first guess — "account" when somebody
+       is signed in to have their guesses recorded, "anon" when not — and
+       kept (see submitGuess). `posted` is whether the finished day reached
+       the server, saved WITH the day so a submission that failed is sent
+       again on the next open rather than forgotten with the visit. */
+    function blankDay(forDay) {
         return {
-            day: today(),
+            v: STATE_VERSION,
+            day: forDay || today(),
             round: 0,
-            // One entry per round: { guesses: [{name, correct}], done, won }
-            results: Array.from({ length: ROUNDS }, () => ({ guesses: [], done: false, won: false })),
-            done: false
+            // One entry per round: { guesses: [{name, correct}], done, won,
+            // answer } — answer is { id, name, slug, creator } once the
+            // server has ended the round, and null until then.
+            results: Array.from({ length: ROUNDS }, () => ({ guesses: [], done: false, won: false, answer: null })),
+            done: false,
+            mode: null,
+            posted: false
         };
     }
 
-    function loadState() {
+    // The stored day, if it is one of this shape; otherwise null.
+    function readSaved() {
         let saved = null;
         try { saved = JSON.parse(localStorage.getItem(STATE_KEY) || "null"); } catch (e) { saved = null; }
-        // Yesterday's game is not this one, and a stored day from an older
-        // shape is not either — both are dropped rather than migrated.
-        if (saved && saved.day === today() && Array.isArray(saved.results) && saved.results.length === ROUNDS) {
-            return saved;
-        }
-        return blankDay();
+        return saved && saved.v === STATE_VERSION && typeof saved.day === "string" &&
+            Array.isArray(saved.results) && saved.results.length === ROUNDS ? saved : null;
     }
 
+    // Guesses made, plus one for a finished day — how far on a copy of the
+    // day is, when two copies of the same day have to be told apart.
+    const progressOf = s => (s ? s.results.reduce((n, r) => n + ((r.guesses || []).length), 0) + (s.done ? 1 : 0) : -1);
+
+    /* Saved, but not over a copy another tab has taken further.
+
+       Two tabs of the game used to overwrite each other's day: each saved
+       its state whole, so whichever tab guessed last wrote its copy over the
+       other's, guesses and all. The stored copy is read first now, and if
+       it is the same day and further on it is adopted rather than
+       overwritten; the `storage` listener in mount() keeps a tab that is
+       only watching up to date too. A signed-in player's guesses are the
+       server's to settle anyway (the first recorded move per round wins). */
     function saveState() {
+        const stored = readSaved();
+        if (stored && state && stored.day === state.day && progressOf(stored) > progressOf(state)) {
+            state = Object.assign(stored, { posted: Boolean(stored.posted || state.posted) });
+            return;
+        }
         try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
         // And against the account, so a day begun on a phone can be
         // finished at a desk. Coalesced and fire-and-forget in Account.
@@ -491,20 +430,42 @@
        Only ever adopts, never overwrites the server with less: a device
        that is behind pulls forward, and one that is ahead pushes on its
        next save. */
+    /* Only a mirror of THIS shape (`v`) and of the day being played: the
+       mirror can still hold a day saved by the page before the server dealt
+       it, whose names belong to a deal nobody is playing. The server's own
+       record of a signed-in player's guesses (applyRecorded) is applied
+       after this and wins over it. */
     function adoptAccountDay(saved) {
-        if (!saved || saved.day !== today()) return false;
+        if (!saved || saved.v !== STATE_VERSION || !state || saved.day !== state.day) return false;
         if (!Array.isArray(saved.results) || saved.results.length !== ROUNDS) return false;
-        const count = s => s.results.reduce((n, r) => n + ((r.guesses || []).length), 0);
-        if (count(saved) <= count(state)) return false;
-        state = {
-            day: saved.day,
+        if (progressOf(saved) <= progressOf(state)) return false;
+        state = Object.assign(blankDay(saved.day), {
             round: saved.round || 0,
             results: saved.results,
-            done: Boolean(saved.done)
-        };
+            done: Boolean(saved.done),
+            mode: saved.mode || null,
+            posted: Boolean(saved.posted)
+        });
         try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
         return true;
     }
+
+    /* THE RUNNING RECORD, AND WHOSE IT IS.
+
+       This device keeps its own record under STATS_KEY — the only record a
+       signed-out player has. A signed-in player's figures are the
+       account's, counted by the server from the days actually recorded
+       (statsFor in netlify/functions/player-data.js).
+
+       The two used to be merged into one object, and that object was what
+       got saved: so signing in once wrote the account's totals over this
+       device's own signed-out record for good, and signing out again showed
+       the account's figures as if they were the device's. Now they are
+       kept apart. `localStats` is the device's and the only one saved
+       here; `accountStats` is the account's and lives in memory, for this
+       visit only. `stats` is whichever is being shown — see shownStats. */
+    let localStats = null;
+    let accountStats = null;
 
     function loadStats() {
         let s = null;
@@ -514,7 +475,14 @@
     }
 
     function saveStats() {
-        try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) { /* private mode */ }
+        try { localStorage.setItem(STATS_KEY, JSON.stringify(localStats)); } catch (e) { /* private mode */ }
+    }
+
+    // The account's figures while somebody is signed in and they have been
+    // read; the device's otherwise.
+    function shownStats() {
+        stats = accountStats && window.Account && Account.current ? accountStats : localStats;
+        return stats;
     }
 
     function yesterdayOf(iso) {
@@ -529,6 +497,7 @@
        or yesterday (UTC); otherwise it is 0 until the next day is banked. */
     function liveStreak() {
         const t = today();
+        shownStats();
         return stats.lastDay === t || stats.lastDay === yesterdayOf(t) ? stats.streak : 0;
     }
 
@@ -549,22 +518,33 @@
        the server already has is answered "already" and changes nothing, so
        there is no double-counting on either side. */
     function bankDay() {
-        if (stats.lastDay !== state.day) countDay();
+        // Fresh from storage first: another tab may have banked this day
+        // already, and the guard below only sees that in a fresh copy.
+        localStats = loadStats();
+        if (localStats.lastDay !== state.day) countDay();
         submitDay();
     }
 
+    /* Counted into the device's own record, which is saved; and into the
+       account's figures in memory too, so the card is right straight away —
+       submitDay then replaces those with the server's own count. */
     function countDay() {
         const solved = state.results.filter(r => r.won).length;
         const scored = dayPoints();
-        stats.streak = stats.lastDay === yesterdayOf(state.day) ? stats.streak + 1 : 1;
-        stats.best = Math.max(stats.best, stats.streak);
-        stats.days += 1;
-        stats.rounds += ROUNDS;
-        stats.solved += solved;
-        stats.points += scored;
-        stats.bestDay = Math.max(stats.bestDay, scored);
-        stats.lastDay = state.day;
+        const count = s => {
+            s.streak = s.lastDay === yesterdayOf(state.day) ? s.streak + 1 : 1;
+            s.best = Math.max(s.best, s.streak);
+            s.days += 1;
+            s.rounds += ROUNDS;
+            s.solved += solved;
+            s.points += scored;
+            s.bestDay = Math.max(s.bestDay, scored);
+            s.lastDay = state.day;
+        };
+        count(localStats);
         saveStats();
+        if (accountStats && accountStats.lastDay !== state.day) count(accountStats);
+        shownStats();
 
         /* The day is sent by bankDay, straight after this, for the same
            reason the streak is banked here: this is the moment the day is
@@ -588,7 +568,6 @@
 
         preparing[i] = true;
         setBusy(i, true);
-        const forDay = state.day;
         const gen = dealGen;
 
         let img = null;
@@ -611,9 +590,12 @@
            away. Filing it would put yesterday's room into today's round. */
         if (gen !== dealGen) return;
 
-        const centre = findCropCentre(img, seededRandom(window.Daily.daySeedFor(forDay, "guess:crop", i)));
+        /* Where to cut, from the seed the round was dealt with — the same
+           for every player, and handed out by the server rather than
+           derived here, so nothing about a day can be worked out in the
+           page before it is dealt. */
+        const centre = findCropCentre(img, seededRandom(pick.crop >>> 0));
         rounds[i] = {
-            maze: pick.maze,
             image: pick.image,
             img,
             cx: centre ? centre.x : img.naturalWidth / 2,
@@ -644,17 +626,84 @@
         return state.results[state.round];
     }
 
-    function submitGuess(name) {
-        const result = currentResult();
-        if (!result || result.done || !rounds[state.round]) return;
+    const signedIn = () => Boolean(window.Account && Account.current);
 
-        const correct = normalise(name) === normalise(rounds[state.round].maze.name);
-        result.guesses.push({ name, correct });
-        if (correct) { result.done = true; result.won = true; }
-        else if (result.guesses.length >= TRIES) { result.done = true; result.won = false; }
-        // Before bankDay, so the last room's mark is already on its way
-        // when the day is submitted. See markRound.
-        if (result.done) markRound(state.round);
+    /* A guess, sent to be judged. The page no longer knows which of the
+       five names is right, so every guess is a question to the server, and
+       the round moves on when the answer comes back — with the maze's name
+       once the round is over, and not before.
+
+       For a signed-in player the server also RECORDS it, and it counts the
+       guesses: a round's view number is how many the server received, not a
+       number this page reports (it used to be, and "1" was worth ten points
+       a round to anybody who wrote it). The first recorded guesses stand —
+       if another tab or device has played this round, the answer carries
+       that round as the server has it, and that is what is shown.
+
+       The mode is settled by the day's first guess and kept, as Odd One
+       Out's is (see choose in js/oddoneout.js): a day begun signed out is
+       sent with `anon`, is not recorded, and is filed from this page's own
+       guesses with no bonus once finished. Signed out, the server cannot
+       count, so the page says when a guess is its last (`final`) to be told
+       the answer.
+
+       While a guess is on its way the other names are ignored; one that
+       could not be judged leaves the round as it was, says so, and can
+       simply be made again. */
+    async function submitGuess(name) {
+        const index = state.round;
+        const result = currentResult();
+        // Not before the picture is on screen: a guess at a room nobody has
+        // seen yet is not a guess about the room.
+        if (!result || result.done || guessing || !picks()[index] || !rounds[index]) return;
+        if (!state.mode) state.mode = signedIn() ? "account" : "anon";
+        const forDay = state.day;
+        const anon = state.mode === "anon";
+        const final = result.guesses.length + 1 >= TRIES;
+
+        guessing = true;
+        const sheet = roundSheet(index);
+        if (sheet) sheet.el.classList.add("is-busy");
+        const reply = await Daily.move("guess", forDay, index, { guess: name, final }, { anon, url: BOARDS_URL });
+        guessing = false;
+        if (sheet) sheet.el.classList.remove("is-busy");
+        if (!state || state.day !== forDay || state.round !== index) return;
+
+        const body = reply.body || {};
+        if (reply.status !== 200) {
+            /* The day has closed under a round not yet begun — a window
+               opened before midnight: today's deal is fetched and played
+               instead (see refreshDay). Or the server's record disagrees
+               with this page's (a reset elsewhere): read it again. */
+            if ((reply.status === 400 && !anyGuesses()) || reply.status === 409) {
+                await refreshDay();
+                renderAll();
+                prepareRound(state.round);
+                return;
+            }
+            if (sheet) {
+                sheet.refs.status.textContent = "That guess did not reach the server, so it has not counted. Try it again.";
+                sheet.refs.status.hidden = false;
+                announce(sheet, sheet.refs.status.textContent);
+            }
+            return;
+        }
+        // Answered but not recorded while this day was meant to be: the
+        // sign-in lapsed. The day carries on unrecorded rather than stalling.
+        if (state.mode === "account" && !body.recorded) state.mode = "anon";
+
+        if (Array.isArray(body.guesses)) {
+            // The round as the server has it — which, if another tab got
+            // there first, is not quite what was just pressed.
+            result.guesses = body.guesses.map(g => ({ name: g.name, correct: Boolean(g.correct) }));
+            result.done = Boolean(body.done);
+            result.won = Boolean(body.won);
+        } else {
+            result.guesses.push({ name, correct: Boolean(body.correct) });
+            result.won = Boolean(body.correct);
+            result.done = result.won || result.guesses.length >= TRIES;
+        }
+        if (body.answer) result.answer = body.answer;
 
         if (result.done && state.round === ROUNDS - 1) {
             state.done = true;
@@ -665,6 +714,8 @@
         renderAll();
         settleFocus(state.round, result, name, pressedAt);
     }
+
+    const anyGuesses = () => Boolean(state && state.results.some(r => r.guesses.length));
 
     /* Where the keyboard goes after a guess, and what is said out loud.
 
@@ -695,7 +746,7 @@
         if (target) target.focus({ preventScroll: true });
 
         const left = TRIES - result.guesses.length;
-        const maze = rounds[i] ? rounds[i].maze : null;
+        const maze = result.answer;
         announce(sheet, result.done
             ? (result.won
                 ? `Got it. It was ${name}. Plus ${pointsFor(result)} points.`
@@ -721,20 +772,6 @@
 
     // ---------- the five names ----------
 
-    /* A seeded shuffle of a list, without disturbing the caller's copy.
-
-       Every draw in this file has to come out the same for everyone on the
-       same day, which means no Math.random and a fixed order going in —
-       see poolOrder above for what happens when the order going in is left
-       to the database. */
-    function shuffledBy(list, seed) {
-        const rand = seededRandom(seed);
-        return list
-            .map(item => ({ item, k: rand() }))
-            .sort((a, b) => a.k - b.k)
-            .map(o => o.item);
-    }
-
     /* The five names a round offers, the right one among them.
 
        The four decoys are not drawn at random. A crop of a dim stone
@@ -750,60 +787,15 @@
        and for the same reason — see the note at the top of
        js/oddoneout.js.
 
-       Settled by the day, the round and the answer's own id, so the five
-       are the same five for everybody, survive a reload, and do not shift
-       under a player who guesses once and comes back after lunch. */
-    function optionsFor(i) {
-        const pick = picks()[i];
-        if (!pick) return [];
-        const answer = pick.maze;
-
-        const tagsOf = r => (r.tags || []).map(t => String(t).toLowerCase()).filter(Boolean);
-        const mine = new Set(tagsOf(answer));
-
-        /* Sorted before anything is drawn from it, for the same reason the
-           picture pool is: an unordered list makes an unreproducible shuffle.
-
-           And hallways are out of the DECOYS too, not just the answers. A
-           name in this list is a claim that the picture might have come from
-           it, and the hallway is the one room on the site where that can
-           never be true — so it reads as the odd one out to anybody who
-           knows the archive, which quietly narrows five names to four. */
-        /* existedBefore for the same reason the picture pool has it: a maze
-           catalogued mid-day would otherwise slip into the decoys for new
-           page loads, so two players on the same day would be offered
-           different five names. The server does not check the options, but
-           players compare notes. */
-        const others = ROOMS
-            .filter(r => r.name && r.id && r.id !== answer.id && !window.Daily.isHallway(r))
-            .filter(r => window.Daily.existedBefore(r, state.day))
-            .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-
-        const seed = window.Daily.daySeedFor(state.day, "guess:options", i, answer.id);
-        const related = others.filter(r => tagsOf(r).some(t => mine.has(t)));
-        const relatedIds = new Set(related.map(r => r.id));
-        const rest = others.filter(r => !relatedIds.has(r.id));
-
-        const decoys = shuffledBy(related, seed)
-            .concat(shuffledBy(rest, seed ^ 0x9e3779b9))
-            .slice(0, OPTIONS - 1);
-
-        /* Shuffled again with the answer in it, or the right name would sit
-           in first place every round — which is a game about noticing where
-           the list stops being sorted. */
-        return shuffledBy([answer].concat(decoys), seed ^ 0x85ebca6b).map(r => r.name);
-    }
-
-    // Worked out once a day rather than on every render, exactly as picks()
-    // is: renderAll redraws all five rounds on every guess, and rebuilding
-    // five shuffles of the archive each time is five shuffles nobody asked
-    // for. Keyed on state.day, not the clock, for the reason given at
-    // picks().
-    let optionsCache = { day: "", rounds: [] };
+       Chosen by the server with the rest of the deal (dealGuess in
+       netlify/functions/_deal.js, where the decoy rules now live) and
+       handed over as five names, so they are the same five for everybody,
+       survive a reload, and do not shift under a player who guesses once
+       and comes back after lunch — and the page cannot tell which is right
+       by looking. OPTIONS is how many there are. */
     function optionsRound(i) {
-        if (optionsCache.day !== state.day) optionsCache = { day: state.day, rounds: [] };
-        if (!optionsCache.rounds[i]) optionsCache.rounds[i] = optionsFor(i);
-        return optionsCache.rounds[i];
+        const pick = picks()[i];
+        return pick && Array.isArray(pick.options) ? pick.options.slice(0, OPTIONS) : [];
     }
 
     /* The five buttons.
@@ -823,17 +815,17 @@
         const result = state.results[sheet.roundIndex];
         if (!box || !result) return;
 
-        /* The answer comes from picks(), not from rounds[] — the day's five
-           mazes are known the moment the archive has loaded, whereas
-           rounds[] is not filled until each picture has been fetched and
-           cropped. Read from picks(), the names are on screen with the
-           sheet; read from rounds[], they appeared a beat later, which made
-           the board look like it was still deciding. */
+        /* The names come from the deal, not from rounds[] — they are known
+           the moment the deal arrives, whereas rounds[] is not filled until
+           each picture has been fetched and cropped; read from rounds[],
+           they appeared a beat later, which made the board look like it was
+           still deciding. The answer is the one the server named when it
+           ended the round (result.answer), and there is none before that. */
         const pick = picks()[sheet.roundIndex];
         if (!pick) { box.innerHTML = ""; return; }
 
         const spent = new Set((result.guesses || []).map(g => normalise(g.name)));
-        const answer = normalise(pick.maze.name);
+        const answer = result.answer ? normalise(result.answer.name) : null;
         const over = result.done;
 
         box.innerHTML = optionsRound(sheet.roundIndex).map(name => {
@@ -976,7 +968,6 @@
         const refs = sheet.refs;
         const result = state.results[i];
         const roundOver = result.done;
-        const data = rounds[i];
         const left = TRIES - result.guesses.length;
 
         refs.label.textContent = `Room ${i + 1} of ${ROUNDS}`;
@@ -1009,7 +1000,8 @@
         renderOptions(sheet);
 
         if (roundOver) {
-            const maze = data ? data.maze : null;
+            // Named by the server in the verdict that ended the round.
+            const maze = result.answer;
             const last = i === ROUNDS - 1;
             refs.between.hidden = false;
             const scored = pointsFor(result);
@@ -1029,7 +1021,7 @@
                             : `for view ${result.guesses.length}${" · "}${POINTS[0]} on the first`}`
                         : `<strong>+0</strong> — no points for a room you don't place`}
                 </p>
-                ${maze ? `<a class="guess-reveal-link" href="/home#maze-${encodeURIComponent(maze.id)}">See it in the archive &rsaquo;</a>` : ""}
+                ${maze ? `<a class="guess-reveal-link" href="${window.RecordAddress ? window.RecordAddress.of("maze", maze) : `/maze/${encodeURIComponent(maze.id)}`}">See it in the archive &rsaquo;</a>` : ""}
                 <button type="button" class="guess-btn guess-btn--lead guess-advance">${last ? "See how you did &rsaquo;" : `Room ${i + 2} &rsaquo;`}</button>`;
             const advance = refs.between.querySelector(".guess-advance");
             if (advance) advance.addEventListener("click", () => (last ? goTo("results") : nextRound()));
@@ -1147,10 +1139,7 @@
         }
         const solved = state.results.filter(r => r.won).length;
         const scored = dayPoints();
-        // picks() was read here only to name the five mazes in the answer
-        // list below, which is gone — and it is not a free call: it deals
-        // the whole day off a seeded shuffle of every room picture in the
-        // archive.
+        shownStats();
         el.summary.innerHTML = `
             <p class="guess-points"><strong>${scored}</strong><span>points</span></p>
             <p class="guess-score">${solved} of ${ROUNDS} rooms found</p>
@@ -1196,6 +1185,7 @@
 
     function renderAll() {
         if (!state) return;
+        shownStats();
         renderIntro();
         for (let i = 0; i < ROUNDS; i++) renderRound(i);
         renderSummary();
@@ -1253,18 +1243,19 @@
         boardsState = "loading";
         renderBoards();
         const base = `${BOARDS_URL}?day=${encodeURIComponent(state.day)}`;
-        try {
-            const res = await fetch(force ? `${base}&fresh=${Date.now()}` : base, {
-                headers: { "Accept": "application/json" },
-                credentials: "same-origin"
-            });
-            if (!res.ok) throw new Error(String(res.status));
-            boards = await res.json();
+        /* Through Daily.request, which gives up after ten seconds: a bare
+           fetch the network swallowed left "Fetching the scores…" up for
+           good, and — because a load in progress queues every later one —
+           no refresh could ever get past it. A board that will not load is
+           a disappointment, not a failure of the game; the day's own result
+           is already on screen and stays there. */
+        const { status, body } = await Daily.request(force ? `${base}&fresh=${Date.now()}` : base, {
+            headers: { "Accept": "application/json" }
+        });
+        if (status === 200 && body) {
+            boards = body;
             boardsState = "ready";
-        } catch (e) {
-            // A board that will not load is a disappointment, not a
-            // failure of the game — the day's own result is already on
-            // screen and stays there.
+        } else {
             boardsState = "failed";
         }
         renderBoards();
@@ -1280,18 +1271,21 @@
        finished signed out and then signed in (which reloads the page) was
        never put on the board, and neither was one whose POST failed. Now
        the day is also sent when its results are reached, or the window is
-       opened, with someone signed in: once per visit, as Odd One Out's
-       wireResults does. Repeats are harmless (the server answers
-       "already"). Only while the server still takes the day: today, or
-       yesterday inside the five-minute grace (dayIsOpen in
+       opened, with someone signed in, until it lands: `posted` is saved
+       with the day once the server has it (or has refused it for good), as
+       Odd One Out's wireResults does, so a failure on one visit is retried
+       on the next. Repeats are harmless (the server answers "already", with
+       the score it already has). Only while the server still takes the
+       day: today, or yesterday inside the five-minute grace (dayIsOpen in
        netlify/functions/_daily.js). */
-    let postedDay = "";   // the day sent (or on its way) this visit
+    let postedDay = "";   // the day on its way this visit, so it is not sent twice at once
     const DAY_GRACE_MS = 5 * 60 * 1000;
 
     function dayStillOpen(day) {
         const t = today();
         if (day === t) return true;
-        return day === yesterdayOf(t) && Date.now() - Date.parse(t + "T00:00:00Z") < DAY_GRACE_MS;
+        const now = window.Daily && Daily.now ? Daily.now() : Date.now();
+        return day === yesterdayOf(t) && now - Date.parse(t + "T00:00:00Z") < DAY_GRACE_MS;
     }
 
     /* The speed bonus's clock, started by the server the first time a
@@ -1302,24 +1296,17 @@
        here or anywhere in the game shows a time; the bonus lands on the
        board. */
     function startClock() {
-        if (!state || state.done || !dayStillOpen(state.day)) return;
+        if (!state || state.done || !dayStillOpen(state.day) || state.mode === "anon") return;
         if (state.results.some(r => r.guesses.length)) return;
         if (window.Daily && Daily.start) Daily.start("guess", state.day, BOARDS_URL);
     }
 
-    /* The end of a room, for the same bonus: the server writes down when it
-       heard (Daily.mark), and the room's time is the gap from the mark
-       before. Called only from submitGuess, at the moment a room is named
-       or its guesses run out — never from a finished day being shown
-       again, which marks nothing. Right or wrong, every room is marked,
-       because the next room's time is measured from it. */
-    function markRound(i) {
-        if (!state || !dayStillOpen(state.day)) return;
-        if (window.Daily && Daily.mark) Daily.mark("guess", state.day, i, BOARDS_URL);
-    }
+    /* The end of a room is no longer marked separately: the guess that
+       ends it IS the mark, recorded by the server with the guess (see
+       submitGuess and netlify/functions/_speed.js). */
 
     function submitIfOwed() {
-        if (!state || !state.done || postedDay === state.day) return;
+        if (!state || !state.done || state.posted || postedDay === state.day) return;
         if (!window.Account || !Account.current) return;
         if (!dayStillOpen(state.day)) return;
         submitDay();
@@ -1328,50 +1315,48 @@
     /* Posts the finished day. Silent by design: whether a score reached the
        board is not something to interrupt someone's result with, and the
        board itself is the confirmation. Signed out, this does nothing at
-       all — there is no name to put on a row. */
+       all — there is no name to put on a row.
+
+       For a day played signed in the server scores it from the guesses it
+       recorded, and the rounds sent here are ignored. For a day played
+       signed out they are all it has — each round's guesses in order, which
+       it judges against the day it dealt (scoreClaim in
+       netlify/functions/guess-scores.js). Never a count of tries or a
+       claimed answer: the server works both out. */
     async function submitDay() {
-        if (!window.Account || !Account.current) return;
+        if (!window.Account || !Account.current || !state) return;
         const forDay = state.day;
+        if (postedDay === forDay) return;
         postedDay = forDay;
-        const rounds = state.results.map((r, i) => {
-            const winning = r.won ? r.guesses[r.guesses.length - 1] : null;
-            return {
-                tries: r.guesses.length,
-                won: Boolean(r.won),
-                // Sent so the server can check the answer against the day's
-                // real one and score the round itself, rather than taking a
-                // number from the page on trust.
-                answer: winning ? winning.name : null
-            };
+        const rounds = state.results.map(r => ({ guesses: r.guesses.map(g => g.name) }));
+        const { status, body } = await Daily.request(BOARDS_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ day: forDay, rounds })
         });
-        // The last room's mark has to land first, or it earns no bonus.
-        if (window.Daily && Daily.settled) await Daily.settled("guess", forDay);
-        let sent = false;
-        try {
-            const res = await fetch(BOARDS_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "same-origin",
-                body: JSON.stringify({ day: forDay, rounds })
-            });
-            sent = res.ok;
-        } catch (e) { /* the local record is already kept; nothing to say */ }
-        /* A failed POST used to be the end of it. Now the day is marked as
-           still owed, so the next time the results are reached this visit
-           (submitIfOwed) it is sent again. Nothing below is worth doing
-           for a day the server has not got. */
-        if (!sent) {
-            if (postedDay === forDay) postedDay = "";
-            return;
+        if (postedDay === forDay) postedDay = "";
+        const sent = status === 200 && body && (body.recorded || body.reason === "already");
+        /* A failed POST used to be the end of it. Now the day stays owed —
+           `posted` unset, and saved that way — so it is sent again when the
+           results are next reached or the window next opened, on this visit
+           or a later one. Only a refusal that would be refused again (a
+           closed day, say) is given up on. Nothing below is worth doing for
+           a day the server has not got. */
+        const retry = status === 0 || status >= 500 || status === 429;
+        if (state && state.day === forDay && (sent || !retry)) {
+            state.posted = true;
+            saveState();
         }
+        if (!sent) return;
 
         /* Re-read the account's totals now the day has been recorded, so
            the results panel shows the counted truth rather than this
            device's guess at it — they differ for anyone who has played
-           elsewhere today, or signed in part-way through. */
+           elsewhere today, or signed in part-way through. Kept in memory
+           only (accountStats), never saved over this device's own record. */
         const remote = await Account.fetchState();
         if (remote && remote.stats) {
-            stats = { ...stats, ...remote.stats };
+            accountStats = { ...localStats, ...remote.stats };
             renderSummary();
         }
         loadBoards(true);
@@ -1565,7 +1550,9 @@
         const next = new Date(state.day + "T00:00:00Z");
         next.setUTCDate(next.getUTCDate() + 1);
         const update = () => {
-            const ms = next - new Date();
+            // The server's now, not the device's: a wrong clock counted down
+            // to a midnight that was not the day's.
+            const ms = next - (window.Daily && Daily.now ? Daily.now() : Date.now());
             if (ms <= 0) {
                 target.textContent = "Five new rooms are ready — close this and reopen it to play.";
                 clearInterval(countdownTimer);
@@ -1618,52 +1605,98 @@
        means "try again" rather than "start". */
     let unavailable = false;
 
-    async function start(retrying) {
+    /* The day to play, from the server, and the state of play to go with it.
+
+       WHICH DAY is the server's to say: an earlier day part-way through (in
+       memory or in storage) is asked for by name so it can be finished,
+       which the server allows only inside the midnight grace; otherwise the
+       server's today, whatever this device's clock says.
+
+       THE STATE is this device's copy of that day if it has one, else a
+       blank one, with the server's record of a signed-in player's guesses
+       laid over it wherever that is further on (applyRecorded) — so a
+       reload neither loses a guess nor offers a round already played. A day
+       the server already has on file is marked posted.
+
+       A new deal throws away the pictures prepared for the old one (dealGen,
+       as in forgetDeal). Answers whether a deal was had. */
+    let recorded = null;   // the server's record of this player's guesses, from the last deal
+    async function refreshDay() {
+        const saved = readSaved();
+        const carry = [state, saved].find(s => s && s.v === STATE_VERSION && s.day !== today() &&
+            !s.done && s.results.some(r => r.guesses.length)) || null;
+        let reply = carry ? await Daily.deal("guess", carry.day, BOARDS_URL) : null;
+        if (!reply) reply = await Daily.deal("guess", null, BOARDS_URL);
+        if (!reply) return false;
+
+        if (!deal || deal.day !== reply.day) {
+            dealGen += 1;
+            rounds = [];
+            preparing = {};
+        }
+        deal = { day: reply.day, rounds: reply.rounds };
+        const mine = [state, saved].filter(s => s && s.v === STATE_VERSION && s.day === reply.day)
+            .sort((a, b) => progressOf(b) - progressOf(a))[0];
+        state = mine || blankDay(reply.day);
+        recorded = Array.isArray(reply.progress) ? reply.progress : null;
+        applyRecorded();
+        if (reply.filed) state.posted = true;
+        saveState();
+        return true;
+    }
+
+    /* The server's record of the day, laid over this page's copy when it is
+       at least as far on. It is what the day will be scored from, so where
+       the two differ it is the one to show. */
+    function applyRecorded() {
+        const rec = recorded || [];
+        if (!rec.length || !state) return;
+        const total = rec.reduce((n, r) => n + r.guesses.length, 0) +
+            (rec.length === ROUNDS && rec[ROUNDS - 1].done ? 1 : 0);
+        if (total < progressOf(state)) return;
+        state.results = Array.from({ length: ROUNDS }, (_, i) => (rec[i]
+            ? {
+                guesses: rec[i].guesses.map(g => ({ name: g.name, correct: Boolean(g.correct) })),
+                done: Boolean(rec[i].done), won: Boolean(rec[i].won), answer: rec[i].answer || null
+            }
+            : { guesses: [], done: false, won: false, answer: null }));
+        state.mode = "account";
+        const next = state.results.findIndex(r => !r.done);
+        state.done = next === -1;
+        /* The room in hand: the first one not over, or the last — except
+           that a room just finished, whose reveal is still showing, stays
+           in hand until its "Room N ›" is pressed, as it would have. */
+        const kept = state.round === next - 1 && state.results[state.round] && state.results[state.round].done;
+        state.round = next === -1 ? ROUNDS - 1 : kept ? state.round : next;
+    }
+
+    async function start() {
         if (started) return;
         started = true;
         unavailable = false;
 
-        /* Rooms read on an earlier UTC day are not the archive today is
-           dealt from: a maze added yesterday joins today's rotation (see
-           existedBefore in js/daily.js), and the server reads the archive
-           as it is now. A tab left open overnight used to deal today from
-           yesterday's copy, a different five from the server's. start()
-           always deals today, so a stale copy is dropped here. */
-        if (ROOMS.length && roomsDay !== today()) ROOMS = [];
+        localStats = loadStats();
+        accountStats = null;
+        // Whether somebody is signed in decides what a guess does, so it
+        // is known before anything is dealt. A failure reads as signed out.
+        if (window.Account) { try { await Account.ready(); } catch (e) { /* signed out */ } }
 
-        if (!ROOMS.length) {
-            /* A retry has to get past Api's own memo first: getRooms keeps
-               its promise for the life of the page, fallback included, so
-               asking again would hand back the same answer that failed. */
-            if (retrying && typeof Api !== "undefined" && Api._inflight) delete Api._inflight.rooms;
-            try {
-                ROOMS = await (Api.roomsForToday ? Api.roomsForToday() : Api.getRooms());
-                roomsDay = Api.roomsDay || today();
-            } catch (e) { ROOMS = []; }
-
-            /* THE BUNDLED FALLBACK IS NOT AN ARCHIVE TO DEAL FROM. When the
-               live rooms cannot be reached, js/api.js hands back the one
-               maze in js/rooms-data.js and marks "room data" degraded. The
-               game used to deal from it regardless: five rounds of that one
-               maze's pictures, every answer the same name — a day nobody
-               else was playing, which the server (reading the real archive)
-               would then score against a different five and find all wrong.
-               Odd One Out has always ended up at "nothing to deal" here,
-               because one maze cannot fill its rounds; this says the same,
-               and offers the retry. */
-            if (typeof Api !== "undefined" && Api._degraded && Api._degraded.has("room data")) {
-                ROOMS = [];
-                unavailable = true;
-                started = false;
-                el.play.disabled = false;
-                el.play.textContent = "Try again";
-                el.splashFoot.textContent = "The archive is not answering just now, so there is nothing to deal.";
-                el.splashFoot.hidden = false;
-                return;
-            }
+        /* THE DAY IS THE SERVER'S. It used to be dealt here from the
+           archive — and when the archive could not be reached, from the
+           one-maze fallback in js/rooms-data.js, which dealt a day nobody
+           else was playing. Now a deal that cannot be had is simply no
+           game yet, and the splash's button becomes the retry. */
+        if (!(await refreshDay())) {
+            unavailable = true;
+            started = false;
+            el.play.disabled = false;
+            el.play.textContent = "Try again";
+            el.splashFoot.textContent = "The archive is not answering just now, so there is nothing to deal.";
+            el.splashFoot.hidden = false;
+            return;
         }
-        pool = buildPool(today());
-        if (!pool.length) {
+        if (!deal.rounds.length) {
+            started = false;
             el.play.disabled = true;
             el.play.textContent = "Nothing to play yet";
             el.splashFoot.textContent = "There are no room pictures in the archive to make a puzzle from yet.";
@@ -1671,24 +1704,24 @@
             return;
         }
         el.play.disabled = false;
-        stats = loadStats();
-        state = loadState();
 
-        /* Signed in, the account is the better record of both: the day in
+        /* Signed in, the account knows better than this browser: the day in
            progress may have been played further on another device, and the
-           running totals are counted from the scores actually recorded
-           rather than from whatever this browser happens to remember.
+           running totals are counted from the scores actually recorded. The
+           account's mirror of the day is adopted if it is further on, and
+           then the server's own record of the guesses (applyRecorded) is
+           laid over both, because it is the one the day is scored from. The
+           totals are kept in memory only — see localStats.
 
            Awaited, because both change what the deck is about to show. It
            is one request, and only for someone who is signed in. */
-        if (window.Account) {
-            await Account.ready();
-            if (Account.current) {
-                const remote = await Account.fetchState();
-                if (remote) {
-                    adoptAccountDay(remote.guess);
-                    if (remote.stats) stats = { ...stats, ...remote.stats };
-                }
+        if (window.Account && Account.current) {
+            const remote = await Account.fetchState();
+            if (remote) {
+                adoptAccountDay(remote.guess);
+                if (remote.stats) accountStats = { ...localStats, ...remote.stats };
+                applyRecorded();
+                saveState();
             }
         }
 
@@ -1703,7 +1736,15 @@
         prepareRound(state.round);
     }
 
+    // Whatever had focus when the window opened, for close() to hand back
+    // to — as js/oddoneout.js does. Only recorded on a real open.
+    let opener = null;
+
     function open() {
+        if (!el.overlay.classList.contains("open")) {
+            const active = document.activeElement;
+            opener = active && active !== document.body && !el.overlay.contains(active) ? active : null;
+        }
         el.overlay.classList.add("open");
         document.body.classList.add("modal-open");
         view = "intro";
@@ -1752,8 +1793,8 @@
         state = null;
         rounds = [];
         preparing = {};
-        picksCache = { day: "", picks: [] };
-        optionsCache = { day: "", rounds: [] };
+        deal = null;
+        recorded = null;
         boards = null;
         boardsState = "idle";
         boardsQueued = false;
@@ -1800,7 +1841,10 @@
             forgetDeal();
             return;
         }
-        state = blankDay();
+        // The server's record went with the reset (daily-games.js clears
+        // daily_starts), so the copy of it held here goes too.
+        recorded = null;
+        state = blankDay(deal ? deal.day : today());
         saveState();
         // The board in hand was read before the day was given back, with the
         // player's old row on it; the replay should fetch its own.
@@ -1816,12 +1860,20 @@
         el.overlay.classList.remove("open");
         document.body.classList.remove("modal-open");
         clearInterval(countdownTimer);
-        // Back to whatever opened the window, when there is something to
-        // go back to. The side menu closes itself before opening this, so
-        // the spine is the sensible landing place — but a pasted /guess
-        // link has no opener at all, hence the guard.
-        const opener = document.getElementById("side-spine");
-        if (opener) opener.focus({ preventScroll: true });
+        /* Back to whatever opened the window, as js/oddoneout.js does. This
+           always went to the side menu's spine, which was right only when
+           the side menu was the opener: from the Leaderboards window's
+           "Play" or the console's Profile it dropped the keyboard somewhere
+           the player had never been. The opener may be gone or hidden by now
+           (the side menu closes itself before opening this, and a pasted
+           /guess link has no opener at all), so the spine is still the
+           fallback. */
+        const back = opener;
+        opener = null;
+        const usable = node => !!(node && document.body.contains(node) && node.getClientRects().length
+            && !(node.closest && node.closest("[inert]")));
+        const landing = usable(back) ? back : document.getElementById("side-spine");
+        if (landing) landing.focus({ preventScroll: true });
         // A pasted /guess link should not leave the address bar claiming the
         // game is open once it has been closed.
         if (location.pathname === "/guess") history.replaceState({}, "", "/home");
@@ -1923,18 +1975,50 @@
         el.close.addEventListener("click", close);
         el.overlay.addEventListener("click", e => { if (e.target === el.overlay) close(); });
 
-        el.play.addEventListener("click", () => {
+        el.play.addEventListener("click", async () => {
             // The archive was unreachable last time; this press is the retry.
             if (unavailable) {
                 el.play.disabled = true;
                 el.play.textContent = "Dealing…";
-                start(true).then(() => { if (state) goTo("intro"); });
+                start().then(() => { if (state) goTo("intro"); });
                 return;
             }
             if (!state) return;
             if (state.done) return goTo("results");
+            /* The day turned while the splash was up and nothing has been
+               played: today's deal first. A window opened at 23:55 and
+               started at 00:10 used to play yesterday's five, whose guesses
+               were then refused (after the grace) or never recorded — a
+               sitting that silently did not count. A day already under way
+               is left to finish, as dayHasTurned says. */
+            if (state.day !== today() && !anyGuesses()) {
+                el.play.disabled = true;
+                forgetDeal();
+                await start();
+                el.play.disabled = false;
+                if (!state || unavailable) return;
+            }
             prepareRound(state.round);
             goTo("round");
+        });
+
+        /* Another tab playing the same day. `storage` fires in every OTHER
+           tab when one saves, so a tab left open on room 2 hears that the
+           other has reached room 4 and moves with it, instead of offering
+           rooms already played and later saving its older copy over the
+           newer one (see saveState). Only the same day, and only forwards;
+           never while this tab's own guess is out. */
+        window.addEventListener("storage", e => {
+            if (e.key !== STATE_KEY || !state || guessing) return;
+            const other = readSaved();
+            if (!other || other.day !== state.day || progressOf(other) <= progressOf(state)) return;
+            const wasDone = state.done;
+            state = other;
+            if (state.done && !wasDone) bankDay();
+            if (started) {
+                renderAll();
+                if (!state.done) prepareRound(state.round);
+            }
         });
 
         /* Escape closes the window outright. It used to have to close the

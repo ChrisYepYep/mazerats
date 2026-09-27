@@ -28,7 +28,7 @@
                         canWrite. Creates or replaces that week's pick.
      DELETE ?weekOf=    canWrite. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson } = require("./_cache");
 
@@ -141,6 +141,10 @@ exports.handler = async (event) => {
         return json(405, { error: "Method not allowed" });
     } catch (e) {
         console.error("picks: request failed", e);
+        /* The guards throw when the account lookup cannot be made (see
+           lookUpRole in _auth.js). That is a 503 — try again — and must
+           not be a 401 or 403, which the admin page acts on. */
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
         return json(500, { error: "Something went wrong with the picks." });
     }
 };

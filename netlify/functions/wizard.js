@@ -32,8 +32,9 @@
    Writes need the "wizard" scope rather than the "site" one every other
    endpoint here asks for, which is what lets an atlas-only account exist
    at all. See WRITE_SCOPES in _auth.js. */
+const crypto = require("crypto");
 const { getDb } = require("./_db");
-const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED } = require("./_auth");
+const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED, isAuthUnavailable, AUTH_UNAVAILABLE } = require("./_auth");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
 
@@ -107,6 +108,46 @@ function heldBack(reveals) {
         for (const id of reveal.paths || []) paths.add(id);
     }
     return { rooms, paths };
+}
+
+/* Whether a typed buffer opens a code: it does when it ENDS WITH one.
+
+   The page collects letters typed at the map and sends the lot after a
+   pause (see the keydown handler in js/wizard.js), and its comment has
+   always promised that a passage opens "every time the buffer ends with
+   something that is a code". The query here was an exact $in, so one stray
+   key before the word — an arrow-key miss, a "w" from somebody who thought
+   the map scrolled with WASD — made the buffer "wdissendium" and the right
+   answer never matched again for as long as the page was open.
+
+   Not a weakening of the limiter worth worrying about: a buffer tests one
+   candidate per LENGTH (its own last n letters), so somebody walking a word
+   list still gets one word per request, and somebody enumerating every
+   three-letter code still needs every three-letter request. */
+function opens(buffer, code) {
+    return !!code && (buffer === code || buffer.endsWith(code));
+}
+
+/* What a visitor may call a secret by.
+
+   The public payload has to give each secret SOME id, so the page can tick
+   off the one just found against the hints it was given. It used to be the
+   record's own id — and that is slugify(name), so the list of secrets said
+   "one-eyed-witch" in plain text, right beside the comment below promising
+   never to send the name because it answers most of the riddle.
+
+   A secret made from now on carries a random `publicId` (see the POST). One
+   made before that has none, and gets a keyed hash of its stored id instead:
+   stable across instances and cold starts, so the GET the edge cached and
+   the unlock answered live agree on it, and not reversible into the name
+   without the key. No migration, and nothing an admin has to re-save. The
+   key is the session secret the tokens are already signed with; the prefix
+   keeps these hashes from being useful as anything else signed with it. */
+function publicSecretId(reveal) {
+    if (typeof reveal.publicId === "string" && reveal.publicId) return reveal.publicId;
+    return "s" + crypto.createHmac("sha256", process.env.SESSION_SECRET || "mazerats-wizard")
+        .update("wizard-reveal:" + String(reveal.id))
+        .digest("hex").slice(0, 16);
 }
 
 function slugify(text) {
@@ -397,22 +438,50 @@ async function route(event, wizard) {
            footprints walking into blank parchment, which is a fairly loud
            advertisement that there is something there — and the shape of it
            would give away where. */
+        /* HIDDEN IS SUBTRACTED TOO, not just flagged. Only rooms a secret
+           held were ever dropped here; a room an admin had simply marked
+           `hidden` went out with its name, its position and every trail to
+           it, and the page was trusted not to draw it. The live map had
+           "Restricted Library (Maze) (Secret)", "Hidden Passage (Secret)"
+           and the Privet Drive rooms sitting in the JSON that way. A hidden
+           thing is one the public should not have, and the page never draws
+           one anyway (drawRooms, trailHidden and the layer loop in
+           js/wizard-map.js all skip it), so leaving it out costs the public
+           map nothing. The one road back is the unlock below, which already
+           hands a revealed room over with `hidden` cleared.
+           The editor's ?fresh=1 copy above is untouched and still has all of
+           it. */
         const held = heldBack(reveals);
-        const paths = of("path").filter(p =>
-            !held.paths.has(p.id) && !held.rooms.has(p.from) && !held.rooms.has(p.to));
+        const publicRooms = of("room").filter(r => !held.rooms.has(r.id) && !r.hidden);
+        const onMap = new Set(publicRooms.map(r => r.id));
+        /* A trail goes when either named end is not on the public map, for
+           the reason given above: footprints walking into blank parchment
+           point at what is missing. A trail with a null end is a real
+           unfinished trail and stays. */
+        const paths = of("path").filter(p => !held.paths.has(p.id) && !p.hidden &&
+            (!p.from || onMap.has(p.from)) && (!p.to || onMap.has(p.to)));
+        /* A room's hand-written exits can name a room too, and the id of a
+           room is the slug of its name — "hidden-passage-secret" is as much a
+           spoiler as the name. Exits to anything not on the map come off;
+           the page skipped them anyway (see openRoom's exits in
+           js/wizard.js). */
+        const rooms = publicRooms.map(r => Array.isArray(r.exits)
+            ? { ...r, exits: r.exits.filter(e => onMap.has(e && typeof e === "object" ? e.to : e)) }
+            : r);
         const payload = {
             map: { ...MAP_DEFAULTS, ...(all.find(d => d.kind === "map") || {}) },
-            layers: of("layer").sort((a, b) => (a.z || 0) - (b.z || 0)),
-            rooms: of("room").filter(r => !held.rooms.has(r.id)),
+            layers: of("layer").filter(l => !l.hidden).sort((a, b) => (a.z || 0) - (b.z || 0)),
+            rooms,
             paths,
             /* What a visitor is told about the secrets they have not found:
                that they exist, how many, and whatever hint each carries. Not
                the name — "The One-Eyed Witch Passage" answers most of the
-               riddle on its own — and obviously not the code. */
+               riddle on its own — and obviously not the code. Nor the stored
+               id, which is the name slugified; see publicSecretId. */
             secrets: reveals
                 .filter(r => r.enabled !== false)
                 .sort((a, b) => (a.order || 0) - (b.order || 0))
-                .map(r => ({ id: r.id, hint: r.hint || "" }))
+                .map(r => ({ id: publicSecretId(r), hint: r.hint || "" }))
         };
         return cachedJson(event, payload);
     }
@@ -464,10 +533,14 @@ async function route(event, wizard) {
         }
         if (!codes.length) return json(200, { ok: false, found: [] });
 
-        const reveals = await wizard.find(
-            { kind: "reveal", code: { $in: codes }, enabled: { $ne: false } },
+        /* Every enabled secret, then matched here by opens() rather than by an
+           exact $in in the query: "ends with" is not something an index can
+           answer, and there are a handful of secrets, not thousands. */
+        const reveals = (await wizard.find(
+            { kind: "reveal", enabled: { $ne: false } },
             { projection: { _id: 0 } }
-        ).toArray();
+        ).toArray()).filter(r => typeof r.code === "string" &&
+            codes.some(buffer => opens(buffer, r.code)));
 
         /* What was behind them. Fetched by id rather than trusted from the
            reveal records, so a room that has since been deleted simply is not
@@ -517,12 +590,26 @@ async function route(event, wizard) {
         ).toArray();
         const stillHeld = heldBack(others);
 
+        /* And every room merely marked hidden that this answer does not
+           reveal. The public GET subtracts those now too, so a linking trail
+           to one would be footprints to a room the page does not have — and
+           the page cannot catch it, because trailHidden in js/wizard-map.js
+           only drops a trail whose room it can find and see is hidden. */
+        const revealedSet = new Set(revealedRoomIds);
+        const hiddenRooms = revealedRoomIds.length
+            ? new Set((await wizard.find(
+                { kind: "room", hidden: true },
+                { projection: { _id: 0, id: 1 } }
+            ).toArray()).map(r => r.id).filter(id => !revealedSet.has(id)))
+            : new Set();
+        const offMap = id => !!id && (stillHeld.rooms.has(id) || hiddenRooms.has(id));
+
         const linking = revealedRoomIds.length
             ? (await wizard.find({
                 kind: "path",
                 $or: [{ from: { $in: revealedRoomIds } }, { to: { $in: revealedRoomIds } }]
             }, { projection: { _id: 0 } }).toArray()).filter(p =>
-                !stillHeld.paths.has(p.id) && !stillHeld.rooms.has(p.from) && !stillHeld.rooms.has(p.to))
+                !stillHeld.paths.has(p.id) && !offMap(p.from) && !offMap(p.to))
             : [];
 
         // Which reveal each linking trail belongs to — the one that owns a
@@ -554,7 +641,9 @@ async function route(event, wizard) {
 
         const found = reveals.map(reveal => ({
             secret: {
-                id: reveal.id,
+                // The same opaque id the public list carries, so the page can
+                // tick this one off against its hint.
+                id: publicSecretId(reveal),
                 code: reveal.code,
                 name: reveal.name || "",
                 message: reveal.message || "",
@@ -623,7 +712,11 @@ async function route(event, wizard) {
             "fromZoom", "toZoom"];
         const writes = [];
         for (const item of items) {
-            if (!item || !item.id || !KINDS.includes(item.kind)) {
+            /* A STRING, checked per item. `{"id":{"$ne":""}}` is truthy, and
+               as a filter it is a Mongo operator — "any id but the empty
+               one" — so it moved whichever record the database found first.
+               Same check as the single PUT below. */
+            if (!item || typeof item.id !== "string" || !item.id || !KINDS.includes(item.kind)) {
                 return json(400, { error: "Every record in a bulk save needs an id and a kind" });
             }
             const $set = { updatedAt: new Date().toISOString() };
@@ -668,8 +761,12 @@ async function route(event, wizard) {
                     : `trail-${Date.now().toString(36)}`;
         let id = base;
         let suffix = 2;
+        /* A new secret's public name for itself: random, and nothing to do
+           with what it is called. Not in FIELDS, so no save can overwrite
+           it. See publicSecretId. */
+        const extra = kind === "reveal" ? { publicId: "s" + crypto.randomBytes(8).toString("hex") } : {};
         for (let attempt = 0; ; attempt++) {
-            const doc = { createdAt, ...pick(kind, body), kind, id };
+            const doc = { createdAt, ...pick(kind, body), ...extra, kind, id };
             try {
                 await wizard.insertOne(doc);
                 const { _id, ...clean } = doc;
@@ -691,7 +788,10 @@ async function route(event, wizard) {
             const doc = await wizard.findOne({ kind: "map" }, { projection: { _id: 0 } });
             return json(200, { ...MAP_DEFAULTS, ...doc });
         }
-        if (!body.id) return json(400, { error: "Missing id" });
+        /* typeof, not truthiness: an object here is a query operator once it
+           lands in the filter below, and {"$ne": ""} would update whatever
+           record of this kind Mongo happened to find first. */
+        if (typeof body.id !== "string" || !body.id) return json(400, { error: "Missing id" });
         // After the spread, so a form that sat open and saved late cannot
         // write the clock backwards. Same as rooms.js.
         const update = { ...pick(kind, body), updatedAt: new Date().toISOString() };
@@ -748,3 +848,18 @@ async function route(event, wizard) {
 
     return json(405, { error: "Method not allowed" });
 }
+
+/* The account checks above (hasAccount, canWrite and the rest) throw when
+   the database cannot say who is asking, rather than answering "nobody" —
+   answering nobody signed admins out over a blip (see _auth.js). Caught
+   here, so that moment is a readable "try again" instead of the platform's
+   own error page and stack trace. Anything else still fails as it did. */
+const handleRequest = exports.handler;
+exports.handler = async (event) => {
+    try {
+        return await handleRequest(event);
+    } catch (e) {
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        throw e;
+    }
+};

@@ -10,7 +10,7 @@
 */
 
 const { getDb } = require("./_db.js");
-const { hasAccount, UNAUTHORIZED } = require("./_auth.js");
+const { hasAccount, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth.js");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -23,7 +23,17 @@ exports.handler = async (event) => {
     /* A live account, not just a signed token (see hasAccount in _auth.js).
        One more indexed findOne beside the one this already makes, on a poll
        that only runs while a scan does. */
-    if (!(await hasAccount(event))) return UNAUTHORIZED;
+    /* The guard THROWS when it cannot reach the database to ask, rather
+       than answering "no account" — see isAuthUnavailable in _auth.js. That
+       is a 503 here, never a 401: the admin page reads a 401 from this poll
+       as the session having ended, and would sign the owner out over a
+       database blip in the middle of a scan. */
+    try {
+        if (!(await hasAccount(event))) return UNAUTHORIZED;
+    } catch (e) {
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        throw e;
+    }
     try {
         const db = await getDb();
         const doc = await db.collection("furni_scans").findOne({ _id: "current" });

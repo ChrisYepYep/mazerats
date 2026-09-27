@@ -155,15 +155,56 @@ const Api = {
     getRoomsFull(token) { return this._write("/.netlify/functions/rooms?full=1", "GET", token); },
     getEventsFull(token) { return this._write("/.netlify/functions/events?full=1", "GET", token); },
 
-    async _write(url, method, token, body) {
-        const res = await fetch(url, {
+    /* A fetch on a leash, for everything below that is not a public read.
+
+       The public GETs have had one since _getWithFallback; the admin reads
+       and writes, the login and the contact form never did, so a request
+       that merely HUNG — not failed — left its button saying "Saving…" or
+       its panel saying "Loading…" for as long as the tab stayed open, with
+       no error to show and nothing to retry.
+
+       HOW LONG, per kind of call rather than one number:
+       - reads and the login: 15s, a little longer than the public reads'
+         first attempt, since there is no second attempt here;
+       - writes: 30s. Deliberately PAST Netlify's own ceiling on a function
+         (26s at most), so by the time this gives up the server has
+         certainly answered or died. A shorter leash on a write can report
+         failure for a save that went on to succeed, and the retry that
+         follows is a duplicate;
+       - image uploads: 90s, because the time is the visitor's upload
+         bandwidth, not the function.
+
+       The timer is not cleared on the headers, so a body that stalls is
+       covered too; an abort after the body has been read does nothing. A
+       timeout comes back as an ordinary Error with a sentence a person can
+       read (and err.timedOut), which every caller already shows. */
+    _TIMEOUT_READ: 15000,
+    _TIMEOUT_WRITE: 30000,
+    _TIMEOUT_UPLOAD: 90000,
+
+    _timedFetch(url, opts, ms) {
+        if (typeof AbortController === "undefined") return fetch(url, opts);
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), ms || this._TIMEOUT_READ);
+        return fetch(url, { ...(opts || {}), signal: controller.signal }).catch(e => {
+            if (e && e.name === "AbortError") {
+                const err = new Error("That took too long to answer. Check your connection and try again.");
+                err.timedOut = true;
+                throw err;
+            }
+            throw e;
+        });
+    },
+
+    async _write(url, method, token, body, ms) {
+        const res = await this._timedFetch(url, {
             method,
             headers: {
                 "Content-Type": "application/json",
                 "x-admin-token": token
             },
             body: body !== undefined ? JSON.stringify(body) : undefined
-        });
+        }, ms || (method === "GET" ? this._TIMEOUT_READ : this._TIMEOUT_WRITE));
         if (!res.ok) {
             const detail = await res.json().catch(() => ({}));
             const err = new Error(detail.error || `Request failed: ${res.status}`);
@@ -191,14 +232,14 @@ const Api = {
        a full admin, "wizard" needs only the atlas scope. See
        FOLDER_SCOPES in netlify/functions/upload.js. */
     uploadImage(token, prefix, filename, dataUrl, folder) {
-        return this._write("/.netlify/functions/upload", "POST", token, { prefix, filename, dataUrl, folder });
+        return this._write("/.netlify/functions/upload", "POST", token, { prefix, filename, dataUrl, folder }, this._TIMEOUT_UPLOAD);
     },
     // Starts the furni scan. A background function, so this returns as soon
     // as Netlify has accepted the job (202) rather than when scanning ends —
     // results land on the records themselves as it works through them.
     // Progress of the running scan, polled while one is going.
     furniScanStatus(token) {
-        return fetch("/.netlify/functions/furni-scan-status", { headers: { "x-admin-token": token } })
+        return this._timedFetch("/.netlify/functions/furni-scan-status", { headers: { "x-admin-token": token } })
             .then(async res => {
                 if (!res.ok) {
                     const err = new Error("Couldn't read scan progress");
@@ -251,7 +292,7 @@ const Api = {
         const params = new URLSearchParams({ q: q || "" });
         if (limit > 0) params.set("limit", String(limit));
         if (q) params.set("sprites", "1");
-        const res = await fetch("/.netlify/functions/furni-catalogue?" + params);
+        const res = await this._timedFetch("/.netlify/functions/furni-catalogue?" + params);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `Furni catalogue unavailable (${res.status})`);
         return data;
@@ -262,7 +303,7 @@ const Api = {
     },
 
     async login(username, password) {
-        const res = await fetch("/.netlify/functions/auth", {
+        const res = await this._timedFetch("/.netlify/functions/auth", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "login", username, password })
@@ -277,7 +318,7 @@ const Api = {
     },
 
     async verifySession(token) {
-        const res = await fetch("/.netlify/functions/auth", {
+        const res = await this._timedFetch("/.netlify/functions/auth", {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-admin-token": token },
             body: JSON.stringify({ action: "verify" })
@@ -302,8 +343,17 @@ const Api = {
     createAdmin(token, username, password, role) {
         return this._write("/.netlify/functions/auth", "POST", token, { action: "create", username, password, role });
     },
-    resetAdminPassword(token, username, password) {
-        return this._write("/.netlify/functions/auth", "PUT", token, { username, password });
+    /* currentPassword is required by the server when the account being
+       changed is the caller's own (see netlify/functions/auth.js): a session
+       token left on a shared machine must not be enough to take the account
+       over. Sent only when given, so an owner resetting somebody else's
+       password carries nothing it does not need. */
+    resetAdminPassword(token, username, password, currentPassword) {
+        const body = { username, password };
+        if (currentPassword !== undefined && currentPassword !== null && currentPassword !== "") {
+            body.currentPassword = currentPassword;
+        }
+        return this._write("/.netlify/functions/auth", "PUT", token, body);
     },
     deleteAdmin(token, username) {
         return this._write(`/.netlify/functions/auth?username=${encodeURIComponent(username)}`, "DELETE", token);
@@ -497,7 +547,7 @@ const Api = {
     // Public — no admin token, since real visitors submit this straight
     // from the console modal's Contact Us page.
     async submitContactMessage(message, username, discord, website) {
-        const res = await fetch("/.netlify/functions/contact", {
+        const res = await this._timedFetch("/.netlify/functions/contact", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             // Stated rather than left to the default, because it matters
@@ -505,7 +555,7 @@ const Api = {
             // signed-in sender as verified rather than as a typed claim.
             credentials: "same-origin",
             body: JSON.stringify({ message, username, discord, website })
-        });
+        }, this._TIMEOUT_WRITE);
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
             const err = new Error(data.error || `Request failed: ${res.status}`);
@@ -546,7 +596,7 @@ const Api = {
        blank sheet, and js/wizard.js says so on the page rather than
        pretending it drew something. */
     async getWizardMap() {
-        const res = await fetch("/.netlify/functions/wizard");
+        const res = await this._timedFetch("/.netlify/functions/wizard");
         if (!res.ok) throw new Error(`Map unavailable (${res.status})`);
         return res.json();
     },
@@ -560,7 +610,7 @@ const Api = {
        genuine failure to reach the endpoint does. */
     async unlockWizardSecret(codes) {
         const many = Array.isArray(codes);
-        const res = await fetch("/.netlify/functions/wizard", {
+        const res = await this._timedFetch("/.netlify/functions/wizard", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(many

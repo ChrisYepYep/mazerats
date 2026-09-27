@@ -1563,9 +1563,26 @@ document.addEventListener("DOMContentLoaded", () => {
        The buffer is only tried when it has stopped growing for a moment,
        rather than on every letter: a seven-letter code typed at speed would
        otherwise be seven requests, six of them certain to fail, and the
-       rate limiter would stop the seventh. */
+       rate limiter would stop the seventh.
+
+       "ENDS WITH" IS THE SERVER'S JOB, and for a long while it was not done
+       anywhere: the whole buffer went up and was compared for equality, so
+       one stray key before the word — "wdissendium" — and the passage never
+       opened however many times the code was typed after it. The unlock
+       route now matches when the buffer ends with a code (see opens() in
+       netlify/functions/wizard.js), so a wrong letter or a false start costs
+       nothing.
+
+       And the buffer is forgotten after a real pause (BUFFER_FORGET_MS), not
+       after a miss. Clearing on a miss would break the slow typist: "dis",
+       a moment's thought, a miss, cleared, and "sendium" on its own never
+       opens anything. A few seconds of silence is the reader having stopped,
+       and what they type next is a fresh attempt — which also keeps the
+       whisper from dragging last minute's letters along in front of it. */
+    const BUFFER_FORGET_MS = 4000;
     let buffer = "";
     let bufferTimer = 0;
+    let forgetTimer = 0;
     let whisperTimer = 0;
 
     function whisper(text) {
@@ -1595,6 +1612,8 @@ document.addEventListener("DOMContentLoaded", () => {
         buffer = (buffer + e.key).slice(-60);
         whisper(buffer);
 
+        clearTimeout(forgetTimer);
+        forgetTimer = setTimeout(() => { buffer = ""; }, BUFFER_FORGET_MS);
         clearTimeout(bufferTimer);
         bufferTimer = setTimeout(async () => {
             const guess = buffer.trim();

@@ -32,7 +32,7 @@
 const path = require("path");
 const { spawn } = require("child_process");
 const { getDb } = require("./_db.js");
-const { isOwnerWrite, isAuthorized, UNAUTHORIZED, forbidden } = require("./_auth.js");
+const { isOwnerWrite, isAuthorized, UNAUTHORIZED, forbidden, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth.js");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -55,7 +55,15 @@ exports.handler = async (event) => {
     // record, so a second scan started by somebody else stamps on the first.
     if (!isAuthorized(event)) return UNAUTHORIZED;
     // isOwnerWrite, so a scan is in the activity log like any other write.
-    if (!(await isOwnerWrite(event))) return forbidden("Only an owner can run a furni scan.");
+    // It throws when the database cannot be asked (see isAuthUnavailable in
+    // _auth.js): that is a 503 "try again", not a 403 saying the owner is
+    // not an owner, and not a scan started on an unchecked caller.
+    try {
+        if (!(await isOwnerWrite(event))) return forbidden("Only an owner can run a furni scan.");
+    } catch (e) {
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        throw e;
+    }
 
     if (process.env.NETLIFY_DEV !== "true") {
         return json(501, {

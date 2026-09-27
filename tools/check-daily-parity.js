@@ -1,45 +1,54 @@
 #!/usr/bin/env node
-/* Checks that the browser and the server agree about how a day is dealt.
+/* Checks that the browser and the server agree about the daily games.
  *
  * ----------------------------------------------------------------------
- * WHAT IT IS GUARDING
+ * WHAT IT USED TO GUARD, AND WHY THAT IS GONE
  *
- * The three daily games choose their day in the browser (js/daily.js) and
- * the two score endpoints re-derive the same day on the server to check
- * what a player claims (netlify/functions/_daily.js, used by
- * guess-scores.js and daily-scores.js). They agree because they run the
- * same arithmetic — nothing coordinates them.
+ * The games used to deal their day in the browser (js/daily.js) while the
+ * score endpoints re-dealt the same day on the server to check what came
+ * back (netlify/functions/_daily.js). They agreed because they ran the same
+ * seed arithmetic, and this file compared the seeds the two produced — the
+ * one check that could catch the silent failure of the two sides dealing
+ * different days, where every correct answer is scored wrong and nothing
+ * errors. It caught a real one: the featured-day salt added to one side
+ * only would have done exactly that on launch day.
  *
- * When they stop agreeing, NOTHING BREAKS LOUDLY. The server derives a
- * different puzzle, decides every correct answer is wrong, and the day's
- * scores silently do not count. No error, no log, no failing page. The
- * first anybody hears about it is a player in Discord saying their score
- * did not save.
- *
- * That is exactly the failure this file exists to make noisy, and it is
- * not hypothetical: FEATURED_DAYS was added to js/daily.js on its own and
- * would have done precisely this on launch day.
+ * The day is now dealt ONCE, on the server, and stored
+ * (netlify/functions/_deal.js); the page is handed it without its answers,
+ * and each move is judged against the stored copy. There is no second
+ * dealer left to drift, so comparing seeds would be comparing a function
+ * with itself.
  *
  * ----------------------------------------------------------------------
- * WHAT IS NO LONGER POSSIBLE, AND WHAT STILL IS
+ * WHAT IT GUARDS NOW
  *
- * The table itself cannot drift any more. It lives in one file,
- * js/featured-days.js, which the browser loads as a script and the server
- * requires — so there is no second copy to edit on its own.
+ * What the two sides still both hold, and what would silently break if
+ * they stopped holding it the same way:
  *
- * Two things still can, and this checks both:
+ *   1. THE NUMBERS. The page shows the points a round was worth and the
+ *      server decides them; Guess the Maze's POINTS (and so its number of
+ *      tries) and Odd One Out's POINTS_EACH are written on both sides, and
+ *      so is the midnight grace. A mismatch is a results card that
+ *      disagrees with the board under it.
  *
- *   THE ARITHMETIC. daySeed is implemented twice, because the two
- *   runtimes cannot share it as easily as they share a table of data. The
- *   parts are joined into a string and hashed, and a different join order
- *   is a different hash and therefore a different puzzle. Comparing the
- *   NUMBERS the two produce is the only check that catches that; comparing
- *   the tables would wave it straight through.
+ *   2. THE DEAL ITSELF. Dealt from a fixture archive: deterministic for a
+ *      seed, one imposter per Odd One Out round, the answer among each
+ *      round's five names, no hallway and no maze catalogued on the day.
+ *      And the copy the page is SENT carries none of the answers — the
+ *      point of dealing on the server is lost the moment one leaks back
+ *      into the page.
  *
- *   THE WIRING. featured-days.js is only loaded by a <script> tag, so a
- *   page that pulls in daily.js without it applies no salt and desyncs
- *   from the server — the original bug wearing a different hat. Every
- *   page is checked for the pairing.
+ *   3. THE SEED IS SECRET. With SESSION_SECRET set, a day is not dealt
+ *      from the public seed anybody could compute, and a featured day's
+ *      salt still rerolls it.
+ *
+ *   4. THE PAGE STILL DOES NOT DEAL. Neither game may reach for seed
+ *      arithmetic or the archive filters again: a page dealing its own day
+ *      is a page playing a day the server never stored.
+ *
+ *   5. THE CALENDAR. js/daily.js is RUN (not parsed — parsing would be a
+ *      third implementation) with a fake clock, to check that today()
+ *      follows the clock, and follows the server's clock once told it.
  *
  *     node tools/check-daily-parity.js
  *
@@ -50,209 +59,163 @@ const path = require("path");
 const vm = require("vm");
 
 const ROOT = path.join(__dirname, "..");
-const BROWSER = path.join(ROOT, "js", "daily.js");
-const FEATURED = path.join(ROOT, "js", "featured-days.js");
-const SERVER = path.join(ROOT, "netlify", "functions", "_daily.js");
+const read = rel => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
+let checked = 0;
 function fail(msg) {
     console.error("MISMATCH: " + msg);
     process.exitCode = 1;
 }
+function check(ok, msg) {
+    checked++;
+    if (!ok) fail(msg);
+}
 
-/* js/daily.js is a browser IIFE assigning window.Daily. It is RUN rather
-   than parsed — parsing it would be a third implementation of the thing
-   being compared, which defeats the point.
+/* A constant as the source writes it: `const NAME = <literal>;`, read as
+   JSON after the arithmetic of a duration is worked out. Deliberately
+   narrow — only numbers, arrays of numbers and `a * b * c` products — so a
+   constant rewritten into something this cannot read fails loudly here
+   rather than being compared wrongly. */
+function constant(rel, name) {
+    const m = read(rel).match(new RegExp(`const ${name}\\s*=\\s*([^;]+);`));
+    if (!m) { fail(`${rel} has no \`const ${name}\` this check can read`); return undefined; }
+    const text = m[1].trim();
+    if (/^[\d\s*]+$/.test(text)) return text.split("*").reduce((n, x) => n * Number(x.trim()), 1);
+    try { return JSON.parse(text); } catch (e) { fail(`${rel}: ${name} is not a literal (${text})`); return undefined; }
+}
 
-   THE CLOCK HAS TO BE FAKED INSIDE THE SANDBOX. A vm context has its own
-   realm and therefore its own Date, so patching Date.prototype out here
-   does nothing to the code in there — the first version of this check did
-   exactly that and reported the same browser seed for every day, which is
-   the giveaway. The context is given a Date subclass instead, whose
-   toISOString answers whatever `pretend` currently holds. */
-const clock = { pretend: null };
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-function loadBrowserDaily() {
+/* ---- 1. the numbers ---- */
+{
+    const pagePoints = constant("js/guess.js", "POINTS");
+    const serverPoints = constant("netlify/functions/guess-scores.js", "POINTS");
+    check(eq(pagePoints, serverPoints), `Guess the Maze POINTS — page ${JSON.stringify(pagePoints)} vs server ${JSON.stringify(serverPoints)}`);
+    const tries = constant("js/guess.js", "TRIES");
+    check(Array.isArray(serverPoints) && tries === serverPoints.length,
+        `Guess the Maze TRIES (${tries}) must be the length of the server's POINTS — the server ends a round on that many guesses`);
+    check(constant("js/guess.js", "ROUNDS") === constant("netlify/functions/guess-scores.js", "ROUNDS"), "Guess the Maze ROUNDS differ");
+
+    const oddPage = constant("js/oddoneout.js", "POINTS_EACH");
+    const oddServer = constant("netlify/functions/daily-scores.js", "POINTS_EACH");
+    check(oddPage === oddServer, `Odd One Out POINTS_EACH — page ${oddPage} vs server ${oddServer}`);
+    check(constant("js/oddoneout.js", "ROUNDS") === constant("netlify/functions/daily-scores.js", "ROUNDS"), "Odd One Out ROUNDS differ");
+
+    const grace = constant("js/guess.js", "DAY_GRACE_MS");
+    const serverGrace = require(path.join(ROOT, "netlify", "functions", "_daily.js")).GRACE_MS;
+    check(grace === serverGrace, `the midnight grace — page ${grace}ms vs server ${serverGrace}ms`);
+}
+
+/* ---- 2 & 3. the deal ---- */
+{
+    const had = process.env.SESSION_SECRET;
+    process.env.SESSION_SECRET = "parity-check-secret";
+    const deals = require(path.join(ROOT, "netlify", "functions", "_deal.js"));
+    const daily = require(path.join(ROOT, "netlify", "functions", "_daily.js"));
+
+    const room = (id, tags, n, extra) => Object.assign({
+        id, name: "Maze " + id, creator: "someone", tags,
+        gallery: Array.from({ length: n }, (_, i) => ({ image: `/img/${id}/${i}.png` }))
+    }, extra || {});
+    const DAY = "2026-10-05";
+    const ARCHIVE = [
+        room("a", ["ice"], 5), room("b", ["ice"], 4), room("c", ["fire"], 6), room("d", ["fire"], 3),
+        room("e", ["ice", "fire"], 4), room("f", ["dark"], 5), room("g", ["dark"], 4), room("h", [], 3),
+        room("hall", ["Hallway"], 8),
+        room("late", ["ice"], 8, { createdAt: DAY + "T13:00:00.000Z" }),
+        room("early", ["dark"], 4, { createdAt: "2026-10-04T23:59:59.000Z" })
+    ];
+    const seedOf = (...parts) => deals.secretSeed(DAY, ...parts);
+
+    const odd = deals.dealOdd(ARCHIVE, DAY, seedOf);
+    const guess = deals.dealGuess(ARCHIVE, DAY, seedOf);
+    check(eq(odd, deals.dealOdd(ARCHIVE.slice().reverse(), DAY, seedOf)),
+        "Odd One Out deals differently from the same archive in a different order");
+    check(eq(guess, deals.dealGuess(ARCHIVE.slice().reverse(), DAY, seedOf)),
+        "Guess the Maze deals differently from the same archive in a different order");
+    check(odd.length === 5 && guess.length === 5, `a full archive should deal five rounds (odd ${odd.length}, guess ${guess.length})`);
+
+    const all = JSON.stringify([odd, guess]);
+    check(!all.includes("/img/hall/") && !all.includes("Maze hall"), "a hallway was dealt");
+    check(!all.includes("/img/late/") && !all.includes("Maze late"), "a maze catalogued during the day was dealt into it");
+
+    odd.forEach((r, i) => {
+        check(r.tiles.length === 4 && r.tiles.filter(t => t.odd).length === 1, `Odd One Out round ${i} must have four tiles, one of them odd`);
+        check(r.tiles.filter(t => !t.odd).every(t => t.image.startsWith(`/img/${r.homeId}/`)), `Odd One Out round ${i}: a home tile is not from the home maze`);
+        check(r.tiles.filter(t => t.odd).every(t => t.image.startsWith(`/img/${r.imposterId}/`)), `Odd One Out round ${i}: the odd tile is not the imposter's`);
+    });
+    guess.forEach((r, i) => {
+        check(r.options.length === 5 && new Set(r.options).size === 5, `Guess the Maze round ${i} must offer five different names`);
+        check(r.options.includes(r.name), `Guess the Maze round ${i}: the answer is not among its names`);
+        check(Number.isInteger(r.crop) && r.crop >= 0, `Guess the Maze round ${i} has no crop seed`);
+    });
+
+    // What the page is sent.
+    const sentOdd = deals.publicRounds("odd", odd);
+    const sentGuess = deals.publicRounds("guess", guess);
+    check(sentOdd.every(r => r.tiles.every(t => Object.keys(t).join() === "image")),
+        "the Odd One Out deal sent to the page carries more than the pictures");
+    check(!/"(odd|home|imposter|homeId|imposterId)"/.test(JSON.stringify(sentOdd)), "the Odd One Out deal sent to the page names an answer");
+    check(sentGuess.every(r => Object.keys(r).sort().join() === "crop,image,options"),
+        "the Guess the Maze deal sent to the page carries more than picture, names and crop");
+
+    // The seed.
+    check(seedOf("guess") !== daily.daySeed(DAY, "guess"), "with a secret set, the deal is still dealt from the public seed");
+    process.env.SESSION_SECRET = "a-different-secret";
+    const other = deals.secretSeed(DAY, "guess");
+    process.env.SESSION_SECRET = "parity-check-secret";
+    check(other !== seedOf("guess"), "the deal's seed does not depend on the secret");
+    const featured = Object.keys(daily.FEATURED_DAYS)[0];
+    if (featured) {
+        const salted = deals.secretSeed(featured, "guess");
+        const saved = daily.FEATURED_DAYS[featured];
+        daily.FEATURED_DAYS[featured] = saved + "-reroll";
+        check(deals.secretSeed(featured, "guess") !== salted, `a featured day's salt (${featured}) no longer rerolls its deal`);
+        daily.FEATURED_DAYS[featured] = saved;
+    }
+    if (had === undefined) delete process.env.SESSION_SECRET; else process.env.SESSION_SECRET = had;
+}
+
+/* ---- 4. the page still does not deal ---- */
+for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
+    const src = read(rel).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    const found = src.match(/\b(daySeed|daySeedFor|seedFrom|Daily\.shuffle|existedBefore|isHallway|roomsForToday|getRooms)\b/);
+    check(!found, `${rel} reaches for ${found && found[1]} — the page must play the server's deal, not deal its own`);
+}
+
+/* ---- 5. the calendar ---- */
+{
+    const clock = { now: Date.parse("2026-10-05T23:59:30.000Z") };
     class FakeDate extends Date {
-        toISOString() {
-            return clock.pretend ? clock.pretend + "T12:00:00.000Z" : super.toISOString();
-        }
+        constructor(...a) { if (a.length === 0) super(clock.now); else super(...a); }
+        static now() { return clock.now; }
     }
+    const store = {};
     const sandbox = {
-        window: {},
-        document: { addEventListener() {} },
+        window: {}, document: { addEventListener() {} },
+        localStorage: { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } },
         fetch: () => Promise.reject(new Error("no network in the parity check")),
-        Date: FakeDate,
-        Math, JSON, console
+        AbortController, setTimeout, clearTimeout,
+        Date: FakeDate, Math, JSON, console, Number, String
     };
-    sandbox.self = sandbox;
     vm.createContext(sandbox);
-
-    /* featured-days.js FIRST, exactly as the page loads it — daily.js reads
-       the table off the global it sets, so running daily.js alone would
-       give it an empty table and quietly compare the wrong thing. There is
-       no `module` in this context, so the file takes its browser branch. */
-    vm.runInContext(fs.readFileSync(FEATURED, "utf8"), sandbox, { filename: "js/featured-days.js" });
-    vm.runInContext(fs.readFileSync(BROWSER, "utf8"), sandbox, { filename: "js/daily.js" });
-    return sandbox.window.Daily;
-}
-
-// Runs fn as though it were that day, in the sandbox's clock.
-function asOf(day, fn) {
-    clock.pretend = day;
-    try { return fn(); } finally { clock.pretend = null; }
-}
-
-const server = require(SERVER);
-const browser = loadBrowserDaily();
-
-if (!browser || typeof browser.daySeed !== "function") {
-    fail("js/daily.js did not publish window.Daily.daySeed");
-    process.exit(1);
-}
-
-/* ---- 1. the wiring ----
-
-   The table cannot drift any more — there is one of it, in
-   js/featured-days.js, read by both sides. What can go wrong instead is a
-   page loading daily.js without it, which leaves the browser applying no
-   salt while the server applies one: the same silent desync, reached a
-   different way.
-
-   Order matters as much as presence. daily.js reads the global the moment
-   it runs, so a script tag placed after it is the same as no tag at all. */
-for (const name of fs.readdirSync(ROOT).filter(f => f.endsWith(".html"))) {
-    const html = fs.readFileSync(path.join(ROOT, name), "utf8");
-    const daily = html.indexOf("js/daily.js");
-    if (daily === -1) continue;
-    const featured = html.indexOf("js/featured-days.js");
-    if (featured === -1) {
-        fail(name + " loads js/daily.js but not js/featured-days.js — " +
-            "featured days would be ignored on that page");
-    } else if (featured > daily) {
-        fail(name + " loads js/featured-days.js AFTER js/daily.js — " +
-            "daily.js reads the table as it runs, so it must come first");
-    }
-}
-
-// ---- 2. the seeds, which is the part that actually matters ----
-/* A spread of days: ordinary ones, every featured one, and the days either
-   side of each featured one — the boundary is where an off-by-one in the
-   table would hide. */
-const days = new Set(["2026-01-01", "2026-06-15", "2027-02-28"]);
-for (const iso of Object.keys(server.FEATURED_DAYS)) {
-    const d = new Date(iso + "T00:00:00Z");
-    for (const shift of [-1, 0, 1]) {
-        const x = new Date(d);
-        x.setUTCDate(x.getUTCDate() + shift);
-        days.add(x.toISOString().slice(0, 10));
-    }
-}
-
-// Every shape of seed the games actually ask for. ["ratrospect"] was one of
-// them until that game was dropped; it came out with the rest of it, because
-// a shape nothing derives is a comparison that can never fail and therefore
-// never catches anything.
-const SHAPES = [
-    ["guess"],
-    ["guess:crop", 3],
-    ["guess:options", 2, "the-little-maze"],
-    ["odd"],
-    ["odd", "maze-empire"],
-    ["odd:tiles", "maze-empire"]
-];
-
-let checked = 0;
-
-for (const day of [...days].sort()) {
-    // The browser's daySeed reads today() internally, so the clock is moved
-    // rather than the argument passed.
-    const mine = asOf(day, () => SHAPES.map(parts => browser.daySeed(...parts)));
-    const theirs = SHAPES.map(parts => server.daySeed(day, ...parts));
-
-    SHAPES.forEach((parts, i) => {
-        checked++;
-        if (mine[i] !== theirs[i]) {
-            fail(`${day} ${JSON.stringify(parts)} — browser ${mine[i]} vs server ${theirs[i]}`);
-        }
-    });
-
-    /* daySeedFor is the path the games actually take now: they pin the day
-       they started on and deal from it, so a round crossing midnight is not
-       re-dealt (see day() in js/oddoneout.js and picks() in js/guess.js).
-       It is checked with the clock deliberately set to a DIFFERENT day, so
-       an implementation that quietly read today() instead of its argument
-       would fail here rather than pass by coincidence. */
-    if (typeof browser.daySeedFor !== "function") {
-        fail("js/daily.js did not publish window.Daily.daySeedFor");
+    vm.runInContext(read("js/daily.js"), sandbox, { filename: "js/daily.js" });
+    const Daily = sandbox.window.Daily;
+    if (!Daily || typeof Daily.today !== "function" || typeof Daily.setServerNow !== "function") {
+        fail("js/daily.js did not publish Daily.today and Daily.setServerNow");
     } else {
-        const elsewhere = day === "2026-01-01" ? "2026-06-15" : "2026-01-01";
-        const pinned = asOf(elsewhere, () => SHAPES.map(parts => browser.daySeedFor(day, ...parts)));
-        SHAPES.forEach((parts, i) => {
-            checked++;
-            if (pinned[i] !== theirs[i]) {
-                fail(`${day} ${JSON.stringify(parts)} via daySeedFor (clock on ${elsewhere}) — ` +
-                    `browser ${pinned[i]} vs server ${theirs[i]}`);
-            }
-        });
-    }
-
-    // Sanity: the fake clock must actually be reaching the sandbox, or
-    // every comparison above is comparing the same day with itself and
-    // this whole check is decorative.
-    const sawDay = asOf(day, () => browser.today());
-    if (sawDay !== day) {
-        fail(`the parity check's own clock is not reaching js/daily.js ` +
-            `(asked for ${day}, it saw ${sawDay})`);
-        break;
-    }
-
-    if (typeof browser.isFeaturedDay === "function") {
-        const bFeatured = asOf(day, () => browser.isFeaturedDay());
-        if (bFeatured !== server.isFeaturedDay(day)) {
-            fail(`${day} — isFeaturedDay disagrees (browser ${bFeatured}, server ${server.isFeaturedDay(day)})`);
-        }
-    }
-}
-
-/* ---- 3. which mazes a day may deal from ----
-
-   Both sides leave out a maze catalogued on or after the day being dealt
-   (existedBefore), so a maze added at lunchtime joins tomorrow's pool
-   instead of re-dealing today's. Like daySeed it is written twice, and a
-   maze kept on one side and dropped on the other is the two sides dealing
-   different games — so the two are asked the same questions here,
-   including the awkward ones: no stamp at all (older records), a stamp on
-   the day itself, the instant before midnight, and junk. */
-const POOL_CASES = [
-    {},
-    { createdAt: "2026-09-23T23:59:59.999Z" },
-    { createdAt: "2026-09-24T00:00:00.000Z" },
-    { createdAt: "2026-09-24T13:00:00.000Z" },
-    { createdAt: "2026-09-25T00:00:00.000Z" },
-    { createdAt: "" },
-    { createdAt: 12345 },
-    null
-];
-if (typeof browser.existedBefore !== "function" || typeof server.existedBefore !== "function") {
-    fail("existedBefore is missing from js/daily.js or netlify/functions/_daily.js");
-} else {
-    const poolDay = "2026-09-24";
-    POOL_CASES.forEach(rec => {
-        checked++;
-        const b = browser.existedBefore(rec, poolDay);
-        const s = server.existedBefore(rec, poolDay);
-        if (b !== s) fail(`existedBefore(${JSON.stringify(rec)}, ${poolDay}) — browser ${b} vs server ${s}`);
-    });
-    // And the answer itself, for the one case that decides the feature: a
-    // maze created during the day must NOT be in that day's pool.
-    if (server.existedBefore({ createdAt: "2026-09-24T13:00:00.000Z" }, poolDay) !== false) {
-        fail("existedBefore lets a maze created during the day into that day's pool");
+        check(Daily.today() === "2026-10-05", `Daily.today() does not follow the clock (saw ${Daily.today()})`);
+        Daily.setServerNow(clock.now + 20000);           // latency, not a wrong clock
+        check(Daily.today() === "2026-10-05", "Daily.today() moved on a 20-second difference, which is only latency");
+        Daily.setServerNow(clock.now + 24 * 3600 * 1000);  // a device a day behind the server
+        check(Daily.today() === "2026-10-06", `Daily.today() does not follow the server's clock once told it (saw ${Daily.today()})`);
+        Daily.setServerNow(clock.now);
+        check(Daily.today() === "2026-10-05", "Daily.today() did not come back when the clocks agreed again");
     }
 }
 
 if (process.exitCode) {
-    console.error(`\n${checked} seeds compared across ${days.size} days — see above.`);
+    console.error(`\n${checked} checks — see above.`);
 } else {
-    console.log(`daily parity OK — ${checked} seeds matched across ${days.size} days ` +
-        `(featured: ${Object.keys(server.FEATURED_DAYS).join(", ") || "none"}).`);
+    console.log(`daily parity OK — ${checked} checks: points, grace, the deal and what the page is sent, the secret seed, the calendar.`);
 }

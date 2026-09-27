@@ -130,6 +130,13 @@ const EscapeLayers = (() => {
         return isNaN(z) ? 0 : z;
     }
 
+    /* The child of `ancestor` that holds `el` (or el itself). */
+    function childUnder(ancestor, el) {
+        let node = el;
+        while (node && node.parentElement !== ancestor) node = node.parentElement;
+        return node;
+    }
+
     // True when a paints in front of b.
     function inFront(a, b) {
         if (a.contains(b)) return false;
@@ -138,6 +145,18 @@ const EscapeLayers = (() => {
         if (ta !== tb) {
             const za = zOf(ta), zb = zOf(tb);
             if (za !== zb) return za > zb;
+        } else {
+            /* Under the same top-level element — the maze window's photo
+               frames (z 300s) and furni cards (z 320s) both live inside its
+               overlay — so compare where they part ways, or Escape closed a
+               frame sitting underneath a card simply because the frame came
+               later in the markup. */
+            let common = a.parentElement;
+            while (common && !common.contains(b)) common = common.parentElement;
+            if (common) {
+                const za = zOf(childUnder(common, a)), zb = zOf(childUnder(common, b));
+                if (za !== zb) return za > zb;
+            }
         }
         return !!(b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING);
     }
@@ -167,9 +186,412 @@ const EscapeLayers = (() => {
         best.layer.close(best.el);
     }, true);
 
-    return { register };
+    // inFront is shared with FocusTrap below, so Tab and Escape agree on
+    // which window is the front one.
+    return { register, inFront };
 })();
 window.EscapeLayers = EscapeLayers;
+
+/* ---------- Tab stays inside the front window ----------
+
+   Every aria-modal window on the site says to a screen reader "nothing
+   outside me exists", and until now only the room modal did anything to
+   make that true for the keyboard — with its own trap, which leaked: it
+   picked "first" and "last" from a selector that still matched hidden and
+   tabindex=-1 controls, so Tab from the real last control was never seen
+   as the end and walked out behind the overlay. The Guides and Alt Codes
+   windows, the landing page's event and privacy windows and the daily games
+   had nothing at all; Tab went straight through them into the page behind.
+
+   One trap now, for every VISIBLE element with aria-modal="true" (markup
+   can leave the attribute on permanently — a shut window is display:none
+   and does not count):
+
+   - The front one wins, by where it paints: EscapeLayers.inFront, the same
+     comparison Escape uses, so the window Tab is kept in is the window
+     Escape would close.
+   - The trap region is the dialog's .modal-overlay when it has one, not
+     the dialog alone. The room modal's photo frames, furni cards and actions
+     tab live in the overlay beside the .modal, and they have to stay
+     reachable.
+   - Tab and Shift+Tab are moved by hand, around a list of what is REALLY
+     tabbable: tabIndex >= 0, not disabled, not inert, not aria-hidden, and
+     actually rendered. Moving by hand rather than letting the browser go
+     and correcting at the ends is what the old trap got wrong — any
+     disagreement between the list and the browser about what comes next
+     was a way out.
+   - Focus outside the front window when Tab is pressed goes to its first
+     control.
+   - Everything else at the top level of <body> is made inert while a
+     window is up, so a pointer or a screen reader's virtual cursor cannot
+     reach it either, and handed back when it shuts. Only what this set is
+     ever unset: something another script made inert is left alone.
+
+   The Habbo Console is the exception. It is a draggable, NON-modal window
+   that sits over everything (z 200), and it can be open over the room
+   modal — so it is never a candidate, never made inert, and a Tab pressed
+   inside it is none of this code's business. The same goes for a photo
+   frame or furni card that ends up at the top level of <body>.
+
+   ---- THE FOCUS PATCH, AND THE BUG IT PREVENTS.
+
+   Every window here puts focus back on its opener in the same breath as it
+   closes: classList.remove("open"), then back.focus(). The inert wrapper
+   around that opener is only lifted when the MutationObserver below next
+   runs, which is after that script has finished — and focus() on an inert
+   element silently does nothing. So every close dropped focus on <body>,
+   and every window opened from another (Progress from the room modal's
+   saved note) could not focus itself either, since until then it sat in an
+   inert sibling. HTMLElement.prototype.focus is therefore wrapped: a
+   focus() aimed inside something this trap made inert brings the trap up
+   to date first, synchronously, and then focuses. It costs a Set lookup on
+   every focus() call and nothing at all while no window is open. A window
+   on its way out (.closing, the room modal's fade) is counted as shut for
+   the same reason: it restores focus while it is still fading. */
+const FocusTrap = (() => {
+    // Non-modal floating windows: never trapped in, never made inert.
+    const FLOATING = "#console-modal, .console-modal, .photo-frame, .furni-card";
+    // Top-level things that are not page content, or that must go on being
+    // heard while a window is up (the "Saved" note is a live region).
+    const NEVER_INERT = "script, style, link, template, noscript, [role='status'], [role='alert'], [aria-live], .saved-note, [data-trap-keep]";
+    const CANDIDATES = [
+        "a[href]", "area[href]", "button", "input", "select", "textarea", "iframe",
+        "summary", "audio[controls]", "video[controls]", "[tabindex]",
+        "[contenteditable]:not([contenteditable='false'])"
+    ].join(",");
+
+    const managed = new Set();      // what THIS trap made inert
+
+    function isShown(el) {
+        if (!el || !el.isConnected) return false;
+        // display:none on it or any ancestor leaves no boxes at all.
+        if (!el.getClientRects().length) return false;
+        // Computed, so an inherited visibility:hidden counts too.
+        if (getComputedStyle(el).visibility === "hidden") return false;
+        if (el.closest("[hidden]")) return false;
+        return true;
+    }
+
+    const regionOf = dialog => dialog.closest(".modal-overlay") || dialog;
+
+    function topDialog() {
+        let best = null;
+        document.querySelectorAll('[aria-modal="true"]').forEach(dialog => {
+            if (dialog.closest(FLOATING)) return;
+            if (!isShown(dialog)) return;
+            const region = regionOf(dialog);
+            if (region.classList.contains("closing")) return;
+            if (!best || EscapeLayers.inFront(region, best.region)) best = { dialog, region };
+        });
+        return best;
+    }
+
+    // Attributes, not the property: in a browser without inert the property
+    // is a plain expando that would lie about what is set.
+    function sync(top) {
+        const want = new Set();
+        if (top && document.body) {
+            for (const child of Array.from(document.body.children)) {
+                if (child.contains(top.region)) continue;
+                if (child.matches(FLOATING) || child.matches(NEVER_INERT)) continue;
+                want.add(child);
+            }
+        }
+        managed.forEach(el => {
+            if (want.has(el) && el.isConnected) return;
+            el.removeAttribute("inert");
+            managed.delete(el);
+        });
+        want.forEach(el => {
+            if (managed.has(el) || el.hasAttribute("inert")) return;
+            el.setAttribute("inert", "");
+            managed.add(el);
+        });
+        /* The page behind stops scrolling while any dialog is open (see
+           html.has-open-dialog in style.css). Held here rather than by each
+           window's own body.modal-open, because the maze window never set
+           that class, and with several windows sharing one class, closing
+           any of them unlocked the page under the others. This knows
+           whether ANY dialog is open. */
+        document.documentElement.classList.toggle("has-open-dialog", !!top);
+    }
+
+    function refresh() {
+        try { sync(topDialog()); } catch (e) {
+            // Never strand the page: whatever went wrong, hand back
+            // everything this trap took.
+            managed.forEach(el => el.removeAttribute("inert"));
+            managed.clear();
+            document.documentElement.classList.remove("has-open-dialog");
+        }
+    }
+
+    function isTabbable(el) {
+        if (el.tabIndex < 0) return false;
+        if (el.matches(":disabled")) return false;
+        if (el.closest("[inert], [aria-hidden='true']")) return false;
+        // Only a <details>' own first summary is a control.
+        if (el.tagName === "SUMMARY" && !(el.parentElement && el.parentElement.tagName === "DETAILS"
+            && el.parentElement.querySelector(":scope > summary") === el)) return false;
+        return isShown(el);
+    }
+
+    // In tab order: positive tabindex first (in order, DOM order breaking
+    // ties — sort is stable), then everything at 0 in DOM order. A radio
+    // group is one stop, as the browser makes it: the checked one, or the
+    // first when none is.
+    function tabbables(region) {
+        const found = Array.from(region.querySelectorAll(CANDIDATES)).filter(isTabbable);
+        const groupStop = new Map();
+        found.forEach(el => {
+            if (el.type !== "radio" || !el.name) return;
+            const key = (el.form ? "f:" : "r:") + el.name;
+            const cur = groupStop.get(key);
+            if (!cur || (el.checked && !cur.checked)) groupStop.set(key, el);
+        });
+        const list = found.filter(el => el.type !== "radio" || !el.name
+            || groupStop.get((el.form ? "f:" : "r:") + el.name) === el);
+        const positive = list.filter(el => el.tabIndex > 0).sort((a, b) => a.tabIndex - b.tabIndex);
+        return positive.concat(list.filter(el => el.tabIndex === 0));
+    }
+
+    function moveTo(el) {
+        el.focus();
+        // What a real Tab does to a text field: the whole value selected,
+        // ready to be typed over.
+        if (el.tagName === "INPUT" && /^(text|search|url|tel|email|password|number)$/.test(el.type)) {
+            try { el.select(); } catch (e) { /* number inputs in some browsers */ }
+        }
+    }
+
+    document.addEventListener("keydown", e => {
+        if (e.key !== "Tab" || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return;
+        const top = topDialog();
+        sync(top);
+        if (!top) return;
+        const active = document.activeElement;
+        // A floating window OUTSIDE the dialog (the console) keeps the
+        // browser's own Tab order. The maze window's photo frames and furni
+        // cards live inside its overlay now, so they are part of the region
+        // and Tab cycles through them with everything else.
+        const floating = active && active !== document.body && active.closest && active.closest(FLOATING);
+        if (floating && !top.region.contains(floating)) return;
+
+        const list = tabbables(top.region);
+        e.preventDefault();
+        if (!list.length) {
+            // Nothing to move between: hold focus on the window itself.
+            if (top.dialog.tabIndex < 0 && !top.dialog.hasAttribute("tabindex")) top.dialog.setAttribute("tabindex", "-1");
+            top.dialog.focus();
+            return;
+        }
+        const idx = list.indexOf(active);
+        if (idx !== -1) {
+            moveTo(list[(idx + (e.shiftKey ? list.length - 1 : 1)) % list.length]);
+            return;
+        }
+        if (!active || !top.region.contains(active)) {
+            moveTo(list[0]);
+            return;
+        }
+        /* Inside the window but on something not in the cycle — the dialog
+           itself (every window focuses that on open), a heading, a control
+           that has just been hidden. Go to the next or previous one after it
+           in the document, wrapping, which is what the browser would do if
+           it could be trusted to stay inside. Descendants count as "after":
+           Tab from the dialog lands on its first control. */
+        const inOrder = list.slice().sort((a, b) =>
+            (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1);
+        if (e.shiftKey) {
+            let prev = null;
+            for (const el of inOrder) {
+                const pos = active.compareDocumentPosition(el);
+                if ((pos & Node.DOCUMENT_POSITION_PRECEDING) && !(pos & Node.DOCUMENT_POSITION_CONTAINS)) prev = el;
+            }
+            moveTo(prev || inOrder[inOrder.length - 1]);
+        } else {
+            const next = inOrder.find(el => active.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+            moveTo(next || inOrder[0]);
+        }
+    });
+
+    // See THE FOCUS PATCH above.
+    const nativeFocus = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function () {
+        if (managed.size) {
+            for (const el of managed) {
+                if (el.contains(this)) { refresh(); break; }
+            }
+        }
+        return nativeFocus.apply(this, arguments);
+    };
+
+    /* Whether a batch of mutations could have opened or shut a window.
+       refresh() measures (getClientRects forces layout), and pages like
+       Fallin' Furni and the room gallery rewrite styles many times a
+       second, so it only runs when a change touched a dialog or one of its
+       ancestors, or the top level of <body>. Deciding that is containment
+       checks only — no layout. */
+    function relevant(records) {
+        const dialogs = Array.from(document.querySelectorAll('[aria-modal="true"]'));
+        const hasDialog = node => node.nodeType === 1
+            && (node.matches('[aria-modal="true"]') || !!node.querySelector('[aria-modal="true"]'));
+        for (const r of records) {
+            if (r.type === "childList") {
+                if (r.target === document.body) return true;
+                for (const n of r.addedNodes) if (hasDialog(n)) return true;
+                for (const n of r.removedNodes) if (hasDialog(n)) return true;
+            } else if (dialogs.some(d => r.target === d || r.target.contains(d))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Kept up to date as windows open and shut. "inert" is deliberately not
+    // in the filter: sync() writes it, and must not wake itself up.
+    function observe() {
+        new MutationObserver(records => { if (relevant(records)) refresh(); }).observe(document.body, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            attributeFilter: ["class", "style", "hidden", "open", "aria-modal"]
+        });
+        refresh();
+    }
+    if (document.body) observe();
+    else document.addEventListener("DOMContentLoaded", observe);
+
+    return { refresh };
+})();
+window.FocusTrap = FocusTrap;
+
+/* ---------- a maze's, event's or guide's own address ----------
+
+   /maze/<slug>, /event/<slug>, /guides/<slug>. The slug follows the
+   record's name and comes from the API (see netlify/functions/_slugs.js);
+   the id stands in for a record that has none, such as one from the offline
+   copy, and the share function sends an id on to the right address. */
+const RecordAddress = (() => {
+    const PREFIX = { maze: "maze", event: "event", guide: "guides" };
+    const PATH = /^\/(maze|event|guides)\/([^/?#]+)\/?$/;
+    return {
+        of(kind, record) {
+            const key = record && (record.slug || record.id);
+            return key ? `/${PREFIX[kind]}/${encodeURIComponent(key)}` : "";
+        },
+        // { kind, key } for an address naming a record, else null.
+        parse(pathname) {
+            const m = PATH.exec(pathname || "");
+            if (!m) return null;
+            let key;
+            try { key = decodeURIComponent(m[2]); } catch (e) { return null; }
+            return { kind: m[1] === "guides" ? "guide" : m[1], key };
+        },
+        // Whether a record answers to `key`: its address, or its id.
+        matches(record, key) {
+            if (!record || !key) return false;
+            const k = String(key).toLowerCase();
+            return (record.slug && record.slug === k) || record.id === key || String(record.id || "").toLowerCase() === k;
+        }
+    };
+})();
+window.RecordAddress = RecordAddress;
+
+/* ---------- the page's title, canonical and og:url ----------
+
+   A window that has an address of its own (a maze, a guide, the Alt Codes)
+   names it in the title, canonical and og:url while it is open, and puts
+   the page's back on close. What "the page's" means is not always what the
+   <head> said at load: at /maze/<slug> the share function wrote the maze's
+   tags there, and keeps the archive's in data-archive (see
+   netlify/functions/share.js). Closing the window leaves the archive, so the
+   archive's are the ones put back. */
+const PageMeta = (() => {
+    const titleEl = () => document.querySelector("title");
+    const canonicalEl = () => document.querySelector('link[rel="canonical"]');
+    const ogUrlEl = () => document.querySelector('meta[property="og:url"]');
+    const archive = (el, attr) => (el ? (el.hasAttribute("data-archive") ? el.getAttribute("data-archive") : el.getAttribute(attr)) : null);
+    let saved = null;
+    let owner = null;
+    return {
+        /* Names `url` and `title` for as long as `who` holds it. A second
+           window taking over keeps the page's originals rather than saving
+           the first window's as them. */
+        set(who, title, url) {
+            if (!saved) {
+                const t = titleEl();
+                saved = {
+                    title: t && t.hasAttribute("data-archive") ? t.getAttribute("data-archive") : document.title,
+                    canonical: archive(canonicalEl(), "href"),
+                    ogUrl: archive(ogUrlEl(), "content")
+                };
+                // Decoded once, here: data-archive holds page text, entities and all.
+                const d = document.createElement("textarea");
+                d.innerHTML = saved.title;
+                saved.title = d.value;
+            }
+            owner = who;
+            if (title) document.title = title;
+            if (url) {
+                const c = canonicalEl(), o = ogUrlEl();
+                if (c) c.setAttribute("href", url);
+                if (o) o.setAttribute("content", url);
+            }
+        },
+        // Puts the page's own back, if `who` is still the one holding it.
+        restore(who) {
+            if (!saved || (who && owner && who !== owner)) return;
+            document.title = saved.title;
+            const c = canonicalEl(), o = ogUrlEl();
+            if (c && saved.canonical !== null) c.setAttribute("href", saved.canonical);
+            if (o && saved.ogUrl !== null) o.setAttribute("content", saved.ogUrl);
+            saved = null;
+            owner = null;
+        }
+    };
+})();
+window.PageMeta = PageMeta;
+
+/* A fragment-only link on a page with <base href="/"> (home.html) resolves
+   to "/#x" — the landing page — rather than to "#x" on this one. home.html
+   has one because it is served at /maze/<slug> and the other record
+   addresses (see the note beside its <base>); its skip link and the
+   footer's #privacy link are fragment links. So they are followed here, on
+   this page, exactly as a browser follows one without a base: the hash
+   changes and the hashchange handlers do the rest. */
+document.addEventListener("click", e => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (!document.querySelector("base[href]")) return;
+    const a = e.target.closest && e.target.closest('a[href^="#"]');
+    if (!a || a.target === "_blank") return;
+    e.preventDefault();
+    const frag = a.getAttribute("href").slice(1);
+    if (!frag) return;
+    if (location.hash === "#" + frag) {
+        // The same hash fires no hashchange, and a browser only scrolls.
+        const el = document.getElementById(frag);
+        if (el) el.scrollIntoView();
+        return;
+    }
+    /* At a record's own address the hash REPLACES the entry rather than
+       pushing one. Pushed, it stacked /maze/a#privacy on top of /maze/a —
+       and when the window opened from a pasted link was then closed, only
+       the top entry was rewritten to /home, leaving /maze/a underneath for
+       the next Back to reopen. The hashchange a browser would fire is fired
+       by hand, since replaceState fires none. */
+    if (window.RecordAddress && RecordAddress.parse(location.pathname)) {
+        const oldURL = location.href;
+        try {
+            history.replaceState(history.state, "", "#" + frag);
+            window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL: location.href }));
+            const el = document.getElementById(frag);
+            if (el) el.scrollIntoView();
+            return;
+        } catch (err) { /* fall through to an ordinary hash change */ }
+    }
+    location.hash = frag;
+});
 
 // Small "what's coming up" readout in the header — shown on every page that
 // has the #header-events markup (a no-op elsewhere). Rotates through every
@@ -208,14 +630,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         // modal right there, since home.html itself is off-limits to
         // regular visitors during Coming Soon/Maintenance and would just
         // bounce them straight back here anyway (see the pre-load gate in
-        // home.html's own <head>). Everywhere else it still points at
-        // /home#event-<id> — a normal navigation from any other page,
-        // or a same-page hash change already handled by home.js's own
-        // openEventFromHash if already there.
+        // home.html's own <head>). Everywhere else it points at the event's
+        // own address, /event/<slug> — a normal navigation from any other
+        // page, and opened in place by js/home.js on the archive itself.
         const isWelcome = document.body.dataset.page === "welcome";
         const href = isWelcome
             ? `#event-${encodeURIComponent(event.id || "")}`
-            : `/home#event-${encodeURIComponent(event.id || "")}`;
+            : RecordAddress.of("event", event);
         return `<a class="header-events-title" href="${href}">${escapeHtml(event.title || "")}</a><p class="header-events-when">${formatEventWhen(event.date)}</p>`;
     }
 
@@ -266,6 +687,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     let showing = upcoming[0] || null;
     slideEl.innerHTML = slideMarkup(showing);
 
+    /* HELD STILL while somebody is pointing at it or has tabbed into it.
+       It used to turn over every ten seconds regardless, so a reader halfway
+       through a title lost it, and a keyboard user who had tabbed onto the
+       link had it replaced under them — innerHTML swaps the <a> out, and
+       focus fell back to <body>. Hover and focus both hold it; leaving
+       releases it, and the next tick moves on as usual. */
+    let hovered = false, focused = false;
+    widget.addEventListener("pointerenter", () => { hovered = true; });
+    widget.addEventListener("pointerleave", () => { hovered = false; });
+    widget.addEventListener("focusin", () => { focused = true; });
+    widget.addEventListener("focusout", e => {
+        if (!widget.contains(e.relatedTarget)) focused = false;
+    });
+
+    /* prefers-reduced-motion: it still turns over, but in place, with no
+       slide. The slide is the motion somebody has asked not to be shown; the
+       other events are information, and not rotating at all would leave the
+       second and later ones unreachable from the header. Read on every tick,
+       not once, so changing the setting takes effect without a reload. */
+    const reducedMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+
     // Always armed, even for a list of one or none. A single event that
     // ends has to be taken down, and one that goes live later has to appear,
     // and neither happens if the timer only exists when there was already
@@ -284,9 +726,21 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
             return;
         }
+        // Held, and what it holds is still true: leave it be. An event that
+        // has ENDED under the pointer is still replaced (below) — holding a
+        // finished event up as "coming up" is the bug currentUpcoming exists
+        // to prevent.
+        if ((hovered || focused) && at !== -1) return;
         // The current one gone (it ended) means the next is whatever
         // now sits where it was, which is the start if it was last.
         const nextIndex = at === -1 ? (index % upcoming.length) : (at + 1) % upcoming.length;
+
+        if (hovered || focused || (reducedMotion && reducedMotion.matches)) {
+            slideEl.innerHTML = slideMarkup(upcoming[nextIndex]);
+            index = nextIndex;
+            showing = upcoming[nextIndex];
+            return;
+        }
 
         // Rolling-ticker style — both slides travel upward together (the
         // outgoing one exits off the top, the incoming one enters from

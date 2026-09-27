@@ -50,7 +50,7 @@
        Gone entirely, screenshots and all. */
 const crypto = require("crypto");
 const { getDb, ensureUniqueIndex, ensureIndex } = require("./_db");
-const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { hasAccount, canWrite, roleOf, WRITE_SCOPES, usernameFromToken, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { imagesStore } = require("./_images");
@@ -80,6 +80,10 @@ const LEAD_LIMIT = 6;
 const UPLOAD_LIMIT = 12;
 const WINDOW_MS = 10 * 60 * 1000;
 const ORPHAN_AGE_MS = 24 * 60 * 60 * 1000;
+// How long an accept's claim on copying a lead's images holds before a
+// later accept may take it over — see "PROMOTE" in handleReview. Longer
+// than any function may run, so a live copy is never trampled.
+const PROMOTE_CLAIM_MS = 2 * 60 * 1000;
 
 /* The file types a screenshot can be, recognised by their first bytes
    rather than by what the data URL claims. The claim is the uploader's; the
@@ -123,6 +127,21 @@ async function ensureIndexes(db) {
     await ensureIndex(uploads, { ip: 1, at: -1 });
     await ensureIndex(uploads, { playerId: 1, at: -1 });
     await ensureIndex(uploads, { claimed: 1, at: 1 });
+    /* One lead per (sender, clientRef) — see handleLead. Partial, so the
+       leads sent before clientRef existed (and any sent without one) are not
+       all "duplicates" of each other under a missing value. Built here
+       rather than through ensureUniqueIndex, which knows no partial
+       filter; if it cannot be built, the findOne check in handleLead still
+       catches every retry that is not a dead-heat race, and the log says
+       why. */
+    try {
+        await leads.createIndex({ sender: 1, clientRef: 1 }, {
+            unique: true,
+            partialFilterExpression: { clientRef: { $type: "string" } }
+        });
+    } catch (e) {
+        console.error("dead-end-leads: clientRef index unavailable", e);
+    }
     indexed = true;
 }
 
@@ -174,7 +193,9 @@ async function notify(lead, recordName) {
                 from,
                 to,
                 subject: `Missing Pieces: ${recordName}${lead.type === "new" ? " (not in the archive)" : ""}`,
-                text: `${lead.from ? `From ${lead.from.name} (Discord, signed in)\n` : ""}${lead.habboName ? `Habbo: ${lead.habboName}\n` : ""}\n${lines.join("\n")}\n\nReview it in Warren, under Missing Pieces.`
+                // The handle and id beside the display name, which alone
+                // identifies nobody — see contact.js.
+                text: `${lead.from ? `From ${lead.from.name} (Discord, signed in${lead.from.username ? `, @${lead.from.username}` : ""}, id ${lead.from.id})\n` : ""}${lead.habboName ? `Habbo: ${lead.habboName}\n` : ""}\n${lines.join("\n")}\n\nReview it in Warren, under Missing Pieces.`
             })
         });
     } catch (e) {
@@ -261,7 +282,24 @@ async function handleLead(event, db) {
         return json(400, { error: "Invalid request body" });
     }
 
+    // "null" parses too, and body.website then threw a 500.
+    if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
+
     if (text(body.website).trim()) return decoy();
+
+    /* THE SAME LEAD SENT TWICE. js/console-info.js stamps each submission
+       with a random clientRef and sends the SAME one again if it retries —
+       after a timeout, a dropped connection, a double press — because a
+       request that timed out on the visitor's side has often landed on
+       ours, and every retry used to become another lead in the queue (with
+       another email). Strict, because it is stored and indexed: a string
+       of up to 64 URL-safe characters, or absent. Absent keeps the old
+       behaviour, so an older cached copy of the console still works. */
+    const hasRef = body.clientRef !== undefined && body.clientRef !== null;
+    const clientRef = hasRef ? body.clientRef : null;
+    if (hasRef && (typeof clientRef !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(clientRef))) {
+        return json(400, { error: "Invalid request body" });
+    }
 
     /* WHAT IT IS ABOUT: a maze or event already in the archive (type + id),
        or — the old "submit a maze" — one that is not in it yet ("new", with
@@ -311,6 +349,22 @@ async function handleLead(event, db) {
     if (await isBanned(db, ip)) return decoy();
 
     const leads = db.collection("dead_end_leads");
+    const player = playerFrom(event);
+    /* Who "the same sender" is, for clientRef: the Discord account when
+       signed in (a phone changes address mid-retry; the account does not),
+       otherwise the address. Neither — no session and no address — means
+       nobody to match against, and the lead is simply taken as new. */
+    const sender = player ? `p:${player.id}` : (ip ? `ip:${ip}` : null);
+    const dedupe = Boolean(clientRef && sender);
+    const earlier = () => leads.findOne({ sender, clientRef }, { projection: { _id: 0, id: 1, status: 1 } });
+    /* Before the throttle and before any image is claimed: a retry of a lead
+       that landed must not count against the sender, and its images are
+       already claimed by the first copy, so letting it run on would fail
+       with "one of those images has gone missing". */
+    if (dedupe) {
+        const prior = await earlier();
+        if (prior) return json(200, { id: prior.id, status: prior.status, duplicate: true });
+    }
     const TOO_MANY_LEADS = "Thanks for all of these. Give it ten minutes before sending more.";
     const countRecentLeads = () => leads.countDocuments({ ip, createdAt: { $gte: new Date(Date.now() - WINDOW_MS) } });
     // A cheap early refusal only; the real check follows the insert below.
@@ -326,7 +380,6 @@ async function handleLead(event, db) {
         recordName = record[NAME_OF[type]] || recordId;
     }
 
-    const player = playerFrom(event);
     /* Every image across every item, claimed atomically one at a time: the
        filter demands the upload is this player's AND still unclaimed, so two
        leads racing for the same file cannot both have it, and nobody can
@@ -349,6 +402,14 @@ async function handleLead(event, db) {
                 if (!doc || !doc.key) {
                     // Hand back anything already claimed for this lead.
                     await uploads.updateMany({ key: { $in: images.map(i => i.key) } }, { $set: { claimed: false } });
+                    /* A retry racing its own first copy loses the images to
+                       it, and lands here rather than at the check above. If
+                       that first copy has been saved by now, it is the
+                       answer, not an error. */
+                    if (dedupe) {
+                        const prior = await earlier();
+                        if (prior) return json(200, { id: prior.id, status: prior.status, duplicate: true });
+                    }
                     return json(400, { error: "One of those images has gone missing. Add it again." });
                 }
                 const img = { key: doc.key, contentType: doc.contentType, bytes: doc.bytes };
@@ -367,10 +428,15 @@ async function handleLead(event, db) {
         items,
         habboName,
         images,
-        from: player ? { id: player.id, name: player.name, verified: true } : null,
+        // username: Discord's unique handle beside the display name — see
+        // signPlayer in _player.js, and contact.js for why it matters.
+        from: player ? { id: player.id, name: player.name, username: player.username || null, verified: true } : null,
         ip,
         status: "new",
-        createdAt: new Date()
+        createdAt: new Date(),
+        // Only when there is one: the unique index is partial on a string
+        // clientRef, and a lead without one has no business in it.
+        ...(dedupe ? { clientRef, sender } : {})
     };
     /* Insert, re-count, and take it back if it went over — see contact.js.
        Counting only before the insert let a parallel burst all see room for
@@ -378,7 +444,21 @@ async function handleLead(event, db) {
        still the sender's, and the orphan sweep will collect them if nothing
        else does), and it happens before the email, so a refused lead costs
        nobody an inbox. */
-    await leads.insertOne(lead);
+    try {
+        await leads.insertOne(lead);
+    } catch (e) {
+        /* Two copies of the same submission in a dead heat, both past the
+           findOne above: the (sender, clientRef) index lets one in. The
+           loser gives back any images it claimed and answers with the
+           winner, exactly as a later retry would have been answered. */
+        if (!(dedupe && e && e.code === 11000)) throw e;
+        if (images.length) {
+            await db.collection("dead_end_uploads").updateMany({ key: { $in: images.map(i => i.key) } }, { $set: { claimed: false } });
+        }
+        const prior = await earlier();
+        if (!prior) throw e;
+        return json(200, { id: prior.id, status: prior.status, duplicate: true });
+    }
     if (ip && await countRecentLeads() > LEAD_LIMIT) {
         await leads.deleteOne({ id: lead.id });
         if (images.length) {
@@ -433,13 +513,27 @@ async function handleReview(event, db) {
         );
         const before = won && (won.value !== undefined ? won.value : won);
         if (!before || !before.id) {
-            // Already accepted: keep the note, repeat nothing.
+            /* Already accepted: keep the note — and FINISH, rather than
+               repeat. This used to return here having done nothing else,
+               which was right for a double-click and wrong for everything
+               that matters: the status flips first, so an accept whose
+               image copy or credit then threw left a lead marked accepted
+               with half its work undone, and pressing Accept again (the
+               obvious thing to do after an error) answered 200 and did none
+               of the rest. The lead was simply stuck.
+
+               So it falls through to the three steps below, each of which
+               checks its own marker — `promoted`, `resolved`, `credited` —
+               and claims it before acting, so work that did complete is not
+               done twice and a click racing the winner does not duplicate
+               what the winner is still doing. */
             await leads.updateOne({ id }, { $set: reviewed });
-            if (lead.promoted) out.promoted = lead.promoted;
             out.alreadyAccepted = true;
-            return json(200, out);
+            lead = (await leads.findOne({ id })) || lead;
+            if (Array.isArray(lead.promoted) && lead.promoted.length) out.promoted = lead.promoted;
+        } else {
+            lead = before;
         }
-        lead = before;
 
         /* PROMOTE: copy the screenshots out of quarantine into the record's
            own folder, where image.js serves them to everybody. Copied, not
@@ -452,35 +546,75 @@ async function handleReview(event, db) {
         if (body.promote && Array.isArray(lead.promoted) && lead.promoted.length) {
             out.promoted = lead.promoted;
         } else if (body.promote && lead.images && lead.images.length) {
-            const store = imagesStore();
-            const urls = [];
-            let n = 0;
-            for (const img of lead.images) {
-                const got = await store.getWithMetadata(img.key, { type: "arrayBuffer" });
-                if (!got) continue;
-                const ext = (img.key.split(".").pop() || "png").replace(/[^a-z]/g, "");
-                // A maze not in the archive yet has no id; its images go
-                // under the name it was sent with, ready for when it is added.
-                const key = `rooms/${slugify(lead.recordId || lead.recordName)}/${Date.now()}-lead-${++n}.${ext}`;
-                await store.set(key, Buffer.from(got.data), { metadata: { contentType: img.contentType || (got.metadata && got.metadata.contentType) || "image/png" } });
-                urls.push(`/.netlify/functions/image?key=${key}`);
+            /* Claimed first, like `credited` below, now that a second press
+               of Accept runs this too (see alreadyAccepted above): two
+               requests arriving together would otherwise both find no
+               `promoted` and both copy the set. The claim is a timestamp
+               rather than a flag so that one left behind by a request that
+               died mid-copy — the platform's timeout, not a catchable
+               throw — lapses on its own after PROMOTE_CLAIM_MS instead of
+               blocking the lead forever. */
+            const claimedAt = new Date();
+            const claim = await leads.updateOne(
+                {
+                    id,
+                    $and: [
+                        { $or: [{ promoted: { $exists: false } }, { promoted: { $size: 0 } }, { promoted: null }] },
+                        { $or: [{ promoting: null }, { promoting: { $lt: new Date(Date.now() - PROMOTE_CLAIM_MS) } }] }
+                    ]
+                },
+                { $set: { promoting: claimedAt } }
+            );
+            if (!claim.modifiedCount) {
+                // Somebody else is copying them right now; theirs will land.
+                out.promoteBusy = true;
+            } else try {
+                const store = imagesStore();
+                const urls = [];
+                let n = 0;
+                for (const img of lead.images) {
+                    const got = await store.getWithMetadata(img.key, { type: "arrayBuffer" });
+                    if (!got) continue;
+                    const ext = (img.key.split(".").pop() || "png").replace(/[^a-z]/g, "");
+                    // A maze not in the archive yet has no id; its images go
+                    // under the name it was sent with, ready for when it is added.
+                    const key = `rooms/${slugify(lead.recordId || lead.recordName)}/${Date.now()}-lead-${++n}.${ext}`;
+                    await store.set(key, Buffer.from(got.data), { metadata: { contentType: img.contentType || (got.metadata && got.metadata.contentType) || "image/png" } });
+                    urls.push(`/.netlify/functions/image?key=${key}`);
+                }
+                out.promoted = urls;
+                await leads.updateOne({ id }, urls.length
+                    ? { $set: { promoted: urls }, $unset: { promoting: "" } }
+                    : { $unset: { promoting: "" } });
+            } catch (e) {
+                await leads.updateOne({ id, promoting: claimedAt }, { $unset: { promoting: "" } }).catch(() => {});
+                throw e;
             }
-            out.promoted = urls;
-            if (urls.length) await leads.updateOne({ id }, { $set: { promoted: urls } });
         }
 
-        // RESOLVE: the pieces this lead answered come off the record's flag.
+        /* RESOLVE: the pieces this lead answered come off the record's flag.
+
+           `resolved` on the lead remembers which pieces it has already taken
+           off, and only the rest are pulled. Now that a second Accept
+           finishes a half-done one rather than stopping (see alreadyAccepted
+           above), this is what keeps it from pulling a piece an admin has
+           deliberately put BACK on the flag since the first accept. Pulling
+           is harmless to repeat otherwise, so two racing accepts need no
+           claim here. */
         const resolve = Array.isArray(body.resolve) && lead.type !== "new"
             ? body.resolve.filter(k => typeof k === "string" && DeadEnds.isPiece(lead.type, k))
             : [];
-        if (resolve.length) {
+        const done = Array.isArray(lead.resolved) ? lead.resolved : [];
+        const toResolve = resolve.filter(k => done.indexOf(k) === -1);
+        if (toResolve.length) {
             const flags = db.collection("dead_ends");
             const key = `${lead.type}:${lead.recordId}`;
-            await flags.updateOne({ key }, { $pull: { pieces: { $in: resolve } }, $set: { updatedAt: new Date().toISOString(), updatedBy: reviewer } });
+            await flags.updateOne({ key }, { $pull: { pieces: { $in: toResolve } }, $set: { updatedAt: new Date().toISOString(), updatedBy: reviewer } });
             // A flag left with nothing to ask for is no flag.
             await flags.deleteOne({ key, pieces: { $size: 0 } });
-            out.resolved = resolve;
+            await leads.updateOne({ id }, { $addToSet: { resolved: { $each: toResolve } } });
         }
+        if (resolve.length) out.resolved = resolve;
 
         /* CREDIT: the sender joins Contributors for this record, in the
            same shape the admin's own contributor form writes (see
@@ -625,8 +759,26 @@ exports.handler = async (event) => {
             await sweepOrphans(db).catch(() => {});
             const status = text(q.status) || "new";
             const filter = status === "all" ? {} : { status };
+            /* WHO MAY SEE WHERE A LEAD CAME FROM. Every lead carries the
+               sender's IP address and, if they were signed in, their
+               Discord id — and this read was gated on hasAccount alone, so
+               a viewer or an atlas account could list the addresses of
+               everybody who had ever sent one. Those two are what a ban and
+               a follow-up need, and both of those are the site scope's
+               jobs, so only an owner or admin gets them; everyone else sees
+               the lead with the name but without the address or the id.
+
+               Asked through roleOf rather than canWrite, because canWrite
+               writes the action log and this is a read. `sender` is the
+               clientRef bookkeeping (see handleLead) — it holds the same
+               address or id, and nobody needs it on screen. */
+            const role = await roleOf(event);
+            const full = (WRITE_SCOPES[role] || []).includes("site");
+            const projection = full
+                ? { _id: 0, sender: 0 }
+                : { _id: 0, sender: 0, ip: 0, "from.id": 0 };
             const list = await db.collection("dead_end_leads")
-                .find(filter, { projection: { _id: 0 } })
+                .find(filter, { projection })
                 .sort({ createdAt: -1 })
                 .limit(300)
                 .toArray();
@@ -657,6 +809,10 @@ exports.handler = async (event) => {
         return json(405, { error: "Method not allowed" });
     } catch (e) {
         console.error("dead-end-leads: request failed", e);
+        /* The guards throw when the account lookup cannot be made (see
+           lookUpRole in _auth.js): a 503 to retry, never the 401 the admin
+           page would read as signed out. */
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
         return json(500, { error: "Something went wrong with that lead." });
     }
 };

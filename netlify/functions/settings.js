@@ -6,7 +6,7 @@
    the request body, leaving the other untouched. Stored as a single
    document with a fixed _id, since there's only ever one. */
 const { getDb } = require("./_db");
-const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, GATE_CDN_CACHE } = require("./_cache");
 
@@ -141,6 +141,21 @@ exports.handler = async (event) => {
         }, { cdn: GATE_CDN_CACHE });
     }
 
+    /* The write half inside one try, as the GET above already is. The save
+       and its read-back had nothing around them, so a database that dropped
+       mid-save answered with Lambda's errorType and stack trace; and canWrite
+       now throws when the account lookup cannot be made (lookUpRole in
+       _auth.js), which has to reach the admin page as a 503 it retries, not
+       as the 401 that signs it out. */
+    try {
+        return await write(event, settings);
+    } catch (e) {
+        console.error("settings: write failed", e);
+        return AUTH_UNAVAILABLE;
+    }
+};
+
+async function write(event, settings) {
     if (!isAuthorized(event)) return UNAUTHORIZED;
     // canWrite, not isAuthorized: a viewer is a real logged-in account and
     // passes isAuthorized quite correctly — it just isn't allowed to change
@@ -246,4 +261,4 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
-};
+}

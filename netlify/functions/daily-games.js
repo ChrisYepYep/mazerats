@@ -33,12 +33,13 @@
    from a signed-out browser is anonymous by construction and cannot be
    addressed by anybody, including us. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 // Points here are totals, the day's score plus its speed bonus, as every
-// public board and the Profile count them (see _speed.js).
-const { TOTAL, totalOf } = require("./_speed");
+// public board and the Profile count them (see _speed.js). forgetDay is the
+// reset's reach into the day's clock and recorded moves — see the reset.
+const { TOTAL, totalOf, forgetDay } = require("./_speed");
 
 const SCORES = "guess_scores";
 const RESETS = "daily_resets";
@@ -123,6 +124,12 @@ exports.handler = async (event) => {
     try {
         return await route(event, db, scores, resets);
     } catch (e) {
+        /* hasAccount and canWrite THROW when the accounts cannot be read,
+           rather than answering "no" — see isAuthUnavailable in _auth.js.
+           That is a 503 the admin page knows to retry, not the generic 500
+           below, and certainly not the 401 that would sign a working
+           session out. */
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
         console.error("daily-games: request failed", e);
         return json(500, { error: "The daily games could not be reached just now" });
     }
@@ -317,6 +324,7 @@ async function route(event, db, scores, resets) {
         }
 
         let mirrorCleared = false;
+        let clockCleared = 0;
         {
             // Today only. Deleting a player's whole history is a different
             // and much larger decision than giving them today back, and it
@@ -337,6 +345,16 @@ async function route(event, db, scores, resets) {
                 await db.collection(PLAYER_STATE).updateOne({ playerId }, { $set: { guess: null } });
                 mirrorCleared = true;
             }
+
+            /* And the day's clock and recorded moves (daily_starts — see
+               _speed.js), which the reset used to leave behind. That row is
+               what the day is SCORED from now, not only timed: left in
+               place, the replay found its first round already picked and
+               was answered "already" on every move, and its clock was still
+               the one started before the reset — so the day given back was
+               neither playable nor fairly timed. Today's row for this game
+               only, like the score row above. */
+            clockCleared = await forgetDay(db, meta.key, today(), playerId);
         }
 
         const player = await scores.findOne({ playerId }, { projection: { name: 1, avatar: 1 } });
@@ -358,6 +376,7 @@ async function route(event, db, scores, resets) {
             playerId,
             scoreRowsDeleted: deleted,
             accountDayCleared: mirrorCleared,
+            movesCleared: clockCleared > 0,
             /* Said plainly so the admin page can say it too: the browser
                half has not happened yet and will not until the player opens
                the game. */

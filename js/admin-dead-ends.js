@@ -68,8 +68,18 @@
        the cleanest way to hand over is the same reload a fresh visit gets,
        which re-verifies the stored token and asks for the password. Saying
        so first, rather than reloading out from under somebody mid-review. */
+    /* That reload lost whatever was half-done here — the ticks and note in
+       an open record editor, an accept form part filled in. admin.js now
+       lends its lockOut (window.AdminLockOut), so the sign-in box goes up
+       over the panel and everything in it is still there afterwards; every
+       request reads the token fresh, so the next press simply works. The
+       reload stays as the fallback for a page without admin.js. */
     function sessionGone(err) {
         if (!err || err.status !== 401) return false;
+        if (typeof window.AdminLockOut === "function") {
+            window.AdminLockOut();
+            return true;
+        }
         leadsEl.innerHTML = '<p class="admin-empty">Your session has expired. <button type="button" class="ctl-btn" data-de-reload>Sign in again</button></p>';
         const btn = leadsEl.querySelector("[data-de-reload]");
         if (btn) btn.addEventListener("click", () => location.reload());
@@ -119,7 +129,13 @@
             renderLeads();
             renderRecords();
         } catch (err) {
-            if (sessionGone(err)) return;
+            if (sessionGone(err)) {
+                // Not left saying "Loading…" behind the sign-in box.
+                if (typeof window.AdminLockOut === "function") {
+                    leadsEl.innerHTML = '<p class="admin-empty">Your session expired before this loaded. Sign in again, then press Refresh.</p>';
+                }
+                return;
+            }
             leadsEl.innerHTML = `<p class="admin-empty">Could not load the missing pieces: ${escapeHtml(err.message)}</p>`;
         }
     }
@@ -289,7 +305,15 @@
         who.className = "de-lead-who";
         const bits = [];
         if (lead.habboName) bits.push(`Habbo: ${lead.habboName}`);
-        if (lead.from) bits.push(`Discord: ${lead.from.name} (signed in)`);
+        /* The display name can be anything and is shared by any number of
+           people; from.username is the unique Discord handle, so it is shown
+           beside it when the server sends it. A view-only account is not
+           sent the account id or the address (dead-end-leads.js), and
+           nothing here needs either: Ban IP only appears when lead.ip does. */
+        if (lead.from) {
+            const handle = lead.from.username ? ` @${lead.from.username}` : "";
+            bits.push(`Discord: ${lead.from.name || lead.from.username || "an account"}${handle && lead.from.name ? handle : ""} (signed in)`);
+        }
         if (!bits.length) bits.push("Anonymous");
         who.textContent = bits.join(" · ");
         info.appendChild(who);
@@ -455,26 +479,51 @@
 
     // Resolves true when the review was saved, false when it was not — the
     // accept form uses it to decide whether to switch itself back on.
-    async function review(lead, body) {
+    /* Re-reading the lists after a write that has ALREADY succeeded. Kept
+       apart from the write's own try: it used to share one, so when the
+       re-read failed after a perfectly good accept, the admin was told
+       "Could not save that" — and, believing it, accepted the lead again.
+       A failure here says what actually happened instead: saved, and the
+       list is behind. (reloadLeads says its own failures; reloadFlags
+       throws them to here.) */
+    async function refreshAfterWrite() {
         try {
-            const out = await call(LEADS_URL, "PATCH", { id: lead.id, ...body });
-            if (out && out.promoted && out.promoted.length) lead.promoted = out.promoted;
             await Promise.all([reloadLeads(), reloadFlags()]);
-            if (out && out.credited) {
-                flash(`Credited ${out.credited} in Contributors.`);
-                /* Tells js/admin.js to re-read its contributor list. Its copy
-                   was loaded at sign-in, and editing the person just credited
-                   from that copy saved the old record back over the credit. */
-                document.dispatchEvent(new CustomEvent("mazerats:contributors-changed"));
-            }
-            if (out && out.promoted && out.promoted.length && leadStatus === "new") {
-                flash("Accepted. The copied screenshots are listed under Accepted.");
-            }
-            return true;
+        } catch (err) {
+            if (!sessionGone(err)) flash(`Saved. The list could not be refreshed (${err.message}) — press Refresh to see it.`);
+        }
+    }
+
+    async function review(lead, body) {
+        let out;
+        try {
+            out = await call(LEADS_URL, "PATCH", { id: lead.id, ...body });
         } catch (err) {
             if (!sessionGone(err)) alert(`Could not save that: ${err.message}`);
             return false;
         }
+        // Saved. Nothing from here on can make it not have been.
+        if (out && out.promoted && out.promoted.length) lead.promoted = out.promoted;
+        await refreshAfterWrite();
+        if (out && out.credited) {
+            flash(`Credited ${out.credited} in Contributors.`);
+            /* Tells js/admin.js to re-read its contributor list. Its copy
+               was loaded at sign-in, and editing the person just credited
+               from that copy saved the old record back over the credit. */
+            document.dispatchEvent(new CustomEvent("mazerats:contributors-changed"));
+        }
+        if (out && out.promoted && out.promoted.length && leadStatus === "new") {
+            flash("Accepted. The copied screenshots are listed under Accepted.");
+        }
+        /* The accept is saved, but another request (a second press, or a
+           second admin) is already copying this lead's screenshots, so this
+           one did not start a second copy — see the claim in
+           dead-end-leads.js. Not an error, and nothing to press again: the
+           copies land on their own. Said last so no other line covers it. */
+        if (out && out.promoteBusy) {
+            flash("Accepted. Its screenshots are still being copied — press Refresh in a moment to see them.");
+        }
+        return true;
     }
 
     function reject(lead) {
@@ -488,10 +537,12 @@
         if (!confirm("Delete this lead and any screenshots with it? This cannot be undone.")) return;
         try {
             await call(`${LEADS_URL}?id=${encodeURIComponent(lead.id)}`, "DELETE");
-            await Promise.all([reloadLeads(), reloadFlags()]);
         } catch (err) {
             if (!sessionGone(err)) alert(`Could not delete it: ${err.message}`);
+            return;
         }
+        // Deleted; a failed re-read is said as that, not as a failed delete.
+        await refreshAfterWrite();
     }
 
     async function ban(ip) {
@@ -661,13 +712,23 @@
             status.classList.remove("is-bad");
             try {
                 await call(FLAGS_URL, "PUT", body);
-                openEditor = null;
-                editorDraft = null;
-                await reloadFlags();
             } catch (err) {
                 if (sessionGone(err)) return;
                 status.textContent = err.message;
                 status.classList.add("is-bad");
+                return;
+            }
+            // Saved. The re-read is separate, so its failure cannot be
+            // reported as this save failing — see refreshAfterWrite.
+            openEditor = null;
+            editorDraft = null;
+            try {
+                await reloadFlags();
+            } catch (err) {
+                if (!sessionGone(err)) {
+                    status.textContent = `Saved. The list could not be refreshed (${err.message}) — press Refresh to see it.`;
+                    status.classList.remove("is-bad");
+                }
             }
         });
         return form;
@@ -677,10 +738,11 @@
         if (!confirm(`Take "${rec.name}" off the Missing Pieces list? It will show as complete everywhere on the site.`)) return;
         try {
             await call(`${FLAGS_URL}?type=${rec.type}&id=${encodeURIComponent(rec.id)}`, "DELETE");
-            await reloadFlags();
         } catch (err) {
             if (!sessionGone(err)) alert(`Could not clear it: ${err.message}`);
+            return;
         }
+        await refreshAfterWrite();
     }
 
     refreshBtn.addEventListener("click", loadAll);

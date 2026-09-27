@@ -42,7 +42,7 @@
 const { blobStore } = require("./_blobs.js");
 const { SECURITY_HEADERS } = require("./_headers");
 const { fetchFurnidata } = require("./_furnidata.js");
-const { isOwnerWrite } = require("./_auth");
+const { isOwnerWrite, isAuthUnavailable, AUTH_UNAVAILABLE } = require("./_auth");
 
 /* The stored copy, required rather than read at run time so the bundler
    carries it into the deployed function. ~1.3MB of JSON, parsed once per
@@ -187,5 +187,21 @@ async function respond(event, params) {
         return { ...json(502, { error: "Could not read furnidata just now." }), headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" } };
     }
 }
+
+
+/* The account checks above (hasAccount, canWrite and the rest) throw when
+   the database cannot say who is asking, rather than answering "nobody" —
+   answering nobody signed admins out over a blip (see _auth.js). Caught
+   here, so that moment is a readable "try again" instead of the platform's
+   own error page and stack trace. Anything else still fails as it did. */
+const handleRequest = exports.handler;
+exports.handler = async (event) => {
+    try {
+        return await handleRequest(event);
+    } catch (e) {
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        throw e;
+    }
+};
 
 module.exports.getFurniMeta = getFurniMeta;

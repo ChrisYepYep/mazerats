@@ -45,6 +45,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const chromeFrameMinimizeToggle = document.getElementById("chrome-frame-minimize-toggle");
     const chromeFrameMinimizeArrow = chromeFrameMinimizeToggle.querySelector(".chrome-frame-minimize-arrow");
     const browseChromeFrame = chromeFrameMinimizeToggle.closest(".chrome-frame");
+    // The list's own body, made inert while it is slid away — see
+    // setFeaturedPanelState.
+    const browseChromeBody = browseChromeFrame.querySelector(".chrome-body");
 
     const SUB_OPTIONS = {
         mazes: [["open", "OPEN"], ["archived", "ARCHIVED"], ["collab", "COLLAB"]],
@@ -116,6 +119,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // choice stands wherever they go and the per-view default below stops
     // having an opinion. Same shape as eventsSubTouched just above.
     let sortTouched = false;
+    /* The dropdown told what sortBy says, once, before anything reads it.
+       Firefox restores a form's last values when a page is reloaded, so the
+       select could come back showing "Maze Owner" while the list underneath
+       was sorted by name — and nothing corrected it until the visitor
+       happened to change the sort, because updateChrome only writes the
+       select when sortBy itself moves. */
+    sortSelect.value = sortBy;
     let query = "";
     // Independent of topView/mazesSub/eventsSub — layers a featured pick
     // over whichever category is active rather than replacing it, so
@@ -248,7 +258,76 @@ document.addEventListener("DOMContentLoaded", () => {
         return n;
     }
 
-    function normalizeShape(item, isEvents) {
+    /* ---- ONE MALFORMED RECORD MUST NOT TAKE THE ARCHIVE WITH IT.
+
+       Every field below used to be passed straight through and then used as
+       whatever type it was supposed to be: tags .map'd, relatedImages
+       .filter'd, sortKey and owner .localeCompare'd. A single record saved
+       with tags as a string, or a creator as a number, threw inside
+       render() — and render() throwing on the load path meant the grid
+       never drew AND openFromAddress never ran, so the whole archive went
+       blank and every shared link on the site stopped opening. One bad row
+       cost all of them.
+
+       So each field is coerced to the type the rest of this file assumes:
+       text to a string ("" for anything missing or not text-like), lists to
+       an array, the furni map to a plain object. A value of the wrong shape
+       reads as absent rather than as an exception. sanitizeRecords applies
+       the same rule to the raw records at load, for the handful of places
+       (the timeline, the stats, the furni index) that read them directly. */
+    function asText(v) {
+        if (v == null) return "";
+        if (typeof v === "string") return v;
+        if (typeof v === "number" || typeof v === "boolean") return String(v);
+        return "";
+    }
+    function asList(v) {
+        return Array.isArray(v) ? v : [];
+    }
+    function asTags(v) {
+        return asList(v).filter(t => typeof t === "string" || typeof t === "number").map(String);
+    }
+    function asMap(v) {
+        return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+    }
+    function asImageRef(v) {
+        return v && typeof v === "object" && !Array.isArray(v) ? v : null;
+    }
+
+    const RECORD_TEXT_FIELDS = ["id", "slug", "name", "title", "creator", "host", "added", "date", "endDate",
+        "createdAt", "updatedAt", "description", "details", "difficulty", "status", "thumb", "linksReferences", "habboLink"];
+    const RECORD_LIST_FIELDS = ["gallery", "relatedImages"];
+
+    /* The raw records, made safe in place as they arrive (see the note
+       above asText). Anything that is not an object at all is dropped: there
+       is nothing in it to show. Only fields holding the WRONG type are
+       touched — a missing field stays missing, so nothing downstream that
+       asks "is this set?" gets a different answer. */
+    function sanitizeRecords(list) {
+        if (!Array.isArray(list)) return [];
+        return list.filter(r => r && typeof r === "object" && !Array.isArray(r)).map(r => {
+            RECORD_TEXT_FIELDS.forEach(k => {
+                if (r[k] != null && typeof r[k] !== "string") r[k] = asText(r[k]);
+            });
+            RECORD_LIST_FIELDS.forEach(k => {
+                if (r[k] != null && !Array.isArray(r[k])) r[k] = [];
+            });
+            if (r.tags != null) r.tags = asTags(r.tags);
+            if (r.furni != null) r.furni = asMap(r.furni);
+            ["entrance", "finish"].forEach(k => {
+                if (r[k] != null && !asImageRef(r[k])) r[k] = null;
+            });
+            return r;
+        });
+    }
+
+    function normalizeShape(rawItem, isEvents) {
+        // Guarded rather than trusted: see asText above.
+        const item = rawItem && typeof rawItem === "object" ? rawItem : {};
+        const gallery = asList(item.gallery);
+        const entrance = asImageRef(item.entrance);
+        const finish = asImageRef(item.finish);
+        const firstImage = (entrance && entrance.image) || (gallery[0] && gallery[0].image) || "";
         if (isEvents) {
             return {
                 isEvent: true,
@@ -260,13 +339,16 @@ document.addEventListener("DOMContentLoaded", () => {
                    done, the what's-new list and the timeline. Before this,
                    a normalized record could only be identified by its
                    display name, which is neither stable nor unique. */
-                id: item.id || "",
-                name: item.title || "",
-                subtitle: item.host ? `by ${item.host}` : "",
+                id: asText(item.id),
+                // Its address (/event/<slug>), which follows its title. See
+                // RecordAddress in js/site.js.
+                slug: asText(item.slug),
+                name: asText(item.title),
+                subtitle: asText(item.host) ? `by ${asText(item.host)}` : "",
                 statusKey: eventStatus(item),
                 statusLabel: EventStatus.labelFor(item),
                 hotel: item.hotel,
-                owner: item.host || "",
+                owner: asText(item.host),
                 dateFieldLabel: "Date",
                 dateValue: item.date,
                 endDateValue: item.endDate,
@@ -287,19 +369,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 // is set) and the same gallery/entrance/finish shape as
                 // mazes, so openModal's gallery-building logic already
                 // works unmodified for either kind.
-                thumb: item.thumb || (item.entrance && item.entrance.image) || (item.gallery && item.gallery[0] && item.gallery[0].image) || "",
-                description: item.description,
-                details: item.details,
-                linksReferences: item.linksReferences,
-                tags: item.tags,
+                thumb: asText(item.thumb) || asText(firstImage),
+                description: asText(item.description),
+                details: asText(item.details),
+                linksReferences: asText(item.linksReferences),
+                tags: asTags(item.tags),
                 habboLink: item.habboLink,
-                gallery: item.gallery,
-                entrance: item.entrance,
-                finish: item.finish,
+                gallery: Array.isArray(item.gallery) ? gallery : undefined,
+                entrance,
+                finish,
                 // Extra images attached to this maze/event in the admin panel, shown
                 // in the floating photo frame off the gallery viewport's photo-wall
                 // icons. Normalized here so a missing field is just an empty list.
-                relatedImages: (item.relatedImages || []).filter(r => r && r.image),
+                relatedImages: asList(item.relatedImages).filter(r => r && r.image),
                 // Furni detected in this maze/event's room images by the admin
                 // scan, keyed by gallery image — see renderFurniStrip.
                 /* Events carry no furni: an event's images are posters
@@ -307,19 +389,20 @@ document.addEventListener("DOMContentLoaded", () => {
                    them worth recording. Left off the normalized shape
                    entirely rather than passed through empty, so nothing
                    downstream has to ask whether this one counts. */
-                sortKey: item.date || ""
+                sortKey: asText(item.date)
             };
         }
         return {
             isEvent: false,
-            // See the events branch above for what this is for.
-            id: item.id || "",
-            name: item.name || "",
-            subtitle: item.creator ? `by ${item.creator}` : "",
+            // See the events branch above for what these are for.
+            id: asText(item.id),
+            slug: asText(item.slug),
+            name: asText(item.name),
+            subtitle: asText(item.creator) ? `by ${asText(item.creator)}` : "",
             statusKey: item.status,
             statusLabel: item.status === "open" ? "Open" : item.status === "closed" ? "Closed" : item.status === "collab" ? "Collab" : "Unknown",
             hotel: item.hotel,
-            owner: item.creator || "",
+            owner: asText(item.creator),
             dateFieldLabel: "Opened",
             dateValue: item.added,
             // No dedicated thumbnail? Fall back to the entrance shot, then
@@ -328,24 +411,24 @@ document.addEventListener("DOMContentLoaded", () => {
             // screenshot representing the room), and a maze that skipped
             // the thumbnail/entrance fields but still has a gallery almost
             // always has its first room stand in for one anyway.
-            thumb: item.thumb || (item.entrance && item.entrance.image) || (item.gallery && item.gallery[0] && item.gallery[0].image) || "",
-            description: item.description,
-            details: item.details,
-            linksReferences: item.linksReferences,
-            tags: item.tags,
+            thumb: asText(item.thumb) || asText(firstImage),
+            description: asText(item.description),
+            details: asText(item.details),
+            linksReferences: asText(item.linksReferences),
+            tags: asTags(item.tags),
             habboLink: item.habboLink,
-            gallery: item.gallery,
-            entrance: item.entrance,
-            finish: item.finish,
+            gallery: Array.isArray(item.gallery) ? gallery : undefined,
+            entrance,
+            finish,
             // Extra images attached to this maze/event in the admin panel, shown
             // in the floating photo frame off the gallery viewport's photo-wall
             // icons. Normalized here so a missing field is just an empty list.
-            relatedImages: (item.relatedImages || []).filter(r => r && r.image),
+            relatedImages: asList(item.relatedImages).filter(r => r && r.image),
             // Furni detected in this maze/event's room images by the admin
             // scan, keyed by gallery image — see renderFurniStrip.
-            furni: item.furni || {},
-            difficulty: item.difficulty || "",
-            sortKey: item.added || ""
+            furni: asMap(item.furni),
+            difficulty: asText(item.difficulty),
+            sortKey: asText(item.added)
         };
     }
 
@@ -486,7 +569,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 continue;
             }
             if (!value) continue;
-            if (key) (neg ? out.notKeys : out.keys).push({ key, value });
+            // exact: the value was quoted. See keyMatches' "by" case.
+            if (key) (neg ? out.notKeys : out.keys).push({ key, value, exact: m[3] !== undefined });
             else (neg ? out.not : out.words).push(value);
         }
         parsedFor = raw;
@@ -521,13 +605,19 @@ document.addEventListener("DOMContentLoaded", () => {
         return names;
     }
 
-    function keyMatches(n, { key, value }) {
+    function keyMatches(n, { key, value, exact }) {
         switch (key) {
             case "by":
                 // Collabs list several builders in one field; any of them counts.
-                return String(n.owner || "").toLowerCase().split(",").some(b => b.trim().includes(value));
+                /* A QUOTED name is matched whole, an unquoted one as a
+                   substring. The "More by Star" chip wrote by:Star, which then
+                   listed Starlight's mazes too — so a chip now always quotes
+                   its builder (see filterToken), and a name somebody types
+                   loosely still finds whatever it is part of, as before. */
+                return String(n.owner || "").toLowerCase().split(",")
+                    .some(b => exact ? b.trim() === value : b.trim().includes(value));
             case "tag":
-                return (n.tags || []).some(t => String(t).toLowerCase().includes(value));
+                return asTags(n.tags).some(t => t.toLowerCase().includes(value));
             case "hotel":
                 return String(n.hotel || "").toLowerCase() === value;
             case "diff":
@@ -556,10 +646,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     /* A filter token for the box, quoted when the value has a space in it
        ("very hard", a tag like "FURNI MAZE") so it survives being parsed
-       back out. */
+       back out.
+
+       A builder is ALWAYS quoted, because quoting is what makes "by" match
+       the name exactly rather than any name containing it — see keyMatches.
+       Only chips come through here, so only a chip's builder is exact. */
     function filterToken(key, value) {
         const v = String(value || "").trim();
-        return /\s/.test(v) ? `${key}:"${v}"` : `${key}:${v}`;
+        return (/\s/.test(v) || key === "by") ? `${key}:"${v}"` : `${key}:${v}`;
     }
 
     /* The box's text with one filter set: any earlier filter of the SAME kind
@@ -633,36 +727,58 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Turns any bare URL in the Links & References text into a real,
-    // clickable <a> — text is escaped first so the input can't inject
-    // markup, then URLs are matched against the already-escaped string
-    // (safe, since URLs don't rely on the characters escapeHtml touches).
-    // Trailing punctuation is peeled off the link itself rather than
-    // swallowed into it: plain sentence punctuation (a period, a comma...),
-    // and a closing paren specifically when it has no matching "(" earlier
-    // in the match — i.e. it's closing surrounding text like "(see url)",
-    // not part of the URL's own path.
+    // clickable <a>. Trailing punctuation is peeled off the link itself
+    // rather than swallowed into it: plain sentence punctuation (a period, a
+    // comma...), and a closing paren specifically when it has no matching
+    // "(" earlier in the match — i.e. it's closing surrounding text like
+    // "(see url)", not part of the URL's own path.
+    /* URLS ARE FOUND IN THE RAW TEXT, AND EVERY PIECE IS ESCAPED ON ITS WAY
+       OUT — not the other way round, which is how this used to work.
+
+       It escaped the whole string first and then looked for URLs in the
+       result, on the theory that URLs never contain the characters
+       escapeHtml touches. The URL does not, but what sits NEXT to it does:
+       a link written in quotes, "https://x", was escaped to
+       &quot;https://x&quot; and the match ran on through the entity, so the
+       link went to https://x&quot and the closing quote vanished into it.
+       Apostrophes (&#39;) did the same. Matching the raw text lets the match
+       simply stop at a quote or an angle bracket, and nothing reaches the
+       page without passing through escapeHtml. */
     function linkifyText(str) {
-        return escapeHtml(str).replace(/((?:https?:\/\/|www\.)[^\s<]+)/gi, match => {
-            let core = match;
-            let trailing = "";
-            while (core.length) {
-                const last = core[core.length - 1];
-                if (".,!?;:".includes(last)) {
-                    trailing = last + trailing;
-                    core = core.slice(0, -1);
-                    continue;
-                }
-                if (last === ")" && (core.match(/\)/g) || []).length > (core.match(/\(/g) || []).length) {
-                    trailing = last + trailing;
-                    core = core.slice(0, -1);
-                    continue;
-                }
-                break;
+        const text = String(str == null ? "" : str);
+        const re = /(?:https?:\/\/|www\.)[^\s<>"']+/gi;
+        let out = "";
+        let last = 0;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            out += escapeHtml(text.slice(last, m.index));
+            last = m.index + m[0].length;
+            out += linkifyOne(m[0]);
+        }
+        return out + escapeHtml(text.slice(last));
+    }
+
+    // One matched URL, raw, as its <a> plus any punctuation peeled off it.
+    function linkifyOne(match) {
+        let core = match;
+        let trailing = "";
+        while (core.length) {
+            const last = core[core.length - 1];
+            if (".,!?;:".includes(last)) {
+                trailing = last + trailing;
+                core = core.slice(0, -1);
+                continue;
             }
-            if (!core) return match;
-            const href = /^https?:\/\//i.test(core) ? core : `https://${core}`;
-            return `<a href="${href}" target="_blank" rel="noopener" class="ref-link">${core}</a>${trailing}`;
-        });
+            if (last === ")" && (core.match(/\)/g) || []).length > (core.match(/\(/g) || []).length) {
+                trailing = last + trailing;
+                core = core.slice(0, -1);
+                continue;
+            }
+            break;
+        }
+        if (!core) return escapeHtml(match);
+        const href = /^https?:\/\//i.test(core) ? core : `https://${core}`;
+        return `<a href="${escapeHtml(href)}" target="_blank" rel="noopener" class="ref-link">${escapeHtml(core)}</a>${escapeHtml(trailing)}`;
     }
 
     // Room thumbnails start invisible (see .row-thumb-img in style.css) and
@@ -709,7 +825,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const difficultyHtml = n.difficulty
             ? `<span class="tag difficulty-${cssToken(n.difficulty)}">${escapeHtml(DIFFICULTY_LABELS[n.difficulty] || n.difficulty)}</span>`
             : "";
-        return difficultyHtml + (n.tags || []).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("");
+        // asTags: a record that is not normalized (or was saved with tags as
+        // a string) must not throw here — see the note above asText.
+        return difficultyHtml + asTags(n.tags).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join("");
     }
 
     /* The same chips as tagsHtml, in a maze's window, as BUTTONS: each one
@@ -742,12 +860,15 @@ document.addEventListener("DOMContentLoaded", () => {
        with one maze in the archive had a "More by" chip that led back to the
        very maze it was pressed in. */
     function othersBy(n, name) {
-        const value = String(name).toLowerCase();
+        const value = String(name).trim().toLowerCase();
         const pool = n.isEvent ? EVENTS : ROOMS;
         return pool.filter(raw => {
             if (raw.id === n.id) return false;
             const owner = n.isEvent ? raw.host : raw.creator;
-            return String(owner || "").toLowerCase().split(",").some(b => b.trim().includes(value));
+            // Whole-name, as the chip's quoted filter now is: counting
+            // Starlight towards "More by Star" offered a chip for mazes Star
+            // never built.
+            return String(owner || "").toLowerCase().split(",").some(b => b.trim() === value);
         }).length;
     }
 
@@ -829,7 +950,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (sortBy === "name") {
             sorted.sort((a, b) => compareNames(a.name, b.name));
         } else if (sortBy === "owner") {
-            sorted.sort((a, b) => a.owner.localeCompare(b.owner));
+            // String(): see the note above asText — a record this sort could
+            // not read used to throw here and blank the whole list.
+            sorted.sort((a, b) => String(a.owner || "").localeCompare(String(b.owner || "")));
         } else if (sortBy === "difficulty-asc" || sortBy === "difficulty-desc") {
             const dir = sortBy === "difficulty-asc" ? 1 : -1;
             sorted.sort((a, b) => {
@@ -852,8 +975,17 @@ document.addEventListener("DOMContentLoaded", () => {
                deliberate: it is the default for the events lists, and a
                stale value from somewhere should land on it rather than on
                nothing. */
+            /* Undated records go last whichever way round. Descending did
+               that by accident ("" sorts below any date); ascending — now
+               the Upcoming tab's default, see updateChrome — would have put
+               every "Date TBC" event ABOVE the one happening tomorrow. */
             const dir = sortBy === "date-asc" ? -1 : 1;
-            sorted.sort((a, b) => dir * b.sortKey.localeCompare(a.sortKey));
+            sorted.sort((a, b) => {
+                const ak = String(a.sortKey || "");
+                const bk = String(b.sortKey || "");
+                if (!ak || !bk) return (ak ? 0 : 1) - (bk ? 0 : 1);
+                return dir * bk.localeCompare(ak);
+            });
         }
         // An event happening right now is the one thing someone opening the
         // Events tab needs to see first, so LIVE is lifted to the top of
@@ -974,6 +1106,12 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.innerHTML = `${iconHtml}<span class="chrome-nav-sub-label">${label}</span>`;
             btn.dataset.subValue = value;
             btn.classList.toggle("active", value === activeSub);
+            /* .active is a picture of the selection and nothing else, so a
+               screen reader met three identical buttons and no way to learn
+               which tab it was on. aria-pressed says it in words, set from the
+               same test so the two cannot disagree — the same pairing
+               What's New and the Timeline buttons already use. */
+            btn.setAttribute("aria-pressed", value === activeSub ? "true" : "false");
         });
     }
 
@@ -1020,8 +1158,23 @@ document.addEventListener("DOMContentLoaded", () => {
         // Couples .chrome-frame's minimize state to showFeatured — see this
         // function's own comment for why the two frames' heights need to be
         // computed together.
-        setFeaturedPanelState(showFeatured);
-        topNavBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.top === topView));
+        /* Forced on every render while the panel stays open. The render
+           above has just rebuilt the rows, and a rebuilt row has lost the
+           display: none trimFeaturedToFit gave it — so on a phone, any
+           status tick or account sync put back the fourth pick the trim had
+           taken off, sliced in half at the panel's foot. Without force the
+           "nothing changed" guard skipped the trim, since the panel itself
+           had not moved. Refresh has always forced for the same reason. */
+        setFeaturedPanelState(showFeatured, showFeatured && !featuredOpening);
+        // aria-pressed beside .active for the same reason as the sub-nav's
+        // (see renderSubNav), and aria-expanded on Featured Mazes because
+        // what it does is open and close the panel beneath it.
+        topNavBtns.forEach(btn => {
+            const on = btn.dataset.top === topView;
+            btn.classList.toggle("active", on);
+            btn.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        featuredMazesBtn.setAttribute("aria-expanded", showFeatured ? "true" : "false");
         renderSubNav();
 
         // Sorting by difficulty was a silent no-op the whole time while
@@ -1092,9 +1245,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
            A default, not a lock: it applies until the visitor picks a sort
            of their own, and their choice then follows them between tabs
-           rather than being reset by arriving at one of these. */
+           rather than being reset by arriving at one of these.
+
+           EXCEPT UPCOMING, which runs soonest first. "Newest" on a list of
+           things that have not happened yet means the furthest away, so the
+           tab somebody opens to find the next event led with one months off
+           and put tomorrow's at the bottom. Past and Archive keep newest
+           first: there the most recent really is the one being looked for. */
         if (!sortTouched) {
-            const want = (isEvents && !showFeatured) ? "date-desc" : "name";
+            const eventsDefault = resolvedEventsSub() === "upcoming" ? "date-asc" : "date-desc";
+            const want = (isEvents && !showFeatured) ? eventsDefault : "name";
             if (sortBy !== want) {
                 sortBy = want;
                 sortSelect.value = want;
@@ -1387,8 +1547,15 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    /* When each id was last ticked or un-ticked by hand, as a running
+       count rather than a time, so syncWalked can tell which answers are
+       older than the visitor's own last word. See the note in syncWalked. */
+    let tickEditSeq = 0;
+    const tickTouchedAt = { walked: new Map(), saved: new Map() };
+
     // A tick or un-tick made by hand on this device.
     function noteTick(list, id, on) {
+        tickTouchedAt[list].set(id, ++tickEditSeq);
         accountTicks[list].delete(id);
         if (on) pendingTicks[list].add(id);
         else pendingTicks[list].delete(id);
@@ -1400,19 +1567,46 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // A server reply that holds an id confirms it: it is no longer pending.
+    /* A server reply that holds an id confirms it: it is no longer pending.
+
+       AND IT NOW BELONGS TO THE ACCOUNT, which it used to leave out. A
+       confirmed id left the pending book and joined no other, so as far as
+       this device knew it was a hand-made tick and nothing to do with the
+       account — and syncWalked only lets the account take away ids in the
+       account book. Tick a maze on your phone while signed in, un-tick it
+       on your laptop, and the phone kept it forever, however often it
+       synced. Once the account holds it, the account is where it lives:
+       an un-tick anywhere now reaches here, and signing out takes it off
+       this browser along with the account's other ticks (it comes back on
+       signing in again, because the account still has it). */
     function confirmTicks(state) {
         if (!state) return;
+        const signedIn = !!(window.Account && Account.current);
         TICK_LISTS.forEach(list => {
             const server = new Set(Array.isArray(state[list]) ? state[list] : []);
             let changed = false;
-            pendingTicks[list].forEach(id => { if (server.has(id)) { pendingTicks[list].delete(id); changed = true; } });
+            pendingTicks[list].forEach(id => {
+                if (!server.has(id)) return;
+                pendingTicks[list].delete(id);
+                if (signedIn && tickSet(list).has(id)) accountTicks[list].add(id);
+                changed = true;
+            });
             if (changed) persistBooks(list);
         });
     }
 
     function syncWalked() {
         if (!window.Account || !Account.current) return;
+        /* Where the visitor's own ticking had got to when this asked.
+
+           The answer can take a while, and it describes the account as it
+           was when the request left. Un-tick a maze in the meantime and the
+           answer still lists it — and this used to read that as "ticked on
+           another device" and put it straight back, so a slow connection
+           resurrected whatever you had just taken off. Anything touched by
+           hand since the request left is the visitor's newer word on it,
+           and is skipped below in all three directions. */
+        const askedAt = tickEditSeq;
         Account.fetchState().then(state => {
             if (!state) return;
             let anyChange = false;
@@ -1421,16 +1615,25 @@ document.addEventListener("DOMContentLoaded", () => {
             TICK_LISTS.forEach(list => {
                 const local = tickSet(list);
                 const server = new Set(Array.isArray(state[list]) ? state[list] : []);
+                const touchedSince = id => (tickTouchedAt[list].get(id) || 0) > askedAt;
                 let changed = false;
                 // Taken off the account elsewhere: leaves here too, if this
                 // device only had it from the account in the first place.
                 accountTicks[list].forEach(id => {
+                    if (touchedSince(id)) return;
                     if (!server.has(id)) { accountTicks[list].delete(id); local.delete(id); changed = true; }
                 });
                 server.forEach(id => {
+                    if (touchedSince(id)) return;
                     if (!local.has(id)) { local.add(id); accountTicks[list].add(id); changed = true; }
                 });
-                pendingTicks[list].forEach(id => { if (server.has(id)) pendingTicks[list].delete(id); });
+                // Confirmed, so the account's now — see confirmTicks for
+                // why it has to join that book rather than just leave this.
+                pendingTicks[list].forEach(id => {
+                    if (touchedSince(id) || !server.has(id)) return;
+                    pendingTicks[list].delete(id);
+                    accountTicks[list].add(id);
+                });
                 /* Only what was ticked HERE and the account has not seen goes
                    up, so a device that is merely up to date (or out of date)
                    stays quiet. */
@@ -1441,14 +1644,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (Object.keys(patch).length) Account.saveState(patch);
             if (anyChange) {
-                render();
+                // In place: this lands whenever the network says, not when
+                // the visitor did anything — see renderInPlace.
+                renderInPlace();
                 updateWalkedCount();
+                refreshProgressIfOpen();
             }
         });
     }
 
     // Nobody signed in (a sign-out, or a session that has lapsed): the
-    // account's ticks leave this browser; the visitor's own stay.
+    // account's ticks leave this browser; the visitor's own stay. (Ticks
+    // made here that the account has since confirmed count as the
+    // account's — see confirmTicks — and come back with the next sign-in.)
     function dropAccountTicks() {
         let anyChange = false;
         TICK_LISTS.forEach(list => {
@@ -1461,8 +1669,9 @@ document.addEventListener("DOMContentLoaded", () => {
             anyChange = true;
         });
         if (anyChange) {
-            render();
+            renderInPlace();
             updateWalkedCount();
+            refreshProgressIfOpen();
         }
     }
 
@@ -1847,7 +2056,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const showDate = isOpenView || n.isEvent;
 
         return `
-            <div class="chrome-list-row featured" data-difficulty="${cssToken(n.difficulty)}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
+            <div class="chrome-list-row featured" data-record-id="${escapeHtml(n.id || "")}" data-difficulty="${cssToken(n.difficulty)}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
                 <div class="row-thumb">
                     ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${rowThumbUrl(n.thumb)}" alt="${escapeHtml(rowThumbAlt(n))}" loading="lazy"></div>` : ""}
                 </div>
@@ -2114,10 +2323,16 @@ document.addEventListener("DOMContentLoaded", () => {
         "images": "Pictures updated",
     };
 
-    /* ONE LINE, however much was done. An edit that touched five things
-       reports the two that matter most and counts the rest — the list is
-       ordered by the server with pictures and furni first, so the two shown
-       are the two a reader would have picked out anyway.
+    /* EVERY CHANGE, TWO TO A LINE. The list is ordered by the server with
+       pictures and furni first, so the first line is the one a reader would
+       have picked out anyway, and anything more wraps onto the lines below.
+
+       It used to be one line: the first two, then "+1 more". That told a
+       reader something else had changed and kept back what — Twister Maze
+       read "Added room imagery · Updated furni listing · +1 more" — when the
+       word it was hiding would have fitted on the next line. Each line is its
+       own row in .updatelog-what's column, so it keeps the row's ellipsis on
+       a narrow screen rather than wrapping mid-phrase.
 
        Nothing at all for a record with no `changes` field, which is every
        record edited before this existed and every record only ever added.
@@ -2128,11 +2343,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const words = keys.map(k => CHANGE_WORDS[k]).filter(Boolean);
         if (!words.length) return "";
 
-        const shown = words.slice(0, 2).join(" · ");
-        const rest = words.length - 2;
-        return `<span class="updatelog-change">${escapeHtml(
-            rest > 0 ? `${shown} · +${rest} more` : shown
-        )}</span>`;
+        const lines = [];
+        for (let i = 0; i < words.length; i += 2) lines.push(words.slice(i, i + 2).join(" · "));
+        return lines.map(line => `<span class="updatelog-change">${escapeHtml(line)}</span>`).join("");
     }
 
     /* The log is grouped and headed by the VISITOR'S day, not UTC's.
@@ -2217,7 +2430,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <ul class="updatelog-entries">
                             ${group.entries.map(({ n, i }) => `
                                 <li>
-                                    <button type="button" class="updatelog-entry" data-log-index="${i}">
+                                    <button type="button" class="updatelog-entry" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}">
                                         <span class="updatelog-verb is-${n.activity}">${n.activity === "updated" ? "Updated" : "Added"}</span>
                                         ${n.thumb
                                             ? `<img class="updatelog-thumb" src="${escapeHtml(rowThumbUrl(n.thumb))}" alt="" loading="lazy" decoding="async">`
@@ -2236,6 +2449,27 @@ document.addEventListener("DOMContentLoaded", () => {
                         </ul>
                     </section>`).join("")}
             </div>`;
+
+        /* A thumbnail that fails becomes the blank square an entry with no
+           picture already shows. It was left as the browser's broken-image
+           icon — the one place in the archive where a missing picture still
+           looked like one, because the rows' own handling (wireThumbFadeIn)
+           only ever looks for .row-thumb-img. Same complete/naturalWidth
+           test as there, for the same reason: a 404 already in the cache
+           fires no error event. */
+        grid.querySelectorAll("img.updatelog-thumb").forEach(img => {
+            const blank = () => {
+                const span = document.createElement("span");
+                span.className = "updatelog-thumb is-blank";
+                span.setAttribute("aria-hidden", "true");
+                img.replaceWith(span);
+            };
+            if (img.complete) {
+                if (!img.naturalWidth) blank();
+                return;
+            }
+            img.addEventListener("error", blank, { once: true });
+        });
 
         grid.querySelectorAll(".updatelog-entry").forEach(btn => {
             btn.addEventListener("click", () => {
@@ -2276,10 +2510,27 @@ document.addEventListener("DOMContentLoaded", () => {
         return m ? m[1] : "";
     }
 
+    /* Whether a record belongs on the timeline at all, dated or not.
+
+       Hallways are left off. The stats at the timeline's own foot count
+       mazes without them (see archiveStats and isHallway), and the header
+       above counted with them, so the one page gave two different numbers
+       for "how many mazes" a scroll apart.
+
+       And the search box applies. It stays visible and usable over the
+       timeline, and typing into it used to do nothing at all there — no
+       narrowing, no message — which reads as a broken box. Matched through
+       the same normalize/matchesQuery pipeline as every list, so a filter
+       like by:Name means the same thing here as anywhere. */
+    function onTimeline(record, isEvent) {
+        if (!isEvent && isHallway(record)) return false;
+        return matchesQuery(normalize(record, isEvent));
+    }
+
     function timelineEntries() {
         const entries = [];
         ROOMS.forEach(room => {
-            if (!room.name || !timelineYearOf(room.added)) return;
+            if (!room.name || !timelineYearOf(room.added) || !onTimeline(room, false)) return;
             entries.push({
                 kind: "maze",
                 id: room.id || "",
@@ -2293,7 +2544,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         });
         EVENTS.forEach(ev => {
-            if (!ev.title || !timelineYearOf(ev.date)) return;
+            if (!ev.title || !timelineYearOf(ev.date) || !onTimeline(ev, true)) return;
             entries.push({
                 kind: "event",
                 id: ev.id || "",
@@ -2341,7 +2592,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <span class="timeline-dot" aria-hidden="true"></span>
                 <div class="timeline-entry-body">
                     <p class="timeline-entry-name">
-                        ${medal}<button type="button" class="timeline-open" data-timeline-index="${index}">${escapeHtml(entry.name)}</button>
+                        ${medal}<button type="button" class="timeline-open" data-timeline-index="${index}" data-record-id="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</button>
                         <span class="timeline-badge status-badge status-${cssToken(entry.statusKey)}">${escapeHtml(entry.statusLabel)}</span>
                     </p>
                     ${entry.by ? `<p class="timeline-entry-by">${entry.kind === "event" ? "Event hosted" : "Maze built"} by ${escapeHtml(entry.by)}</p>` : ""}
@@ -2354,7 +2605,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const entries = timelineEntries();
         if (!entries.length) {
             grid.innerHTML = "";
-            emptyEl.textContent = "Nothing dated in the archive yet.";
+            emptyEl.textContent = query.trim()
+                ? "Nothing on the timeline matches your search."
+                : "Nothing dated in the archive yet.";
             emptyEl.style.display = "block";
             return;
         }
@@ -2390,8 +2643,10 @@ document.addEventListener("DOMContentLoaded", () => {
            mazes while the tabs counted 38, and nothing anywhere accounted for
            the other two. A timeline that quietly drops records is a timeline
            you cannot trust as a census. */
-        const undatedMazes = ROOMS.filter(r => r.name && !timelineYearOf(r.added)).length;
-        const undatedEvents = EVENTS.filter(e => e.title && !timelineYearOf(e.date)).length;
+        // Through onTimeline, so the hallway and the search are counted out
+        // here on exactly the terms they are counted out of the entries.
+        const undatedMazes = ROOMS.filter(r => r.name && !timelineYearOf(r.added) && onTimeline(r, false)).length;
+        const undatedEvents = EVENTS.filter(e => e.title && !timelineYearOf(e.date) && onTimeline(e, true)).length;
         const undatedTotal = undatedMazes + undatedEvents;
         const missing = [];
         if (undatedMazes) missing.push(`${undatedMazes} ${undatedMazes === 1 ? "maze" : "mazes"}`);
@@ -2454,7 +2709,50 @@ document.addEventListener("DOMContentLoaded", () => {
     // renderFeaturedList) — so this always shows effectiveView() regardless
     // of showFeatured, rather than swapping to the featured pool while that
     // frame's open (chrome-frame is minimized out of the way then anyway).
+    /* Every render keeps a keyboard user's place.
+
+       The lists are rebuilt wholesale with innerHTML, so the row that had
+       focus is destroyed and focus falls to <body> — and several renders
+       happen with nobody asking: the 15s event-status tick, the account's
+       ticks arriving (syncWalked) or leaving (dropAccountTicks). A keyboard
+       user part-way down the list was thrown back to the top of the page by
+       a timer. So the focused entry's record id is noted before the render
+       and the entry with the same id is focused after it, if it is still
+       there. Rows, What's New entries and timeline entries all carry
+       data-record-id for this.
+
+       Nothing happens unless focus was on one of those entries, so a render
+       from typing in the search box or pressing a tab is untouched. */
     function render() {
+        const active = document.activeElement;
+        const held = active && active.closest && active.closest("[data-record-id]");
+        const container = held && (grid.contains(held) ? grid : featuredFrameList.contains(held) ? featuredFrameList : null);
+        const keep = container && held.dataset.recordId
+            ? { container, id: held.dataset.recordId, cls: held.classList[0] }
+            : null;
+        renderView();
+        // Still focused on something that survived the render: leave it be.
+        if (!keep || (document.activeElement !== document.body && keep.container.contains(document.activeElement))) return;
+        const again = Array.from(keep.container.querySelectorAll("[data-record-id]"))
+            .find(el => el.dataset.recordId === keep.id && el.classList.contains(keep.cls));
+        if (again) again.focus({ preventScroll: true });
+    }
+
+    /* A render nobody asked for — the list's scroll position is put back
+       as well as its focus. Replacing the rows can clamp or jump the
+       panel's scroll (the list is briefly a different height, and a
+       restored focus would otherwise scroll itself into view), which to
+       somebody reading reads as the page jumping on its own. */
+    function renderInPlace() {
+        const results = document.querySelector(".home-results");
+        const top = results ? results.scrollTop : 0;
+        const bodyTop = featuredFrameBody.scrollTop;
+        render();
+        if (results) results.scrollTop = top;
+        featuredFrameBody.scrollTop = bodyTop;
+    }
+
+    function renderView() {
         updateChrome();
         syncSearchToUrl();
 
@@ -2541,11 +2839,9 @@ document.addEventListener("DOMContentLoaded", () => {
             ? furniFilteredItems().filter(matchesQuery)
             : showWhatsNew
                 ? whatsNewItems().filter(matchesQuery)
-                : (searching ? kindItems(topView) : sourceItems(view))
-                    .map(item => normalize(item, topView === "events"))
+                : normalizeAll(searching ? kindItems(topView) : sourceItems(view), topView === "events")
                     .filter(matchesQuery);
         const items = (showWhatsNew || furniFilter) ? rawItems : sortItems(rawItems);
-        currentItems = items;
 
         // The Open Mazes list trades the short description for the date the
         // maze opened, shown right next to the owner's name instead. What's
@@ -2553,7 +2849,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // the line that says what each one is.
         const isOpenView = !showWhatsNew && !searching && view === "open";
 
-        grid.innerHTML = furniFilterChipHtml() + currentItems.map(n => roomRowHtml(n, isOpenView)).join("");
+        // Only the records that actually drew — see rowsHtml. currentItems
+        // has to be exactly that list, because wireRowActivation pairs
+        // rows with it by position.
+        const rows = rowsHtml(items, isOpenView);
+        currentItems = rows.items;
+        grid.innerHTML = furniFilterChipHtml() + rows.html;
 
         const clearFilter = document.getElementById("furni-filter-clear");
         if (clearFilter) {
@@ -2583,6 +2884,41 @@ document.addEventListener("DOMContentLoaded", () => {
         updateWalkedCount();
     }
 
+    /* Normalize a list of raw records, skipping any that will not.
+
+       normalize is written not to throw (see the note above asText), and
+       this is the second line behind it: whatever a record turns out to be
+       wrong in next, it costs that one record rather than the list. The
+       archive going blank over a single bad save — and every deep link with
+       it, since the load path never reached openFromAddress — is what this
+       exists to stop. */
+    function normalizeAll(list, isEvents) {
+        const out = [];
+        asList(list).forEach(item => {
+            try { out.push(normalize(item, isEvents)); }
+            catch (e) { console.warn("Skipped a record that would not normalize", item && item.id, e); }
+        });
+        return out;
+    }
+
+    /* The row markup for a list, one record at a time, leaving out any row
+       that throws while it is drawn — for the same reason as normalizeAll.
+       Returns the records that made it alongside their markup, because the
+       rows are wired to their records by position and the two must agree. */
+    function rowsHtml(items, isOpenView) {
+        const kept = [];
+        let html = "";
+        items.forEach(n => {
+            try {
+                html += roomRowHtml(n, isOpenView);
+                kept.push(n);
+            } catch (e) {
+                console.warn("Skipped a row that would not render", n && n.id, e);
+            }
+        });
+        return { items: kept, html };
+    }
+
     // Every record of one kind, across all three of its tabs — what a search
     // looks through (see render).
     function kindItems(kind) {
@@ -2607,8 +2943,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // the same pipeline the real list uses, so "matches" means exactly what
     // it means everywhere else.
     function countOfKind(kind) {
-        return kindItems(kind)
-            .map(item => normalize(item, kind === "events"))
+        return normalizeAll(kindItems(kind), kind === "events")
             .filter(matchesQuery)
             .length;
     }
@@ -2776,13 +3111,16 @@ document.addEventListener("DOMContentLoaded", () => {
     function renderFeaturedList(reshuffle) {
         if (!showFeatured || !dataLoaded) return;
 
-        const pool = sourceItems("featured").map(item => normalize(item, false));
+        const pool = normalizeAll(sourceItems("featured"), false);
         const kept = reshuffle ? [] : featuredListItems
             .map(old => pool.find(n => n.id && n.id === old.id))
             .filter(Boolean);
-        featuredListItems = kept.length ? kept : pickFeatured(pool);
+        // Through rowsHtml so a pick that will not draw is dropped rather
+        // than taking the panel down with it — see normalizeAll.
+        const rows = rowsHtml(kept.length ? kept : pickFeatured(pool), false);
+        featuredListItems = rows.items;
 
-        featuredFrameList.innerHTML = featuredListItems.map(n => roomRowHtml(n, false)).join("");
+        featuredFrameList.innerHTML = rows.html;
         wireRowActivation(featuredFrameList, featuredListItems);
         wireThumbFadeIn(featuredFrameList);
 
@@ -2852,7 +3190,19 @@ document.addEventListener("DOMContentLoaded", () => {
         // setFeaturedPanelState would skip re-measuring entirely.
         setFeaturedPanelState(true, true);
 
+        /* Runs once, and cancels the other of its two triggers when it does.
+           It used to run twice — transitionend at 0.5s, then the fallback
+           below at 0.6s regardless — and the second run cleared
+           featuredRefreshInFlight for whatever refresh had STARTED in the
+           100ms between. That one was then still mid-slide with the guard
+           down, so a third click stacked another outgoing clone on top of
+           it. */
+        let finished = false;
+        let fallback = 0;
         const finish = () => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(fallback);
             outgoingClip.remove();
             featuredRefreshInFlight = false;
         };
@@ -2864,7 +3214,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // silently disabling every future click on this button for the
         // rest of the session. .featured-frame-list-outgoing's own
         // transition is 0.5s (see css/style.css); comfortably clear of that.
-        setTimeout(finish, 600);
+        fallback = setTimeout(finish, 600);
     }
 
     // #search-wrap's own natural (fully padded) height — cached rather than
@@ -2925,6 +3275,20 @@ document.addEventListener("DOMContentLoaded", () => {
     function updateSearchWrap() {
         const myGeneration = ++searchWrapGeneration;
         const wasCollapsed = searchWrap.style.maxHeight === "0px";
+        /* Collapsed is out of the tab order too. max-height: 0 and opacity:
+           0 hide the box and the sort select from the eye only, so Tab still
+           walked into a search field nobody could see while Featured was
+           open. inert takes them out of focus and out of the accessibility
+           tree together, and comes off the moment the row is shown again. */
+        searchWrap.inert = showFeatured;
+        /* Already collapsed and staying that way: nothing to do. Every
+           render while Featured is open used to run the collapse again from
+           the top — max-height set back to the full scrollHeight for a frame
+           and then animated to 0 — so a status tick or a sync made the
+           hidden row twitch visibly behind the sub-nav. The generation was
+           still bumped above, which is wanted: it cancels a reveal that may
+           be pending from a close-and-reopen inside one frame. */
+        if (showFeatured && wasCollapsed) return;
         if (showFeatured) {
             // Lock in the current expanded height as the transition's start
             // — max-height can't animate *from* "none".
@@ -3082,6 +3446,17 @@ document.addEventListener("DOMContentLoaded", () => {
         chromeFrameMinimizeToggle.setAttribute("aria-label", active ? "Restore the results" : "Minimise the results");
         featuredFrame.classList.toggle("is-open", active);
         browseChromeFrame.classList.toggle("is-minimized", active);
+        /* Kept out of the tab order whenever they cannot be seen, which CSS
+           alone never did. The restore strip is opacity: 0 while the list is
+           showing, yet it stayed a tabbable button — and pressing Enter on
+           it ran its click handler, which empties the search box, so a
+           keyboard user tabbing past lost their search to a control they
+           could not see. The other way round, while Featured is open the
+           list has slid away to a 12px sliver, but every row in it was still
+           reachable by Tab. inert on both, flipped with the state they
+           follow. */
+        chromeFrameMinimizeToggle.inert = !active;
+        if (browseChromeBody) browseChromeBody.inert = active;
 
         // force bypasses the "nothing changed" guard below — used by
         // refreshFeaturedList to re-run the sizing math after swapping in a
@@ -3203,7 +3578,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // via Prev) still slides the way the button implies instead of
         // snapping backwards because the wrapped index looks smaller.
         const direction = index > activeIndex ? 1 : (index < activeIndex ? -1 : 1);
-        const skipSlide = opts.instant || nextIndex === activeIndex;
+        // Reduced motion swaps the picture outright: the slide is a full
+        // frame's width of movement, every twelve seconds, which is exactly
+        // the kind of motion that setting asks a page not to make.
+        const skipSlide = opts.instant || nextIndex === activeIndex || reducedMotionQuery.matches;
         activeIndex = nextIndex;
         const g = activeGallery[activeIndex];
         const label = displayLabel(g);
@@ -3265,8 +3643,24 @@ document.addEventListener("DOMContentLoaded", () => {
         galleryStrip.querySelectorAll("img, .gallery-strip-missing").forEach((thumb, i) => {
             thumb.classList.toggle("active", i === activeIndex);
         });
+        /* Only the strip scrolls, and only sideways. This was
+           scrollIntoView, which scrolls EVERY scrollable ancestor to bring
+           the thumb into view — and on a phone the whole overlay is one of
+           them, so each auto-advance (every 12s) and every arrow press
+           dragged the window down to the thumbnail tray, away from the
+           picture the visitor was looking at. Measured off the two rects
+           rather than offsetLeft, which counts from whatever positioned
+           ancestor the strip happens to have rather than from the strip. */
         const activeThumb = galleryStrip.children[activeIndex];
-        if (activeThumb) activeThumb.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+        if (activeThumb) {
+            const stripRect = galleryStrip.getBoundingClientRect();
+            const thumbRect = activeThumb.getBoundingClientRect();
+            galleryStrip.scrollTo({
+                left: galleryStrip.scrollLeft + (thumbRect.left - stripRect.left)
+                    - (galleryStrip.clientWidth - thumbRect.width) / 2,
+                behavior: reducedMotionQuery.matches ? "auto" : "smooth"
+            });
+        }
 
         if (lightboxOverlay.classList.contains("open")) {
             // Nothing to zoom into for a room with no image — close rather
@@ -3290,12 +3684,104 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    /* ---------- holding the carousel still ----------
+
+       The room pictures advance on their own every 12 seconds, and for a
+       long time nothing could stop that: no control, no respect for the
+       visitor's reduced-motion setting, and no notice taken of someone
+       reading the description or tabbing through the thumbnails while the
+       picture above them changed. Now three things hold it:
+
+       - prefers-reduced-motion: it never advances on its own at all, and
+         the arrows swap the picture instead of sliding it (showGalleryImage).
+       - the Pause button on the picture, which stays paused until pressed
+         again — for the rest of the visit, not just this maze, since the
+         reason someone paused one is rarely about that one maze.
+       - a visitor inside the picture or the description panel: hovered by
+         a real pointer, or keyboard focus (focus-visible only, so a mouse
+         click on an arrow does not leave the carousel stuck until focus
+         happens to move somewhere else). */
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    // A touchscreen reports :hover on whatever was last tapped, and keeps
+    // reporting it — hover only counts where there is a pointer to hover.
+    const canHoverQuery = window.matchMedia("(hover: hover)");
+    const galleryPauseBtn = document.getElementById("gallery-pause");
+    let carouselPausedByUser = false;
+
+    function carouselHoldAreas() {
+        return [modalThumbFrame, modalOverlay.querySelector(".room-desc-panel")].filter(Boolean);
+    }
+
+    function isFocusVisible(el) {
+        // matches() throws on a selector the browser does not know, and
+        // :focus-visible is recent enough for that to matter; an older
+        // browser treats any focus there as deliberate.
+        try { return el.matches(":focus-visible"); } catch (e) { return true; }
+    }
+
+    function carouselHeld() {
+        const areas = carouselHoldAreas();
+        const f = document.activeElement;
+        if (f && f !== document.body && isFocusVisible(f) && areas.some(a => a.contains(f))) return true;
+        return canHoverQuery.matches && areas.some(a => a.matches(":hover"));
+    }
+
+    // The button only exists where there is something for it to stop.
+    function syncGalleryPauseBtn() {
+        if (!galleryPauseBtn) return;
+        const shown = !!(activeGallery && activeGallery.length >= 2) && !reducedMotionQuery.matches;
+        galleryPauseBtn.style.display = shown ? "inline-flex" : "none";
+        galleryPauseBtn.textContent = carouselPausedByUser ? "▶︎ Play" : "❚❚ Pause"; // U+FE0E: iOS would otherwise draw the emoji play button
+        galleryPauseBtn.setAttribute("aria-label", carouselPausedByUser ? "Play the slideshow" : "Pause the slideshow");
+        galleryPauseBtn.classList.toggle("is-paused", carouselPausedByUser);
+    }
+
+    if (galleryPauseBtn) {
+        galleryPauseBtn.addEventListener("click", () => {
+            carouselPausedByUser = !carouselPausedByUser;
+            syncGalleryPauseBtn();
+            if (carouselPausedByUser) stopAutoAdvance();
+            else restartAutoAdvance();
+        });
+    }
+
+    // Someone switching the setting with a room open gets it straight away
+    // rather than on the next maze.
+    const onReducedMotionChange = () => {
+        syncGalleryPauseBtn();
+        restartAutoAdvance();
+    };
+    if (reducedMotionQuery.addEventListener) reducedMotionQuery.addEventListener("change", onReducedMotionChange);
+    else if (reducedMotionQuery.addListener) reducedMotionQuery.addListener(onReducedMotionChange);
+
+    // Leaving the picture or the description hands the carousel back for a
+    // full fresh countdown, the same as leaving the furni row does. Bound
+    // once, on elements that outlive every maze shown in them.
+    carouselHoldAreas().forEach(area => {
+        area.addEventListener("pointerleave", () => {
+            if (!carouselHeld() && !furniInUse()) restartAutoAdvance();
+        });
+        area.addEventListener("focusout", e => {
+            if (e.relatedTarget && area.contains(e.relatedTarget)) return;
+            if (!furniInUse()) restartAutoAdvance();
+        });
+    });
+
     // Restarts the 12s countdown from scratch — called both to kick off the
     // carousel and after any manual navigation, so clicking prev/next or a
     // thumbnail doesn't get immediately overridden by a stale timer.
     function restartAutoAdvance() {
         stopAutoAdvance();
+        /* Only for a window that is up and staying up. closeModal() tears
+           down the furni cards on its way out, and closing a card restarts
+           the carousel — so every close with a card open started a fresh
+           12s interval over a window that was fading away, and nothing was
+           left to clear it. closeLightbox has always had this guard; it
+           lives here now so no other caller has to remember it. (openModal
+           starts the carousel only once "open" is on, for the same reason.) */
+        if (!modalOverlay.classList.contains("open") || modalOverlay.classList.contains("closing")) return;
         if (!activeGallery || activeGallery.length < 2) return;
+        if (reducedMotionQuery.matches || carouselPausedByUser) return;
         if (lightboxOverlay.classList.contains("open")) return;
         /* An older version is up over the current room. Advancing would
            swap the picture out from under a deliberate comparison — and
@@ -3314,6 +3800,8 @@ document.addEventListener("DOMContentLoaded", () => {
             // leaving the row restarts it for a full fresh countdown rather
             // than whatever was left of the interval it interrupted.
             if (furniInUse()) return;
+            // The same courtesy for the picture and the description.
+            if (carouselHeld()) return;
             showGalleryImage(activeIndex + 1);
         }, 12000);
     }
@@ -3558,8 +4046,33 @@ document.addEventListener("DOMContentLoaded", () => {
         frame.style.top = `${Math.min(maxTop, Math.max(0, top))}px`;
     }
 
+    /* The stacking counters used to climb by one on every touch, forever.
+       A long visit spent shuffling frames and cards carried them past the
+       saved-progress note (900) and the skip link (999), and a card from
+       one maze then sat on top of both. Two things keep them in their band
+       now: the counter drops back to its base whenever nothing of its kind
+       is open, and when it reaches the top of its band the open ones are
+       renumbered from the base in the order they are stacked, which keeps
+       the same pile with small numbers. (They also now live inside the
+       room modal's overlay — see openPhotoFrame — whose own z-index is a
+       ceiling none of this can pass.) Returns the new top. */
+    function raiseInStack(el, open, base, top, ceiling) {
+        if (top >= ceiling) {
+            top = base;
+            open.filter(o => o !== el)
+                .sort((a, b) => (Number(a.style.zIndex) || 0) - (Number(b.style.zIndex) || 0))
+                .forEach(o => { o.style.zIndex = String(++top); });
+        }
+        el.style.zIndex = String(++top);
+        return top;
+    }
+
+    const PHOTO_FRAME_Z = 300;   // must match .photo-frame z-index in the CSS
+
     function bringPhotoFrameToFront(frame) {
-        frame.style.zIndex = ++photoFrameTopZ;
+        // Kept under 320, where the furni cards start (see furniCardTopZ):
+        // a card is meant to stand in front of every frame.
+        photoFrameTopZ = raiseInStack(frame, openPhotoFrames, PHOTO_FRAME_Z, photoFrameTopZ, 319);
     }
 
     // The photo frame and the furni card are both fixed-position, draggable,
@@ -3572,8 +4085,20 @@ document.addEventListener("DOMContentLoaded", () => {
     function closePhotoFrame(frame) {
         const i = openPhotoFrames.indexOf(frame);
         if (i !== -1) openPhotoFrames.splice(i, 1);
+        /* Closed from inside (its X, or Escape while on it): removing the
+           frame took focus with it, and a keyboard user was dropped on
+           <body> — outside the room window, with the next Tab starting from
+           the top of the page. Back to the photo icon that opened it, or to
+           the window itself when that icon has gone. */
+        const hadFocus = frame.contains(document.activeElement);
         frame.remove();
+        if (!openPhotoFrames.length) photoFrameTopZ = PHOTO_FRAME_Z;
         syncPhotoStripToFrames();
+        if (hadFocus) {
+            const back = frame._opener;
+            if (back && back.isConnected && back.offsetParent !== null) back.focus({ preventScroll: true });
+            else if (modalOverlay.classList.contains("open")) modalCard.focus({ preventScroll: true });
+        }
     }
 
     function closeAllPhotoFrames() {
@@ -3720,6 +4245,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function renderFurniStrip(record) {
+        // The old row's arrows are about to be thrown away; one still
+        // scrolling under a resting pointer would otherwise keep its
+        // animation loop running against a detached row (see makeFurniArrow).
+        furniArrowStops.forEach(stop => stop());
+        furniArrowStops.clear();
         furniStrip.innerHTML = "";
         /* An event has no furni on any of its images — its pictures are
            posters rather than rooms — so the row goes entirely rather than
@@ -3728,8 +4258,13 @@ document.addEventListener("DOMContentLoaded", () => {
            The case below for keeping the row's space even when it is empty
            is about a MAZE gallery, where some images have been scanned and
            some have not and the row would otherwise appear and disappear
-           between them. An event has no such middle state. */
-        if (activeIsEvent) {
+           between them. An event has no such middle state.
+
+           Nor has a maze with no pictures at all. There is no room image
+           for furni to belong to, so "No furni recorded for this room yet"
+           was a note about a room that is not on screen, standing in an
+           empty band under the maze's thumbnail. */
+        if (activeIsEvent || !activeGallery || !activeGallery.length) {
             furniStrip.hidden = true;
             return;
         }
@@ -3807,10 +4342,22 @@ document.addEventListener("DOMContentLoaded", () => {
             // Keyboard and touch have no hover to give, so the same thing on
             // focus and on click — and a click pins it outright, since there
             // is no pointer to move into it.
-            btn.addEventListener("focus", () => openFurniCard(entry, btn));
+            btn.addEventListener("focus", () => { if (!furniRefocusing) openFurniCard(entry, btn); });
             btn.dataset.track = "furni-open";
             btn.dataset.trackLabel = entry.name || "";
-            btn.addEventListener("click", () => openFurniCard(entry, btn, true));
+            btn.addEventListener("click", e => {
+                const card = openFurniCard(entry, btn, true);
+                /* Pressed from the keyboard (a click with no pointer behind
+                   it reports detail 0): the card's controls — its link, its
+                   "also in", its X — sit outside the row in the tab order,
+                   so they could be seen but never reached. Focus goes into
+                   the card, as a photo frame's does; its X or Escape hands
+                   it back to this icon (see closeFurniCard). */
+                if (card && e.detail === 0) {
+                    const first = card.querySelector(".furni-card-close");
+                    if (first) first.focus({ preventScroll: true });
+                }
+            });
             scroller.appendChild(btn);
         });
 
@@ -3848,6 +4395,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // frame, or the same hover would run at half speed on a 60Hz screen and
     // double on a 144Hz one.
     const FURNI_HOVER_SCROLL = 60;
+    // Every live arrow's stop(), so renderFurniStrip can end their loops
+    // before it throws the old row away.
+    const furniArrowStops = new Set();
 
     /* One end-cap of the icon row: a solid arrow that scrolls the row while
        the pointer rests on it, and jumps a full row-width when clicked.
@@ -3872,6 +4422,11 @@ document.addEventListener("DOMContentLoaded", () => {
         // only whole pixels are ever handed to scrollLeft.
         let carry = 0;
         const step = now => {
+            /* The row was rebuilt (the next room) or the window closed
+               while the pointer rested here, so no pointerleave ever came —
+               and the loop went on scrolling a detached row every frame for
+               the rest of the visit. A removed arrow ends its own loop. */
+            if (!btn.isConnected) { frame = null; return; }
             // Capped so a backgrounded tab, where frames stop arriving,
             // doesn't come back and jump the row a long way in one step.
             const dt = Math.min(now - last, 100) / 1000;
@@ -3890,6 +4445,7 @@ document.addEventListener("DOMContentLoaded", () => {
             frame = requestAnimationFrame(now => { last = now; step(now); });
         };
         const stop = () => { if (frame !== null) cancelAnimationFrame(frame); frame = null; };
+        furniArrowStops.add(stop);
 
         // Pointer events rather than mouseenter/leave so a touch that lands
         // on the arrow doesn't leave it scrolling forever with no pointer to
@@ -3899,7 +4455,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.addEventListener("pointerdown", stop);
         btn.addEventListener("click", () => {
             stop();
-            scroller.scrollBy({ left: scroller.clientWidth * dir, behavior: "smooth" });
+            scroller.scrollBy({ left: scroller.clientWidth * dir, behavior: reducedMotionQuery.matches ? "auto" : "smooth" });
         });
         return btn;
     }
@@ -3958,10 +4514,16 @@ document.addEventListener("DOMContentLoaded", () => {
        front. Its own counter rather than the photo frames' one, starting at
        the z-index the CSS gives a card, so that raising a card keeps it
        above the frames instead of dropping it into their range. */
-    let furniCardTopZ = 320;   // must match .furni-card z-index in the CSS
+    const FURNI_CARD_Z = 320;  // must match .furni-card z-index in the CSS
+    let furniCardTopZ = FURNI_CARD_Z;
+    // Set while closeFurniCard hands focus back to an icon, whose own focus
+    // handler would otherwise open the card again straight away.
+    let furniRefocusing = false;
 
+    // Held inside its own band the same way the frames are (see
+    // raiseInStack); the band's top is arbitrary, it only has to exist.
     function bringFurniCardToFront(card) {
-        card.style.zIndex = ++furniCardTopZ;
+        furniCardTopZ = raiseInStack(card, openFurniCards, FURNI_CARD_Z, furniCardTopZ, 399);
     }
 
     /* The card's height follows its content, and part of that content is a
@@ -4040,7 +4602,23 @@ document.addEventListener("DOMContentLoaded", () => {
         // so it has to be taken off again or every open leaves another pair
         // of listeners on it pointing at a card that no longer exists.
         if (card._teardownHoverWatch) card._teardownHoverWatch();
+        // Closed from inside (its X, or Escape on one of its links): focus
+        // goes back to the furni icon it came from, not to <body> — the same
+        // reason as closePhotoFrame.
+        const hadFocus = card.contains(document.activeElement);
         card.remove();
+        if (!openFurniCards.length) furniCardTopZ = FURNI_CARD_Z;
+        if (hadFocus) {
+            const back = card._anchor;
+            if (back && back.isConnected) {
+                // The icon opens its card on focus; handing focus back must
+                // not open the card that was just closed.
+                furniRefocusing = true;
+                try { back.focus({ preventScroll: true }); } finally { furniRefocusing = false; }
+            } else if (modalOverlay.classList.contains("open")) modalCard.focus({ preventScroll: true });
+        }
+        // restartAutoAdvance itself declines while the window is closing,
+        // which is when closeModal runs this for every card still open.
         if (!furniInUse()) restartAutoAdvance();
     }
 
@@ -4068,6 +4646,33 @@ document.addEventListener("DOMContentLoaded", () => {
         return entry.url || entry.name || "";
     }
 
+    /* The scan records a maze's furni keyed by the picture it came from, and
+       nothing removes that record when the picture itself is deleted from
+       the maze. So room.furni can hold rooms that are no longer IN the
+       record — illusion-maze still carries a scan for a picture taken out
+       of its gallery — and the index counted them: a piece could claim to
+       be "in" a maze where no room on show contains it, and the furni
+       listing offered a room that opened on a different picture. Only
+       pictures the record still shows — its entrance, its gallery, its
+       finish — count. */
+    function recordImageSet(room) {
+        const present = new Set();
+        if (room.entrance && room.entrance.image) present.add(room.entrance.image);
+        if (room.finish && room.finish.image) present.add(room.finish.image);
+        asList(room.gallery).forEach(g => {
+            const image = typeof g === "string" ? g : (g && g.image);
+            if (image) present.add(image);
+        });
+        return present;
+    }
+
+    // [image, record] for each scanned picture still in the record.
+    function liveFurniRecords(room) {
+        const present = recordImageSet(room);
+        const furni = room.furni && typeof room.furni === "object" ? room.furni : {};
+        return Object.entries(furni).filter(([image]) => present.has(image));
+    }
+
     function buildFurniIndex() {
         const index = new Map();
         ROOMS.forEach(room => {
@@ -4080,8 +4685,12 @@ document.addEventListener("DOMContentLoaded", () => {
             if (isHallway(room)) return;
             // A furni found in six of a maze's rooms is still one maze.
             const seenHere = new Set();
-            Object.values(room.furni).forEach(record => {
-                (record && record.items ? record.items : []).forEach(item => {
+            liveFurniRecords(room).forEach(([, record]) => {
+                asList(record && record.items).forEach(item => {
+                    // Hidden by an admin (a false match) never reaches the
+                    // site, so it is not "in" anything either — the furni
+                    // listing already skipped these; the count did not.
+                    if (!item || item.hidden) return;
                     const key = furniKeyOf(item);
                     if (!key || seenHere.has(key)) return;
                     seenHere.add(key);
@@ -4537,9 +5146,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!furniFilter) return [];
         const out = [];
         ROOMS.filter(room => !isHallway(room)).forEach(room => {
-            Object.entries(room.furni || {}).forEach(([image, record]) => {
-                const items = (record && record.items) || [];
-                if (!items.some(f => !f.hidden && furniKeyOf(f) === furniFilter.key)) return;
+            // Only pictures still in the record (see recordImageSet): a row
+            // for a deleted one opened the maze on its first room instead.
+            liveFurniRecords(room).forEach(([image, record]) => {
+                const items = asList(record && record.items);
+                if (!items.some(f => f && !f.hidden && furniKeyOf(f) === furniFilter.key)) return;
                 out.push({ room, image, label: roomLabelFor(room, image) });
             });
         });
@@ -4578,12 +5189,26 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function renderFurniRooms() {
-        const entries = furniRoomEntries();
+        /* Narrowed by the search box, maze by maze. The box stays up over
+           this listing and typing in it used to change nothing — the one
+           list in the archive where a search was silently ignored. Matched
+           on the maze each room belongs to, through the same matchesQuery
+           every other list uses, and worked out once per maze rather than
+           once per room. */
+        const searching = !!query.trim();
+        const mazeMatches = new Map();
+        const entries = furniRoomEntries().filter(e => {
+            if (!searching) return true;
+            if (!mazeMatches.has(e.room)) mazeMatches.set(e.room, matchesQuery(normalize(e.room, false)));
+            return mazeMatches.get(e.room);
+        });
         currentItems = [];
 
         if (!entries.length) {
             grid.innerHTML = furniFilterChipHtml();
-            emptyEl.textContent = "That piece is not recorded in any room.";
+            emptyEl.textContent = searching
+                ? "None of the rooms with that piece match your search."
+                : "That piece is not recorded in any room.";
             emptyEl.style.display = "block";
             wireFurniChip();
             return;
@@ -4686,7 +5311,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (existing) {
             bringFurniCardToFront(existing);
             if (pinNow) pinFurniCard(existing);
-            return;
+            // A card pinned in an earlier room outlives that room's icon;
+            // this one is where focus should go back to now.
+            if (!existing._anchor || !existing._anchor.isConnected) existing._anchor = anchor;
+            return existing;
         }
         // Only the card nobody has moved gives way. Anything dragged out
         // of place stays where it was put — that is what moving one means,
@@ -4722,6 +5350,9 @@ document.addEventListener("DOMContentLoaded", () => {
         renderFurniAlsoIn(card, entry);
 
         bringFurniCardToFront(card);
+        card._anchor = anchor;
+        // "Close" alone, arrived at from the icon, does not say what closes.
+        card.querySelector(".furni-card-close").setAttribute("aria-label", `Close ${entry.name || "furni"} details`);
         card.querySelector(".furni-card-close").addEventListener("click", () => closeFurniCard(card));
         // Anywhere on the card raises it, not just the handle — reading a
         // card half-buried under another shouldn't mean finding its 19px
@@ -4729,7 +5360,10 @@ document.addEventListener("DOMContentLoaded", () => {
         card.addEventListener("pointerdown", () => bringFurniCardToFront(card));
         card.querySelector(".furni-card-drag").addEventListener("pointerdown", e => startCardDrag(card, e));
 
-        document.body.appendChild(card);
+        // Into the room modal's overlay rather than <body>, for the same
+        // reason as the photo frames (see openPhotoFrame): outside the
+        // dialog, the focus trap leaves the card's controls unreachable.
+        modalOverlay.appendChild(card);
         openFurniCards.push(card);
 
         // Sits above its icon with the card's bottom-left corner lapping
@@ -4805,11 +5439,28 @@ document.addEventListener("DOMContentLoaded", () => {
         anchor.addEventListener("mouseleave", scheduleClose);
         card.addEventListener("mouseenter", cancelClose);
         card.addEventListener("mouseleave", scheduleClose);
+        /* Focus is the keyboard's hover, and it needs the same way out. A
+           card opened by tabbing onto its icon was watched only for the
+           MOUSE leaving — so it never closed, and since an open card counts
+           as the furni row being read (furniInUse), it also held the room
+           carousel still for as long as it stayed up. Tabbing off the icon
+           now closes an unpinned card, unless focus went into the card
+           itself or the pointer is still resting on either. */
+        const onAnchorFocusOut = e => {
+            if (card.dataset.pinned === "true") return;
+            const to = e.relatedTarget;
+            if (to && (to === anchor || card.contains(to))) return;
+            if (card.matches(":hover") || anchor.matches(":hover")) return;
+            closeFurniCard(card);
+        };
+        anchor.addEventListener("focusout", onAnchorFocusOut);
         card._teardownHoverWatch = () => {
             cancelClose();
             anchor.removeEventListener("mouseenter", cancelClose);
             anchor.removeEventListener("mouseleave", scheduleClose);
+            anchor.removeEventListener("focusout", onAnchorFocusOut);
         };
+        return card;
     }
 
     /* Anywhere that is not a card and not part of the icon row dismisses
@@ -5277,6 +5928,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const frame = photoFrameTemplate.content.firstElementChild.cloneNode(true);
         frame.dataset.image = entry.image;
+        // Where focus goes back to when the frame is closed from inside it
+        // (see closePhotoFrame) — normally the photo icon just pressed.
+        const opener = document.activeElement;
+        frame._opener = opener && modalOverlay.contains(opener) ? opener : null;
         // Width only, no height: passing both makes imgCdn ask the CDN for
         // fit=cover, which crops the picture to that aspect before it is
         // ever sent. Zooming and panning could then only explore the crop —
@@ -5298,7 +5953,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Appended before positioning: clampFrame measures the rendered box,
         // and a frame still detached from the document measures as zero.
-        document.body.appendChild(frame);
+        /* Into the room modal's overlay, not <body>. The window is a modal
+           dialog, and the focus trap in js/site.js makes everything outside
+           it inert while it is open — a frame out on <body> was outside,
+           so its X and its picture could not be reached from the keyboard at
+           all. Inside the overlay it is part of the window it belongs to.
+           Still position: fixed against the viewport: the overlay carries no
+           transform or filter that would become its containing block. */
+        modalOverlay.appendChild(frame);
 
         /* Opens ABOVE the row of photo icons, not in the middle of the
            screen. Centred, it landed squarely on the strip it was launched
@@ -5435,7 +6097,13 @@ document.addEventListener("DOMContentLoaded", () => {
         // holds the previous picture while a slide's preload is in flight.
         lightboxImg.src = g.image ? imgCdn(g.image, 900, null, 78) : modalGalleryImg.src;
         lightboxImg.alt = modalGalleryImg.alt;
-        lightboxCounter.textContent = g.kind === "room" ? `${galleryCounter.textContent} — ${galleryPosition.textContent}` : galleryCounter.textContent;
+        /* Keyed on whether there IS a position, as showGalleryImage does,
+           not on kind === "room": bonus and run-through rooms are rooms with
+           no number, and they captioned as "Bonus Room — " with a dash
+           leading nowhere. */
+        lightboxCounter.textContent = galleryPosition.textContent
+            ? `${galleryCounter.textContent} — ${galleryPosition.textContent}`
+            : galleryCounter.textContent;
         if (!lightboxOverlay.classList.contains("open")) lightboxTriggerEl = document.activeElement;
         lightboxOverlay.classList.add("open");
         if (lightboxClose) lightboxClose.focus({ preventScroll: true });
@@ -5477,6 +6145,9 @@ document.addEventListener("DOMContentLoaded", () => {
        Nothing outside the viewport moves now, so none of that is needed. */
 
     const OLD_VERSION_TRANSITION = "transform 0.42s cubic-bezier(0.22, 1, 0.36, 1)";
+    // The pending "slid away, now hide it" listener, if one is waiting —
+    // see hideOldVersion.
+    let oldVersionHideListener = null;
 
     function oldVersionsAvailable() {
         return oldVersionsGallery && oldVersionsGallery.length;
@@ -5553,7 +6224,9 @@ document.addEventListener("DOMContentLoaded", () => {
             oldVersionLayer.style.transition = "none";
             oldVersionLayer.style.transform = "translateY(100%)";
             void oldVersionLayer.offsetHeight;   // commit the start state (see slideGalleryImage)
-            oldVersionLayer.style.transition = OLD_VERSION_TRANSITION;
+            // Inline, so the stylesheet's reduced-motion rules cannot reach
+            // it — the setting is honoured here instead.
+            oldVersionLayer.style.transition = reducedMotionQuery.matches ? "none" : OLD_VERSION_TRANSITION;
             oldVersionLayer.style.transform = "translateY(0)";
             // The room-by-room carousel must not advance out from under an
             // older version the visitor is looking at.
@@ -5572,14 +6245,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (instant) { resetOldVersionInstant(); return; }
 
+        // Reduced motion: gone at once, with no slide and so no transitionend
+        // to wait for — but the carousel is handed back all the same.
+        if (reducedMotionQuery.matches) {
+            resetOldVersionInstant();
+            restartAutoAdvance();
+            return;
+        }
+
         oldVersionLayer.style.transition = OLD_VERSION_TRANSITION;
         oldVersionLayer.style.transform = "translateY(100%)";
-        oldVersionLayer.addEventListener("transitionend", () => {
+        /* Filtered to the layer's OWN transform. transitionend bubbles, so
+           the first one to arrive used to be whichever child finished
+           anything first — a rail thumbnail's hover lift ending as the
+           pointer left it — and with { once: true } that stray event spent
+           the listener and blanked the panel halfway down its slide. Kept
+           in a variable so a listener left over from an earlier hide (one
+           the layer was re-shown before it could fire) is taken off rather
+           than piling up and firing on some later, unrelated slide. */
+        if (oldVersionHideListener) oldVersionLayer.removeEventListener("transitionend", oldVersionHideListener);
+        oldVersionHideListener = e => {
+            if (e.target !== oldVersionLayer || e.propertyName !== "transform") return;
+            oldVersionLayer.removeEventListener("transitionend", oldVersionHideListener);
+            oldVersionHideListener = null;
             // Re-shown again before this fired — leave it alone.
             if (oldVersionShown >= 0) return;
             oldVersionLayer.style.display = "none";
             oldVersionImg.removeAttribute("src");
-        }, { once: true });
+        };
+        oldVersionLayer.addEventListener("transitionend", oldVersionHideListener);
 
         if (modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing")) {
             restartAutoAdvance();
@@ -5591,6 +6285,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // would be describing a relationship that no longer exists.
     function resetOldVersionInstant() {
         oldVersionShown = -1;
+        // A slide-away still waiting to finish has nothing left to hide.
+        if (oldVersionHideListener) {
+            oldVersionLayer.removeEventListener("transitionend", oldVersionHideListener);
+            oldVersionHideListener = null;
+        }
         oldVersionLayer.style.transition = "none";
         oldVersionLayer.style.transform = "translateY(100%)";
         oldVersionLayer.style.display = "none";
@@ -5790,10 +6489,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     /* ---------- sharing one maze or event ----------
 
-       The link a visitor can actually pass on. /maze/<id> and /event/<id>
-       are served by netlify/functions/share.js, which answers a chat
-       client's preview crawler with that maze's own name and screenshot and
-       sends a real browser through to the archive with it open. Before this
+       The link a visitor can actually pass on: the window's own address,
+       /maze/<slug> or /event/<slug>. netlify/functions/share.js serves the
+       archive there with that maze's own name and screenshot in the tags a
+       chat client's preview crawler reads. Before this
        every link into the site unfurled identically, whichever maze it
        pointed at — and there was no per-maze link to send in the first
        place.
@@ -5801,9 +6500,12 @@ document.addEventListener("DOMContentLoaded", () => {
        The clipboard API needs a secure context (https, or localhost), which
        the live site is; the fallback path covers an older browser and a
        clipboard permission that was refused. */
+    // The window's polite status line (see #modal-status in home.html).
+    const modalStatus = document.getElementById("modal-status");
+
     function shareUrlFor(n) {
-        if (!n.id) return "";
-        return `${location.origin}/${n.isEvent ? "event" : "maze"}/${encodeURIComponent(n.id)}`;
+        const path = modalAddress(n);
+        return path ? location.origin + path : "";
     }
 
     function renderShareButton(n, host) {
@@ -5822,9 +6524,18 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.setAttribute("aria-label", `Copy a link to ${n.name || "this"}`);
 
         let resetTimer = null;
-        const say = text => {
+        const say = (text, spoken) => {
             label.textContent = text;
             btn.classList.toggle("is-done", text !== "Share");
+            /* Read out through the window's polite status line: the
+               button's aria-label outranks its visible text, so "Link
+               copied" appearing on it was never announced — a screen reader
+               user pressed Share and heard nothing. Emptied first and filled
+               a beat later, so a second press still counts as a change. */
+            if (modalStatus && spoken) {
+                modalStatus.textContent = "";
+                setTimeout(() => { modalStatus.textContent = spoken; }, 60);
+            }
             clearTimeout(resetTimer);
             // Long enough to read, short enough that the button is back to
             // being a button before anyone reaches for it again.
@@ -5834,23 +6545,38 @@ document.addEventListener("DOMContentLoaded", () => {
             }, 2200);
         };
 
+        /* One field per button, made on the first failure and reused after.
+           Each failed press used to add another, so a visitor pressing
+           Share again because nothing seemed to happen stacked up copies of
+           the address, each one squeezing the phone's action bar further. */
+        let field = null;
+        let fieldTimer = null;
+
         btn.addEventListener("click", async () => {
             try {
                 await navigator.clipboard.writeText(url);
-                say("Link copied");
+                say("Link copied", "Link copied");
             } catch (e) {
                 /* No clipboard (an old browser, or permission refused).
                    Select the URL in a field the visitor can copy by hand
                    rather than telling them it failed and leaving them with
                    nothing — the address is the whole point of the button. */
-                const field = document.createElement("input");
-                field.className = "modal-share-fallback";
+                if (!field) {
+                    field = document.createElement("input");
+                    field.className = "modal-share-fallback";
+                    field.readOnly = true;
+                    field.setAttribute("aria-label", "Link to copy");
+                }
                 field.value = url;
-                field.readOnly = true;
-                btn.after(field);
+                if (!field.isConnected) btn.after(field);
+                field.focus({ preventScroll: true });
                 field.select();
-                say("Copy this");
-                setTimeout(() => field.remove(), 8000);
+                // iOS Safari ignores select() on a read-only field and
+                // selects nothing; an explicit range is what it honours.
+                try { field.setSelectionRange(0, url.length); } catch (err) { /* not a text field */ }
+                say("Copy this", "Couldn't copy automatically. The link is selected, ready to copy.");
+                clearTimeout(fieldTimer);
+                fieldTimer = setTimeout(() => { if (field) field.remove(); }, 8000);
             }
         });
 
@@ -5876,7 +6602,19 @@ document.addEventListener("DOMContentLoaded", () => {
     /* The same 1000px the stylesheet hides the tab at. Stated twice because
        CSS cannot tell a script anything — kept findable by both sides
        naming the other in a comment. */
-    const actionsFitDrawer = window.matchMedia("(min-width: 1000px)");
+    /* Asked as the exact negation of the stylesheet's own query rather than
+       as "(min-width: 1000px)". The two look like complements and are not:
+       on a fractional width (a zoomed page, a DPI-scaled screen — 999.5px)
+       neither matched, so the script moved the actions into the phone's
+       bar while the CSS, not yet narrow, kept that bar hidden — and Save,
+       Completed and Share vanished from the window altogether. Negating the CSS's query cannot leave a gap. */
+    const actionsNarrowQuery = window.matchMedia("(max-width: 999px)");
+    const actionsFitDrawer = {
+        get matches() { return !actionsNarrowQuery.matches; },
+        addEventListener: (type, fn) => actionsNarrowQuery.addEventListener
+            ? actionsNarrowQuery.addEventListener(type, fn)
+            : actionsNarrowQuery.addListener(fn)
+    };
 
     /* Below 1000px the actions sit in a bar along the foot of the window,
        each with its word: Save, Completed, Share. They used to be three
@@ -5977,12 +6715,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function openModal(n, opts = {}) {
         modalItem = n;
+        /* Read before "closing" is taken off below: a window mid-close still
+           carries "open", and that case is a fresh open, not a swap. */
+        const swapping = modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing");
         // Invalidates any in-flight closeModal() from a rapid re-open (its
         // animationend/fallback would otherwise fire later and rip the
         // "open"/"closing" classes off this new instance mid-view).
         modalCloseToken++;
         modalOverlay.classList.remove("closing");
-        modalTriggerEl = document.activeElement;
+        /* One record replacing another in a window that is already up — a
+           furni card's "also in", the console's links, the in-page link
+           handler. Everything that floats over the window belongs to the
+           record being left: its photo frames, its furni cards, its
+           lightbox. None of them used to be closed, so the first maze's
+           pictures and cards stayed on screen over the second maze.
+
+           And focus goes back, on close, to what opened the window in the
+           first place. Taking activeElement here instead captured the
+           control INSIDE the window that did the swapping — a card's link,
+           usually already removed — so closing lost focus to <body>. */
+        if (swapping) {
+            closeLightbox();
+            closeAllPhotoFrames();
+            closeAllFurniCards();
+            if (!modalTriggerEl || !document.body.contains(modalTriggerEl) || modalOverlay.contains(modalTriggerEl)) {
+                modalTriggerEl = null;
+            }
+        } else {
+            modalTriggerEl = document.activeElement;
+        }
         // Shut for the incoming room. A tab left hanging open from the last
         // one would be showing that one's Save state over this one's window.
         setActionsOpen(false);
@@ -6049,6 +6810,11 @@ document.addEventListener("DOMContentLoaded", () => {
             actions.appendChild(wrap);
         }
         renderShareButton(n, actions);
+        /* A record with nothing to act on — an event with no address to
+           share, say — leaves the set empty. Left in, the empty div kept the
+           phone's action bar from matching :empty, so the bar showed as a
+           bare band along the foot of the window with nothing in it. */
+        if (!actions.children.length) actions.remove();
         modalDesc.textContent = n.details || n.description || "";
 
         /* The stored Habbo article, if this event has one.
@@ -6155,7 +6921,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const finishItem = n.finish && n.finish.image
             ? { image: n.finish.image, label: n.finish.label || "Finish", kind: "finish", oldVersions: n.finish.oldVersions || [] }
             : null;
-        const roomItems = (n.gallery || []).map(normalizeGalleryItem);
+        /* Anything that is not an entry is dropped before it is normalized.
+           One null in a stored gallery (a half-finished admin edit, a bad
+           import) made normalizeGalleryItem read .image off null, which
+           threw out of openModal — and the page's own error handling then
+           took the whole archive to its failed state, over one blank room. */
+        const roomItems = (n.gallery || [])
+            .filter(g => typeof g === "string" || (g && typeof g === "object"))
+            .map(normalizeGalleryItem);
         // Run-through and bonus rooms (a walk-through / a side quest, not a
         // numbered room of the maze proper) are skipped by the counter
         // entirely — they get no roomIndex/roomTotal, same as the
@@ -6247,7 +7020,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? activeGallery.findIndex(g => g.image === opts.atImage)
                 : -1;
             showGalleryImage(wanted >= 0 ? wanted : 0, { instant: true });
-            restartAutoAdvance();
+            // The carousel itself is started further down, once "open" is
+            // on — restartAutoAdvance declines to run for a closed window.
             setGalleryImageOperable(true);
         } else {
             activeGallery = null;
@@ -6311,6 +7085,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const wasOpen = modalOverlay.classList.contains("open");
         modalOverlay.classList.add("open");
+        // Started (or, for a record with no gallery, stopped — a timer left
+        // from the previous maze would otherwise tick on over this one) only
+        // now the window is open; see restartAutoAdvance's first guard.
+        syncGalleryPauseBtn();
+        restartAutoAdvance();
         // Moves keyboard focus into the dialog itself (see modalCard's own
         // tabindex="-1" in home.html — focusable via script, not Tab) so a
         // keyboard user's very next Tab press starts cycling the modal's
@@ -6318,7 +7097,7 @@ document.addEventListener("DOMContentLoaded", () => {
         modalCard.focus();
         // The address follows the window — see "the modal and the Back
         // button" below.
-        syncModalHistory(n, wasOpen, !!opts.fromHashChange);
+        syncModalHistory(n, wasOpen, opts.fromAddress || null);
     }
 
     // Plays modalOut (see style.css) before actually hiding the overlay,
@@ -6348,9 +7127,12 @@ document.addEventListener("DOMContentLoaded", () => {
         closeAllPhotoFrames();
         closeAllFurniCards();
 
-        // Drop a #event-… or #maze-… hash left over from opening this modal
-        // (via the header widget or a shared link) so a refresh after closing
-        // doesn't reopen it. When the entry is one this page pushed for the
+        // The page's title and canonical name the archive again.
+        shownModalAddress = null;
+        if (window.PageMeta) window.PageMeta.restore("modal");
+
+        // Leave the window's address (/maze/<slug>, or an old #maze-… hash)
+        // so a refresh after closing doesn't reopen it. When the entry is one this page pushed for the
         // modal, stepping back off it is what removes it — otherwise closing
         // with the X would leave it behind and the next Back would land on
         // the same archive page and appear to do nothing. Anything else (a
@@ -6415,68 +7197,115 @@ document.addEventListener("DOMContentLoaded", () => {
     let pendingBack = false;
     let pendingPush = null;
 
-    function modalHash(n) {
-        return `#${n.isEvent ? "event" : "maze"}-${encodeURIComponent(n.id || "")}`;
+    /* The window's own address: /maze/<slug> or /event/<slug>, the same one
+       the Share button copies and the share function serves (see
+       RecordAddress in js/site.js). The slug follows the record's name; an
+       old address is sent on to the new one by the share function before
+       this page ever loads. */
+    function modalAddress(n) {
+        return n && n.id ? window.RecordAddress.of(n.isEvent ? "event" : "maze", n) : "";
+    }
+
+    // What the address bar names, if it is a maze or an event: the clean
+    // path, or the #maze-<id> / #event-<id> form every link used before it.
+    const LEGACY_HASH = /^#(event|maze)-(.+)$/;
+    function addressedRecord() {
+        const p = window.RecordAddress.parse(location.pathname);
+        if (p && (p.kind === "maze" || p.kind === "event")) return { kind: p.kind, key: p.key, legacy: false };
+        const m = LEGACY_HASH.exec(location.hash);
+        if (!m) return null;
+        /* A bare "%" that is not an escape — a hand-edited or truncated
+           link — makes decodeURIComponent throw, and uncaught here it took
+           the load path down with it. A hash that does not decode names
+           nothing, so it is ignored like any other unknown id. */
+        try { return { kind: m[1], key: decodeURIComponent(m[2]), legacy: true }; } catch (e) { return null; }
+    }
+    const onModalAddress = () => !!addressedRecord();
+
+    /* The archive's address to go back to when a window opened from a link
+       is closed: the path it came in on for the old #hash form (/home, or
+       /guess), and /home for a record's own address.
+
+       A window's address never carries the archive's search (?q=): it is
+       the link somebody copies. The search the page had when the window
+       took its address over is kept here and put back on close. A window
+       opened by a click does not need it — its entry sits on top of the
+       archive's, which still has it. */
+    let archiveSearch = "";
+    function archiveAddress() {
+        const p = window.RecordAddress.parse(location.pathname);
+        return p ? "/home" + archiveSearch : location.pathname + location.search;
     }
 
     function ownsModalEntry() {
         return !!(history.state && history.state[MODAL_STATE]);
     }
 
-    // Compared decoded, so an id the share page escaped slightly differently
-    // from encodeURIComponent still counts as the address already showing.
-    function sameModalHash(a, b) {
-        const dec = s => { try { return decodeURIComponent(s); } catch (e) { return s; } };
-        return dec(a) === dec(b);
-    }
+    // The address of whatever the window is showing, so a history step that
+    // names the same thing does not rebuild the window it is already showing.
+    let shownModalAddress = null;
 
-    // The address of whatever the modal is showing, so a hashchange that
-    // names the same thing (this code's own pushes are followed by one when
-    // a reopen races a step back) does not rebuild the window it is already
-    // looking at.
-    let shownModalHash = null;
+    /* How the window came to open decides what happens to the history:
 
-    function syncModalHistory(n, wasOpen, fromHashChange) {
-        shownModalHash = n && n.id ? modalHash(n) : null;
-        if (!n || !n.id) return;
-        const hash = modalHash(n);
-        const url = location.pathname + location.search + hash;
-        if (pendingBack) { pendingPush = hash; return; }
+       - fromAddress "load": the address the page loaded with (a shared link).
+         Left unmarked — it is the visitor's way into the site; closing
+         rewrites it to the archive rather than stepping back off the site.
+         An old #maze-<id> form is rewritten to the clean address in place.
+       - fromAddress "hashchange": something on the page followed an old
+         #maze-<id> link, so the browser made the entry already. It is
+         marked as ours and given the clean address.
+       - fromAddress "history": Back or Forward onto an entry that already
+         names it. Nothing to add.
+       - otherwise, a click: pushed, or REPLACED when a window is already
+         showing (a furni card's "also in"), so Back closes the window rather
+         than walking through every maze viewed in it. */
+    function syncModalHistory(n, wasOpen, fromAddress) {
+        const url = modalAddress(n);
+        shownModalAddress = url || null;
+        if (!url) return;
+        if (window.PageMeta) window.PageMeta.set("modal", `${n.name || "Maze Rats"} — Maze Rats`, "https://mazerats.net" + url);
+        if (pendingBack) { pendingPush = url; return; }
+        const here = location.pathname + location.search;
+        const target = url;
+        if (fromAddress === "load" || fromAddress === "hashchange") archiveSearch = location.search;
         try {
-            if (fromHashChange) {
-                if (!ownsModalEntry()) history.replaceState({ [MODAL_STATE]: true }, "", url);
-            } else if (sameModalHash(location.hash, hash)) {
-                // Already at this address: the load-time deep link, or a
-                // Forward press back onto an entry we pushed earlier. Nothing
-                // to add either way.
-            } else if (wasOpen && (ownsModalEntry() || /^#(event|maze)-/.test(location.hash))) {
-                history.replaceState(history.state, "", url);
+            if (fromAddress === "history") {
+                if (location.pathname !== url) history.replaceState(history.state, "", target);
+            } else if (fromAddress === "hashchange") {
+                history.replaceState(ownsModalEntry() ? history.state : { [MODAL_STATE]: true }, "", target);
+            } else if (fromAddress === "load") {
+                if (here !== target || location.hash) history.replaceState(history.state, "", target);
+            } else if (location.pathname === url) {
+                // Already at this address: Forward back onto an entry we
+                // pushed earlier. Nothing to add.
+            } else if (wasOpen && (ownsModalEntry() || onModalAddress())) {
+                history.replaceState(history.state, "", target);
             } else {
-                history.pushState({ [MODAL_STATE]: true }, "", url);
+                history.pushState({ [MODAL_STATE]: true }, "", target);
             }
         } catch (e) { /* a sandboxed frame can refuse history writes; the modal still works */ }
     }
 
     function leaveModalHistory() {
-        if (!/^#(event|maze)-/.test(location.hash)) return;
+        if (!onModalAddress()) return;
         if (ownsModalEntry()) {
             pendingBack = true;
             history.back();
         } else {
-            history.replaceState(null, "", location.pathname + location.search);
+            history.replaceState(null, "", archiveAddress());
         }
     }
 
     window.addEventListener("popstate", () => {
         if (pendingBack) {
             const reopened = pendingPush && modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing");
-            /* Landed on ANOTHER of our modal entries — possible when the
-               header ticker's link was followed while a maze was already
-               open, which makes the browser stack a second entry that this
-               code can only mark, not prevent. The window is closed, so keep
-               stepping until the archive's own entry is reached; stopping
-               here would leave a hash the next hashchange reopens. */
-            if (!reopened && ownsModalEntry() && /^#(event|maze)-/.test(location.hash)) {
+            /* Landed on ANOTHER of our modal entries — possible when an old
+               #maze- link was followed while a maze was already open, which
+               makes the browser stack a second entry that this code can only
+               mark, not prevent. The window is closed, so keep stepping
+               until the archive's own entry is reached; stopping here would
+               leave an address the next history step reopens. */
+            if (!reopened && ownsModalEntry() && onModalAddress()) {
                 history.back();
                 return;
             }
@@ -6491,22 +7320,34 @@ document.addEventListener("DOMContentLoaded", () => {
             // A modal reopened while the step back was in flight gets the
             // entry it asked for now that the old one is gone.
             if (reopened) {
-                history.pushState({ [MODAL_STATE]: true }, "", location.pathname + location.search + pendingPush);
+                history.pushState({ [MODAL_STATE]: true }, "", pendingPush);
             }
             pendingPush = null;
             return;
         }
+        /* Forward (or Back) onto a maze's or an event's address: open it.
+           An old #maze- link followed on this page fires this too, BEFORE
+           its hashchange — and that entry is one the browser has just made
+           for the window, so it is treated as the hashchange would treat it
+           (marked as ours). The hashchange then finds the window already
+           showing it and does nothing. */
+        const asked = addressedRecord();
+        if (asked) {
+            openFromAddress(asked.legacy ? "hashchange" : "history");
+            return;
+        }
         // Back from a modal's entry to the plain archive: close it, without
-        // stepping back a second time. Forward onto a maze's entry is handled
-        // by the hashchange that fires alongside this (openFromHash).
-        if (!/^#(event|maze)-/.test(location.hash) && modalOverlay.classList.contains("open")) {
+        // stepping back a second time.
+        if (modalOverlay.classList.contains("open")) {
             closeModal({ fromHistory: true });
         }
     });
 
     searchInput.addEventListener("input", e => {
         query = e.target.value;
-        // Notes that a search happened. The term itself never leaves the page.
+        // Notes that a search happened. The term itself is not sent with this
+        // event — but it is in the address (?q=), which Umami records; the
+        // privacy policy says so.
         if (e.target.value.trim()) noteSearch();
         render();
     });
@@ -6547,7 +7388,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Only ones still to walk: a maze on both lists has been done, and
         // showing it under "to walk" would be a list that never empties.
-        const toWalk = savedRooms.filter(r => !walkedIds.has(r.id));
+        /* And only ones that CAN be walked. A saved maze that has since
+           closed (or a hallway) sat under "Saved to complete" for good: it
+           can never be completed, so it could never leave the list, and it
+           counted towards a figure the console's Profile shows as well. The
+           same walkableRooms set the headline figure is taken over. */
+        const walkableIds = new Set(walkable.map(r => r.id));
+        const toWalk = savedRooms.filter(r => walkableIds.has(r.id) && !walkedIds.has(r.id));
 
         const byDifficulty = {};
         walkable.forEach(r => {
@@ -6691,11 +7538,42 @@ document.addEventListener("DOMContentLoaded", () => {
     function openProgress() {
         const overlay = document.getElementById("progress-overlay");
         if (!overlay) return;
-        if (!overlay.classList.contains("open")) progressTriggerEl = document.activeElement;
+        /* The room modal goes first. Both overlays sit at z-index 100 and
+           the modal comes later in the page, so opening this from the
+           console's Profile while a maze was showing put Your Progress
+           BEHIND it — open, holding focus, and invisible. The row that
+           opened the maze is the better place to hand focus back to later,
+           so it is taken as this window's opener before the modal lets go
+           of it (keepFocus stops the modal handing focus back itself, 300ms
+           from now, on top of this). */
+        let opener = null;
+        if (modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing")) {
+            opener = modalTriggerEl;
+            closeModal({ keepFocus: true });
+        }
+        if (!overlay.classList.contains("open")) progressTriggerEl = opener || document.activeElement;
         renderProgress();
         overlay.classList.add("open");
         document.body.classList.add("modal-open");
         document.getElementById("progress-window").focus();
+    }
+
+    /* The window, drawn again if it is showing. It was drawn once on open
+       and never again, so ticks arriving from the account (syncWalked) or
+       leaving with a sign-out (dropAccountTicks) changed every figure on
+       the page except the ones in the window that exists to show them.
+       Focus inside it is lost with the markup, so it goes back to the
+       window itself rather than falling to <body> behind the overlay. */
+    function refreshProgressIfOpen() {
+        const overlay = document.getElementById("progress-overlay");
+        if (!overlay || !overlay.classList.contains("open")) return;
+        const body = document.getElementById("progress-body");
+        const hadFocus = !!(body && body.contains(document.activeElement));
+        renderProgress();
+        if (hadFocus) {
+            const win = document.getElementById("progress-window");
+            if (win) win.focus({ preventScroll: true });
+        }
     }
 
     /* opts.keepFocus: something is about to open in its place (a saved
@@ -6748,6 +7626,10 @@ document.addEventListener("DOMContentLoaded", () => {
         Account.onChange(me => {
             if (me) onAccountAnswer(me);
             else if (!Account.unsure) onAccountAnswer(null);
+            // The window's header names who is signed in (or offers the
+            // sign-in), so a change of answer redraws it even when no tick
+            // moved — see refreshProgressIfOpen.
+            refreshProgressIfOpen();
         });
         if (Account.onStored) Account.onStored(confirmTicks);
         Account.ready();
@@ -6828,11 +7710,17 @@ document.addEventListener("DOMContentLoaded", () => {
     // One shared wait for the archive, rather than a fresh 200ms poll per
     // caller: the console asks every time a page of it is drawn.
     let archiveWait = null;
+    /* Settles on a failed load too, not only a good one. It used to wait for
+       dataLoaded alone, and the .catch at the foot of this file never sets
+       that — so when the archive request blew up, the console and the Add
+       Maze Info form sat on "loading" forever, polling every 200ms for a
+       flag that was never coming. Callers already check archiveLoaded() /
+       loaded() afterwards, which is what tells them the two outcomes apart. */
     function archiveReady() {
-        if (dataLoaded) return Promise.resolve();
+        if (dataLoaded || loadFailed) return Promise.resolve();
         if (!archiveWait) {
             archiveWait = new Promise(resolve => {
-                const t = setInterval(() => { if (dataLoaded) { clearInterval(t); resolve(); } }, 200);
+                const t = setInterval(() => { if (dataLoaded || loadFailed) { clearInterval(t); resolve(); } }, 200);
             });
         }
         return archiveWait;
@@ -7571,10 +8459,17 @@ document.addEventListener("DOMContentLoaded", () => {
     // so this only ever fires from the minimized state) — same exit as
     // pressing "FEATURED MAZES" again.
     chromeFrameMinimizeToggle.addEventListener("click", () => {
+        // Belt and braces behind the inert in setFeaturedPanelState: with
+        // the list already showing there is nothing to restore, and this
+        // must not empty the search box for nothing.
+        if (!showFeatured) return;
         showFeatured = false;
         searchInput.value = "";
         query = "";
         render();
+        // This strip has just gone inert under the focus it held, so hand
+        // focus to the button that reopens the panel rather than to <body>.
+        featuredMazesBtn.focus({ preventScroll: true });
     });
 
     modalClose.addEventListener("click", closeModal);
@@ -7661,87 +8556,144 @@ document.addEventListener("DOMContentLoaded", () => {
             if (e.key === "ArrowLeft") { showGalleryImage(activeIndex - 1); restartAutoAdvance(); }
             if (e.key === "ArrowRight") { showGalleryImage(activeIndex + 1); restartAutoAdvance(); }
         }
-        // Basic focus trap — without this, Tab-ing past the last (or before
-        // the first) focusable element inside the modal would carry focus
-        // out to whatever's sitting behind the overlay instead of wrapping
-        // back around within the dialog, same as any native modal.
-        if (e.key === "Tab") {
-            /* Only what is actually on screen. Half this modal's controls are
-               shown per maze — the gallery arrows, the Visit Room link, the
-               older-versions pill — and a display:none button still matches
-               the selector, so the trap was stopping Tab on controls the
-               visitor cannot see. offsetParent is null for anything display:
-               none'd (itself or through an ancestor), which is exactly the
-               set to skip. */
-            const focusable = [...modalCard.querySelectorAll(
-                'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-            )].filter(el => el.offsetParent !== null);
-            if (!focusable.length) return;
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (e.shiftKey && document.activeElement === first) {
-                e.preventDefault();
-                last.focus();
-            } else if (!e.shiftKey && document.activeElement === last) {
-                e.preventDefault();
-                first.focus();
-            }
-        }
+        /* No Tab handling here any more. This window kept its own focus trap,
+           and it leaked on desktop: it chose "first" and "last" from a
+           selector that still matched hidden controls and tabindex=-1 ones
+           (the furni row's end arrows, a thumbnail inside a collapsed
+           panel), so a Tab from the true last control was never seen as the
+           end and walked straight out behind the overlay. js/site.js now
+           keeps ONE trap for every aria-modal dialog on the page, which
+           knows what is actually visible; this window relies on that. */
     });
 
-    // The header's upcoming-events widget (site.js) links its title at
-    // "home.html#event-<id>" — from any other page that's just a normal
-    // navigation, but a click while already on home.html only changes the
-    // hash (no reload), so this also has to run on "hashchange", not just
-    // once at load.
-    /* Opens whatever the hash names — an event or, now, a maze.
+    /* ---------- opening a maze or an event from its address ----------
 
-       #maze-<id> exists because a maze had no address of its own: the only
-       way to send someone one was "open the archive and search for it". It
-       is what /maze/<id> lands on once the share function has handed a real
-       browser through (see netlify/functions/share.js), and what the Copy
-       link button in the modal writes to the clipboard. */
-    /* fromHashChange is true when the browser moved to this address while
-       the page was already open (a link, or Back/Forward), false for the
-       address the page loaded with — the modal's history handling treats
-       the two differently; see "the modal and the Back button". */
-    function openFromHash(fromHashChange) {
-        if (!dataLoaded) return;
-        // Mid-way through stepping back off a closed modal's entries: the
-        // hash about to be left is not a request to open anything.
-        if (pendingBack) return;
-        const m = /^#(event|maze)-(.+)$/.exec(location.hash);
-        if (!m) return;
-        // Already showing exactly this: nothing to open.
-        if (modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing")
-            && shownModalHash && sameModalHash(location.hash, shownModalHash)) return;
-        /* A bare "%" that is not an escape — a hand-edited or truncated
-           link — makes decodeURIComponent throw, and uncaught here it took
-           the load path down with it: openFromHash runs straight after the
-           first render. A hash that does not decode names nothing, so it is
-           ignored like any other unknown id. */
-        let id;
-        try { id = decodeURIComponent(m[2]); } catch (e) { return; }
-        const opts = { fromHashChange: fromHashChange === true };
-        if (m[1] === "event") {
-            const match = EVENTS.find(e => e.id === id);
-            if (match) openModal(normalize(match, true), opts);
+       /maze/<slug> and /event/<slug> are the window's own addresses (see
+       "the modal and the Back button"): the share function serves this page
+       there, and this opens the window the address names. The old forms,
+       /home#maze-<id> and /home#event-<id>, are still honoured — every link
+       made before clean addresses used them — and are rewritten to the clean
+       address once open.
+
+       `how` is "load" for the address the page loaded with, "hashchange"
+       when something on the page followed an old #hash link, and "history"
+       for Back and Forward; the window's history handling treats the three
+       differently. */
+    function findRecord(kind, key) {
+        const list = kind === "event" ? EVENTS : ROOMS;
+        return list.find(r => window.RecordAddress.matches(r, key)) || null;
+    }
+
+    function openRecord(kind, record, opts) {
+        if (kind === "event") {
+            openModal(normalize(record, true), opts);
             return;
         }
-        const match = ROOMS.find(r => r.id === id);
-        if (!match) return;
         // A maze can sit in any of the three maze tabs, and a link to one
         // should not depend on which tab happens to be showing. Switch to
         // the list it actually lives in before opening it, so closing the
         // modal leaves the visitor somewhere that contains it.
         topView = "mazes";
         showFeatured = false;
-        mazesSub = match.status === "closed" ? "archived" : match.status === "collab" ? "collab" : "open";
+        mazesSub = record.status === "closed" ? "archived" : record.status === "collab" ? "collab" : "open";
         render();
-        openModal(normalize(match, false), opts);
+        openModal(normalize(record, false), opts);
     }
 
-    window.addEventListener("hashchange", () => openFromHash(true));
+    /* The record the share function served this page for, by id (its
+       <meta name="mazerats:record">, see netlify/functions/share.js). The
+       address is matched first; this is for when it cannot be — the archive
+       list is edge-cached for a minute, so a maze renamed a moment ago still
+       carries its old address in it, and the offline copy carries none. The
+       id is the one thing that never changes. */
+    function servedRecord(kind) {
+        const tag = document.querySelector('meta[name="mazerats:record"]');
+        const m = tag && /^(maze|event|guide):(.+)$/.exec(tag.getAttribute("content") || "");
+        if (!m || m[1] !== kind) return null;
+        const record = (kind === "event" ? EVENTS : ROOMS).find(r => r.id === m[2]);
+        if (!record) return null;
+        // With the address the page was served at, which the server has
+        // just confirmed is current — the list's copy is the stale one, and
+        // writing it into the address bar would send the visitor back to
+        // the old address.
+        const asked = addressedRecord();
+        return asked ? { ...record, slug: asked.key } : record;
+    }
+
+    function openFromAddress(how) {
+        if (!dataLoaded) return;
+        // Mid-way through stepping back off a closed modal's entries: the
+        // address about to be left is not a request to open anything.
+        if (pendingBack) return;
+        const asked = addressedRecord();
+        if (!asked) return;
+        const match = findRecord(asked.kind, asked.key) || (how === "load" && !asked.legacy && servedRecord(asked.kind));
+        if (!match) {
+            /* Nothing here by that name: removed, or a draft of an address.
+               The share function has already said so to anything reading the
+               page's tags; the visitor gets the archive, at its own address
+               rather than one naming something that is not in it — and with
+               the archive's own title and canonical, not "Not in the
+               archive" or the missing maze's, which would otherwise stay
+               for the rest of the visit (and be saved as the page's own by
+               the next window that borrows them). */
+            if (how === "load" && !asked.legacy) {
+                try { history.replaceState(history.state, "", archiveAddress()); } catch (e) { /* fine */ }
+                if (window.PageMeta) {
+                    window.PageMeta.set("unknown-address", null, null);
+                    window.PageMeta.restore("unknown-address");
+                }
+            }
+            return;
+        }
+        const url = modalAddress(normalize(match, asked.kind === "event"));
+        // Already showing exactly this: nothing to open, but an old #hash
+        // form still gets the clean address.
+        if (modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing")
+            && shownModalAddress === url) {
+            if (asked.legacy) {
+                archiveSearch = location.search;
+                try { history.replaceState(history.state, "", url); } catch (e) { /* fine */ }
+            }
+            return;
+        }
+        openRecord(asked.kind, match, { fromAddress: how });
+    }
+
+    window.addEventListener("hashchange", () => {
+        if (LEGACY_HASH.test(location.hash)) openFromAddress("hashchange");
+    });
+
+    /* A link on this page to a maze's or an event's address — the header's
+       upcoming-event ticker, a guess's "See it in the archive", a guide —
+       opens the window here rather than loading the whole archive again to
+       show the same thing. A new tab, or a record this page does not have,
+       is left to the browser. */
+    document.addEventListener("click", e => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        const a = e.target.closest && e.target.closest("a[href]");
+        if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+        let dest;
+        try { dest = new URL(a.href, location.href); } catch (err) { return; }
+        if (dest.origin !== location.origin) return;
+        const p = window.RecordAddress.parse(dest.pathname);
+        if (!p || (p.kind !== "maze" && p.kind !== "event") || !dataLoaded) return;
+        const match = findRecord(p.kind, p.key);
+        if (!match) return;
+        e.preventDefault();
+        openRecord(p.kind, match, {});
+    });
+
+    // For the other windows on this page (js/guides.js) that name a maze or
+    // an event and want it opened the way a click opens one.
+    window.ArchiveRecords = {
+        open(kind, key) {
+            const match = dataLoaded && findRecord(kind, key);
+            if (!match) return false;
+            openRecord(kind, match, {});
+            return true;
+        }
+    };
 
     render();
 
@@ -7761,12 +8713,38 @@ document.addEventListener("DOMContentLoaded", () => {
         return EVENTS.map(e => `${e.id}:${eventStatus(e)}`).join("|");
     }
 
+    /* The open window's own badge, brought up to date in place. The list
+       waits for the window to close, but the window itself was left saying
+       "Upcoming" on an event that had started while someone was reading
+       about it — the one place the visitor is looking. Only the badge is
+       touched: re-running openModal would restart the gallery and throw
+       away where they had got to. */
+    function refreshOpenModalStatus() {
+        if (!modalItem || !modalItem.isEvent) return;
+        const raw = modalItem._raw || (modalItem.id && EVENTS.find(e => e && e.id === modalItem.id));
+        if (!raw) return;
+        const fresh = normalize(raw, true);
+        if (fresh.statusKey === modalItem.statusKey && fresh.statusLabel === modalItem.statusLabel) return;
+        modalItem.statusKey = fresh.statusKey;
+        modalItem.statusLabel = fresh.statusLabel;
+        const badge = modalMeta.querySelector(".status-badge");
+        if (!badge) return;
+        badge.className = `status-badge status-${cssToken(fresh.statusKey)}`;
+        badge.textContent = fresh.statusLabel;
+    }
+
     setInterval(() => {
-        if (!dataLoaded || modalOverlay.classList.contains("open")) return;
+        if (!dataLoaded) return;
+        if (modalOverlay.classList.contains("open")) {
+            refreshOpenModalStatus();
+            return;
+        }
         const signature = eventStatusSignature();
         if (signature === lastStatusSignature) return;
         lastStatusSignature = signature;
-        render();
+        // In place: a timer, not the visitor, asked for this one, so their
+        // focus and scroll are kept — see render and renderInPlace.
+        renderInPlace();
     }, 15000);
 
     /* ---------- Loading screen ----------
@@ -7968,7 +8946,21 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    /* How many rows' thumbnails the loading screen waits for: about one
+       screenful of whichever list the page lands on.
+
+       It used to wait for EVERY thumbnail in the archive — every maze and
+       every event, most of them on tabs nobody had opened, all behind a
+       loader whose whole purpose is to hide the first screen until it is
+       ready. The rest load as their rows are scrolled to, which is what
+       loading="lazy" on the rows already arranges. LOADER_MAX_WAIT still
+       caps the wait whatever happens. */
+    const LOADER_PRELOAD_ROWS = 12;
+
     Promise.all([roomsReq, eventsReq]).then(async ([rooms, events]) => {
+        // Made safe before anything reads them — see sanitizeRecords.
+        rooms = sanitizeRecords(rooms);
+        events = sanitizeRecords(events);
         ROOMS = rooms;
         EVENTS = events;
         // New records, so every cached search string is for an object that
@@ -7984,34 +8976,47 @@ document.addEventListener("DOMContentLoaded", () => {
         setTimeout(hideLoader, LOADER_MAX_WAIT);
 
         showDegradedNotice();
-
-        // Exactly the images the cards will ask for, deduplicated — normalize
-        // is what decides a card's thumbnail, and rowThumbUrl is the request
-        // the row will actually make, so going through both is the only way
-        // to be sure the preload and the render want the same files.
-        const thumbs = [...new Set([
-            ...rooms.map(r => normalize(r, false).thumb),
-            ...events.map(e => normalize(e, true).thumb)
-        ].filter(Boolean).map(rowThumbUrl))];
         drawLoader();
 
         dataLoaded = true;
         lastStatusSignature = eventStatusSignature();
-        render();
-        openFromHash();
+        /* Each step on its own, so one failing cannot take the next with it.
+           A render that threw used to skip openFromAddress as well — every
+           shared link on the site landing on a blank archive — and then
+           fell into the catch below, which called render again and threw
+           the same error a second time from there. */
+        try { render(); } catch (e) { console.error("The archive list failed to render", e); }
+        try { openFromAddress("load"); } catch (e) { console.error("Could not open the linked record", e); }
         // Which records are marked as dead ends. Small and edge-cached, and
         // nothing waits on it: a maze's window re-draws its strip when it
         // lands (see loadDeadEnds).
         loadDeadEnds();
 
+        // Exactly the images the first rows ask for, deduplicated — read off
+        // what render() actually drew (currentItems, and the featured picks
+        // if the panel is open), through rowThumbUrl, so the preload and the
+        // rows cannot want different files. See LOADER_PRELOAD_ROWS.
+        const firstScreen = [
+            ...(showFeatured ? featuredListItems : []),
+            ...currentItems.slice(0, LOADER_PRELOAD_ROWS)
+        ];
+        const thumbs = [...new Set(firstScreen
+            .map(n => n && n.thumb)
+            .filter(Boolean)
+            .map(rowThumbUrl))];
+
         await preloadThumbs(thumbs);
         hideLoader();
-    }).catch(() => {
+    }).catch(e => {
         // Api's own reads fall back rather than reject, so reaching this is
         // something unexpected — but the empty grid it leaves behind must
         // still say so rather than sitting on "still loading" forever.
-        loadFailed = true;
+        console.error("The archive failed to load", e);
+        // Only a failure to GET the archive is a failed load. Once the data
+        // is in, whatever went wrong went wrong in drawing it, and "Couldn't
+        // load the archive" would be the wrong thing to say.
+        if (!dataLoaded) loadFailed = true;
         hideLoader();
-        render();
+        try { render(); } catch (err) { console.error("The archive list failed to render", err); }
     });
 });

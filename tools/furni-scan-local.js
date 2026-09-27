@@ -414,15 +414,124 @@ function imagesOf(doc) {
     const started = Date.now();
     let done = 0, failed = 0, found = 0;
 
-    // Writes are funnelled through one promise chain. Several workers can
-    // finish images of the SAME maze at once, and each write sends that
-    // maze's whole furni object — so two overlapping read-modify-writes
-    // would silently drop one of the two results.
+    /* ---------- writing a result without overwriting anybody ----------
+
+       This used to write each maze's WHOLE furni object as this process had
+       it — a copy read once, at the start of the run, fifteen minutes ago.
+       Anything saved in between was overwritten: a furni added by hand in
+       the admin while the scan ran, a room hidden, a picture replaced. The
+       admin form had the mirror-image problem and wiped the scan's results
+       whenever it saved. Both now go through the same rule (rooms.js does
+       it for the form):
+
+         · read the record as it is NOW,
+         · change only the images this run has results for, merging each
+           into what is stored for it at this moment — the hand-added
+           entries kept are the ones there NOW, not the ones there when the
+           run began,
+         · write it back only if nobody else has written furni since,
+           judged by furniRev, a counter every furni write bumps. A record
+           that predates it has none, which counts as 0. If the counter has
+           moved, somebody else wrote in between: read again, merge again,
+           try again.
+
+       The whole `furni` field is $set, never a dotted path into it — the
+       keys are image addresses, full of dots, and Mongo would read each dot
+       as a level of nesting.
+
+       An image that is no longer on the record by the time its result is
+       written (replaced or removed in the admin mid-scan) is skipped: its
+       furni would only be an orphan, the kind the admin's save prunes.
+
+       Writes still go through one promise chain, so this process never
+       races itself; furniRev is what protects against everybody else. */
+    const pending = new Map();   // maze id -> Map(image -> this run's result)
+    const MAX_WRITE_ATTEMPTS = 8;
+
+    function mergeImage(current, result) {
+        const previous = (current && current.items) || [];
+        /* What survives this image being rescanned.
+
+           Normally: anything an admin added by hand. A scan replaces its own
+           findings wholesale — that is the point of rescanning — but
+           hand-added entries are the ones it could never find on its own,
+           so wiping them would make a rescan destructive rather than merely
+           repetitive. (This tool used to drop them; a full run would have
+           quietly destroyed every correction ever made.)
+
+           In --additive: everything survives, and only genuinely new names
+           are appended. See the flag's own comment. */
+        const kept = ADDITIVE ? previous.slice() : previous.filter(f => f && f.manual);
+        // Names already spoken for, so a "find" that is really just the
+        // same furni again can be recognised and dropped.
+        const known = new Set(kept.map(f => f && f.name).filter(Boolean));
+        if (result.error) {
+            // In additive mode a failed image must not lose the furni it
+            // already had — the run promised to change nothing that is
+            // already there, and failing is not an exception to that.
+            return ADDITIVE
+                ? { ...(current || {}), error: result.error, items: kept }
+                : { error: result.error, items: kept };
+        }
+        if (result.skipped) {
+            return ADDITIVE
+                ? { ...(current || {}), items: kept }
+                : { skipped: result.skipped, roomColours: result.roomColours, items: kept };
+        }
+        const items = result.items.filter(it => !ADDITIVE || !known.has(it.name));
+        return {
+            ...(ADDITIVE ? (current || {}) : {}),
+            scannedAt: result.scannedAt,
+            roomColours: result.roomColours,
+            items: kept.concat(items)
+        };
+    }
+
+    async function flushMaze(id) {
+        const results = pending.get(id);
+        if (!results || !results.size) return;
+        // Taken off the queue now; anything that lands while this write is
+        // in flight starts a fresh batch for the next write.
+        pending.delete(id);
+        const col = db.collection(COLLECTION);
+        try {
+            for (let attempt = 0; attempt < MAX_WRITE_ATTEMPTS; attempt++) {
+                const doc = await col.findOne({ id },
+                    { projection: { furni: 1, furniRev: 1, entrance: 1, gallery: 1, finish: 1 } });
+                if (!doc) return; // the maze was deleted mid-scan
+                const onRecord = new Set(imagesOf(doc));
+                const rev = Number(doc.furniRev) || 0;
+                const furni = { ...(doc.furni || {}) };
+                let touched = 0;
+                for (const [image, result] of results) {
+                    if (!onRecord.has(image)) continue;
+                    furni[image] = mergeImage(furni[image], result);
+                    touched++;
+                }
+                if (!touched) return;
+                // $in [0, null] also matches a record with no furniRev at
+                // all, which is every record written before the counter.
+                const revFilter = rev === 0 ? { furniRev: { $in: [0, null] } } : { furniRev: rev };
+                const res = await col.updateOne({ id, ...revFilter },
+                    { $set: { furni, furniRev: rev + 1 } });
+                if (res.matchedCount) return;
+                // Somebody else wrote this maze's furni since the read.
+                await sleep(100 * (attempt + 1));
+            }
+            console.error(`\nwrite for ${id} kept colliding with other saves — its results were not written; rerun it.`);
+        } catch (err) {
+            // Put back, under anything newer, so the next write for this
+            // maze — or the final flush — tries them again.
+            const newer = pending.get(id) || new Map();
+            pending.set(id, new Map([...results, ...newer]));
+            throw err;
+        }
+    }
+
     let writeChain = Promise.resolve();
     const write = (id) => {
-        writeChain = writeChain.then(() =>
-            db.collection(COLLECTION).updateOne({ id }, { $set: { furni: furniByMaze.get(id) } })
-        ).catch(err => console.error("\nwrite failed:", err.message));
+        writeChain = writeChain.then(() => flushMaze(id))
+            .catch(err => console.error("\nwrite failed:", err.message));
         return writeChain;
     };
 
@@ -446,43 +555,24 @@ function imagesOf(doc) {
             w.on("message", msg => {
                 if (msg.ready) { feed(w); return; }
                 const job = w._job;
-                const previous = (furniByMaze.get(job.id)[job.image] || {}).items || [];
-                /* What survives this image being rescanned.
-
-                   Normally: anything an admin added by hand. A scan replaces
-                   its own findings wholesale — that is the point of
-                   rescanning — but hand-added entries are the ones it could
-                   never find on its own, so wiping them would make a rescan
-                   destructive rather than merely repetitive. (This tool used
-                   to drop them; a full run would have quietly destroyed every
-                   correction ever made.)
-
-                   In --additive: everything survives, and only genuinely new
-                   names are appended. See the flag's own comment. */
-                const kept = ADDITIVE ? previous.slice() : previous.filter(f => f && f.manual);
-                // Names already spoken for, so a "find" that is really just
-                // the same furni again can be recognised and dropped.
-                const known = new Set(kept.map(f => f && f.name).filter(Boolean));
+                /* Only this run's RESULT is recorded here. It is merged into
+                   the record as stored at the moment of writing — see
+                   mergeImage and flushMaze above — not into the copy read
+                   at the start of the run. */
+                if (!pending.has(job.id)) pending.set(job.id, new Map());
+                const results = pending.get(job.id);
                 if (msg.error) {
-                    // In additive mode a failed image must not lose the furni
-                    // it already had — the run promised to change nothing
-                    // that is already there, and failing is not an exception
-                    // to that.
-                    furniByMaze.get(job.id)[job.image] = ADDITIVE
-                        ? { ...(furniByMaze.get(job.id)[job.image] || {}), error: msg.error, items: kept }
-                        : { error: msg.error, items: kept };
+                    results.set(job.image, { error: msg.error });
                     failed++;
                 } else if (msg.result.skipped) {
-                    furniByMaze.get(job.id)[job.image] = ADDITIVE
-                        ? { ...(furniByMaze.get(job.id)[job.image] || {}), items: kept }
-                        : { skipped: msg.result.skipped, roomColours: msg.result.roomColours, items: kept };
+                    results.set(job.image, { skipped: msg.result.skipped, roomColours: msg.result.roomColours });
                 } else {
                     /* The omit list is applied here rather than in the
                        matcher: the matcher works in sprite keys and knows
                        nothing about names, and this is the first point where
                        a hit HAS a name to compare. Scan finds only — `kept`
-                       above is hand-added work, which the omit list has no
-                       business deleting. */
+                       in mergeImage is hand-added work, which the omit list
+                       has no business deleting. */
                     const items = msg.result.hits.map(h => {
                         const item = catalogue.items[h.key];
                         return {
@@ -491,15 +581,19 @@ function imagesOf(doc) {
                             matched: h.matched, coverage: Number(h.coverage.toFixed(3)), at: h.at,
                             alternates: (h.alternates || []).map(k => catalogue.items[k].name)
                         };
-                    }).filter(it => !isOmitted(it.name))
-                      .filter(it => !ADDITIVE || !known.has(it.name));
-                    furniByMaze.get(job.id)[job.image] = {
-                        ...(ADDITIVE ? (furniByMaze.get(job.id)[job.image] || {}) : {}),
+                    }).filter(it => !isOmitted(it.name));
+                    results.set(job.image, {
                         scannedAt: new Date().toISOString(),
                         roomColours: msg.result.roomColours,
-                        items: kept.concat(items)
-                    };
-                    found += items.length;
+                        items
+                    });
+                    /* The running count, for the progress line. In additive
+                       mode it is judged against the record as the run found
+                       it, so it can overstate by whatever was added by hand
+                       meanwhile; the WRITE uses the record as it is then. */
+                    const before = ((furniByMaze.get(job.id) || {})[job.image] || {}).items || [];
+                    const knownBefore = new Set(before.map(f => f && f.name).filter(Boolean));
+                    found += ADDITIVE ? items.filter(it => !knownBefore.has(it.name)).length : items.length;
                 }
                 write(job.id);
                 done++;
@@ -520,7 +614,11 @@ function imagesOf(doc) {
         }
     });
 
+    // Anything a failed write put back gets one last try before the run
+    // reports itself finished.
+    for (const id of Array.from(pending.keys())) write(id);
     await writeChain;
+    if (pending.size) console.error(`\n${pending.size} maze(s) could not be written — rerun them.`);
     console.log(`\n\nDone in ${clock(Date.now() - started)} — ${done} images, ${found} furni, ${failed} failed.`);
     await setProgress({
         done, total: jobs.length, errors: failed, found, additive: ADDITIVE,

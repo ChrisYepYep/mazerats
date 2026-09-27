@@ -34,7 +34,7 @@
    with it — so a preset cannot carry `}` out of its declaration and start
    writing rules of its own. */
 const { getDb } = require("./_db");
-const { isAuthorized, canWrite, refuseWrite, usernameFromToken, UNAUTHORIZED } = require("./_auth");
+const { isAuthorized, canWrite, refuseWrite, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson } = require("./_cache");
 
@@ -88,14 +88,19 @@ function cleanSprites(raw) {
     return out;
 }
 
-const clean = (doc) => ({
+/* `by` is an admin's username, and the reads here are public — so it went
+   out to every visitor wearing a palette, and into the edge cache with it:
+   a free list of the accounts worth guessing passwords for. It is only
+   added for a caller that has a valid admin token (the editor), and never
+   on the edge-cached ?id= read, which is shared by everybody. */
+const clean = (doc, withBy) => ({
     id: doc.id,
     name: doc.name,
     palette: doc.palette || { vars: {}, decls: {}, sprites: {} },
     basedOn: doc.basedOn || null,
     at: doc.at,
     updatedAt: doc.updatedAt || doc.at,
-    by: doc.by || null
+    ...(withBy ? { by: doc.by || null } : {})
 });
 
 exports.handler = async (event) => {
@@ -125,7 +130,8 @@ exports.handler = async (event) => {
                 return one ? cachedJson(event, clean(one)) : json(404, { error: "No palette by that name." });
             }
             const all = await col.find({}, { projection: { _id: 0 } }).sort({ at: 1 }).toArray();
-            return json(200, { count: all.length, palettes: all.map(clean) });
+            const signedIn = isAuthorized(event);
+            return json(200, { count: all.length, palettes: all.map(p => clean(p, signedIn)) });
         } catch (e) {
             console.error("palettes: read failed", e);
             return json(503, { error: "Palettes could not be read just now." });
@@ -141,7 +147,23 @@ exports.handler = async (event) => {
        answers {"error":"Unauthorized"}. The status was right and the
        refusal held, but a caller reading .error off it got undefined and
        would have shown an empty message. This was the only file in
-       netlify/functions doing it. */
+       netlify/functions doing it.
+
+       The write half inside one try, as the GET above is: the saves and the
+       settings update had nothing around them, so a database that dropped
+       mid-save answered with Lambda's stack trace — and canWrite now throws
+       when the account lookup cannot be made (lookUpRole in _auth.js),
+       which has to reach the editor as a 503, not the 401 that signs it
+       out. */
+    try {
+        return await write(event, db, col, params);
+    } catch (e) {
+        console.error("palettes: write failed", e);
+        return AUTH_UNAVAILABLE;
+    }
+};
+
+async function write(event, db, col, params) {
     if (!isAuthorized(event)) return UNAUTHORIZED;
     // Async, and the scope is the site-wide one a palette plainly is.
     // refuseWrite, not READ_ONLY: a wizard account is not view-only, it is
@@ -152,6 +174,8 @@ exports.handler = async (event) => {
     let body = {};
     try { body = JSON.parse(event.body || "{}"); }
     catch (e) { return json(400, { error: "Invalid request body" }); }
+    // "null" parses too, and has no .name to read.
+    if (!body || typeof body !== "object") body = {};
 
     if (event.httpMethod === "POST" || event.httpMethod === "PUT") {
         const name = String(body.name || "").trim().slice(0, MAX_NAME);
@@ -180,7 +204,7 @@ exports.handler = async (event) => {
             by: who || null
         };
         await col.replaceOne({ id }, doc, { upsert: true });
-        return json(existing ? 200 : 201, clean(doc));
+        return json(existing ? 200 : 201, clean(doc, true));
     }
 
     if (event.httpMethod === "DELETE") {
@@ -202,4 +226,4 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
-};
+}

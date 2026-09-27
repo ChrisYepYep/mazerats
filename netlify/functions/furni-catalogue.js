@@ -15,6 +15,10 @@
 const { blobStore } = require("./_blobs.js");
 const { SECURITY_HEADERS } = require("./_headers");
 const { isOwnerWrite } = require("./_auth");
+const { cachedJson } = require("./_cache");
+
+// The edge policy furni-meta.js gives its ?classes= answer — see the handler.
+const CATALOGUE_CDN_CACHE = "public, durable, s-maxage=3600, stale-while-revalidate=86400";
 
 const ENDPOINT = "https://furniindex.com/api/mazerats/all";
 const PAGE_SIZE = 100;          // their cap; anything larger is ignored
@@ -178,8 +182,16 @@ exports.handler = async (event) => {
     /* A forced refresh is 13 requests to FurniIndex on an anonymous caller's
        say-so — a way to spend their goodwill and our function time from
        outside. Owners only, the same as the furni scans. */
-    if (params.refresh === "1" && !(await isOwnerWrite(event))) {
-        return json(403, { error: "Only an owner can refresh the furni catalogue." });
+    if (params.refresh === "1") {
+        // isOwnerWrite throws when the account lookup cannot be made (see
+        // lookUpRole in _auth.js) — a 503, not a refusal and not a trace.
+        let owner;
+        try {
+            owner = await isOwnerWrite(event);
+        } catch (e) {
+            return json(503, { error: "The database is unavailable just now. Please try again in a moment." });
+        }
+        if (!owner) return json(403, { error: "Only an owner can refresh the furni catalogue." });
     }
     try {
         const catalogue = await getCatalogue({ force: params.refresh === "1" });
@@ -248,7 +260,7 @@ exports.handler = async (event) => {
         // add-by-hand picker, never by anything else — and they are by far
         // the biggest part of the payload.
         if (params.sprites !== "1") items = items.map(({ largeImages, smallImages, ...rest }) => rest);
-        return json(200, {
+        const data = {
             total: catalogue.total,
             fetchedAt: catalogue.fetchedAt,
             count: items.length,
@@ -258,7 +270,27 @@ exports.handler = async (event) => {
                that matched plenty — the one wrong answer this endpoint can
                give that looks like a correct one. */
             items: (limit > 0) ? items.slice(0, limit) : items
-        });
+        };
+        /* THROUGH THE EDGE, the way furni-meta.js's ?classes= answer is.
+
+           Every answer here was sent with no cache header at all, so every
+           anonymous caller cost a function run, a Blobs read and — for
+           ?sprites=1, which Fallin' Furni asks for — about 930KB of JSON
+           serialised and shipped uncompressed. The answer is the same for
+           everybody who asks the same URL (no session is read), and the
+           catalogue itself only moves once a day, so an hour at the edge
+           with a day's stale-while-revalidate costs nothing in freshness
+           and turns a crowd into a handful of runs. cachedJson gzips it too.
+
+           Not a ?q= search: those are the admin picker's keystrokes, every
+           one a different URL, and filling the edge with them buys nothing.
+           Not a ?refresh=1 either — that is the owner's, and its answer
+           must never be stored for the next caller of the same URL (see
+           uncached() in furni-meta.js for how that went wrong there). */
+        if (!q && params.refresh !== "1") {
+            return cachedJson(event, data, { cdn: CATALOGUE_CDN_CACHE });
+        }
+        return json(200, data);
     } catch (err) {
         /* The detailed reason stays in the function log. Some of these
            messages are written to diagnose a missing key — its length, and

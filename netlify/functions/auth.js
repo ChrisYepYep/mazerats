@@ -8,7 +8,8 @@
    _auth.js). Only owners can delete accounts or create new owner accounts —
    a standard admin can still create accounts, but only as "admin",
    "viewer" or "wizard", and can't remove anyone. A viewer can do none of
-   it, and cannot change anything anywhere else on the site either. A wizard
+   it bar changing its own password, and cannot change anything anywhere
+   else on the site either. A wizard
    is the same as a viewer everywhere except the atlas at /wizard,
    which it owns outright; the one thing it may change in HERE is its own
    password.
@@ -27,7 +28,7 @@
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, hasAccount, canWrite, refuseWrite, usernameFromToken, sessionOf, tokenPayload, tokenIsCurrent, UNAUTHORIZED, READ_ONLY, ROLES, PERMANENT_OWNER, resolveRole, signAdminToken } = require("./_auth");
+const { isAuthorized, hasAccount, canWrite, refuseWrite, usernameFromToken, sessionOf, tokenPayload, tokenIsCurrent, UNAUTHORIZED, READ_ONLY, ROLES, PERMANENT_OWNER, resolveRole, signAdminToken, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { record, COLLECTION: ACTIVITY } = require("./_audit");
 const { SECURITY_HEADERS } = require("./_headers");
 
@@ -66,10 +67,30 @@ const text = (v) => (typeof v === "string" ? v : "");
    between invocations and there is no shared cache to lean on. Same shape as
    the per-IP cap contact.js has always had.
 
-   Counted per IP AND per username, whichever trips first. The IP cap stops
-   one host working through a password list; the username cap stops the same
-   account being worked on from a botnet, which the IP cap alone would miss
-   entirely.
+   Counted per IP AND per (username, IP) pair, whichever trips first, with a
+   third, much higher per-username ceiling across every IP that SLOWS rather
+   than refuses.
+
+   The username cap used to be per username alone, and refused outright,
+   BEFORE the password was looked at. That made it a lockout anybody could
+   hold: fifteen junk attempts at "ChrisYepYep" every fifteen minutes, from
+   anywhere, and the owner's own correct password was answered with a 429
+   for as long as they cared to keep it up. A throttle that refuses the
+   right password is a denial of service with a nicer error message.
+
+   So the refusing caps are now only ever about the host asking. The IP cap
+   stops one host working through a password list; the pair cap is the same
+   thing for a caller whose address is missing or shared (see clientIp), and
+   keeps one noisy host from spending an account's whole allowance. Neither
+   can touch the real owner signing in from their own machine.
+
+   What the username cap was for — the same account worked on from a
+   botnet, which no per-host cap sees — is the ceiling's job now. Over it,
+   every answer for that username (right or wrong, so the delay tells a
+   guesser nothing) waits LOGIN_SLOW_MS first. It cannot stop a botnet, and
+   nothing that still lets the right password in could; what it does is cut
+   what each bot gets through per minute, and make the run loud in the
+   activity log, while the owner still gets in — slowly.
 
    bcrypt is the reason this matters twice over. A cost-10 hash is ~45ms of
    CPU that an anonymous caller can ask for as often as they like, so an
@@ -78,7 +99,9 @@ const text = (v) => (typeof v === "string" ? v : "");
    BEFORE any hashing, so a refused attempt costs an insert, two indexed
    counts and a delete — and no bcrypt. */
 const LOGIN_MAX_PER_IP = 10;
-const LOGIN_MAX_PER_USER = 15;
+const LOGIN_MAX_PER_USER_IP = 15;
+const LOGIN_SLOW_PER_USER = 100;
+const LOGIN_SLOW_MS = 2500;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGGED_NAME_MAX = 60;
 
@@ -110,15 +133,25 @@ function clientIp(event) {
    nothing. Under a real race this can refuse one more than it strictly had
    to, which is the direction to be wrong in.
 
-   A missing IP skips only the IP half — the username half still applies, so
-   an unidentifiable caller is throttled per account rather than not at all.
-   Failing open on the whole check would make the header its own bypass.
+   A missing IP skips only the IP half — the pair half still applies (as
+   username + no-address), so an unidentifiable caller is throttled per
+   account rather than not at all. Failing open on the whole check would
+   make the header its own bypass.
 
-   Returns { refused } or { settle(reason) }: settle(null) is a success and
-   removes the row, settle("…") records the failure. Throws if the database
-   does — the caller answers 503 rather than letting an attempt through
-   unthrottled. */
+   Returns { refused } or { settle(reason), slow }: settle(null) is a
+   success and removes the row, settle("…") records the failure; `slow` is
+   true when the username is over its all-hosts ceiling and the caller
+   should wait LOGIN_SLOW_MS before answering, whatever the answer. Throws
+   if the database does — the caller answers 503 rather than letting an
+   attempt through unthrottled.
+
+   The current-password check on a password change (the PUT below) goes
+   through here too, filed as the same "login-failed" with its own reason.
+   It is the same guessing game — a stolen session trying passwords against
+   its own account — so it shares the same caps, and the activity page
+   already shows it without being taught a new kind of row. */
 async function loginThrottle(db, event, username) {
+    const type = "login-failed";
     const since = new Date(Date.now() - LOGIN_WINDOW_MS);
     const ip = clientIp(event);
     const activity = db.collection(ACTIVITY);
@@ -127,23 +160,29 @@ async function loginThrottle(db, event, username) {
     // it as any other failed sign-in.
     const { insertedId } = await activity.insertOne({
         at: new Date(),
-        type: "login-failed",
+        type,
         ip,
         agent: ((event.headers || {})["user-agent"] || "").slice(0, 180),
         username,
         reason: "checking"
     });
 
-    const [byIp, byUser] = await Promise.all([
-        ip ? activity.countDocuments({ type: "login-failed", ip, at: { $gte: since } },
+    /* `ip` is null for an unidentified caller, and { ip: null } matches
+       exactly the rows written without one — so the pair count is
+       "this username, from nowhere in particular" in that case. */
+    const [byIp, byPair, byUser] = await Promise.all([
+        ip ? activity.countDocuments({ type, ip, at: { $gte: since } },
             { limit: LOGIN_MAX_PER_IP + 1 }) : Promise.resolve(0),
-        activity.countDocuments({ type: "login-failed", username, at: { $gte: since } },
-            { limit: LOGIN_MAX_PER_USER + 1 })
+        activity.countDocuments({ type, username, ip, at: { $gte: since } },
+            { limit: LOGIN_MAX_PER_USER_IP + 1 }),
+        activity.countDocuments({ type, username, at: { $gte: since } },
+            { limit: LOGIN_SLOW_PER_USER + 1 })
     ]);
 
     // Strictly more than the cap, because the count includes this attempt's
     // own row: ten earlier failures plus this one is eleven, and refused.
-    if (byIp > LOGIN_MAX_PER_IP || byUser > LOGIN_MAX_PER_USER) {
+    // byUser is deliberately NOT here — see the top of this section.
+    if (byIp > LOGIN_MAX_PER_IP || byPair > LOGIN_MAX_PER_USER_IP) {
         await activity.deleteOne({ _id: insertedId }).catch(() => {});
         return {
             refused: {
@@ -158,11 +197,14 @@ async function loginThrottle(db, event, username) {
        stays as a failure marked "checking" — which still counts, so the
        throttle errs towards stricter rather than looser. */
     return {
+        slow: byUser > LOGIN_SLOW_PER_USER,
         settle: (reason) => (reason
             ? activity.updateOne({ _id: insertedId }, { $set: { reason } })
             : activity.deleteOne({ _id: insertedId })).catch(() => {})
     };
 }
+
+const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /* A bcrypt hash of nothing in particular, compared against when the account
    does not exist.
@@ -221,6 +263,9 @@ async function handlePost(event, body, db, admins) {
            has rather than its most expensive one. */
         const attempt = await loginThrottle(db, event, tried);
         if (attempt.refused) return attempt.refused;
+        /* The all-hosts ceiling: slowed, never refused. Before the password
+           is looked at, so a right answer and a wrong one wait the same. */
+        if (attempt.slow) await pause(LOGIN_SLOW_MS);
 
         const count = await admins.countDocuments();
         if (count === 0) {
@@ -346,10 +391,29 @@ exports.handler = async (event) => {
             return await handlePost(event, body, db, admins);
         } catch (e) {
             console.error("auth: POST failed", e);
+            // "create" goes through canWrite; its failure is worded for
+            // what it is rather than as a failed sign-in.
+            if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
             return json(503, { error: "Sign-in is unavailable just now. Please try again in a minute." });
         }
     }
 
+    /* The rest inside one try too, for the reason the POST is. GET, PUT and
+       DELETE each read or write the accounts with nothing around them, so a
+       database that dropped mid-request answered with Lambda's errorType
+       and stack trace in the body; and since the guards now THROW when the
+       account lookup cannot be made (see lookUpRole in _auth.js), this is
+       also what turns that into a 503 the admin page retries, instead of
+       the 401 that used to sign everybody out. */
+    try {
+        return await handleRest(event, db, admins);
+    } catch (e) {
+        console.error(`auth: ${event.httpMethod} failed`, e);
+        return AUTH_UNAVAILABLE;
+    }
+};
+
+async function handleRest(event, db, admins) {
     if (event.httpMethod === "GET") {
         if (!(await hasAccount(event))) return UNAUTHORIZED;
         // tokenVersion stays server-side with the hash: it is nothing a
@@ -366,6 +430,9 @@ exports.handler = async (event) => {
         } catch (e) {
             return json(400, { error: "Invalid request body" });
         }
+        // An array or a bare string parses fine and has no fields; read
+        // as an empty request rather than as a crash on body.username.
+        if (!body || typeof body !== "object") body = {};
         const username = text(body.username).trim();
         const password = text(body.password);
         if (!username || !validPassword(password)) {
@@ -395,6 +462,38 @@ exports.handler = async (event) => {
             if (resolveRole(requester) !== "owner") {
                 return json(403, { error: "Only an owner can reset another admin's password" });
             }
+        }
+        /* Your OWN password needs your current one. Without this, a token
+           was enough on its own: whoever lifted one (a shared machine, a
+           leaked localStorage) could set a password of their choosing, get
+           a fresh token back in the same reply, and — because the new
+           tokenVersion signs every other session out — lock the real owner
+           of the account out of it, all without ever having known the
+           password. Now the token lets you ASK, and the password decides.
+
+           403, never 401: the session is perfectly good, and js/admin.js
+           treats any 401 as signed out and wipes the token, which would
+           punish a typo by throwing the user out of the page.
+
+           Through the sign-in throttle, since this is a password check an
+           attacker holding a token can repeat at will — the same caps and
+           the same bcrypt-before-or-not bookkeeping as a login.
+
+           An owner resetting SOMEBODY ELSE'S password does not need that
+           person's; that is what an owner reset is for. */
+        if (username === requesterUsername) {
+            const current = text(body.currentPassword);
+            const WRONG_CURRENT = json(403, { error: "Your current password is wrong." });
+            if (!current) return WRONG_CURRENT;
+            const attempt = await loginThrottle(db, event, username.slice(0, LOGGED_NAME_MAX));
+            if (attempt.refused) return attempt.refused;
+            if (attempt.slow) await pause(LOGIN_SLOW_MS);
+            const self = await admins.findOne({ username });
+            if (!(await passwordMatches(current, self))) {
+                await attempt.settle("wrong current password");
+                return WRONG_CURRENT;
+            }
+            await attempt.settle(null);
         }
         const passwordHash = await bcrypt.hash(password, 10);
         /* A new tokenVersion with the new password, which signs out every
@@ -439,4 +538,4 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
-};
+}

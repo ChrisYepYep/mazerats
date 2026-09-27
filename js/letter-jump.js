@@ -14,7 +14,9 @@ document.addEventListener("keydown", e => {
     if (e.key.length !== 1 || !/[a-z]/i.test(e.key)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const active = document.activeElement;
-    if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) return;
+    // contenteditable too: typing into an editable region is typing, even
+    // though the element doing it is a <div>.
+    if (active && (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))) return;
 
     /* Not while something is open over the page. The lists behind a window
        are still "visible" by the offsetParent test below — the overlay
@@ -30,6 +32,15 @@ document.addEventListener("keydown", e => {
        keyboard is talking to". */
     if (document.body && document.body.classList.contains("modal-open")) return;
     if (document.querySelector(".modal-overlay.open, .lightbox-overlay.open")) return;
+    /* The Habbo Console sets neither marker: it is shown by switching its
+       own inline display, so letters typed while reading it (or pressed on
+       one of its buttons) went on scrolling the archive behind it. Checked
+       both ways — shown at all, or holding focus — since either means the
+       keyboard is talking to the console. getClientRects rather than
+       offsetParent, which reads null for a position: fixed box even when
+       it is on screen. */
+    const consoleModal = document.getElementById("console-modal");
+    if (consoleModal && (consoleModal.getClientRects().length > 0 || consoleModal.contains(active))) return;
 
     const letter = e.key.toLowerCase();
     /* Matched on the same reading of the name the sort uses (sortableName

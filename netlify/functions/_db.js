@@ -35,6 +35,32 @@ const MAX_POOL = 5;
    12s, before falling back to the bundled archive). */
 const SERVER_SELECTION_MS = 5000;
 
+/* The same idea for the two waits server selection does not cover: opening
+   the TCP/TLS connection itself, and a query that was sent and never
+   answered. The driver's defaults are 30s and "forever", so a cluster that
+   was reachable but stalled (a failover mid-query, a saturated tier) held
+   the function until the platform killed it at ten seconds — and the
+   caller got Lambda's own timeout body instead of the JSON 503 every
+   handler knows how to send.
+
+   The socket allowance is a little longer than the others because it
+   bounds a whole operation, not a handshake, and the heaviest queries a
+   function runs (the activity log's aggregation, the leaderboards' group
+   stages) should get to finish on a slow day. Eight seconds still lands
+   inside the ten-second function limit with room to answer.
+
+   Functions only. The tools/ scripts share this file, run under plain node
+   on the owner's PC, and some of them (the furni scan, the level builds)
+   do long operations that have every right to take longer; they have no
+   platform timeout to beat. Told apart by the script that was started,
+   not by an environment variable: the admin's scan button spawns
+   tools/furni-scan-local.js from inside a function with the function's
+   whole environment copied across (AWS_LAMBDA_FUNCTION_NAME included), so
+   only the entry point says which one this is. */
+const CONNECT_MS = 5000;
+const SOCKET_MS = 8000;
+const IN_FUNCTION = !(require.main && /[\\/]tools[\\/][^\\/]+$/.test(require.main.filename || ""));
+
 /* The PROMISE is cached, not the client, and that is not a detail.
 
    Caching the client meant two things went wrong under exactly the
@@ -58,7 +84,8 @@ async function getDb() {
     if (!clientPromise) {
         const client = new MongoClient(process.env.MONGODB_URI, {
             maxPoolSize: MAX_POOL,
-            serverSelectionTimeoutMS: SERVER_SELECTION_MS
+            serverSelectionTimeoutMS: SERVER_SELECTION_MS,
+            ...(IN_FUNCTION ? { connectTimeoutMS: CONNECT_MS, socketTimeoutMS: SOCKET_MS } : {})
         });
         clientPromise = client.connect().catch(err => {
             clientPromise = null;      // let the next request try again

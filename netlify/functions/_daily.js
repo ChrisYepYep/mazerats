@@ -1,16 +1,18 @@
-/* The day rules, on the server's side of the wire.
+/* The day rules, on the server's side of the wire: when a day turns over,
+   how a date becomes a seed, what a seeded shuffle does with a list, and
+   which rooms a day may be dealt from.
 
-   js/daily.js holds the same three answers for the browser: when a day turns
-   over, how a date becomes a seed, and what a seeded shuffle does with a
-   list. This is the copy the scoring endpoint needs, because it re-derives
-   each day's puzzle for itself rather than believing what the page claims
-   was in it.
+   THIS IS NOW THE ONLY COPY THAT DEALS. js/daily.js used to hold the same
+   answers for the browser, which dealt each day itself while the score
+   endpoints re-dealt it here to check what came back — two copies kept
+   identical by a test, and a day's scores silently wrong whenever the two
+   sides read the archive differently. The day is dealt once, on the server,
+   and stored (_deal.js); the page is handed it. The browser keeps only the
+   calendar (Daily.today, corrected to the server's clock) and a seeded
+   random for choosing where to crop a picture, from a seed it is given.
 
-   Two copies of a thing this small is a risk worth naming: they are not the
-   same file and cannot be, so they are kept identical by being tiny,
-   commented on both sides, and — more usefully — by a test that deals the
-   same day in both and compares. If they ever drift, every score submitted
-   that day is rejected as wrong, which is loud rather than silent. */
+   Some notes below still speak of "both sides"; where they do, the other
+   side is now _deal.js's stored deal rather than the page. */
 
 // UTC, so a player and the server never disagree about which day it is.
 const today = () => new Date().toISOString().slice(0, 10);
@@ -116,14 +118,14 @@ function saltFor(iso) {
     return salt ? ":" + salt : "";
 }
 
-/* The seed for a day, salt included — the server's half of Daily.daySeed.
+/* The PUBLIC seed for a day, salt included.
 
-   THE STRING MUST BE BUILT EXACTLY AS js/daily.js BUILDS IT: the parts
-   joined with colons, then the day, then the salt. A different join order
-   is a different hash and therefore a different puzzle. The table can no
-   longer drift, but this arithmetic is still written twice, which is why
-   tools/check-daily-parity.js compares the NUMBERS the two produce
-   rather than the tables. */
+   No longer what deals a day: that is secretSeed in _deal.js, an HMAC of
+   the same string under SESSION_SECRET, because a seed anybody can compute
+   is a day anybody can deal in advance. This is its fallback for a server
+   with no secret configured, and is built exactly as it always was — the
+   parts joined with colons, then the day, then the salt — so the string
+   secretSeed signs reads the same. */
 function daySeed(day, ...parts) {
     return seedFrom(parts.join(":") + ":" + day + saltFor(day));
 }
@@ -219,6 +221,6 @@ function rangeBounds(kind, todayStr) {
 }
 
 module.exports = {
-    today, dayIsOpen, seededRandom, seedFrom, shuffle,
+    today, dayIsOpen, GRACE_MS, seededRandom, seedFrom, shuffle,
     FEATURED_DAYS, daySeed, isFeaturedDay, isHallway, existedBefore, rangeBounds
 };

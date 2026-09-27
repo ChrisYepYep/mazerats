@@ -238,6 +238,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function renderInfo() {
+        // A fresh form is a fresh submission: see clientRef below send().
+        clientRef = null;
         const selected = target ? `${target.type}:${target.id}` : "";
         /* A record an admin has marked opens on the likeliest kind of answer
            for the first thing it is missing, so "I can help" on a maze
@@ -355,16 +357,68 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    async function postJson(url, body) {
-        const res = await fetch(url, {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            body: JSON.stringify(body)
-        });
+    /* On a leash, like every other request now (see _timedFetch in
+       js/api.js): a POST that hung left the button disabled and "Sending..."
+       on screen for good. 30s for the lead, past Netlify's 26s ceiling on a
+       function so a slow save is not reported as a failure it wasn't; 90s
+       for an image, which is the visitor's upload bandwidth. Retrying after
+       either is safe now — see clientRef and uploadedKeys below. */
+    async function postJson(url, body, ms) {
+        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        if (controller) setTimeout(() => controller.abort(), ms || 30000);
+        let res;
+        try {
+            res = await fetch(url, {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json", Accept: "application/json" },
+                body: JSON.stringify(body),
+                signal: controller ? controller.signal : undefined
+            });
+        } catch (e) {
+            if (e && e.name === "AbortError") throw new Error("That took too long. Press Send again: nothing will be sent twice.");
+            throw new Error("That didn't send. Check your connection and try again.");
+        }
         const out = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(out.error || "That didn't send. Try again in a minute.");
         return out;
+    }
+
+    /* ---- SENDING TWICE, AND UPLOADING TWICE ----
+
+       A failed send used to start again from nothing. Every image was
+       uploaded afresh — a visitor on a poor connection with five pictures
+       paid for all five again on every retry, and the ones that HAD landed
+       were left in storage attached to nothing — and a lead whose POST timed
+       out after the server had saved it was saved again on the retry, so the
+       review queue got the same submission twice.
+
+       uploadedKeys remembers each picture's storage key against the File it
+       came from. A File is the same object for as long as it stays chosen in
+       its picker, so a retry skips straight past it; choose a different
+       picture and it is a different File, and uploads. A WeakMap, so a form
+       thrown away takes its entries with it.
+
+       clientRef names THIS submission: made once, on the first press of
+       Send, kept through every retry, and dropped when the form is redrawn
+       (renderInfo) — which is also what happens after a success. The server
+       keeps the first lead it saw under a ref and answers a repeat with that
+       one rather than saving another (netlify/functions/dead-end-leads.js). */
+    let uploadedKeys = new WeakMap();
+    let clientRef = null;
+    // Who the keys above were uploaded as (see the Account.onChange below).
+    let senderSeen = window.Account && Account.current ? String(Account.current.id || Account.current.name || "?") : "";
+
+    // Up to 64 of [A-Za-z0-9_-], as the server accepts it.
+    function newClientRef() {
+        try {
+            if (window.crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+            if (window.crypto && typeof crypto.getRandomValues === "function") {
+                const bytes = crypto.getRandomValues(new Uint8Array(16));
+                return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+            }
+        } catch (e) { /* fall through */ }
+        return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
     }
 
     let sending = false;
@@ -400,14 +454,20 @@ document.addEventListener("DOMContentLoaded", () => {
         sending = true;
         const sendBtn = document.getElementById("ci-send");
         sendBtn.disabled = true;
+        if (!clientRef) clientRef = newClientRef();
         try {
             let done = 0;
             const items = [];
             for (const r of rows) {
                 const images = [];
                 for (const f of r.files) {
-                    say(`Sending image ${++done} of ${fileCount}...`);
-                    const up = await postJson(`${LEADS_URL}?action=upload`, { dataUrl: await readAsDataUrl(f) });
+                    ++done;
+                    // Already landed on an earlier try: reuse it.
+                    const had = uploadedKeys.get(f);
+                    if (had) { images.push(had); continue; }
+                    say(`Sending image ${done} of ${fileCount}...`);
+                    const up = await postJson(`${LEADS_URL}?action=upload`, { dataUrl: await readAsDataUrl(f) }, 90000);
+                    uploadedKeys.set(f, up.key);
                     images.push(up.key);
                 }
                 items.push({ kind: r.kind, value: r.value, images });
@@ -418,7 +478,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 type,
                 habboName: document.getElementById("ci-habbo").value.trim(),
                 items,
-                website: document.getElementById("ci-hp").value
+                website: document.getElementById("ci-hp").value,
+                clientRef
             };
             if (type === "new") body.name = newName;
             else body.id = rest.join(":");
@@ -506,6 +567,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (window.Account) {
         Account.onChange(() => {
+            /* A different sender now (or none). An upload may only be
+               claimed by the account that made it, so keys from before
+               would be refused, and the submission is not the same one. */
+            // Only on a real change: onChange also fires on a re-read that
+            // changed nothing, and that must not cost a retry its ref.
+            const who = Account.current ? String(Account.current.id || Account.current.name || "?") : "";
+            if (who !== senderSeen) {
+                senderSeen = who;
+                uploadedKeys = new WeakMap();
+                clientRef = null;
+            }
             const note = document.getElementById("ci-habbo-note");
             if (note) note.innerHTML = identityNote();
             infoBody.querySelectorAll(".console-info-item").forEach(row => {

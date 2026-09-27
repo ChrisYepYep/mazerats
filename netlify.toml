@@ -31,22 +31,23 @@
 # The minify step deliberately has NO `|| true`: terser failing usually means
 # a real syntax error in a source file, which is a signal worth stopping for.
 #
-# `|| true` because this is a colour scheme. If it ever fails, the committed
-# files are still there and the deploy should carry on with them rather than
-# taking the archive down over a palette.
-# check-daily-parity runs FIRST and has no `|| true`, unlike the theme step
-# below. It compares how js/daily.js and netlify/functions/_daily.js each
-# derive a day's puzzle, and they have to agree: the games deal in the
-# browser and the score endpoints re-derive on the server to check what a
-# player claims. When those two drift, nothing errors — the server simply
-# decides every correct answer is wrong and the day's scores quietly do not
-# count, with no log line saying so.
-#
-# That is worth failing a deploy over, and it is not hypothetical: adding
-# the featured-day salt to one file and not the other would have done
-# exactly that, on launch day.
+# themes.js has no `|| true` either, any more. It used to, on the reasoning
+# that a colour scheme is not worth failing a deploy over and the committed
+# files would do — but a failure there was then completely silent, and the
+# committed files had in fact already fallen behind style.css. "Carry on with
+# the old palette" meant shipping stale colours with nobody told. It needs
+# nothing the clone does not have (node's own fs/zlib/crypto and the PNGs it
+# recolours, all in the repo), so a failure is a real fault worth stopping for.
+# check-daily-parity runs FIRST. It used to compare how the browser and the
+# server each derived a day's puzzle; the day is now dealt once, on the
+# server, stored, and handed to the page (netlify/functions/_deal.js), so
+# there is no second dealer to drift. What it checks now is the contract
+# that replaced it — that the page is given no answers and plays the deal it
+# is handed, and that the server judges against the stored one. See its own
+# header. When either side of that breaks, nothing errors: correct answers
+# are quietly scored wrong. That is worth failing a deploy over.
 [build]
-  command = "npm install && node tools/check-daily-parity.js && node tools/check-changes.js && (node tools/themes.js || true) && node tools/build-minify.js"
+  command = "npm install && node tools/check-daily-parity.js && node tools/check-changes.js && node tools/check-share-headers.js && node tools/themes.js && node tools/build-minify.js"
   publish = "."
 
 [functions]
@@ -69,7 +70,13 @@
   # js/dead-ends.js likewise: dead-ends.js and dead-end-leads.js validate
   # the pieces a flag or a lead may name against the same table the archive
   # and /warren draw from. Left out, every flag would be refused on save.
-  included_files = ["netlify/functions/_furnidata.json", "js/featured-days.js", "js/dead-ends.js"]
+  #
+  # home.html because the share function serves it: /maze/<slug>,
+  # /event/<slug> and /guides/<slug> are the archive page itself with that
+  # record's preview tags written in (see netlify/functions/share.js). It
+  # has a fallback that fetches the page over HTTP, but reading the bundled
+  # copy is faster and cannot be answered by a stale edge.
+  included_files = ["netlify/functions/_furnidata.json", "js/featured-days.js", "js/dead-ends.js", "home.html"]
 
 # ------------------------------------------------------------ THE ADMIN PANEL
 #
@@ -252,11 +259,9 @@
   to = "/home.html"
   status = 200
 
-# A shared guide link, on the same terms as /maze/:id below: the share
-# function writes the guide's own title and thumbnail for a chat client,
-# then sends a browser on to /guides?g=<id>. It cannot be home.html itself,
-# which loads its scripts and styles by relative paths that only resolve
-# from one level deep. The id is read off the path, as for mazes.
+# A guide's own address, on the same terms as /maze/:id below: the share
+# function serves the archive page with the guide's title and thumbnail
+# written in, and the page opens the Guides window on it.
 [[redirects]]
   from = "/guides/:id"
   to = "/.netlify/functions/share"
@@ -495,6 +500,20 @@
   to = "/.netlify/functions/discord-auth"
   status = 200
 
+# The two icon addresses browsers and crawlers ask for without being told:
+# Google's result favicon and iOS "Add to Home Screen" both try the root
+# before reading any <link>, and both were 404s. The files live with the
+# other icons under /assets/icons/, linked from every page's <head>.
+[[redirects]]
+  from = "/favicon.ico"
+  to = "/assets/icons/favicon.ico"
+  status = 200
+
+[[redirects]]
+  from = "/apple-touch-icon.png"
+  to = "/assets/icons/apple-touch-icon.png"
+  status = 200
+
 # Generated from the archive itself rather than kept as a file — see
 # netlify/functions/sitemap.js.
 [[redirects]]
@@ -502,17 +521,21 @@
   to = "/.netlify/functions/sitemap"
   status = 200
 
-# A shared maze or event link. The tags a chat client reads are written by
-# the function (see netlify/functions/share.js), which then sends a real
-# browser on to the archive with the right modal open. A rewrite (200), not
-# a redirect: a crawler has to see the tags at the URL that was pasted.
+# A maze's or event's own address: /maze/<slug>, /event/<slug>. The share
+# function (netlify/functions/share.js) serves the archive page itself with
+# that record's preview tags written in, and the page opens the window from
+# the address. One address for people and for previews, and the one the
+# address bar shows while the window is open. An older address (the id, or
+# the slug from before a rename) is answered with a 301 to the current one.
+# A rewrite (200), not a redirect: a crawler has to see the tags at the URL
+# that was pasted.
 #
-# The id is NOT handed over as a query parameter. These read
+# The slug is NOT handed over as a query parameter. These read
 # "…/share?maze=:id" until the placeholder was found to arrive only under
 # `netlify dev`: on a 200 rewrite the deployed service forwards the INCOMING
 # request's query string, which for a pasted /maze/<id> link is empty, so
 # the query written here was dropped and every shared link reached the
-# function with no id at all. The function reads the id off event.path
+# function with no id at all. The function reads the slug off event.path
 # instead — the request path is what survives a rewrite, and is what
 # Netlify's own docs use for path parameters — so these are left as plain
 # rewrites and local dev exercises the same branch production does.
@@ -589,16 +612,85 @@
     # is SERVED from cloud.umami.is but POSTs its events to gateway.umami.is,
     # and a policy written from the script tag alone blocks every one of
     # them. (Verified against the real page — the console said so.)
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    #
+    # origins.habbo.com is the Origins hotel's own host, and a third habbo
+    # entry for the reason images.habbo.com is a second: a CSP host matches
+    # exactly, so neither of the other two covers it, and pictures served
+    # from it were blocked. Mirrored in netlify/functions/share.js, which
+    # tools/check-share-headers.js holds to this line.
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
 # The pixel art, the fonts and the sprite sheets never change without their
 # filename changing, so there is no reason for a returning visitor to ask
 # about them again. The HTML and the data endpoints are deliberately left
 # alone — those are what carry new mazes.
+#
+# ONE RULE PER FOLDER, NOT /assets/*. Two folders under /assets break the
+# "never changes without a new filename" promise, and a more specific rule
+# cannot safely be laid over a general one here: when two [[headers]] rules
+# match a path and set the same header, production Netlify can send BOTH
+# values joined with a comma — "max-age=31536000, immutable, max-age=0,
+# must-revalidate", which a browser is free to read as the year — while
+# `netlify dev` lets the later rule win, so a local check would not show
+# it. Rather than depend on which, the year is granted
+# folder by folder, and anything not listed (a folder added later, a file
+# at the top of /assets) falls back to Netlify's default of revalidating,
+# which is the safe way to be wrong.
+#
+#   · /assets/img/<theme>/ is rewritten in place by tools/themes.js on every
+#     build. It stays in the year because the theme stylesheets now ask for
+#     each of those files as ?v=<its content hash> — a changed file is a new
+#     address — rather than because the files themselves never change.
+#   · /assets/furni-icons/ carries index.json, the catalogue the room editor
+#     reads, which changes whenever an icon is added. A day, not a year.
+#   · /assets/icons/ is the favicon and the home-screen icon, which are
+#     fetched by fixed name from every page's <head>. A day, so a redrawn
+#     icon reaches people this week rather than next year.
+#
+# /assets/furni and /assets/room are written /:file, not /*. A splat here
+# also matches without its slash — "/assets/furni/*" matched
+# /assets/furni-icons/index.json and "/assets/room/*" matched /assets/rooms/,
+# putting two rules back on one path (checked with Netlify's own headers
+# parser). Both folders are flat, so one path segment is all they need.
 [[headers]]
-  for = "/assets/*"
+  for = "/assets/img/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/fonts/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/furni/:file"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/avatar/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/room/:file"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/rooms/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/furni-icons/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/assets/icons/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
 
 # Resized images are kept in the DURABLE cache, not just at the edge.
 #
@@ -622,15 +714,24 @@
 # A transform is a pure function of (source image, query string), and the
 # query string is part of the cache key (see the Netlify-Vary the endpoint
 # answers with), so asking for a different size or quality is a different
-# URL and cannot be served the old answer. A year is safe because neither
-# kind of source image is ever rewritten in place:
+# URL and cannot be served the old answer.
 #
-#   · uploads are keyed <timestamp>-<slug>.<ext> in upload.js, so replacing
-#     a room's picture mints a new key and therefore a new transform URL;
-#   · repo assets under /assets/* are ALREADY served immutable for a year
-#     by the rule above, on the stated understanding that they change by
-#     getting a new filename. This inherits that promise rather than making
-#     a new one — if it is ever broken, both rules break together.
+# A DAY AT THE EDGE, NOT A YEAR. It was a year, immutable, on the reasoning
+# that no source image is rewritten in place (uploads are keyed
+# <timestamp>-<slug>.<ext> in upload.js, so a replaced picture is a new
+# URL). That covers REPLACING a picture and not REMOVING one: a deleted
+# upload, or one taken down on request, went on being served through every
+# resized URL already in the edge cache — for up to a year, however short a
+# life image.js gives the original. A deletion or a takedown has to take
+# effect within a day, so s-maxage is a day.
+#
+# stale-while-revalidate keeps what the durable cache was for: after the
+# day, the next visitor is still answered at once from the old copy while
+# the edge re-checks the original behind them, so a popular picture is not
+# re-transformed on somebody's clock. It does not stretch a deletion past
+# the day by more than a request: the first visitor after it may still get
+# the old copy, and the re-check that visit sets off finds the original
+# gone and replaces it.
 #
 # Not verifiable with `netlify dev`: the local server applies no custom
 # headers to /.netlify/images at all, not even the site-wide ones it does
@@ -640,7 +741,7 @@
 [[headers]]
   for = "/.netlify/images*"
   [headers.values]
-    Netlify-CDN-Cache-Control = "public, durable, s-maxage=31536000, immutable"
+    Netlify-CDN-Cache-Control = "public, durable, s-maxage=86400, stale-while-revalidate=604800"
 
 # The stylesheet and scripts are REVALIDATED rather than cached for a day,
 # which is a correctness rule and not a performance one.
@@ -657,8 +758,9 @@
 # must-revalidate costs a conditional request per file per visit and
 # almost always gets a 304 back — headers, no body — which is a small
 # price for never again shipping a page assembled out of two different
-# versions of itself. /assets/* keeps its year: pictures and fonts change
-# by getting a new filename, so they genuinely are immutable.
+# versions of itself. The /assets folders keep their year (see the rules
+# above for the two that do not): pictures and fonts change by getting a
+# new address, so they genuinely are immutable.
 #
 # The proper fix is hashed filenames, which needs a build step this site
 # deliberately does not have.

@@ -157,10 +157,23 @@
             speed: 0,                   // points paid for the clock on a cleared round
             message: "",
             endedBecause: "",
+            /* WHEN THE ROUND ENDED, on the game clock, or null while it runs.
+
+               The round's clock used to go on running after a win or a loss,
+               so `summary` — which the run takes when the player presses the
+               button, not when the round ends — counted the time spent reading
+               the result as time spent playing. A level cleared in 20s and
+               read for 30 was logged as 50s taken (clamped to the allowance).
+               That was only a wrong number in the run log while nothing
+               checked it; the leaderboard now checks each level's time
+               against what that level allows, so it has to be the real one.
+               secondsLeft stops here. */
+            endedAt: null,
 
             start(now) {
                 this.round = Drop.createRound(level, o);
                 this.state = RUNNING;
+                this.endedAt = null;
                 this.sat = [];
                 this.penalty = 0;
                 this.score = 0;
@@ -195,7 +208,9 @@
 
             secondsLeft(now) {
                 if (!this.round) return level.rules.seconds;
-                return Math.max(0, this.round.secondsLeft(now) - this.penalty);
+                // A finished round's clock stands where it stopped; see endedAt.
+                const at = this.endedAt === null ? now : Math.min(now, this.endedAt);
+                return Math.max(0, this.round.secondsLeft(at) - this.penalty);
             },
 
             /* The seats still to sit on, in order. Everything already sat on is
@@ -243,6 +258,7 @@
                 this.speed = Math.max(0, Math.floor(this.secondsLeft(now))) * TIME_BONUS_PER_S;
                 this.award(FINISH_BONUS + this.speed);
                 this.state = WON;
+                this.endedAt = now;
                 this.endedBecause = "complete";
                 this.message = this.speed
                     ? `Every seat, in order. +${FINISH_BONUS} and +${this.speed} for the clock`
@@ -265,6 +281,7 @@
 
                 if (this.secondsLeft(now) <= 0) {
                     this.state = LOST;
+                    this.endedAt = now;
                     this.endedBecause = "time";
                     this.message = "Out of time.";
                     changed = true;
@@ -283,6 +300,7 @@
 
                 if (seat.role === "poi") {
                     this.state = LOST;
+                    this.endedAt = now;
                     this.endedBecause = "poi";
                     this.message = "That was the wrong chair entirely.";
                     return "poi";
@@ -359,6 +377,15 @@
 
             blocked() {
                 return this.round ? Furni.blockedTiles(this.round.renderList()) : new Set();
+            },
+
+            /* Whether a piece is still on its way down. It is in the room's
+               render list, and it blocks, from the moment it starts to fall —
+               but `arrivedAt` only knows the pieces that have LANDED, so a
+               seat walked into while it was in the air was sat on and never
+               scored. The page asks this to hold the seat until it lands. */
+            inAir(f) {
+                return Boolean(f && this.round && this.round.falling.some(p => p.furni === f));
             },
 
             /* THE ROUND, FROZEN, for the run to keep.

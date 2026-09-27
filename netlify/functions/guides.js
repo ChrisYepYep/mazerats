@@ -20,8 +20,9 @@
    small text format js/guide-text.js renders, and an optional picture. `status` is "draft" or "published"; only published guides
    ever leave this function without a token.
 
-   THE ID IS THE ADDRESS (/guides?g=<id>) and is fixed when the guide is
-   created, so renaming a guide never breaks a link somebody has shared.
+   THE ADDRESS IS THE SLUG (/guides/<slug>), and it follows the title: see
+   _slugs.js. The id is fixed when the guide is created and still answers as
+   an old address, so renaming a guide never breaks a link somebody shared.
 
    WHAT'S NEW. A guide reaches the homepage's update log the way a maze
    does: `publishedAt` is when it first went public ("Added"), and a later
@@ -46,10 +47,11 @@
    the check after one of those. Guides saved before rev existed have none,
    which counts as 0. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED, usernameFromToken } = require("./_auth");
+const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED, usernameFromToken, isAuthUnavailable, AUTH_UNAVAILABLE } = require("./_auth");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
 const { isSafeKey } = require("./_keys");
+const { assignSlugs, settleSlug, idFor, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -167,7 +169,7 @@ exports.handler = async (event) => {
         if (full && !(await hasAccount(event))) return UNAUTHORIZED;
         let list;
         try {
-            list = await guides.find(full ? {} : { status: "published" }, { projection: { _id: 0 } })
+            list = await guides.find({}, { projection: { _id: 0 } })
                 .sort({ order: 1, publishedAt: -1, createdAt: -1 })
                 .toArray();
         } catch (e) {
@@ -177,7 +179,16 @@ exports.handler = async (event) => {
         // The public copy leaves out who wrote what, the save counter, and
         // what a taken-down guide used to say: none of it is anybody's
         // business but the admins'.
-        if (!full) list = list.map(({ updatedBy, createdBy, rev, publicCopy, ...g }) => g);
+        /* Every guide's address, worked out over drafts as well as published
+           ones: a draft holds its address too, and working it out over the
+           published ones alone would let the page and the share function
+           disagree the moment a draft shared a name (see _slugs.js). */
+        const slugs = assignSlugs(list, "guide");
+        list.forEach(g => { g.slug = slugs.get(g.id) || g.id; });
+        if (!full) {
+            list = list.filter(g => g.status === "published")
+                .map(({ updatedBy, createdBy, rev, publicCopy, slugAliases, slugManual, ...g }) => g);
+        }
         return cachedJson(event, list, { cache: !full });
     }
 
@@ -209,9 +220,17 @@ exports.handler = async (event) => {
 
         if (event.httpMethod === "POST") {
             await ensureUniqueIndex(guides, "id");
-            const base = slugify(body.id || guide.title);
-            let id = base;
-            for (let attempt = 0, n = 2; ; attempt++) {
+            guide.slug = body.slug;
+            guide._slugAuto = body._slugAuto;
+            const everyGuide = () => guides.find({}, { projection: SLUG_FIELDS }).toArray();
+            const slugProblem = settleSlug(await everyGuide(), "guide", null, guide);
+            if (slugProblem) return json(400, { error: slugProblem });
+            /* An id the caller asked for (the starter guide's) is kept as
+               asked where it is free; otherwise the settled address, or the
+               nearest thing nothing answers to — see idFor in _slugs.js. */
+            const wanted = (typeof body.id === "string" && slugify(body.id)) || guide.slug;
+            let id = idFor(await everyGuide(), "guide", wanted);
+            for (let attempt = 0; ; attempt++) {
                 const record = {
                     ...guide, id,
                     createdAt: now, createdBy: who,
@@ -227,7 +246,7 @@ exports.handler = async (event) => {
                 } catch (e) {
                     // Same attempt-and-retry as rooms.js: the unique index, not a
                     // prior lookup, is what stops two guides sharing an address.
-                    if (e.code === 11000 && attempt < 50) { id = `${base}-${n++}`; continue; }
+                    if (e.code === 11000 && attempt < 50) { id = idFor(await everyGuide(), "guide", wanted); continue; }
                     throw e;
                 }
             }
@@ -253,6 +272,11 @@ exports.handler = async (event) => {
             }
 
             const update = { ...guide, updatedAt: now, updatedBy: who, rev: revOf(before) + 1 };
+            // Its address, which follows a new title (see _slugs.js).
+            update.slug = body.slug;
+            update._slugAuto = body._slugAuto;
+            const slugProblem = settleSlug(await guides.find({}, { projection: SLUG_FIELDS }).toArray(), "guide", before, update);
+            if (slugProblem) return json(400, { error: slugProblem });
             const wasPublic = before.status === "published";
             if (guide.status === "published" && !before.publishedAt) {
                 // Its first day in public: that is the "Added" line, with nothing
@@ -300,7 +324,23 @@ exports.handler = async (event) => {
 
         return json(405, { error: "Method not allowed" });
     } catch (e) {
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
         console.error("guides: write failed", e);
         return json(500, { error: "Something went wrong saving the guides. Try again in a minute." });
+    }
+};
+
+/* The account checks above (hasAccount, canWrite and the rest) throw when
+   the database cannot say who is asking, rather than answering "nobody" —
+   answering nobody signed admins out over a blip (see _auth.js). Caught
+   here, so that moment is a readable "try again" instead of the platform's
+   own error page and stack trace. Anything else still fails as it did. */
+const handleRequest = exports.handler;
+exports.handler = async (event) => {
+    try {
+        return await handleRequest(event);
+    } catch (e) {
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        throw e;
     }
 };

@@ -54,6 +54,10 @@
     const Path = window.RoomPath;
 
     const FALL_TILES = 9;               // how far above the floor a piece starts
+    /* How late a drop may be and still be charged to its own slot in the
+       schedule. Well past a slow screen's frame (66ms at 15fps) and well
+       under any level's delay between drops. See the tick. */
+    const DROP_CATCHUP_MS = 250;
 
     function inArea(area, x, y) {
         return x >= area.x && x < area.x + area.w && y >= area.y && y < area.y + area.h;
@@ -76,6 +80,23 @@
     }
 
     const sealsIn = (list, seat) => sealedWith(Furni.blockedTiles(list), seat);
+
+    /* THE CORNER RULE, in one place for every flood fill below: a diagonal
+       step from (x, y) by (dx, dy) is refused when BOTH tiles beside it are
+       shut — furni, or no floor at all.
+
+       The "no floor" half is new, and it has to match js/room-path.js, which
+       gained it for the Library: that room's walls step in and out, and two
+       floor tiles meeting only at a corner of wall were joined diagonally,
+       so the figure walked through the wall. Left out of here, these fills
+       would go on calling a region reachable through a corner that findPath
+       now refuses — and a seat dropped there on that promise would be
+       unreachable for real. */
+    function sealedCorner(blocked, x, y, dx, dy) {
+        if (dx === 0 || dy === 0) return false;
+        const shut = (tx, ty) => !Path.inside(tx, ty) || blocked.has(key(tx, ty));
+        return shut(x + dx, y) && shut(x, y + dy);
+    }
 
     /* EVERY TILE THE PLAYER CAN STILL WALK TO, which is a different question
        from whether a seat has a free tile beside it — and the difference is
@@ -108,9 +129,7 @@
                 if (!Path.inside(nx, ny)) continue;
                 const nk = key(nx, ny);
                 if (seen.has(nk) || blocked.has(nk)) continue;
-                if (d.dx !== 0 && d.dy !== 0
-                    && blocked.has(key(cur.x + d.dx, cur.y))
-                    && blocked.has(key(cur.x, cur.y + d.dy))) continue;
+                if (sealedCorner(blocked, cur.x, cur.y, d.dx, d.dy)) continue;
                 seen.add(nk);
                 stack.push({ x: nx, y: ny });
             }
@@ -154,8 +173,7 @@
             if (!Path.inside(nx, ny)) continue;
             const nk = key(nx, ny);
             if (blocked.has(nk)) continue;
-            if (d.dx !== 0 && d.dy !== 0
-                && blocked.has(key(nx, start.y)) && blocked.has(key(start.x, ny))) continue;
+            if (sealedCorner(blocked, start.x, start.y, d.dx, d.dy)) continue;
             if (regions.some(r => r.has(nk))) continue;      // already covered
             const r = reachableFrom({ x: nx, y: ny }, blocked);
             r.add(here);                                     // they are on it now
@@ -200,9 +218,7 @@
                 if (!Path.inside(nx, ny)) continue;
                 const nk = key(nx, ny);
                 if (seen.has(nk) || blocked.has(nk)) continue;
-                if (d.dx !== 0 && d.dy !== 0
-                    && blocked.has(key(cur.x + d.dx, cur.y))
-                    && blocked.has(key(cur.x, cur.y + d.dy))) continue;
+                if (sealedCorner(blocked, cur.x, cur.y, d.dx, d.dy)) continue;
                 seen.add(nk);
                 out.push({ x: nx, y: ny });
                 stack.push({ x: nx, y: ny });
@@ -246,9 +262,7 @@
                 // A null `reachable` asks only whether the seat is open at
                 // all, with no opinion about who can get to it.
                 if (reachable && !reachable.has(nk)) continue;
-                if (d.dx !== 0 && d.dy !== 0
-                    && blocked.has(key(nx, t.y))
-                    && blocked.has(key(t.x, ny))) continue;
+                if (sealedCorner(blocked, t.x, t.y, d.dx, d.dy)) continue;
                 wayOut = true;
                 break;
             }
@@ -599,8 +613,26 @@
                             ...urlFor(entry.className, 0, rotation)
                         });
                         furni.lift = FALL_TILES;
-                        this.falling.push({ furni, at: now });
-                        this.nextAt = now + level.rules.dropDelayMs;
+                        /* FROM WHEN IT WAS DUE, not from the frame that
+                           noticed. This used to be `now` for both, so every
+                           drop was late by however far the frame overshot
+                           `nextAt` and the NEXT drop was scheduled from that
+                           late start — the overshoot compounded down the
+                           round. The page ran this inside its 24fps paint
+                           gate, which is really 20fps on a 60Hz screen and
+                           15fps on a 30Hz one, so the same level dropped its
+                           last piece seconds later on a slow screen than a
+                           fast one, and the clock that measured the player
+                           was the same clock either way.
+
+                           Carried forward instead, so the schedule is the
+                           level's and not the display's. Capped: a stall
+                           longer than DROP_CATCHUP_MS (a debugger, a tab that
+                           somehow ticked while hidden) starts from now rather
+                           than dropping a burst of pieces to catch up. */
+                        const due = now - this.nextAt > DROP_CATCHUP_MS ? now : this.nextAt;
+                        this.falling.push({ furni, at: due });
+                        this.nextAt = due + level.rules.dropDelayMs;
                         changed = true;
                         break;
                     }

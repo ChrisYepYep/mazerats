@@ -28,7 +28,7 @@ const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { today } = require("./_daily");
-const { launchDay } = require("./daily-scores");
+const { launchCut, afterLaunch } = require("./daily-scores");
 const { totalOf } = require("./_speed");
 
 const COLLECTION = "player_state";
@@ -133,8 +133,11 @@ async function statsFor(db, playerId) {
        in daily-scores.js). Without it a player who tested before launch saw
        their test days in this panel while the Profile said they had played
        one day. No launch date set means nothing is cut. */
-    const launch = await launchDay(db);
-    const query = launch ? { playerId, day: { $gte: launch } } : { playerId };
+    /* And from the launch INSTANT, not just its day: the site opens at
+       08:00 UTC, and a day cut alone counted anything played on 3 Oct
+       before the doors opened — the owner's own early checks included. */
+    const launch = await launchCut(db);
+    const query = launch ? { playerId, day: { $gte: launch.day }, ...afterLaunch(launch) } : { playerId };
     const rows = await db.collection(SCORES)
         .find(query, { projection: { _id: 0, day: 1, points: 1, bonus: 1, solved: 1 } })
         .sort({ day: 1 })

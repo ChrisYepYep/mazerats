@@ -88,14 +88,64 @@ async function readGate(db) {
     const state = (doc && doc.fallinFurniState) || "live";
     const ffLaunchAt = isoOrNull(doc && doc.ffLaunchAt);
     const launchAt = ffLaunchAt || isoOrNull(doc && doc.launchAt);
+    /* When the game was first open for play on or after its launch date —
+       see WHEN IT ACTUALLY OPENED. Only asked for when there is a date, and
+       a failed read is "not known yet" rather than a failed request. */
+    let openedMs = null;
+    if (ffLaunchAt) {
+        const opened = await db.collection(META).findOne({ _id: openedKey(ffLaunchAt) })
+            .catch(() => null);
+        const ms = opened && opened.at ? new Date(opened.at).getTime() : NaN;
+        if (Number.isFinite(ms)) openedMs = ms;
+    }
     return {
         open: !CLOSED_STATES.includes(state),
         // The effective launch for this board: the game's own, else the site's.
         launchAt,
         launchMs: launchAt ? Date.parse(launchAt) : null,
         // The game's own, or null. Only Launch Week reads this.
-        ffLaunchAt
+        ffLaunchAt,
+        openedMs
     };
+}
+
+/* ---------------------------------------------------------------- WHEN IT ACTUALLY OPENED
+
+   The game has two controls that each say when it starts — the switch
+   (fallinFurniState) and the date (ffLaunchAt) — set separately in /warren,
+   and nothing made them agree. Launch Week hung off the date alone, so a
+   game whose date came and went with the switch still shut spent its
+   tournament closed: open it two days late and the week had five days left.
+
+   So the week starts at the LATER of the date and the moment the game was
+   actually playable after it. That moment is not stored anywhere — the
+   switch keeps no history — and the closest thing this server sees is the
+   first run token it hands out on or after the date, since a token is only
+   ever issued with the switch open (see ?action=start). That is the first
+   Play press of the launch, which on a launch day is within moments of the
+   game opening; on a game that opened late it is when it opened.
+
+   Kept in a collection of its own, one document per launch date, so moving
+   the date starts the question again. `$min`, so two first presses racing
+   keep the earlier. Memoised per warm instance once written: after the
+   first, every later token is later still and cannot change it. */
+const META = "ff_meta";
+const openedKey = (ffLaunchAt) => "opened:" + ffLaunchAt;
+const openedNoted = new Set();
+
+async function noteOpened(db, gate, now) {
+    if (!gate.ffLaunchAt || !gate.open) return;
+    const launch = Date.parse(gate.ffLaunchAt);
+    if (!Number.isFinite(launch) || now < launch) return;
+    if (gate.openedMs !== null || openedNoted.has(gate.ffLaunchAt)) return;
+    try {
+        await db.collection(META).updateOne(
+            { _id: openedKey(gate.ffLaunchAt) },
+            { $min: { at: new Date(now) } },
+            { upsert: true }
+        );
+        openedNoted.add(gate.ffLaunchAt);
+    } catch (e) { /* the week falls back to the date; nothing else depends on it */ }
 }
 
 /* ONLY WHAT WAS PLAYED AFTER LAUNCH is on the board, when there is a launch.
@@ -145,9 +195,9 @@ const RUN_LIFE_S = 3 * 60 * 60;
 const RUN_TOLERANCE_MS = 15 * 1000;
 const RUN_TOKENS = "ff_run_tokens";
 
-function signRun(player) {
+function signRun(player, now) {
     if (!process.env.SESSION_SECRET) return null;
-    const claims = { rid: crypto.randomBytes(12).toString("hex"), t: Date.now() };
+    const claims = { rid: crypto.randomBytes(12).toString("hex"), t: now || Date.now() };
     // Bound to the account when there is one, so a token cannot be handed
     // to somebody else's session. A signed-out start stays unbound: signing
     // in means leaving the page, which ends the run anyway.
@@ -248,9 +298,19 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 // The window from the gate, or null. Not "is it showing" — see below.
 function launchWeek(gate) {
-    const from = gate && gate.ffLaunchAt ? Date.parse(gate.ffLaunchAt) : NaN;
+    let from = gate && gate.ffLaunchAt ? Date.parse(gate.ffLaunchAt) : NaN;
     // A date that cannot be read must not take the leaderboard down with it.
     if (isNaN(from)) return null;
+    /* FROM WHEN IT OPENED, if that was later than the date — see WHEN IT
+       ACTUALLY OPENED. Nobody has played since the date and the switch is
+       still shut: the week has not begun, whatever the calendar says, and
+       there is nothing to show. (Open and not yet played in, the date
+       stands until the first Play press moves it — by moments.) */
+    if (gate.openedMs !== null && gate.openedMs !== undefined) {
+        from = Math.max(from, gate.openedMs);
+    } else if (!gate.open && Date.now() >= from) {
+        return null;
+    }
     const launchDay = Math.floor(from / DAY_MS) * DAY_MS;      // 00:00Z that day
     const to = launchDay + TOURNAMENT_DAYS * DAY_MS;
     const fromIso = new Date(from).toISOString();
@@ -408,6 +468,206 @@ function maxPointsFor(level) {
     return total;
 }
 
+/* ---------------------------------------------------------------- THE BREAKDOWN
+
+   Every check above this line was on TOTALS, and totals are the easy thing
+   to forge. Ask for a token, wait out the summed time floor — about 405
+   seconds for all fifty levels — and post {levels: 50} with the summed
+   points ceiling: every check passed, because every check was "could fifty
+   levels add up to this?", and they could.
+
+   So a run now comes with its rounds: one per level its score is made of,
+   in order, each with the level's id, the milliseconds it took and the
+   points it paid. Each is held to THAT level's own ceiling and clock, from
+   the level as this server serves it, and to a floor tied to the points it
+   claims (see A LEVEL'S FLOOR IS TIED TO ITS POINTS); and the totals must
+   be exactly what the rounds add up to. A forged
+   maximum now has to be a forged maximum fifty times over, each one inside
+   its own level's clock — and then agree with the run log (see THE RUN
+   LOG below).
+
+   `ids` is the run's LEVEL LIST, as the page was dealt it when Play was
+   pressed. The rounds are checked against those levels, not against the
+   first N of whatever is published by the time the run ends — an owner
+   publishing, unpublishing or reordering levels in the middle of somebody's
+   run used to move the floor and ceiling under it, and refuse it for
+   levels it never played. A listed level still has to be published now:
+   a draft's numbers are not the game's.
+
+   The rounds are what RoomGame banks: the levels cleared, and at most one
+   more at the end that was not — the round lost on the last life, or the
+   one walked out of. A retried round is not in the score and is not sent.
+   What the rounds do not account for is the life bonus, which is only paid
+   on a run that cleared every level it was dealt, in whole lives. */
+const MAX_LEVEL_ID = 64;
+/* A level's time is measured on the same clock as its limit, so an honest
+   one is always inside it; this is only room for the rounding. */
+const LEVEL_MS_TOLERANCE = 1000;
+// The rounds are slices of the run's own clock and cannot add up to more.
+const RUN_SUM_TOLERANCE_MS = 2000;
+
+/* ---- A LEVEL'S FLOOR IS TIED TO ITS POINTS.
+
+   floorMsFor, which the run's TOTAL is held to, assumes half a level's
+   seats land — and over a whole run that holds, because the levels that
+   skip a lot and the ones that skip nothing average out. Level by level it
+   does not: the bot through all fifty levels cleared Level 39 in 6.2
+   seconds against a floor of 9.7, because eleven of its fourteen seats had
+   nowhere safe to land and came off the plan (see room-drop.js). A
+   per-level floor built that way would refuse honest runs, which is the
+   one thing these checks must never do.
+
+   What is true of every round is this: each seat you are paid for is a
+   piece that LANDED, pieces land at least a drop delay apart, and the
+   first takes a whole fall. So the points a round claims say how many
+   seats it must at least have sat on — counted as generously as possible,
+   one unbroken streak with every second the clock could have left paid on
+   top — and that many seats cannot have landed faster than
+   (seats - 1) * delay + fall. A round that paid a lot has to have taken
+   the time to be paid it; a round that skipped most of its seats was
+   quick, and also scored little. The forged maximum needs every seat, so
+   it needs every seat's time. */
+function seatPoints(k) {
+    let total = 0;
+    for (let n = 1; n <= k; n++) total += SEAT_POINTS + Math.min(n - 1, STREAK_MAX) * STREAK_STEP;
+    return total;
+}
+
+function earnedFloorMs(level, points, ms, won) {
+    const rules = level.rules || {};
+    const delay = Number(rules.dropDelayMs) || 0;
+    const fall = Number(rules.dropSpeedMs) || 0;
+    const seats = dropsIn(level, "sequence");
+    // What the clock and the finish could have paid, at the very most.
+    const allowed = Number(rules.seconds) || 0;
+    const clock = won ? Math.max(0, Math.floor(allowed - ms / 1000)) * TIME_BONUS_PER_S : 0;
+    const fromSeats = points - (won ? FINISH_BONUS : 0) - clock;
+    if (fromSeats <= 0) return 0;
+    let k = 0;
+    while (k < seats && seatPoints(k) < fromSeats) k++;
+    if (seatPoints(k) < fromSeats) return Infinity;     // more than its seats can pay
+    return k ? (k - 1) * delay + fall : 0;
+}
+
+/* The lowest a round can honestly score. Nothing is gained by claiming
+   less, so this is generous to the point of being a type check: every
+   mistake costs at most ten points and at least two seconds of the clock
+   (see the penalties in js/room-game.js). */
+function minPointsFor(level) {
+    const secs = Number((level.rules || {}).seconds) || 0;
+    return -10 * (Math.ceil(secs / 2) + 10);
+}
+
+// { dealt, rounds } or { error }. `totals` is the body's own levels/ms/points.
+function checkBreakdown(body, totals, published) {
+    const bad = (error) => ({ error });
+    const ids = Array.isArray(body.ids) ? body.ids : null;
+    const rounds = Array.isArray(body.rounds) ? body.rounds : null;
+    if (!ids || !rounds || !ids.length || !rounds.length) {
+        return bad("That run came without its level-by-level breakdown");
+    }
+    if (ids.length > published.length) return bad("More levels than exist");
+
+    const byId = new Map(published.map(lv => [String(lv.id), lv]));
+    const seen = new Set();
+    const dealt = [];
+    for (const id of ids) {
+        if (typeof id !== "string" || !id || id.length > MAX_LEVEL_ID || seen.has(id)) {
+            return bad("That run's level list is not valid");
+        }
+        const lv = byId.get(id);
+        if (!lv) return bad("That run lists a level that is not published");
+        seen.add(id);
+        dealt.push(lv);
+    }
+    if (rounds.length > dealt.length) return bad("That run has more rounds than levels");
+
+    const out = [];
+    let won = 0, sumPoints = 0, sumMs = 0;
+    for (let i = 0; i < rounds.length; i++) {
+        const r = rounds[i] && typeof rounds[i] === "object" ? rounds[i] : {};
+        const lv = dealt[i];
+        const name = String(lv.name || lv.id).slice(0, 80);
+        if (String(r.id) !== String(lv.id)) return bad("That run's rounds are not in its levels' order");
+        const ms = Number(r.ms);
+        const pts = Number(r.points);
+        if (!Number.isFinite(ms) || ms < 0 || !Number.isInteger(pts)) {
+            return bad("That run's rounds are not valid");
+        }
+        const isWon = r.won === true;
+        if (!isWon && i !== rounds.length - 1) {
+            return bad("Only a run's last round can be one it did not clear");
+        }
+        const allowedMs = (Number((lv.rules || {}).seconds) || 0) * 1000;
+        if (ms > allowedMs + LEVEL_MS_TOLERANCE) return bad(`${name} took longer than its clock allows`);
+        if (pts > maxPointsFor(lv)) return bad(`${name} scored more than it can pay`);
+        // See A LEVEL'S FLOOR IS TIED TO ITS POINTS.
+        if (ms < earnedFloorMs(lv, pts, ms, isWon)) {
+            return bad(`${name} scored more than its furni could have landed in that time`);
+        }
+        if (pts < minPointsFor(lv)) return bad(`${name} scored less than it can cost`);
+        if (isWon) won++;
+        sumPoints += pts;
+        sumMs += ms;
+        out.push({ id: String(lv.id), ms: Math.round(ms), points: pts, won: isWon });
+    }
+
+    if (won !== totals.levels) return bad("The levels cleared do not match the rounds");
+    if (sumMs > totals.ms + RUN_SUM_TOLERANCE_MS) return bad("The rounds add up to longer than the run");
+    const bonus = totals.points - sumPoints;
+    if (bonus !== 0) {
+        const finished = won === dealt.length;
+        if (!finished || bonus < 0 || bonus % LIFE_BONUS !== 0 || bonus > maxLifeBonus(won)) {
+            return bad("The points do not add up to the rounds");
+        }
+    }
+    return { dealt, rounds: out };
+}
+
+/* ---------------------------------------------------------------- THE RUN LOG
+
+   The page logs every run to ff-runs.js as well, with the same token, and
+   that row is stored under the token's run id. A score is only taken if
+   that row exists and says the same thing, round for round: same levels,
+   same order, same clears, same points, and times within the second the
+   log rounds them to. It raises the cost of a forgery from one request to
+   two that agree — and it means the admin panel's picture of a run and the
+   board's are the same run.
+
+   THE LOG MAY BE A MOMENT BEHIND. The page sends it first and waits for it,
+   but a run reported as the tab closes sends both at once (see reportRun in
+   js/fallinfurni.js), and either can land first. So this looks a few times
+   over a couple of seconds before deciding there is none. */
+const RUN_LOG = "ff_runs";
+const RUN_LOG_TRIES = 5;
+const RUN_LOG_GAP_MS = 400;
+
+async function findRunLog(db, rid) {
+    const col = db.collection(RUN_LOG);
+    for (let i = 0; i < RUN_LOG_TRIES; i++) {
+        const row = await col.findOne({ rid }, { projection: { _id: 0, levels: 1, points: 1 } });
+        if (row) return row;
+        if (i < RUN_LOG_TRIES - 1) await new Promise(r => setTimeout(r, RUN_LOG_GAP_MS));
+    }
+    return null;
+}
+
+// A sentence saying how they differ, or null when they agree.
+function logDisagrees(log, rounds, points) {
+    const kept = (Array.isArray(log.levels) ? log.levels : []).filter(l => l && !l.retried);
+    const differ = "That run does not match its own run log";
+    if (kept.length !== rounds.length) return differ;
+    for (let i = 0; i < rounds.length; i++) {
+        const a = kept[i], b = rounds[i];
+        if (String(a.id) !== b.id || (a.won === true) !== b.won) return differ;
+        if (Number(a.points) !== b.points) return differ;
+        // The log keeps whole seconds; see cleanLevel in ff-runs.js.
+        if (!(Math.abs(Number(a.seconds) - b.ms / 1000) <= 1.5)) return differ;
+    }
+    if (Number(log.points) !== points) return differ;
+    return null;
+}
+
 /* `points` defaults to 0 so a row written before the board ranked on them
    reads as a real row with nothing scored rather than as a hole in the
    table. Those rows sort to the bottom until their owner plays again, which
@@ -534,7 +794,10 @@ exports.handler = async (event) => {
         try { gate = await readGate(db); }
         catch (e) { return json(503, { error: "The leaderboard could not be reached just now." }); }
         if (!gate.open) return json(200, { token: null, reason: "closed" });
-        const token = signRun(player);
+        const now = Date.now();
+        const token = signRun(player, now);
+        // The first Play press after the launch date marks the week's start.
+        if (token) await noteOpened(db, gate, now);
         return json(200, token ? { token } : { token: null, reason: "unavailable" });
     }
 
@@ -556,8 +819,9 @@ exports.handler = async (event) => {
 
     /* CLOSED MEANS CLOSED TO THE BOARD, admins included. An admin playing a
        closed game is testing it, and a test is not a result — see IS IT OPEN
-       above. Refused before the token is spent, so nothing about a closed
-       run is written anywhere on this endpoint. (The run log in ff-runs.js
+       above. That is enforced at the START now: a closed game issues no run
+       token, so a run begun while it was shut has nothing to submit with and
+       is refused below, before anything is spent. (The run log in ff-runs.js
        still has it; that is analytics and never touches ff_scores.) */
     let gate;
     try { gate = await readGate(db); }
@@ -565,16 +829,26 @@ exports.handler = async (event) => {
         console.error("ff-scores: could not read the settings", e);
         return json(503, { error: "The leaderboard could not be updated just now." });
     }
-    if (!gate.open) return json(200, { recorded: false, reason: "closed" });
-
     /* The run token. Missing is the start request having failed, which the
        page treats as "not on the board" without a scene; anything else wrong
        with it — forged, expired, somebody else's — is the same refusal with
        a different reason, since a real player can only reach it by pausing
-       a run for three hours. */
-    if (!body.run) return json(200, { recorded: false, reason: "no-run-token" });
+       a run for three hours.
+
+       WITHOUT ONE, a closed game says so: that is an admin testing it shut,
+       who was refused a token at the start for the same reason. */
+    if (!body.run) {
+        return json(200, { recorded: false, reason: gate.open ? "no-run-token" : "closed" });
+    }
     const claims = readRun(body.run, player);
     if (!claims) return json(200, { recorded: false, reason: "stale-run" });
+    /* A TOKEN IS PROOF THE GAME WAS OPEN WHEN THE RUN BEGAN — none is issued
+       while it is shut — so the switch's state NOW is not asked. It used to
+       be, and a run under way when the switch was thrown (for maintenance,
+       say, or by somebody fixing the date beside it) was refused at its end
+       for something that happened while it was being played. Closing the
+       game stops new runs; the ones already started finish, and their tokens
+       expire three hours after issue whatever happens. */
     if (gate.launchMs !== null && claims.t < gate.launchMs) {
         return json(200, { recorded: false, reason: "closed" });
     }
@@ -601,18 +875,36 @@ exports.handler = async (event) => {
         return json(400, { error: "More levels than exist" });
     }
 
-    const floor = published.slice(0, levels).reduce((n, lv) => n + floorMsFor(lv), 0);
+    /* LEVEL BY LEVEL — see THE BREAKDOWN. Everything below is judged against
+       the levels THIS run was dealt, by id, not against the first `levels`
+       of whatever is published now. */
+    const checked = checkBreakdown(body, { levels, ms, points }, published);
+    if (checked.error) return json(400, { error: checked.error });
+    const dealt = checked.dealt;
+
+    const floor = dealt.slice(0, levels).reduce((n, lv) => n + floorMsFor(lv), 0);
     if (ms < floor) {
         return json(400, { error: "That run is faster than the furni can fall" });
     }
 
     /* The same trick as the time floor, from the other end: the levels are
        served from here, so the most they can be worth is known here. */
-    const ceiling = published.slice(0, levels).reduce((n, lv) => n + maxPointsFor(lv), 0)
+    const ceiling = dealt.slice(0, checked.rounds.length).reduce((n, lv) => n + maxPointsFor(lv), 0)
         + maxLifeBonus(levels);
     if (points > ceiling) {
         return json(400, { error: "That run scores more than those levels can pay" });
     }
+
+    /* AND THE RUN LOG HAS TO SAY THE SAME. See THE RUN LOG. */
+    let logged;
+    try { logged = await findRunLog(db, claims.rid); }
+    catch (e) {
+        console.error("ff-scores: could not read the run log", e);
+        return json(503, { error: "The leaderboard could not be updated just now." });
+    }
+    if (!logged) return json(200, { recorded: false, reason: "no-run-log" });
+    const disagreement = logDisagrees(logged, checked.rounds, points);
+    if (disagreement) return json(400, { error: disagreement });
 
     const row = {
         playerId: player.id,
@@ -754,3 +1046,12 @@ async function keepBest(col, owner, row, staleBefore) {
 
 module.exports.keepBest = keepBest;
 module.exports.betterThan = betterThan;
+/* ff-runs.js verifies the same token to file its row under the run id, and
+   the checks are exported for the tests in the same breath. */
+module.exports.readRun = readRun;
+module.exports.checkBreakdown = checkBreakdown;
+module.exports.logDisagrees = logDisagrees;
+module.exports.floorMsFor = floorMsFor;
+module.exports.maxPointsFor = maxPointsFor;
+module.exports.earnedFloorMs = earnedFloorMs;
+module.exports.launchWeek = launchWeek;

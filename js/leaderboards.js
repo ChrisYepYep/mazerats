@@ -81,14 +81,28 @@
        tight loop and the error note was overwritten before anyone saw it.
        A failed board is retried only by retry() below: on open(), or when
        its game tab is picked. */
+    /* Capped at ten seconds, like every other request the daily games make
+       (see request in js/daily.js). A bare fetch that the network swallowed
+       never settled, so the board sat on "Fetching the scores…" for good
+       and — since a pending board is never re-asked for — stayed there
+       until the page was reloaded. An abort lands in the catch and the
+       board says it could not be reached, which the game tab can retry.
+       The timer is cleared only once the body is read, because res.json()
+       can stall as well as the headers. */
+    const FETCH_TIMEOUT_MS = 10000;
     function fetchGame(key) {
         const g = GAMES.find(x => x.key === key);
         if (cache[key]) return;
-        cache[key] = fetch(g.url, { headers: { Accept: "application/json" }, credentials: "same-origin" })
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+        cache[key] = fetch(g.url, { headers: { Accept: "application/json" }, credentials: "same-origin", signal: controller.signal })
             .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
             .then(data => { cache[key] = data; })
             .catch(() => { cache[key] = "failed"; })
-            .then(() => { if (overlay.classList.contains("open") && game === key) draw(); });
+            .then(() => {
+                clearTimeout(timer);
+                if (overlay.classList.contains("open") && game === key) draw();
+            });
     }
 
     // Clears a failed board so the next draw() asks again. Called only on

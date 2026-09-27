@@ -159,6 +159,8 @@
         /* When the figure landed on a seat and the round has yet to be told,
            or null. See ACCEPT_MS — the wait between sitting and scoring. */
         acceptAt: null,
+        // True while that seat is still falling; see advanceWalk.
+        acceptHeld: false,
         furni: [],                  // what is standing in the room
         hover: null
     };
@@ -298,6 +300,21 @@
 
     // ---- movement
 
+    /* WHAT THE ROOM IS CALLED, to anything reading the page rather than
+       looking at it. The canvas's label was written into the markup as "An
+       eight by thirteen Habbo guest room" — true of Classic, and said just the
+       same over the Library, the six-by-six Square, and every other shape a
+       level can be built in. Set here, where the shape changes, and again by
+       beginLevel with the level's own name in front. */
+    function labelRoom(layout, levelName) {
+        const el = canvas || document.getElementById("ff-canvas");
+        if (!el || !layout) return;
+        const room = layout.painted
+            ? `The ${layout.name || "public room"}, a Habbo public room`
+            : `A ${layout.cols} by ${layout.rows} Habbo guest room`;
+        el.setAttribute("aria-label", levelName ? `${levelName}: ${room}` : room);
+    }
+
     /* PUT A ROOM SHAPE UP. Everything that measures the room reads it from
        RoomIso, so this is the one call that changes it — and it has to happen
        BEFORE anything is placed, clamped or routed against the new room.
@@ -312,6 +329,7 @@
         const next = L.get(id);
         Iso.setLayout(next);
         state.model = next.id;
+        labelRoom(next);
         // A different scale means a different set of figure sprites — see
         // avatarSizing. Cheap, and cached per URL, so a room revisited pays
         // nothing.
@@ -357,10 +375,18 @@
         return v ? v.facing : null;
     }
 
+    /* The seat the figure is sitting on: one that has LANDED. A seat still
+       falling onto the tile is not there yet, and sitting in mid-air under it
+       is what the figure did before advanceWalk learned to wait for it. */
+    function seatUnderfoot() {
+        const seat = Furni.seatAt(state.furni, state.pos.x, state.pos.y);
+        return seat && !(game && game.inAir(seat)) ? seat : null;
+    }
+
     function avatarAt(now) {
         if (!state.stepFrom) {
             const c = Iso.tileCenter(state.pos.x, state.pos.y);
-            const seat = game && Furni.seatAt(state.furni, state.pos.x, state.pos.y);
+            const seat = game && seatUnderfoot();
             /* Sitting DOWN turns you to face the way the chair faces — you do
                not perch on a sofa still looking wherever you walked in from.
                Falls back to the walking direction for furni the library has no
@@ -417,13 +443,16 @@
        relationship. */
     function acceptSeat(now) {
         state.acceptAt = null;
+        state.acceptHeld = false;
         if (!game || game.state !== Game.RUNNING) return;
         const what = game.arrivedAt(state.pos, now);
         if (what) { renderHud(now); dirty = true; }
     }
 
     function beginStep(now) {
-        if (state.acceptAt !== null) acceptSeat(now);
+        // The flush, stamped with the arrival it is settling, as every
+        // acceptance is — see advanceWalk.
+        if (state.acceptAt !== null) acceptSeat(state.acceptAt);
         const next = state.path.shift();
         state.stepFrom = { x: state.pos.x, y: state.pos.y };
         state.pos = { x: next.x, y: next.y };
@@ -805,6 +834,7 @@
            it, so it writes nothing unless something actually changed — the
            same reason hudLast exists a few hundred lines down. */
         if (canPause === pauseEls.canPause && paused === pauseEls.paused) return;
+        const resumed = pauseEls.paused === true && !paused;
         pauseEls.canPause = canPause;
         pauseEls.paused = paused;
 
@@ -825,6 +855,15 @@
         if (paused) {
             const r = document.getElementById("ff-resume");
             if (r) r.focus({ preventScroll: true });
+        } else if (resumed && pauseEls.cover && (pauseEls.cover.contains(document.activeElement)
+            || document.activeElement === document.body)) {
+            /* AND BRINGS IT BACK when it lifts. The Resume button the focus
+               was on has just been hidden, and a hidden element's focus falls
+               to <body> — the keyboard player's next Tab started from the top
+               of the page. It goes to the pause button if it is showing, so
+               the same key pauses again, and otherwise to the room itself. */
+            const back = !pauseEls.btn.hidden ? pauseEls.btn : canvas;
+            if (back) back.focus({ preventScroll: true });
         }
     }
 
@@ -970,14 +1009,66 @@
 
        Orientation lock is best-effort in the same way — it only resolves
        inside fullscreen, and only on Android in practice. */
+    /* ONCE PER TURN OF THE DEVICE, and never again once the player has said
+       no by leaving it.
+
+       This used to be asked on EVERY tap while sideways. Somebody who left
+       fullscreen on purpose — to reach a notification, to get the address
+       bar back — was put straight back into it by their next tap on the
+       room, with no way to stay out short of turning the phone upright. So
+       one ask per rotation into landscape (`fullscreenAsked`, cleared by
+       applyOrientation when the gate goes up), and leaving fullscreen
+       ourselves-entered is remembered for the life of the page
+       (`fullscreenRefused`, set by the fullscreenchange listener). */
+    let fullscreenAsked = false;
+    let fullscreenRefused = false;
+    let fullscreenOurs = false;
+    /* When a tap was spent on asking, so the same tap's click does not also
+       walk the figure: the layout jumps as fullscreen comes in, and the tile
+       under the finger at the click is not the one the player aimed at —
+       they were not aiming at one at all. See the canvas click handler. */
+    let fullscreenTapAt = 0;
+
+    // Returns whether it actually asked.
     function goFullscreen() {
         const el = document.documentElement;
         const req = el.requestFullscreen || el.webkitRequestFullscreen;
-        if (!req || document.fullscreenElement) return;
+        if (!req || document.fullscreenElement || document.webkitFullscreenElement) return false;
+        if (fullscreenAsked || fullscreenRefused) return false;
+        fullscreenAsked = true;
         Promise.resolve(req.call(el)).then(() => {
+            fullscreenOurs = true;
             const lock = screen.orientation && screen.orientation.lock;
             if (lock) Promise.resolve(lock.call(screen.orientation, "landscape")).catch(() => {});
         }).catch(() => {});
+        return true;
+    }
+
+    /* THE PAGE BEHIND THE GATE IS OUT OF REACH, not just out of sight.
+
+       The gate covers the screen, but everything under it was still in the
+       tab order and the accessibility tree: a keyboard or a screen reader
+       went straight past "Turn your screen sideways" into a header, a game
+       and a console nobody could see. `inert` on every other child of the
+       body takes all of it out, and the gate's own way out stays reachable.
+
+       Only what this set is cleared again (data-ff-inert), so an element
+       some other script made inert for its own reasons is left as it was. */
+    function shutBehindGate(gate, shut) {
+        for (const el of document.body.children) {
+            if (el === gate || el.tagName === "SCRIPT") continue;
+            if (shut) {
+                if (!el.inert) { el.inert = true; el.setAttribute("data-ff-inert", ""); }
+            } else if (el.hasAttribute("data-ff-inert")) {
+                el.inert = false;
+                el.removeAttribute("data-ff-inert");
+            }
+        }
+        // The focus was somewhere now inert; give it the one control left.
+        if (shut && !gate.contains(document.activeElement)) {
+            const back = gate.querySelector("a[href]");
+            if (back) back.focus({ preventScroll: true });
+        }
     }
 
     function applyOrientation() {
@@ -995,6 +1086,11 @@
         // ff-rotate-GATE. The editor's rotate button is #ff-rotate.
         const gate = document.getElementById("ff-rotate-gate");
         if (gate) gate.setAttribute("aria-hidden", shut ? "false" : "true");
+        if (gate) shutBehindGate(gate, shut);
+
+        /* A new rotation into landscape is a new chance to offer fullscreen;
+           see goFullscreen. Upright is where a rotation ends. */
+        if (shut || !handheld) fullscreenAsked = false;
 
         if (handheld && !shut) fitImmersive();
 
@@ -1024,11 +1120,123 @@
             else if (mq.addListener) mq.addListener(applyOrientation);
         }
 
-        /* The gesture that buys fullscreen. Bound while sideways, spent once,
-           and rebound if the player leaves fullscreen and turns again. */
+        /* The gesture that buys fullscreen — at most once per rotation, and
+           not at all once the player has left it; see goFullscreen. */
         document.addEventListener("pointerdown", () => {
-            if (document.body.classList.contains("ff-immersive")) goFullscreen();
+            if (document.body.classList.contains("ff-immersive") && goFullscreen()) {
+                fullscreenTapAt = performance.now();
+            }
         }, { passive: true });
+
+        /* Leaving a fullscreen WE entered is the player's answer, and it is
+           kept. A fullscreen they entered themselves is not ours to track. */
+        const leftFullscreen = () => {
+            if (document.fullscreenElement || document.webkitFullscreenElement) return;
+            if (fullscreenOurs) fullscreenRefused = true;
+            fullscreenOurs = false;
+        };
+        document.addEventListener("fullscreenchange", leftFullscreen);
+        document.addEventListener("webkitfullscreenchange", leftFullscreen);
+    }
+
+    /* How late a step may finish and still be carried forward to the instant
+       it was due. Past this — a stall, a debugger — the next step starts from
+       now instead, so the figure does not sprint several tiles in one frame
+       to catch up. See advanceWalk. */
+    const STEP_CATCHUP_MS = 250;
+
+    /* THE WALK, and the seat at the end of it. Run on EVERY frame, before the
+       round is ticked — see tick for why both halves of that matter.
+
+       A step finishes at `stepAt + WALK_MS`, not at whichever frame noticed.
+       It used to be stamped `now` and the next step restarted from there, so
+       every tile lost the frame's overshoot: at 20fps that is up to 50ms a
+       tile, a tenth of a step, and at 15fps up to 66ms. A ten-tile walk was
+       most of a tile slower on a 30Hz screen than on a 60Hz one, against a
+       clock that was the same for both. Carried forward, a walk takes its
+       length in WALK_MS whatever the display does. */
+    function advanceWalk(now) {
+        const running = game && game.state === Game.RUNNING;
+
+        if (state.stepFrom && now - state.stepAt >= WALK_MS) {
+            const due = state.stepAt + WALK_MS;
+            const arrived = now - due > STEP_CATCHUP_MS ? now : due;
+            state.stepFrom = null;
+
+            /* ARRIVING AT THE TILE YOU ASKED FOR is what the game reacts to —
+               not every tile crossed on the way to it.
+
+               Seats block, so a route can only ever END on one; it can never
+               legitimately pass over one. Anything underfoot mid-route is
+               therefore something that arrived after you set off, and being
+               scored for it is being scored for someone else's timing. The
+               same goes for a step already in flight when a seat lands on the
+               tile it was heading into: repathIfBlocked drops the goal in that
+               case, and with no goal there is nothing to score. */
+            const atGoal = state.goal &&
+                state.pos.x === state.goal.x && state.pos.y === state.goal.y;
+            if (running && !state.path.length && atGoal) {
+                state.goal = null;
+                if (Furni.seatAt(state.furni, state.pos.x, state.pos.y)) {
+                    /* Sat down already; the round hears about it in a moment.
+                       STAMPED WITH THE ARRIVAL, not with when it is heard —
+                       see the acceptance below. */
+                    state.acceptAt = arrived;
+                    state.acceptHeld = false;
+                    dirty = true;
+                } else {
+                    acceptSeat(arrived);      // nothing here; settles immediately
+                }
+            }
+            if (state.path.length) beginStep(arrived);
+            dirty = true;
+        }
+
+        if (state.acceptAt === null) return;
+
+        /* A SEAT STILL IN THE AIR IS NOT SAT ON YET.
+
+           A piece blocks, and is drawn, from the moment it starts to fall, and
+           a seat that is falling is a seat you can click — so a quick player
+           could walk into one before it touched down. The figure sat, the
+           beat below ran out, and the round was told about a tile it had
+           nothing landed on: no score, no penalty, and a seat in the sequence
+           the player was now sitting on and could not get credit for without
+           walking off and back.
+
+           Held instead, which is what Habbo itself does with a chair put down
+           under somebody: they sit in it when it arrives. The beat restarts
+           each frame it is still falling, so it runs from the LANDING, and
+           the chair reads as landing and then being taken. Walking away first
+           lets it go (beginStep flushes, and the round finds nothing placed).
+           The figure stands meanwhile — see seatUnderfoot. */
+        const pending = Furni.seatAt(state.furni, state.pos.x, state.pos.y);
+        if (running && game.inAir(pending)) {
+            state.acceptAt = now;
+            state.acceptHeld = true;
+            return;
+        }
+        /* Landed. The beat is restarted from THIS frame — the first that
+           has seen it on the floor — and not from the last one that saw it
+           falling, which was before it touched down: stamped with that, the
+           seat would count as sat on a few milliseconds before it existed,
+           and the round's time would be shorter than its own drops allow. */
+        if (state.acceptHeld) {
+            state.acceptHeld = false;
+            state.acceptAt = now;
+        }
+
+        /* THE BEAT IS NOT PLAY TIME. A seat reached with less than ACCEPT_MS
+           on the clock used to lose the round: the clock ran out during the
+           wait, and the tick called time before the seat was ever counted.
+           Arriving is what earns it (see ACCEPT_MS), so when the clock is out
+           the seat is counted at once — stamped with the arrival, and only if
+           the arrival itself was in time. */
+        const out = running && game.secondsLeft(now) <= 0;
+        if (now - state.acceptAt >= ACCEPT_MS || out) {
+            if (out && game.secondsLeft(state.acceptAt) <= 0) state.acceptAt = null;
+            else acceptSeat(state.acceptAt);
+        }
     }
 
     function tick() {
@@ -1039,11 +1247,30 @@
         if (frozen() || loading) return;
 
         const now = gameNow();
-        // Before the paint gate: the board's crawl wants every frame, and it
-        // has nothing to draw on the canvas.
+        // The board's crawl wants every frame, and it has nothing to draw on
+        // the canvas.
         stepBoard(performance.now());
-        if (now - lastPaint < FRAME_MS) return;
-        lastPaint = now;
+
+        /* THE GAME RUNS ON EVERY FRAME, AND ONLY THE DRAWING IS CAPPED.
+
+           The whole of this used to sit behind the 24fps paint gate, and that
+           gate is not 24fps: `lastPaint = now` lands on whole display frames,
+           so it paints every third frame at 60Hz (20fps) and every second at
+           30Hz (15fps). The walk, the drops and the clock were all advanced at
+           that rate and each restarted from the frame that noticed it, so the
+           same level played measurably slower on a slower screen — against a
+           clock that ran at the same speed for everyone, on a leaderboard
+           that compares them.
+
+           So the logic runs on every animation frame, with every schedule
+           carried forward from when it was due (advanceWalk here, `nextAt` in
+           js/room-drop.js), and the gate below decides only when the canvas
+           is repainted. The Director look — see FPS — is a look, and it is
+           kept; it just no longer sets the pace.
+
+           THE WALK FIRST, then the round. A seat reached in the frame the
+           clock runs out is counted before the tick can call time on it. */
+        advanceWalk(now);
 
         if (game && game.state === Game.RUNNING) {
             if (game.tick(now, state.pos)) {
@@ -1071,37 +1298,6 @@
             dirty = true;
         }
 
-        if (state.stepFrom && now - state.stepAt >= WALK_MS) {
-            state.stepFrom = null;
-
-            /* ARRIVING AT THE TILE YOU ASKED FOR is what the game reacts to —
-               not every tile crossed on the way to it.
-
-               Seats block, so a route can only ever END on one; it can never
-               legitimately pass over one. Anything underfoot mid-route is
-               therefore something that arrived after you set off, and being
-               scored for it is being scored for someone else's timing. The
-               same goes for a step already in flight when a seat lands on the
-               tile it was heading into: repathIfBlocked drops the goal in that
-               case, and with no goal there is nothing to score. */
-            const atGoal = state.goal &&
-                state.pos.x === state.goal.x && state.pos.y === state.goal.y;
-            if (game && game.state === Game.RUNNING && !state.path.length && atGoal) {
-                state.goal = null;
-                if (Furni.seatAt(state.furni, state.pos.x, state.pos.y)) {
-                    // Sat down already; the round hears about it in a moment.
-                    state.acceptAt = now;
-                    dirty = true;
-                } else {
-                    acceptSeat(now);          // nothing here; settles immediately
-                }
-            }
-            if (state.path.length) beginStep(now);
-            dirty = true;
-        }
-        // The wait is over: the seat counts now. See ACCEPT_MS.
-        if (state.acceptAt !== null && now - state.acceptAt >= ACCEPT_MS) acceptSeat(now);
-
         if (state.stepFrom) dirty = true;
         /* A switched-on furni is moving too. The paint gate only knows about
            things the GAME moves — a step, a drop — so a lamp's flame held
@@ -1110,6 +1306,10 @@
         if (state.furni.some(f => Furni.animates(f))) dirty = true;
         // The title screen is always moving — furni is falling past the hotel.
         if (Lobby && !Editor && !game) dirty = true;
+
+        // The paint gate, and nothing else behind it.
+        if (now - lastPaint < FRAME_MS) return;
+        lastPaint = now;
         if (!dirty) return;
         dirty = false;
         draw(now);
@@ -3376,10 +3576,14 @@
        quietly double every number in the panel. */
     let runRecorded = false;
 
-    function recordRun(theRun, outcome) {
-        if (!theRun || runRecorded || !runStartedAt) return;
-        runRecorded = true;
+    /* THE RUN, LEVEL BY LEVEL — one list, for the log and the board both.
 
+       The leaderboard now checks a run level by level against the run log
+       for the same token (see ff-scores.js), so the two must be built from
+       the same numbers. They used to be put together separately, at
+       different moments; this is the one place that does it now, and
+       reportRun hands the SAME list to both. */
+    function runLevels(theRun, outcome) {
         /* results holds one entry per level that ENDED. A run abandoned in
            the middle of a round has that round missing from it, which is the
            one level anybody would most want to see — the player walked out of
@@ -3402,16 +3606,76 @@
                 }
             } catch (e) { /* mid-teardown; the finished rounds are enough */ }
         }
+        return levels;
+    }
 
-        const body = JSON.stringify({
+    /* The board's half of that list: the rounds the score is MADE of. A
+       retried round was never banked (see RoomGame.createRun), so it is in
+       the log and not in the sum. Times in whole milliseconds of play. */
+    const scoredRounds = (levels) => levels.filter(l => !l.retried).map(l => ({
+        id: String(l.id || ""),
+        ms: Math.max(0, Math.round((Number(l.seconds) || 0) * 1000)),
+        points: Math.round(Number(l.points) || 0),
+        won: l.won === true
+    }));
+
+    /* THE RUN ENDED, one way or another: log it, and put it to the board.
+
+       Every ending comes through here now — the last round settling, Quit,
+       and the tab closing — so all three do the same two things. Closing the
+       tab used to LOG the run and never SUBMIT it, while Quit did both: a
+       player who cleared nine levels and closed the tab mid-tenth was off
+       the board, and one who pressed Quit instead was on it with the same
+       run.
+
+       `settled` is RoomGame's verdict when the run is over on its own
+       (points include the life bonus, which `score()` does not have yet);
+       without one, the run is being walked out of and is worth what it has
+       banked so far plus the round in hand, exactly as Quit always sent.
+
+       `unloading` is the pagehide case: nothing can be awaited, so the log
+       and the score go out together on keepalive requests and ff-scores
+       waits a moment for the log to land (see THE RUN LOG in ff-scores.js). */
+    function reportRun(theRun, outcome, opts) {
+        const o = opts || {};
+        if (!theRun || !runStartedAt) return;
+        const levels = runLevels(theRun, outcome);
+        const done = o.settled || null;
+        const points = done ? done.points : theRun.score();
+        const cleared = done ? done.cleared : theRun.cleared();
+        const logged = recordRun(theRun, outcome, levels, points, o.unloading);
+        if (runSubmitted) return;
+        runSubmitted = true;
+        submitRun(cleared, points, o.endedAt || 0, {
+            rounds: scoredRounds(levels),
+            ids: (theRun.levels || []).map(l => String((l && l.id) || "")),
+            logged, unloading: !!o.unloading
+        });
+    }
+
+    /* Returns a promise that settles when the log has been ANSWERED (or has
+       given up), which submitRun waits on — the board looks the log up. */
+    function recordRun(theRun, outcome, levels, points, unloading) {
+        if (!theRun || runRecorded || !runStartedAt) return Promise.resolve();
+        runRecorded = true;
+        // A run the console has had its hands on is nobody's result — see
+        // debugTainted. Not logged either: it would skew the level stats.
+        if (debugTainted) return Promise.resolve();
+
+        const payload = {
             outcome,
             cleared: theRun.cleared(),
-            points: theRun.score(),
+            points,
             ms: Math.round(gameNow() - runStartedAt),
             livesSpent: theRun.livesSpent || 0,
             livesWon: theRun.livesWon || 0,
             livesLeft: theRun.lives || 0,
             levels,
+            /* THE RUN'S TOKEN, so the board can find this row: a score is
+               only taken if the run log for the same token agrees with it,
+               level for level. Null for a run whose token never came back,
+               which is logged as it always was and simply never scored. */
+            run: runTokenNow,
             /* THE NAME IN THE BOX, so a signed-out run is somebody rather than
                another tally on one "Anonymous" line. `state.name` is only ever
                set from a lookup Habbo ANSWERED — a refused name clears it — so
@@ -3427,23 +3691,41 @@
             w: window.innerWidth,
             h: window.innerHeight,
             touch: navigator.maxTouchPoints > 0
-        });
+        };
 
-        /* sendBeacon, so a run that ends because the tab is closing still
-           arrives — a fetch is cancelled when the page goes away, which is
-           the exact moment an abandoned run needs reporting. There is no
-           failure path worth handling: the browser either queues it or it
-           does not, and a missing row in a statistics panel is not worth
-           saying anything to the player about. */
+        /* THE TOKEN MAY STILL BE ON ITS WAY, on a slow connection — the
+           request goes out as Play is pressed and is not awaited. Waited for
+           here unless the page is going away, when nothing can be; a log sent
+           without it would be a run the board could never find. */
+        if (!unloading && runTokenNow === null && runToken) {
+            return runToken.then((t) => sendRunLog({ ...payload, run: t || null }));
+        }
+        return sendRunLog(payload);
+    }
+
+    function sendRunLog(payload) {
+        const body = JSON.stringify(payload);
+        /* A KEEPALIVE FETCH, so a run that ends because the tab is closing
+           still arrives — an ordinary fetch is cancelled when the page goes
+           away, which is the exact moment an abandoned run needs reporting.
+           It used to be sendBeacon first, which is as durable but answers
+           nothing; the board now waits for the log (it looks the row up by
+           token), so this has to be a request whose END can be seen. The
+           beacon stays as the fallback for a browser that refuses the fetch
+           outright. There is no failure path worth telling the player about:
+           a missing row in a statistics panel is not news to them. */
+        const url = "/.netlify/functions/ff-runs";
         try {
-            const blob = new Blob([body], { type: "application/json" });
-            if (!navigator.sendBeacon || !navigator.sendBeacon("/.netlify/functions/ff-runs", blob)) {
-                fetch("/.netlify/functions/ff-runs", {
-                    method: "POST", credentials: "same-origin", keepalive: true,
-                    headers: { "Content-Type": "application/json" }, body
-                }).catch(() => {});
-            }
-        } catch (e) { /* private mode, a blocked beacon, no network */ }
+            return fetch(url, {
+                method: "POST", credentials: "same-origin", keepalive: true,
+                headers: { "Content-Type": "application/json" }, body
+            }).then(() => {}, () => {});
+        } catch (e) {
+            try {
+                if (navigator.sendBeacon) navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+            } catch (e2) { /* private mode, a blocked beacon, no network */ }
+            return Promise.resolve();
+        }
     }
 
     /* The tab closing mid-round is an abandoned run like any other.
@@ -3463,11 +3745,15 @@
     /* A RUN WHOSE RESULT IS ALREADY SETTLED is not abandoned by closing the
        tab on it: the last round ended, the panel said so, and the player
        simply did not press the button. It is logged as what it was. */
+    /* AND IT GOES TO THE BOARD AS WELL AS THE LOG, the same as Quit — see
+       reportRun. A settled run was already submitted when it settled, and
+       runSubmitted keeps this from sending it twice. */
     window.addEventListener("pagehide", (ev) => {
         if (ev.persisted) return;
         if (!run) return;
         const done = run.settled();
-        recordRun(run, done ? (done.result === "finished" ? "won" : "lost") : "abandoned");
+        reportRun(run, done ? (done.result === "finished" ? "won" : "lost") : "abandoned",
+            { settled: done, endedAt: roundEndedAt || 0, unloading: true });
     });
 
     /* ---- THE RUN TOKEN, asked for when Play is pressed.
@@ -3482,6 +3768,10 @@
        the request has come back (it cannot, realistically, but a stalled
        connection is a stalled connection) still waits for it. */
     let runToken = null;
+    /* The same token once it has come back, or null — for the two places
+       that cannot wait on a promise: the run log's body, and anything sent
+       from pagehide, where an await may never get its turn. */
+    let runTokenNow = null;
     // Once per run: the board is told when the result settles, and only then.
     let runSubmitted = false;
 
@@ -3501,18 +3791,38 @@
        panel and closed the tab had played a whole run and was not on the
        board. The tick calls this as every round ends; it does nothing until
        RoomGame's `settled` says the run cannot go on, and nothing twice. */
+    /* AND THE LOG GOES WITH IT, at the same moment. It used to wait for the
+       button after the last round, but the board now checks the score
+       against the log (see reportRun), so the log has to be there first. */
     function settleRun() {
         if (!run || runSubmitted) return;
         const done = run.settled();
         if (!done) return;
-        runSubmitted = true;
-        submitRun(done.cleared, done.points);
+        reportRun(run, done.result === "finished" ? "won" : "lost", { settled: done });
     }
+
+    /* How long the board waits for the run log to be answered before it
+       sends the score anyway. ff-scores.js waits a little for the log in its
+       turn, so this only has to cover the ordinary case. */
+    const LOG_WAIT_MS = 5000;
 
     // `endedAt` is the game-clock moment the run's last round ended, for a
     // caller that runs later than that (Quit, pressed on the round-end panel).
-    async function submitRun(levelsCleared, points, endedAt) {
+    /* `extra` carries what reportRun worked out: the rounds the score is made
+       of, the ids of the levels this run was dealt (the server checks the
+       rounds against THOSE, not against whatever is published by the time
+       the run ends), and the log's promise. */
+    async function submitRun(levelsCleared, points, endedAt, extra) {
+        const x = extra || {};
         if (!runStartedAt) return;
+        /* THE CONSOLE TOUCHED THIS PAGE, so this run is not a result. See
+           debugTainted — said plainly rather than silently dropped, so the
+           owner testing with ?debug is not left wondering why the board did
+           not move. */
+        if (debugTainted) {
+            boardSays("This run was played with the debug console open, so it stays off the leaderboard.", false);
+            return;
+        }
         /* A run that cleared nothing still ENDED, and the player is owed the
            same sentence as anyone else. The board will not take it — it ranks
            runs, and this one got nowhere — so say that rather than nothing,
@@ -3529,7 +3839,17 @@
         // below belongs to the old one and is dropped rather than written
         // over the new run's panel.
         const tokenFor = runToken;
-        const token = tokenFor ? await tokenFor : null;
+        /* Unloading, nothing may be awaited before the request is made: the
+           page can be gone before an await's turn comes round. The token is
+           long back by then in practice, so the settled copy is used. */
+        const token = x.unloading ? runTokenNow : (tokenFor ? await tokenFor : null);
+        /* The log first, bounded: the board looks the log up by token and
+           refuses a score whose log disagrees, so sending the score ahead of
+           it would only make the server wait. A log that never answers does
+           not hold the score up past LOG_WAIT_MS. */
+        if (!x.unloading && x.logged) {
+            await Promise.race([x.logged, new Promise(r => setTimeout(r, LOG_WAIT_MS))]);
+        }
         try {
             const res = await fetch("/.netlify/functions/ff-scores", {
                 method: "POST",
@@ -3541,7 +3861,12 @@
                 // No `habbo`: the server stopped storing it (it was never
                 // rendered anywhere, and it was the one field on this request
                 // whose contents came from the page rather than the session).
-                body: JSON.stringify({ levels: levelsCleared, ms, points, run: token })
+                /* `rounds` and `ids` are the per-level breakdown the server
+                   now checks the totals against — see ff-scores.js. */
+                body: JSON.stringify({
+                    levels: levelsCleared, ms, points, run: token,
+                    rounds: x.rounds || [], ids: x.ids || []
+                })
             });
             const data = await res.json().catch(() => ({}));
             if (runToken !== tokenFor) return;
@@ -3563,7 +3888,8 @@
                 /* An admin testing the game while it is shut. The server keeps
                    those runs off the public board; this just says so plainly. */
                 boardSays("The game isn't open yet, so this run stays off the leaderboard.", false);
-            } else if (data.reason === "no-run-token" || data.reason === "stale-run") {
+            } else if (data.reason === "no-run-token" || data.reason === "stale-run"
+                || data.reason === "no-run-log") {
                 /* The start request never came back (or the run outlived its
                    token, three hours in). Nothing is broken and nothing is
                    lost from the game, so this is one quiet sentence, not an
@@ -3858,7 +4184,8 @@
                only thing holding the per-round summaries. The title screen
                comes back when the player closes it. */
             showRunEnd(run, what === "finished");
-            recordRun(run, what === "finished" ? "won" : "lost");
+            // A no-op when settleRun has already reported it, which it will have.
+            reportRun(run, what === "finished" ? "won" : "lost");
             game = null; run = null;
         }
         renderHud(now);
@@ -4103,15 +4430,42 @@
         });
     }
 
-    // Every part file the room is currently waiting on.
+    /* Every part file the room is waiting on — what is standing in it AND
+       everything that is going to fall into it.
+
+       It used to be only the first: `state.furni` at load time is the level's
+       decor, because nothing has dropped yet. So the loader waited for the
+       scenery and let the round start with none of the falling pieces'
+       artwork requested, and a piece whose sprite had not arrived when it
+       dropped fell and landed INVISIBLE — a seat the player was supposed to
+       watch land, and put in order, that never appeared.
+
+       Every class still in the round's queue, at every rotation it can land
+       in (the facing is only rolled as it drops; see js/room-drop.js). A
+       throwaway piece is made per facing so the parts are resolved by the
+       same code that will draw them. */
     function spriteUrlsInRoom() {
         const urls = [];
-        for (const f of state.furni) {
+        const collect = (f) => {
             const parts = Furni.partsOf(f, gameNow());
             if (parts) for (const p of parts) urls.push(p.url);
             else if (f.url) urls.push(f.url);
+        };
+        for (const f of state.furni) collect(f);
+        const queue = (game && game.round && game.round.queue) || [];
+        const seen = new Set();
+        for (const entry of queue) {
+            if (!entry || !entry.className || seen.has(entry.className)) continue;
+            seen.add(entry.className);
+            const c = entry.className;
+            const turns = Math.max(1, rotationsOf(c) | 0);
+            for (let r = 0; r < turns; r++) {
+                try {
+                    collect(Furni.make(c, 0, 0, { meta: metaFor(c), rotation: r, state: 0, ...urlFor(c, 0, r) }));
+                } catch (e) { /* a piece that cannot be built cannot be drawn either */ }
+            }
         }
-        return urls;
+        return [...new Set(urls.filter(Boolean))];
     }
 
     /* Put the player and the room where the level says, clear the readout, and
@@ -4135,6 +4489,7 @@
         showStart(level);
         Object.assign(state, Levels.toRoomOpts(level));
         applyLayout(state.model);
+        labelRoom(Iso.layout, level && level.name);
         syncPickers();
         state.furni = game.renderList();
         refreshBlocked();
@@ -4241,7 +4596,12 @@
            stamp can only ever be LATER than the page's start - the side
            ff-scores.js's tolerance is written for. Not awaited: see
            requestRunToken. */
-        runToken = requestRunToken();
+        const tokenReq = requestRunToken();
+        runToken = tokenReq;
+        runTokenNow = null;
+        // Kept only while it is still this run's: a slow answer for an old
+        // run must not become the new run's token.
+        tokenReq.then((t) => { if (runToken === tokenReq) runTokenNow = t; });
         runSubmitted = false;
         boardLine = null;
         runStartedAt = gameNow();
@@ -4304,6 +4664,12 @@
 
         restore();
         Iso.preloadStencils(() => { dirty = true; });
+        /* A FURNI SPRITE ARRIVING IS A REASON TO REPAINT, for a player too.
+           This was registered only in initEditor, so in a real round a piece
+           whose artwork came in after it had started to fall stayed
+           invisible until something else happened to dirty the frame — and a
+           seat you cannot see land is a seat you cannot put in order. */
+        Furni.onSpriteLoad(() => { dirty = true; });
         if (!Editor) { document.body.classList.remove("is-editing"); setHint(null); }
 
         canvas.addEventListener("mousemove", (ev) => {
@@ -4355,6 +4721,15 @@
                here so that staying still while paused does not depend on one
                element's z-index continuing to sit where it sits. */
             if (paused) return;
+            /* The tap that asked for fullscreen is spent on that; see
+               fullscreenTapAt. A second is far longer than a tap's click
+               follows its pointerdown and far shorter than a deliberate
+               second tap. */
+            if (fullscreenTapAt && performance.now() - fullscreenTapAt < 1000) {
+                fullscreenTapAt = 0;
+                return;
+            }
+            fullscreenTapAt = 0;
             const t = pointerTile(ev);
             if (!t) return;
             const playing = game && game.state === Game.RUNNING;
@@ -4369,6 +4744,37 @@
                Kept rather than dropped: a player tapping on "1" is telling us
                where they want to go, so the tile is held and walked to the
                moment the round actually starts. Only the latest one counts. */
+            if (loading) { queuedTap = t; return; }
+            walkTo(t.x, t.y);
+        });
+
+        /* ---- THE ARROW KEYS WALK ONE TILE.
+
+           The game was mouse-and-touch only. The canvas takes the focus
+           (tabindex below) and an arrow key walks to the neighbouring tile —
+           the same walkTo a click makes, so a seat is sat on, furni blocks
+           and a queued step waits for the count-in exactly as a tap would.
+
+           The keys follow the GRID, not the screen. A room is drawn at 45
+           degrees, so a screen-straight "up" is a grid diagonal, and four
+           diagonals alone only ever reach half the tiles (x + y keeps its
+           parity). Up is the grid's NE, right its SE, down SW, left NW —
+           each key moves along one edge of the diamond. Held down, the key
+           repeats, and each repeat re-aims from wherever the step in flight
+           is going; nothing here queues more than one tile. */
+        canvas.tabIndex = 0;
+        const ARROW = {
+            ArrowUp: { dx: 0, dy: -1 }, ArrowRight: { dx: 1, dy: 0 },
+            ArrowDown: { dx: 0, dy: 1 }, ArrowLeft: { dx: -1, dy: 0 }
+        };
+        canvas.addEventListener("keydown", (ev) => {
+            const d = ARROW[ev.key];
+            if (!d || ev.altKey || ev.ctrlKey || ev.metaKey) return;
+            ev.preventDefault();            // the page does not scroll under it
+            if (paused) return;
+            if (!game || game.state !== Game.RUNNING) return;
+            const t = { x: state.pos.x + d.dx, y: state.pos.y + d.dy };
+            if (!Iso.has(t.x, t.y)) return;
             if (loading) { queuedTap = t; return; }
             walkTo(t.x, t.y);
         });
@@ -4519,13 +4925,11 @@
                settleRun had already put on the board. Timed at the round's
                end, as settleRun's is, not at the moment Quit was pressed. */
             if (run) {
-                // A run already settled was not abandoned, as in pagehide.
+                // A run already settled was not abandoned, as in pagehide —
+                // which now does exactly this too (see reportRun).
                 const done = run.settled();
-                recordRun(run, done ? (done.result === "finished" ? "won" : "lost") : "abandoned");
-                if (!runSubmitted) {
-                    runSubmitted = true;
-                    submitRun(run.cleared(), run.score(), roundEndedAt || 0);
-                }
+                reportRun(run, done ? (done.result === "finished" ? "won" : "lost") : "abandoned",
+                    { settled: done, endedAt: roundEndedAt || 0 });
             }
             hideRoundEnd();
             stopRound();
@@ -4544,44 +4948,32 @@
            seat is wanted next. Opt-in and never present otherwise: the run is
            built inside RoomGame.createRun, so there is no way to reach it from
            outside, and "play it and watch" is not a test. */
+        /* AND ONLY FOR AN OWNER, or on the builder's own machine.
+
+           This used to be built for anybody who put ?debug on the address,
+           and it is not a read-only window whatever the note above says: it
+           hands out the live round and the page's own `state`, and two
+           setters that change how fast the figure walks and how soon a seat
+           counts. A run played at setWalkMs(80) is six times quicker than
+           anybody else's and passed every check the leaderboard makes,
+           because every one of those checks is about what a run COULD take,
+           and a faster figure really can. A public speed hack, one query
+           string long.
+
+           So the object is built only once the same check that opens the
+           editor has said "owner" (admitEditor — the server's answer, not the
+           URL's), or on localhost, where the builder works. Not awaited:
+           the game starts without it and it turns up when the answer does.
+
+           AND A RUN IT HAS TOUCHED IS NEVER SCORED. Anything that hands out a
+           live reference or changes a timing taints the page for good — a
+           reference taken once can be used in any later run — and a tainted
+           run is refused before it is sent. See debugTainted. */
         if (new URLSearchParams(location.search).has("debug")) {
-            window.FallinFurni = {
-                get game() { return game; },
-                get run() { return run; },
-                get state() { return state; },
-                nextRound,
-                /* Walk speed, live. Lower is faster; the limbs follow because
-                   the cycle is one stride per tile. Tell me the number that
-                   matches Habbo and it becomes the default. */
-                get walkMs() { return WALK_MS; },
-                /* The wait between sitting and the seat counting. Same reason
-                   as walkMs: the right number is the one that feels right, and
-                   that is found by trying them. */
-                get acceptMs() { return ACCEPT_MS; },
-                setAcceptMs(ms) {
-                    const n = Number(ms);
-                    if (Number.isFinite(n) && n >= 0 && n <= 1500) ACCEPT_MS = n;
-                    return ACCEPT_MS;
-                },
-                get walkFrameMs() { return WALK_FRAME_MS; },
-                /* Whether the room loader has the paint loop frozen. Exposed
-                   because a stuck `loading` looks exactly like a dead game —
-                   no repaint, no readout, no error — and there is otherwise
-                   no way to tell it from one. */
-                get loading() { return loading; },
-                /* The life callout, on demand - "won" or "lost" - played as it
-                   is in a round: the beat, then 3-2-1-Go. Display only: it
-                   touches no clock and no run, so it can be fired over the
-                   title screen to look at the thing without losing a life. */
-                previewLife(kind) {
-                    return countIn({ kind: kind === "lost" ? "lost" : "won" });
-                },
-                setWalkMs(ms) {
-                    const n = Number(ms);
-                    if (Number.isFinite(n) && n >= 80 && n <= 2000) WALK_MS = n;
-                    return WALK_MS;
-                }
-            };
+            const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+            (local ? Promise.resolve({ ok: true }) : admitEditor())
+                .then((verdict) => { if (verdict && verdict.ok) exposeDebug(); })
+                .catch(() => { /* no debug; the game is unaffected */ });
         }
 
         preload(state.figure);
@@ -4615,6 +5007,62 @@
             status("", "");
             prepare();
         });
+    }
+
+    /* ---- THE CONSOLE HANDLE, for an owner or localhost only. See the gate
+       in init, which is the only caller.
+
+       `debugTainted` is set by anything here that can change how a run
+       plays — a live reference handed out, a timing changed, a round skipped
+       — and it is never cleared: a reference taken in one run is still in the
+       console for the next. submitRun and recordRun both refuse a tainted
+       page. The read-only numbers (walkMs, acceptMs, loading) and the life
+       preview touch nothing and taint nothing. */
+    let debugTainted = false;
+
+    function exposeDebug() {
+        const taint = () => { debugTainted = true; };
+        window.FallinFurni = {
+            get game() { taint(); return game; },
+            get run() { taint(); return run; },
+            get state() { taint(); return state; },
+            nextRound() { taint(); return nextRound(); },
+            /* Walk speed, live. Lower is faster; the limbs follow because
+               the cycle is one stride per tile. Tell me the number that
+               matches Habbo and it becomes the default. */
+            get walkMs() { return WALK_MS; },
+            /* The wait between sitting and the seat counting. Same reason
+               as walkMs: the right number is the one that feels right, and
+               that is found by trying them. */
+            get acceptMs() { return ACCEPT_MS; },
+            setAcceptMs(ms) {
+                taint();
+                const n = Number(ms);
+                if (Number.isFinite(n) && n >= 0 && n <= 1500) ACCEPT_MS = n;
+                return ACCEPT_MS;
+            },
+            get walkFrameMs() { return WALK_FRAME_MS; },
+            /* Whether the room loader has the paint loop frozen. Exposed
+               because a stuck `loading` looks exactly like a dead game —
+               no repaint, no readout, no error — and there is otherwise
+               no way to tell it from one. */
+            get loading() { return loading; },
+            /* The life callout, on demand - "won" or "lost" - played as it
+               is in a round: the beat, then 3-2-1-Go. Display only: it
+               touches no clock and no run, so it can be fired over the
+               title screen to look at the thing without losing a life. */
+            previewLife(kind) {
+                return countIn({ kind: kind === "lost" ? "lost" : "won" });
+            },
+            setWalkMs(ms) {
+                taint();
+                const n = Number(ms);
+                if (Number.isFinite(n) && n >= 80 && n <= 2000) WALK_MS = n;
+                return WALK_MS;
+            },
+            // Whether this page's runs are off the board, and why not.
+            get tainted() { return debugTainted; }
+        };
     }
 
     /* ------------------------------------------ THE CONSOLE'S ARCHIVE, LENT

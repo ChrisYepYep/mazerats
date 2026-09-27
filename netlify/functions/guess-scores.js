@@ -1,12 +1,22 @@
 /* /.netlify/functions/guess-scores — the daily game's leaderboards.
 
    GET  ?day=YYYY-MM-DD           today's top scorers and the all-time table
-   POST {day, rounds}             records the signed-in player's finished day
+   GET  ?deal=1[&day=]            the day's deal to play: the server's today
+                                  unless a still-open day is named — the five
+                                  pictures and their five names each, and
+                                  nothing that says which name is right (see
+                                  _deal.js); for a signed-in player, their
+                                  guesses so far too
    POST {day, action: "start"}    starts the signed-in player's clock for the
                                   day's speed bonus — see _speed.js
-   POST {day, action: "mark", round}
-                                  marks the end of one round, for the same
-                                  bonus — see _speed.js
+   POST {day, action: "move", round, guess}
+                                  one guess, judged against the stored deal
+                                  now; recorded and COUNTED for a signed-in
+                                  player, only answered for anybody else
+   POST {day[, rounds]}           records the signed-in player's finished
+                                  day, scored from the guesses recorded —
+                                  `rounds` is read only for a day played
+                                  signed out (see scoreClaim)
 
    ----------------------------------------------------------------------
    How much this trusts the page
@@ -14,39 +24,38 @@
    Not much, and it is worth being precise about where the line falls,
    because a leaderboard invites exactly the kind of person who will look.
 
-   The day's five rooms are DERIVED here, from the same seeded shuffle
-   js/guess.js runs, over the same archive out of the same database. So the
-   server knows what the answers were without being told. Each round's
-   claimed answer is checked against that, and a round whose answer does not
-   match the real maze scores nothing no matter what the page said. Points
-   are then computed from POINTS below rather than read from the request —
-   the client never sends a score at all.
+   The day is dealt HERE, once, and stored (_deal.js). The page is sent the
+   five pictures and the five names offered for each, and is only told
+   which name was right when a round is over. Each guess is sent as it is
+   made and judged against the stored deal then; for a signed-in player it
+   is written down with the time it arrived, and the SERVER counts the
+   guesses a round took (_speed.js). The day's score is built from those
+   records and from nothing in the finishing request.
 
-   What that does NOT stop is a crafted request claiming the right answer on
-   the first view for all five. Closing that needs the server to hand out
-   the rounds and time them, which means the game's pictures and crops
-   moving server-side — a much larger change, and the wrong shape for a
-   thing whose whole appeal is that it is a static page with a seed. So:
-   casual inflation is impossible, deliberate forgery by someone willing to
-   write the request is not, and one submission per player per day is the
-   backstop that keeps even that from compounding.
+   It used to be the other way round: the page dealt the day from a public
+   seed, with every answer in it, and reported at the end what each round's
+   answer was and how many tries it took. So a crafted request could claim
+   the right answer on the first view for all five — ten points a round for
+   writing "1" — and the speed marks could be laid down in a burst and the
+   answers chosen afterwards.
 
-   Only the first submission for a day counts, and it is written with an
-   upsert that will not overwrite an existing row — replaying the same day
-   with a better story cannot improve it. */
+   What is still possible is learning the answers first by playing the day
+   signed out, and then playing it signed in. Only the first submission for
+   a day counts, and a second is answered with the first's score — so even
+   that cannot be compounded, or used to check answers. */
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
-/* Only dayIsOpen. This game keeps its own todayIso, seededRandom and scoring
-   — it was written before _daily.js existed and its day is dealt from its own
-   POINTS array — but "is this day still accepting scores" is a rule about the
-   clock rather than about the game, and both games want the same answer. */
-const { dayIsOpen, daySeed, isHallway, existedBefore, rangeBounds } = require("./_daily");
+/* dayIsOpen and rangeBounds are rules about the clock and the calendar
+   rather than about the game, and both games want the same answers. The
+   deal itself is _deal.js's. */
+const { dayIsOpen, rangeBounds } = require("./_daily");
 /* Where the boards start, and what counts as a day, from daily-scores.js so
-   the two games and the combined board cut at the same place. See launchDay
+   the two games and the combined board cut at the same place. See launchCut
    and isRealDay there. */
-const { launchDay, fromLaunch, isRealDay } = require("./daily-scores");
+const { launchCut, afterLaunch, fromLaunch, isRealDay } = require("./daily-scores");
 const speed = require("./_speed");
+const deals = require("./_deal");
 
 const COLLECTION = "guess_scores";
 const ROUNDS = 5;
@@ -54,16 +63,18 @@ const ROUNDS = 5;
    this decides it. Three entries since the round became multiple choice:
    five names and three guesses, so a round cannot be won on a fourth view
    because there is no fourth view. The length is load-bearing beyond the
-   scoring — scoreRounds below rejects a claimed `tries` outside it, so a day
-   submitted by an older page, or a crafted one claiming four, scores that
-   round nothing rather than reading past the end of this array.
+   scoring: it is TRIES, the number of guesses the server lets a round take
+   before it is over (recordGuess in _speed.js), so a round can never be
+   counted past the end of this array. tools/check-daily-parity.js checks
+   the page's copy against this one.
 
    Ten a round, so a perfect day is 50. It was 100/60/30 (a 500 day) until
    just before launch; the rows scored that way are all test days from
    before launch day, which the launch cut already hides from every board
-   (see launchDay in daily-scores.js), so they were left as they are rather
+   (see launchCut in daily-scores.js), so they were left as they are rather
    than rescored. */
 const POINTS = [10, 6, 3];
+const TRIES = POINTS.length;
 const BOARD_SIZE = 10;
 
 const json = (statusCode, data) => ({
@@ -72,6 +83,14 @@ const json = (statusCode, data) => ({
         // a burst of results does not become a burst of aggregations.
         "Cache-Control": statusCode === 200 ? "public, max-age=30" : "no-store"
     },
+    body: JSON.stringify(data)
+});
+
+/* Never cached, anywhere: a deal carrying one player's guesses, or one
+   guess's verdict, must not be handed to the next person by a cache. */
+const privateJson = (statusCode, data) => ({
+    statusCode,
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "private, no-store" },
     body: JSON.stringify(data)
 });
 
@@ -98,145 +117,79 @@ function todayIso() {
     return new Date().toISOString().slice(0, 10);
 }
 
-function seededRandom(seed) {
-    let a = seed >>> 0;
-    return function () {
-        a |= 0; a = (a + 0x6D2B79F5) | 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
+/* The answer cache that lived here (answersFor) is gone with the re-deal it
+   was coping with. The day's five are dealt once and stored by _deal.js,
+   so a picture added at noon changes tomorrow and not the afternoon — the
+   split day that cache could only shorten to a few minutes cannot happen. */
 
-/* The local seedFrom is gone: the one caller now asks _daily.daySeed for
-   its seed instead, so that a featured day is salted here exactly as it is
-   in the browser. A spare copy of the hash left sitting beside it is a
-   thing somebody would reach for again and, by doing so, silently opt this
-   endpoint back out of the salt. */
+const normalise = speed.normalise;
 
-const normalise = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+/* A day's outcome, from what the server recorded round by round (movesOf in
+   _speed.js). The grid is stored alongside the score so a day's board can
+   show everyone's grid beside their name — which is the whole of the
+   head-to-head, and it works because a grid names no mazes: it says how a
+   round went and nothing about what was in it.
 
-/* The five maze names for a day, worked out exactly as the page works them
-   out. Cached on the warm container, because it costs a full read of the
-   archive — but for MINUTES, not for the life of the container.
-
-   It used to be kept for as long as the container stayed warm, which could
-   be hours. So a picture added to a maze at noon split the day in two: page
-   loads after the edit dealt a new five (the shuffle runs over every
-   picture, so one new picture moves everything), while this container
-   went on scoring against the morning's five and rejected every correct
-   answer from the afternoon's players — and a cold container elsewhere,
-   reading the archive fresh, did the reverse to the morning's.
-
-   Nothing on this side can make a mid-day gallery edit harmless: the page
-   and the server both deal from whatever the archive holds, and a gallery
-   entry carries no timestamp that would let either of them ignore a new
-   one (see existedBefore in _daily.js, which handles whole new MAZES).
-   What the short life does is stop this cache being the thing that keeps
-   the two sides disagreeing: within a few minutes of an edit the server is
-   scoring the same deal new page loads are dealing, which is about the
-   same lag as the edge cache on /rooms itself (s-maxage=60 in _cache.js).
-   Morning players who finish after that are still scored against the new
-   deal — the honest limit of a game dealt from a live archive, and the
-   reason gallery edits are best made outside the day's busy hours. */
-const ANSWER_TTL_MS = 3 * 60 * 1000;
-const answerCache = { day: "", names: null, at: 0 };
-
-async function answersFor(day) {
-    if (answerCache.day === day && answerCache.names && Date.now() - answerCache.at < ANSWER_TTL_MS) {
-        return answerCache.names;
-    }
-
-    const db = await getDb();
-    /* tags comes back for isHallway below, and createdAt for existedBefore;
-       neither is part of the answer. Worth saying because a projection is a
-       list of what this function needs, and these are needed by filters. */
-    const rooms = await db.collection("rooms")
-        .find({}, { projection: { id: 1, name: 1, tags: 1, gallery: 1, createdAt: 1 } })
-        .toArray();
-
-    const pool = [];
-    rooms.forEach(room => {
-        if (!room.name || !room.id) return;
-        // Exactly as js/guess.js builds its pool — a room dropped there and
-        // kept here would deal one set of five and score another.
-        if (isHallway(room)) return;
-        // Only mazes catalogued before the day began — see existedBefore.
-        if (!existedBefore(room, day)) return;
-        (room.gallery || []).forEach(g => {
-            if (g && g.image) pool.push({ maze: room, image: g.image });
-        });
-    });
-
-    /* Ordered before the shuffle, exactly as js/guess.js orders it — see
-       poolOrder there for why. Both sides read the same rooms out of the
-       same collection, but neither asks Mongo for an order, and the
-       shuffle's output depends entirely on the order it is handed. Sorting
-       both on the same fixed key is what lets this function derive the same
-       five rooms the player was shown without either side coordinating.
-
-       Plain string comparison, not localeCompare: Node and the browser can
-       disagree about collation, and that disagreement would show up as
-       correct answers being rejected. */
-    pool.sort((a, b) => {
-        if (a.maze.id !== b.maze.id) return a.maze.id < b.maze.id ? -1 : 1;
-        if (a.image !== b.image) return a.image < b.image ? -1 : 1;
-        return 0;
-    });
-
-    /* THROUGH _daily.daySeed, not the bare day, so a featured day is
-       salted here exactly as it is in js/daily.js. Without this the page
-       deals one set of five and this checks another — see the header of
-       netlify/functions/_daily.js. */
-    const rand = seededRandom(daySeed(day, "guess"));
-    const shuffled = pool
-        .map(p => ({ p, k: rand() }))
-        .sort((a, b) => a.k - b.k)
-        .map(o => o.p);
-
-    const chosen = [];
-    const used = new Set();
-    for (const item of shuffled) {
-        if (chosen.length >= ROUNDS) break;
-        if (used.has(item.maze.id)) continue;
-        used.add(item.maze.id);
-        chosen.push(item);
-    }
-    for (const item of shuffled) {
-        if (chosen.length >= ROUNDS) break;
-        if (!chosen.includes(item)) chosen.push(item);
-    }
-
-    answerCache.day = day;
-    answerCache.names = chosen.map(c => c.maze.name);
-    answerCache.at = Date.now();
-    return answerCache.names;
-}
-
-/* Scores a submitted day against the real answers. Every round is checked
-   on its own, so a request that is honest about four rounds and invents the
-   fifth keeps the four. */
-function scoreRounds(rounds, answers) {
+   0 is "not solved"; 1-3 is the view it was named on, which is the count of
+   guesses the SERVER received for it, never a number the page reported.
+   `complete` says whether every round is over — a day is only filed once
+   it is. */
+function scoreRecorded(moves) {
     let points = 0, solved = 0;
-    /* The per-round outcome as the SERVER decided it, not as the page
-       claimed it. Stored alongside the score so a day's board can show
-       everyone's grid beside their name — which is the whole of the
-       head-to-head, and it works because a grid names no mazes: it says
-       how a round went and nothing about what was in it.
-
-       0 is "not solved". 1-4 is the view it was named on. */
-    const grid = new Array(ROUNDS).fill(0);
-    for (let i = 0; i < ROUNDS; i++) {
-        const r = rounds[i];
-        if (!r || !r.won) continue;
-        const tries = Number(r.tries);
-        if (!Number.isInteger(tries) || tries < 1 || tries > POINTS.length) continue;
-        if (!answers[i] || normalise(r.answer) !== normalise(answers[i])) continue;
+    const grid = moves.map(m => {
+        if (!m || !m.won) return 0;
+        const tries = m.guesses.length;
+        if (tries < 1 || tries > POINTS.length) return 0;
         points += POINTS[tries - 1];
         solved += 1;
-        grid[i] = tries;
+        return tries;
+    });
+    return { points, solved, grid, complete: moves.every(m => m && m.done) };
+}
+
+/* A day played SIGNED OUT, being filed now the player has signed in: the
+   "Sign in with Discord to be listed" promise.
+
+   Nothing was recorded while they played, so the page's own record of the
+   guesses is all there is. Each round's guesses are judged against the
+   stored deal in the order made, up to TRIES, and must be names that round
+   offered; the round is won on the first right one. Filed with no bonus —
+   no clock ran — and only when nothing at all was recorded for the day (see
+   the POST). It buys nothing playing the day signed out first and then
+   signed in would not, and earns less. */
+function scoreClaim(dealRounds, rounds) {
+    if (!Array.isArray(rounds) || rounds.length !== dealRounds.length) return null;
+    const moves = [];
+    for (let i = 0; i < dealRounds.length; i++) {
+        const sent = rounds[i] && Array.isArray(rounds[i].guesses) ? rounds[i].guesses.slice(0, TRIES) : null;
+        if (!sent) return null;
+        const offered = new Set(dealRounds[i].options.map(normalise));
+        const guesses = [];
+        let won = false;
+        for (const g of sent) {
+            if (typeof g !== "string" || !offered.has(normalise(g))) return null;
+            guesses.push(g);
+            if (normalise(g) === normalise(dealRounds[i].name)) { won = true; break; }
+        }
+        moves.push({ guesses, won, done: won || guesses.length >= TRIES });
     }
-    return { points, solved, grid };
+    return scoreRecorded(moves);
+}
+
+// What the page is told about a finished round: the maze it was, so the
+// round can name it and link to it. Never sent for a round still open.
+const answerOf = r => ({ id: r.id, name: r.name, slug: r.slug || null, creator: r.creator || "" });
+
+/* A signed-in player's recorded guesses, for the page reopening the day:
+   each round's guesses and whether it is over, and the answer for the
+   rounds that are. */
+function progressView(dealRounds, moves) {
+    return moves.filter(Boolean).map((m, i) => ({
+        guesses: m.guesses.map(name => ({ name, correct: normalise(name) === normalise(dealRounds[i].name) })),
+        done: Boolean(m.done),
+        won: Boolean(m.won),
+        answer: m.done ? answerOf(dealRounds[i]) : null
+    }));
 }
 
 // ---------- the ranges a board can cover ----------
@@ -283,9 +236,11 @@ function scoreRounds(rounds, answers) {
    beside it for anything that wants the split. No time on a span's rows:
    a month of times added up says nothing a reader could use, and days that
    were never timed would count as instant. */
-async function board(col, from, to, limit) {
+async function board(col, from, to, limit, cut) {
     const rows = await col.aggregate([
-        { $match: { day: { $gte: from, $lte: to } } },
+        // afterLaunch: nothing submitted before the launch instant — see
+        // launchCut in daily-scores.js.
+        { $match: { day: { $gte: from, $lte: to }, ...afterLaunch(cut) } },
         { $sort: { day: 1, at: 1 } },
         { $group: {
             _id: "$playerId",
@@ -362,7 +317,10 @@ exports.handler = async (event) => {
 
     // ---------- read the boards ----------
     if (event.httpMethod === "GET") {
-        const day = ((event.queryStringParameters || {}).day || todayIso()).slice(0, 10);
+        const params = event.queryStringParameters || {};
+        if (params.deal === "1") return dealReply(db, event, params);
+
+        const day = (params.day || todayIso()).slice(0, 10);
         // A real calendar day, not only the right shape — see isRealDay.
         if (!isRealDay(day)) return json(400, { error: "Bad day" });
 
@@ -370,9 +328,10 @@ exports.handler = async (event) => {
             const week = rangeBounds("week", day);
             const month = rangeBounds("month", day);
             const all = rangeBounds("all", day);
-            // Every span from launch day on; a day before it has no board.
-            const launch = await launchDay(db);
-            const before = Boolean(launch) && day < launch;
+            // Every span from launch day on, and every row from the launch
+            // instant on (launchCut); a day before it has no board.
+            const launch = await launchCut(db);
+            const before = Boolean(launch) && day < launch.day;
 
             /* All four boards in one request rather than one per tab. They
                are small, they are read together, and a results panel whose
@@ -382,10 +341,10 @@ exports.handler = async (event) => {
                 // The day's own board keeps its per-player rows rather than
                 // being grouped, because it carries the grid for the
                 // head-to-head and there is nothing to sum over one day.
-                before ? [] : dayBoard(col, { day }, BOARD_SIZE),
-                board(col, fromLaunch(week.from, launch), week.to, BOARD_SIZE),
-                board(col, fromLaunch(month.from, launch), month.to, BOARD_SIZE),
-                board(col, fromLaunch(all.from, launch), all.to, BOARD_SIZE)
+                before ? [] : dayBoard(col, { day, ...afterLaunch(launch) }, BOARD_SIZE),
+                board(col, fromLaunch(week.from, launch), week.to, BOARD_SIZE, launch),
+                board(col, fromLaunch(month.from, launch), month.to, BOARD_SIZE, launch),
+                board(col, fromLaunch(all.from, launch), all.to, BOARD_SIZE, launch)
             ]);
 
             // "date" is the day these are FOR; "day" is the board itself.
@@ -406,14 +365,11 @@ exports.handler = async (event) => {
 
     // ---------- record a finished day ----------
     if (event.httpMethod === "POST") {
-        /* The moment the request arrived, taken before anything slow — the
-           archive read in answersFor can take a second or two, and that is
-           the server's time, not the player's. */
+        /* The moment the request arrived, taken before anything slow — a
+           database read can take a second or two, and that is the server's
+           time, not the player's. */
         const arrived = Date.now();
         const player = playerFrom(event);
-        // Not an error worth shouting about: the page submits optimistically
-        // and simply is not listed when signed out.
-        if (!player) return json(401, { error: "Not signed in" });
 
         let body;
         try {
@@ -428,6 +384,77 @@ exports.handler = async (event) => {
         // dayIsOpen in _daily.js for why the grace period exists. A day that
         // has not happened cannot have been played.
         if (!dayIsOpen(day)) return json(400, { error: "That day is not open" });
+
+        /* ---------- one guess ----------
+
+           Sent by the page the moment a name is pressed, by EVERYBODY: the
+           page no longer knows which of the five is right, so it has to ask.
+           Judged against the stored deal now.
+
+           Signed in, the guess is also written down and COUNTED — once per
+           name, three at most, in order, the round's first no sooner than
+           MIN_MOVE_MS into it (recordGuess in _speed.js) — and the day is
+           later scored from those records. The answer is only told once the
+           round is over.
+
+           Signed out — or signed in on a day the page began signed out, which
+           says so with `anon` — nothing is stored and the server cannot know
+           how many guesses the round has had, so the page says when it has
+           spent its last (`final`), and the answer comes back then or on the
+           right name. Nothing about it counts until a finished day is filed
+           (see scoreClaim), and a player willing to ask for answers this way
+           could as easily have played the day in a private window. */
+        if (body.action === "move") {
+            if (String(event.body || "").length > speed.MAX_START_BODY) return privateJson(413, { error: "Too large" });
+            const round = speed.markRound(body.round, ROUNDS);
+            if (round == null) return privateJson(400, { error: "Bad round" });
+            let deal;
+            try {
+                deal = await deals.dealFor(db, ensureUniqueIndex, "guess", day);
+            } catch (e) {
+                console.error("guess-scores: could not read the day's deal", e);
+                return privateJson(503, { error: "The day could not be read just now" });
+            }
+            const dealt = deal.rounds[round];
+            const guess = typeof body.guess === "string" ? body.guess : "";
+            const offered = dealt && dealt.options.find(o => normalise(o) && normalise(o) === normalise(guess));
+            if (!offered) return privateJson(400, { error: "Bad move" });
+
+            if (!player || body.anon === true) {
+                const correct = normalise(offered) === normalise(dealt.name);
+                return privateJson(200, {
+                    recorded: false, correct,
+                    answer: correct || body.final === true ? answerOf(dealt) : null
+                });
+            }
+            let outcome;
+            try {
+                outcome = await speed.recordGuess(db, ensureUniqueIndex, day, player.id, round, offered, dealt, TRIES, arrived);
+            } catch (e) {
+                console.error("guess-scores: could not record a guess", e);
+                return privateJson(503, { error: "The guess could not be recorded just now" });
+            }
+            if (outcome.error === "too-fast") return privateJson(429, { reason: "too-fast", retryInMs: outcome.retryInMs });
+            if (outcome.error === "bad-move") return privateJson(400, { error: "Bad move" });
+            if (outcome.error) return privateJson(outcome.error === "busy" ? 503 : 409, { reason: outcome.error });
+            return privateJson(200, {
+                recorded: true,
+                already: Boolean(outcome.already),
+                repeat: Boolean(outcome.repeat),
+                guesses: outcome.guesses.map(name => ({ name, correct: normalise(name) === normalise(dealt.name) })),
+                done: outcome.done,
+                won: outcome.won,
+                answer: outcome.done ? answerOf(dealt) : null
+            });
+        }
+
+        // "mark" — sent by a page from before guesses were judged one at a
+        // time — and anything else unknown is refused rather than ignored.
+        if (body.action !== undefined && body.action !== "start") return json(400, { error: "Unknown action" });
+
+        // Not an error worth shouting about: the page submits optimistically
+        // and simply is not listed when signed out.
+        if (!player) return json(401, { error: "Not signed in" });
 
         /* ---------- the day's clock starting ----------
 
@@ -448,55 +475,51 @@ exports.handler = async (event) => {
             return json(200, { started: true });
         }
 
-        /* ---------- a round ending ----------
+        /* ---------- the finished day ----------
 
-           Sent by the page the moment a room is named or its guesses run
-           out. Written once, never moved, and only in order — each round
-           needs the one before it marked, and round 0 needs the start; see
-           recordMark in _speed.js. Like the start, the most any number of
-           calls can write is one mark per round, so no rate limit of its
-           own. The answer names no time. */
-        if (body.action === "mark") {
-            if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
-            const round = speed.markRound(body.round, ROUNDS);
-            if (round == null) return json(400, { error: "Bad round" });
-            let outcome;
-            try {
-                outcome = await speed.recordMark(db, "guess", day, player.id, round);
-            } catch (e) {
-                console.error("guess-scores: could not record a mark", e);
-                return json(503, { marked: false });
-            }
-            if (outcome === "marked") return json(200, { marked: true });
-            if (outcome === "already") return json(200, { marked: false, reason: "already" });
-            return json(409, { marked: false, reason: outcome });
-        }
-
-        if (!Array.isArray(body.rounds) || body.rounds.length !== ROUNDS) {
-            return json(400, { error: "Bad rounds" });
-        }
-
-        let answers;
+           A day already on file is answered with THAT row's score, before
+           anything in this request is read. The reply used to carry the
+           points just computed from the request even for a duplicate, which
+           made a second submission a free answer checker. */
+        let filed;
         try {
-            answers = await answersFor(day);
+            filed = await col.findOne({ day, playerId: player.id });
         } catch (e) {
             return json(500, { error: "Could not check the day" });
         }
+        if (filed) return privateJson(200, alreadyReply(filed));
 
-        const { points, solved, grid } = scoreRounds(body.rounds, answers);
-
-        /* The speed bonus, from the start and the round marks on file —
-           see _speed.js. Only the rounds scored right just above earn any;
-           a round with no mark earns none. No start on file is no bonus,
-           and so is a clock that cannot be read just now: a day that fails
-           to record over a lookup would be worse than a day recorded
-           without its extra points. */
-        let clock = null;
+        /* Scored from the guesses RECORDED as they were made whenever there
+           are any, and then nothing in this request counts and a day with a
+           room still open is not filed yet. Only a day with nothing recorded
+           — played signed out, filed now the player has signed in — reads the
+           request's guesses, judged against the stored deal, with no bonus
+           (scoreClaim). */
+        let scored, clock = null, claimed = false;
         try {
-            clock = await speed.clockFor(db, "guess", day, player.id);
+            const deal = await deals.dealFor(db, ensureUniqueIndex, "guess", day);
+            if (!deal.rounds.length) return json(409, { recorded: false, reason: "no-deal" });
+            const row = await speed.progressFor(db, "guess", day, player.id);
+            const moves = speed.movesOf(row, deal.rounds.length);
+            if (moves.some(Boolean)) {
+                scored = scoreRecorded(moves);
+                if (!scored.complete) return privateJson(409, { recorded: false, reason: "unfinished" });
+                clock = speed.clockOf(row);
+            } else {
+                scored = scoreClaim(deal.rounds, body.rounds);
+                claimed = true;
+            }
         } catch (e) {
-            console.error("guess-scores: could not read the day's clock", e);
+            console.error("guess-scores: could not check the day", e);
+            return json(500, { error: "Could not check the day" });
         }
+        if (!scored) return json(400, { error: "Bad rounds" });
+        const { points, solved, grid } = scored;
+
+        /* The speed bonus, from the start and the marks on file — see
+           _speed.js. Only rooms named right when they were played earn any;
+           a round with no mark earns none. No clock — a claimed day, an
+           untimed one — is no bonus rather than a day that fails to record. */
         const { bonus, ms, roundSecs } = speed.dayBonus(clock, grid.map(g => g > 0), arrived);
 
         try {
@@ -513,18 +536,69 @@ exports.handler = async (event) => {
                 ...(ms == null ? {} : { ms, roundSecs }),
                 solved,
                 grid,
+                // Filed from the page's own guesses after signing in — see
+                // scoreClaim. Only there so the difference can be told.
+                ...(claimed ? { claimed: true } : {}),
                 at: new Date().toISOString()
             });
         } catch (e) {
-            // Duplicate key: this player already recorded this day. That is
-            // the rule working, not a failure — tell them plainly and leave
-            // the first score standing.
-            if (e && e.code === 11000) return json(200, { recorded: false, reason: "already", points });
+            // Duplicate key: a submission raced this one and landed first.
+            // The rule working, not a failure — and the answer is the row
+            // that stands, not what was just computed (see alreadyReply).
+            if (e && e.code === 11000) {
+                const first = await col.findOne({ day, playerId: player.id }).catch(() => null);
+                return privateJson(200, first ? alreadyReply(first) : { recorded: false, reason: "already" });
+            }
             return json(500, { error: "Could not record the score" });
         }
 
-        return json(200, { recorded: true, points, solved });
+        return privateJson(200, { recorded: true, points, bonus, solved });
     }
 
     return { statusCode: 405, body: "" };
 };
+
+// The answer to a day already on file: the stored row's own figures.
+function alreadyReply(row) {
+    return { recorded: false, reason: "already", points: row.points || 0, bonus: row.bonus || 0, solved: row.solved || 0 };
+}
+
+/* The page's deal for a day — the five pictures, their five names each, and
+   where to cut — and, for a signed-in player, their guesses so far and
+   whether the day is filed. The day is the server's: its today, or a named
+   day only while dayIsOpen still takes it, so a device clock set forward
+   gets nothing. Public, and never cached. See dealReply in daily-scores.js,
+   which is the same thing for Odd One Out. */
+async function dealReply(db, event, params) {
+    const day = params.day ? String(params.day).slice(0, 10) : todayIso();
+    if (!isRealDay(day) || !dayIsOpen(day)) {
+        return privateJson(404, { error: "That day is not open", today: todayIso(), now: Date.now() });
+    }
+    let deal;
+    try {
+        deal = await deals.dealFor(db, ensureUniqueIndex, "guess", day);
+    } catch (e) {
+        console.error("guess-scores: could not deal the day", e);
+        return privateJson(503, { error: "The day could not be dealt just now" });
+    }
+    const player = playerFrom(event);
+    let progress = null, filed = false;
+    if (player) {
+        try {
+            const row = await speed.progressFor(db, "guess", day, player.id);
+            progress = progressView(deal.rounds, speed.movesOf(row, deal.rounds.length));
+            filed = Boolean(await db.collection(COLLECTION).findOne({ day, playerId: player.id }, { projection: { _id: 1 } }));
+        } catch (e) {
+            progress = null;
+        }
+    }
+    return privateJson(200, {
+        day, today: todayIso(), now: Date.now(),
+        rounds: deals.publicRounds("guess", deal.rounds),
+        progress, filed
+    });
+}
+
+// For the tests: the pure scoring halves.
+module.exports.scoreRecorded = scoreRecorded;
+module.exports.scoreClaim = scoreClaim;

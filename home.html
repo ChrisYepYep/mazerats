@@ -2,6 +2,18 @@
 <html lang="en" style="visibility:hidden">
 <head>
     <meta charset="UTF-8">
+    <!-- Every relative address on this page (the stylesheets, the scripts,
+         every "assets/..." picture and "api" call written in them) resolves
+         from the site's root, wherever the page is served. It is served at
+         /maze/<slug>, /event/<slug> and /guides/<slug> as well as /home (see
+         netlify/functions/share.js), and without this "css/style.css" at
+         /maze/x asks for /maze/css/style.css. Straight after the charset, so
+         it is in force before the first relative address is read.
+
+         A fragment-only link (href="#x") would resolve to "/#x" under this
+         and leave the page. The skip link below and the footer's #privacy
+         are kept on the page by a click handler in js/site.js. -->
+    <base href="/">
     <!-- The charset comes before even the gate. A browser only honours a
          charset declaration inside the first 1024 bytes of the document;
          past that it has already guessed an encoding and may re-parse the
@@ -145,6 +157,10 @@
            still in flight, which is the case worth handling. And the
            promise itself is published before the gate's own .then chain, so
            a slow gate is not a slow page. */
+        // Read before the answer below overwrites it: was this visitor last
+        // told the site is open? See "one more ask" further down.
+        var cameInOpen = false;
+        try { cameInOpen = localStorage.getItem("mazerats_landing_state") === "enter"; } catch (e) { /* private mode */ }
         var settingsRequest = getSettings();
         try { window.__mrSettings = settingsRequest; } catch (e) { /* nothing depends on this */ }
 
@@ -242,6 +258,46 @@
                     return;
                 }
 
+                /* ONE MORE ASK, for a visitor the site has just let in.
+
+                   /settings is cached at the edge for a few seconds and served
+                   stale while it refreshes, so for the first minute or so after
+                   the site opens, a node can still answer "coming-soon". The
+                   landing page's watcher (js/welcome.js) asks past that cache,
+                   sees the site open, writes "enter" and sends the visitor
+                   here — where this gate, reading the ordinary cached answer,
+                   bounced them straight back to the landing page. On launch
+                   morning that is everybody.
+
+                   So a visitor whose last answer was "enter" is asked once
+                   more, past the cache, before being turned away. Anyone
+                   else goes straight to the ordinary gated path below. */
+                if (cameInOpen) {
+                    return fetchWithTimeout("/.netlify/functions/settings?fresh=" + Date.now(), { cache: "no-store" }, 8000)
+                        .then(function (res) { return res.ok ? res.json() : null; })
+                        .catch(function () { return null; })
+                        .then(function (fresh) {
+                            var s = fresh && fresh.landingState;
+                            if (s && s !== "coming-soon" && s !== "maintenance") {
+                                rememberState(s);
+                                reveal();
+                                return;
+                            }
+                            return gatedVisitor();
+                        });
+                }
+                return gatedVisitor();
+            })
+            .catch(function () {
+                // Reached only if the admin verify call itself fails. The
+                // state says this page is gated and the token could not be
+                // confirmed, so the answer is the same as no token at all.
+                location.replace("/");
+            });
+
+        // The gated path: an admin with a live session gets in with the Dev
+        // Mode notice; everybody else goes back to the landing page.
+        function gatedVisitor() {
                 var token = localStorage.getItem(TOKEN_KEY);
                 if (!token) {
                     location.replace("/");
@@ -266,13 +322,7 @@
                         applyAdminNotice();
                         reveal();
                     });
-            })
-            .catch(function () {
-                // Reached only if the admin verify call itself fails. The
-                // state says this page is gated and the token could not be
-                // confirmed, so the answer is the same as no token at all.
-                location.replace("/");
-            });
+        }
     })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -321,23 +371,48 @@
     <meta property="og:image:height" content="630">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
+    <!-- Bitmap copies of the MZ mark below, for the browsers that take no SVG
+         favicon (Safari, until recently) and for a phone's home screen, which
+         asks for a 180px picture of its own and showed a blank tile without
+         one. Absolute paths, so a page served at /maze/x still finds them. -->
+    <link rel="icon" href="/assets/icons/favicon.ico" sizes="32x32">
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
-    <!-- The palette, before the stylesheets rather than after, so <html> already
-         carries data-theme when the CSS is applied and there is no brown frame
-         on screen for a moment first.
+    <!-- The palette. The theme's stylesheet has a fixed slot straight AFTER
+         style.css (the empty link below), and this script only gives it an
+         address. It used to create the link and append it itself, which, run
+         from above style.css, put the theme BEFORE style.css on every repeat
+         visit, while js/api.js appends it after: one page, cascaded two ways
+         depending on which of them got there first.
+
+         A link the parser made also holds up the first paint once it has an
+         href, where one made by script does not, so the theme is in place
+         before anything is drawn and there is no brown frame for a moment
+         first. <html> gets data-theme in the same breath.
 
          Read from localStorage because the real answer lives in the database and
          arrives later: js/site.js fetches the site settings, applies whatever they
          say and writes it here for next time. The cached value is therefore the
          PREVIOUS visit's answer, which is right almost always and self-corrects
          within one page load when it is not. A first-ever visitor has nothing
-         cached and gets classic, which is the default anyway.
+         cached and gets classic, which is the default anyway. Classic leaves the
+         slot empty — a stylesheet link with no href loads nothing — and
+         js/api.js and the gate above remove it outright.
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);var l=document.createElement("link");l.id="theme-css";l.rel="stylesheet";l.href="css/theme-"+t+".css";document.head.appendChild(l);}catch(e){}})();</script>
     <link rel="stylesheet" href="css/style.css?v=2">
-    <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
+    <link id="theme-css" rel="stylesheet">
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
+    <!-- Umami, the aggregate visit counts. Loaded by this line rather than a
+         plain <script src>, because a plain tag cannot ask the browser first:
+         with Global Privacy Control on, it is not loaded at all. Do Not Track
+         is honoured by Umami itself (data-do-not-track), and data-exclude-hash
+         keeps the part of an address after # out of it — a palette preview
+         link carries a private token there. The search (?q=) is kept on
+         purpose: the privacy policy says searches are recorded, and why.
+         js/track.js, the site's own record, honours both signals too. -->
+    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");document.head.appendChild(s);}catch(e){}})();</script>
 </head>
 <body data-page="home">
 
@@ -632,8 +707,13 @@
         </div>
     </main>
 
-    <!-- Full-size image lightbox, opened by clicking the gallery image in the room modal -->
-    <div class="lightbox-overlay" id="image-lightbox">
+    <!-- Full-size image lightbox, opened by clicking the gallery image in the room modal.
+         A dialog of its own, so the one focus trap in js/site.js keeps Tab
+         inside it while it is up rather than letting it wander back into
+         the room window underneath. aria-modal can stay on permanently:
+         the overlay is display:none until .open, and the trap only counts
+         a dialog that is visible. -->
+    <div class="lightbox-overlay" id="image-lightbox" role="dialog" aria-modal="true" aria-label="Enlarged room picture" tabindex="-1">
         <button class="lightbox-close" id="lightbox-close" aria-label="Close">&times;</button>
         <button class="gallery-nav lightbox-prev" id="lightbox-prev" aria-label="Previous room">&#10094;</button>
         <img class="lightbox-img" id="lightbox-img" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
@@ -1168,6 +1248,11 @@
                     <span class="side-spine-arrow" aria-hidden="true">&#9654;</span>
                 </button>
             </div>
+            <!-- Spoken, never seen: what the Share button has just done
+                 ("Link copied"). The button's own aria-label names it, and a
+                 name overrides the text inside it, so the word changing on
+                 the button was never read out. Filled by js/home.js. -->
+            <p class="visually-hidden" id="modal-status" role="status" aria-live="polite"></p>
             <div class="chrome-titlebar">
                 <h2 id="modal-name"></h2>
                 <button class="chrome-close" id="modal-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
@@ -1218,6 +1303,13 @@
                                 <span class="gallery-bonus-tab" id="gallery-bonus-tab" style="display:none;">Bonus Room</span>
                                 <span class="gallery-counter" id="gallery-counter" style="display:none;"></span>
                                 <span class="gallery-counter gallery-position" id="gallery-position" style="display:none;"></span>
+                                <!-- Stops the 12-second auto-advance, and starts it again.
+                                     Top-left, the one corner of the picture nothing else
+                                     uses. Shown by js/home.js (syncGalleryPauseBtn) only for
+                                     a gallery of two or more pictures, and never under
+                                     prefers-reduced-motion, where nothing advances on its
+                                     own to be paused. -->
+                                <button type="button" class="gallery-counter gallery-pause" id="gallery-pause" aria-label="Pause the slideshow" style="display:none;">&#10074;&#10074; Pause</button>
                                 <button type="button" class="old-versions-pill" id="old-versions-pill" style="display:none;"></button>
                             </div>
                             <!-- Furni detected in the room image above, one icon each.
@@ -1347,7 +1439,7 @@
          asserted by tools/check-daily-parity.js so a page cannot quietly
          load one without the other. -->
     <script src="js/featured-days.js?v=2"></script>
-    <script src="js/daily.js?v=2"></script>
+    <script src="js/daily.js?v=3"></script>
     <script src="js/daily-loader.js?v=2"></script>
     <!-- After daily.js: the window draws its rows with Daily.ranks and the
          same row markup the games' own boards use. -->

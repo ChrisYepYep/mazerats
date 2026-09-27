@@ -68,8 +68,9 @@
         if (internal && ID.test(internal[2])) {
             const [, kind, id] = internal;
             // Real addresses, so opening one in a new tab or copying it works
-            // too; js/guides.js takes over an ordinary click.
-            const href = kind === "guide" ? `/guides?g=${id}` : `/home#${kind}-${id}`;
+            // too; js/guides.js takes over an ordinary click. By id, which
+            // the share function sends on to the record's current address.
+            const href = `/${kind === "guide" ? "guides" : kind}/${id}`;
             return `<a class="guide-link" href="${href}" data-guide-${kind}="${id}">${words}</a>`;
         }
         try {

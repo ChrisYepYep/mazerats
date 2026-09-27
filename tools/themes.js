@@ -322,18 +322,19 @@ const boneness = l => smoothstep(0.52, 0.80, l);
    any of this. */
 const DARK_SCALE = 0.55;
 
-function mapLight(l) {
+// asText forces the colour fully into the text zone — see TEXT_VARS.
+function mapLight(l, asText) {
     const curved = Math.pow(l, LIGHT_GAMMA);
     const deep = curved + (l * DARK_SCALE - curved) * KEEP;
     const faded = 0.60 + (l - 0.5) * 0.80 + LIFT * boneness(l);
-    const t = textness(l);
+    const t = asText ? 1 : textness(l);
     return Math.max(0, Math.min(1, deep * (1 - t) + faded * t));
 }
 
-function mapSat(s, l) {
+function mapSat(s, l, asText) {
     const deep = Math.min(SAT_MAX, s * SAT);
     const faded = Math.min(FADE_SAT_MAX, s * FADE_SAT);
-    const t = textness(l);
+    const t = asText ? 1 : textness(l);
     const mixed = deep * (1 - t) + faded * t;
     return mixed * (1 - BONE * boneness(l));
 }
@@ -406,7 +407,24 @@ const KEEP_SELECTORS = [
 ];
 
 // Inside :root, where a whole-rule skip would take the entire palette with it.
-const KEEP_VARS = ["--danger"];
+// --danger-text is the lifted red the small status labels are set in (see
+// :root in style.css); it is a warning for the same reason --danger is.
+const KEEP_VARS = ["--danger", "--danger-text"];
+
+/* Variables that are TEXT, whatever their lightness says.
+
+   The transform decides "surface or text?" from a colour's lightness, which
+   is right for almost the whole palette and wrong for --unknown. It is a
+   mid-dark grey-brown (l 42%) that sits on the page's darkest surfaces and
+   is used for nothing BUT text — the Unknown/Past badges, the quiz board's
+   headings, the progress window's big numbers, some twenty rules. At l 42%
+   it fell on the surface side of the curve and was sunk with the surfaces
+   it is printed on: 1.4-2:1 in every theme, which is not dim, it is gone.
+
+   So these are mapped as the light end is — faded and lifted, in the accent
+   hue — exactly as --parchment-dim is, which is the token they are closest
+   to in use. Everything else still goes by its lightness. */
+const TEXT_VARS = ["--unknown", "--unknown-text"];
 
 const keepsSelector = sel => KEEP_SELECTORS.some(re => re.test(sel));
 
@@ -418,16 +436,16 @@ function isBrown(h, s, l) {
     return s >= MIN_SAT && l > 0.01 && l < 0.995 && h >= HUE_MIN && h <= HUE_MAX;
 }
 
-function toPurple(r, g, b) {
+function toPurple(r, g, b, asText) {
     const [h, s, l] = rgbToHsl(r, g, b);
     if (!isBrown(h, s, l)) return null;
-    const sat = mapSat(s, l);
-    const light = mapLight(l);
+    const sat = mapSat(s, l, asText);
+    const light = mapLight(l, asText);
     // Built twice and mixed, rather than once at an interpolated hue — see
     // the note above on why the blend happens in RGB.
     const onSurface = hslToRgb(SURFACE_HUE, sat, light);
     if (SURFACE_HUE === ACCENT_HUE) return onSurface;
-    return mixRgb(onSurface, hslToRgb(ACCENT_HUE, sat, light), hueMix(l));
+    return mixRgb(onSurface, hslToRgb(ACCENT_HUE, sat, light), asText ? 1 : hueMix(l));
 }
 
 /* ------------------------------------------------- CSS filters, in numbers
@@ -654,6 +672,8 @@ function loud(px) {
 // A flag rather than an argument because both are RegExp replace callbacks.
 let IN_CHROME = false;
 let IN_LOUD = false;
+// Set while a TEXT_VARS declaration is being shifted, for the same reason.
+let IN_TEXT = false;
 
 /* ------------------------------------------------------------- THE GLINT
 
@@ -774,7 +794,32 @@ function solveGrip(classicDot, fill) {
     return best;
 }
 
+/* THE RECOLOURED ART IS ADDRESSED BY ITS CONTENT.
+
+   Everything under /assets/* is served with a year's immutable cache
+   (netlify.toml), on the understanding that a picture changes by getting a
+   new name. These files break that: this script rewrites them IN PLACE,
+   under the same name, whenever a palette or the art under it changes — so
+   a returning visitor would have gone on seeing last month's purple tabs
+   for up to a year, beside a stylesheet that had moved on.
+
+   So every reference the theme stylesheet makes to one of them carries
+   ?v=<the first 8 hex of the file's own SHA-1>. Same bytes, same address,
+   and the cache is still used for everything that did not change; a file
+   that did change is a new URL and is fetched once. The stylesheet itself
+   is revalidated on every visit (/css/*), which is what gets the new
+   address to the browser. Keyed on the classic path, the same as the Set
+   recolourAssets returns, and refilled on every theme pass. */
+const crypto = require("crypto");
+const ART_VERSION = new Map();
+
+const artUrl = rel => {
+    const v = ART_VERSION.get(rel);
+    return "../assets/img/" + THEME + "/" + rel.replace(/^assets\/img\//, "") + (v ? "?v=" + v : "");
+};
+
 function recolourAssets() {
+    ART_VERSION.clear();
     const css = fs.readFileSync(path.join(ROOT, "css/style.css"), "utf8");
     const refs = [...new Set([
         ...[...css.matchAll(/url\('\.\.\/(assets\/img\/[^']+\.png)'\)/g)].map(m => m[1]),
@@ -814,7 +859,9 @@ function recolourAssets() {
 
         const dest = path.join(ROOT, rel.replace(/^assets\/img\//, "assets/img/" + THEME + "/"));
         fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.writeFileSync(dest, encodePng(img.width, img.height, out));
+        const png = encodePng(img.width, img.height, out);
+        fs.writeFileSync(dest, png);
+        ART_VERSION.set(rel, crypto.createHash("sha1").update(png).digest("hex").slice(0, 8));
         done.push(rel);
     }
     return new Set(done);
@@ -833,7 +880,7 @@ function shiftHex(match, body) {
     let alpha = "";
     if (h.length === 8) { alpha = h.slice(6); h = h.slice(0, 6); }
     if (h.length !== 6) return match;
-    let px = toPurple(parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16));
+    let px = toPurple(parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), IN_TEXT);
     if (!px) return match;
     if (IN_CHROME) px = calmChrome(px);
     else if (IN_LOUD) px = loud(px);
@@ -841,7 +888,7 @@ function shiftHex(match, body) {
 }
 
 function shiftRgb(match, r, g, b, a) {
-    let px = toPurple(+r, +g, +b);
+    let px = toPurple(+r, +g, +b, IN_TEXT);
     if (!px) return match;
     if (IN_CHROME) px = calmChrome(px);
     else if (IN_LOUD) px = loud(px);
@@ -862,7 +909,7 @@ function shiftValue(value, recoloured) {
     let out = value.replace(HEX, shiftHex).replace(RGB, shiftRgb);
     for (const rel of recoloured) {
         const tail = rel.replace("assets/img/", "");
-        out = out.split("../assets/img/" + tail).join("../assets/img/" + THEME + "/" + tail);
+        out = out.split("../assets/img/" + tail).join(artUrl(rel));
     }
     return out;
 }
@@ -1035,7 +1082,9 @@ function buildCss(recoloured) {
                and typography are never copied, so this file still cannot
                move anything, only colour it. */
             if (!touches(value, recoloured) && !PAINT_PROPS.includes(prop)) continue;
+            IN_TEXT = TEXT_VARS.includes(prop);
             keep.push("    " + prop + ": " + shiftValue(value, recoloured) + ";");
+            IN_TEXT = false;
             declCount++;
         }
         IN_CHROME = false; IN_LOUD = false;
@@ -1247,7 +1296,7 @@ function corrections() {
 ${MARKUP_SPRITES.map(rel => {
         const file = rel.replace(/^assets\/img\//, "");
         return `[data-theme="${THEME}"] img[src$="${file}"] {\n` +
-               `    content: url('../assets/img/${THEME}/${file}');\n}`;
+               `    content: url('${artUrl(rel)}');\n}`;
     }).join("\n\n")}
 
 /* =================================================================== NEON

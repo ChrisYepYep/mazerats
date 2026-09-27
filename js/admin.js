@@ -133,8 +133,14 @@ document.addEventListener("DOMContentLoaded", () => {
             e.stopPropagation();
             const open = !tab.classList.contains("is-open");
             closeAdminTabs(tab);
+            tab.classList.remove("is-dismissed");
             tab.classList.toggle("is-open", open);
             btn.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+        // An Escape dismissal (see the keydown below) lasts until focus
+        // leaves the tab altogether; coming back to it opens it as usual.
+        tab.addEventListener("focusout", (e) => {
+            if (!tab.contains(e.relatedTarget)) tab.classList.remove("is-dismissed");
         });
         // Leaving with the pointer drops the lock as well, so a tab opened by
         // tapping does not stay stuck open for a mouse user afterwards.
@@ -155,11 +161,25 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!e.target.closest(".admin-tab")) closeAdminTabs(null);
     });
 
+    /* Escape, for a panel open by either route: locked open by a tap
+       (.is-open), or open only because focus is inside it — the CSS opens a
+       tab on :focus-within too, and that one Escape used to ignore, so a
+       keyboard user tabbing through the Nav could not shut it at all.
+
+       Putting focus back on the tab button would leave focus within the
+       tab and so leave it open, which is what .is-dismissed is for: it
+       overrides :focus-within (see .admin-tab.is-dismissed in style.css)
+       until focus leaves the tab or the button is pressed again. */
     document.addEventListener("keydown", (e) => {
         if (e.key !== "Escape") return;
-        const open = document.querySelector(".admin-tab.is-open");
+        const focused = document.activeElement && document.activeElement.closest
+            ? document.activeElement.closest(".admin-tab") : null;
+        const open = document.querySelector(".admin-tab.is-open") || focused;
         if (!open) return;
+        // A dialog is open over the page — its own Escape handles that.
+        if (document.querySelector(".modal-overlay.open")) return;
         closeAdminTabs(null);
+        open.classList.add("is-dismissed");
         const btn = open.querySelector(".admin-tab-btn");
         if (btn) btn.focus();
     });
@@ -176,8 +196,23 @@ document.addEventListener("DOMContentLoaded", () => {
        also why the field is not in the Admins tab — that tab is for resetting
        OTHER people's, which is a different permission entirely. */
     const selfPasswordInput = document.getElementById("self-password");
+    const selfPasswordCurrentInput = document.getElementById("self-password-current");
     const selfPasswordBtn = document.getElementById("self-password-btn");
     const selfPasswordStatus = document.getElementById("self-password-status");
+
+    /* A password field's REAL value. js/password-field.js turns every
+       password input into a text field that draws "••••" and keeps the real
+       string to itself, so reading .value gives back the mask — and the mask
+       is exactly what this page used to save as the new password. Only the
+       inputs read directly need this: FormData reads the hidden partner that
+       module keeps under the field's name, which already holds the real one. */
+    function passwordValue(input) {
+        return window.PasswordField ? window.PasswordField.value(input) : (input ? input.value : "");
+    }
+    function clearPassword(input) {
+        if (window.PasswordField) window.PasswordField.clear(input);
+        else if (input) input.value = "";
+    }
 
     function sayPassword(message, ok) {
         if (!selfPasswordStatus) return;
@@ -188,14 +223,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function saveOwnPassword() {
         if (!selfPasswordInput) return;
-        const next = selfPasswordInput.value;
+        // Enter in either field reaches here too, and does not care that the
+        // button is disabled mid-save.
+        if (selfPasswordBtn.disabled) return;
+        const next = passwordValue(selfPasswordInput);
+        const current = passwordValue(selfPasswordCurrentInput);
+        // The server refuses a change to your own password without the
+        // current one (see auth.js); asked for here first so the answer is
+        // immediate rather than a round trip away.
+        if (selfPasswordCurrentInput && !current) { sayPassword("Type your current password first.", false); return; }
         // Checked here only to save a round trip and give a faster answer;
         // the endpoint enforces its own rules regardless of what this says.
         if (next.length < 8) { sayPassword("At least 8 characters.", false); return; }
         selfPasswordBtn.disabled = true;
         sayPassword("Saving…", true);
         try {
-            const changed = await Api.resetAdminPassword(adminToken, currentUsername, next);
+            const changed = await Api.resetAdminPassword(adminToken, currentUsername, next, current);
             // A password change retires every session this account had,
             // this one included, so the reply carries a replacement.
             if (changed && changed.token) {
@@ -203,11 +246,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 writeToken(adminToken);
             }
             // Cleared on success, so a new password is never left sitting in
-            // a field on an unattended screen.
-            selfPasswordInput.value = "";
+            // a field on an unattended screen — through the module, so its
+            // own copy of the value goes too (see passwordValue).
+            clearPassword(selfPasswordInput);
+            clearPassword(selfPasswordCurrentInput);
             sayPassword("Password changed.", true);
         } catch (err) {
+            // A wrong current password is a 403 with its own message, and
+            // falls through to be said here; only 401 means the session.
+            // So does the server's throttle on repeated tries (429).
             if (err.status === 401) { lockOut(); return; }
+            if (err.status === 429) {
+                sayPassword(err.message || "Too many tries — wait a minute, then try again.", false);
+                return;
+            }
             sayPassword(err.message || "Couldn't change it.", false);
         } finally {
             selfPasswordBtn.disabled = false;
@@ -215,15 +267,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (selfPasswordBtn) selfPasswordBtn.addEventListener("click", saveOwnPassword);
-    if (selfPasswordInput) {
+    [selfPasswordCurrentInput, selfPasswordInput].forEach(input => {
+        if (!input) return;
         // Enter saves, and must not reach anything else — see the furni
         // search for the same trap, though there is no form around this one.
-        selfPasswordInput.addEventListener("keydown", (e) => {
+        input.addEventListener("keydown", (e) => {
             if (e.key !== "Enter") return;
             e.preventDefault();
             saveOwnPassword();
         });
-    }
+    });
 
     const floatingActionsEl = document.getElementById("floating-actions");
     const floatingSaveBtn = document.getElementById("floating-save-btn");
@@ -402,6 +455,12 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     function lockOut() {
+        /* The furni scan's poll stops here. It kept firing every 2.5s with
+           the dead token, and each 401 came back through this function and
+           rewrote the login box — clearing whatever error it was showing and
+           re-opening a modal the admin was part-way through typing into.
+           applyRoleVisibility starts it again on the next sign-in. */
+        stopFurniPolling();
         writeToken("");
         adminToken = "";
         currentUsername = "";
@@ -418,7 +477,43 @@ document.addEventListener("DOMContentLoaded", () => {
         loginError.style.display = "block";
     }
 
-    function doLogout() {
+    /* The panels that live in files of their own (js/admin-guides.js,
+       js/admin-dead-ends.js) hand a 401 back here, so an expired session
+       gets the same sign-in box — over the page, with the edit still in it
+       underneath — rather than a "reload" button that threw the edit away.
+       Recolour already had this, passed to it in showPanel. */
+    window.AdminLockOut = () => lockOut();
+
+    /* Logging out used to close every form on the spot: unsaved work gone
+       without a question, and every picture uploaded during the edit left
+       in storage for good, because closeForm only forgets the list of them.
+       Now it asks first, as Cancel does, refuses while a save is still in
+       flight (see refuseWhileSaving), and discards the uploads properly —
+       awaited, because the discard's deletes need the token this is about
+       to throw away. */
+    let loggingOut = false;
+    async function doLogout() {
+        if (loggingOut) return;
+        const keys = Object.keys(COLLECTIONS);
+        if (keys.some(refuseWhileSaving)) return;
+        if (keys.some(isFormDirty)) {
+            const ok = await showConfirmDialog("Log out and discard your unsaved changes? Anything you have added or edited in the open form will be lost.");
+            if (!ok) return;
+            if (keys.some(refuseWhileSaving)) return;
+        }
+        loggingOut = true;
+        try {
+            // Each discard takes its list off the form synchronously; the
+            // forms are then closed BEFORE the awaits, or the check inside
+            // would find the pictures still in use by the very form being
+            // thrown away and spare every one of them.
+            const discards = keys.map(key => discardFormUploads(key));
+            keys.forEach(key => closeForm(key));
+            await Promise.all(discards);
+        } finally {
+            loggingOut = false;
+        }
+        stopFurniPolling();
         writeToken("");
         adminToken = "";
         currentUsername = "";
@@ -442,6 +537,10 @@ document.addEventListener("DOMContentLoaded", () => {
         loginModal.classList.add("open");
         loginError.style.display = "none";
         loginForm.reset();
+        // Not in a form, so the reset above does not reach them.
+        clearPassword(selfPasswordInput);
+        clearPassword(selfPasswordCurrentInput);
+        sayPassword("", true);
     }
 
     /* ---------- activity log (owner only) ----------
@@ -820,6 +919,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!ffAddressesEl) return;
         const body = ffAddressesEl.querySelector("tbody");
         const rows = d.byIp || [];
+        /* The server sends addresses only to accounts that may see them
+           (personal: false for the rest — see ff-runs.js), and an empty
+           table would otherwise read as "nobody played". */
+        if (d.personal === false) {
+            body.innerHTML = '<tr><td colspan="7" class="admin-empty">Addresses are shown to owners and admins only.</td></tr>';
+            return;
+        }
         if (!rows.length) {
             body.innerHTML = '<tr><td colspan="7" class="admin-empty">No runs in this range.</td></tr>';
             return;
@@ -1030,6 +1136,11 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.classList.toggle("is-albus", currentUserRole === "wizard");
         if (activityNavBtn) activityNavBtn.hidden = !canReadActivity();
         if (furniSidebar) furniSidebar.hidden = !owner;
+        /* The account tab's change-password box stays for EVERY role, view
+           only included: changing your own password is the "self" scope,
+           which WRITE_SCOPES in _auth.js gives to all of them. Nothing here
+           hides or greys it, and #self-password-btn is deliberately not in
+           the is-viewer list in style.css. */
         if (owner) updateFurniLocality();
         // Only an owner has anything to poll for, and furni-scan-status
         // would just be an authenticated request answering "nothing" every
@@ -1375,6 +1486,33 @@ document.addEventListener("DOMContentLoaded", () => {
         return keys;
     }
 
+    /* The same, but asked of the database at the moment of deciding.
+
+       workingRooms/workingEvents are the lists read at sign-in. Another
+       admin (or this one, in a second tab) can have pointed a record at a
+       picture since — a thumbnail aimed at somebody else's room, a Missing
+       Pieces copy added by URL — and "not in my copy of the archive" is not
+       "not used". Deleting a blob is the one thing here that cannot be
+       undone, so it is checked against the stored records as they are now,
+       the same full read the panel loads with, just before any delete.
+
+       The loaded lists are counted too, which can only make it more
+       careful. If the read fails, the answer is null and the caller deletes
+       NOTHING: an orphan left in storage costs a few kilobytes, a picture
+       deleted from under a live record is a broken maze. */
+    async function freshReferencedKeys() {
+        let rooms, events;
+        try {
+            [rooms, events] = await Promise.all([Api.getRoomsFull(adminToken), Api.getEventsFull(adminToken)]);
+        } catch (err) {
+            if (err && err.status === 401) lockOut();
+            return null;
+        }
+        const keys = allReferencedKeys();
+        (rooms || []).concat(events || []).forEach(item => imageKeysOf(item).forEach(k => keys.add(k)));
+        return keys;
+    }
+
     // What an open form currently points at, drafts included.
     function formImageKeys(formEl) {
         if (!formEl || !formEl.classList.contains("is-open")) return new Set();
@@ -1399,6 +1537,34 @@ document.addEventListener("DOMContentLoaded", () => {
     function noteUpload(formEl, url) {
         const key = blobKeyFromUrl(url);
         if (key && formEl && formEl._sessionUploads) formEl._sessionUploads.add(key);
+    }
+
+    /* An upload that finished after the row it was for went away — removed,
+       or promoted to the entrance/finish — while it was on its way up. The
+       picture belongs to nothing and never will, so it is deleted at once
+       rather than being written into whichever row now sits at the index it
+       started from (which is what used to happen: the upload captured `i`,
+       and by the time it landed draft[i] was a different room). */
+    function dropOrphanUpload(url) {
+        const key = blobKeyFromUrl(url);
+        if (key && adminToken) deleteImageSafe(key);
+    }
+
+    /* A room picture replaced in place keeps that room's furni.
+
+       Furni is recorded against the picture's ADDRESS, so a new upload in
+       the same slot is, as far as the record is concerned, a different room
+       with nothing in it — and the save's orphan pruning then dropped the
+       old address's furni as belonging to no picture. Every hand-added
+       piece in that room went with it. The entry moves to the new address
+       instead; submitForm's furniPatch then sends the new key set and the
+       old one null. */
+    function moveFurniKey(formEl, oldUrl, newUrl) {
+        const draft = formEl && formEl._furniDraft;
+        if (!draft || !oldUrl || !newUrl || oldUrl === newUrl || !draft[oldUrl]) return;
+        if (!draft[newUrl]) draft[newUrl] = draft[oldUrl];
+        delete draft[oldUrl];
+        if (formEl._renderFurni) formEl._renderFurni();
     }
 
     /* Every upload the maze/event form makes goes through here, for two
@@ -1444,14 +1610,20 @@ document.addEventListener("DOMContentLoaded", () => {
        anything uploaded during the edit that the saved record does not use
        (uploaded, then replaced again before saving), minus everything still
        referenced anywhere. Called with the sets captured before closeForm
-       wipes them. */
-    function flushPendingDeletes(pendingDeletes, sessionUploads, storedKeys) {
-        const referenced = allReferencedKeys();
+       wipes them. "Anywhere" is asked of the database — see
+       freshReferencedKeys — so this is async, and nothing waits on it. */
+    async function flushPendingDeletes(pendingDeletes, sessionUploads, storedKeys) {
         const doomed = new Set();
         pendingDeletes.forEach(k => {
             if (storedKeys.has(k) || sessionUploads.has(k)) doomed.add(k);
         });
         sessionUploads.forEach(k => doomed.add(k));
+        if (!doomed.size) return;
+        const referenced = await freshReferencedKeys();
+        if (!referenced) return;
+        // Whatever an open form now points at is spared as well: the read
+        // above took a moment, and a picture can be added by URL meanwhile.
+        Object.keys(COLLECTIONS).forEach(other => formImageKeys(COLLECTIONS[other].formEl).forEach(k => referenced.add(k)));
         doomed.forEach(k => { if (!referenced.has(k)) deleteImageSafe(k); });
     }
 
@@ -1463,18 +1635,24 @@ document.addEventListener("DOMContentLoaded", () => {
        the server stored it (a dropped connection or a server error can land
        AFTER the write — deleting then would break a saved record). The
        queued removals are simply forgotten: the stored record still uses
-       those pictures. */
-    function discardFormUploads(key) {
+       those pictures.
+
+       The bookkeeping is taken off the form at once, so the caller can
+       close or reopen it straight away; the deciding and deleting happen
+       after the database has been asked (freshReferencedKeys). Returns that
+       promise, which only logout waits for — its deletes need the token. */
+    async function discardFormUploads(key) {
         const formEl = COLLECTIONS[key] && COLLECTIONS[key].formEl;
         if (!formEl || !formEl._sessionUploads) return;
         const uploads = formEl._sessionUploads;
         formEl._sessionUploads = new Set();
         if (formEl._pendingDeletes) formEl._pendingDeletes.clear();
-        if (formEl._saveAmbiguous || !adminToken) return;
-        const referenced = allReferencedKeys();
-        Object.keys(COLLECTIONS).forEach(other => {
-            if (other !== key) formImageKeys(COLLECTIONS[other].formEl).forEach(k => referenced.add(k));
-        });
+        if (formEl._saveAmbiguous || !adminToken || !uploads.size) return;
+        const referenced = await freshReferencedKeys();
+        if (!referenced) return;
+        // Read after the await: by now this form may have been reopened and
+        // be using one of these again (added back by URL), which spares it.
+        Object.keys(COLLECTIONS).forEach(other => formImageKeys(COLLECTIONS[other].formEl).forEach(k => referenced.add(k)));
         uploads.forEach(k => { if (!referenced.has(k)) deleteImageSafe(k); });
     }
 
@@ -1722,13 +1900,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 row.querySelector(".admin-related-thumb-file").addEventListener("change", async e => {
                     const file = e.target.files[0];
                     if (!file) return;
+                    // The entry itself, not its index: the list can be
+                    // reordered or have rows removed while this uploads.
+                    const entry = draft[i];
                     status.textContent = "Uploading…";
                     status.style.display = "block";
                     try {
                         const { url } = await formUpload(formEl, uploadPrefix, file);
+                        const current = formEl._relatedDraft || [];
+                        if (!current.includes(entry)) {
+                            dropOrphanUpload(url);
+                            status.textContent = "That image was removed while its new picture uploaded, so the upload was not kept.";
+                            return;
+                        }
                         noteUpload(formEl, url);
-                        queueImageDelete(formEl, draft[i].image);
-                        draft[i].image = url;
+                        queueImageDelete(formEl, entry.image);
+                        entry.image = url;
                         status.style.display = "none";
                         renderRelatedList();
                     } catch (err) {
@@ -1877,13 +2064,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Room images in the order they appear on the site, so this reads in
         // the same order as the gallery above rather than by object key.
+        //
+        // The entrance and finish come from the FORM's fields, as the
+        // gallery already came from its draft. They were read from the
+        // stored record, so a replaced entrance still listed the old
+        // picture's furni here, and the new one had no tab to add furni to
+        // until the maze had been saved and reopened.
         function imagesInOrder() {
             const out = [];
-            if (item.entrance && item.entrance.image) out.push({ image: item.entrance.image, label: "Entrance" });
+            const field = name => {
+                const el = formEl.querySelector(`input[name="${name}"]`);
+                return el ? el.value.trim() : "";
+            };
+            const bookendImage = kind => formEl.querySelector(`input[name="${kind}Image"]`)
+                ? field(kind + "Image")
+                : ((item[kind] && item[kind].image) || "");
+            const entranceImage = bookendImage("entrance");
+            const finishImage = bookendImage("finish");
+            if (entranceImage) out.push({ image: entranceImage, label: "Entrance" });
             (formEl._galleryDraft || item.gallery || []).forEach((g, i) => {
                 if (g.image) out.push({ image: g.image, label: g.label || ("Room " + (i + 1)) });
             });
-            if (item.finish && item.finish.image) out.push({ image: item.finish.image, label: "Finish" });
+            if (finishImage) out.push({ image: finishImage, label: "Finish" });
             return out;
         }
 
@@ -2239,6 +2441,9 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
+        // So a picture replaced elsewhere in the form can redraw this list
+        // once its furni has moved to the new address — see moveFurniKey.
+        formEl._renderFurni = render;
         render();
     }
 
@@ -2305,8 +2510,12 @@ document.addEventListener("DOMContentLoaded", () => {
             try {
                 const { url } = await formUpload(formEl, uploadPrefix, file);
                 noteUpload(formEl, url);
-                queueImageDelete(formEl, textInput.value);
+                // Read now, after the upload: whatever is in the slot at
+                // this moment is what is being replaced, furni and all.
+                const was = textInput.value;
+                queueImageDelete(formEl, was);
                 textInput.value = url;
+                moveFurniKey(formEl, was, url);
                 if (previewEl) {
                     previewEl.style.backgroundImage = `url('${imgCdn(url, 100, 100, 55)}')`;
                     previewEl.classList.add("admin-gallery-thumb-filled");
@@ -2492,8 +2701,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 subStatus.textContent = "Uploading…";
                 try {
                     const { url } = await formUpload(formEl, uploadPrefix, file);
+                    /* Re-read, not the `items` this render captured: while
+                       the file was uploading, promoting a room to this slot
+                       or removing the slot's picture REPLACES the list, and
+                       a push onto the old one vanished — the picture was in
+                       storage and in no record. With no picture in the slot
+                       any more, an older version of it means nothing (see
+                       the Remove button), so the upload goes too. */
+                    const slotImage = formEl.querySelector(`input[name="${kind}Image"]`);
+                    if (!slotImage || !slotImage.value.trim()) {
+                        dropOrphanUpload(url);
+                        subStatus.textContent = "The picture was removed while this uploaded, so the older version was not kept.";
+                        return;
+                    }
                     noteUpload(formEl, url);
-                    items.push({ image: url, label });
+                    const list = formEl[`_${kind}OldVersions`] || (formEl[`_${kind}OldVersions`] = []);
+                    list.push({ image: url, label });
                     render();
                 } catch (err) {
                     if (err.status === 401) { lockOut(); return; }
@@ -2511,6 +2734,65 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         render();
+    }
+
+    /* ---------- the pop-ups, made safe for a keyboard ----------
+
+       The three dialogs below block the page for a MOUSE — the overlay sits
+       over everything — but did nothing about focus. It stayed on the
+       button that opened the dialog, behind it, so a second Enter pressed
+       that button again: two "Remove this room?" dialogs stacked, two Yeses,
+       and two rooms gone, the second one never asked about.
+
+       So while one is open: focus is inside it (on the safe answer, so a
+       stray or repeated Enter declines rather than confirms), Tab cycles
+       within it, Escape closes it the way × does, everything else on the
+       page is inert — unfocusable and unclickable — and a second dialog
+       asked for meanwhile is refused outright, answering as if declined.
+       Focus goes back where it came from on close.
+
+       Returns null when a dialog is already showing; otherwise a function
+       that tears this one down. */
+    let dialogShowing = false;
+
+    function holdDialog(overlay, initialFocus, onEscape) {
+        if (dialogShowing) return null;
+        dialogShowing = true;
+        const returnTo = document.activeElement;
+        // Only what this made inert is given back — anything already inert
+        // for its own reasons stays so.
+        const madeInert = Array.from(document.body.children).filter(el => el !== overlay && !el.inert);
+        madeInert.forEach(el => { el.inert = true; });
+
+        const focusables = () => Array.from(overlay.querySelectorAll("button:not([disabled]), [href], input, select, textarea"));
+        const onKey = e => {
+            if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                onEscape();
+                return;
+            }
+            if (e.key !== "Tab") return;
+            const list = focusables();
+            if (!list.length) return;
+            const first = list[0];
+            const last = list[list.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+            else if (!overlay.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+        };
+        document.addEventListener("keydown", onKey, true);
+        if (initialFocus) initialFocus.focus();
+
+        return () => {
+            document.removeEventListener("keydown", onKey, true);
+            madeInert.forEach(el => { el.inert = false; });
+            overlay.remove();
+            dialogShowing = false;
+            if (returnTo && typeof returnTo.focus === "function" && document.body.contains(returnTo)) {
+                returnTo.focus({ preventScroll: true });
+            }
+        };
     }
 
     // Pop-up shown when promoting a room image over an entrance/finish slot
@@ -2541,10 +2823,15 @@ document.addEventListener("DOMContentLoaded", () => {
                     </div>
                 </div>
             `;
+            if (dialogShowing) { resolve("cancel"); return; }
             document.body.appendChild(overlay);
 
+            // Opens on Cancel, the answer that changes nothing.
+            const release = holdDialog(overlay, overlay.querySelector('[data-choice="cancel"]'), () => finish("cancel"));
+            if (!release) { overlay.remove(); resolve("cancel"); return; }
+
             function finish(choice) {
-                overlay.remove();
+                release();
                 resolve(choice);
             }
 
@@ -2560,7 +2847,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Generic Yes/No pop-up (same modal-overlay treatment as the dialogs
     // above) — resolves true only if "Yes" was actually clicked; closing
-    // any other way (the × button, clicking outside) counts as "No".
+    // any other way (the × button, clicking outside, Escape) counts as "No".
     function showConfirmDialog(message) {
         return new Promise(resolve => {
             const overlay = document.createElement("div");
@@ -2580,10 +2867,17 @@ document.addEventListener("DOMContentLoaded", () => {
                     </div>
                 </div>
             `;
+            // Refused while another is showing — see holdDialog. Answered
+            // as "No", which is what every caller treats as "do nothing".
+            if (dialogShowing) { resolve(false); return; }
             document.body.appendChild(overlay);
 
+            // Opens on No: Enter pressed again by accident declines.
+            const release = holdDialog(overlay, overlay.querySelector('[data-choice="no"]'), () => finish("no"));
+            if (!release) { overlay.remove(); resolve(false); return; }
+
             function finish(choice) {
-                overlay.remove();
+                release();
                 resolve(choice === "yes");
             }
 
@@ -2616,10 +2910,14 @@ document.addEventListener("DOMContentLoaded", () => {
                     </div>
                 </div>
             `;
+            if (dialogShowing) { resolve(); return; }
             document.body.appendChild(overlay);
 
+            const release = holdDialog(overlay, overlay.querySelector('[data-choice="ok"]'), () => finish());
+            if (!release) { overlay.remove(); resolve(); return; }
+
             function finish() {
-                overlay.remove();
+                release();
                 resolve();
             }
 
@@ -2851,16 +3149,30 @@ document.addEventListener("DOMContentLoaded", () => {
                     thumbFileInput.addEventListener("change", async () => {
                         const file = thumbFileInput.files[0];
                         if (!file) return;
+                        /* The room itself, not its index. `i` is where the
+                           row was when this render drew it; by the time the
+                           upload lands the list can have been reordered, or
+                           this room removed or promoted to entrance/finish —
+                           and draft[i] was then a different room, which had
+                           its picture silently swapped for this one. */
+                        const entry = draft[i];
                         status.style.display = "block";
                         status.textContent = "Uploading…";
                         try {
                             const { url } = await formUpload(formEl, uploadPrefix, file);
+                            if (!(formEl._galleryDraft || []).includes(entry)) {
+                                dropOrphanUpload(url);
+                                status.textContent = "That room left the list while its picture uploaded, so the upload was not kept.";
+                                return;
+                            }
                             noteUpload(formEl, url);
                             // Replacing used to leave the old picture in
                             // storage for good; it goes on the after-save
                             // list now, like a removal.
-                            queueImageDelete(formEl, draft[i].image);
-                            draft[i].image = url;
+                            const was = entry.image;
+                            queueImageDelete(formEl, was);
+                            entry.image = url;
+                            moveFurniKey(formEl, was, url);
                             status.style.display = "none";
                             renderGalleryList();
                         } catch (err) {
@@ -2995,10 +3307,18 @@ document.addEventListener("DOMContentLoaded", () => {
                     subAddBtn.disabled = true;
                     subStatus.style.display = "block";
                     subStatus.textContent = "Uploading…";
+                    // The room, not its index — see the thumbnail upload
+                    // above for what the index went wrong with.
+                    const entry = draft[i];
                     try {
                         const { url } = await formUpload(formEl, uploadPrefix, file);
+                        if (!(formEl._galleryDraft || []).includes(entry)) {
+                            dropOrphanUpload(url);
+                            subStatus.textContent = "That room left the list while this uploaded, so the older version was not kept.";
+                            return;
+                        }
                         noteUpload(formEl, url);
-                        draft[i].oldVersions.push({ image: url, label });
+                        entry.oldVersions.push({ image: url, label });
                         renderGalleryList();
                     } catch (err) {
                         if (err.status === 401) { lockOut(); return; }
@@ -3102,9 +3422,15 @@ document.addEventListener("DOMContentLoaded", () => {
        related pictures in storage for good. Called after the record is gone
        from the working list, so a picture another record still points at
        (a thumbnail aimed at somebody else's room by hand) is spared. */
-    function cleanupItemImages(item) {
-        const referenced = allReferencedKeys();
-        imageKeysOf(item).forEach(key => {
+    async function cleanupItemImages(item) {
+        const keys = imageKeysOf(item);
+        if (!keys.size) return;
+        // Asked of the database, not the list loaded at sign-in — see
+        // freshReferencedKeys. Nothing is deleted if that read fails.
+        const referenced = await freshReferencedKeys();
+        if (!referenced) return;
+        Object.keys(COLLECTIONS).forEach(other => formImageKeys(COLLECTIONS[other].formEl).forEach(k => referenced.add(k)));
+        keys.forEach(key => {
             if (!referenced.has(key)) deleteImageSafe(key);
         });
     }
@@ -3381,6 +3707,16 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
 
+        /* Enter in the link reads it, as the button beside it does. It used
+           to save the event and close the form, with the link unread — the
+           field's own note says an unread link stores nothing, so the
+           article the admin had just pasted was quietly not kept. */
+        urlInput.addEventListener("keydown", e => {
+            if (e.key !== "Enter" || e.isComposing) return;
+            e.preventDefault();
+            if (!button.disabled) button.click();
+        });
+
         // Editing the link away from what was stored puts the field back to
         // "not read yet", so it cannot look saved when it is not.
         urlInput.addEventListener("input", refresh);
@@ -3468,6 +3804,7 @@ document.addEventListener("DOMContentLoaded", () => {
            Edit on imageless maze B carried A's furni draft into B, and
            Save wrote A's furni onto B. */
         cfg.formEl._furniDraft = null;
+        cfg.formEl._renderFurni = null;
 
         /* The after-save bookkeeping — see imageKeysOf and
            discardFormUploads. What the stored record held when this form
@@ -3765,6 +4102,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl.innerHTML = `
             <h3 class="admin-form-title">${isEdit ? "Edit " + cfg.singular : "Add a New " + cfg.singular}</h3>
             ${fieldRow(cfg.titleLabel, `<input type="text" name="title" required value="${escapeHtml(item[cfg.fieldMap.title] || "")}">`)}
+            ${window.AddressField ? window.AddressField.html(isRooms ? "maze" : "event", isEdit ? item.slug || "" : "") : ""}
             ${fieldRow(cfg.subtitleLabel, `<input type="text" name="subtitle" value="${escapeHtml(item[cfg.fieldMap.subtitle] || "")}">`)}
             ${ecSeasonFieldHtml}
             ${statusFieldHtml}
@@ -3811,6 +4149,21 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
 
         cfg.formEl.dataset.editId = isEdit ? editId : "";
+        /* The address (/maze/<slug>), which follows the name unless it is set
+           by hand — see js/admin-address.js. A clash is looked for among the
+           other records' addresses, ids and old addresses, the same three
+           the server refuses. */
+        cfg.formEl._address = window.AddressField ? window.AddressField.wire(cfg.formEl, {
+            titleInput: cfg.formEl.querySelector('input[name="title"]'),
+            current: isEdit ? item.slug || "" : "",
+            manual: isEdit ? item.slugManual : undefined,
+            prefix: isRooms ? "maze" : "event",
+            taken: slug => {
+                const other = cfg.getAll().find(r => r.id !== editId
+                    && (r.slug === slug || r.id === slug || (Array.isArray(r.slugAliases) && r.slugAliases.includes(slug))));
+                return other ? other[cfg.fieldMap.title] || other.id : "";
+            }
+        }) : null;
         cfg.formEl.classList.add("is-open");
         cfg.addBtn.style.display = "none";
         cfg.formEl.querySelector(".admin-cancel-btn").addEventListener("click", () => requestCloseForm(key));
@@ -3965,6 +4318,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl._galleryDraft = null;
         cfg.formEl._relatedDraft = null;
         cfg.formEl._furniDraft = null;
+        cfg.formEl._renderFurni = null;
         cfg.formEl._selectedTags = null;
         cfg.formEl._expandedOldVersions = null;
         cfg.formEl._entranceOldVersions = null;
@@ -3997,6 +4351,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const newInput = formEl.querySelector(".admin-tag-new-input");
         const addBtn = formEl.querySelector(".admin-tag-add-btn");
         const status = formEl.querySelector(".admin-tag-status");
+        /* The opening this picker belongs to, and ITS set of ticked tags,
+           held from here on rather than read off the form each time. The
+           form element outlives any one maze: after an await below it can
+           have been closed (and its set nulled) or reopened on another maze
+           (and given a new set), and reading formEl._selectedTags then
+           ticked a tag created for maze A on maze B. */
+        const session = formEl._openSession;
+        const selected = formEl._selectedTags;
+        const stillOpen = () => formEl._openSession === session && formEl._selectedTags === selected;
 
         let tagPool = [];
         let tagPoolFailed = false;
@@ -4006,6 +4369,9 @@ document.addEventListener("DOMContentLoaded", () => {
             tagPool = [];
             tagPoolFailed = true;
         }
+        // The form moved on while the list loaded; the new opening has its
+        // own picker.
+        if (!stillOpen()) return;
 
         /* Built as elements rather than a joined string of markup. A tag is
            free text anyone with write access can create (see addNewTag
@@ -4016,7 +4382,6 @@ document.addEventListener("DOMContentLoaded", () => {
            back out of dataset exactly as it went in, which is what the
            selected set is keyed on. */
         function renderChips() {
-            const selected = formEl._selectedTags;
             const allTags = Array.from(new Set([...tagPool, ...selected]));
             listEl.innerHTML = "";
             if (!allTags.length && tagPoolFailed) {
@@ -4050,10 +4415,13 @@ document.addEventListener("DOMContentLoaded", () => {
             status.style.display = "none";
             try {
                 const result = await Api.createTag(adminToken, label);
+                // The tag exists now either way (it is shared vocabulary),
+                // but it is only ticked on the maze it was typed for.
+                if (!stillOpen()) return;
                 if (!tagPool.some(t => t.toLowerCase() === result.label.toLowerCase())) {
                     tagPool.push(result.label);
                 }
-                formEl._selectedTags.add(result.label);
+                selected.add(result.label);
                 newInput.value = "";
                 renderChips();
             } catch (err) {
@@ -4095,6 +4463,31 @@ document.addEventListener("DOMContentLoaded", () => {
         return "";
     }
 
+    /* The same question for a maze's opening date: Day, Month and Year.
+
+       A month and a year is a whole answer (the site says "March 2005"), and
+       so is nothing at all. Anything else used to be treated as nothing: a
+       year typed with the month left on "Month" saved as "", which ERASED
+       the date the maze already had, silently. And a day the month does not
+       have — 31 February — was stored as it was typed. Both are refused now,
+       with the reason, as dateFault does for events. */
+    function mazeDateFault(year, month, day) {
+        if (!year && !month && !day) return "";
+        if (!year || !month) {
+            return "The opening date needs both a month and a year. Pick both, or clear all three boxes to leave it unset.";
+        }
+        if (!/^\d{4}$/.test(year) || Number(year) < 2000 || Number(year) > 2100) {
+            return "The opening year should be four digits, between 2000 and 2100.";
+        }
+        if (day) {
+            const d = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+            if (d.getUTCMonth() !== Number(month) - 1 || d.getUTCDate() !== Number(day)) {
+                return `${MONTH_NAMES[Number(month) - 1]} ${year} has no day ${Number(day)}.`;
+            }
+        }
+        return "";
+    }
+
     async function submitForm(key, e) {
         e.preventDefault();
         const cfg = COLLECTIONS[key];
@@ -4125,6 +4518,10 @@ document.addEventListener("DOMContentLoaded", () => {
         };
         payload[cfg.fieldMap.title] = data.title;
         payload[cfg.fieldMap.subtitle] = data.subtitle;
+        // The address, and whether it follows the name (js/admin-address.js).
+        // The old addresses are the server's to keep, never the form's.
+        delete payload.slugAliases;
+        if (form._address) Object.assign(payload, form._address.payload());
 
         /* The server's own bookkeeping, taken back out of the spread above.
            `...existing` sent the stored change list and both timestamps
@@ -4157,6 +4554,13 @@ document.addEventListener("DOMContentLoaded", () => {
             payload.date = startDate && startTime ? `${startDate}T${startTime}:00Z` : "";
             payload.endDate = endDate && endTime ? `${endDate}T${endTime}:00Z` : "";
             payload._dateFault = dateFault(startDate, startTime, endDate, endTime);
+            /* "live" is never sent. The status box works it out from the
+               dates and can say LIVE (see wireDerivedStatus), but it is not
+               a status the events endpoint stores — a live event is an
+               upcoming one whose start has passed, and the site derives the
+               rest from its dates. Sending it made every save of an event
+               that was running at the time fail. */
+            if (payload.status === "live") payload.status = "upcoming";
             // "" for Regular, which is also what an event that predates the
             // field reads as. Written either way so switching an event back
             // to Regular actually clears it.
@@ -4194,6 +4598,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 // An unrecognised stored value stays unless a date was
                 // picked — see _rawDate in openForm.
                 : (form._rawDate || "");
+            // Half a date, or one that does not exist, is refused below
+            // rather than saved as nothing — see mazeDateFault.
+            payload._dateFault = mazeDateFault(year, month, day);
         }
 
         if (key === "rooms") {
@@ -4207,23 +4614,29 @@ document.addEventListener("DOMContentLoaded", () => {
         // Dropped if an upload left a row without an image — a related
         // image with nothing to show has no meaning on the public side.
         payload.relatedImages = (form._relatedDraft || []).filter(r => r.image);
-        /* Furni is only sent when the furni editor actually changed it.
+        /* Furni goes as a PATCH, never as the whole object.
 
            A scan writes a maze's furni straight into the database without
            touching updatedAt (tools/furni-scan-local.js), so the conflict
            check below cannot see it. A form opened before the scan finished
            and saved after it used to send its own, pre-scan copy — both the
            draft and, through `...existing`, the stored furni as it was when
-           the page loaded — and silently wiped out the scan's results.
-           Leaving the field off the save lets $set keep whatever is stored.
+           the page loaded — and silently wiped out the scan's results. The
+           step before this sent furni only when the editor had changed it,
+           which still sent the WHOLE object then, and so still wiped every
+           room the scan had just done whenever one room was edited.
 
-           The one exception is the orphan pruning further down: if the
-           gallery lost a picture that has furni recorded against it, the
-           pruned copy has to be written, and that save does carry the
-           form's copy of the furni. */
+           So `furni` is never sent now. furniPatch carries only the picture
+           addresses this form changed: { "<image url>": record } for a room
+           edited here, null for one to delete. rooms.js applies it to the
+           furni AS STORED, under its own furniRev compare-and-set, so a room
+           nobody touched here keeps whatever the scan wrote into it.
+           furniRev is the server's counter and goes back out of the spread
+           along with furni itself. Built just below, after the entrance and
+           finish are known, because the orphan pruning needs them. */
         delete payload.furni;
-        const furniChanged = !!form._furniDraft && JSON.stringify(form._furniDraft) !== form._furniOriginal;
-        if (form._furniDraft) payload.furni = form._furniDraft;
+        delete payload.furniRev;
+        delete payload.furniPatch;
         /* The entrance and finish keep any sub-fields the editor does not
            know about, as the gallery entries now do — but only while the
            slot still holds the same picture: details belonging to the old
@@ -4256,8 +4669,11 @@ document.addEventListener("DOMContentLoaded", () => {
            Conservative on purpose — it only ever removes a key that matches
            no picture at all. An existing orphan is cleared the next time its
            maze is saved, so this cleans up behind itself without a migration
-           and without touching the database directly. */
-        if (payload.furni) {
+           and without touching the database directly.
+
+           The pruning is part of the patch now: a dropped key is a null
+           entry in furniPatch, not a key missing from a whole object. */
+        if (form._furniDraft) {
             const keep = new Set();
             const note = img => { if (img) keep.add(img); };
             const withOld = entry => {
@@ -4269,20 +4685,29 @@ document.addEventListener("DOMContentLoaded", () => {
             withOld(payload.finish);
             (payload.gallery || []).forEach(withOld);
 
-            const pruned = {};
+            let original = {};
+            try { original = JSON.parse(form._furniOriginal || "{}") || {}; } catch (e) { original = {}; }
+            const draft = form._furniDraft;
+            const patch = {};
             let dropped = 0;
-            for (const [image, record] of Object.entries(payload.furni)) {
-                if (keep.has(image)) pruned[image] = record;
-                else dropped++;
+            // Changed or new here: sent as the draft has it.
+            for (const [image, record] of Object.entries(draft)) {
+                if (!keep.has(image)) continue;
+                if (JSON.stringify(record) !== JSON.stringify(original[image])) patch[image] = record;
             }
-            if (dropped) {
-                console.info(`Dropped ${dropped} furni record${dropped === 1 ? "" : "s"} with no matching picture.`);
-                payload.furni = pruned;
-            } else if (!furniChanged) {
-                // Nothing edited and nothing to prune: leave the stored
-                // furni to the database — see the note above.
-                delete payload.furni;
+            // Deleted here (a replaced picture's old address — see
+            // moveFurniKey), or an orphan of a picture this maze no longer
+            // has: null, which rooms.js reads as "remove this key".
+            for (const image of new Set([...Object.keys(original), ...Object.keys(draft)])) {
+                if (!keep.has(image)) {
+                    patch[image] = null;
+                    dropped++;
+                } else if (!(image in draft) && (image in original)) {
+                    patch[image] = null;
+                }
             }
+            if (dropped) console.info(`Dropping ${dropped} furni record${dropped === 1 ? "" : "s"} with no matching picture.`);
+            if (Object.keys(patch).length) payload.furniPatch = patch;
         }
 
         const submitBtn = form.querySelector("button[type=submit]");
@@ -4303,6 +4728,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const fault = payload._dateFault;
         delete payload._dateFault;
         if (fault) { refuse(fault); return; }
+
+        const addressProblem = form._address && form._address.problem();
+        if (addressProblem) { refuse(addressProblem); return; }
 
         if (key === "events" && payload.date && payload.endDate && payload.endDate <= payload.date) {
             refuse("The event's end must be after its start.");
@@ -4481,14 +4909,20 @@ document.addEventListener("DOMContentLoaded", () => {
                     <p class="row-creator">${ROLE_LABELS[role] || "Admin"} · ${admin.createdAt ? "Added " + escapeHtml(String(admin.createdAt).slice(0, 10)) : ""}</p>
                 </div>
                 <div class="admin-row-actions">
-                    ${(isSelf || canDelete) ? `<button type="button" class="btn admin-reset-btn">Reset Password</button>` : ""}
+                    ${(isSelf || canDelete) ? `<button type="button" class="btn ${isSelf ? "admin-self-reset-btn" : "admin-reset-btn"}">Reset Password</button>` : ""}
                     ${canDelete && admin.username !== PERMANENT_OWNER ? `<button type="button" class="btn admin-delete-btn" ${workingAdmins.length <= 1 ? "disabled" : ""}>Delete</button>` : ""}
                 </div>
             `;
             // Only an owner can reset someone else's password (also enforced
             // server-side, see netlify/functions/auth.js's PUT handler) — a
             // standard admin only ever sees this button on their own row.
-            const resetBtn = row.querySelector(".admin-reset-btn");
+            /* Your own row's button carries a class of its own. The
+               view-only greying (body.is-viewer .admin-reset-btn in
+               style.css) is right for resetting SOMEBODY ELSE, which only an
+               owner may do — but changing your own password is the "self"
+               scope, which every role has (WRITE_SCOPES in _auth.js, viewer
+               included), and a greyed button said a viewer could not. */
+            const resetBtn = row.querySelector(".admin-reset-btn, .admin-self-reset-btn");
             if (resetBtn) resetBtn.addEventListener("click", () => openResetForm(admin.username));
             const deleteBtn = row.querySelector(".admin-delete-btn");
             if (deleteBtn) deleteBtn.addEventListener("click", () => deleteAdmin(admin.username));
@@ -4525,12 +4959,20 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
         adminsFormEl.dataset.mode = "create";
         adminsFormEl.dataset.username = "";
+        adminsFormEl.dataset.self = "";
         openAdminsForm();
     }
 
     function openResetForm(username) {
+        /* Your own row asks for your current password too. The server treats
+           a change to the caller's own password as the "self" case and
+           refuses it without one (auth.js) — the same rule as the account
+           tab's box, which this is just another way into. Somebody else's
+           row, reset by an owner, needs no such thing. */
+        const isSelf = username === currentUsername;
         adminsFormEl.innerHTML = `
             <h3 class="admin-form-title">Reset Password — ${escapeHtml(username)}</h3>
+            ${isSelf ? fieldRow("Your current password", `<input type="password" name="currentPassword" required autocomplete="current-password">`) : ""}
             ${fieldRow("New password (8+ characters)", `<input type="password" name="password" required minlength="8" autocomplete="new-password">`)}
             ${fieldRow("Confirm new password", `<input type="password" name="confirm" required minlength="8" autocomplete="new-password">`)}
             <p class="admin-form-error" style="display:none;"></p>
@@ -4541,6 +4983,9 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
         adminsFormEl.dataset.mode = "reset";
         adminsFormEl.dataset.username = username;
+        // Marks the one form in this panel a view-only account may submit,
+        // so the stylesheet can lift its greying (#admins-form[data-self]).
+        adminsFormEl.dataset.self = isSelf ? "true" : "";
         openAdminsForm();
     }
 
@@ -4575,7 +5020,10 @@ document.addEventListener("DOMContentLoaded", () => {
             if (adminsFormEl.dataset.mode === "create") {
                 await Api.createAdmin(adminToken, data.username.trim(), data.password, data.role);
             } else {
-                const changed = await Api.resetAdminPassword(adminToken, adminsFormEl.dataset.username, data.password);
+                // Read through FormData, which gets the real values from
+                // js/password-field.js's hidden partners, not the masks.
+                const changed = await Api.resetAdminPassword(adminToken, adminsFormEl.dataset.username, data.password,
+                    data.currentPassword || undefined);
                 // An owner resetting their own row from this list: keep them
                 // signed in with the replacement token (see saveOwnPassword).
                 if (changed && changed.token) {
@@ -4939,6 +5387,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 discordTag.textContent = ` · Discord: ${msg.discord}`;
                 heading.appendChild(discordTag);
             }
+            /* The account the message was SENT from, when the sender was
+               signed in — the unique Discord handle, which the server
+               checked. msg.discord above is only what they typed, and can
+               be anybody's name. */
+            if (msg.from && msg.from.username) {
+                const fromTag = document.createElement("span");
+                fromTag.className = "admin-contributor-count";
+                fromTag.textContent = ` · signed in as @${msg.from.username}`;
+                heading.appendChild(fromTag);
+            }
 
             const body = document.createElement("p");
             body.className = "row-creator";
@@ -5048,9 +5506,43 @@ document.addEventListener("DOMContentLoaded", () => {
         launchAtStatus.style.display = text ? "block" : "none";
     }
 
-    async function saveLaunchAt(value) {
-        const iso = localFieldToIso(value);
+    /* Whether the two launch fields hold what is actually stored.
+
+       They are filled by loadLandingState. If that read failed, or came from
+       the outage stand-in, they were left EMPTY — and an empty field saved
+       is a clear. So pressing Save on a panel whose settings had not loaded
+       switched the site's countdown off without anybody having asked for
+       that. Until a real read has filled them, neither can be saved. */
+    let launchFieldsLoaded = false;
+    const LAUNCH_NOT_LOADED = "The current settings didn't load, so this can't be saved safely — reload the page first.";
+
+    /* The saved moment in both zones. The field is UTC and says so, but the
+       person reading the confirmation lives in one zone and thinks in it, and
+       "08:00 UTC" read as local time is how a launch is announced for the
+       wrong hour. */
+    function bothZones(iso) {
+        const d = new Date(iso);
+        const utc = d.toUTCString().replace(" GMT", " UTC");
+        const local = d.toLocaleString(undefined, {
+            weekday: "short", day: "numeric", month: "short", year: "numeric",
+            hour: "2-digit", minute: "2-digit", timeZoneName: "short"
+        });
+        return utc + " (" + local + " your time)";
+    }
+
+    /* clearing: the Clear button, which asks first. Save with the field
+       empty is NOT a clear any more — it used to be, silently, which made
+       an accidental Save on a blank field the same as deciding there was no
+       launch date. */
+    async function saveLaunchAt(value, clearing) {
+        if (!launchFieldsLoaded) { showLaunchAtStatus(LAUNCH_NOT_LOADED); return; }
+        if (!clearing && !String(value || "").trim()) {
+            showLaunchAtStatus("Pick a date and time first. To switch the countdown off, use Clear.");
+            return;
+        }
+        const iso = clearing ? "" : localFieldToIso(value);
         if (iso === null) { showLaunchAtStatus("That is not a date I can read."); return; }
+        if (clearing && !await showConfirmDialog("Clear the launch countdown? The landing page goes back to just saying Coming Soon.")) return;
         const controls = [launchAtInput, launchAtSave, launchAtClear].filter(Boolean);
         controls.forEach(c => c.disabled = true);
         showLaunchAtStatus("");
@@ -5058,7 +5550,7 @@ document.addEventListener("DOMContentLoaded", () => {
             await Api.updateSiteSettings(adminToken, { launchAt: iso });
             launchAtInput.value = isoToLocalField(iso);
             showLaunchAtStatus(iso
-                ? "Counting down to " + new Date(iso).toUTCString().replace(" GMT", " UTC") + "."
+                ? "Counting down to " + bothZones(iso) + "."
                 : "Countdown off — the gate just says Coming Soon.");
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
@@ -5068,12 +5560,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    if (launchAtSave) launchAtSave.addEventListener("click", () => saveLaunchAt(launchAtInput.value));
+    if (launchAtSave) launchAtSave.addEventListener("click", () => saveLaunchAt(launchAtInput.value, false));
     // The field is emptied by saveLaunchAt once the clear has saved, not
     // before: blanked up front, a refused clear (a viewer's 403, a dropped
     // connection) left the field reading "no launch date" while the stored
     // one was still counting down.
-    if (launchAtClear) launchAtClear.addEventListener("click", () => saveLaunchAt(""));
+    if (launchAtClear) launchAtClear.addEventListener("click", () => saveLaunchAt("", true));
 
     /* ---------- Fallin' Furni's own launch date ----------
 
@@ -5089,19 +5581,29 @@ document.addEventListener("DOMContentLoaded", () => {
         ffLaunchAtStatus.style.display = text ? "block" : "none";
     }
 
-    async function saveFfLaunchAt(value) {
-        const iso = localFieldToIso(value);
+    // Same rules as saveLaunchAt: no saving fields that never loaded, an
+    // empty Save is an error, and Clear asks.
+    async function saveFfLaunchAt(value, clearing) {
+        if (!launchFieldsLoaded) { showFfLaunchAtStatus(LAUNCH_NOT_LOADED); return; }
+        if (!clearing && !String(value || "").trim()) {
+            showFfLaunchAtStatus("Pick a date and time first. To remove the launch date, use Clear.");
+            return;
+        }
+        const iso = clearing ? "" : localFieldToIso(value);
         if (iso === null) { showFfLaunchAtStatus("That is not a date I can read."); return; }
+        if (clearing && !await showConfirmDialog("Clear Fallin' Furni's launch date? There is then no Launch Week, and its boards count from the site's launch.")) return;
         const controls = [ffLaunchAtInput, ffLaunchAtSave, ffLaunchAtClear].filter(Boolean);
         controls.forEach(c => c.disabled = true);
         showFfLaunchAtStatus("");
         try {
             await Api.updateSiteSettings(adminToken, { ffLaunchAt: iso });
             ffLaunchAtInput.value = isoToLocalField(iso);
+            currentFfLaunchAt = iso;
             showFfLaunchAtStatus(iso
-                ? "Boards count and Launch Week starts from " + new Date(iso).toUTCString().replace(" GMT", " UTC") +
+                ? "Boards count and Launch Week starts from " + bothZones(iso) +
                   ". The game still opens only when its switch is on Live."
                 : "No date — no Launch Week, and the boards count from the site's launch.");
+            sayFfMismatch();
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
             showFfLaunchAtStatus(err.message || "Couldn't save the Fallin' Furni launch date.");
@@ -5110,10 +5612,39 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    if (ffLaunchAtSave) ffLaunchAtSave.addEventListener("click", () => saveFfLaunchAt(ffLaunchAtInput.value));
+    if (ffLaunchAtSave) ffLaunchAtSave.addEventListener("click", () => saveFfLaunchAt(ffLaunchAtInput.value, false));
     // Emptied by saveFfLaunchAt once the clear has saved, not before — the
     // same reason as the site countdown's Clear above.
-    if (ffLaunchAtClear) ffLaunchAtClear.addEventListener("click", () => saveFfLaunchAt(""));
+    if (ffLaunchAtClear) ffLaunchAtClear.addEventListener("click", () => saveFfLaunchAt("", true));
+
+    /* The Fallin' Furni switch and its launch date, checked against each
+       other.
+
+       They are separate on purpose — the date does not open the game (see
+       the note in warren.html) — which means they can disagree, and each
+       disagreement is a mistake that looks fine from either control alone:
+       Live with the launch still ahead lets people play before the boards
+       count, so the first days' runs vanish from them; closed with the
+       launch passed means Launch Week is running on a game nobody can
+       reach. Said under the switch whenever either changes, and on load. */
+    let currentFfState = "";
+    let currentFfLaunchAt = "";
+
+    function sayFfMismatch() {
+        if (!ffToggleStatus || !currentFfState) return;
+        const at = currentFfLaunchAt ? new Date(currentFfLaunchAt).getTime() : NaN;
+        let warning = "";
+        if (!isNaN(at)) {
+            if (currentFfState === "live" && at > Date.now()) {
+                warning = "Heads up: Fallin' Furni is Live, but its launch date is still ahead (" +
+                    bothZones(currentFfLaunchAt) + "). Players can play now, and their runs won't count on the boards until then.";
+            } else if (currentFfState !== "live" && at <= Date.now()) {
+                warning = "Heads up: Fallin' Furni's launch date has passed, but its switch isn't on Live — Launch Week is running on a game players can't open.";
+            }
+        }
+        ffToggleStatus.textContent = warning;
+        ffToggleStatus.style.display = warning ? "block" : "none";
+    }
 
     async function loadLandingState() {
         try {
@@ -5126,16 +5657,23 @@ document.addEventListener("DOMContentLoaded", () => {
                one — "Live" highlighted on a site that is actually closed —
                so nothing is lit and the reason is said instead. */
             if (fromCache) {
+                launchFieldsLoaded = false;
                 landingToggleStatus.textContent = "Couldn't read the current site settings — reload to see which mode is on.";
                 landingToggleStatus.style.display = "block";
                 return;
             }
             if (launchAtInput) launchAtInput.value = isoToLocalField(launchAt);
             if (ffLaunchAtInput) ffLaunchAtInput.value = isoToLocalField(ffLaunchAt);
+            // Only now do the two fields say what is stored — see
+            // launchFieldsLoaded.
+            launchFieldsLoaded = true;
             landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
             renderDevModeLink(landingState);
             const ff = fallinFurniState || "live";
             ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
+            currentFfState = ff;
+            currentFfLaunchAt = ffLaunchAt || "";
+            sayFfMismatch();
             // getSiteSettings has already applied the palette to this page —
             // this only lights the button that matches what is stored.
             // Whatever is stored, if a button offers it. This used to know
@@ -5145,7 +5683,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const palette = offered ? theme : "classic";
             themeToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.themeState === palette));
         } catch (e) {
-            // best-effort — the toggles just won't show anything highlighted
+            // best-effort — the toggles just won't show anything highlighted.
+            // The launch fields are empty, not loaded, so they stay unsavable.
+            launchFieldsLoaded = false;
         }
     }
 
@@ -5202,6 +5742,8 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             await Api.updateSiteSettings(adminToken, { fallinFurniState: state });
             ffToggleBtns.forEach(b => b.classList.toggle("active", b === clickedBtn));
+            currentFfState = state;
+            sayFfMismatch();
             return true;
         } catch (err) {
             // The same expired-session handling as the landing switch above.
@@ -5337,8 +5879,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function pollFurniProgress() {
+        // Signed out (or locked out) since the timer was set: nothing to
+        // ask, and asking with no token is just a 401 — see lockOut.
+        if (!adminToken) { stopFurniPolling(); return; }
+        const askedWith = adminToken;
         try {
             const p = await Api.furniScanStatus(adminToken);
+            // The session ended while this was in flight; its answer is
+            // for a page that is no longer signed in.
+            if (adminToken !== askedWith) return;
             // Someone else's record — the run we started hasn't written yet.
             // Treated as nothing reported in, so the cold-start grace below
             // applies rather than the previous run's outcome being shown.
@@ -5388,7 +5937,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             }
         } catch (err) {
-            if (err.status === 401) { lockOut(); return; }
+            // Only the session this poll was asked under can be expired by
+            // it — a 401 landing after a logout must not put "Session
+            // expired" into a login box nobody's session ran out in.
+            if (err.status === 401) { if (adminToken === askedWith) lockOut(); else stopFurniPolling(); return; }
+            // 503: the database could not be asked who this is (_auth.js's
+            // AUTH_UNAVAILABLE). A blip, not an answer — keep polling.
+            if (err.status === 503) return;
             stopFurniPolling();
         }
     }
@@ -5576,10 +6131,35 @@ document.addEventListener("DOMContentLoaded", () => {
 
     adminsAddBtn.addEventListener("click", openCreateAdminForm);
 
+    /* Enter in a one-line field never saves the maze or event form.
+
+       A form with a submit button submits when Enter is pressed in any of
+       its single-line inputs, and these forms are long: the title, a room's
+       label, an older version's label, the Habbo link, the year. Each one
+       was a way to save half an edit and close the form mid-sentence.
+       Several fields had grown their own guard (the furni search, the new
+       room's label, the Add-from-URL boxes, the tag box); this is the one
+       guard for all of them, including every field added later. Fields
+       that give Enter a meaning of their own still do — they handle it on
+       the field first, and this only stops the submission behind it.
+       Save is the Save button (or the floating one); a textarea's Enter is
+       a new line and is left alone. */
+    function blockImplicitSubmit(formEl) {
+        formEl.addEventListener("keydown", e => {
+            if (e.key !== "Enter" || e.isComposing) return;
+            const t = e.target;
+            if (!t || t.tagName !== "INPUT") return;
+            // Nor a file input, where Enter opens the picker.
+            if (/^(submit|button|reset|image|file)$/i.test(t.type)) return;
+            e.preventDefault();
+        });
+    }
+
     Object.keys(COLLECTIONS).forEach(key => {
         const cfg = COLLECTIONS[key];
         cfg.addBtn.addEventListener("click", () => requestOpenForm(key));
         cfg.formEl.addEventListener("submit", e => submitForm(key, e));
+        blockImplicitSubmit(cfg.formEl);
     });
 
     // Sidebar shortcuts to the same two forms — openForm's own
@@ -5715,7 +6295,22 @@ document.addEventListener("DOMContentLoaded", () => {
     if (adminNavEl) {
         adminNavEl.addEventListener("click", e => {
             const btn = e.target.closest(".chrome-nav-btn");
-            if (btn) showPanel(btn.dataset.panel);
+            if (!btn) return;
+            showPanel(btn.dataset.panel);
+            /* Focus follows the choice into the panel. Left on the nav
+               button, it kept the Nav tab open by :focus-within after the
+               click had closed its .is-open — the menu sat over the very
+               panel it had just brought up until you clicked somewhere
+               else. The panel is made focusable for this alone (-1: never
+               a Tab stop), and preventScroll because the stage is already
+               where it should be. */
+            const panel = adminPanelEls.find(p => p.dataset.panel === btn.dataset.panel);
+            if (panel) {
+                if (!panel.hasAttribute("tabindex")) panel.setAttribute("tabindex", "-1");
+                panel.focus({ preventScroll: true });
+            } else {
+                btn.blur();
+            }
         });
     }
 

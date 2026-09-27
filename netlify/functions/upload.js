@@ -2,7 +2,7 @@
    room-by-room gallery screenshots) in Netlify Blobs, gated by the same
    x-admin-token used by rooms.js/events.js. Images are served back out
    through image.js. */
-const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED } = require("./_auth");
+const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED, AUTH_UNAVAILABLE } = require("./_auth");
 const { imagesStore } = require("./_images");
 const { SECURITY_HEADERS } = require("./_headers");
 const { isSafeKey } = require("./_keys");
@@ -49,7 +49,21 @@ function folderOfKey(key) {
     return slash === -1 ? "" : key.slice(0, slash);
 }
 
+/* The whole handler inside one try. The blob write and delete had nothing
+   around them, so a Blobs outage answered with Lambda's errorType and stack
+   trace in the body; and canWrite now throws when the account lookup cannot
+   be made (lookUpRole in _auth.js), which has to reach the admin page as a
+   503 it retries, not the 401 that signs it out mid-upload. */
 exports.handler = async (event) => {
+    try {
+        return await handle(event);
+    } catch (e) {
+        console.error("upload: request failed", e);
+        return AUTH_UNAVAILABLE;
+    }
+};
+
+async function handle(event) {
     if (!isAuthorized(event)) return UNAUTHORIZED;
 
     const store = imagesStore();
@@ -129,4 +143,4 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
-};
+}

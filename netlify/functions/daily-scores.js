@@ -2,14 +2,21 @@
 
    GET  ?game=odd&day=YYYY-MM-DD    today's board, and the week, month and
                                     all-time tables
-   POST {game, day, moves}          records the signed-in player's finished
-                                    day
+   GET  ?game=odd&deal=1[&day=]     the day's deal to play: the server's
+                                    today unless a still-open day is named,
+                                    pictures only — see _deal.js — and, for
+                                    a signed-in player, their moves so far
    POST {game, day, action: "start"}
                                     starts the signed-in player's clock for
                                     the day's speed bonus — see _speed.js
-   POST {game, day, action: "mark", round}
-                                    marks the end of one round, for the
-                                    same bonus — see _speed.js
+   POST {game, day, action: "move", round, tile}
+                                    one pick, judged against the stored
+                                    deal now; recorded for a signed-in
+                                    player, only answered for anybody else
+   POST {game, day[, moves]}        records the signed-in player's finished
+                                    day, scored from the moves recorded —
+                                    `moves` is read only for a day played
+                                    signed out (see scoreClaim)
 
    Guess the Maze has had a board since it was built (guess-scores.js); this
    is the same idea for the games beside it.
@@ -36,37 +43,41 @@
    ----------------------------------------------------------------------
    How much this trusts the page
 
-   The same amount guess-scores.js does, and for the same reasons. The day's
-   rooms, intruders and answers are DERIVED here, from the same seeded
-   shuffle the browser runs over the same archive out of the same database.
-   The page sends what it DID — which tile was picked — and never a score.
-   Points are computed here.
+   The same amount guess-scores.js does, and for the same reasons. The day
+   is dealt HERE, once, and stored (_deal.js); the page is handed the
+   pictures and nothing that says which is the imposter. Each pick is sent
+   the moment it is made, judged against the stored deal then, and — for a
+   signed-in player — written down with the time it arrived (_speed.js).
+   The day's score is built from those written-down picks and nothing else:
+   the finishing request carries no answers that count.
 
-   What that does not stop is somebody writing a request by hand claiming
-   the right move every time. Closing that needs the server to hand out the
-   puzzle and time the answers, which is a much larger thing and the wrong
-   shape for a game whose whole appeal is a static page and a seed. So:
-   casual inflation is impossible, deliberate forgery by someone willing to
-   write the request is not, and one submission per player per day is the
-   backstop that stops even that compounding.
+   It used to be the other way round: the page dealt the day from a seed
+   anybody could compute, with the answers in it, and sent its picks at the
+   end for this file to re-deal and check. That let a hand-written request
+   claim the right pick every time, and let the day's speed marks be laid
+   down in a burst and the picks chosen afterwards.
 
-   The pictures are public archive data, so a determined player could work
-   out a perfect day offline. That is true of Guess the Maze too. A
-   leaderboard here is a thing to enjoy, not a thing to defend. */
+   What is still possible is learning the answers first — playing the day
+   signed out in a private window, where every pick is answered — and then
+   playing it signed in. One submission per player per day is the backstop
+   that keeps even that from compounding. A leaderboard here is a thing to
+   enjoy, not a thing to defend. */
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom } = require("./_player");
-const { today, dayIsOpen, shuffle, daySeed, isHallway, existedBefore, rangeBounds } = require("./_daily");
+const { today, dayIsOpen, rangeBounds } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
 const speed = require("./_speed");
+const deals = require("./_deal");
 
 const COLLECTION = "daily_scores";
 const BOARD_SIZE = 10;
 /* Ten a right pick, so a perfect day is 50, as in Guess the Maze. It was
    100 (a 500 day) until just before launch; the rows scored that way are
    all test days from before launch day, which the launch cut hides from
-   every board (see launchDay below), so they were left as they are rather
-   than rescored. Must stay in step with POINTS_EACH in js/oddoneout.js. */
+   every board (see launchCut below), so they were left as they are rather
+   than rescored. Must stay in step with POINTS_EACH in js/oddoneout.js —
+   tools/check-daily-parity.js compares the two. */
 const POINTS_EACH = 10;
 const ROUNDS = 5;              // five moves a day
 
@@ -78,6 +89,16 @@ const json = (statusCode, data) => ({
     statusCode,
     headers: { ...SECURITY_HEADERS, "Cache-Control": statusCode === 200 ? "public, max-age=30" : "no-store"
     },
+    body: JSON.stringify(data)
+});
+
+/* For anything that answers about the caller or about a move: never cached,
+   anywhere. The deal carries the signed-in player's own moves, and a move's
+   verdict is one person's pick — neither may be handed to the next person
+   through a shared cache. */
+const privateJson = (statusCode, data) => ({
+    statusCode,
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "private, no-store" },
     body: JSON.stringify(data)
 });
 
@@ -96,78 +117,48 @@ async function ensureIndexes(col) {
     ensured = true;
 }
 
-/* ---------- dealing the day, exactly as the page deals it ---------- */
+/* ---------- judging what the player did ----------
 
-/* Read fresh on every submission — there is no cache here to go stale,
-   unlike the answer cache guess-scores.js keeps (see answersFor there). The
-   pool is limited to mazes that existed before the day began, as the page's
-   is; a picture added to an existing maze mid-day still re-deals, for the
-   reason given at existedBefore in _daily.js. */
-async function oddDay(day) {
-    const db = await getDb();
-    const rooms = await db.collection("rooms")
-        .find({}, { projection: { id: 1, name: 1, tags: 1, gallery: 1, createdAt: 1 } }).toArray();
+   The day is dealt once and stored — see _deal.js, which has the whole
+   story of why re-dealing it here at submission went wrong — so these read
+   the stored deal and never the archive. */
 
-    const pool = rooms
-        // Exactly as js/oddoneout.js builds its pool. A room dropped there
-        // and kept here would deal one set of rounds and score another.
-        .filter(room => room && room.id && room.name && !isHallway(room))
-        .filter(room => existedBefore(room, day))
-        .map(room => ({
-            id: room.id,
-            name: room.name,
-            tags: (room.tags || []).map(t => String(t).toLowerCase()),
-            shots: (room.gallery || []).map(g => g && g.image).filter(Boolean)
-        }))
-        .filter(maze => maze.shots.length >= 3)
-        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-
-    const shares = (a, b) => a.tags.some(t => t && b.tags.includes(t));
-    const rounds = [];
-    const usedHome = new Set();
-    for (const home of shuffle(pool, daySeed(day, "odd"))) {
-        if (rounds.length >= ROUNDS) break;
-        if (usedHome.has(home.id)) continue;
-
-        const seed = daySeed(day, "odd", home.id);
-        const others = pool.filter(m => m.id !== home.id && m.shots.length);
-        const related = others.filter(m => shares(home, m));
-        const imposter = shuffle(related.length ? related : others, seed)[0];
-        if (!imposter) continue;
-
-        const mine = shuffle(home.shots, seed).slice(0, 3);
-        if (mine.length < 3) continue;
-        const theirs = shuffle(imposter.shots, seed)[0];
-
-        const tiles = shuffle(
-            mine.map(image => ({ image, odd: false })).concat([{ image: theirs, odd: true }]),
-            daySeed(day, "odd:tiles", home.id)
-        );
-
-        usedHome.add(home.id);
-        rounds.push({ home: home.name, imposter: imposter.name, tiles });
-    }
-    return rounds;
+/* A day as the server recorded it, pick by pick (movesOf in _speed.js).
+   Every round the day was dealt counts, and a round with no recorded pick
+   is a round not got, so the grid is always the deal's length. `complete`
+   says whether every round has one — a day is only filed once it has. */
+function scoreRecorded(dealRounds, moves) {
+    const grid = dealRounds.map((_, i) => (moves[i] && moves[i].right ? 1 : 0));
+    const solved = grid.filter(Boolean).length;
+    return { points: solved * POINTS_EACH, solved, grid, complete: moves.every(Boolean) };
 }
 
-/* ---------- judging what the player did ---------- */
+/* A day played SIGNED OUT, being filed now the player has signed in.
 
-// Odd One Out: five independent rounds, one pick each.
-function scoreOdd(rounds, moves) {
-    if (!rounds.length) return null;
-    let points = 0;
+   Nothing was recorded while they played — there was nobody to record it
+   against — so the only account of the day is the picks the page kept. They
+   are judged against the stored deal, and filed with no bonus, because no
+   clock ever ran for them. That is the "Sign in with Discord to be listed"
+   promise kept, and it is the one place a request's picks still count; see
+   the POST below for why it is only reached when nothing was recorded. It
+   buys nothing that playing the day signed out first and then signed in
+   would not, and it earns less: no bonus. */
+function scoreClaim(dealRounds, moves) {
+    if (!Array.isArray(moves) || moves.length !== dealRounds.length) return null;
     const grid = [];
-    for (let i = 0; i < moves.length; i++) {
-        if (i >= rounds.length) break;
-        const pick = Number(moves[i] && moves[i].tile);
-        if (!Number.isInteger(pick) || pick < 0 || pick > 3) return null;
-        const tile = rounds[i].tiles[pick];
-        const right = Boolean(tile && tile.odd);
-        grid.push(right ? 1 : 0);
-        if (right) points += POINTS_EACH;
+    for (let i = 0; i < dealRounds.length; i++) {
+        const pick = moves[i] && moves[i].tile;
+        if (!Number.isInteger(pick) || pick < 0 || pick >= dealRounds[i].tiles.length) return null;
+        grid.push(dealRounds[i].tiles[pick].odd ? 1 : 0);
     }
-    return { points, solved: grid.filter(Boolean).length, grid };
+    const solved = grid.filter(Boolean).length;
+    return { points: solved * POINTS_EACH, solved, grid, complete: true };
 }
+
+/* What the page is told about the moves recorded so far, for a signed-in
+   player reopening the day: which tile each round got and whether it was
+   right. Never the imposter of a round not yet played. */
+const progressView = moves => moves.filter(Boolean).map(m => ({ tile: m.tile, right: Boolean(m.right) }));
 
 /* ---------- the boards ---------- */
 
@@ -181,24 +172,53 @@ function scoreOdd(rounds, moves) {
    cut at launch since it was built (sinceLaunch in ff-scores.js); these did
    not.
 
-   The same setting, settings.launchAt, cut by DAY rather than by instant:
-   a daily row is filed against the day it was played, not the moment, so
-   the launch day counts whole. The UTC date of launchAt, because days are
-   UTC everywhere in the daily games. No launchAt, no cut — clearing it puts
-   the history back, as it does for Fallin' Furni.
+   The same setting, settings.launchAt, and cut in TWO places: by day, so
+   no span reaches back before launch day, and by the INSTANT, on each row's
+   `at`, so nothing submitted before the doors opened counts either.
+
+   It used to be by day alone — "the launch day counts whole" — and that was
+   wrong in a way only launch day could show. The site opens at 08:00 UTC on
+   the 3rd (launchAt), but the games run on UTC days, so the 3rd's puzzle is
+   playable from 00:00: eight hours in which the owner's last test runs and
+   the early friends' plays were filed under the launch day itself, and
+   landed on the first day's board, the week's, the month's and everybody's
+   Profile, ahead of every real player. The instant cut is what keeps them
+   off. The day cut stays beside it because the spans are asked for by day,
+   and so a day before launch still has no board at all.
+
+   `at` is the submission's ISO string, and launchAt is normalised to one
+   (new Date(ms).toISOString()), so the comparison is a plain string one in
+   the same format on both sides. No launchAt, no cut — clearing it puts the
+   history back, as it does for Fallin' Furni.
 
    Filtered on read, never deleted, for the same reason ff-scores.js gives:
-   nothing to undo. Exported so guess-scores.js and player-profile.js cut at
-   exactly the same place — three boards that disagreed about where the
-   season starts would be worse than none cutting at all. */
-async function launchDay(db) {
+   nothing to undo. Exported so guess-scores.js, player-profile.js and
+   player-data.js cut at exactly the same place — boards that disagreed
+   about where the season starts would be worse than none cutting at all. */
+async function launchCut(db) {
     const doc = await db.collection("settings").findOne({ _id: "site" }, { projection: { launchAt: 1 } });
     const ms = doc && doc.launchAt ? Date.parse(doc.launchAt) : NaN;
-    return isNaN(ms) ? null : new Date(ms).toISOString().slice(0, 10);
+    if (isNaN(ms)) return null;
+    const at = new Date(ms).toISOString();
+    return { day: at.slice(0, 10), at };
 }
 
+// The launch DAY alone, for callers written before the instant cut. They
+// should add afterLaunch(cut) to their match as well — see launchCut.
+async function launchDay(db) {
+    const cut = await launchCut(db);
+    return cut ? cut.day : null;
+}
+
+// The instant half of the cut, as a match fragment to spread into a query.
+const afterLaunch = cut => (cut ? { at: { $gte: cut.at } } : {});
+
 // A span's first day, moved up to launch day if it started before it.
-const fromLaunch = (from, launch) => (launch && from < launch ? launch : from);
+// `launch` is the launch day as a string, or a launchCut, or null.
+const fromLaunch = (from, launch) => {
+    const day = launch && typeof launch === "object" ? launch.day : launch;
+    return day && from < day ? day : from;
+};
 
 /* A real calendar day, not only the right shape. "2026-13-45" passes the
    pattern, and rangeBounds turned it into an Invalid Date whose
@@ -226,9 +246,9 @@ function isRealDay(day) {
    bonus) second, and `points` in the answer IS that total — the same rule
    and the same shape as board() in guess-scores.js, where the reasoning is
    written out (RIGHT ANSWERS FIRST). */
-async function board(col, game, from, to) {
+async function board(col, game, from, to, cut) {
     const rows = await col.aggregate([
-        { $match: { game, day: { $gte: from, $lte: to } } },
+        { $match: { game, day: { $gte: from, $lte: to }, ...afterLaunch(cut) } },
         { $sort: { day: 1, at: 1 } },
         {
             $group: {
@@ -378,9 +398,10 @@ async function combinedBoards(db, event, params) {
         const month = rangeBounds("month", day);
         const all = rangeBounds("all", day);
 
-        // Every span starts no earlier than launch day — see launchDay.
-        const launch = await launchDay(db);
-        const span = (from, to) => ({ day: { $gte: fromLaunch(from, launch), $lte: to } });
+        // Every span starts no earlier than launch day, and no row counts
+        // that was submitted before the launch instant — see launchCut.
+        const launch = await launchCut(db);
+        const span = (from, to) => ({ day: { $gte: fromLaunch(from, launch), $lte: to }, ...afterLaunch(launch) });
         // A day before launch has no board at all; asked by span, it is empty.
         const oneDay = span(day, day);
 
@@ -459,6 +480,9 @@ exports.handler = async (event) => {
         if (game === "all") return combinedBoards(db, event, params);
 
         if (!GAMES.includes(game)) return json(400, { error: "Unknown game" });
+
+        if (params.deal === "1") return dealReply(db, event, game, params);
+
         const day = String(params.day || today()).slice(0, 10);
         if (!isRealDay(day)) return json(400, { error: "Bad day" });
 
@@ -476,15 +500,15 @@ exports.handler = async (event) => {
             week = rangeBounds("week", day);
             month = rangeBounds("month", day);
             all = rangeBounds("all", day);
-            // Every span from launch day on — see launchDay. A day before it
-            // has no board at all.
-            const launch = await launchDay(db);
-            const before = Boolean(launch) && day < launch;
+            // Every span from launch day on, and every row from the launch
+            // instant on — see launchCut. A day before it has no board at all.
+            const launch = await launchCut(db);
+            const before = Boolean(launch) && day < launch.day;
             [todayRows, weekRows, monthRows, allRows] = await Promise.all([
-                before ? [] : dayBoard(col, { game, day }),
-                board(col, game, fromLaunch(week.from, launch), week.to),
-                board(col, game, fromLaunch(month.from, launch), month.to),
-                board(col, game, fromLaunch(all.from, launch), all.to)
+                before ? [] : dayBoard(col, { game, day, ...afterLaunch(launch) }),
+                board(col, game, fromLaunch(week.from, launch), week.to, launch),
+                board(col, game, fromLaunch(month.from, launch), month.to, launch),
+                board(col, game, fromLaunch(all.from, launch), all.to, launch)
             ]);
         } catch (e) {
             console.error("daily-scores: board read failed", e);
@@ -515,12 +539,9 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === "POST") {
         // Before anything slow: the time taken is the player's, not the
-        // time this function spends re-dealing the day.
+        // time this function spends reading the day.
         const arrived = Date.now();
         const player = playerFrom(event);
-        // Signed out is not an error: the game posts unconditionally and
-        // there is simply no name to put on a row.
-        if (!player) return json(200, { recorded: false, reason: "signed-out" });
 
         let body = {};
         try { body = JSON.parse(event.body || "{}"); } catch (e) { body = {}; }
@@ -533,6 +554,60 @@ exports.handler = async (event) => {
         // dayIsOpen in _daily.js for why the grace period exists. A day that
         // has not happened cannot have been played.
         if (!dayIsOpen(day)) return json(400, { error: "That day is not open" });
+
+        /* ---------- one pick ----------
+
+           Sent by the game (Daily.move in js/daily.js) the moment a tile is
+           picked, for EVERYBODY — the page no longer knows which tile is the
+           imposter, so it has to ask. Judged against the stored deal now.
+
+           Signed in, the pick is also written down, once, in order, and no
+           sooner than MIN_MOVE_MS into its round (recordOddPick in
+           _speed.js), and the day is later scored from what was written.
+           Signed out — or signed in on a day the page began signed out, which
+           says so with `anon` — it is only answered: nothing is stored, so
+           nothing about it can count until a finished day is filed (see
+           scoreClaim). */
+        if (body.action === "move") {
+            if (String(event.body || "").length > speed.MAX_START_BODY) return privateJson(413, { error: "Too large" });
+            const round = speed.markRound(body.round, ROUNDS);
+            if (round == null) return privateJson(400, { error: "Bad round" });
+            let deal;
+            try {
+                deal = await deals.dealFor(db, ensureUniqueIndex, game, day);
+            } catch (e) {
+                console.error("daily-scores: could not read the day's deal", e);
+                return privateJson(503, { error: "The day could not be read just now" });
+            }
+            const dealt = deal.rounds[round];
+            const tile = body.tile;
+            if (!dealt || !Number.isInteger(tile) || tile < 0 || tile >= dealt.tiles.length) {
+                return privateJson(400, { error: "Bad move" });
+            }
+            if (!player || body.anon === true) {
+                return privateJson(200, { recorded: false, tile, right: Boolean(dealt.tiles[tile].odd) });
+            }
+            let outcome;
+            try {
+                outcome = await speed.recordOddPick(db, ensureUniqueIndex, day, player.id, round, tile, dealt, arrived);
+            } catch (e) {
+                console.error("daily-scores: could not record a pick", e);
+                return privateJson(503, { error: "The pick could not be recorded just now" });
+            }
+            if (outcome.error === "too-fast") return privateJson(429, { reason: "too-fast", retryInMs: outcome.retryInMs });
+            if (outcome.error === "bad-move") return privateJson(400, { error: "Bad move" });
+            if (outcome.error) return privateJson(409, { reason: outcome.error });
+            return privateJson(200, { recorded: true, already: Boolean(outcome.already), tile: outcome.tile, right: outcome.right });
+        }
+
+        // Anything else with an action is not a request this endpoint takes —
+        // including "mark", which a page from before the moves were judged
+        // one at a time still sends, and which now means nothing.
+        if (body.action !== undefined && body.action !== "start") return json(400, { error: "Unknown action" });
+
+        // Signed out is not an error: the game posts unconditionally and
+        // there is simply no name to put on a row.
+        if (!player) return json(200, { recorded: false, reason: "signed-out" });
 
         /* ---------- the day's clock starting ----------
 
@@ -552,57 +627,58 @@ exports.handler = async (event) => {
             return json(200, { started: true });
         }
 
-        /* ---------- a round ending ----------
+        /* ---------- the finished day ----------
 
-           Sent by the game (Daily.mark in js/daily.js) the moment a pick is
-           made. Written once, never moved, and only in order — see
-           recordMark in _speed.js. Checked against ROUNDS rather than the
-           day as dealt, so no archive read is needed here: a thin day's
-           mark for a round it never had has no pick to be right, and is
-           never read. */
-        if (body.action === "mark") {
-            if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
-            const round = speed.markRound(body.round, ROUNDS);
-            if (round == null) return json(400, { error: "Bad round" });
-            let outcome;
-            try {
-                outcome = await speed.recordMark(db, game, day, player.id, round);
-            } catch (e) {
-                console.error("daily-scores: could not record a mark", e);
-                return json(503, { marked: false });
-            }
-            if (outcome === "marked") return json(200, { marked: true });
-            if (outcome === "already") return json(200, { marked: false, reason: "already" });
-            return json(409, { marked: false, reason: outcome });
-        }
-
-        const moves =Array.isArray(body.moves) ? body.moves.slice(0, ROUNDS) : null;
-        if (!moves || !moves.length) return json(400, { error: "Bad moves" });
-
-        /* One game in the switch, and the switch kept: `game` has already
-           been checked against GAMES above, so anything reaching here is a
-           name this endpoint serves. With one entry it is a lookup that
-           happens to have a single answer, which is the honest shape for a
-           list that has twice now been expected to grow again. */
-        let scored;
+           A day already on file is answered with THAT row's score, before
+           anything in this request is looked at. The reply used to carry
+           the points just computed from the request, even for a duplicate —
+           which made a second submission a free answer checker: send any
+           five picks, read back how many were right, and nothing was written
+           to stop you asking again. */
+        let filed;
         try {
-            scored = scoreOdd(await oddDay(day), moves);
+            filed = await col.findOne({ game, day, playerId: player.id });
         } catch (e) {
+            return json(500, { error: "Could not check the day" });
+        }
+        if (filed) return privateJson(200, alreadyReply(filed));
+
+        /* Scored from the picks RECORDED as they were made (scoreRecorded),
+           whenever there are any: then nothing in this request counts at
+           all, and a day with rounds still unpicked is not filed yet. Only a
+           day with no recorded picks — played signed out, and being filed
+           now the player has signed in — reads the request's picks, judged
+           against the stored deal and with no bonus (scoreClaim). A day
+           cannot be half one and half the other: one recorded pick and the
+           request's picks are ignored.
+
+           One game in the switch, and the switch kept: `game` has already
+           been checked against GAMES above. See the note at the top of the
+           file for why the list survived coming down to one. */
+        let scored, clock = null, claimed = false;
+        try {
+            const deal = await deals.dealFor(db, ensureUniqueIndex, game, day);
+            if (!deal.rounds.length) return json(409, { recorded: false, reason: "no-deal" });
+            const row = await speed.progressFor(db, game, day, player.id);
+            const moves = speed.movesOf(row, deal.rounds.length);
+            if (moves.some(Boolean)) {
+                scored = scoreRecorded(deal.rounds, moves);
+                if (!scored.complete) return privateJson(409, { recorded: false, reason: "unfinished" });
+                clock = speed.clockOf(row);
+            } else {
+                scored = scoreClaim(deal.rounds, body.moves);
+                claimed = true;
+            }
+        } catch (e) {
+            console.error("daily-scores: could not check the day", e);
             return json(500, { error: "Could not check the day" });
         }
         if (!scored) return json(400, { error: "Bad moves" });
 
-        /* The speed bonus, from the start and the round marks on file — see
-           _speed.js. Only the picks scored right just above earn any, and
-           only for rounds the day was really dealt (the grid's length). None
-           on file, or none readable just now, is no bonus rather than a day
-           that fails to record. */
-        let clock = null;
-        try {
-            clock = await speed.clockFor(db, game, day, player.id);
-        } catch (e) {
-            console.error("daily-scores: could not read the day's clock", e);
-        }
+        /* The speed bonus, from the start and the marks on file — see
+           _speed.js. Only rounds judged right when they were played earn
+           any. No clock (a claimed day, or an untimed one) is no bonus
+           rather than a day that fails to record. */
         const { bonus, ms, roundSecs } = speed.dayBonus(clock, scored.grid.map(g => g > 0), arrived);
 
         try {
@@ -626,22 +702,88 @@ exports.handler = async (event) => {
                    Rows written before this have no field; player-profile.js
                    reads those as five, which is what they almost all were. */
                 rounds: scored.grid.length,
+                // A day filed from the page's own picks after signing in —
+                // see scoreClaim. Only there so the difference can be told.
+                ...(claimed ? { claimed: true } : {}),
                 at: new Date().toISOString()
             });
         } catch (e) {
-            // Duplicate key: already recorded today. The rule working, not a
-            // failure — the first score stands.
-            if (e && e.code === 11000) return json(200, { recorded: false, reason: "already", points: scored.points });
+            // Duplicate key: a submission raced this one and landed first.
+            // The rule working, not a failure — and the answer is the row
+            // that stands, not what was just computed (see alreadyReply).
+            if (e && e.code === 11000) {
+                const first = await col.findOne({ game, day, playerId: player.id }).catch(() => null);
+                return privateJson(200, first ? alreadyReply(first) : { recorded: false, reason: "already" });
+            }
             return json(500, { error: "Could not record the score" });
         }
 
-        return json(200, { recorded: true, points: scored.points, solved: scored.solved });
+        return privateJson(200, { recorded: true, points: scored.points, bonus, solved: scored.solved });
     }
 
     return json(405, { error: "Method not allowed" });
 };
 
-// For guess-scores.js and player-profile.js — see launchDay and isRealDay.
+// The answer to a day already on file: the stored row's own figures.
+function alreadyReply(row) {
+    return { recorded: false, reason: "already", points: row.points || 0, bonus: row.bonus || 0, solved: row.solved || 0 };
+}
+
+/* The page's deal for a day: what to play, and nothing that says how.
+
+   The DAY IS THE SERVER'S. Without a `day`, it is the server's today; with
+   one, it is served only if dayIsOpen says so — today, or yesterday inside
+   the midnight grace, for a player finishing a day begun before midnight.
+   A day that has not started is refused, so setting a device's clock
+   forward no longer shows tomorrow's pictures (and the seed that deals them
+   is secret — see _deal.js — so they cannot be worked out either).
+
+   Public: fetching the deal needs no account, and a signed-out player
+   plays exactly the same day. A signed-in player also gets their recorded
+   moves (so a reload, or another device, carries on where they are rather
+   than offering rounds already played), and whether the day is already
+   filed. `now` is the server's clock, which the page uses to correct its
+   own (Daily.today in js/daily.js). Never cached — see privateJson. */
+async function dealReply(db, event, game, params) {
+    const day = params.day ? String(params.day).slice(0, 10) : today();
+    if (!isRealDay(day) || !dayIsOpen(day)) {
+        return privateJson(404, { error: "That day is not open", today: today(), now: Date.now() });
+    }
+    let deal;
+    try {
+        deal = await deals.dealFor(db, ensureUniqueIndex, game, day);
+    } catch (e) {
+        console.error("daily-scores: could not deal the day", e);
+        return privateJson(503, { error: "The day could not be dealt just now" });
+    }
+    const player = playerFrom(event);
+    let progress = null, filed = false;
+    if (player) {
+        try {
+            const row = await speed.progressFor(db, game, day, player.id);
+            progress = progressView(speed.movesOf(row, deal.rounds.length));
+            filed = Boolean(await db.collection(COLLECTION).findOne({ game, day, playerId: player.id }, { projection: { _id: 1 } }));
+        } catch (e) {
+            // The deal is still worth sending; the page plays on from its
+            // own copy of the day.
+            progress = null;
+        }
+    }
+    return privateJson(200, {
+        game, day, today: today(), now: Date.now(),
+        rounds: deals.publicRounds(game, deal.rounds),
+        progress, filed
+    });
+}
+
+/* For guess-scores.js, player-profile.js and player-data.js — see launchCut
+   and isRealDay. launchDay is kept for the callers that only cut by day;
+   they should add afterLaunch too. */
 module.exports.launchDay = launchDay;
+module.exports.launchCut = launchCut;
+module.exports.afterLaunch = afterLaunch;
 module.exports.fromLaunch = fromLaunch;
 module.exports.isRealDay = isRealDay;
+// For the tests: the pure scoring halves.
+module.exports.scoreRecorded = scoreRecorded;
+module.exports.scoreClaim = scoreClaim;

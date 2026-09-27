@@ -7,23 +7,26 @@
    Under the Enter button while the site is gated and a launch date is set.
    The markup is in index.html; this fills it and ticks it.
 
-   THREE CONDITIONS, all required: the site is gated, a launchAt exists, and
-   it is still in the future. Any one failing and this does nothing at all
-   and the landing page is what it always was. That is deliberate — the gate
-   is the only thing on this page that has to work, and a countdown is
-   decoration on top of it.
+   TWO CONDITIONS, both required: the site is gated and a readable launchAt
+   exists. (It used to be three — the date also had to be still ahead — and
+   that third condition is what stranded launch-morning arrivals; see the
+   note on the poll below. A date already past now shows the "any moment"
+   state from the first tick.) Either failing and there is no clock, and the
+   landing page is what it always was. That is deliberate — the gate is the
+   only thing on this page that has to work, and a countdown is decoration
+   on top of it.
 
    WHAT HAPPENS AT ZERO. Not the obvious thing. Reaching zero does NOT open
    the site: the gate is the landingState setting and only an admin flips
    it, which is right — a date typed a fortnight ago should not be able to
    publish the archive on its own while nobody is watching. So at zero the
-   clock stops and starts asking the settings endpoint whether the switch
-   has been thrown yet, and the moment it has, the page reloads into the
-   open site. Somebody who left the tab open overnight walks in without
-   touching anything, and nobody has to sit refreshing on launch morning.
+   clock stops, and the page keeps asking the settings endpoint whether the
+   switch has been thrown yet; the moment it has, it goes into the open
+   site. Somebody who left the tab open overnight walks in without touching
+   anything, and nobody has to sit refreshing on launch morning.
 
-   The poll is every 20 seconds and only ever runs after zero, so it costs
-   nothing on any ordinary day.
+   The poll is every 20–40 seconds near and after zero, and every few
+   minutes before that (see FAR_POLL_MS).
 
    ---- AND IT IS JITTERED, WHICH IS THE WHOLE POINT OF THE NUMBERS BELOW.
 
@@ -36,15 +39,148 @@
 
    So each tab waits a random 0–20s on top of the base interval. The same
    number of requests still arrive, spread over a window instead of
-   stacked on an instant, and nobody waits meaningfully longer for it —
-   the endpoint is edge-cached for twenty seconds anyway (see
-   GATE_CDN_CACHE in netlify/functions/_cache.js), so the spread lines up
-   with how long a cached answer is good for. */
+   stacked on an instant, and nobody waits meaningfully longer for it.
+
+   ---- THE POLL NO LONGER BELONGS TO THE COUNTDOWN (27 Sept 2026).
+
+   It used to live inside startCountdown, and startCountdown only ran when
+   launchAt was still in the FUTURE when the page loaded. So anybody who
+   arrived after 08:00 UTC on launch day — before an admin had flipped the
+   switch — got a page with no countdown and, worse, nothing asking whether
+   the site had opened. They sat on "Coming Soon" until they thought to
+   refresh. The same for a Maintenance window, or a gated site with no date
+   set at all. That is watchForOpening below: it runs whenever the page is
+   gated, whatever launchAt says, and the countdown is decoration again.
+
+   AND IT ASKS PAST THE EDGE. /settings is cached at the CDN for twenty
+   seconds and served stale for sixty more (GATE_CDN_CACHE in
+   netlify/functions/_cache.js), so a poll through the plain address could
+   be told "coming-soon" for up to a minute and a half after the switch was
+   thrown — and the old location.reload() on a good answer then fetched the
+   page's settings through that same stale copy and came back up gated. The
+   poll now adds ?fresh=<bucket>, a query the function ignores and the CDN
+   keys on, the way js/guides.js asks past its own cache. The bucket is ten
+   seconds wide rather than Date.now(): every waiting tab in the same ten
+   seconds shares ONE edge entry, so the launch-morning crowd still costs a
+   handful of function runs rather than one each, and no answer it gets can
+   be older than the bucket.
+
+   On an open answer it goes straight to /home rather than reloading this
+   page — see goInside for the one wrinkle that leaves. */
 const COUNTDOWN_POLL_MS = 20000;
 const COUNTDOWN_POLL_JITTER_MS = 20000;
+/* More than ten minutes out, a tab asks every two to four minutes instead.
+   Somebody can leave this page open for a fortnight, and an admin opening
+   the site early is the only thing a poll that far out is for — a couple of
+   minutes' notice of that is plenty. Inside the last ten minutes it is back
+   to the 20–40s above, so every tab is on the fast cadence by zero. */
+const FAR_POLL_MS = 120000;
+const FAR_POLL_JITTER_MS = 120000;
+const FAR_THRESHOLD_MS = 10 * 60 * 1000;
+const POLL_BUCKET_MS = 10000;
+// Same leash as js/api.js's first attempt in _getWithFallback. A poll that
+// hangs must not stop the next one being scheduled.
+const POLL_TIMEOUT_MS = 10000;
 
-const nextPollDelay = () =>
-    COUNTDOWN_POLL_MS + Math.floor(Math.random() * COUNTDOWN_POLL_JITTER_MS);
+const isGatedState = s => s === "coming-soon" || s === "maintenance";
+
+/* The landing state, straight from the function (or a ten-second-old edge
+   copy at worst). null for anything that is not a clear answer — a failed,
+   timed-out or malformed read is "ask again later", never "open". */
+async function freshLandingState() {
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), POLL_TIMEOUT_MS) : null;
+    try {
+        const bucket = Math.floor(Date.now() / POLL_BUCKET_MS);
+        const res = await fetch(`/.netlify/functions/settings?fresh=${bucket}`, {
+            // And past the browser's own copy, for the same reason.
+            cache: "no-store",
+            signal: controller ? controller.signal : undefined
+        });
+        if (!res.ok) return null;
+        const body = await res.json();
+        return body && typeof body.landingState === "string" && body.landingState ? body.landingState : null;
+    } catch (e) {
+        return null;
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+}
+
+/* Into the archive, once a fresh answer has said it is open.
+
+   home.html's own gate reads /settings through the PLAIN address — the one
+   the edge may still be holding "coming-soon" for — and bounces anybody it
+   is told is gated straight back here. So before leaving, the plain address
+   is asked too (the browser's copy skipped, the edge's not). A stale edge
+   answer is served and revalidated in the background, which is exactly what
+   is wanted: a couple of seconds later that address says "enter" as well,
+   and the gate on the other side will hear the same. Three tries at most;
+   after that it goes anyway, because a visitor waiting on an optimisation is
+   worse than the one bounce it guards against — and a bounce only lands
+   them back on this page, polling again.
+
+   The answer is also written where home.html's gate looks for its early
+   "peek" (mazerats_landing_state), so the loading screen shows at once
+   instead of a blank window. */
+async function goInside(state) {
+    try { Api.rememberLandingState(state); } catch (e) { /* private mode */ }
+    for (let i = 0; i < 3; i++) {
+        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), 5000) : null;
+        try {
+            const res = await fetch("/.netlify/functions/settings", {
+                cache: "no-cache",
+                signal: controller ? controller.signal : undefined
+            });
+            const body = res.ok ? await res.json() : null;
+            if (body && body.landingState && !isGatedState(body.landingState)) break;
+        } catch (e) {
+            break;      // unreachable: the gate will not do better, so just go
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+        if (i < 2) await new Promise(r => setTimeout(r, 3000));
+    }
+    location.assign("/home");
+}
+
+/* Asks, jittered, until the site opens — then goes in. Runs for as long as
+   this page is gated, from load, whether launchAt is ahead, behind or unset.
+
+   target is the launch Date, or null. It only sets the cadence (see
+   FAR_POLL_MS); it never decides anything, because zero on the clock does
+   not open the site — only the admin's switch does.
+
+   onStillGated(state) hears each gated answer, so a site that moves from
+   Coming Soon to Maintenance (or back) relabels the button without a
+   reload. */
+function watchForOpening(target, onStillGated) {
+    const far = () => !!target && target.getTime() - Date.now() > FAR_THRESHOLD_MS;
+    const nextDelay = () => far()
+        ? FAR_POLL_MS + Math.floor(Math.random() * FAR_POLL_JITTER_MS)
+        : COUNTDOWN_POLL_MS + Math.floor(Math.random() * COUNTDOWN_POLL_JITTER_MS);
+
+    let leaving = false;
+    async function poll() {
+        const state = await freshLandingState();
+        if (state && !isGatedState(state)) {
+            if (leaving) return;
+            leaving = true;
+            goInside(state);
+            return;
+        }
+        if (state) {
+            try { onStillGated(state); } catch (e) { /* the poll outlives a bad label */ }
+        }
+        setTimeout(poll, nextDelay());
+    }
+
+    /* The FIRST check is jittered too, and that one matters most: a crowd
+       that arrived together (or a page reloaded by the thousand) would
+       otherwise all ask in the same second. */
+    setTimeout(poll, Math.floor(Math.random() * (far() ? FAR_POLL_MS : COUNTDOWN_POLL_JITTER_MS)));
+}
 
 function startCountdown(target) {
     const box = document.getElementById("welcome-countdown");
@@ -82,53 +218,27 @@ function startCountdown(target) {
     box.hidden = false;
 
     const pad = n => String(n).padStart(2, "0");
-    let pollTimer = null;
 
-    /* Reload only once the gate has actually been lifted. A failed check is
-       not a reason to reload — reloading a gated page just shows the gate
-       again, and doing it every twenty seconds would be a page that flickers
-       at anyone who leaves it open. */
-    async function checkIfOpen() {
-        try {
-            // Drop the page's memoised answer first. getSiteSettings keeps
-            // one promise for the life of the page, so without this every
-            // poll re-read the "coming-soon" it got at load and the
-            // countdown never noticed the site opening. Only clears the
-            // cache (and the gate's handshake promise, long since used).
-            Api.forgetSiteSettings();
-            const { landingState } = await Api.getSiteSettings();
-            if (landingState !== "coming-soon" && landingState !== "maintenance") {
-                location.reload();
-            }
-        } catch (e) { /* still shut, or still offline; ask again shortly */ }
-    }
-
+    // The asking is watchForOpening's, which the caller starts alongside
+    // this. All the clock does at zero is stop and say so.
     function tick() {
         const left = target.getTime() - Date.now();
         if (left <= 0) {
             // Stop counting and start watching. The wording is honest about
             // what it knows: the moment has arrived, the switch has not
-            // necessarily been thrown.
+            // necessarily been thrown. Also what somebody arriving AFTER
+            // the launch time sees from the first tick — a clock counting
+            // down to a moment already past would be nonsense.
             label.textContent = "Opening any moment now";
             box.classList.add("is-due");
             parts.days.textContent = "0";
             parts.hours.textContent = "00";
             parts.mins.textContent = "00";
             parts.secs.textContent = "00";
-            when.textContent = "";
+            // The one thing worth knowing while waiting: there is nothing
+            // to do. The page lets them in by itself.
+            when.textContent = "No need to refresh: this page will let you in";
             clearInterval(ticker);
-            if (!pollTimer) {
-                /* The FIRST check is jittered too, and that one matters
-                   most: it is the one every waiting tab would otherwise
-                   fire in the same second the clock strikes. A few seconds
-                   of spread before the first ask costs a visitor nothing —
-                   they have been waiting a fortnight — and it is the
-                   difference between a spike and a trickle. */
-                pollTimer = setTimeout(function poll() {
-                    checkIfOpen();
-                    pollTimer = setTimeout(poll, nextPollDelay());
-                }, Math.floor(Math.random() * COUNTDOWN_POLL_JITTER_MS));
-            }
             return;
         }
         const secs = Math.floor(left / 1000);
@@ -203,17 +313,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // aria-disabled moves with the label: the button is focusable in every
     // state (see its markup in index.html), so the state has to be spoken
-    // rather than left to the visual treatment alone.
-    if (landingState === "coming-soon") {
-        label.textContent = "Coming Soon";
+    // rather than left to the visual treatment alone. A function so the
+    // poll can relabel a site that moves between the two gated states.
+    function labelGated(state) {
+        const text = state === "maintenance" ? "Maintenance, Back Soon!" : "Coming Soon";
+        if (label.textContent !== text) label.textContent = text;
         btn.removeAttribute("href");
         btn.classList.add("is-disabled");
         btn.setAttribute("aria-disabled", "true");
-    } else if (landingState === "maintenance") {
-        label.textContent = "Maintenance, Back Soon!";
-        btn.removeAttribute("href");
-        btn.classList.add("is-disabled");
-        btn.setAttribute("aria-disabled", "true");
+    }
+
+    if (landingState === "coming-soon" || landingState === "maintenance") {
+        labelGated(landingState);
     } else {
         label.textContent = "Enter";
         /* The clean address, not the filename. This is the one link on the
@@ -238,13 +349,20 @@ document.addEventListener("DOMContentLoaded", async () => {
        took to get here is nobody's business. Parsed defensively because
        this value came over the wire — an unreadable date leaves the gate
        exactly as the block above left it. */
-    const gated = landingState === "coming-soon" || landingState === "maintenance";
-    if (gated && launchAt) {
-        const target = new Date(launchAt);
-        if (!isNaN(target.getTime()) && target.getTime() > Date.now()) {
-            startCountdown(target);
-        }
+    const gated = isGatedState(landingState);
+    if (!gated) return;
+    let target = null;
+    if (launchAt) {
+        const parsed = new Date(launchAt);
+        // Past as well as future: startCountdown shows the "any moment"
+        // state for a date already gone rather than nothing at all.
+        if (!isNaN(parsed.getTime())) target = parsed;
     }
+    if (target) startCountdown(target);
+    // Always, while gated — see the note on watchForOpening. The answer
+    // above may itself have been a stale edge copy, and this is what
+    // corrects it.
+    watchForOpening(target, labelGated);
 });
 
 // Upcoming Events widget on this page (see js/site.js) opens the event

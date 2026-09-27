@@ -24,6 +24,14 @@ const MAX_AGE = 60 * 60 * 24 * 30;      // 30 days
    stolen admin JWT presented as a player cookie fails here. */
 const AUDIENCE = "mazerats-player";
 
+/* Every cookie on the domain arrives in the one header, not only ours — and
+   decodeURIComponent throws a URIError on any stray "%" that is not a valid
+   escape. One malformed cookie set by anything at all (an analytics script,
+   a hand-edited value, a different app on a sibling path) used to take down
+   every playerFrom caller with a stack trace in the response, because
+   playerFrom's own try only wraps the verify. So each value decodes on its
+   own and a bad one is kept raw: it is almost certainly not ours, and if it
+   is, the verify below refuses it the ordinary way. */
 function parseCookies(header) {
     const out = {};
     String(header || "").split(";").forEach(part => {
@@ -31,7 +39,12 @@ function parseCookies(header) {
         if (eq < 0) return;
         const k = part.slice(0, eq).trim();
         const v = part.slice(eq + 1).trim();
-        if (k) out[k] = decodeURIComponent(v);
+        if (!k) return;
+        try {
+            out[k] = decodeURIComponent(v);
+        } catch (e) {
+            out[k] = v;
+        }
     });
     return out;
 }
@@ -41,9 +54,15 @@ function cookieHeader(event) {
     return h.cookie || h.Cookie || "";
 }
 
+/* `username` is Discord's unique handle, carried beside the display name.
+   The display name is what people see on a board, but it is not unique —
+   two people can both be "Chris" — so anything that has to say WHO sent
+   something (the contact form's "(signed in)", see contact.js) needs the
+   handle and the id as well. Sessions minted before it existed simply lack
+   it until their next sign-in; callers treat it as optional. */
 function signPlayer(player) {
     return jwt.sign(
-        { sub: player.id, name: player.name, avatar: player.avatar || null },
+        { sub: player.id, name: player.name, avatar: player.avatar || null, username: player.username || null },
         process.env.SESSION_SECRET,
         { expiresIn: MAX_AGE, audience: AUDIENCE }
     );
@@ -61,7 +80,10 @@ function playerFrom(event) {
         // counts as a valid signature should not be inferred from the key.
         const claims = jwt.verify(token, process.env.SESSION_SECRET, { audience: AUDIENCE, algorithms: ["HS256"] });
         if (!claims || !claims.sub) return null;
-        return { id: String(claims.sub), name: claims.name || "Someone", avatar: claims.avatar || null };
+        return {
+            id: String(claims.sub), name: claims.name || "Someone", avatar: claims.avatar || null,
+            username: typeof claims.username === "string" && claims.username ? claims.username : null
+        };
     } catch (e) {
         return null;
     }

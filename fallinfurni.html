@@ -299,21 +299,32 @@
          Screen" saves a blurred screenshot of the page instead. Same mark as
          the tab icon, drawn once at 180px. -->
     <link rel="apple-touch-icon" href="assets/img/fallinfurni-icon.png">
-    <!-- The palette, before the stylesheets rather than after, so <html> already
-         carries data-theme when the CSS is applied and there is no brown frame
-         on screen for a moment first.
+    <!-- The palette. The theme's stylesheet has a fixed slot straight AFTER
+         style.css (the empty link below), and this script only gives it an
+         address. It used to create the link and append it itself, which, run
+         from above style.css, put the theme BEFORE style.css on every repeat
+         visit, while js/api.js appends it after: one page, cascaded two ways
+         depending on which of them got there first.
+
+         A link the parser made also holds up the first paint once it has an
+         href, where one made by script does not, so the theme is in place
+         before anything is drawn and there is no brown frame for a moment
+         first. <html> gets data-theme in the same breath.
 
          Read from localStorage because the real answer lives in the database and
          arrives later: js/site.js fetches the site settings, applies whatever they
          say and writes it here for next time. The cached value is therefore the
          PREVIOUS visit's answer, which is right almost always and self-corrects
          within one page load when it is not. A first-ever visitor has nothing
-         cached and gets classic, which is the default anyway.
+         cached and gets classic, which is the default anyway. Classic leaves the
+         slot empty — a stylesheet link with no href loads nothing — and
+         js/api.js removes it outright.
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);var l=document.createElement("link");l.id="theme-css";l.rel="stylesheet";l.href="css/theme-"+t+".css";document.head.appendChild(l);}catch(e){}})();</script>
     <link rel="stylesheet" href="css/style.css?v=2">
+    <link id="theme-css" rel="stylesheet">
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
     <link rel="stylesheet" href="css/fallinfurni.css">
 </head>
 <body data-page="fallinfurni">
@@ -387,8 +398,12 @@
                 <div class="chrome-window ff-window" id="ff-window" tabindex="-1">
                     <div class="chrome-titlebar chrome-titlebar-plain"></div>
                 <div class="ff-stage">
+                    <!-- The label is the room's, set per level by labelRoom in
+                         js/fallinfurni.js; this is only what it says before
+                         the script has run. The canvas is focusable from
+                         script, and the arrow keys walk. -->
                     <canvas id="ff-canvas" width="720" height="498"
-                            aria-label="An eight by thirteen Habbo guest room"></canvas>
+                            aria-label="A Habbo room"></canvas>
 
                     <!-- Loading a room, the way the client does it: a small
                          box with a bar and the words "Loading room", over

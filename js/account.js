@@ -17,6 +17,26 @@
 
     const ENDPOINT = "/.netlify/functions/discord-auth";
 
+    /* Every request in this file is on a leash, the same way js/api.js's
+       _getWithFallback puts the public reads on one. None of them was, and a
+       fetch that HANGS — a cold function on flaky mobile data — resolves
+       neither way: ready() never settled, so everything awaiting it (the
+       Profile page's "Checking…", the daily game's leaderboard decision)
+       sat on its loading state for as long as the tab was open, and a
+       stalled save held up every un-tick queued behind it (see forget).
+       An abort lands in the callers' existing catch blocks, which already
+       say the right thing: signed out-but-unsure, nothing stored, try again. */
+    const TIMEOUT_MS = 10000;
+    function timedFetch(url, opts, ms) {
+        if (typeof AbortController === "undefined") return fetch(url, opts);
+        const controller = new AbortController();
+        // Not cleared when the headers arrive: the leash has to cover the
+        // body too (res.json() on a stalled stream hangs just the same), and
+        // an abort after the body has been read is a no-op.
+        setTimeout(() => controller.abort(), ms || TIMEOUT_MS);
+        return fetch(url, Object.assign({}, opts, { signal: controller.signal }));
+    }
+
     const listeners = [];
     let ready = null;
 
@@ -35,7 +55,7 @@
 
         async refresh() {
             try {
-                const res = await fetch(`${ENDPOINT}?action=me`, {
+                const res = await timedFetch(`${ENDPOINT}?action=me`, {
                     credentials: "same-origin",
                     headers: { Accept: "application/json" }
                 });
@@ -73,7 +93,8 @@
             // the session cookie is still good; after, it would be dropped.
             try { await flushState(); } catch (e) { /* nothing to undo */ }
             try {
-                await fetch(`${ENDPOINT}?action=signout`, { credentials: "same-origin" });
+                // Leashed: the header button is disabled until this returns.
+                await timedFetch(`${ENDPOINT}?action=signout`, { credentials: "same-origin" });
             } catch (e) { /* the cookie is the server's to clear; nothing local to undo */ }
             Account.current = null;
             Account.unsure = false;
@@ -110,7 +131,7 @@
         async fetchState() {
             if (!Account.current) return null;
             try {
-                const res = await fetch(STATE_ENDPOINT, {
+                const res = await timedFetch(STATE_ENDPOINT, {
                     credentials: "same-origin",
                     headers: { Accept: "application/json" }
                 });
@@ -160,7 +181,11 @@
         if (!Object.keys(patch).length) return;
         const send = (async () => {
             try {
-                const res = await fetch(STATE_ENDPOINT, {
+                // 15s, a little longer than the reads: it carries a body,
+                // and forget() waits on it, so it must end one way or the
+                // other. Harmless on pagehide — the page is gone before
+                // the timer could fire, and keepalive carries it on.
+                const res = await timedFetch(STATE_ENDPOINT, {
                     method: "PUT",
                     credentials: "same-origin",
                     headers: { "Content-Type": "application/json" },
@@ -171,7 +196,7 @@
                        and at most one day's game, far under keepalive's
                        64KB limit. */
                     keepalive: true
-                });
+                }, 15000);
                 if (res.ok) {
                     Account.stored = await res.json();
                     storedListeners.forEach(fn => { try { fn(Account.stored); } catch (e) { /* its own problem */ } });
@@ -207,7 +232,7 @@
         }
         if (inFlight) { try { await inFlight; } catch (e) { /* settled either way */ } }
         try {
-            await fetch(`${STATE_ENDPOINT}?${list}=${encodeURIComponent(id)}`, {
+            await timedFetch(`${STATE_ENDPOINT}?${list}=${encodeURIComponent(id)}`, {
                 method: "DELETE",
                 credentials: "same-origin"
             });

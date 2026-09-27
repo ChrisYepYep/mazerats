@@ -1,7 +1,7 @@
 /* /.netlify/functions/contributors — CRUD API for the console modal's
    Contributors page. Mirrors rooms.js/events.js. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -99,6 +99,21 @@ exports.handler = async (event) => {
         }
     }
 
+    /* The write half inside one try, as the GET above is: the inserts and
+       updates had nothing around them (the insert loop even rethrows on
+       purpose), so a database that dropped mid-save answered with Lambda's
+       stack trace — and canWrite now throws when the account lookup cannot
+       be made (lookUpRole in _auth.js), which has to reach the admin page
+       as a 503, not the 401 that signs it out. */
+    try {
+        return await write(event, contributors);
+    } catch (e) {
+        console.error("contributors: write failed", e);
+        return AUTH_UNAVAILABLE;
+    }
+};
+
+async function write(event, contributors) {
     if (!isAuthorized(event)) return UNAUTHORIZED;
     // canWrite, not isAuthorized: a viewer is a real logged-in account and
     // passes isAuthorized quite correctly — it just isn't allowed to change
@@ -195,4 +210,4 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
-};
+}

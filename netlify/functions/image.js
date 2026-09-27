@@ -15,6 +15,37 @@ const { isSafeKey } = require("./_keys");
 const PRIVATE_PREFIX = "tips/";
 const PRIVATE_HEADERS = { "Cache-Control": "private, no-store" };
 
+/* How long a public image lives in caches — and why the edge is told less
+   than the browser.
+
+   This used to be `public, max-age=31536000, immutable` and nothing else,
+   which Netlify's edge honours as its own lifetime too. The keys are
+   timestamped and never rewritten, so as far as FRESHNESS goes that was
+   right — but a delete never took effect: the edge kept serving the copy
+   it had for a year, so a picture removed because it should not be public
+   (a wrong upload, somebody's face, a request to take it down) went on
+   being public at the same address.
+
+   The edge now gets its own, much shorter life via Netlify-CDN-Cache-
+   Control, which it obeys in place of Cache-Control and does not pass on to
+   the browser: an hour fresh, then served stale for up to a day while it
+   re-asks in the background. A deleted blob answers 404 with no-store, so
+   the first request after the hour replaces the cached copy and the image
+   is gone from the site within about an hour of the delete.
+
+   Why not a cache tag and a purge on delete: purging needs @netlify/
+   functions' purgeCache and a purge token, neither of which this site has,
+   and an hour is fine for a takedown on a site this size.
+
+   The browser keeps a week, not a year, and no `immutable`. Its copy is
+   only ever seen again by the one person who already saw it, and only at
+   an address the site no longer links to, so it can afford to be long —
+   just not so long that it outlives any reason to keep it. */
+const PUBLIC_IMAGE_HEADERS = {
+    "Cache-Control": "public, max-age=604800",
+    "Netlify-CDN-Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400"
+};
+
 const refuse = (statusCode, body) => ({
     statusCode,
     headers: headersFor("text/plain; charset=utf-8", { "Cache-Control": "no-store" }),
@@ -41,7 +72,17 @@ exports.handler = async (event) => {
        uploads. It costs one indexed lookup, paid only on tips/ keys — which
        only the admin page ever asks for — so the public image path never
        touches the database. */
-    if (isPrivate && !(await hasAccount(event))) return refuse(404, "Not found");
+    if (isPrivate) {
+        /* hasAccount throws when the lookup itself cannot be made (see
+           lookUpRole in _auth.js): that is "try again", not "not found". */
+        let ok;
+        try {
+            ok = await hasAccount(event);
+        } catch (e) {
+            return refuse(503, "Image unavailable");
+        }
+        if (!ok) return refuse(404, "Not found");
+    }
 
     const store = imagesStore();
     let result;
@@ -68,9 +109,7 @@ exports.handler = async (event) => {
     const contentType = (result.metadata && result.metadata.contentType) || "application/octet-stream";
     return {
         statusCode: 200,
-        headers: headersFor(contentType, isPrivate ? PRIVATE_HEADERS : {
-            "Cache-Control": "public, max-age=31536000, immutable"
-        }),
+        headers: headersFor(contentType, isPrivate ? PRIVATE_HEADERS : PUBLIC_IMAGE_HEADERS),
         body: Buffer.from(result.data).toString("base64"),
         isBase64Encoded: true
     };

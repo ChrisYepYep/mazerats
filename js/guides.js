@@ -11,12 +11,11 @@
              each with the picture that shows it
 
    ADDRESSES. /guides is a rewrite to this page (netlify.toml), so it can
-   be linked and shared; a single guide is /guides?g=<id>. The tidier
-   /guides/<id> is the address a guide is shared at: it is answered by
-   netlify/functions/share.js with the guide's own preview, which then
-   sends a browser to /guides?g=<id>. It cannot be this page itself,
-   because this page loads its scripts and styles by relative paths that
-   only resolve one level deep. Opening the
+   be linked and shared; a single guide is /guides/<slug>, the slug
+   following its title (netlify/functions/_slugs.js). That address is
+   served by netlify/functions/share.js: this page, with the guide's own
+   preview tags written in. The old /guides?g=<id> form still opens the
+   guide, and is rewritten to the clean address. Opening the
    window from the menu pushes one history entry, so Back closes it, as it
    does for a maze; moving between guides inside it replaces that entry
    rather than stacking more.
@@ -60,10 +59,22 @@
        (netlify/functions/_cache.js), so a guide published a moment ago can
        be missing from it, and one just edited can show its old words. A
        query string the function ignores is a different cache key. */
+    /* And on a 10s leash, like js/api.js's _getWithFallback. A request that
+       hung never reached the catch below, so `loading` stayed set to a
+       promise that would never settle: the window sat on its loading state,
+       and every later open returned that same dead promise instead of
+       asking again. The abort lands in the catch like any failure, which
+       clears `loading` and draws the existing retry state. The timer is not
+       cleared on the headers, so a body that stalls is covered as well. */
     function load(fresh) {
         if (loading && !fresh) return loading;
         failed = false;
-        loading = fetch(URL_ + (fresh ? `?fresh=${Date.now()}` : ""), { headers: { Accept: "application/json" } })
+        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        if (controller) setTimeout(() => controller.abort(), 10000);
+        loading = fetch(URL_ + (fresh ? `?fresh=${Date.now()}` : ""), {
+            headers: { Accept: "application/json" },
+            signal: controller ? controller.signal : undefined
+        })
             .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
             .then(list => {
                 guides = Array.isArray(list) ? list.filter(g => g && g.id) : [];
@@ -76,7 +87,23 @@
     }
 
     const isOpen = () => overlay.classList.contains("open");
-    const byId = id => guides.find(g => g.id === id) || null;
+    // A guide by its address or its id: view.id is whichever the address
+    // named, until the list arrives to say which guide that is.
+    const byId = key => (key ? guides.find(g => window.RecordAddress.matches(g, key)) || servedGuide(key) : null) || null;
+
+    /* The guide the share function served this page for, when the address
+       it was served at is the one being asked about (its
+       <meta name="mazerats:record">, see netlify/functions/share.js). The
+       guides list is edge-cached, so a guide renamed a moment ago is still
+       listed under its old address and its new one found nothing; the id
+       in the tag never changes. */
+    function servedGuide(key) {
+        const tag = document.querySelector('meta[name="mazerats:record"]');
+        const m = tag && /^guide:(.+)$/.exec(tag.getAttribute("content") || "");
+        const here = window.RecordAddress.parse(location.pathname);
+        if (!m || !here || here.kind !== "guide" || here.key !== key) return null;
+        return guides.find(g => g.id === m[1]) || null;
+    }
 
     // ------------------------------------------------------------ helpers
 
@@ -127,7 +154,7 @@
                     const thumb = GuideText.thumbOf(g);
                     return `
                     <li>
-                        <a class="guides-card${thumb ? "" : " no-thumb"}" href="/guides?g=${esc(g.id)}" data-guide="${esc(g.id)}">
+                        <a class="guides-card${thumb ? "" : " no-thumb"}" href="${esc(addressFor(g.id))}" data-guide="${esc(g.id)}">
                             ${thumb ? `<span class="guide-thumb guides-card-thumb">${pic(thumb, "", "")}</span>` : ""}
                             <span class="guides-card-text">
                                 ${g.category ? `<span class="guides-pill">${esc(g.category)}</span>` : ""}
@@ -181,7 +208,7 @@
             ${others.length ? `
                 <aside class="guide-more">
                     <p class="guide-contents-title">More guides</p>
-                    <ul>${others.map(o => `<li><a class="guide-link" href="/guides?g=${esc(o.id)}" data-guide="${esc(o.id)}">${esc(o.title)}</a></li>`).join("")}</ul>
+                    <ul>${others.map(o => `<li><a class="guide-link" href="${esc(addressFor(o.id))}" data-guide="${esc(o.id)}">${esc(o.title)}</a></li>`).join("")}</ul>
                 </aside>` : ""}
             <p class="guides-copied" role="status" aria-live="polite"></p>`;
     }
@@ -211,7 +238,14 @@
             body.innerHTML = g ? readerHtml(g) : listHtml();
         }
         win.setAttribute("aria-labelledby", g ? "guide-title" : "guides-title");
-        if (isOpen()) setMeta(g);
+        if (isOpen()) {
+            setMeta(g);
+            // The address the guide was reached by (an old ?g= link, its id)
+            // becomes its own, now the list has said which guide it names.
+            if (g && onGuidesPath() && pendingPush === null && location.pathname + location.search !== addressFor(g.id)) {
+                try { history.replaceState(history.state, "", addressFor(g.id)); } catch (e) { /* fine */ }
+            }
+        }
         if (o.focus || hadFocus) focusHeading(g);
     }
 
@@ -225,54 +259,37 @@
     /* The page's own title, canonical and og:url name the archive. While the
        window is open they name what it shows, so a bookmark, a share sheet or
        a crawler that runs the page gets the guide's address, not /home's.
-       The originals are put back on close. */
-    const SITE = "https://mazerats.net";
-    const canonicalEl = document.querySelector('link[rel="canonical"]');
-    const ogUrlEl = document.querySelector('meta[property="og:url"]');
-    let pageMeta = null;        // the page's own, while ours are showing
-
+       The archive's are put back on close (PageMeta in js/site.js). */
     function setMeta(g) {
-        if (!pageMeta) {
-            pageMeta = {
-                title: document.title,
-                canonical: canonicalEl ? canonicalEl.getAttribute("href") : null,
-                ogUrl: ogUrlEl ? ogUrlEl.getAttribute("content") : null
-            };
-        }
-        const url = SITE + shareAddressFor(g ? g.id : null);
-        if (canonicalEl) canonicalEl.setAttribute("href", url);
-        if (ogUrlEl) ogUrlEl.setAttribute("content", url);
-        document.title = g ? `${g.title} — Maze Rats Guides` : "Guides — Maze Rats";
+        if (!window.PageMeta) return;
+        window.PageMeta.set("guides", g ? `${g.title} — Maze Rats Guides` : "Guides — Maze Rats",
+            "https://mazerats.net" + addressFor(g ? g.id : null));
     }
 
     function restoreMeta() {
-        if (!pageMeta) return;
-        document.title = pageMeta.title;
-        if (canonicalEl && pageMeta.canonical !== null) canonicalEl.setAttribute("href", pageMeta.canonical);
-        if (ogUrlEl && pageMeta.ogUrl !== null) ogUrlEl.setAttribute("content", pageMeta.ogUrl);
-        pageMeta = null;
+        if (window.PageMeta) window.PageMeta.restore("guides");
     }
 
     // ------------------------------------------------------------ address
 
-    function addressFor(id) {
-        return "/guides" + (id ? `?g=${encodeURIComponent(id)}` : "");
+    /* A guide's address, /guides/<slug>: the same one it is shared at, so a
+       chat client unfurls it with the guide's own title and thumbnail (see
+       netlify/functions/share.js). Before the list has arrived a guide is
+       only known by what the address said, which is used as it stands. */
+    function addressFor(key) {
+        if (!key) return "/guides";
+        const g = byId(key);
+        return g ? window.RecordAddress.of("guide", g) : `/guides/${encodeURIComponent(key)}`;
     }
 
-    /* The address a guide is SHARED at, which is not the one in the address
-       bar. /guides/<id> is answered by netlify/functions/share.js, which gives
-       a chat client the guide's own title and thumbnail and sends a browser on
-       to /guides?g=<id>. A crawler never runs this page's script, so the
-       query form can only ever unfurl as the archive. */
-    function shareAddressFor(id) {
-        return id ? `/guides/${encodeURIComponent(id)}` : "/guides";
-    }
-
+    // The guide the address names: /guides/<slug>, or the old ?g=<id>.
     function idFromAddress() {
+        const p = window.RecordAddress.parse(location.pathname);
+        if (p && p.kind === "guide") return p.key;
         try { return new URLSearchParams(location.search).get("g") || null; } catch (e) { return null; }
     }
 
-    const onGuidesPath = () => /^\/guides\/?$/.test(location.pathname);
+    const onGuidesPath = () => /^\/guides(?:\/[^/]+)?\/?$/.test(location.pathname);
 
     function setAddress(id) {
         // A push still waiting on our own Back: rewriting the address now
@@ -419,7 +436,9 @@
             const kind = record.dataset.guideMaze ? "maze" : "event";
             const id = record.dataset.guideMaze || record.dataset.guideEvent;
             close({ replace: true, keepFocus: true });
-            location.hash = `${kind}-${id}`;
+            if (!(window.ArchiveRecords && window.ArchiveRecords.open(kind, id))) {
+                location.href = window.RecordAddress.of(kind, { id });
+            }
             return;
         }
         // A section's picture: see toggleZoom.
@@ -456,7 +475,7 @@
         else if (act.dataset.act === "copy") {
             const note = body.querySelector(".guides-copied");
             // The share address, so a pasted link unfurls as this guide.
-            const link = location.origin + shareAddressFor(view.id);
+            const link = location.origin + addressFor(view.id);
             const done = ok => { if (note) note.textContent = ok ? "Link copied." : link; };
             if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(() => done(true), () => done(false));
             else done(false);

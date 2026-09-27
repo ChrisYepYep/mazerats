@@ -64,8 +64,22 @@
     const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; } };
     const call = (url, method, body) => Api._write(url, method, token(), body);
 
+    /* A 401: the twelve-hour session ran out while the panel was open.
+
+       This used to replace the list with a "Sign in again" button that
+       reloaded the page — which threw away the guide being written, the
+       one thing the admin was trying to save when they found out. admin.js
+       now lends its own lockOut (window.AdminLockOut): the sign-in box goes
+       up over the page, the form stays exactly as it was underneath, and
+       once signed back in, Save simply works (the token is read fresh from
+       storage on every request). The reload is kept only as the fallback
+       for a page where admin.js did not load. */
     function sessionGone(err) {
         if (!err || err.status !== 401) return false;
+        if (typeof window.AdminLockOut === "function") {
+            window.AdminLockOut();
+            return true;
+        }
         listEl.innerHTML = '<p class="admin-empty">Your session has expired. <button type="button" class="ctl-btn" data-g-reload>Sign in again</button></p>';
         const b = listEl.querySelector("[data-g-reload]");
         if (b) b.addEventListener("click", () => location.reload());
@@ -99,7 +113,17 @@
             renderList();
             renderStarter();
         } catch (err) {
-            if (sessionGone(err)) return;
+            if (sessionGone(err)) {
+                // The sign-in box is up; what is left here once it is done
+                // is a way to try the list again, not a "Loading…" forever.
+                // (Without admin.js's lockOut, sessionGone has already put
+                // its reload button here, and that stays.)
+                if (typeof window.AdminLockOut !== "function") return;
+                listEl.innerHTML = '<p class="admin-empty">Your session expired before the guides loaded. <button type="button" class="ctl-btn" data-g-retry>Load them again</button></p>';
+                const b = listEl.querySelector("[data-g-retry]");
+                if (b) b.addEventListener("click", load);
+                return;
+            }
             listEl.innerHTML = `<p class="admin-empty">Could not load the guides: ${esc(err.message)}</p>`;
         }
     }
@@ -147,11 +171,11 @@
                         ${g.category ? esc(g.category) + " · " : ""}${(g.sections || []).length} sections
                         ${g.updatedAt ? " · edited " + esc(when(g.updatedAt)) + (g.updatedBy ? " by " + esc(g.updatedBy) : "") : ""}
                     </p>
-                    <p class="row-creator">/guides?g=${esc(g.id)}</p>
+                    <p class="row-creator">/guides/${esc(g.slug || g.id)}</p>
                 </div>
                 <div class="admin-row-actions">
                     <button type="button" class="btn" data-g-edit>Edit</button>
-                    ${g.status === "published" ? `<a class="btn" href="/guides?g=${esc(encodeURIComponent(g.id))}&amp;fresh=1" target="_blank" rel="noopener">View</a>` : ""}
+                    ${g.status === "published" ? `<a class="btn" href="/guides/${esc(encodeURIComponent(g.slug || g.id))}?fresh=1" target="_blank" rel="noopener">View</a>` : ""}
                     <button type="button" class="btn" data-g-delete>Delete</button>
                 </div>
             </div>`).join("");
@@ -191,6 +215,10 @@
 
     const blankSection = () => ({ heading: "", body: "", image: "" });
 
+    // The Address field's handle and the state it keeps across redraws.
+    let address = null;
+    let addressState = {};
+
     function copyOf(g) {
         return {
             id: g ? g.id : "",
@@ -206,7 +234,10 @@
         };
     }
 
-    const dirty = () => editing && JSON.stringify(editing) !== snapshot;
+    // The address lives in the Address field's own state, not in `editing`.
+    const addressMoved = () => typeof addressState.value === "string"
+        && addressState.value !== (stored ? stored.slug || "" : addressState.value);
+    const dirty = () => editing && (JSON.stringify(editing) !== snapshot || addressMoved());
 
     function openEditor(g) {
         if (saving) return;
@@ -217,6 +248,7 @@
         newSession();
         stored = g || null;
         editing = copyOf(g);
+        addressState = {};
         snapshot = JSON.stringify(editing);
         renderForm();
         formEl.classList.add("is-open");
@@ -258,8 +290,13 @@
             <div class="guides-pic" data-pic="${which}">
                 ${src ? `<img src="${esc(src)}" alt="">` : `<span class="guides-pic-empty">No picture</span>`}
                 <div class="guides-pic-actions">
+                    <!-- Not [hidden]: a hidden input cannot take focus, so
+                         this could only ever be reached with a mouse. The
+                         class the maze form's thumbnails use hides it from
+                         sight while leaving it in the Tab order; the label
+                         shows the focus (.guides-pic-upload:focus-within). -->
                     <label class="admin-action-pill guides-pic-upload">${src ? "Replace" : "Upload picture"}
-                        <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-upload="${which}" hidden>
+                        <input type="file" class="admin-gallery-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp" data-upload="${which}">
                     </label>
                     ${src ? `<button type="button" class="admin-action-pill" data-unpic="${which}">Remove</button>` : ""}
                     <span class="guides-pic-status" data-pic-status="${which}"></span>
@@ -295,6 +332,7 @@
             <h3 class="admin-form-title">${g.id ? `Edit "${esc(stored ? stored.title : g.title)}"` : "New Guide"}</h3>
             <label class="admin-field"><span>Title</span>
                 <input type="text" maxlength="120" data-g="title" value="${esc(g.title)}" required></label>
+            ${window.AddressField ? window.AddressField.html("guides", stored ? stored.slug || "" : "") : ""}
             <label class="admin-field"><span>Category</span>
                 <input type="text" maxlength="40" data-g="category" value="${esc(g.category)}" list="guides-cat-list" placeholder="e.g. Getting Started">
                 <datalist id="guides-cat-list">${cats.map(c => `<option value="${esc(c)}">`).join("")}</datalist></label>
@@ -320,6 +358,21 @@
                 <button type="button" class="admin-action-pill" data-preview>Preview</button>
                 <button type="button" class="admin-action-pill admin-cancel-btn">Cancel</button>
             </div>`;
+        /* The address (/guides/<slug>), which follows the title unless set by
+           hand (js/admin-address.js). Its state lives in addressState, so
+           the redraws this form does as sections come and go keep it. */
+        address = window.AddressField ? window.AddressField.wire(formEl, {
+            titleInput: formEl.querySelector('[data-g="title"]'),
+            current: stored ? stored.slug || "" : "",
+            manual: stored ? stored.slugManual : undefined,
+            prefix: "guides",
+            state: addressState,
+            taken: slug => {
+                const other = guides.find(x => (!stored || x.id !== stored.id)
+                    && (x.slug === slug || x.id === slug || (Array.isArray(x.slugAliases) && x.slugAliases.includes(slug))));
+                return other ? other.title || other.id : "";
+            }
+        }) : null;
     }
 
     function showError(msg) {
@@ -328,6 +381,22 @@
         el.textContent = msg || "";
         el.style.display = msg ? "block" : "none";
     }
+
+    /* Enter in a one-line field (the title, the category, a section heading,
+       the list position) does not save the guide. It used to: this is a
+       form with a submit button, so Enter anywhere in it submitted — and a
+       save closes the form, half-way through writing the next section.
+       Save is the Save button; a textarea's Enter is a new line and is left
+       alone. The same guard as the maze form's (js/admin.js). */
+    formEl.addEventListener("keydown", e => {
+        if (e.key !== "Enter" || e.isComposing) return;
+        const t = e.target;
+        if (!t || t.tagName !== "INPUT") return;
+        // A picture's file input is the exception: Enter there opens the
+        // picker, which is the keyboard's way to upload at all.
+        if (/^(submit|button|reset|image|file)$/i.test(t.type)) return;
+        e.preventDefault();
+    });
 
     // Typing updates the guide in memory without redrawing the form, so the
     // caret stays where it is.
@@ -452,11 +521,14 @@
             showError(`${uploading === 1 ? "A picture is" : `${uploading} pictures are`} still uploading. Save again once it says it's done.`);
             return;
         }
+        const addressProblem = address && address.problem();
+        if (addressProblem) { showError(addressProblem); return; }
         const btn = formEl.querySelector('button[type="submit"]');
         btn.disabled = true;
         saving = true;
         showError("");
         const body = { ...editing, sections: editing.sections.filter(s => s.heading.trim() || s.body.trim() || s.image) };
+        if (address) Object.assign(body, address.payload());
         try {
             let saved;
             if (stored) {
@@ -482,6 +554,20 @@
         } catch (err) {
             btn.disabled = false;
             if (sessionGone(err)) return;
+            /* Somebody else saved this guide after the form opened. The
+               form stays open with the edit in it — nothing typed is lost —
+               but it is not saved over their work either. The list is
+               re-read so that Cancel and Edit again opens the guide as it
+               now is: before this, the list kept its old copy, the reopened
+               form carried the same old rev, and every retry was refused
+               again until the whole page was reloaded. The same answer the
+               maze form gives (refreshAfterConflict in js/admin.js). */
+            if (err.status === 409) {
+                showError("Someone else saved this guide since you opened it. Your edits are still here: copy anything you need, then Cancel and Edit it again to see their version.");
+                saving = false;
+                await load();
+                return;
+            }
             showError(err.message || "Could not save the guide.");
         } finally {
             saving = false;

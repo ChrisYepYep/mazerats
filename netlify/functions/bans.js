@@ -7,7 +7,7 @@
    manages the list. */
 const crypto = require("crypto");
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -33,6 +33,21 @@ exports.handler = async (event) => {
     }
     const bans = db.collection("bans");
 
+    /* The whole of the rest inside one try. The reads and writes below had
+       nothing around them, so a database that dropped mid-request answered
+       with Lambda's errorType and stack trace in the body — and hasAccount
+       and canWrite now throw when the account lookup itself cannot be made
+       (see lookUpRole in _auth.js), which must come back as a 503 the admin
+       page retries, not a 401 that signs it out. */
+    try {
+        return await handle(event, bans);
+    } catch (e) {
+        console.error("bans: request failed", e);
+        return AUTH_UNAVAILABLE;
+    }
+};
+
+async function handle(event, bans) {
     // hasAccount, not just a valid token: the ban list is a list of IP
     // addresses, and a deleted account's token should not keep reading it.
     if (!(await hasAccount(event))) return UNAUTHORIZED;
@@ -102,4 +117,4 @@ exports.handler = async (event) => {
     }
 
     return json(405, { error: "Method not allowed" });
-};
+}

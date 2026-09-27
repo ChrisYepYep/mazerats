@@ -4,29 +4,54 @@
     <meta charset="UTF-8">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#120c07">
     <title>Privacy Policy — Maze Rats</title>
     <meta name="description" content="How Maze Rats handles the information you give it: what is collected, what it is used for, how long it is kept, and how to have it removed.">
     <link rel="canonical" href="https://mazerats.net/privacy">
+    <!-- Bitmap copies of the MZ mark below, for the browsers that take no SVG
+         favicon (Safari, until recently) and for a phone's home screen, which
+         asks for a 180px picture of its own and showed a blank tile without
+         one. Absolute paths, so a page served at /maze/x still finds them. -->
+    <link rel="icon" href="/assets/icons/favicon.ico" sizes="32x32">
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23120c07'/%3E%3Ctext x='32' y='44' font-family='Georgia, serif' font-size='26' font-weight='700' fill='%23e6b866' text-anchor='middle'%3EMZ%3C/text%3E%3C/svg%3E">
-    <!-- The palette, before the stylesheets rather than after, so <html> already
-         carries data-theme when the CSS is applied and there is no brown frame
-         on screen for a moment first.
+    <!-- The palette. The theme's stylesheet has a fixed slot straight AFTER
+         style.css (the empty link below), and this script only gives it an
+         address. It used to create the link and append it itself, which, run
+         from above style.css, put the theme BEFORE style.css on every repeat
+         visit, while js/api.js appends it after: one page, cascaded two ways
+         depending on which of them got there first.
+
+         A link the parser made also holds up the first paint once it has an
+         href, where one made by script does not, so the theme is in place
+         before anything is drawn and there is no brown frame for a moment
+         first. <html> gets data-theme in the same breath.
 
          Read from localStorage because the real answer lives in the database and
          arrives later: js/site.js fetches the site settings, applies whatever they
          say and writes it here for next time. The cached value is therefore the
          PREVIOUS visit's answer, which is right almost always and self-corrects
          within one page load when it is not. A first-ever visitor has nothing
-         cached and gets classic, which is the default anyway.
+         cached and gets classic, which is the default anyway. Classic leaves the
+         slot empty — a stylesheet link with no href loads nothing — and
+         js/api.js removes it outright.
 
          Wrapped in try/catch: localStorage throws outright in some privacy modes,
          and a colour scheme is not worth a blank page. -->
-    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);var l=document.createElement("link");l.id="theme-css";l.rel="stylesheet";l.href="css/theme-"+t+".css";document.head.appendChild(l);}catch(e){}})();</script>
     <link rel="stylesheet" href="css/style.css?v=2">
-    <script defer src="https://cloud.umami.is/script.js" data-website-id="8dee5429-29ff-4efb-bec1-c124c8d6fb18"></script>
+    <link id="theme-css" rel="stylesheet">
+    <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
+    <!-- Umami, the aggregate visit counts. Loaded by this line rather than a
+         plain <script src>, because a plain tag cannot ask the browser first:
+         with Global Privacy Control on, it is not loaded at all. Do Not Track
+         is honoured by Umami itself (data-do-not-track), and data-exclude-hash
+         keeps the part of an address after # out of it — a palette preview
+         link carries a private token there. The search (?q=) is kept on
+         purpose: the privacy policy says searches are recorded, and why.
+         js/track.js, the site's own record, honours both signals too. -->
+    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");document.head.appendChild(s);}catch(e){}})();</script>
 </head>
 <!-- data-page="legal" keeps js/site.js from appending a second Privacy
      Policy link to the footer of the privacy policy itself. -->

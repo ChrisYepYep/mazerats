@@ -13,7 +13,7 @@
        start and end both more than ARCHIVE_YEARS old  -> archive
        end in the past                                 -> past
        started but not yet ended                       -> live
-       (no end date = the end of the start's UTC day)
+       (no end date, or one before the start = start + 3 hours)
        start still in the future                       -> upcoming
 
    The stored status is not the source of truth here — it survives only as
@@ -32,6 +32,10 @@
     "use strict";
 
     const ARCHIVE_YEARS = 2;
+
+    // How long an event with no usable end date is taken to run. Three
+    // hours covers a typical hosted maze event or party with room to spare.
+    const DEFAULT_EVENT_MS = 3 * 60 * 60 * 1000;
 
     const LABELS = {
         upcoming: "Upcoming",
@@ -59,22 +63,26 @@
         // Past forever with nothing to age it out.
         if (!startIso) return "upcoming";
         const start = new Date(startIso);
-        /* No end date means the event runs to the end of the UTC day it
-           starts on. It used to be treated as ending the moment it started,
-           which meant an event with only a start went straight from
-           Upcoming to Past and never once showed LIVE. The end of that day
-           rather than some fixed duration because every listing already
-           frames events by their UTC date ("12 Oct 2026, 19:00 UTC", see
-           formatEventDuration in home.js/welcome.js), so "on that day" is
-           what a start-only event reads as. It still ages out normally. */
-        let end;
-        if (endIso) {
-            end = new Date(endIso);
-        } else {
-            end = new Date(start);
-            if (!isNaN(end)) end.setUTCHours(23, 59, 59, 999);
-        }
-        if (isNaN(start) || isNaN(end)) return fallback || "upcoming";
+        if (isNaN(start)) return fallback || "upcoming";
+        /* No end date means the event runs for DEFAULT_EVENT_MS after it
+           starts. It was once treated as ending the moment it started, so a
+           start-only event went straight from Upcoming to Past and never
+           showed LIVE; the fix for that ran it to 23:59:59 UTC on its start
+           day instead, which was just as wrong at the other end of the day —
+           an event starting at 23:30 UTC was LIVE for thirty minutes, and one
+           starting at 00:30 for twenty-three and a half hours. A fixed
+           length treats every start time the same.
+
+           An end that is BEFORE the start (a typo in the admin form — the
+           wrong day, or am/pm swapped) is treated as no end at all, rather
+           than believed: believed, it made the event Past before it had
+           begun. So is an end that cannot be read, which would otherwise
+           have thrown the perfectly good start date away with it.
+
+           All of this is plain millisecond arithmetic on the instants, so
+           it is UTC throughout and never touches the visitor's timezone. */
+        let end = endIso ? new Date(endIso) : null;
+        if (!end || isNaN(end) || end < start) end = new Date(start.getTime() + DEFAULT_EVENT_MS);
 
         const now = Date.now();
         const cutoff = archiveCutoff();

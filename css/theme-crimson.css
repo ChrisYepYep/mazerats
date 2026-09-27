@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   836 rules, 1384 declarations, hues 350 (surfaces) / 212 (accents).
+   850 rules, 1400 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -21,7 +21,8 @@
     --amber-bright: #aab1b8;
     --parchment: #dedfe1;
     --parchment-dim: #969ba0;
-    --unknown: #433e41;
+    --unknown: #83878c;
+    --unknown-text: #a2a5a9;
     --border: rgba(113, 130, 149, 0.35);
     --chrome-fill: #171011;
     --chrome-highlight: #2f2022;
@@ -45,20 +46,20 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .custom-scrollbar-track-segment {
-    background-image: url('../assets/img/crimson/scrollbar_track_inactive.png');
+    background-image: url('../assets/img/crimson/scrollbar_track_inactive.png?v=017f6598');
 }
 
 [data-theme="crimson"] .custom-scrollbar-track-segment.is-active {
-    background-image: url('../assets/img/crimson/scrollbar_track_active.png');
+    background-image: url('../assets/img/crimson/scrollbar_track_active.png?v=442882fc');
 }
 
 [data-theme="crimson"] .custom-scrollbar-thumb {
-    background-image: url('../assets/img/crimson/scrollbar_thumb_inactive.png');
+    background-image: url('../assets/img/crimson/scrollbar_thumb_inactive.png?v=5726e3db');
 }
 
 [data-theme="crimson"] .custom-scrollbar-thumb:hover,
 [data-theme="crimson"] .custom-scrollbar-thumb.is-dragging {
-    background-image: url('../assets/img/crimson/scrollbar_thumb_active.png');
+    background-image: url('../assets/img/crimson/scrollbar_thumb_active.png?v=a392a012');
 }
 
 [data-theme="crimson"] .custom-scrollbar-arrow {
@@ -67,72 +68,72 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .custom-scrollbar-arrow-up {
-    background-image: url('../assets/img/crimson/scrollbar_arrow_up_inactive.png');
+    background-image: url('../assets/img/crimson/scrollbar_arrow_up_inactive.png?v=99d60778');
 }
 
 [data-theme="crimson"] .custom-scrollbar-arrow-up:hover {
-    background-image: url('../assets/img/crimson/scrollbar_arrow_up_active.png');
+    background-image: url('../assets/img/crimson/scrollbar_arrow_up_active.png?v=f890d555');
 }
 
 [data-theme="crimson"] .custom-scrollbar-arrow-down {
-    background-image: url('../assets/img/crimson/scrollbar_arrow_down_inactive.png');
+    background-image: url('../assets/img/crimson/scrollbar_arrow_down_inactive.png?v=11dbc716');
 }
 
 [data-theme="crimson"] .custom-scrollbar-arrow-down:hover {
-    background-image: url('../assets/img/crimson/scrollbar_arrow_down_active.png');
+    background-image: url('../assets/img/crimson/scrollbar_arrow_down_active.png?v=cb63448f');
 }
 
 [data-theme="crimson"] .custom-scrollbar-arrow-up.is-disabled,
 [data-theme="crimson"] .custom-scrollbar-arrow-up.is-disabled:hover {
-    background-image: url('../assets/img/crimson/scrollbar_arrow_up_disabled.png');
+    background-image: url('../assets/img/crimson/scrollbar_arrow_up_disabled.png?v=cc7d0efd');
 }
 
 [data-theme="crimson"] .custom-scrollbar-arrow-down.is-disabled,
 [data-theme="crimson"] .custom-scrollbar-arrow-down.is-disabled:hover {
-    background-image: url('../assets/img/crimson/scrollbar_arrow_down_disabled.png');
+    background-image: url('../assets/img/crimson/scrollbar_arrow_down_disabled.png?v=c30a9d8e');
 }
 
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-track-segment {
-    background-image: url('../assets/img/crimson/scrollbar_h_track_inactive.png');
+    background-image: url('../assets/img/crimson/scrollbar_h_track_inactive.png?v=bd0df11b');
 }
 
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-track-segment.is-active {
-    background-image: url('../assets/img/crimson/scrollbar_h_track_active.png');
+    background-image: url('../assets/img/crimson/scrollbar_h_track_active.png?v=217de53d');
 }
 
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-thumb {
-    background-image: url('../assets/img/crimson/scrollbar_h_thumb_inactive.png');
+    background-image: url('../assets/img/crimson/scrollbar_h_thumb_inactive.png?v=5a3f7b4c');
 }
 
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-thumb:hover,
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-thumb.is-dragging {
-    background-image: url('../assets/img/crimson/scrollbar_h_thumb_active.png');
+    background-image: url('../assets/img/crimson/scrollbar_h_thumb_active.png?v=98dd7c4c');
 }
 
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-up {
-    background-image: url('../assets/img/crimson/scrollbar_h_arrow_left_inactive.png');
+    background-image: url('../assets/img/crimson/scrollbar_h_arrow_left_inactive.png?v=ec0009a7');
 }
 
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-up:hover {
-    background-image: url('../assets/img/crimson/scrollbar_h_arrow_left_active.png');
+    background-image: url('../assets/img/crimson/scrollbar_h_arrow_left_active.png?v=cf13e033');
 }
 
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-down {
-    background-image: url('../assets/img/crimson/scrollbar_h_arrow_right_inactive.png');
+    background-image: url('../assets/img/crimson/scrollbar_h_arrow_right_inactive.png?v=0095fd77');
 }
 
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-down:hover {
-    background-image: url('../assets/img/crimson/scrollbar_h_arrow_right_active.png');
+    background-image: url('../assets/img/crimson/scrollbar_h_arrow_right_active.png?v=16fa85ae');
 }
 
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-up.is-disabled,
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-up.is-disabled:hover {
-    background-image: url('../assets/img/crimson/scrollbar_h_arrow_left_disabled.png');
+    background-image: url('../assets/img/crimson/scrollbar_h_arrow_left_disabled.png?v=8d4ab43e');
 }
 
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-down.is-disabled,
 [data-theme="crimson"] .custom-scrollbar--horizontal .custom-scrollbar-arrow-down.is-disabled:hover {
-    background-image: url('../assets/img/crimson/scrollbar_h_arrow_right_disabled.png');
+    background-image: url('../assets/img/crimson/scrollbar_h_arrow_right_disabled.png?v=2a5d3262');
 }
 
 [data-theme="crimson"] .visually-hidden {
@@ -164,7 +165,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
             rgba(4, 3, 3, 0.2700) 65%,
             rgba(4, 3, 3, 0.2700) 100%),
         linear-gradient(rgba(8, 5, 6, 0.1), rgba(8, 5, 6, 0.1)),
-        url('../assets/img/crimson/MazeBG.png');
+        url('../assets/img/crimson/MazeBG.png?v=ba8ca4bb');
     color: var(--parchment);
 }
 
@@ -336,8 +337,8 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .btn-enter {
-    border-image-source: url('../assets/img/crimson/window_frame.png');
-    background-image: url('../assets/img/crimson/title_pattern.png');
+    border-image-source: url('../assets/img/crimson/window_frame.png?v=d011309d');
+    background-image: url('../assets/img/crimson/title_pattern.png?v=d7e17c4f');
     background-color: var(--chrome-fill);
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
 }
@@ -386,7 +387,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .chrome-window {
-    border-image-source: url('../assets/img/crimson/window_frame.png');
+    border-image-source: url('../assets/img/crimson/window_frame.png?v=d011309d');
     box-shadow: 0 16px 44px rgba(0, 0, 0, 0.6);
 }
 
@@ -463,7 +464,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .chrome-nav-btn::before {
-    border-image-source: url('../assets/img/crimson/btn_inactive.png');
+    border-image-source: url('../assets/img/crimson/btn_inactive.png?v=e9ee6243');
     filter: sepia(0.25) saturate(0.5) brightness(0.66) contrast(1.05);
 }
 
@@ -489,7 +490,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .chrome-nav-btn.active::before {
-    border-image-source: url('../assets/img/crimson/btn_active.png');
+    border-image-source: url('../assets/img/crimson/btn_active.png?v=ebcb60f8');
     filter: saturate(0.54) brightness(1.18) hue-rotate(4deg);
 }
 
@@ -498,7 +499,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .chrome-nav-btn-mazes.active .chrome-nav-icon {
-    content: url('../assets/img/crimson/mazes_icon_active.png');
+    content: url('../assets/img/crimson/mazes_icon_active.png?v=45ecccdf');
 }
 
 [data-theme="crimson"] .chrome-titlebar {
@@ -507,7 +508,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 
 [data-theme="crimson"] .chrome-titlebar::before,
 [data-theme="crimson"] .chrome-titlebar::after {
-    background-image: url('../assets/img/crimson/title_pattern.png');
+    background-image: url('../assets/img/crimson/title_pattern.png?v=d7e17c4f');
     filter: brightness(1.2);
 }
 
@@ -585,11 +586,11 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .ec-title-s1 {
-    border-image-source: url('../assets/img/crimson/ec/ec-name-player-s1.png');
+    border-image-source: url('../assets/img/crimson/ec/ec-name-player-s1.png?v=7d66b85a');
 }
 
 [data-theme="crimson"] .ec-title-s2 {
-    border-image-source: url('../assets/img/crimson/ec/ec-name-player-s2.png');
+    border-image-source: url('../assets/img/crimson/ec/ec-name-player-s2.png?v=ea231dac');
 }
 
 [data-theme="crimson"] .chrome-list-row .ec-title .ec-title-name {
@@ -618,11 +619,11 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .status-closed {
-    color: var(--danger);
+    color: var(--danger-text);
 }
 
 [data-theme="crimson"] .status-unknown {
-    color: var(--unknown);
+    color: var(--unknown-text);
 }
 
 [data-theme="crimson"] .status-collab {
@@ -634,11 +635,11 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .status-past {
-    color: var(--unknown);
+    color: var(--unknown-text);
 }
 
 [data-theme="crimson"] .status-archive {
-    color: var(--danger);
+    color: var(--danger-text);
 }
 
 [data-theme="crimson"] .status-live {
@@ -651,20 +652,8 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     background: rgba(8, 5, 6, 0.85);
 }
 
-[data-theme="crimson"] .chrome-tab {
-    background: transparent;
-    border-image-source: url('../assets/img/crimson/btn_inactive.png');
-    color: #161414;
-    outline: none;
-}
-
-[data-theme="crimson"] .chrome-tab.active {
-    border-image-source: url('../assets/img/crimson/btn_active.png');
-    color: #0c0a0a;
-}
-
 [data-theme="crimson"] #search-wrap::before {
-    border-image-source: url('../assets/img/crimson/btn_active.png');
+    border-image-source: url('../assets/img/crimson/btn_active.png?v=ebcb60f8');
     filter: saturate(0.54) brightness(1.18) hue-rotate(4deg);
 }
 
@@ -698,6 +687,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: #ffffff;
     text-shadow: 0 0 6px rgba(255, 255, 255, 0.65);
     outline: none;
+}
+
+[data-theme="crimson"] .clear-filter-btn:focus-visible {
+    outline: 2px solid var(--amber-bright);
 }
 
 [data-theme="crimson"] .featured-refresh-btn:hover,
@@ -808,7 +801,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .modal {
-    border-image-source: url('../assets/img/crimson/window_frame.png');
+    border-image-source: url('../assets/img/crimson/window_frame.png?v=d011309d');
     box-shadow: 0 22px 55px rgba(0, 0, 0, 0.85);
 }
 
@@ -846,7 +839,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 
 [data-theme="crimson"] .gallery-photo-btn {
     border: 0;
-    background: url('../assets/img/crimson/stickies-photos/photo-wall.png') no-repeat center;
+    background: url('../assets/img/crimson/stickies-photos/photo-wall.png?v=728e1066') no-repeat center;
 }
 
 [data-theme="crimson"] .gallery-photo-btn:hover,
@@ -870,8 +863,12 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     outline: none;
 }
 
+[data-theme="crimson"] .gallery-photo-more:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="crimson"] .photo-frame {
-    background: url('../assets/img/crimson/stickies-photos/photo-frame.png') no-repeat 0 0;
+    background: url('../assets/img/crimson/stickies-photos/photo-frame.png?v=5e667e2f') no-repeat 0 0;
     filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.4));
 }
 
@@ -927,8 +924,12 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     outline: none;
 }
 
+[data-theme="crimson"] .furni-icon-btn:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="crimson"] .furni-card {
-    border-image-source: url('../assets/img/crimson/stickies-photos/sticky-furni.png');
+    border-image-source: url('../assets/img/crimson/stickies-photos/sticky-furni.png?v=c816846a');
     filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.4));
     color: #181516;
 }
@@ -1017,6 +1018,20 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: var(--amber-bright);
 }
 
+[data-theme="crimson"] .gallery-pause:hover,
+[data-theme="crimson"] .gallery-pause:focus-visible {
+    color: #ffffff;
+}
+
+[data-theme="crimson"] .gallery-pause:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="crimson"] .gallery-pause.is-paused {
+    background: var(--amber);
+    color: #120c0d;
+}
+
 [data-theme="crimson"] .gallery-bonus-tab {
     background: rgba(0, 0, 0, 0.65);
     border: 1px solid var(--amber);
@@ -1071,6 +1086,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .old-versions-pill:hover,
 [data-theme="crimson"] .old-versions-pill:focus-visible {
     color: #ffffff;
+}
+
+[data-theme="crimson"] .old-versions-pill:focus-visible {
+    outline: 2px solid var(--amber-bright);
 }
 
 [data-theme="crimson"] .old-versions-pill.is-showing {
@@ -1263,8 +1282,8 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .btn-enter-mini {
-    border-image-source: url('../assets/img/crimson/window_frame.png');
-    background-image: url('../assets/img/crimson/title_pattern.png');
+    border-image-source: url('../assets/img/crimson/window_frame.png?v=d011309d');
+    background-image: url('../assets/img/crimson/title_pattern.png?v=d7e17c4f');
     background-color: var(--chrome-fill);
     color: #ffffff;
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
@@ -1279,6 +1298,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .btn-enter-mini[data-state="maintenance"].active {
     box-shadow: 0 0 14px 3px rgba(70, 60, 68, 0.8),
         0 4px 10px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="crimson"] .admin-panel:focus {
+    outline: none;
 }
 
 [data-theme="crimson"] .admin-you-tag {
@@ -1474,6 +1497,24 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
+[data-theme="crimson"] .admin-address-prefix {
+    color: var(--parchment-dim);
+}
+
+[data-theme="crimson"] .admin-address-field.is-clash input {
+    border-color: #c0392b;
+}
+
+[data-theme="crimson"] .admin-address-note strong {
+    color: #e8a08e;
+}
+
+[data-theme="crimson"] .admin-address-follow {
+    background: none;
+    border: 0;
+    color: var(--amber);
+}
+
 [data-theme="crimson"] .admin-checkbox-group {
     background: #fff;
     border: 2px solid var(--chrome-border);
@@ -1523,6 +1564,12 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     border-color: var(--amber);
     background: rgba(113, 130, 149, 0.1);
     color: var(--parchment);
+}
+
+[data-theme="crimson"] .admin-dropzone:has(input[type="file"]:focus-visible),
+[data-theme="crimson"] .admin-gallery-thumb:has(input[type="file"]:focus-visible),
+[data-theme="crimson"] .guides-pic-upload:has(input[type="file"]:focus-visible) {
+    outline: 2px solid var(--amber-bright);
 }
 
 [data-theme="crimson"] .admin-gallery-row {
@@ -1632,12 +1679,12 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .console-border {
-    border-image-source: url('../assets/img/crimson/console/cnsl-frame-border.png');
+    border-image-source: url('../assets/img/crimson/console/cnsl-frame-border.png?v=5a1976d1');
 }
 
 [data-theme="crimson"] .console-top-pattern::before,
 [data-theme="crimson"] .console-top-pattern::after {
-    background-image: url('../assets/img/crimson/console/cnsl-top-pattern.png');
+    background-image: url('../assets/img/crimson/console/cnsl-top-pattern.png?v=c9826792');
 }
 
 [data-theme="crimson"] .console-title {
@@ -1648,7 +1695,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .console-close-btn {
     border: none;
     background-color: transparent;
-    background-image: url('../assets/img/crimson/console/cnsl-top-x-close.png');
+    background-image: url('../assets/img/crimson/console/cnsl-top-x-close.png?v=84f23018');
 }
 
 [data-theme="crimson"] .console-screen {
@@ -1810,7 +1857,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .console-dotline {
-    background-image: url('../assets/img/crimson/console/cnsl-dotline.png');
+    background-image: url('../assets/img/crimson/console/cnsl-dotline.png?v=31896947');
 }
 
 [data-theme="crimson"] .console-tab-btn {
@@ -1827,35 +1874,35 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] #profile-btn {
-    background-image: url('../assets/img/crimson/console/cnsl-tab-site-profile-inactive.png');
+    background-image: url('../assets/img/crimson/console/cnsl-tab-site-profile-inactive.png?v=041f0146');
 }
 
 [data-theme="crimson"] #profile-btn.active {
-    background-image: url('../assets/img/crimson/console/cnsl-tab-site-profile-active.png');
+    background-image: url('../assets/img/crimson/console/cnsl-tab-site-profile-active.png?v=beddbab6');
 }
 
 [data-theme="crimson"] #contact-btn {
-    background-image: url('../assets/img/crimson/console/cnsl-tab-site-contact-inactive.png');
+    background-image: url('../assets/img/crimson/console/cnsl-tab-site-contact-inactive.png?v=250e8097');
 }
 
 [data-theme="crimson"] #contact-btn.active {
-    background-image: url('../assets/img/crimson/console/cnsl-tab-site-contact-active.png');
+    background-image: url('../assets/img/crimson/console/cnsl-tab-site-contact-active.png?v=8863bd52');
 }
 
 [data-theme="crimson"] #people-btn {
-    background-image: url('../assets/img/crimson/console/cnsl-tab-site-people-inactive.png');
+    background-image: url('../assets/img/crimson/console/cnsl-tab-site-people-inactive.png?v=993f6632');
 }
 
 [data-theme="crimson"] #people-btn.active {
-    background-image: url('../assets/img/crimson/console/cnsl-tab-site-people-active.png');
+    background-image: url('../assets/img/crimson/console/cnsl-tab-site-people-active.png?v=94be6526');
 }
 
 [data-theme="crimson"] #privacy-btn {
-    background-image: url('../assets/img/crimson/console/cnsl-tab-site-privacy-inactive.png');
+    background-image: url('../assets/img/crimson/console/cnsl-tab-site-privacy-inactive.png?v=d76af6c3');
 }
 
 [data-theme="crimson"] #privacy-btn.active {
-    background-image: url('../assets/img/crimson/console/cnsl-tab-site-privacy-active.png');
+    background-image: url('../assets/img/crimson/console/cnsl-tab-site-privacy-active.png?v=bcec2275');
 }
 
 [data-theme="crimson"] .custom-scrollbar-wrap--console .custom-scrollbar-track-segment {
@@ -1922,7 +1969,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
             rgba(4, 3, 3, 0.2700) 65%,
             rgba(4, 3, 3, 0.2700) 100%),
         linear-gradient(rgba(8, 5, 6, 0.1), rgba(8, 5, 6, 0.1)),
-        url('../assets/img/crimson/MazeBG.png');
+        url('../assets/img/crimson/MazeBG.png?v=ba8ca4bb');
 }
 
 [data-theme="crimson"] .site-loader-wordmark {
@@ -1986,7 +2033,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .modal.is-ec::before {
-    background-image: url('../assets/img/crimson/ec/jade-bow.png');
+    background-image: url('../assets/img/crimson/ec/jade-bow.png?v=b8181c82');
 }
 
 [data-theme="crimson"] .modal-article-kicker {
@@ -2604,7 +2651,8 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     outline: none;
 }
 
-[data-theme="crimson"] .guess-option:focus-visible {
+[data-theme="crimson"] .guess-option:focus-visible,
+[data-theme="crimson"] .guess-option:focus-visible:not(:disabled) {
     outline: 2px solid var(--amber-bright);
 }
 
@@ -2966,6 +3014,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .guides-textbtn:focus-visible {
     color: var(--parchment);
     outline: none;
+}
+
+[data-theme="crimson"] .guides-textbtn:focus-visible {
+    outline: 2px solid var(--amber-bright);
 }
 
 [data-theme="crimson"] .guides-cat {
@@ -3466,6 +3518,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     outline: none;
 }
 
+[data-theme="crimson"] .meta-filter:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="crimson"] .updatelog-date {
     color: var(--amber-bright);
 }
@@ -3547,7 +3603,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .admin-tab:hover .admin-tab-btn,
-[data-theme="crimson"] .admin-tab:focus-within .admin-tab-btn,
+[data-theme="crimson"] .admin-tab:has(:focus-visible) .admin-tab-btn,
 [data-theme="crimson"] .admin-tab.is-open .admin-tab-btn {
     color: var(--parchment);
     background: var(--chrome-fill);
@@ -3558,6 +3614,13 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     background: var(--chrome-fill);
     border: 1px solid var(--chrome-border);
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+}
+
+[data-theme="crimson"] .admin-tab.is-dismissed:not(:hover):not(.is-open) .admin-tab-btn {
+    color: var(--parchment-dim);
+    background: var(--chrome-highlight);
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+        2px 2px 0 rgba(0, 0, 0, 0.35);
 }
 
 [data-theme="crimson"] .ctl-input {
@@ -3576,7 +3639,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .ctl-status.is-bad {
-    color: var(--danger);
+    color: var(--danger-text);
 }
 
 [data-theme="crimson"] body[data-page="admin"] .admin-nav-grid .chrome-nav-btn {
@@ -3994,7 +4057,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .rc-status.is-bad {
-    color: var(--danger);
+    color: var(--danger-text);
 }
 
 [data-theme="crimson"] .rc-bar {
@@ -4082,7 +4145,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .rc-warn {
-    color: var(--danger);
+    color: var(--danger-text);
 }
 
 [data-theme="crimson"] .rc-revert {
@@ -4355,15 +4418,15 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
    from: /home.html asks for "assets/img/..." and /wizard/<room> resolves the
    same file through a <base>, and a prefix match would only catch one. */
 [data-theme="crimson"] img[src$="modal_topclose_x.png"] {
-    content: url('../assets/img/crimson/modal_topclose_x.png');
+    content: url('../assets/img/crimson/modal_topclose_x.png?v=6742f095');
 }
 
 [data-theme="crimson"] img[src$="mazes_icon.png"] {
-    content: url('../assets/img/crimson/mazes_icon.png');
+    content: url('../assets/img/crimson/mazes_icon.png?v=f7b4d9a2');
 }
 
 [data-theme="crimson"] img[src$="events_icon.png"] {
-    content: url('../assets/img/crimson/events_icon.png');
+    content: url('../assets/img/crimson/events_icon.png?v=6a081c30');
 }
 
 /* =================================================================== NEON

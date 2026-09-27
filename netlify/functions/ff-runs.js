@@ -70,11 +70,16 @@
    whatever it is handed into a database is a different problem entirely. */
 
 const { getDb } = require("./_db");
-const { hasAccount, UNAUTHORIZED } = require("./_auth");
+const {
+    hasAccount, roleOf, WRITE_SCOPES, UNAUTHORIZED, isAuthUnavailable, AUTH_UNAVAILABLE
+} = require("./_auth");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
+// The leaderboard's run token, verified the same way it verifies it.
+const { readRun } = require("./ff-scores");
 
 const COLLECTION = "ff_runs";
+const LEVELS = "ff_levels";
 
 /* Long enough to see a season in it, short enough that the collection cannot
    grow without bound on a site nobody is watching. The activity log keeps 90
@@ -83,11 +88,41 @@ const COLLECTION = "ff_runs";
    per click. */
 const KEEP_DAYS = 180;
 
-/* Caps. A run has one entry per level played and the game ships 50, but a
-   player with lives can retry, so the honest ceiling is higher than the level
-   count — 200 is far past anything reachable and still bounded. */
-const MAX_LEVELS = 200;
+/* Caps. A run has one entry per level played, plus one per life lost — a
+   lost round is logged and then played again. It used to be a flat 200,
+   four times what the game can produce, and every one of those entries
+   could carry a 120-character id the level table then grouped on: a single
+   request could add two hundred invented "levels" to the admin panel.
+
+   So the ceiling is what the game can actually do: every published level,
+   plus a retry for each life a run can have (three to start, one back per
+   five cleared), plus the round walked out of. A few more on top for a
+   level published while somebody was mid-run. */
+const STARTING_LIVES = 3;
+const LIFE_EVERY = 5;
+const LEVEL_SLACK = 5;
+const maxLevelsFor = (published) =>
+    published + STARTING_LIVES + Math.floor(published / LIFE_EVERY) + 1 + LEVEL_SLACK;
+const MAX_ID = 64;
 const MAX_NAME = 80;
+
+/* THE WHOLE REQUEST, capped before it is parsed. An honest run of the full
+   game is about ten kilobytes of JSON; this is room for twice that and then
+   some, and it is well inside the 64KB a keepalive request may carry at
+   all — so nothing the page can send is refused, and nothing much larger
+   than it is read. */
+const MAX_BODY = 32 * 1024;
+
+/* AND A CEILING FOR EVERYBODY AT ONCE. The per-address limit below stops one
+   connection filling the collection; it does nothing about many — and an
+   address is the cheapest thing on the internet to have lots of. These cap
+   the rows written per hour and per day across the whole site. Set far
+   above anything this game will see honestly (launch week, a few hundred
+   players, is a few thousand runs a DAY), and low enough that the worst a
+   flood can do before it is stopped is tens of megabytes, not the database.
+   A run refused here is only a missing row in a chart. */
+const GLOBAL_PER_HOUR = 1500;
+const GLOBAL_PER_DAY = 10000;
 
 /* How many runs one address may record in a window. This takes a POST from
    anybody, unsigned, and every one is a document kept for six months — so
@@ -119,8 +154,26 @@ async function ensureIndexes(db) {
     await col.createIndex({ at: 1 }, { expireAfterSeconds: KEEP_DAYS * 24 * 60 * 60 })
         .catch(e => { ttl = false; console.warn("ff-runs: TTL index not created -", e.message); });
     await col.createIndex({ ip: 1, at: -1 }).catch(() => {});
+    /* One log row per run token, and the leaderboard's way in: ff-scores.js
+       looks a run up by `rid` to check the score against it. Partial, so the
+       rows with no token (signed-out starts that failed, and every row from
+       before this) are not all one duplicate null. */
+    await col.createIndex({ rid: 1 },
+        { unique: true, partialFilterExpression: { rid: { $type: "string" } } }).catch(() => {});
     indexState = ttl;
     return indexState;
+}
+
+/* Every level id there is, and how many are published, for the caps above.
+   Unpublished ones count as known: a level can be unpublished in the middle
+   of somebody's run, and that run's entry for it is still a real one. */
+async function knownLevels(db) {
+    const rows = await db.collection(LEVELS)
+        .find({}, { projection: { _id: 0, id: 1, published: 1 } }).toArray();
+    return {
+        ids: new Set(rows.map(r => String(r.id))),
+        published: rows.filter(r => r.published === true).length
+    };
 }
 
 const json = (statusCode, data) => ({
@@ -183,7 +236,10 @@ function cleanLevel(raw) {
            table across its whole life — which is the point of recording any
            of this, since the reason to rename a level is usually that you
            have just changed it. */
-        id: str(raw.id, 120),
+        // Too long is not truncated into somebody else's id; it is no id at
+        // all, and record() drops any id that is not a real level's.
+        id: String(raw.id === undefined || raw.id === null ? "" : raw.id).length > MAX_ID
+            ? "" : str(raw.id, MAX_ID),
         name: str(raw.name, MAX_NAME) || "Level",
         won: raw.won === true,
         // Why the level ended: the game's own word — "seated", "timeout",
@@ -210,22 +266,50 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") return record(db, event);
-    if (event.httpMethod === "GET") return report(db, event);
+    if (event.httpMethod === "GET") {
+        /* The account checks THROW when the accounts cannot be read; see
+           authUnavailableError in _auth.js. A 503 the panel retries, never a
+           401 it would take for a dead session. */
+        try {
+            return await report(db, event);
+        } catch (e) {
+            if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+            throw e;
+        }
+    }
     return json(405, { error: "Method not allowed" });
 };
 
 /* ------------------------------------------------------------- RECORDING */
 
 async function record(db, event) {
+    // Measured before parsing, so an oversized body costs nothing to refuse.
+    const raw = event.body || "";
+    const size = event.isBase64Encoded ? Math.floor(raw.length * 3 / 4) : raw.length;
+    if (size > MAX_BODY) return json(413, { recorded: false, reason: "too-large" });
+
     let body;
     try {
-        body = JSON.parse(event.body || "{}");
+        body = JSON.parse(event.isBase64Encoded ? Buffer.from(raw, "base64").toString("utf8") : (raw || "{}"));
     } catch (e) {
         return json(400, { error: "Invalid request body" });
     }
+    if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
 
+    let known;
+    try { known = await knownLevels(db); }
+    catch (e) {
+        console.error("ff-runs: could not read the levels", e);
+        return json(503, { recorded: false, reason: "unavailable" });
+    }
+
+    /* ONLY LEVELS THAT EXIST. An entry whose id is not a level in ff_levels
+       is dropped rather than stored: it is either invented or from a level
+       since deleted, and either way the admin panel would give it a row of
+       its own. */
     const levels = Array.isArray(body.levels)
-        ? body.levels.slice(0, MAX_LEVELS).map(cleanLevel).filter(Boolean)
+        ? body.levels.slice(0, maxLevelsFor(known.published)).map(cleanLevel)
+            .filter(l => l && l.id && known.ids.has(l.id))
         : [];
 
     /* A run with no levels in it never started — the page opened the game and
@@ -235,6 +319,11 @@ async function record(db, event) {
 
     // Signed in or not; either is fine and only one of them has a name.
     const player = playerFrom(event);
+    /* THE RUN TOKEN, verified exactly as the leaderboard verifies it, and
+       filed as its run id — which is how ff-scores.js finds this row to check
+       a score against. Anything that does not verify is stored without one:
+       the log keeps every run, and only the board cares. */
+    const claims = body.run ? readRun(body.run, player) : null;
 
     const outcome = ["won", "lost", "abandoned"].includes(body.outcome)
         ? body.outcome : "abandoned";
@@ -292,6 +381,7 @@ async function record(db, event) {
         },
         v: 1
     };
+    if (claims) doc.rid = claims.rid;
 
     try {
         const ttl = await ensureIndexes(db);
@@ -304,7 +394,24 @@ async function record(db, event) {
                 return json(429, { recorded: false, reason: "rate" });
             }
         }
-        await col.insertOne(doc);
+        // Everybody at once — see GLOBAL_PER_HOUR. Both walk the `at` index.
+        const hour = await col.countDocuments({ at: { $gte: new Date(Date.now() - 60 * 60 * 1000) } },
+            { limit: GLOBAL_PER_HOUR });
+        const day = hour >= GLOBAL_PER_HOUR ? GLOBAL_PER_DAY
+            : await col.countDocuments({ at: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+                { limit: GLOBAL_PER_DAY });
+        if (hour >= GLOBAL_PER_HOUR || day >= GLOBAL_PER_DAY) {
+            console.warn("ff-runs: the global run-log cap is full", { hour, day });
+            return json(429, { recorded: false, reason: "busy" });
+        }
+        try {
+            await col.insertOne(doc);
+        } catch (e) {
+            // A second log for one token: the first stands, and the board
+            // has already been checked against it.
+            if (e && e.code === 11000) return json(200, { recorded: false, reason: "duplicate" });
+            throw e;
+        }
 
         /* The fallback prune, only while the TTL index above is missing.
            Failure here must not fail the write — the run is already saved
@@ -355,6 +462,15 @@ async function report(db, event) {
     // hasAccount rather than isAuthorized: this lists addresses, so a
     // deleted account's leftover token should not keep reading it.
     if (!(await hasAccount(event))) return UNAUTHORIZED;
+    /* THE ADDRESSES AND ACCOUNT IDS NEED MORE THAN AN ACCOUNT. Any login
+       could read them — a viewer, an atlas-only wizard account — and they
+       are the personal data in this collection: where people played from,
+       and which Discord account played. They go to the roles that carry the
+       "site" scope (owners and admins, see WRITE_SCOPES in _auth.js), the
+       same people who manage the accounts and bans those addresses are for.
+       Everybody else still gets the game-design half of the report. */
+    const role = await roleOf(event);
+    const personal = (WRITE_SCOPES[role] || []).includes("site");
 
     const asked = ((event.queryStringParameters || {}).range || "30d");
     const range = RANGES[asked] ? asked : "30d";
@@ -429,9 +545,20 @@ async function report(db, event) {
        whose slug happens to equal another's name cannot collide with it. That
        covers anything recorded before the id was added, and levels served by
        a build too old to send one. */
+    /* ONLY LEVELS THAT EXIST get a row. record() drops unknown ids now, but
+       the rows written before it did can carry anything — up to two hundred
+       invented levels a run — and this table is one entry per distinct id.
+       Unfiltered, a handful of old junk rows could push the response past
+       Netlify's 6MB limit and take the whole panel down with it. A failed
+       read of the level list falls back to no filter rather than no report. */
+    let knownIds = null;
+    try { knownIds = (await knownLevels(db)).ids; }
+    catch (e) { console.warn("ff-runs: level list unavailable, byLevel unfiltered -", e.message); }
+
     const levels = new Map();
     for (const r of rows) {
         for (const lv of r.levels || []) {
+            if (knownIds && !knownIds.has(lv.id)) continue;
             const key = lv.id || ("name:" + lv.name);
             let e = levels.get(key);
             if (!e) {
@@ -606,7 +733,18 @@ async function report(db, event) {
 
     /* ---- the runs themselves, newest first, with their levels intact so the
        panel can open one up and show the whole round. */
-    const recent = rows.slice(0, RECENT);
+    /* Each one's levels TRIMMED to what the game can produce, for the same
+       reason byLevel is filtered: an old row can hold two hundred entries,
+       and sixty of those is a response nobody asked for. `rid` stays behind —
+       it is the leaderboard's key into this row and nothing the panel shows.
+       The address and the account id go only to a caller allowed them. */
+    const keepLevels = maxLevelsFor(knownIds ? knownIds.size : 50);
+    const recent = rows.slice(0, RECENT).map(r => {
+        const { rid, ip, playerId, ...rest } = r;
+        const out = { ...rest, levels: (r.levels || []).slice(0, keepLevels) };
+        if (personal) { out.ip = ip === undefined ? null : ip; out.playerId = playerId === undefined ? null : playerId; }
+        return out;
+    });
 
     return json(200, {
         range,
@@ -643,7 +781,10 @@ async function report(db, event) {
         byOutcome: rank(byOutcome, 8),
         byWhy: rank(byWhy, 8),
         byPlayer,
-        byIp,
+        // Empty rather than absent for a caller without the site scope, so
+        // the panel's table reads "nothing to show" instead of breaking.
+        byIp: personal ? byIp : [],
+        personal,
         recent
     });
 }

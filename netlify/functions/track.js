@@ -43,12 +43,50 @@ const COLLECTION = "site_events";
    a beacon has nobody to read an error. The limiter row is not taken back,
    so an address that keeps hammering stays over the line until it stops.
 
-   The number is generous. The client sends at most one batch every four
-   seconds per tab (FLUSH_MS in js/track.js) — 150 in ten minutes — and a
-   school or an office can put many visitors behind one address. */
+   THE NUMBERS, and why they came down. This used to allow 300 batches of
+   40 rows per address per ten minutes — 72,000 rows an hour from one
+   address, kept for 60 days, and keyed on the EXACT address, so anybody on
+   IPv6 (whose provider hands out a /64, i.e. more addresses than there are
+   atoms to spare) could rotate through fresh keys forever and never meet
+   the cap at all. Three changes:
+
+   · An IPv6 address is counted by its /64, which is the unit one
+     subscriber is actually given; an IPv4 address is still itself.
+   · A batch is at most MAX_EVENTS_PER_BATCH rows, which is what the client
+     ever sends (MAX_BUFFER in js/track.js), and 60 batches per ten minutes
+     per address: one busy tab flushes every few seconds only while
+     somebody is clicking, and a school or an office behind one address
+     still fits — and if it does not, the cost is some dropped telemetry,
+     which is the cheapest thing this site has to lose.
+   · A GLOBAL ceiling on rows per minute (see overGlobal below), because no
+     per-address rule survives an attacker with enough addresses. Over it,
+     every batch is dropped until the minute turns. That can starve real
+     telemetry during an attack, and that is the right way round: the
+     numbers are a nicety, the database is not. */
 const LIMITS = "site_events_limits";
-const LIMIT_BATCHES = 300;
+const LIMIT_BATCHES = 60;
 const LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const GLOBAL_ROWS_PER_MIN = 1500;
+
+/* The part of an address that identifies one subscriber: IPv4 as it is, an
+   IPv4 dressed as IPv6 (::ffff:1.2.3.4) as the IPv4 underneath, and any
+   other IPv6 as its first four groups — the /64 — after expanding "::".
+   Nothing here is stored; it only feeds the HMAC below. */
+function subscriberOf(ip) {
+    const s = String(ip).trim().toLowerCase().replace(/%.*$/, "");     // a zone id is local noise
+    if (!s.includes(":")) return s;
+    const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(s);
+    if (mapped) return mapped[1];
+    const halves = s.split("::");
+    const head = halves[0] ? halves[0].split(":") : [];
+    const tail = halves.length > 1 && halves[1] ? halves[1].split(":") : [];
+    // A trailing dotted quad fills two groups, not one.
+    const width = (list) => list.length + (list.length && list[list.length - 1].includes(".") ? 1 : 0);
+    const groups = halves.length > 1
+        ? [...head, ...Array(Math.max(0, 8 - width(head) - width(tail))).fill("0"), ...tail]
+        : head;
+    return groups.slice(0, 4).map(g => (parseInt(g, 16) || 0).toString(16)).join(":") + "::/64";
+}
 
 function limiterKey(event) {
     // Netlify's own value only — see clientIp in contact.js.
@@ -56,7 +94,7 @@ function limiterKey(event) {
     if (!ip) return null;
     const day = new Date().toISOString().slice(0, 10);
     return crypto.createHmac("sha256", process.env.SESSION_SECRET || "maze-rats-track")
-        .update(`${day}|${ip}`).digest("base64").slice(0, 22);
+        .update(`${day}|${subscriberOf(ip)}`).digest("base64").slice(0, 22);
 }
 
 // True when this batch is over the cap and should be dropped.
@@ -65,11 +103,30 @@ async function overLimit(db, event) {
     if (!k) return false;
     const col = db.collection(LIMITS);
     await col.insertOne({ k, at: new Date() });
-    const n = await col.countDocuments({ k, at: { $gte: new Date(Date.now() - LIMIT_WINDOW_MS) } });
+    const n = await col.countDocuments({ k, at: { $gte: new Date(Date.now() - LIMIT_WINDOW_MS) } },
+        { limit: LIMIT_BATCHES + 1 });
     return n > LIMIT_BATCHES;
 }
+
+/* One counter document per minute, bumped by the rows each batch brings
+   and read back in the same atomic step, so a parallel burst cannot all
+   see room together (the insert-then-count idea again, in one round trip).
+   Counted by rows, not batches, and on the server's clock — the rows' own
+   `at` can be backdated by up to an hour (see the handler), so counting
+   site_events by `at` would let a sender hide its rows from the count.
+   Keyed by the minute alone: nothing about any caller is on it. The TTL
+   index on `at` sweeps old minutes with the per-address rows. */
+async function overGlobal(db, rows) {
+    const minute = new Date(Math.floor(Date.now() / 60000) * 60000);
+    const doc = await db.collection(LIMITS).findOneAndUpdate(
+        { _id: `global:${minute.toISOString()}` },
+        { $inc: { n: rows }, $setOnInsert: { at: minute } },
+        { upsert: true, returnDocument: "after" }
+    );
+    return Boolean(doc) && doc.n > GLOBAL_ROWS_PER_MIN;
+}
 const KEEP_DAYS = 60;              // matches the retention the policy states
-const MAX_EVENTS_PER_BATCH = 40;
+const MAX_EVENTS_PER_BATCH = 20;
 const MAX_NAME = 40;
 const MAX_LABEL = 80;
 
@@ -107,6 +164,8 @@ exports.handler = async (event) => {
         return ok;                 // malformed telemetry is not worth an error
     }
 
+    // "null" parses too, and reading .events off it threw out of the handler.
+    if (!body || typeof body !== "object") return ok;
     const events = Array.isArray(body.events) ? body.events.slice(0, MAX_EVENTS_PER_BATCH) : [];
     if (!events.length) return ok;
 
@@ -134,7 +193,10 @@ exports.handler = async (event) => {
     try {
         const db = await getDb();
         await ensureIndexes(db);
+        // Per address first, so a sender already over its own cap does not
+        // also spend the global allowance everybody else shares.
         if (await overLimit(db, event)) return ok;
+        if (await overGlobal(db, rows.length)) return ok;
         await db.collection(COLLECTION).insertMany(rows, { ordered: false });
     } catch (e) {
         // Never tell an anonymous caller anything, and never fail a beacon.
