@@ -423,7 +423,8 @@ const KEEP_VARS = ["--danger", "--danger-text"];
 
    So these are mapped as the light end is — faded and lifted, in the accent
    hue — exactly as --parchment-dim is, which is the token they are closest
-   to in use. Everything else still goes by its lightness. */
+   to in use. Everything else still goes by its lightness. (--amber-text is
+   text too, but is solved rather than mapped — see solveAmberText.) */
 const TEXT_VARS = ["--unknown", "--unknown-text"];
 
 const keepsSelector = sel => KEEP_SELECTORS.some(re => re.test(sel));
@@ -766,11 +767,47 @@ const contrast = (a, b) => {
     return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 };
 
-function classicChromeFill() {
+function classicVar(name) {
     const css = fs.readFileSync(path.join(ROOT, "css/style.css"), "utf8");
-    const m = css.match(/--chrome-fill:\s*#([0-9a-fA-F]{6})/);
-    if (!m) throw new Error("--chrome-fill is not in css/style.css any more");
+    const m = css.match(new RegExp(name + ":\\s*#([0-9a-fA-F]{6})"));
+    if (!m) throw new Error(name + " is not in css/style.css any more");
     return [0, 2, 4].map(i => parseInt(m[1].substr(i, 2), 16));
+}
+
+const classicChromeFill = () => classicVar("--chrome-fill");
+
+/* --amber-text: THE AMBER, LIFTED ONLY AS FAR AS TEXT NEEDS.
+
+   --amber is a border and fill colour that two dozen rules also set small
+   text in — the row's builder line, the eyebrows, the pills, the progress
+   counts. It lands among the accents (l 53%), which is right for a border,
+   and on the rows the text in it measured 3.9:1 in Deep Purple, 3.6:1 in
+   Witching Hour and 4.3:1 in Crimson. style.css gives those rules
+   --amber-text instead, the same value as --amber in classic.
+
+   Not added to TEXT_VARS. Mapped as text it came out at #a090af in Deep
+   Purple against a --parchment-dim of #9f92aa: readable, and no longer an
+   accent at all — every eyebrow and builder name turned into body copy. So
+   it is SOLVED, the way the grip dot is: the themed --amber keeps its hue
+   and saturation and takes the lightness that gives it classic's own ratio
+   against --chrome-row (5.1:1), and never less than 4.5:1. A palette whose
+   --amber already clears that (Pumpkin) is left exactly as it is. */
+function solveAmberText() {
+    const fg = classicVar("--amber");
+    const bg = classicVar("--chrome-row");
+    const target = Math.max(4.5, contrast(fg, bg));
+    const themedBg = toPurple(bg[0], bg[1], bg[2]) || bg;
+    const themedFg = toPurple(fg[0], fg[1], fg[2]) || fg;
+    if (contrast(themedFg, themedBg) >= target) return themedFg;
+    const [h, s, l0] = rgbToHsl(themedFg[0], themedFg[1], themedFg[2]);
+    let lo = l0, hi = 1, best = themedFg;
+    for (let i = 0; i < 20; i++) {
+        const mid = (lo + hi) / 2;
+        const px = hslToRgb(h, s, mid);
+        if (contrast(px, themedBg) < target) lo = mid;
+        else { hi = mid; best = px; }
+    }
+    return best;
 }
 
 /* The dot the tile should carry in this theme, given the dot and the fill it
@@ -1081,6 +1118,12 @@ function buildCss(recoloured) {
                whole class of bug. Only paint is mirrored: layout, spacing
                and typography are never copied, so this file still cannot
                move anything, only colour it. */
+            // Solved against --chrome-row rather than shifted; see solveAmberText.
+            if (prop === "--amber-text") {
+                keep.push("    --amber-text: " + asHex(...solveAmberText()) + ";");
+                declCount++;
+                continue;
+            }
             if (!touches(value, recoloured) && !PAINT_PROPS.includes(prop)) continue;
             IN_TEXT = TEXT_VARS.includes(prop);
             keep.push("    " + prop + ": " + shiftValue(value, recoloured) + ";");
@@ -1180,6 +1223,42 @@ function corrections() {
                   > contrast(bridge, hexToRgb(paleLabel));
     const subLabel = subDark ? darkLabel : paleLabel;
 
+    /* THE LABELS ON AN --amber FILL, MEASURED THE SAME WAY.
+
+       The chips and counts that fill with --amber — the selected tag chip,
+       the paused slideshow pill, the jump list's counts, the admin nav's
+       counts, a marked dead-end chip, the pill that is showing an older
+       picture — carry a dark label, and the transform darkens it along with
+       everything else. On classic's tan that is 5.9:1. But --amber is a MID
+       tone in every palette, and a mid tone is exactly where the ladder note
+       above says neither label is safe: the dark one measured 3.9:1 in Deep
+       Purple, 3.65:1 in Witching Hour and 4.3:1 in Crimson.
+
+       Adding them to the invert list below was the obvious fix and is wrong
+       twice over: pale on Pumpkin's gold is 2.97:1, and pale on Crimson's
+       steel (3.97:1) is worse than the dark it would replace. So both
+       candidates are measured against this theme's own --amber, and the
+       better one is used; where even that is short of 4.5:1 it is pushed to
+       the pure end on the same side — white for Deep Purple, black for
+       Crimson — which is as far as a label can go without changing the
+       fill, and the fill is a design decision rather than a bug. */
+    const amberClassic = classicVar("--amber");
+    const amberFill = toPurple(amberClassic[0], amberClassic[1], amberClassic[2]) || amberClassic;
+    /* The dark candidate is what the transform already makes of these rules'
+       own darkest label (#1a0f04, .admin-nav-count's), not darkLabel above:
+       darkLabel is l 10% and scored 5.5:1 on Pumpkin's gold where the
+       transformed label scores 6.3:1, and a palette that already passed
+       should come out of this no worse. */
+    const amberDark = asHex(...(toPurple(0x1a, 0x0f, 0x04) || [0x1a, 0x0f, 0x04]));
+    const amberDarkWins = contrast(amberFill, hexToRgb(amberDark)) >= contrast(amberFill, hexToRgb(paleLabel));
+    let amberLabel = amberDarkWins ? amberDark : paleLabel;
+    if (contrast(amberFill, hexToRgb(amberLabel)) < 4.5) amberLabel = amberDarkWins ? "#000000" : "#ffffff";
+    const amberRatio = contrast(amberFill, hexToRgb(amberLabel));
+    if (amberRatio < 4.5) {
+        console.warn("  !! " + THEME + ": the best label on --amber is " + amberLabel + " at "
+            + amberRatio.toFixed(2) + ":1 — the fill itself needs to move");
+    }
+
     return `
 /* ============================================================ CORRECTIONS */
 
@@ -1256,10 +1335,22 @@ function corrections() {
 [data-theme="${THEME}"] .chrome-body .btn,
 [data-theme="${THEME}"] .modal-body .btn,
 [data-theme="${THEME}"] .chrome-nav-btn.active,
-[data-theme="${THEME}"] .old-versions-pill.is-showing,
 [data-theme="${THEME}"] .console-tab-label,
 [data-theme="${THEME}"] .featured-frame .chrome-nav-btn-recommended {
     color: ${paleLabel};
+}
+
+/* The labels on a flat --amber fill: not inverted but measured, because a
+   mid-tone fill takes neither label reliably. ${amberRatio.toFixed(2)}:1 here. See
+   tools/themes.js. .old-versions-pill.is-showing moved here from the list
+   above: its fill is --amber too, and pale on it failed in three palettes. */
+[data-theme="${THEME}"] .gallery-pause.is-paused,
+[data-theme="${THEME}"] .old-versions-pill.is-showing,
+[data-theme="${THEME}"] .tag-chip.selected,
+[data-theme="${THEME}"] .archive-empty-jump-count,
+[data-theme="${THEME}"] .admin-nav-count,
+[data-theme="${THEME}"] .de-chip.is-marked {
+    color: ${amberLabel};
 }
 
 /* The dark label carried its own light text-shadow to lift it off the tan.

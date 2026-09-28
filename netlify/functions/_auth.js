@@ -258,11 +258,12 @@ async function isOwner(event) {
    editor, the furni scans and refreshes. Those never pass through canWrite,
    so they never reached the one place the action log is written, and the
    most privileged writes on the site were the only ones that left no trace.
-   Same fire-and-forget record canWrite makes: it cannot hold up or fail the
-   request. isOwner stays as it was for the owner-only READS. */
+   Same briefly-awaited record canWrite makes: it cannot fail the request,
+   and holds it up by AUDIT_WAIT_MS at most (see _audit.js). isOwner stays as
+   it was for the owner-only READS. */
 async function isOwnerWrite(event) {
     const owner = await isOwner(event);
-    if (owner) recordWrite(event, usernameFromToken(event), sessionOf(event));
+    if (owner) await recordWrite(event, usernameFromToken(event), sessionOf(event));
     return owner;
 }
 
@@ -285,9 +286,12 @@ async function canWrite(event, scope = "site") {
     /* Every mutating endpoint on the site passes through here, which makes it
        the one place an action log can be kept without threading a call
        through ten handlers — and the one place that cannot be forgotten when
-       an eleventh is added. Not awaited: the log must never hold up a save,
-       or take one down with it. */
-    if (allowed) recordWrite(event, usernameFromToken(event), sessionOf(event));
+       an eleventh is added. Awaited, but capped: this was fire-and-forget,
+       and Netlify freezes an instance the moment its handler returns, so
+       a write still in flight went unrecorded as often as not. It still can
+       never take a save down (record swallows its own errors), and holds
+       one up by AUDIT_WAIT_MS at most — see _audit.js. */
+    if (allowed) await recordWrite(event, usernameFromToken(event), sessionOf(event));
     return allowed;
 }
 
@@ -325,9 +329,20 @@ const OUT_OF_SCOPE = forbidden("This account can only make changes to the atlas.
    stays correct for them in the case that actually happens — a viewer. A
    atlas account is refused by those too, just with a slightly blunt
    message, and only ever by hand-crafting the request: the admin page never
-   shows it a control that would send one. */
+   shows it a control that would send one.
+
+   And no role at all is no account: a token whose account was deleted, or
+   minted before its password last changed, has a perfectly valid signature
+   and so passes isAuthorized, then fails canWrite with a null role. That
+   used to fall through to the 403 — "view-only", or "atlas only" — so the
+   admin page kept a dead session and told its user something untrue about
+   it. A 401 is the answer the page acts on by signing out, which is what
+   that session is. Endpoints that still return READ_ONLY directly should
+   come through here instead to get this right. */
 async function refuseWrite(event) {
-    return (await roleOf(event)) === "viewer" ? READ_ONLY : OUT_OF_SCOPE;
+    const role = await roleOf(event);
+    if (role === null) return UNAUTHORIZED;
+    return role === "viewer" ? READ_ONLY : OUT_OF_SCOPE;
 }
 
 module.exports = {

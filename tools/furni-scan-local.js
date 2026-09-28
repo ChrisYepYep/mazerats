@@ -60,6 +60,7 @@ const { getCatalogue } = require("../netlify/functions/furni-catalogue.js");
 const { blobStore } = require("../netlify/functions/_blobs.js");
 const { getDb } = require("../netlify/functions/_db.js");
 const { spriteList, isLegacySpriteKey } = require("../netlify/functions/_furni-sprites.js");
+const { pieceKey } = require("../netlify/functions/_furni-merge.js");
 
 const CACHE = path.join(__dirname, ".cache", "sprites");
 const SITE = process.env.SCAN_SITE_URL || "https://mazerats.net";
@@ -465,6 +466,18 @@ function imagesOf(doc) {
         // Names already spoken for, so a "find" that is really just the
         // same furni again can be recognised and dropped.
         const known = new Set(kept.map(f => f && f.name).filter(Boolean));
+        /* Pieces an admin hid, which stay hidden when this rescan finds
+           them again. The admin editor promises exactly that ("a hidden one
+           stays hidden"), and this used to break it: a rescan replaced the
+           scanned pieces wholesale, hidden flags and all, and every false
+           positive somebody had hidden came back on the site. Matched by
+           the same identity the form's saves merge by (pieceKey in
+           netlify/functions/_furni-merge.js: which furni, and where), so the
+           scan and the form agree on which piece is which. A piece the
+           admin REMOVED is still found again — removing is not a record
+           the scan can see, and the editor says so. */
+        const hiddenKeys = new Set(previous.filter(f => f && f.hidden && !f.manual).map(pieceKey));
+        const keepHidden = it => (hiddenKeys.has(pieceKey(it)) ? { ...it, hidden: true } : it);
         if (result.error) {
             // In additive mode a failed image must not lose the furni it
             // already had — the run promised to change nothing that is
@@ -478,7 +491,7 @@ function imagesOf(doc) {
                 ? { ...(current || {}), items: kept }
                 : { skipped: result.skipped, roomColours: result.roomColours, items: kept };
         }
-        const items = result.items.filter(it => !ADDITIVE || !known.has(it.name));
+        const items = result.items.filter(it => !ADDITIVE || !known.has(it.name)).map(keepHidden);
         return {
             ...(ADDITIVE ? (current || {}) : {}),
             scannedAt: result.scannedAt,

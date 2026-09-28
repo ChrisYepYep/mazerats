@@ -24,8 +24,24 @@
 
     const MAX = 80;
 
+    // Accents folded first ("São" is sao), as the server now does — see
+    // slugify in _slugs.js for why no stored address moved when it began,
+    // and for the picture glyphs (Ì Í Î Õ ì í î õ, which Habbo's font
+    // draws as pictures) that are left out of the folding.
+    const PICTURE_GLYPHS = new RegExp("[" + [0xCC, 0xCD, 0xCE, 0xD5, 0xEC, 0xED, 0xEE, 0xF5]
+        .map(c => String.fromCharCode(c)).join("") + "]", "g");
     function slugify(text) {
-        return String(text || "").toLowerCase().trim()
+        return slugifyWith(String(text || "").replace(PICTURE_GLYPHS, " ")
+            .normalize("NFD").replace(/\p{M}/gu, ""));
+    }
+
+    // The rule before folding, for isAutomatic below.
+    function slugifyUnfolded(text) {
+        return slugifyWith(String(text || ""));
+    }
+
+    function slugifyWith(text) {
+        return text.toLowerCase().trim()
             .replace(/['’]/g, "")
             .replace(/[^a-z0-9]+/g, "-")
             .replace(/(^-|-$)/g, "")
@@ -33,11 +49,15 @@
             .replace(/-$/, "");
     }
 
+    // Folded or not: an address worked out before folding is still the
+    // automatic one (isAutomatic in _slugs.js).
     function isAutomatic(slug, title) {
-        const base = slugify(title);
-        if (!slug || !base) return !slug;
-        const stem = base.slice(0, MAX - 4).replace(/-+$/, "") + "-";
-        return slug === base || (slug.startsWith(stem) && /^\d+$/.test(slug.slice(stem.length)));
+        const bases = [...new Set([slugify(title), slugifyUnfolded(title)].filter(Boolean))];
+        if (!slug || !bases.length) return !slug;
+        return bases.some(base => {
+            const stem = base.slice(0, MAX - 4).replace(/-+$/, "") + "-";
+            return slug === base || (slug.startsWith(stem) && /^\d+$/.test(slug.slice(stem.length)));
+        });
     }
 
     const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({

@@ -49,11 +49,12 @@ const { SECURITY_HEADERS } = require("./_headers");
 /* dayIsOpen and rangeBounds are rules about the clock and the calendar
    rather than about the game, and both games want the same answers. The
    deal itself is _deal.js's. */
-const { dayIsOpen, rangeBounds } = require("./_daily");
+const { dayIsOpen, dayClosesAt, rangeBounds } = require("./_daily");
 /* Where the boards start, and what counts as a day, from daily-scores.js so
    the two games and the combined board cut at the same place. See launchCut
    and isRealDay there. */
-const { launchCut, afterLaunch, fromLaunch, isRealDay } = require("./daily-scores");
+const { launchCut, afterLaunch, fromLaunch, isRealDay, filedScore } = require("./daily-scores");
+const { clientNet } = require("./_net");
 const speed = require("./_speed");
 const deals = require("./_deal");
 
@@ -173,7 +174,16 @@ function scoreClaim(dealRounds, rounds) {
         }
         moves.push({ guesses, won, done: won || guesses.length >= TRIES });
     }
-    return scoreRecorded(moves);
+    /* Only a FINISHED day is a claim. Five empty guess lists passed every
+       check above — each is an array, and no name in it is one the round
+       did not offer — and were filed as a finished day scoring nothing:
+       a row that took the player's one submission for the day, so the day
+       they then actually played signed in was answered "already", 0 points.
+       scoreRecorded says whether every room is over; a claim that is not
+       is no claim. Odd One Out's scoreClaim needs a pick per round for the
+       same reason. */
+    const scored = scoreRecorded(moves);
+    return scored.complete ? scored : null;
 }
 
 // What the page is told about a finished round: the maze it was, so the
@@ -202,7 +212,7 @@ function progressView(dealRounds, moves) {
 /* RIGHT ANSWERS FIRST, ON EVERY DAILY BOARD. Rounds answered correctly
    decide the order, and the total (points plus speed bonus) only orders
    players level on those. The bonus can be worth far more than a round (up
-   to 37 a round against 10 — see _speed.js), so ranked on the total alone
+   to 36 a round against 10 — see _speed.js), so ranked on the total alone
    a fast day with four right would sit above a slower day with all five;
    ranked this way, speed separates players who got the same number right
    and never lifts anybody over someone who got more right. The same order
@@ -383,7 +393,12 @@ exports.handler = async (event) => {
         // Today, or the day that ended in the last few minutes — see
         // dayIsOpen in _daily.js for why the grace period exists. A day that
         // has not happened cannot have been played.
-        if (!dayIsOpen(day)) return json(400, { error: "That day is not open" });
+        //
+        // Except a signed-in player's finishing request for a closed day
+        // whose guesses were all recorded before it closed — see LATE
+        // FILING below, and the same rule in daily-scores.js.
+        const open = dayIsOpen(day);
+        if (!open && (body.action !== undefined || !player)) return json(400, { error: "That day is not open" });
 
         /* ---------- one guess ----------
 
@@ -397,13 +412,27 @@ exports.handler = async (event) => {
            later scored from those records. The answer is only told once the
            round is over.
 
-           Signed out — or signed in on a day the page began signed out, which
-           says so with `anon` — nothing is stored and the server cannot know
-           how many guesses the round has had, so the page says when it has
-           spent its last (`final`), and the answer comes back then or on the
-           right name. Nothing about it counts until a finished day is filed
-           (see scoreClaim), and a player willing to ask for answers this way
-           could as easily have played the day in a private window. */
+           Signed out, nothing is stored and the server cannot know how many
+           guesses the round has had, so the page says when it has spent its
+           last (`final`), and the answer comes back then or on the right
+           name. Nothing about it counts until a finished day is filed (see
+           scoreClaim).
+
+           That made it the cheapest answer check on the site: ONE request
+           with `final: true` names the maze, no guessing needed. Two things
+           now stand in front of it, as in daily-scores.js, where the
+           reasoning is written out in full:
+
+             - `anon` from a request carrying a valid session is refused
+               (400 "signed in"). It used to be answered unrecorded, so a
+               signed-in player could ask for a round's answer that way and
+               then guess it, recorded, on the first view. The page records
+               the day instead, replaying any guesses it made signed out
+               first (adoptRecorded in js/guess.js).
+             - signed-out guesses are capped per network per day
+               (claimAnonMove in _speed.js), at three times a day's most
+               guesses and then some — beyond any person, well short of a
+               script asking every round of every day. */
         if (body.action === "move") {
             if (String(event.body || "").length > speed.MAX_START_BODY) return privateJson(413, { error: "Too large" });
             const round = speed.markRound(body.round, ROUNDS);
@@ -420,7 +449,13 @@ exports.handler = async (event) => {
             const offered = dealt && dealt.options.find(o => normalise(o) && normalise(o) === normalise(guess));
             if (!offered) return privateJson(400, { error: "Bad move" });
 
-            if (!player || body.anon === true) {
+            if (player && body.anon === true) {
+                return privateJson(400, { error: "signed in", reason: "signed-in" });
+            }
+            if (!player) {
+                const allowed = await speed.claimAnonMove(db, "guess", day, clientNet(event),
+                    speed.anonMoveLimit(deal.rounds.length, TRIES));
+                if (!allowed) return privateJson(429, { reason: "anon-limit", error: "Too many guesses from this network today" });
                 const correct = normalise(offered) === normalise(dealt.name);
                 return privateJson(200, {
                     recorded: false, correct,
@@ -495,17 +530,29 @@ exports.handler = async (event) => {
            — played signed out, filed now the player has signed in — reads the
            request's guesses, judged against the stored deal, with no bonus
            (scoreClaim). */
+        /* LATE FILING, as in daily-scores.js, where the reasoning is: a
+           closed day is still filed if every room was recorded and the last
+           guess was stamped before the day closed (dayClosesAt in
+           _daily.js), because the score is built from those stamps and not
+           from when this request arrived. A claim (a day played signed out)
+           has no stamps and is refused once closed, and so is a day with a
+           room still open — finally (400), not as "unfinished". */
+        const closed = () => json(400, { error: "That day is not open" });
         let scored, clock = null, claimed = false;
         try {
+            const row = await speed.progressFor(db, "guess", day, player.id);
+            // Before the deal, so a closed day with nothing recorded never
+            // causes one to be dealt.
+            if (!open && !(speed.lastMarkAt(row) <= dayClosesAt(day))) return closed();
             const deal = await deals.dealFor(db, ensureUniqueIndex, "guess", day);
             if (!deal.rounds.length) return json(409, { recorded: false, reason: "no-deal" });
-            const row = await speed.progressFor(db, "guess", day, player.id);
             const moves = speed.movesOf(row, deal.rounds.length);
             if (moves.some(Boolean)) {
                 scored = scoreRecorded(moves);
-                if (!scored.complete) return privateJson(409, { recorded: false, reason: "unfinished" });
+                if (!scored.complete) return open ? privateJson(409, { recorded: false, reason: "unfinished" }) : closed();
                 clock = speed.clockOf(row);
             } else {
+                if (!open) return closed();
                 scored = scoreClaim(deal.rounds, body.rounds);
                 claimed = true;
             }
@@ -582,20 +629,26 @@ async function dealReply(db, event, params) {
         return privateJson(503, { error: "The day could not be dealt just now" });
     }
     const player = playerFrom(event);
-    let progress = null, filed = false;
+    let progress = null, filed = false, score = null;
     if (player) {
         try {
             const row = await speed.progressFor(db, "guess", day, player.id);
             progress = progressView(deal.rounds, speed.movesOf(row, deal.rounds.length));
-            filed = Boolean(await db.collection(COLLECTION).findOne({ day, playerId: player.id }, { projection: { _id: 1 } }));
+            const onFile = await db.collection(COLLECTION).findOne({ day, playerId: player.id },
+                { projection: { _id: 1, points: 1, bonus: 1, solved: 1 } });
+            filed = Boolean(onFile);
+            // The filed day's base, bonus and rounds right, for the results
+            // card on a reload — see filedScore in daily-scores.js.
+            score = filedScore(onFile);
         } catch (e) {
             progress = null;
         }
     }
     return privateJson(200, {
         day, today: todayIso(), now: Date.now(),
-        rounds: deals.publicRounds("guess", deal.rounds),
-        progress, filed
+        // Picture addresses, never the stored references — see _deal.js.
+        rounds: deals.publicRounds("guess", deal.rounds, day),
+        progress, filed, score
     });
 }
 

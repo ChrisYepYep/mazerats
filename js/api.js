@@ -171,28 +171,75 @@ const Api = {
          certainly answered or died. A shorter leash on a write can report
          failure for a save that went on to succeed, and the retry that
          follows is a duplicate;
-       - image uploads: 90s, because the time is the visitor's upload
-         bandwidth, not the function.
+       - image uploads: sized to the picture (uploadTimeout below), because
+         the time is the visitor's upload bandwidth, not the function.
 
        The timer is not cleared on the headers, so a body that stalls is
        covered too; an abort after the body has been read does nothing. A
        timeout comes back as an ordinary Error with a sentence a person can
-       read (and err.timedOut), which every caller already shows. */
+       read (and err.timedOut), which every caller already shows.
+
+       ---- INCLUDING A TIMEOUT WHILE THE BODY IS READ (28 Sept 2026).
+
+       Only the fetch() itself used to be translated. The leash runs on past
+       the headers on purpose, but when it ran out during res.json() the
+       caller got the browser's raw AbortError ("The user aborted a
+       request.") — or, worse, nothing at all: getFurniCatalogue, login and
+       the contact form read their bodies with .catch(() => ({})), so a
+       timed-out catalogue search came back as an empty result that looked
+       like "no furni by that name". The response's body readers are now
+       wrapped so that abort becomes the same friendly timeout error, and
+       _body() below reads a body with a fallback for a MALFORMED one while
+       letting a timeout through. */
     _TIMEOUT_READ: 15000,
     _TIMEOUT_WRITE: 30000,
     _TIMEOUT_UPLOAD: 90000,
+
+    /* An upload's leash, by its size. A flat 90s was fine for a screenshot
+       and cut off a 4MB one on a slow uplink that was getting there — and
+       the retry that followed started from nothing. 30s for the function,
+       plus a second for every 50KB of body (about 400kbit/s, a poor
+       mobile uplink), never less than the old 90s and never more than five
+       minutes. `bytes` is the request body's length; a data: URL's length
+       is close enough. Also used by js/console-info.js for the lead form's
+       pictures. */
+    uploadTimeout(bytes) {
+        const n = Math.max(0, Number(bytes) || 0);
+        return Math.min(300000, Math.max(this._TIMEOUT_UPLOAD, 30000 + Math.ceil(n / 51200) * 1000));
+    },
+
+    _timeoutError() {
+        const err = new Error("That took too long to answer. Check your connection and try again.");
+        err.timedOut = true;
+        return err;
+    },
 
     _timedFetch(url, opts, ms) {
         if (typeof AbortController === "undefined") return fetch(url, opts);
         const controller = new AbortController();
         setTimeout(() => controller.abort(), ms || this._TIMEOUT_READ);
-        return fetch(url, { ...(opts || {}), signal: controller.signal }).catch(e => {
-            if (e && e.name === "AbortError") {
-                const err = new Error("That took too long to answer. Check your connection and try again.");
-                err.timedOut = true;
-                throw err;
-            }
+        const mapAbort = e => {
+            if (e && e.name === "AbortError") throw this._timeoutError();
             throw e;
+        };
+        return fetch(url, { ...(opts || {}), signal: controller.signal }).then(res => {
+            // See INCLUDING A TIMEOUT WHILE THE BODY IS READ, above.
+            ["json", "text", "blob", "arrayBuffer"].forEach(name => {
+                const read = res[name];
+                if (typeof read !== "function") return;
+                try { res[name] = () => read.call(res).catch(mapAbort); } catch (e) { /* frozen: left raw */ }
+            });
+            return res;
+        }, mapAbort);
+    },
+
+    /* A body read with a fallback for one that is not JSON (an HTML error
+       page from the platform, an empty 204) — but NOT for a timeout, which
+       is rethrown rather than dressed up as an empty answer. */
+    _body(res, fallback) {
+        return res.json().catch(e => {
+            if (e && e.timedOut) throw e;
+            return fallback;
         });
     },
 
@@ -206,9 +253,12 @@ const Api = {
             body: body !== undefined ? JSON.stringify(body) : undefined
         }, ms || (method === "GET" ? this._TIMEOUT_READ : this._TIMEOUT_WRITE));
         if (!res.ok) {
-            const detail = await res.json().catch(() => ({}));
+            const detail = await this._body(res, {});
             const err = new Error(detail.error || `Request failed: ${res.status}`);
             err.status = res.status;
+            // The whole answer, for callers that act on more than the
+            // message — e.g. upload's 409 { inUse: true }.
+            err.data = detail;
             throw err;
         }
         return res.status === 200 || res.status === 201 ? res.json() : null;
@@ -232,7 +282,8 @@ const Api = {
        a full admin, "wizard" needs only the atlas scope. See
        FOLDER_SCOPES in netlify/functions/upload.js. */
     uploadImage(token, prefix, filename, dataUrl, folder) {
-        return this._write("/.netlify/functions/upload", "POST", token, { prefix, filename, dataUrl, folder }, this._TIMEOUT_UPLOAD);
+        return this._write("/.netlify/functions/upload", "POST", token, { prefix, filename, dataUrl, folder },
+            this.uploadTimeout(String(dataUrl || "").length));
     },
     // Starts the furni scan. A background function, so this returns as soon
     // as Netlify has accepted the job (202) rather than when scanning ends —
@@ -293,7 +344,7 @@ const Api = {
         if (limit > 0) params.set("limit", String(limit));
         if (q) params.set("sprites", "1");
         const res = await this._timedFetch("/.netlify/functions/furni-catalogue?" + params);
-        const data = await res.json().catch(() => ({}));
+        const data = await this._body(res, {});
         if (!res.ok) throw new Error(data.error || `Furni catalogue unavailable (${res.status})`);
         return data;
     },
@@ -308,7 +359,7 @@ const Api = {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "login", username, password })
         });
-        const data = await res.json().catch(() => ({}));
+        const data = await this._body(res, {});
         if (!res.ok) {
             const err = new Error(data.error || `Login failed: ${res.status}`);
             err.status = res.status;
@@ -331,7 +382,7 @@ const Api = {
            already did, and the caller says "try again" with the token kept. */
         if (res.status === 401 || res.status === 403) return null;
         if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
+            const data = await this._body(res, {});
             const err = new Error(data.error || `Couldn't check the session: ${res.status}`);
             err.status = res.status;
             throw err;
@@ -381,15 +432,28 @@ const Api = {
        response arrives.
 
        The cost of the other direction is small and self-healing — a
-       first-time visitor during an outage sees Coming Soon for one load.
-       Anyone who has been here before while it was live remembers "enter"
-       and is unaffected. */
+       visitor during an outage sees a closed door for one load, and the
+       landing page's watcher opens it the moment settings answer again.
+       (It used to let anyone who remembered "enter" straight in; it no
+       longer does — see unreadableLandingState below.) */
     rememberLandingState(state) {
         try { localStorage.setItem("mazerats_landing_state", state); } catch (e) { /* private mode */ }
     },
 
     lastKnownLandingState() {
         try { return localStorage.getItem("mazerats_landing_state"); } catch (e) { return null; }
+    },
+
+    /* What to believe when settings cannot be read: always a GATED state
+       (28 Sept 2026). The last-seen fallback above let a returning visitor
+       who remembered "enter" through during an outage — and an outage is
+       exactly when the site is likely to be in Maintenance on purpose. So
+       the memory now only chooses the wording: anyone who has seen the site
+       open or in Maintenance is told Maintenance, anyone else Coming Soon.
+       home.html's gate uses the same rule. */
+    unreadableLandingState() {
+        const last = this.lastKnownLandingState();
+        return last === "enter" || last === "maintenance" ? "maintenance" : "coming-soon";
     },
 
     /* WHICH PALETTE THE SITE IS WEARING.
@@ -498,10 +562,10 @@ const Api = {
             // The gate's own request. `.catch` and not a bare adopt: if that
             // one failed, this must still fall back the way it always did
             // rather than rejecting into every caller on the page.
-            ? Promise.resolve(shared).catch(() => null).then(v => v ||
-                ({ landingState: this.lastKnownLandingState() || "coming-soon", fromCache: true }))
+            ? Promise.resolve(shared).catch(() => null).then(v => (v && v.landingState) ? v :
+                ({ landingState: this.unreadableLandingState(), fromCache: true }))
             : this._getWithFallback("/.netlify/functions/settings", "site settings",
-                () => ({ landingState: this.lastKnownLandingState() || "coming-soon", fromCache: true }));
+                () => ({ landingState: this.unreadableLandingState(), fromCache: true }));
 
         this._settingsPromise = fetched.then(settings => {
             if (!settings.fromCache && settings.landingState) this.rememberLandingState(settings.landingState);
@@ -556,7 +620,7 @@ const Api = {
             credentials: "same-origin",
             body: JSON.stringify({ message, username, discord, website })
         }, this._TIMEOUT_WRITE);
-        const data = await res.json().catch(() => ({}));
+        const data = await this._body(res, {});
         if (!res.ok) {
             const err = new Error(data.error || `Request failed: ${res.status}`);
             err.status = res.status;

@@ -93,6 +93,7 @@ function minifyCss(source, file) {
     let before = 0;
     let after = 0;
     const rows = [];
+    const failed = [];
 
     for (const dir of DIRS) {
         const abs = path.join(ROOT, dir);
@@ -107,12 +108,21 @@ function minifyCss(source, file) {
                     ? await minifyJs(source, name)
                     : minifyCss(source, name);
             } catch (err) {
-                /* A file that will not parse is left exactly as it is rather
-                   than failing the build. Shipping one unminified file is a
-                   slower page; failing the deploy over it takes the whole
-                   site down for a saving nobody asked for. It is reported
-                   loudly enough to be fixed. */
-                console.error("  !! " + dir + "/" + name + " left as-is: " + err.message);
+                /* A file that will not parse FAILS THE BUILD, once every
+                   other file has been tried so the log names them all.
+
+                   It used to be left as-is and the build carried on, on the
+                   reasoning that one unminified file is only a slower page.
+                   But a file terser cannot parse is almost always a file the
+                   BROWSER cannot parse either — a real syntax error that
+                   would ship and take its page down — and the "reported
+                   loudly" line sat in a build log nobody reads on a green
+                   deploy. netlify.toml's own note says a terser failure is
+                   meant to be "a signal worth stopping for"; the catch here
+                   quietly swallowed it and exited 0. A failed deploy leaves
+                   the last good one live, which is the safe outcome. */
+                console.error("  !! " + dir + "/" + name + " will not parse: " + err.message);
+                failed.push(dir + "/" + name);
                 before += Buffer.byteLength(source);
                 after += Buffer.byteLength(source);
                 continue;
@@ -133,6 +143,12 @@ function minifyCss(source, file) {
     console.log("  " + "TOTAL".padEnd(28) + kb(before).padStart(9) + " -> " + kb(after).padStart(9)
         + "   (" + Math.round((1 - after / before) * 100) + "% smaller)");
     if (dryRun) console.log("\n  Nothing was written. Netlify runs this with NETLIFY=true; use --force to write here.");
+    // Non-zero even on a dry run, so the same syntax error shows up when the
+    // script is run by hand before a push.
+    if (failed.length) {
+        console.error("\nbuild-minify: " + failed.length + " file(s) would not parse: " + failed.join(", "));
+        process.exit(1);
+    }
 })().catch(err => {
     console.error("build-minify failed:", err);
     process.exit(1);

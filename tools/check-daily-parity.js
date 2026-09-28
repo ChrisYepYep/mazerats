@@ -36,7 +36,9 @@
  *      round's five names, no hallway and no maze catalogued on the day.
  *      And the copy the page is SENT carries none of the answers — the
  *      point of dealing on the server is lost the moment one leaks back
- *      into the page.
+ *      into the page. That includes the pictures' addresses: a stored path
+ *      names the maze's folder, so the page must get signed deal-image
+ *      addresses (netlify/functions/deal-image.js) and never a raw path.
  *
  *   3. THE SEED IS SECRET. With SESSION_SECRET set, a day is not dealt
  *      from the public seed anybody could compute, and a featured day's
@@ -49,6 +51,9 @@
  *   5. THE CALENDAR. js/daily.js is RUN (not parsed — parsing would be a
  *      third implementation) with a fake clock, to check that today()
  *      follows the clock, and follows the server's clock once told it.
+ *      The same run checks the speed-bonus line the results cards print
+ *      (Daily.bonusLine), and section 1 holds the most a round can earn,
+ *      as the splashes print it, to the server's.
  *
  *     node tools/check-daily-parity.js
  *
@@ -101,6 +106,19 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     check(oddPage === oddServer, `Odd One Out POINTS_EACH — page ${oddPage} vs server ${oddServer}`);
     check(constant("js/oddoneout.js", "ROUNDS") === constant("netlify/functions/daily-scores.js", "ROUNDS"), "Odd One Out ROUNDS differ");
 
+    /* The most a round's speed bonus can be, as the notes say it: 36, not
+       the formula's 37, because no round can end sooner than MIN_MOVE_MS
+       after it began (see HOW BIG IT IS in _speed.js). The notes in
+       _speed.js, guess-scores.js and js/guess.js said 37 and 185 for a
+       while; this fails if the two constants move and leave "36" behind. */
+    const speed = require(path.join(ROOT, "netlify", "functions", "_speed.js"));
+    const bestRound = speed.roundBonusFor(speed.MIN_MOVE_MS);
+    check(bestRound === 36, `the best round bonus is now ${bestRound}, not 36 — update the notes in _speed.js, guess-scores.js and js/guess.js`);
+    check(/up to 36 for each room/.test(read("js/guess.js")), "js/guess.js no longer says the bonus is up to 36 a room");
+    // And the figure both games' splashes print (Daily.bonusRule).
+    const pageBest = constant("js/daily.js", "SPEED_BONUS_MAX");
+    check(pageBest === bestRound, `the splashes say the speed bonus is up to ${pageBest} a round, the server's best is ${bestRound}`);
+
     const grace = constant("js/guess.js", "DAY_GRACE_MS");
     const serverGrace = require(path.join(ROOT, "netlify", "functions", "_daily.js")).GRACE_MS;
     check(grace === serverGrace, `the midnight grace — page ${grace}ms vs server ${serverGrace}ms`);
@@ -151,13 +169,36 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     });
 
     // What the page is sent.
-    const sentOdd = deals.publicRounds("odd", odd);
-    const sentGuess = deals.publicRounds("guess", guess);
+    const sentOdd = deals.publicRounds("odd", odd, DAY);
+    const sentGuess = deals.publicRounds("guess", guess, DAY);
     check(sentOdd.every(r => r.tiles.every(t => Object.keys(t).join() === "image")),
         "the Odd One Out deal sent to the page carries more than the pictures");
     check(!/"(odd|home|imposter|homeId|imposterId)"/.test(JSON.stringify(sentOdd)), "the Odd One Out deal sent to the page names an answer");
     check(sentGuess.every(r => Object.keys(r).sort().join() === "crop,image,options"),
         "the Guess the Maze deal sent to the page carries more than picture, names and crop");
+
+    /* THE PICTURE ADDRESSES. A stored reference names the maze's folder
+       (rooms/<id>/…), so the deal must send deal-image addresses and never
+       one stored path — see "the picture addresses" in _deal.js. Every
+       address must be signed for its own picture, and a publicRounds call
+       without the day must refuse rather than fall back to raw paths. */
+    const sentAll = JSON.stringify([sentOdd, sentGuess]);
+    check(!sentAll.includes("/img/"), "the deal sent to the page carries a stored picture path — the address gives the answer away");
+    const addresses = sentOdd.flatMap(r => r.tiles.map(t => t.image)).concat(sentGuess.map(r => r.image));
+    check(addresses.every(a => a.startsWith(deals.IMAGE_FUNCTION + "?")), "a picture in the deal is not a deal-image address");
+    check(new Set(addresses).size === addresses.length, "two pictures in the deal share one address");
+    const addrOk = (game, rounds) => rounds.every((r, i) => (game === "odd" ? r.tiles.map(t => t.image) : [r.image]).every((a, j) => {
+        const q = new URLSearchParams(a.split("?")[1]);
+        const ref = deals.imageRefAt({ rounds: game === "odd" ? odd : guess }, game, i, j);
+        return q.get("g") === game && q.get("d") === DAY && q.get("r") === String(i) && q.get("t") === String(j) &&
+            deals.imageSigMatches(game, DAY, i, j, ref, q.get("s")) &&
+            !deals.imageSigMatches(game, "2026-10-06", i, j, ref, q.get("s"));
+    }));
+    check(addrOk("odd", sentOdd), "an Odd One Out picture address is not signed for its own day, round, tile and picture");
+    check(addrOk("guess", sentGuess), "a Guess the Maze picture address is not signed for its own day, round and picture");
+    let refused = false;
+    try { deals.publicRounds("odd", odd); } catch (e) { refused = true; }
+    check(refused, "publicRounds without a day did not refuse — a caller that forgot it would send the raw paths");
 
     // The seed.
     check(seedOf("guess") !== daily.daySeed(DAY, "guess"), "with a secret set, the deal is still dealt from the public seed");
@@ -211,6 +252,25 @@ for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
         check(Daily.today() === "2026-10-06", `Daily.today() does not follow the server's clock once told it (saw ${Daily.today()})`);
         Daily.setServerNow(clock.now);
         check(Daily.today() === "2026-10-05", "Daily.today() did not come back when the clocks agreed again");
+
+        /* The line under a finished day's points (Daily.bonusLine): the
+           bonus and total only from a day the server filed, nothing about a
+           bonus for a signed-out day except how to earn one, and nothing at
+           all while a signed-in day's figures are still on their way. */
+        const line = o => (typeof Daily.bonusLine === "function" ? Daily.bonusLine(o) : null);
+        check(line({ score: { points: 50, bonus: 161 }, signedIn: true, mode: "account" }) === "50 + 161 speed bonus = 211 on the boards",
+            "Daily.bonusLine does not show base + bonus = total for a filed day");
+        check(line({ score: { points: 40, bonus: 0 }, signedIn: true, mode: "anon" }) === "No speed bonus: this day began signed out.",
+            "Daily.bonusLine does not explain a claimed day's missing bonus");
+        check(line({ score: { points: 40, bonus: 0 }, signedIn: true, mode: "account" }) === "No speed bonus this time.",
+            "Daily.bonusLine does not say a filed day earned no bonus");
+        check(line({ score: null, signedIn: true, mode: "account" }) === "",
+            "Daily.bonusLine says something about a bonus the server has not reported yet");
+        const out = line({ score: null, signedIn: false, mode: "anon" });
+        check(typeof out === "string" && /sign in/i.test(out) && !/\d/.test(out),
+            "Daily.bonusLine should only invite a signed-out player to sign in, with no bonus figure");
+        check(typeof Daily.bonusRule === "function" && /up to 36 /.test(Daily.bonusRule("10", "picking")),
+            "Daily.bonusRule does not print the real most a round can earn");
     }
 }
 

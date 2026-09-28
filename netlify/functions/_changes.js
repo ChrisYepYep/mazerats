@@ -87,7 +87,18 @@ const GROUPS = [
    previous edit's bookkeeping. */
 // The address too: a maze that moved to a new link has not changed in any
 // way What's New should report.
-const IGNORED = new Set(["id", "_id", "createdAt", "updatedAt", "changes", "slug", "slugAliases"]);
+/* And the address's own bookkeeping with it. settleSlug writes slugManual
+   on every save and the editor sends _slugAuto, so a record saved before
+   slugManual existed gained the flag on its next save — and that one new
+   field fell through to the catch-all, so typing a new address (or pressing
+   Save on an untouched maze) put it in What's New as "Updated details".
+   furniRev and furniPatch are the furni write's machinery, not the furni:
+   the furni itself is still judged, as merged, under "furni". */
+const IGNORED = new Set([
+    "id", "_id", "createdAt", "updatedAt", "changes",
+    "slug", "slugAliases", "slugManual", "_slugAuto",
+    "furniRev", "furniPatch"
+]);
 
 // Anything real that is not in a group above still deserves to be reported,
 // or a change quietly goes unmentioned. It lands here.

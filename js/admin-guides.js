@@ -48,6 +48,7 @@
     let stored = null;          // the same guide as last saved (null for a new one)
     let snapshot = "";          // editing as it was opened, for "unsaved changes?"
     const uploaded = new Set(); // image keys uploaded during this edit
+    const parked = new Map();   // guide id -> uploads of a refused (409) save, see submit
     /* Which edit is open, counted. An upload is slow and the form can move on
        while it runs: saved, cancelled, the guide deleted, or another guide
        opened. Each upload remembers the session it started in and, if that
@@ -94,8 +95,17 @@
         return new Set([keyOf(g.thumb), ...(g.sections || []).map(s => keyOf(s.image))].filter(Boolean));
     }
 
+    /* Background clean-up, never a lockOut — see deleteImageSafe in
+       js/admin.js. A 409 ({ inUse: true }) is the server keeping a picture
+       another record still uses, and a 503 is it keeping one because it
+       could not check; both are the right outcome and are left alone
+       without a word. Anything else is swallowed as before. */
     function forget(keys) {
-        keys.forEach(k => { Api.deleteImage(token(), k).catch(() => {}); });
+        keys.forEach(k => {
+            Api.deleteImage(token(), k).catch(err => {
+                if (err && (err.status === 409 || err.status === 503 || (err.data && err.data.inUse))) return; // kept: leave it
+            });
+        });
     }
 
     function when(iso) {
@@ -105,14 +115,21 @@
 
     // ------------------------------------------------------------ loading
 
+    /* Counted, so a read still out when the account changed (see reset)
+       is dropped rather than drawing the last account's guides. */
+    let loadGen = 0;
+
     async function load() {
+        const gen = ++loadGen;
         listEl.innerHTML = '<p class="admin-empty">Loading…</p>';
         try {
             const data = await call(`${URL_}?full=1`, "GET");
+            if (gen !== loadGen) return;
             guides = Array.isArray(data) ? data : [];
             renderList();
             renderStarter();
         } catch (err) {
+            if (gen !== loadGen) return;
             if (sessionGone(err)) {
                 // The sign-in box is up; what is left here once it is done
                 // is a way to try the list again, not a "Loading…" forever.
@@ -200,6 +217,12 @@
                and not yet saved: nothing will ever point at them now. Any
                still uploading are deleted as they arrive (see upload). */
             const doomed = keysIn(g);
+            // A refused save's pictures, waiting for an edit that will
+            // never come now.
+            if (parked.has(g.id)) {
+                parked.get(g.id).forEach(k => doomed.add(k));
+                parked.delete(g.id);
+            }
             if (editing && editing.id === g.id) {
                 uploaded.forEach(k => doomed.add(k));
                 closeEditor(true);
@@ -237,7 +260,17 @@
     // The address lives in the Address field's own state, not in `editing`.
     const addressMoved = () => typeof addressState.value === "string"
         && addressState.value !== (stored ? stored.slug || "" : addressState.value);
-    const dirty = () => editing && (JSON.stringify(editing) !== snapshot || addressMoved());
+    /* What the Address field would save, as it was when the form opened.
+       addressMoved only compared the text in the field with the stored
+       address, which cannot see a NEW guide's address at all (there is no
+       stored one, so it compared the field with itself) nor a "Follow the
+       name" pressed on an address that was set by hand. The payload is what
+       the save sends, so comparing it catches both — the same check the
+       maze form's formSnapshot makes in js/admin.js. */
+    let addressSnapshot = "";
+    const addressPayload = () => address ? JSON.stringify(address.payload()) : "";
+    const dirty = () => !!editing && (JSON.stringify(editing) !== snapshot || addressMoved()
+        || addressPayload() !== addressSnapshot);
 
     function openEditor(g) {
         if (saving) return;
@@ -246,11 +279,18 @@
         // it holds (or after a save has kept it), so it is empty here.
         if (editing) discardUploads();
         newSession();
+        // A refused save's pictures become this edit's to keep or clear.
+        if (g && parked.has(g.id)) {
+            parked.get(g.id).forEach(k => uploaded.add(k));
+            parked.delete(g.id);
+        }
         stored = g || null;
         editing = copyOf(g);
         addressState = {};
         snapshot = JSON.stringify(editing);
         renderForm();
+        // Taken once the field is wired — renderForm is what wires it.
+        addressSnapshot = addressPayload();
         formEl.classList.add("is-open");
         addBtn.style.display = "none";
         previewEl.hidden = true;
@@ -279,6 +319,7 @@
         newSession();
         editing = null;
         stored = null;
+        address = null;
         formEl.classList.remove("is-open");
         formEl.innerHTML = "";
         previewEl.hidden = true;
@@ -563,7 +604,21 @@
                again until the whole page was reloaded. The same answer the
                maze form gives (refreshAfterConflict in js/admin.js). */
             if (err.status === 409) {
-                showError("Someone else saved this guide since you opened it. Your edits are still here: copy anything you need, then Cancel and Edit it again to see their version.");
+                /* The pictures this edit uploaded are parked against the
+                   guide rather than left in `uploaded`, where Cancel — the
+                   very step this message asks for — deleted them, so
+                   "copy anything you need" could never cover a picture.
+                   The next edit of the guide takes them on as its own
+                   (openEditor), and its Save or Cancel clears whatever it
+                   does not use. Uploads made after this point are this
+                   form's again, and go on Cancel as usual. */
+                if (stored) {
+                    const p = parked.get(stored.id) || new Set();
+                    uploaded.forEach(k => p.add(k));
+                    parked.set(stored.id, p);
+                    uploaded.clear();
+                }
+                showError("Someone else saved this guide since you opened it. Your edits are still here: copy any text you need, then Cancel and Edit it again to see their version. Pictures you uploaded are kept until that next edit is saved or cancelled: right-click one to save a copy, then upload it again.");
                 saving = false;
                 await load();
                 return;
@@ -629,4 +684,50 @@
     }
     new MutationObserver(maybeMount).observe(panel, { attributes: true, attributeFilter: ["hidden"] });
     maybeMount();
+
+    /* ------------------------------------------------------------ for admin.js
+
+       What the rest of /warren needs to ask of this editor. Logging out
+       closed the maze and event forms with a question and this one with
+       none — it was never asked — so a half-written guide went with the
+       session. And mounting was once per page, so the list (drafts
+       included) stayed on screen for whoever signed in next on the tab.
+
+         isDirty()           unsaved changes in the open guide
+         isSaving()          a save still in flight
+         refuseWhileSaving() the same, saying so in the form
+         close()             throw the open edit away, deleting its uploads
+                             and any refused save's parked ones — while the
+                             token is still valid, so before it is dropped
+         reset()             forget the last account's list and edit, and
+                             load again as whoever is signed in now */
+    window.AdminGuides = {
+        isDirty: () => !!dirty(),
+        isSaving: () => saving,
+        refuseWhileSaving() {
+            if (!saving) return false;
+            showError("Still saving - wait for it to finish.");
+            return true;
+        },
+        close() {
+            if (editing) closeEditor();
+            const leftover = [];
+            parked.forEach(set => set.forEach(k => leftover.push(k)));
+            parked.clear();
+            if (leftover.length) forget(leftover);
+        },
+        reset() {
+            loadGen++;
+            // Another account's pictures: left, not deleted with this one's
+            // token — see resetAccountPanels in js/admin.js.
+            parked.clear();
+            if (editing) closeEditor(true);
+            guides = [];
+            listEl.innerHTML = "";
+            starterEl.innerHTML = "";
+            previewEl.hidden = true;
+            mounted = false;
+            maybeMount();
+        }
+    };
 })();

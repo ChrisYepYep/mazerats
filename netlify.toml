@@ -46,8 +46,15 @@
 # is handed, and that the server judges against the stored one. See its own
 # header. When either side of that breaks, nothing errors: correct answers
 # are quietly scored wrong. That is worth failing a deploy over.
+#
+# The last step takes the dungeon bench (dungeon.html, js/dungeon.js) out of
+# what is published (28 Sept 2026). It is unfinished, unlinked and noindex,
+# but publish = "." served it at mazerats.net/dungeon.html to anyone who
+# guessed the name. Removed from the build's throwaway clone rather than
+# 404'd by a redirect, because `netlify dev` obeys redirects too and a
+# redirect would shut the bench on the machine it is being built on.
 [build]
-  command = "npm install && node tools/check-daily-parity.js && node tools/check-changes.js && node tools/check-share-headers.js && node tools/themes.js && node tools/build-minify.js"
+  command = "npm install && node tools/check-daily-parity.js && node tools/check-changes.js && node tools/check-share-headers.js && node tools/themes.js && node tools/build-minify.js && rm -f dungeon.html js/dungeon.js"
   publish = "."
 
 [functions]
@@ -773,3 +780,24 @@
   for = "/js/*"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+
+# The Sorcerer's Atlas stays out of search results (28 Sept 2026). robots.txt
+# used to Disallow it, which is the wrong tool: a crawler that may not fetch
+# the page never sees wizard.html's noindex, and a disallowed URL that other
+# sites link to can still be listed, bare, with no description. So robots.txt
+# now lets it be fetched and this says, on every spelling of the address,
+# not to index it. Lift both (and the meta tag) when the Atlas is ready.
+[[headers]]
+  for = "/wizard"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/wizard/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/wizard.html"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"

@@ -224,19 +224,34 @@
          no longer carries it;
        - a PUT already on the wire is waited for, so the DELETE lands after
          it rather than racing it (the server applies whichever arrives
-         last, and that must be the removal). */
+         last, and that must be the removal).
+
+       IT SAYS WHETHER IT WORKED (28 Sept 2026). It used to resolve nothing
+       either way, so js/home.js could not tell a removal the account had
+       taken from one lost to a dropped connection, and had to keep every
+       un-tick in its book until a later fetch happened to show the id gone
+       (see sendForget there). Now it resolves true on a 2xx and false on
+       anything else — signed out, a refusal, a timeout, no network. It
+       still never rejects, so a caller that ignored the result before is
+       unaffected.
+
+       keepalive, as the PUT above has: an un-tick made just before the tab
+       closes is the same case as a tick made then, and without it the
+       DELETE was usually cancelled with the page. */
     async function forget(list, id) {
-        if (!Account.current || !id) return;
+        if (!Account.current || !id) return false;
         if (Array.isArray(pendingPatch[list])) {
             pendingPatch[list] = pendingPatch[list].filter(x => x !== id);
         }
         if (inFlight) { try { await inFlight; } catch (e) { /* settled either way */ } }
         try {
-            await timedFetch(`${STATE_ENDPOINT}?${list}=${encodeURIComponent(id)}`, {
+            const res = await timedFetch(`${STATE_ENDPOINT}?${list}=${encodeURIComponent(id)}`, {
                 method: "DELETE",
-                credentials: "same-origin"
+                credentials: "same-origin",
+                keepalive: true
             });
-        } catch (e) { /* as above */ }
+            return !!(res && res.ok);
+        } catch (e) { return false; }
     }
     Account.forgetWalked = id => forget("walked", id);
     Account.forgetSaved = id => forget("saved", id);

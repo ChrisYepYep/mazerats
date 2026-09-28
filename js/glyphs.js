@@ -290,30 +290,23 @@
 
     /* As js/guides.js: while the window is open, the page's title,
        canonical and og:url name /glyphs rather than /home, and the page's
-       own are put back on close. */
+       own are put back on close.
+
+       Through PageMeta in js/site.js, like the maze window and the Guides.
+       This used to keep its own copy of "what was there before", which is
+       the same one-slot bookkeeping PageMeta had and the same bug: opened
+       over a maze it saved the MAZE's title as the page's own, and a maze
+       closed underneath it put the archive's back while this window still
+       named /glyphs in its title. One stack for every window keeps them in
+       step. */
     const SITE = "https://mazerats.net";
-    const canonicalEl = document.querySelector('link[rel="canonical"]');
-    const ogUrlEl = document.querySelector('meta[property="og:url"]');
-    let pageMeta = null;
 
     function setMeta() {
-        if (pageMeta) return;
-        pageMeta = {
-            title: document.title,
-            canonical: canonicalEl ? canonicalEl.getAttribute("href") : null,
-            ogUrl: ogUrlEl ? ogUrlEl.getAttribute("content") : null
-        };
-        if (canonicalEl) canonicalEl.setAttribute("href", SITE + ADDRESS);
-        if (ogUrlEl) ogUrlEl.setAttribute("content", SITE + ADDRESS);
-        document.title = "Alt Codes — Maze Rats";
+        if (window.PageMeta) window.PageMeta.set("glyphs", "Alt Codes — Maze Rats", SITE + ADDRESS);
     }
 
     function restoreMeta() {
-        if (!pageMeta) return;
-        document.title = pageMeta.title;
-        if (canonicalEl && pageMeta.canonical !== null) canonicalEl.setAttribute("href", pageMeta.canonical);
-        if (ogUrlEl && pageMeta.ogUrl !== null) ogUrlEl.setAttribute("content", pageMeta.ogUrl);
-        pageMeta = null;
+        if (window.PageMeta) window.PageMeta.restore("glyphs");
     }
 
     // ------------------------------------------------------------ open/close

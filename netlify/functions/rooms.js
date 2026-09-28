@@ -3,14 +3,15 @@
    require the x-admin-token header to carry a valid session token from
    logging in on the admin page (see auth.js and _auth.js). */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, hasAccount, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED } = require("./_auth");
 const { packRecords } = require("./_furni-payload");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
 const { describe: describeChanges, changedFields } = require("./_changes");
 const { checkRecord } = require("./_url");
 const { cleanArticle } = require("./article");
-const { assignSlugs, settleSlug, idFor, PROJECTION: SLUG_FIELDS } = require("./_slugs");
+const { assignSlugs, settleSlug, idFor, recheckSlug, loadRetired, retireAddresses, PROJECTION: SLUG_FIELDS } = require("./_slugs");
+const { applyFurniPatch, validEntry: validFurniEntry } = require("./_furni-merge");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -51,9 +52,13 @@ const CONFLICT = "Someone else saved this record since you opened it - reload it
 
 /* ---- furni, patched rather than replaced (see the PUT below) ---- */
 
-// { image: record | null }, or null for no patch, or false for a body that
-// is not one. Keys are image references, so any string a picture field
-// could hold; values are the stored per-picture record or null to drop it.
+/* { image: entry }, or null for no patch, or false for a body that is not
+   one. Keys are image references, so any string a picture field could
+   hold. Each entry is null (drop the picture's record), { base, draft,
+   from? } (the three-way merge — see _furni-merge.js), or a whole record
+   from a /warren tab loaded before that shape existed, which is still
+   stored as sent: refusing it would lose that tab's edits, and taking it
+   costs nothing more than it always did. */
 const MAX_FURNI_PATCH = 500;
 function cleanFurniPatch(p) {
     if (p === undefined || p === null) return null;
@@ -63,40 +68,112 @@ function cleanFurniPatch(p) {
     if (keys.length > MAX_FURNI_PATCH) return false;
     for (const k of keys) {
         if (!k || k.length > 2048 || k === "__proto__" || k === "constructor" || k === "prototype") return false;
-        const v = p[k];
-        if (v !== null && (typeof v !== "object" || Array.isArray(v))) return false;
+        if (!validFurniEntry(p[k])) return false;
     }
     return p;
 }
 
+/* The stored furni with the patch merged in, piece by piece: what the
+   admin added, removed or hid goes in, and everything a scan wrote while
+   the form was open stays. See _furni-merge.js. */
 function mergeFurni(stored, patch) {
-    const next = Object.assign(Object.create(null), stored && typeof stored === "object" ? stored : {});
-    Object.keys(patch).forEach(k => {
-        if (patch[k] === null) delete next[k];
-        else next[k] = patch[k];
-    });
-    return { ...next };
+    return applyFurniPatch(stored, patch);
 }
 
-/* Read the stored furni, merge, write back only if nobody else wrote it in
-   between (furniRev), and try again if they did. Image references contain
-   dots, so the per-picture keys cannot be addressed with a dotted $set path
-   — hence read-merge-write rather than an atomic per-key update. A record
-   that has never had a furniRev matches as revision 0. Returns the new
-   { furni, furniRev }, or null if it could not get a turn. */
-async function applyFurniPatch(rooms, id, patch) {
-    for (let attempt = 0; attempt < 6; attempt++) {
-        const doc = await rooms.findOne({ id }, { projection: { _id: 0, furni: 1, furniRev: 1 } });
-        if (!doc) return null;
-        const rev = Number(doc.furniRev) || 0;
-        const furni = mergeFurni(doc.furni, patch);
-        const res = await rooms.updateOne(
-            { id, furniRev: rev ? rev : { $in: [0, null] } },
-            { $set: { furni, furniRev: rev + 1 } }
-        );
-        if (res.matchedCount === 1) return { furni, furniRev: rev + 1 };
+// The furniRev condition for a record read at revision `rev`. A record that
+// has never had a furniRev matches as revision 0.
+const furniRevFilter = rev => ({ furniRev: rev ? rev : { $in: [0, null] } });
+
+/* The $set for one save: the fields, with updatedAt and the change list
+   settled against `before` — the record as the write will find it. `furni`
+   is the merged furni when the save carries a patch, so a furni-only save
+   still reads as a change and What's New still says "furni".
+
+   A save that changes nothing is still written — the form may have tidied a
+   value's representation (a trimmed name, "" for null) and that is worth
+   keeping — but it does not move updatedAt and does not touch the change
+   list. Otherwise pressing Save on an untouched maze put it at the top of
+   What's New as "Updated" that day. changedFields returns null when it
+   cannot tell, and that is read as an ordinary save: a missed changelog
+   line is the lesser harm.
+
+   A fresh object each call, because the furni path below may have to work
+   it out again against a record re-read after a scan got in first. */
+function fieldsToSet(before, update, furni) {
+    const set = { ...update };
+    const judged = furni ? { ...set, furni } : set;
+    const moved = changedFields(before, judged);
+    if (moved && moved.length === 0) {
+        delete set.updatedAt;
+        delete set.changes;
+    } else {
+        const changed = describeChanges(before, judged);
+        if (changed) set.changes = changed;
     }
-    return null;
+    return set;
+}
+
+/* A save that carries furni changes: the fields and the merged furni in ONE
+   conditional write.
+
+   They used to be two. The fields went first and moved updatedAt; then the
+   furni was merged in a second write under its own furniRev check. When
+   that second write failed (a scan holding the maze, a dropped
+   connection), the form was told to save again — and the retry carried the
+   version it had opened at, which the first write had just moved on, so it
+   was refused as somebody else's save and the furni edits were lost. What's
+   New said "furni" all the same, because the change list went out with the
+   fields.
+
+   Now the one write is conditional on both the version the editor started
+   from (versionFilter) AND the furniRev the merge was made against, and
+   sets the fields, the merged furni and furniRev + 1 together: it lands
+   whole or not at all, so a retry finds the record exactly as the failed
+   attempt did. A scan writing the same maze in between moves only furniRev,
+   so that alone re-reads, re-merges onto what the scan wrote and tries
+   again; a moved version is somebody else's save and is a 409, as ever.
+
+   Image references contain dots, so the per-picture keys cannot be
+   addressed with a dotted $set path — hence read-merge-write rather than an
+   atomic per-key update.
+
+   Its own try/catch, so a failure here says the save did not happen rather
+   than leaving the admin to guess which half landed. (A response lost AFTER
+   the write landed is answered by the retry: it gets a 409, and the form
+   re-reads the record.)
+
+   Each attempt merges the patch into the furni as THAT attempt read it, and
+   the merge is piece by piece (_furni-merge.js): a scan that wrote the maze
+   between attempts keeps its new detections, and the admin's own additions,
+   removals and Hide/Show land on top of them. */
+async function saveWithFurni(rooms, id, base, previous, update, patch, retired) {
+    try {
+        let doc = previous;
+        for (let attempt = 0; attempt < 6; attempt++) {
+            // Re-read on a retry, and on the first go too when the read
+            // before the slug step failed rather than found nothing.
+            if (attempt || !doc) doc = await rooms.findOne({ id });
+            if (!doc) return json(404, { error: "Room not found" });
+            if (base !== null && stamp(doc.updatedAt) !== base) {
+                return json(409, { error: CONFLICT, conflict: true });
+            }
+            const rev = Number(doc.furniRev) || 0;
+            const furni = mergeFurni(doc.furni, patch);
+            const set = fieldsToSet(doc, update, furni);
+            set.furni = furni;
+            set.furniRev = rev + 1;
+            const result = await rooms.findOneAndUpdate(
+                { ...versionFilter(id, base), ...furniRevFilter(rev) },
+                { $set: set },
+                { returnDocument: "after", projection: { _id: 0 } }
+            );
+            if (result) return json(200, (await recheckSlug(rooms, "maze", id, retired)) || result);
+        }
+        return json(503, { error: "The maze is busy (a furni scan is writing it) and wasn't saved. Save again in a moment." });
+    } catch (e) {
+        console.error("rooms: furni save failed", e);
+        return json(503, { error: "The maze couldn't be saved just now, furni included. Save again to retry." });
+    }
 }
 
 async function handle(event) {
@@ -124,7 +201,15 @@ async function handle(event) {
            over the stored slug: a maze saved before addresses existed has
            none stored, and one whose stored slug clashes gets the one the
            share function will actually answer to. */
-        const slugs = assignSlugs(all, "maze");
+        /* Around the deleted mazes' addresses too, as share.js and the
+           sitemap work them out (see _slugs.js). None when they cannot be
+           read: every maze has its address stored, and a stored address
+           does not depend on them. */
+        const retired = await loadRetired(db, "maze").catch(e => {
+            console.error("rooms: retired addresses unreadable", e);
+            return [];
+        });
+        const slugs = assignSlugs(all, "maze", retired);
         all.forEach(r => { r.slug = slugs.get(r.id) || r.id; });
         // ?full=1 is the admin page's route: the records exactly as stored,
         // every reviewer field and hidden detection included, because that is
@@ -158,7 +243,10 @@ async function handle(event) {
     // canWrite, not isAuthorized: a viewer is a real logged-in account and
     // passes isAuthorized quite correctly — it just isn't allowed to change
     // anything. See _auth.js.
-    if (!(await canWrite(event))) return READ_ONLY;
+    // refuseWrite: a signed token for an account that has since been
+    // deleted, or whose password was reset, is signed OUT (401), not told it
+    // is view-only — see _auth.js.
+    if (!(await canWrite(event))) return await refuseWrite(event);
 
     // Parsed once, and guarded: an unparseable body used to throw straight
     // out of the handler, which Netlify turns into a bare 502 with nothing
@@ -207,11 +295,38 @@ async function handle(event) {
         // name sent as a number or an object was a 500, not a refusal.
         if (!body.name || typeof body.name !== "string") return json(400, { error: "A room needs at least a name" });
 
+        /* NOT the body as sent. A create used to store every field that
+           arrived, so the PUT's bookkeeping went in raw: a furniPatch sat on
+           the record as a field of its own (its furni never applied), a
+           client's furniRev or change list was taken as the server's, and
+           an updatedAt from the body put a brand-new maze in What's New as
+           "Updated" on whatever day the body named.
+
+           A new maze has no stored furni for a patch to race with, so the
+           patch is simply applied to nothing — the admin form sends one when
+           the furni editor was used before the first save. */
+        const newFurni = cleanFurniPatch(body.furniPatch);
+        if (newFurni === false) return json(400, { error: "Invalid furni changes" });
+        if (newFurni) body.furni = mergeFurni(body.furni, newFurni);
+        delete body.furniPatch;
+        delete body.furniRev;
+        delete body.changes;
+        delete body.updatedAt;
+        delete body._baseUpdatedAt;
+        /* Nor its id. The id is the server's to choose (idFor, below), and
+           settleSlug reads a new record's id off the body to decide which
+           record is "this one" — so a create carrying an EXISTING maze's id
+           left that maze out of the clash check, and could be given the
+           address it was standing at. guides.js never passed it through. */
+        delete body.id;
+
         await ensureUniqueIndex(rooms, "id");
 
-        // Its address: the one typed in the editor, else its name's.
+        // Its address: the one typed in the editor, else its name's — never
+        // one a deleted maze's links still name (see _slugs.js).
         const everyRoom = () => rooms.find({}, { projection: SLUG_FIELDS }).toArray();
-        const slugProblem = settleSlug(await everyRoom(), "maze", null, body);
+        const retired = await loadRetired(db, "maze");
+        const slugProblem = settleSlug(await everyRoom(), "maze", null, body, retired);
         if (slugProblem) return json(400, { error: slugProblem });
 
         // Attempt-and-retry-on-collision rather than check-then-insert —
@@ -237,7 +352,7 @@ async function handle(event) {
            nothing already answers to — see idFor in _slugs.js for the
            maze it once took the address of. A collision (two saves racing)
            re-reads the collection and asks again. */
-        let id = idFor(await everyRoom(), "maze", body.slug);
+        let id = idFor(await everyRoom(), "maze", body.slug, retired);
         for (let attempt = 0; ; attempt++) {
             /* createdAt AFTER the body: it is the server's fact, and the
                daily games now read it (existedBefore in netlify/functions/
@@ -249,10 +364,12 @@ async function handle(event) {
             try {
                 await rooms.insertOne(room);
                 const { _id, ...clean } = room;
-                return json(201, clean);
+                // Another save may have settled the same address a moment
+                // ago — see recheckSlug in _slugs.js.
+                return json(201, (await recheckSlug(rooms, "maze", id, retired)) || clean);
             } catch (e) {
                 if (e.code === 11000 && attempt < 50) {
-                    id = idFor(await everyRoom(), "maze", body.slug);
+                    id = idFor(await everyRoom(), "maze", body.slug, retired);
                     continue;
                 }
                 throw e;
@@ -287,15 +404,31 @@ async function handle(event) {
            that maze, and a form opened before a scan wiped the scan's results
            the moment it changed anything.
 
-           So the form now sends only the pictures it changed ({ image: record }
-           to set one, { image: null } to drop one), and they are merged into
-           whatever is stored NOW, guarded by furniRev so a scan writing the
-           same maze at the same moment makes one of the two retry rather
-           than lose. The scan does the same (see applyFurniPatch below and
-           the scan tool). A whole `furni` or a client's furniRev is never
-           taken from a body. */
+           So the form now sends only the pictures it changed, and they are
+           merged into whatever is stored NOW, guarded by furniRev so a scan
+           writing the same maze at the same moment makes one of the two
+           retry rather than lose. The scan does the same (see saveWithFurni
+           above and the scan tool). A whole `furni` or a client's furniRev
+           is never taken from a body.
+
+           And within a picture, piece by piece: each changed picture comes
+           as { base, draft } — the record as the form opened it and as the
+           admin left it — and only the difference is applied to the stored
+           record, so a scan that rewrote that very room while the form was
+           open keeps what it found ({ image: null } still drops a
+           picture's record). See _furni-merge.js. */
         const furniPatch = cleanFurniPatch(update.furniPatch);
         if (furniPatch === false) return json(400, { error: "Invalid furni changes" });
+        /* A whole `furni` with no patch is a /warren tab loaded before
+           patches existed. It used to be dropped without a word: the save
+           answered 200, the editor closed, and every furni change made in
+           that tab was gone. Refused instead, as a conflict, so the form
+           stays open with its edits and says to reload. The current form
+           never sends `furni` (it deletes it from the payload; see
+           submitForm in js/admin.js). */
+        if (Object.prototype.hasOwnProperty.call(update, "furni") && update.furniPatch === undefined) {
+            return json(409, { error: "This page is out of date. Reload /warren to save furni changes.", conflict: true });
+        }
         delete update.furniPatch;
         delete update.furni;
         delete update.furniRev;
@@ -360,8 +493,10 @@ async function handle(event) {
         /* Its address, which follows a new name and keeps the old one as an
            alias (see _slugs.js). Only when the record exists: a PUT for a
            missing id is answered 404 below. */
+        let retired = [];
         if (previous) {
-            const slugProblem = settleSlug(await rooms.find({}, { projection: SLUG_FIELDS }).toArray(), "maze", previous, update);
+            retired = await loadRetired(db, "maze");
+            const slugProblem = settleSlug(await rooms.find({}, { projection: SLUG_FIELDS }).toArray(), "maze", previous, update, retired);
             if (slugProblem) return json(400, { error: slugProblem });
         } else {
             /* Not settled, so not stored: a body's own address fields are
@@ -373,32 +508,13 @@ async function handle(event) {
             delete update._slugAuto;
         }
 
-        /* A save that changes nothing is still written — the form may have
-           tidied a value's representation (a trimmed name, "" for null) and
-           that is worth keeping — but it does not move updatedAt and does
-           not touch the change list. Otherwise pressing Save on an untouched
-           maze put it at the top of What's New as "Updated" that day.
-           changedFields returns null when it cannot tell, and that is read
-           as an ordinary save: a missed changelog line is the lesser harm. */
-        // Judged with the furni as it will be, so a furni-only save still
-        // reads as a change and What's New still says "furni".
-        const judged = furniPatch && previous
-            ? { ...update, furni: mergeFurni(previous.furni, furniPatch) }
-            : update;
-        const moved = changedFields(previous, judged);
-        if (moved && moved.length === 0) {
-            delete update.updatedAt;
-            delete update.changes;
-        } else {
-            const changed = describeChanges(previous, judged);
-            if (changed) update.changes = changed;
-        }
+        if (furniPatch) return saveWithFurni(rooms, body.id, base, previous, update, furniPatch, retired);
 
         // The version condition is in the filter too, so two saves racing
         // between the read above and this write cannot both pass.
         const result = await rooms.findOneAndUpdate(
             versionFilter(body.id, base),
-            { $set: update },
+            { $set: fieldsToSet(previous, update, null) },
             { returnDocument: "after", projection: { _id: 0 } }
         );
         if (!result) {
@@ -407,17 +523,29 @@ async function handle(event) {
             }
             return json(404, { error: "Room not found" });
         }
-        if (!furniPatch) return json(200, result);
-        const merged = await applyFurniPatch(rooms, body.id, furniPatch);
-        if (!merged) {
-            return json(503, { error: "The maze saved, but its furni changes didn't go through - save again to retry them." });
-        }
-        return json(200, { ...result, furni: merged.furni, furniRev: merged.furniRev });
+        return json(200, (await recheckSlug(rooms, "maze", body.id, retired)) || result);
     }
 
     if (event.httpMethod === "DELETE") {
         const id = (event.queryStringParameters || {}).id;
-        if (!id) return json(400, { error: "Missing room id" });
+        // A string: an object would be a query operator in the filter.
+        if (!id || typeof id !== "string") return json(400, { error: "Missing room id" });
+        /* ITS ADDRESSES STAY RESERVED. Deleting a maze used to free its
+           address, its old addresses and its id on the spot, and the next
+           maze given the same name took them — so every link somebody had
+           shared to the deleted maze opened a different one, with nothing
+           to say so. They are written to retired_addresses first (see
+           _slugs.js): nothing is ever given them again, and share.js
+           answers them 410 Gone.
+
+           Retired BEFORE the delete: see retireAddresses for why that is
+           the safe order. The address it is served at is worked out over
+           the whole collection, as the API serves it. */
+        const all = await rooms.find({}, { projection: SLUG_FIELDS }).toArray();
+        const doomed = all.find(r => r && r.id === id);
+        if (!doomed) return json(404, { error: "Room not found" });
+        const retired = await loadRetired(db, "maze");
+        await retireAddresses(db, "maze", doomed, assignSlugs(all, "maze", retired).get(id));
         const result = await rooms.deleteOne({ id });
         if (result.deletedCount === 0) return json(404, { error: "Room not found" });
         return json(200, { deleted: id });

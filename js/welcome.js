@@ -7,8 +7,9 @@
    Under the Enter button while the site is gated and a launch date is set.
    The markup is in index.html; this fills it and ticks it.
 
-   TWO CONDITIONS, both required: the site is gated and a readable launchAt
-   exists. (It used to be three — the date also had to be still ahead — and
+   TWO CONDITIONS, both required: the site is in Coming Soon (not merely
+   gated — see showCountdownFor) and a readable launchAt exists. (It used
+   to be three — the date also had to be still ahead — and
    that third condition is what stranded launch-morning arrivals; see the
    note on the poll below. A date already past now shows the "any moment"
    state from the first tick.) Either failing and there is no clock, and the
@@ -123,7 +124,10 @@ async function freshLandingState() {
    The answer is also written where home.html's gate looks for its early
    "peek" (mazerats_landing_state), so the loading screen shows at once
    instead of a blank window. */
+let handedOff = false;
+
 async function goInside(state) {
+    handedOff = true;
     try { Api.rememberLandingState(state); } catch (e) { /* private mode */ }
     for (let i = 0; i < 3; i++) {
         const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -144,6 +148,24 @@ async function goInside(state) {
     }
     location.assign("/home");
 }
+
+/* BACK, AFTER THE HAND-OFF.
+
+   The browser keeps this page whole in its back/forward cache, and Back
+   from the archive restores it exactly as it was left: the button still
+   reading "Coming Soon", the countdown still saying "any moment", and the
+   poll finished for good — it stopped asking the moment it saw the site
+   open, and set `leaving` so it would never go twice. A dead gate over an
+   open site, with nothing on it that would ever change.
+
+   So a page restored from that cache after it handed the visitor inside is
+   loaded afresh, which asks the settings again and draws whichever door is
+   true now. Only then: a gated page restored after the visitor merely
+   looked at another site is still polling (its timers resume with it), and
+   an open one is already an Enter link. */
+window.addEventListener("pageshow", e => {
+    if (e.persisted && handedOff) location.reload();
+});
 
 /* Asks, jittered, until the site opens — then goes in. Runs for as long as
    this page is gated, from load, whether launchAt is ahead, behind or unset.
@@ -250,6 +272,16 @@ function startCountdown(target) {
 
     const ticker = setInterval(tick, 1000);
     tick();
+
+    // Taken down again when the site moves out of Coming Soon without
+    // opening (see showCountdownFor).
+    return {
+        stop() {
+            clearInterval(ticker);
+            box.hidden = true;
+            box.classList.remove("is-due");
+        }
+    };
 }
 
 /* ------------------------------------------- FETCHING IT BEFORE IT IS ASKED
@@ -358,11 +390,38 @@ document.addEventListener("DOMContentLoaded", async () => {
         // state for a date already gone rather than nothing at all.
         if (!isNaN(parsed.getTime())) target = parsed;
     }
-    if (target) startCountdown(target);
+    /* COMING SOON ONLY, not every gated state (28 Sept 2026).
+
+       launchAt is the date the archive OPENS, and it is not cleared once it
+       has. So a Maintenance window after launch — or any later gated
+       period — came up under a clock reading "Opening any moment now" and
+       "No need to refresh: this page will let you in", about a launch that
+       happened weeks ago, beside a button saying "Maintenance, Back Soon!".
+       The countdown and its wording now belong to Coming Soon alone;
+       Maintenance keeps its plain button and nothing under it. And it
+       follows the poll: a site moved from Coming Soon to Maintenance while
+       the page is open loses its clock, and one moved back gets it again.
+
+       The poll itself is NOT narrowed — watchForOpening still runs in every
+       gated state, which is what lets a Maintenance visitor in the moment
+       it is over. */
+    let countdown = null;
+    function showCountdownFor(state) {
+        if (state === "coming-soon") {
+            if (!countdown && target) countdown = startCountdown(target) || null;
+        } else if (countdown) {
+            countdown.stop();
+            countdown = null;
+        }
+    }
+    showCountdownFor(landingState);
     // Always, while gated — see the note on watchForOpening. The answer
     // above may itself have been a stale edge copy, and this is what
     // corrects it.
-    watchForOpening(target, labelGated);
+    watchForOpening(target, state => {
+        labelGated(state);
+        showCountdownFor(state);
+    });
 });
 
 // Upcoming Events widget on this page (see js/site.js) opens the event
@@ -913,15 +972,19 @@ document.addEventListener("DOMContentLoaded", () => {
     // The footer link is a same-page hash, so clicking it while the modal
     // is already closed-but-hash-still-set fires no hashchange — hence the
     // direct click handler as well as the hashchange listener.
+    /* Capture phase, so this runs before js/site.js's own fragment-link
+       handler, which index.html's <base href="/"> now switches on: that one
+       would push a second #privacy entry. It stands aside for a click
+       already handled (defaultPrevented). */
     document.addEventListener("click", e => {
-        const link = e.target.closest('a[href="#privacy"]');
+        const link = e.target.closest && e.target.closest('a[href="#privacy"]');
         if (!link) return;
         e.preventDefault();
         if (location.hash !== "#privacy") {
             history.replaceState(null, "", location.pathname + location.search + "#privacy");
         }
         openPrivacyModal();
-    });
+    }, true);
 
     window.addEventListener("hashchange", checkPrivacyHash);
     closeBtn.addEventListener("click", closePrivacyModal);

@@ -1,13 +1,13 @@
 /* /.netlify/functions/events — CRUD API for events. Mirrors rooms.js. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, hasAccount, canWrite, UNAUTHORIZED, READ_ONLY } = require("./_auth");
+const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED } = require("./_auth");
 const { packRecords } = require("./_furni-payload");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
 const { describe: describeChanges, changedFields } = require("./_changes");
 const { checkRecord } = require("./_url");
 const { cleanArticle } = require("./article");
-const { assignSlugs, settleSlug, idFor, PROJECTION: SLUG_FIELDS } = require("./_slugs");
+const { assignSlugs, settleSlug, idFor, recheckSlug, loadRetired, retireAddresses, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -57,8 +57,13 @@ async function handle(event) {
             console.error("events: read failed", e);
             return json(503, { error: "The archive could not be read just now." });
         }
-        // Every event's address — see the same step in rooms.js.
-        const slugs = assignSlugs(all, "event");
+        // Every event's address — see the same step in rooms.js, retired
+        // addresses and all.
+        const retired = await loadRetired(db, "event").catch(e => {
+            console.error("events: retired addresses unreadable", e);
+            return [];
+        });
+        const slugs = assignSlugs(all, "event", retired);
         all.forEach(r => { r.slug = slugs.get(r.id) || r.id; });
         // ?full=1 is the admin page's route: the records exactly as stored,
         // every reviewer field and hidden detection included, because that is
@@ -88,7 +93,10 @@ async function handle(event) {
     // canWrite, not isAuthorized: a viewer is a real logged-in account and
     // passes isAuthorized quite correctly — it just isn't allowed to change
     // anything. See _auth.js.
-    if (!(await canWrite(event))) return READ_ONLY;
+    // refuseWrite: a signed token for an account that has since been
+    // deleted, or whose password was reset, is signed OUT (401), not told it
+    // is view-only — see _auth.js.
+    if (!(await canWrite(event))) return await refuseWrite(event);
 
     // Parsed once, and guarded: an unparseable body used to throw straight
     // out of the handler, which Netlify turns into a bare 502 with nothing
@@ -125,10 +133,25 @@ async function handle(event) {
         // A string, because the address is made from it with string methods.
         if (!body.title || typeof body.title !== "string") return json(400, { error: "An event needs at least a title" });
 
+        /* Not the body as sent — see the same step in rooms.js. An event has
+           no furni editor (the /warren form offers it on mazes only), so a
+           patch is dropped here as the PUT below drops it, rather than
+           stored as a field of its own. */
+        delete body.furniPatch;
+        delete body.furniRev;
+        delete body.changes;
+        delete body.updatedAt;
+        delete body._baseUpdatedAt;
+        // The id is the server's to choose; one sent with the body skipped
+        // the address clash check for that record. See rooms.js.
+        delete body.id;
+
         await ensureUniqueIndex(events, "id");
 
         const everyEvent = () => events.find({}, { projection: SLUG_FIELDS }).toArray();
-        const slugProblem = settleSlug(await everyEvent(), "event", null, body);
+        // A deleted event's addresses stay its own — see _slugs.js.
+        const retired = await loadRetired(db, "event");
+        const slugProblem = settleSlug(await everyEvent(), "event", null, body, retired);
         if (slugProblem) return json(400, { error: slugProblem });
 
         // Attempt-and-retry-on-collision rather than check-then-insert —
@@ -140,7 +163,7 @@ async function handle(event) {
         // have to be told apart.
         const createdAt = new Date().toISOString();
         // The settled address, or the nearest free thing — see rooms.js.
-        let id = idFor(await everyEvent(), "event", body.slug);
+        let id = idFor(await everyEvent(), "event", body.slug, retired);
         for (let attempt = 0; ; attempt++) {
             // The server's timestamp wins, as in rooms.js.
             const item = { ...body, createdAt, id };
@@ -148,10 +171,11 @@ async function handle(event) {
             try {
                 await events.insertOne(item);
                 const { _id, ...clean } = item;
-                return json(201, clean);
+                // The same address settled twice at once — see rooms.js.
+                return json(201, (await recheckSlug(events, "event", id, retired)) || clean);
             } catch (e) {
                 if (e.code === 11000 && attempt < 50) {
-                    id = idFor(await everyEvent(), "event", body.slug);
+                    id = idFor(await everyEvent(), "event", body.slug, retired);
                     continue;
                 }
                 throw e;
@@ -167,6 +191,14 @@ async function handle(event) {
         const { _id, createdAt: _ignored, ...update } = body;
         // Never a client-sent change list — see the same line in rooms.js.
         delete update.changes;
+        /* Nor furni in any form. rooms.js takes furni only as a patch it
+           merges under furniRev; this route never had that step, so a body
+           carrying furniPatch stored it as a field of its own, and a whole
+           `furni` or a furniRev went in raw. Events carry no furni (the
+           /warren editor is mazes only), so all three are simply dropped. */
+        delete update.furniPatch;
+        delete update.furni;
+        delete update.furniRev;
         // The version the editor started from; never stored. See rooms.js.
         const hasBase = Object.prototype.hasOwnProperty.call(update, "_baseUpdatedAt");
         const base = hasBase ? stamp(update._baseUpdatedAt) : null;
@@ -191,8 +223,10 @@ async function handle(event) {
         }
 
         // Its address — see the same step in rooms.js.
+        let retired = [];
         if (previous) {
-            const slugProblem = settleSlug(await events.find({}, { projection: SLUG_FIELDS }).toArray(), "event", previous, update);
+            retired = await loadRetired(db, "event");
+            const slugProblem = settleSlug(await events.find({}, { projection: SLUG_FIELDS }).toArray(), "event", previous, update, retired);
             if (slugProblem) return json(400, { error: slugProblem });
         } else {
             // Not settled, so not stored — see the same step in rooms.js.
@@ -224,12 +258,20 @@ async function handle(event) {
             }
             return json(404, { error: "Event not found" });
         }
-        return json(200, result);
+        return json(200, (await recheckSlug(events, "event", body.id, retired)) || result);
     }
 
     if (event.httpMethod === "DELETE") {
         const id = (event.queryStringParameters || {}).id;
-        if (!id) return json(400, { error: "Missing event id" });
+        // A string: an object would be a query operator in the filter.
+        if (!id || typeof id !== "string") return json(400, { error: "Missing event id" });
+        // Its addresses stay reserved, so a link to it answers 410 rather
+        // than opening whichever event takes the name next — see rooms.js.
+        const all = await events.find({}, { projection: SLUG_FIELDS }).toArray();
+        const doomed = all.find(r => r && r.id === id);
+        if (!doomed) return json(404, { error: "Event not found" });
+        const retired = await loadRetired(db, "event");
+        await retireAddresses(db, "event", doomed, assignSlugs(all, "event", retired).get(id));
         const result = await events.deleteOne({ id });
         if (result.deletedCount === 0) return json(404, { error: "Event not found" });
         return json(200, { deleted: id });

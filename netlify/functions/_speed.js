@@ -21,7 +21,7 @@
    THE MOVE CARRIES THE PICK, and that is the fix for the hole the old shape
    had. A mark used to carry nothing but a round number, and the picks came
    later in the day's submission — so a script could mark all five rounds a
-   few milliseconds apart, earn the full 185, and choose its answers
+   few milliseconds apart, earn the full bonus, and choose its answers
    afterwards, at leisure, from a page that had the answers in it anyway.
    Now there is no mark without a pick, the pick is judged when it lands,
    and what is judged is what is scored: the day's score is built from the
@@ -76,9 +76,18 @@
 
      round bonus = max(0, 37 - seconds)       if the round was right
 
-       0s 37   5s 32   20s 17   36s 1   37s 0
+       1s 36   5s 32   20s 17   36s 1   37s 0
 
-   The day's bonus is the sum over its rounds — 185 at most over five.
+   IN PRACTICE THE MOST A ROUND EARNS IS 36, and a day 180 over five. The
+   formula would give 37 for a round under a second, but no round can be:
+   its first move is refused until MIN_MOVE_MS (1.2s) after it began (see
+   below), so every round lasts at least a second and loses at least one
+   point. These notes, and the page's, said 37 and 185 for a while — the
+   formula's figures, not the game's. (The one way under a second is a mark
+   stamped by a server whose clock runs a moment behind the one that
+   stamped the mark before it, which reads as zero; rare, and worth one
+   point when it happens.) Nothing here was changed to make it 36: this is
+   only the arithmetic written down as it actually plays.
 
    ----------------------------------------------------------------------
    THE TIME ON THE BOARD
@@ -96,6 +105,8 @@
    button would be a thing to exploit.
 
    The one number below is the one to tune. */
+const crypto = require("crypto");
+
 const COLLECTION = "daily_starts";
 
 // Thirty-six seconds a round: the three minutes a whole day is given,
@@ -136,7 +147,9 @@ const markKey = round => "r" + round;
    start, for round 0; the end of the round before, for the rest). About the
    quickest a person can look at four pictures, or one, and press something —
    and far slower than a script, which is the point: marking five rounds a
-   few milliseconds apart was worth the whole 185. A move that arrives
+   few milliseconds apart was worth the whole bonus. It is also why a
+   round's bonus tops out at 36 rather than the formula's 37 (see HOW BIG IT
+   IS above). A move that arrives
    sooner is refused with how long is left, and the page sends it again
    once that has passed, so a genuinely quick player loses nothing but the
    difference. */
@@ -215,6 +228,24 @@ async function clockFor(db, game, day, playerId) {
     return clockOf(await progressFor(db, game, day, playerId));
 }
 
+/* When the last move recorded on a row landed, in ms, or NaN for a row
+   with none. Read from the marks, which every recorded round-ending move
+   writes, untimed rows included — so this is the server's own stamp of
+   when the day was last played, whatever `noClock` says about its start.
+   Pure.
+
+   For the late filing of a finished day (dayClosesAt in _daily.js): the
+   day may be filed after it has closed only if this is inside the close. */
+function lastMarkAt(row) {
+    let last = NaN;
+    const raw = (row && row.marks) || {};
+    for (const k of Object.keys(raw)) {
+        const t = timeOf(raw[k]);
+        if (Number.isFinite(t) && !(t <= last)) last = t;
+    }
+    return last;
+}
+
 /* The moves recorded for each round, from a row, as an array the length of
    the day: the stored move, or null for a round with none. Pure. The day's
    score is built from this and from nothing else. */
@@ -239,7 +270,13 @@ function roundBeganAt(row, round) {
    as a day with no start always has. Only for round 0 — a later round with
    no row means the row was taken away (an administrator's reset), and the
    page should not be carrying on from where it was. $setOnInsert, so a
-   start that lands at the same moment keeps its own time and no flag. */
+   start that lands at the same moment keeps its own time and no flag.
+
+   Rarer than it was: the page now sends the start again, and waits for it,
+   before a signed-in round 0 move whose start it never saw confirmed
+   (Daily.move in js/daily.js), because one dropped request at the first
+   pictures used to make the whole day untimed. This is still the answer
+   when that second start fails too. */
 async function rowForMove(col, ensureUniqueIndex, game, day, playerId, round) {
     let row = await col.findOne({ game, day, playerId });
     if (row || round !== 0) return row;
@@ -411,8 +448,89 @@ function dayBonus(clock, right, now) {
    keep. */
 const MAX_START_BODY = 512;
 
+/* ----------------------------------------------------------------------
+   THE CAP ON SIGNED-OUT VERDICTS
+
+   A signed-out move is judged and answered and nothing else — there is
+   nobody to record it against — and that answer is the one thing on the
+   daily games that says what is right without it counting. Unmetered, it
+   was an answer key on request: a script could ask about every tile of
+   every Odd One Out round, or ask Guess the Maze for each room's maze in
+   one request apiece (`final`), and hand the answers round before anybody
+   had played.
+
+   So the verdicts are counted per network per game per day — the network
+   as clientNet in _net.js reads it (an IPv4 address, or an IPv6 /64,
+   because one subscriber can put a fresh IPv6 address on every request) —
+   and past anonMoveLimit the answer is 429. The limit is generous on
+   purpose: three times the most moves a day can take, plus ANON_SLACK, so
+   a household, an office, or a phone network putting many people behind
+   one address can all play signed out before anyone meets it, and a
+   request retried after a dropped connection is not a move lost. Odd One
+   Out's five picks give 45; Guess the Maze's fifteen guesses give 75. What
+   it stops is the scale a script works at, which is the point; one person
+   asking a few answers early is the private-window route the notes above
+   already accept.
+
+   One counter document per (game, day, network), bumped and read back in
+   a single atomic step — findOneAndUpdate with $inc and upsert — so a
+   burst in parallel cannot all see room together, as claimNotifySlot in
+   _net.js does. The network is stored HASHED: the counter needs only to
+   tell networks apart, never to say whose they were. A TTL sweeps them two
+   days on, when their day can no longer be played.
+
+   FAILS OPEN. A counter the database could not bump lets the move through:
+   the cap is a fence against scripts, and a signed-out player refused a
+   verdict because a counter hiccuped would be worse than one extra answer.
+   And with no network to count by at all (no address from Netlify, which
+   in production does not happen; `netlify dev` is the usual case) it is
+   not counted, as every other limiter on the site treats a missing
+   address — never folded into one shared bucket that unrelated visitors
+   would exhaust for each other. */
+const ANON_COLLECTION = "daily_anon_moves";
+const ANON_MULTIPLE = 3;
+const ANON_SLACK = 30;
+
+// The day's cap for a game: `rounds` rounds of at most `perRound` moves.
+function anonMoveLimit(rounds, perRound) {
+    const r = Number.isInteger(rounds) && rounds > 0 ? rounds : 5;
+    const p = Number.isInteger(perRound) && perRound > 0 ? perRound : 1;
+    return r * p * ANON_MULTIPLE + ANON_SLACK;
+}
+
+let anonIndexed = null;
+function netKey(net) {
+    return crypto.createHash("sha256")
+        .update("daily-anon:" + (process.env.SESSION_SECRET || "") + ":" + net)
+        .digest("base64url").slice(0, 22);
+}
+
+/* Counts one signed-out move and answers whether it may be judged. */
+async function claimAnonMove(db, game, day, net, limit) {
+    if (!net) return true;
+    try {
+        const col = db.collection(ANON_COLLECTION);
+        if (!anonIndexed) {
+            anonIndexed = col.createIndex({ at: 1 }, { expireAfterSeconds: 2 * 24 * 60 * 60 }).catch(() => {});
+        }
+        const doc = await col.findOneAndUpdate(
+            { _id: `${game}:${day}:${netKey(net)}` },
+            { $inc: { n: 1 }, $setOnInsert: { at: new Date() } },
+            { upsert: true, returnDocument: "after" }
+        );
+        // Either driver shape: the document, or { value: document }.
+        const row = doc && doc.value !== undefined ? doc.value : doc;
+        const n = row && row.n;
+        return !(typeof n === "number" && n > limit);
+    } catch (e) {
+        console.warn("daily: the signed-out move cap is unavailable", e && e.message);
+        return true;
+    }
+}
+
 module.exports = {
     COLLECTION, ROUND_BONUS_SECONDS, NO_TIME, TOTAL, MAX_START_BODY, MIN_MOVE_MS,
-    totalOf, roundBonusFor, markRound, recordStart, progressFor, clockOf, clockFor, movesOf,
-    recordOddPick, recordGuess, forgetDay, dayBonus, normalise
+    ANON_COLLECTION, ANON_MULTIPLE, ANON_SLACK,
+    totalOf, roundBonusFor, markRound, recordStart, progressFor, clockOf, clockFor, movesOf, lastMarkAt,
+    recordOddPick, recordGuess, forgetDay, dayBonus, normalise, anonMoveLimit, claimAnonMove
 };

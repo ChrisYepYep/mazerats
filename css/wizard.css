@@ -583,7 +583,10 @@
 .wiz-room:hover,
 .wiz-room:focus-visible {
     background: var(--wiz-glow);
-    outline: none;
+    /* A glow alone is how hovering looks too; the ring is what says "the
+       keyboard is here", as it does across the rest of the site. */
+    outline: 2px solid #e9c88c;
+    outline-offset: 2px;
 }
 
 /* A room nobody has walked yet — the ?? marks on the drawing. Dimmed and
@@ -2351,4 +2354,41 @@ body.is-albus .admin-panel[data-panel="wizard"] .admin-wiz-inline-form [data-cle
     .wiz-controls { gap: 8px; }
     .wiz-controls button { width: 44px; height: 44px; font-size: 20px; }
     .wiz-zoom-label { padding: 10px 8px; }
+}
+
+/* THE SEARCH FIELD IS DRAWN AT 16px AND SHRUNK BACK TO 13px.
+
+   Safari on an iPhone zooms the whole page in on any field whose text is
+   under 16px the moment it is focused, and leaves it zoomed after the
+   keyboard goes. The atlas search was 13px, so the first tap on "Find a
+   room" zoomed the map page in and left it that way — on the one page
+   whose whole surface is itself a thing you pinch and drag.
+
+   The console's trick (see .console-input in style.css), for the same
+   reason: the field is laid out at 16/13 of its size with 16px text and
+   scaled by 13/16 (0.8125) from its top-left corner, so what is painted is
+   the 13px field that was there — the text rasterised at its final size —
+   while the font-size Safari checks is 16px. Everything is set in the
+   unscaled units: the height is fixed (36px, what the 13px line, the 8px
+   padding and the 2px border came to) rather than left to the line, so the
+   layout height it hands back with a negative bottom margin is known, and
+   the results still drop from the field's painted bottom edge. The extra
+   width needs nothing: overflow is measured from the scaled box.
+
+   Block, so the negative margin shortens the search box rather than a line
+   box the inline field would otherwise sit on. Coarse pointers only: a
+   mouse never zooms. */
+@media (pointer: coarse) {
+    .wiz-search input {
+        display: block;
+        font-size: 16px;
+        transform: scale(0.8125);
+        transform-origin: 0 0;
+        width: calc(100% / 0.8125);
+        height: calc(36px / 0.8125);
+        padding: 0 calc(10px / 0.8125);
+        border-width: calc(2px / 0.8125);
+        border-radius: calc(6px / 0.8125);
+        margin-bottom: calc(36px - 36px / 0.8125);
+    }
 }

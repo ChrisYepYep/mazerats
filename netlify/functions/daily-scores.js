@@ -60,11 +60,15 @@
    What is still possible is learning the answers first — playing the day
    signed out in a private window, where every pick is answered — and then
    playing it signed in. One submission per player per day is the backstop
-   that keeps even that from compounding. A leaderboard here is a thing to
+   that keeps even that from compounding, and two things keep it from being
+   free: a signed-in request may not ask for an unrecorded verdict (see
+   "one pick" below), and signed-out verdicts are capped per network per
+   day (claimAnonMove in _speed.js). A leaderboard here is a thing to
    enjoy, not a thing to defend. */
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom } = require("./_player");
-const { today, dayIsOpen, rangeBounds } = require("./_daily");
+const { clientNet } = require("./_net");
+const { today, dayIsOpen, dayClosesAt, rangeBounds } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
 const speed = require("./_speed");
@@ -553,7 +557,13 @@ exports.handler = async (event) => {
         // Today, or the day that ended in the last few minutes — see
         // dayIsOpen in _daily.js for why the grace period exists. A day that
         // has not happened cannot have been played.
-        if (!dayIsOpen(day)) return json(400, { error: "That day is not open" });
+        //
+        // With ONE exception, decided further down: a signed-in player's
+        // finishing request for a closed day whose moves were all recorded
+        // before it closed (see LATE FILING below). Every move and start,
+        // and anything signed out, is still held to the open day here.
+        const open = dayIsOpen(day);
+        if (!open && (body.action !== undefined || !player)) return json(400, { error: "That day is not open" });
 
         /* ---------- one pick ----------
 
@@ -564,10 +574,30 @@ exports.handler = async (event) => {
            Signed in, the pick is also written down, once, in order, and no
            sooner than MIN_MOVE_MS into its round (recordOddPick in
            _speed.js), and the day is later scored from what was written.
-           Signed out — or signed in on a day the page began signed out, which
-           says so with `anon` — it is only answered: nothing is stored, so
-           nothing about it can count until a finished day is filed (see
-           scoreClaim). */
+           Signed out, it is only answered: nothing is stored, so nothing
+           about it can count until a finished day is filed (see
+           scoreClaim).
+
+           `anon` WITH A SESSION IS REFUSED. The page used to send `anon`
+           for a day it began signed out, and the server answered those
+           without recording them whoever was asking — so a signed-in
+           player could put `anon: true` on a pick, read whether it was
+           right, and then make the recorded pick knowing. A free answer
+           check on a timed day, with the bonus still to earn. Now a
+           request that carries a valid session is told "signed in" (400)
+           and nothing is judged; the page then records the day instead,
+           replaying any picks it made signed out first (adoptRecorded in
+           js/oddoneout.js). A day played wholly signed out and filed after
+           signing in is untouched: that is the finishing POST below
+           (scoreClaim), not a move.
+
+           AND SIGNED-OUT VERDICTS ARE CAPPED, per network per day
+           (claimAnonMove in _speed.js). The private-window route above is
+           still open, deliberately — a signed-out player has to be able to
+           play — but it was unmetered, so a script could ask every tile of
+           every round. The cap is three times a day's picks and then some,
+           which no person playing the day ever reaches; past it the answer
+           is 429 and the page suggests signing in. */
         if (body.action === "move") {
             if (String(event.body || "").length > speed.MAX_START_BODY) return privateJson(413, { error: "Too large" });
             const round = speed.markRound(body.round, ROUNDS);
@@ -584,7 +614,13 @@ exports.handler = async (event) => {
             if (!dealt || !Number.isInteger(tile) || tile < 0 || tile >= dealt.tiles.length) {
                 return privateJson(400, { error: "Bad move" });
             }
-            if (!player || body.anon === true) {
+            if (player && body.anon === true) {
+                return privateJson(400, { error: "signed in", reason: "signed-in" });
+            }
+            if (!player) {
+                const allowed = await speed.claimAnonMove(db, game, day, clientNet(event),
+                    speed.anonMoveLimit(deal.rounds.length, 1));
+                if (!allowed) return privateJson(429, { reason: "anon-limit", error: "Too many picks from this network today" });
                 return privateJson(200, { recorded: false, tile, right: Boolean(dealt.tiles[tile].odd) });
             }
             let outcome;
@@ -655,17 +691,35 @@ exports.handler = async (event) => {
            One game in the switch, and the switch kept: `game` has already
            been checked against GAMES above. See the note at the top of the
            file for why the list survived coming down to one. */
+        /* LATE FILING. A day that has closed is still filed when the
+           request is only late and the day was not: every round recorded,
+           the last of them stamped by this server before the day closed
+           (dayClosesAt in _daily.js). The score is built from those stamped
+           moves exactly as it would have been at 00:04, so arriving at
+           00:06 changes nothing about it except that it now lands — before
+           this, a finished day whose POST fell over in the grace was lost
+           outright. A day played signed out has no stamps to prove when it
+           was played, so a claim is still refused once the day has closed,
+           and so is a day with a round unplayed: it can no longer be
+           finished, so it is told so (400, final) rather than "unfinished"
+           (409, which the page keeps trying). The start row these read
+           expires two days on (_speed.js), which bounds how late is late. */
+        const closed = () => json(400, { error: "That day is not open" });
         let scored, clock = null, claimed = false;
         try {
+            const row = await speed.progressFor(db, game, day, player.id);
+            // Checked before the deal is read, so a closed day with nothing
+            // recorded can never cause a day to be dealt.
+            if (!open && !(speed.lastMarkAt(row) <= dayClosesAt(day))) return closed();
             const deal = await deals.dealFor(db, ensureUniqueIndex, game, day);
             if (!deal.rounds.length) return json(409, { recorded: false, reason: "no-deal" });
-            const row = await speed.progressFor(db, game, day, player.id);
             const moves = speed.movesOf(row, deal.rounds.length);
             if (moves.some(Boolean)) {
                 scored = scoreRecorded(deal.rounds, moves);
-                if (!scored.complete) return privateJson(409, { recorded: false, reason: "unfinished" });
+                if (!scored.complete) return open ? privateJson(409, { recorded: false, reason: "unfinished" }) : closed();
                 clock = speed.clockOf(row);
             } else {
+                if (!open) return closed();
                 scored = scoreClaim(deal.rounds, body.moves);
                 claimed = true;
             }
@@ -757,12 +811,15 @@ async function dealReply(db, event, game, params) {
         return privateJson(503, { error: "The day could not be dealt just now" });
     }
     const player = playerFrom(event);
-    let progress = null, filed = false;
+    let progress = null, filed = false, score = null;
     if (player) {
         try {
             const row = await speed.progressFor(db, game, day, player.id);
             progress = progressView(speed.movesOf(row, deal.rounds.length));
-            filed = Boolean(await db.collection(COLLECTION).findOne({ game, day, playerId: player.id }, { projection: { _id: 1 } }));
+            const onFile = await db.collection(COLLECTION).findOne({ game, day, playerId: player.id },
+                { projection: { _id: 1, points: 1, bonus: 1, solved: 1 } });
+            filed = Boolean(onFile);
+            score = filedScore(onFile);
         } catch (e) {
             // The deal is still worth sending; the page plays on from its
             // own copy of the day.
@@ -771,9 +828,20 @@ async function dealReply(db, event, game, params) {
     }
     return privateJson(200, {
         game, day, today: today(), now: Date.now(),
-        rounds: deals.publicRounds(game, deal.rounds),
-        progress, filed
+        // Picture addresses, never the stored references — see _deal.js.
+        rounds: deals.publicRounds(game, deal.rounds, day),
+        progress, filed, score
     });
+}
+
+/* The filed day's own figures, for a results card reopened after the day
+   was filed — the base points, the speed bonus and the rounds right, as
+   the row stands, so the card shows the same split the board adds up.
+   null when nothing is filed. The same shape as alreadyReply, which is
+   what the submit answers with. */
+function filedScore(row) {
+    if (!row) return null;
+    return { points: row.points || 0, bonus: row.bonus || 0, solved: row.solved || 0 };
 }
 
 /* For guess-scores.js, player-profile.js and player-data.js — see launchCut
@@ -784,6 +852,8 @@ module.exports.launchCut = launchCut;
 module.exports.afterLaunch = afterLaunch;
 module.exports.fromLaunch = fromLaunch;
 module.exports.isRealDay = isRealDay;
+// For guess-scores.js, so both games' deal replies carry the same shape.
+module.exports.filedScore = filedScore;
 // For the tests: the pure scoring halves.
 module.exports.scoreRecorded = scoreRecorded;
 module.exports.scoreClaim = scoreClaim;

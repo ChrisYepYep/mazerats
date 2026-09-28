@@ -16,13 +16,12 @@ Allow: /
 Disallow: /glyphs
 Disallow: /glyphs.html
 
-# The Sorcerer's Atlas. Reachable by anyone with the link, but still
-# being drawn — half its rooms have no picture and no description yet, and
-# a search result pointing at that is worse than no search result at all.
-# Lift this (and the noindex in wizard.html's own markup) when it is ready
-# to be found.
-Disallow: /wizard
-Disallow: /wizard.html
+# The Sorcerer's Atlas is NOT disallowed here, on purpose. It is still being
+# drawn and is kept out of search results — but by its noindex (the meta tag
+# in wizard.html and an X-Robots-Tag header in netlify.toml), which a crawler
+# can only obey if it is allowed to fetch the page. Disallowing it here hid
+# that noindex, and a blocked URL other sites link to can still be listed,
+# bare. Lift the noindex when it is ready to be found.
 
 # /guess was disallowed while the daily game was an unfinished experiment.
 # It is a real feature now — scored, with leaderboards and accounts behind
@@ -30,14 +29,34 @@ Disallow: /wizard.html
 # findable. It still serves the homepage with the game open, so a crawler
 # reaches nothing here it could not already reach at /home.html; and the
 # page a searcher lands on is the game itself, which is exactly what the
-# link promised. The day's answers are not in the HTML at all — they are
-# derived in the browser from the date — so there is nothing datable for an
-# index to go stale on.
+# link promised. The day's answers are not in the HTML at all — the day is
+# dealt on the server and the page is handed the puzzle without them (see
+# netlify/functions/_deal.js) — so there is nothing datable for an index to
+# go stale on.
 
-# Project tooling and the function endpoints. Both already 404 at the edge
-# (see netlify.toml); this saves the crawl.
+# Project tooling and the function endpoints. /tools/ already 404s at the
+# edge (see netlify.toml); the functions do not — they are the site's API,
+# and answer anybody — but none of them is a page worth indexing, so this
+# saves the crawl.
 #
-# EXCEPT the image CDN. Every share preview's picture is a
+# EXCEPT the public reads the archive makes as it loads. A crawler renders
+# the page the way a browser does, and a page whose data it may not fetch
+# renders empty: the Coming Soon check in home.html reads settings first
+# and, unable to, sent the crawler back to the landing page — and past that,
+# every /maze, /event and /guides address would have been an archive with
+# nothing in it. So these, and only these, are open: the site's switches,
+# the mazes, the events, the guides, and the Missing Pieces flags a maze's
+# window shows (js/home.js). Every one is a public GET the page makes
+# without signing in; the admin routes on the same functions (?full=1, and
+# every write) still need a token whatever this file says. article is not
+# here: it is POST-only, used by /warren, and nothing reads it on load.
+Allow: /.netlify/functions/settings
+Allow: /.netlify/functions/rooms
+Allow: /.netlify/functions/events
+Allow: /.netlify/functions/guides
+Allow: /.netlify/functions/dead-ends
+#
+# And the image CDN. Every share preview's picture is a
 # /.netlify/images?url=… address (see netlify/functions/share.js), and so is
 # every thumbnail in the archive. X's card crawler and LinkedIn's obey this
 # file, so with /.netlify/ disallowed whole, every maze link posted there

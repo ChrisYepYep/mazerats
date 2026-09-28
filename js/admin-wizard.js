@@ -255,15 +255,24 @@ window.AdminWizard = (function () {
     }
 
     async function saveOne(kind, record) {
+        return (await saveOneAnswer(kind, record)).ok;
+    }
+
+    /* saveOne, with the failure kept: { ok: true }, or { ok: false, err }.
+       For the one caller that has to know HOW it failed — replacing a
+       picture, which deletes an upload on a failure and must only do that
+       when the server certainly did not keep it. See the imageFile branch
+       of onInspectorInput. */
+    async function saveOneAnswer(kind, record) {
         try {
             await ctx.api.updateWizardItem(ctx.token(), kind, record);
             pending.delete(`${kind}:${record.id}`);
             updateDirty();
-            return true;
+            return { ok: true };
         } catch (err) {
-            if (err.status === 401) { ctx.lockOut(); return false; }
+            if (err.status === 401) { ctx.lockOut(); return { ok: false, err }; }
             say("Could not save — " + (err.message || "try again."), "bad");
-            return false;
+            return { ok: false, err };
         }
     }
 
@@ -1581,10 +1590,32 @@ window.AdminWizard = (function () {
                 say("Uploading…", "");
                 const uploaded = await ctx.uploadImage(record.name || "layer", file);
                 record.image = uploaded.url;
-                if (!(await saveOne("layer", record))) {
+                const saved = await saveOneAnswer("layer", record);
+                if (!saved.ok) {
+                    /* WHAT THE FAILURE WAS decides what happens to the
+                       upload. It used to be deleted on any failure — and a
+                       save that timed out, or whose answer was lost on the
+                       way back, may well have been written: the layer then
+                       pointed at a file this had just thrown away, and the
+                       map drew a hole where the picture was.
+
+                         401            the session ran out. Nothing is
+                                        rolled back: lockOut keeps the open
+                                        edits for the same admin signing
+                                        back in (see lockOut in admin.js),
+                                        and this replacement is one of them.
+                         other 4xx      the server said no, so it certainly
+                                        did not keep it: roll back, and the
+                                        upload nothing points at goes.
+                         anything else  a network error, a timeout, a 5xx:
+                                        unknown. Rolled back on screen, but
+                                        the file is KEPT — a stray upload
+                                        costs a little storage; deleting one
+                                        the server kept breaks the map. */
+                    const status = saved.err && saved.err.status;
+                    if (status === 401) return;
                     record.image = previous;
-                    // The upload nothing points at any more.
-                    dropUpload(uploaded.url);
+                    if (status >= 400 && status < 500) dropUpload(uploaded.url);
                     return;
                 }
                 /* And the picture it replaced, out of storage — the same
@@ -1875,29 +1906,28 @@ window.AdminWizard = (function () {
        is the answer that loses nothing if Enter is pressed by reflex, and
        Escape presses No. Caught on the capture phase so it is answered here
        and does not also collapse the expanded editor behind it. */
+    /* THE FOCUS AND ESCAPE ARE admin.js's NOW. showConfirmDialog holds its
+       own dialog (holdDialog there): focus on No, Tab kept inside, Escape
+       answering No on the capture phase, and focus handed back on close.
+       This used to do the same things itself, alongside — so one Escape was
+       answered twice, finish() tearing the dialog down a second time over
+       the first, and No was focused twice. What is left here is the part
+       only this panel can do: standing the map's own keys down while it is
+       up (dialogOpen), and putting the focus back on the map if the control
+       holdDialog would have returned it to has gone — the Delete button in
+       an inspector the deletion has just re-rendered, say. */
     let dialogOpen = false;
 
     async function askFirst(message) {
         dialogOpen = true;
-        const answer = ctx.confirm(message);        // the overlay is in the page now
-        const overlays = document.querySelectorAll(".modal-overlay.open");
-        const overlay = overlays[overlays.length - 1];
-        const no = overlay && overlay.querySelector('[data-choice="no"]');
-        if (no) no.focus();
-        const onKey = e => {
-            if (e.key !== "Escape" || !no) return;
-            e.preventDefault();
-            e.stopPropagation();
-            no.click();
-        };
-        document.addEventListener("keydown", onKey, true);
         try {
-            return await answer;
+            return await ctx.confirm(message);
         } finally {
-            document.removeEventListener("keydown", onKey, true);
             dialogOpen = false;
-            // Back to the map, so the arrow keys carry on where they were.
-            if (els.stage && els.stage.focus) els.stage.focus({ preventScroll: true });
+            // Back to the map, so the arrow keys carry on where they were —
+            // only when holdDialog had nowhere left to put the focus.
+            const lost = !document.activeElement || document.activeElement === document.body;
+            if (lost && els.stage && els.stage.focus) els.stage.focus({ preventScroll: true });
         }
     }
 

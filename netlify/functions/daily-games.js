@@ -32,8 +32,9 @@
    the only thing that makes a player identifiable across a page load. Play
    from a signed-out browser is anonymous by construction and cannot be
    addressed by anybody, including us. */
+const crypto = require("crypto");
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
+const { hasAccount, canWrite, refuseWrite, roleOf, WRITE_SCOPES, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 // Points here are totals, the day's score plus its speed bonus, as every
@@ -79,6 +80,18 @@ const GAMES = [
 ];
 
 const isGame = key => GAMES.some(g => g.key === key);
+
+/* A player's stand-in id, for an admin role that may not see Discord ids
+   (see the GET below): an HMAC of the id under SESSION_SECRET, so it is
+   the same on every request and cannot be turned back into the id by
+   anybody without the secret. Without a secret (a local setup) it is a
+   plain hash — still not the id on screen, which is all a missing secret
+   has left to protect anywhere on the site. */
+function standIn(id) {
+    const secret = process.env.SESSION_SECRET;
+    const h = secret ? crypto.createHmac("sha256", secret) : crypto.createHash("sha256");
+    return "p_" + h.update("daily-games-player:" + String(id)).digest("hex").slice(0, 20);
+}
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -247,10 +260,21 @@ async function route(event, db, scores, resets) {
             byPlayer.get(t.playerId).pending.push(t.game);
         });
 
+        /* DISCORD IDS ONLY FOR THOSE WHO CAN ACT ON THEM. The list went out
+           with each player's Discord id to every role that can log in —
+           viewers and wizards included, neither of whom can reset a day —
+           and the search matched on the id too, so a viewer could confirm
+           anybody's id a digit at a time. A role without the "site" write
+           scope (WRITE_SCOPES in _auth.js) now gets a stand-in instead:
+           the same player always gets the same one, so the admin page
+           still selects a player and asks for their detail with it (it
+           treats the id as opaque), and the detail is looked up by mapping
+           it back here. Search is by name only for them. */
+        const seesIds = (WRITE_SCOPES[await roleOf(event)] || []).includes("site");
         const players = [...byPlayer.values()];
         const q = String(params.q || "").trim().toLowerCase();
         const filtered = q
-            ? players.filter(p => p.name.toLowerCase().includes(q) || p.id.includes(q))
+            ? players.filter(p => p.name.toLowerCase().includes(q) || (seesIds && p.id.includes(q)))
             : players;
 
         /* A player's standing in each game, so the admin is deciding with
@@ -258,8 +282,11 @@ async function route(event, db, scores, resets) {
            hoping. Only asked for one player at a time — the day's row for
            every player in every game is a report, not a control. */
         let detail = null;
-        if (params.playerId) {
-            const id = String(params.playerId);
+        const asked = params.playerId
+            ? (seesIds ? String(params.playerId) : (players.find(p => standIn(p.id) === String(params.playerId)) || {}).id)
+            : null;
+        if (asked) {
+            const id = asked;
             const waiting = pending.filter(t => t.playerId === id).map(t => t.game);
 
             // Each game's own rows, from wherever that game keeps them.
@@ -281,7 +308,7 @@ async function route(event, db, scores, resets) {
             }));
 
             detail = {
-                id,
+                id: seesIds ? id : standIn(id),
                 games: perGame.map(({ rows, ...rest }) => rest),
                 /* The recent list is Guess the Maze's, because it is the one
                    with a solved-out-of-five to show and the longest history.
@@ -293,7 +320,8 @@ async function route(event, db, scores, resets) {
             };
         }
 
-        return json(200, { today: today(), games: GAMES, players: filtered, detail });
+        const shown = seesIds ? filtered : filtered.map(p => Object.assign({}, p, { id: standIn(p.id) }));
+        return json(200, { today: today(), games: GAMES, players: shown, detail });
     }
 
     if (event.httpMethod === "POST") {
@@ -304,7 +332,13 @@ async function route(event, db, scores, resets) {
         // the bare call returned a Promise — which is truthy, so the `!`
         // made it false every time and a viewer sailed straight through to
         // deleting a player's scored day. Every other endpoint awaits it.
-        if (!(await canWrite(event))) return READ_ONLY;
+        //
+        // Refused through refuseWrite rather than a bare READ_ONLY: a
+        // session whose account was deleted, or whose password has changed
+        // since, also fails canWrite, and READ_ONLY told the admin page it
+        // was "view-only" — so it kept a dead session. refuseWrite answers
+        // those with the 401 the page signs out on (see _auth.js).
+        if (!(await canWrite(event))) return await refuseWrite(event);
 
         let body = {};
         try { body = JSON.parse(event.body || "{}"); } catch (e) { body = {}; }

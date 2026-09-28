@@ -120,6 +120,114 @@ function cleanLevel(body) {
     };
 }
 
+/* ---------------------------------------------------------------- VERSIONS
+
+   Every save is a new VERSION of the level, and the numbers the leaderboard
+   judges a run by are kept for each one.
+
+   WHY. ff-scores.js holds each round of a run to its level's clock, drop
+   delay and seats — and it used to read those as they stood when the run
+   was SUBMITTED. Edit a level while somebody is half an hour into a run
+   (a shorter clock, a slower drop, a seat taken out) or unpublish it, and
+   their honest run came back refused, for numbers they never played
+   against. During launch week, with the levels being tuned live, that is
+   the one refusal the board cannot afford.
+
+   So: a level carries `rev`, bumped by every save, and the public GET hands
+   it out with the level. The page sends back, with its run, the rev of each
+   level it was dealt, and ff-scores judges each round by the snapshot of
+   THAT version — provided the version existed before the run's token was
+   issued, so nobody can play one version and claim a friendlier one written
+   later. See levelsAsPlayed in ff-scores.js.
+
+   ONLY WHAT THE CHECKS READ is kept: the id, name, order and published flag,
+   the three rules the clock and floor use, and each zone's items reduced to
+   their role and count (dropsIn in ff-scores.js). Not the room, not the
+   decor — a snapshot is a scorecard, not a backup, and this way it is a few
+   hundred bytes.
+
+   A LEVEL WITH NO `rev` is at version 0: every level published before this
+   existed. Nothing migrates them — the first save through here snapshots the
+   level as it WAS, as version 0, stamped with its old updatedAt, and then
+   the new version as 1. Until that first save the level document itself is
+   version 0, and ff-scores reads it as such.
+
+   KEPT FOR A WEEK AFTER BEING REPLACED. A version is only interesting to a
+   page that loaded it and has not been reloaded since; tokens last three
+   hours, but a tab can sit open far longer before Play is pressed, and an
+   old version is honoured for as long as it predates the token. So a
+   version gets `supersededAt` when the next one is written, and a TTL index
+   deletes it seven days after that; the CURRENT version never has the field
+   and never expires. On top of the week, at most KEEP_VERSIONS per level, so
+   an afternoon of the editor's Save button cannot grow it without bound —
+   a version that far back is one nobody's page is still holding. Past
+   either limit, a run naming a version that is gone is judged against the
+   level as it is now, which is exactly how every run was judged before. */
+const VERSIONS = "ff_level_versions";
+const VERSION_LIFE_S = 7 * 24 * 60 * 60;
+const KEEP_VERSIONS = 100;
+
+const revOf = (level) => (Number.isInteger(level && level.rev) && level.rev >= 0 ? level.rev : 0);
+
+function snapshotOf(level, rev, at) {
+    const rules = level.rules || {};
+    return {
+        _id: `${level.id}:${rev}`,
+        id: level.id,
+        rev,
+        at,
+        name: level.name,
+        order: level.order,
+        published: level.published === true,
+        rules: {
+            seconds: rules.seconds,
+            dropDelayMs: rules.dropDelayMs,
+            dropSpeedMs: rules.dropSpeedMs
+        },
+        zones: (level.zones || []).map(z => ({
+            items: (z.items || []).map(i => ({ role: i.role, count: i.count }))
+        }))
+    };
+}
+
+// A stored timestamp as a Date, or the epoch for a level that never had one:
+// "older than every stamp", the same reading ff-scores gives a missing one.
+function stampOf(level) {
+    const ms = Date.parse((level && (level.updatedAt || level.createdAt)) || "");
+    return new Date(Number.isFinite(ms) ? ms : 0);
+}
+
+let versionsIndexed = false;
+/* Writes one version and retires the ones before it. NEVER FAILS THE SAVE:
+   the level is already written by the time this runs, and a missing
+   snapshot costs only that runs on the version before are judged against
+   the new one — the old behaviour, not a new failure. The insert is by
+   `${id}:${rev}`, so two writes of the same version are one row. */
+async function recordVersion(versions, level, rev, at) {
+    try {
+        if (!versionsIndexed) {
+            versionsIndexed = true;
+            // Built here rather than through _db.js, which cannot make a TTL
+            // index; see spendRun in ff-scores.js for the same arrangement.
+            await versions.createIndex({ supersededAt: 1 }, { expireAfterSeconds: VERSION_LIFE_S })
+                .catch(() => {});
+            await versions.createIndex({ id: 1, rev: 1 }).catch(() => {});
+        }
+        try {
+            await versions.insertOne(snapshotOf(level, rev, at));
+        } catch (e) {
+            if (!(e && e.code === 11000)) throw e;
+        }
+        await versions.updateMany(
+            { id: level.id, rev: { $lt: rev }, supersededAt: null },
+            { $set: { supersededAt: new Date() } }
+        );
+        await versions.deleteMany({ id: level.id, rev: { $lte: rev - KEEP_VERSIONS } });
+    } catch (e) {
+        console.error("ff-levels: could not record a level version", e);
+    }
+}
+
 /* THE OWNER CHECKS THROW when the accounts cannot be read (see
    authUnavailableError in _auth.js), rather than answering "not an owner" —
    which the editor would have shown as a refusal and the admin page as a
@@ -143,6 +251,7 @@ async function handle(event) {
         return json(503, { error: "Database connection failed" });
     }
     const levels = db.collection("ff_levels");
+    const versions = db.collection(VERSIONS);
 
     if (event.httpMethod === "GET") {
         const params = event.queryStringParameters || {};
@@ -173,7 +282,12 @@ async function handle(event) {
 
            The ?all=1 branch above returns through json() and stays
            uncached, which is what keeps an admin reading the truth. */
-        return cachedJson(event, { count: published.length, levels: published });
+        /* `rev` on every level, 0 where it has never been saved through
+           here — the page sends it back with its run (see VERSIONS). */
+        return cachedJson(event, {
+            count: published.length,
+            levels: published.map(l => ({ ...l, rev: revOf(l) }))
+        });
     }
 
     let body = {};
@@ -192,6 +306,18 @@ async function handle(event) {
         if (!level.id) level.id = slugify(level.name);
         level.createdAt = new Date().toISOString();
         level.updatedAt = level.createdAt;
+        /* A new level starts at version 0, like one from before VERSIONS —
+           unless its id has been used before. A level deleted and made again
+           under the same name (the editor does exactly that when a save finds
+           it gone) still has the old one's versions for a week, and starting
+           at 0 would collide with those and leave the OLD level's numbers
+           answering for the new one. So it carries on after them. */
+        let lastRev = -1;
+        try {
+            const last = await versions.find({ id: level.id }).sort({ rev: -1 }).limit(1).toArray();
+            if (last[0] && Number.isInteger(last[0].rev)) lastRev = last[0].rev;
+        } catch (e) { /* a fresh id, as far as anyone can tell */ }
+        level.rev = lastRev + 1;
 
         await ensureUniqueIndex(levels, "id");
         try {
@@ -202,6 +328,7 @@ async function handle(event) {
             if (e && e.code === 11000) return json(409, { error: "A level with that id already exists" });
             throw e;
         }
+        await recordVersion(versions, level, level.rev, new Date(level.updatedAt));
         return json(201, level);
     }
 
@@ -214,12 +341,28 @@ async function handle(event) {
         // Server-stamped, and after the clean so a stale value in the body
         // cannot wind the clock back.
         update.updatedAt = new Date().toISOString();
+
+        /* A LEVEL FROM BEFORE VERSIONS is snapshotted as it stood, as
+           version 0, before this save replaces it — so a run already under
+           way on it is judged by what it was playing. Read first; if a
+           second save races this one, the version-0 row is the same row
+           either way (see recordVersion). */
+        const before = await levels.findOne({ id: update.id }, { projection: { _id: 0 } });
+        if (!before) return json(404, { error: "Level not found" });
+        if (!Number.isInteger(before.rev)) {
+            await recordVersion(versions, before, 0, stampOf(before));
+        }
+
+        /* `$inc` rather than before.rev + 1, so two saves racing get two
+           numbers and never share one. cleanLevel never passes `rev`
+           through, so the body cannot set it either. */
         const result = await levels.findOneAndUpdate(
             { id: update.id },
-            { $set: update },
+            { $set: update, $inc: { rev: 1 } },
             { returnDocument: "after", projection: { _id: 0 } }
         );
         if (!result) return json(404, { error: "Level not found" });
+        await recordVersion(versions, result, revOf(result), new Date(update.updatedAt));
         return json(200, result);
     }
 
@@ -230,6 +373,13 @@ async function handle(event) {
         if (!id) return json(400, { error: "Missing level id" });
         const result = await levels.deleteOne({ id });
         if (result.deletedCount === 0) return json(404, { error: "Level not found" });
+        /* Its versions are left to expire rather than deleted with it: a run
+           dealt this level before it went is still judged by its snapshot for
+           the week the others last. The current one is retired too, or it
+           would never expire at all. */
+        try {
+            await versions.updateMany({ id, supersededAt: null }, { $set: { supersededAt: new Date() } });
+        } catch (e) { /* the TTL is tidiness; the delete has happened */ }
         return json(200, { deleted: id });
     }
 

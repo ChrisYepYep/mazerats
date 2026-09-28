@@ -21,8 +21,9 @@
 
    Bootstrapping: the very first login (when the admins collection is still
    empty) is checked against the legacy shared ADMIN_PASSWORD env var
-   instead of a stored account, and on success creates that username as the
-   first real admin, with the "owner" role. This path only ever fires once
+   instead of a stored account, and on success creates the first real admin,
+   with the "owner" role. Only for the PERMANENT_OWNER username, and only one
+   request at a time (see the login below). This path only ever fires once
    the collection has zero admins, so it also doubles as a recovery route
    if every admin account is ever deleted. */
 const crypto = require("crypto");
@@ -68,8 +69,8 @@ const text = (v) => (typeof v === "string" ? v : "");
    the per-IP cap contact.js has always had.
 
    Counted per IP AND per (username, IP) pair, whichever trips first, with a
-   third, much higher per-username ceiling across every IP that SLOWS rather
-   than refuses.
+   third, per-username lock across every network the account has NOT signed
+   in from before (see "THE USERNAME LOCK" below).
 
    The username cap used to be per username alone, and refused outright,
    BEFORE the password was looked at. That made it a lockout anybody could
@@ -85,12 +86,9 @@ const text = (v) => (typeof v === "string" ? v : "");
    can touch the real owner signing in from their own machine.
 
    What the username cap was for — the same account worked on from a
-   botnet, which no per-host cap sees — is the ceiling's job now. Over it,
-   every answer for that username (right or wrong, so the delay tells a
-   guesser nothing) waits LOGIN_SLOW_MS first. It cannot stop a botnet, and
-   nothing that still lets the right password in could; what it does is cut
-   what each bot gets through per minute, and make the run loud in the
-   activity log, while the owner still gets in — slowly.
+   botnet, which no per-host cap sees — is the username lock's job now, and
+   it can afford to refuse outright because it never applies to a network
+   the account has already signed in from. See below.
 
    bcrypt is the reason this matters twice over. A cost-10 hash is ~45ms of
    CPU that an anonymous caller can ask for as often as they like, so an
@@ -100,17 +98,195 @@ const text = (v) => (typeof v === "string" ? v : "");
    counts and a delete — and no bcrypt. */
 const LOGIN_MAX_PER_IP = 10;
 const LOGIN_MAX_PER_USER_IP = 15;
-const LOGIN_SLOW_PER_USER = 100;
-const LOGIN_SLOW_MS = 2500;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGGED_NAME_MAX = 60;
 
-function clientIp(event) {
-    /* Only the value Netlify computes. x-forwarded-for is client-settable,
-       so honouring it would let an attacker rotate the header and walk
-       straight past the cap. Same reasoning, and the same single source, as
-       contact.js. */
-    return (event.headers || {})["x-nf-client-connection-ip"] || null;
+/* ---- THE USERNAME LOCK, and why it cannot lock the owner out.
+
+   The per-host caps above cannot see a botnet: a thousand networks each
+   making nine guesses at "ChrisYepYep" is nine thousand guesses and not one
+   of them over a cap. The old answer was a ceiling that only SLOWED every
+   answer for the name by 2.5s past a hundred failures, because a ceiling
+   that refused would refuse the owner too — whoever held the lock would
+   hold it against the real password as well.
+
+   The way out is that the owner is not signing in from nowhere. Every
+   account now remembers the networks (clientNet — the /64 for IPv6, the
+   address for IPv4) it has signed in from successfully, most recent first,
+   KNOWN_NETS_MAX of them. A request from one of those is never touched by
+   the username lock at all; only the per-host caps above apply to it. So
+   the lock can be a real one for everybody else:
+
+     - every attempt from an UNKNOWN network claims a place on one
+       per-username document in USER_THROTTLE, shared by every unknown
+       network at once, BEFORE bcrypt — the insert-first idea again, done as
+       one atomic findOneAndUpdate so a parallel burst cannot all see room;
+     - past USER_LOCK_AFTER failures inside USER_WINDOW_MS the name is
+       locked until `nextAllowedAt`, refused with a 429 for everyone who is
+       not on a known network — the right password included, which is the
+       point: the lock is only worth having if a guess that happens to be
+       right is refused along with the rest;
+     - each lock is twice the last (1 minute, 2, 4 … capped at an hour),
+       and the doubling is forgotten after a quiet USER_LOCK_MEMORY_MS.
+
+   A correct password takes its claim back, as it takes its activity row
+   back, so a first sign-in from a new phone — no recent failures — is one
+   claim in and one out and goes straight through; and that network is
+   known from then on.
+
+   A name that is not an account has no known networks, so every attempt at
+   it is "unknown" and is locked exactly as a real account's would be. The
+   answers are the same either way, so the lock tells nobody which names
+   exist. The document is keyed by a hash of the name, never the name, for
+   the reason maskedName gives. */
+const USER_THROTTLE = "admin_login_throttle";
+const USER_LOCK_AFTER = 20;
+const USER_WINDOW_MS = 60 * 60 * 1000;
+const USER_LOCK_BASE_MS = 60 * 1000;
+const USER_LOCK_MAX_MS = 60 * 60 * 1000;
+const USER_LOCK_MEMORY_MS = 24 * 60 * 60 * 1000;
+const KNOWN_NETS_MAX = 20;
+
+/* The address, and the unit it is COUNTED by, both from _net.js.
+
+   Only the value Netlify computes (x-forwarded-for is client-settable, so
+   honouring it would let an attacker rotate the header and walk straight
+   past the cap). And counted by subscriber rather than by exact address:
+   the caps below used to count the raw address, and an IPv6 caller holds a
+   whole /64 of them, so ten guesses per address was ten guesses per address
+   for as many addresses as they cared to use — no cap at all. Each row keeps
+   the real `ip` for the activity page and gains `net`, which is what the
+   counts read. */
+const { clientIp, clientNet } = require("./_net");
+
+/* What a failed sign-in against a name that is NOT an account keeps of
+   that name. The typed username went into admin_activity verbatim, and the
+   wrong box is exactly where people type their password — so the log kept a
+   ninety-day list of passwords that were one field out. A keyed hash still
+   lets the activity page group a run of attempts at the same name, and lets
+   the pair count below keep counting them, without the name itself being
+   readable by anyone. Real account names are kept as they are: a run of
+   failures against one of those is the thing worth seeing. */
+function maskedName(name) {
+    const h = crypto.createHmac("sha256", process.env.SESSION_SECRET || "maze-rats-auth")
+        .update(String(name)).digest("hex").slice(0, 10);
+    return `unknown #${h}`;
+}
+
+/* The username lock's document id: a keyed hash of the name as typed, for
+   the same reason maskedName exists — the lock is kept for names that are
+   not accounts too, and those are so often a password. Longer than
+   maskedName's, since here two names sharing an id would share a lock. */
+function lockIdOf(name) {
+    return "u:" + crypto.createHmac("sha256", process.env.SESSION_SECRET || "maze-rats-auth")
+        .update("login-lock:" + String(name)).digest("hex").slice(0, 32);
+}
+
+// Whether this caller's network is one the account has signed in from.
+function isKnownNet(admin, net) {
+    return Boolean(net && admin && Array.isArray(admin.knownNets) && admin.knownNets.includes(net));
+}
+
+/* Puts `net` at the front of the account's known networks, trimmed to
+   KNOWN_NETS_MAX. Two updates rather than one because Mongo will not $pull
+   and $push the same field in a single one; a sign-in racing another can
+   at worst leave the same network listed twice, which the cap then trims.
+   Skipped when it is already first, which is every ordinary sign-in.
+   Never allowed to fail the sign-in it follows. */
+async function rememberNet(admins, admin, net) {
+    if (!net || !admin) return;
+    if (Array.isArray(admin.knownNets) && admin.knownNets[0] === net) return;
+    try {
+        await admins.updateOne({ username: admin.username }, { $pull: { knownNets: net } });
+        await admins.updateOne({ username: admin.username },
+            { $push: { knownNets: { $each: [net], $position: 0, $slice: KNOWN_NETS_MAX } } });
+    } catch (e) {
+        console.warn("auth: could not remember a sign-in network", e.message);
+    }
+}
+
+/* The lock's documents sweep themselves two days after they were last
+   touched — past USER_LOCK_MEMORY_MS, so a lock's doubling is never
+   forgotten early. Memoised per warm instance and never allowed to fail a
+   sign-in; without it the documents simply stay. */
+let lockIndexing = null;
+function ensureLockIndex(col) {
+    if (!lockIndexing) {
+        lockIndexing = col.createIndex({ touchedAt: 1 }, { expireAfterSeconds: 2 * 24 * 60 * 60 })
+            .catch(e => console.error("auth: TTL index on the login lock unavailable", e));
+    }
+    return lockIndexing;
+}
+
+const lockLength = (level) => Math.min(USER_LOCK_MAX_MS, USER_LOCK_BASE_MS * Math.pow(2, Math.min(level, 20)));
+
+// Either driver shape: the document, or { value: document }.
+const docOf = (res) => (res && res.value !== undefined ? res.value : res);
+
+/* One claim on the username lock, for an attempt from an unknown network.
+   Returns { release } when the attempt may go on (release() takes the
+   claim back after a correct password), or { lockedUntil, justLocked }
+   when it must be refused.
+
+   "Not locked" is part of the claim's own filter, so a locked name matches
+   nothing and the upsert then collides with the existing _id — a duplicate
+   key, which is the answer "locked" arriving atomically, the same trick the
+   bootstrap claim below uses. Nothing is written for a refused attempt, so
+   hammering a locked name does not lengthen its lock; only the attempt that
+   crosses USER_LOCK_AFTER sets one.
+
+   The window is a fixed one, restarted by the first claim after it lapses.
+   That reset is its own conditional update, so two requests arriving
+   together cannot both restart it; at worst one claim lands just before a
+   restart and is forgotten, which errs by one in the looser direction on a
+   window of twenty. */
+async function claimUserAttempt(db, name) {
+    const col = db.collection(USER_THROTTLE);
+    await ensureLockIndex(col);
+    const _id = lockIdOf(name);
+    const now = new Date();
+    const open = [{ nextAllowedAt: null }, { nextAllowedAt: { $lte: now } }];
+    const heldUntil = async (fallback) => {
+        const held = await col.findOne({ _id }, { projection: { nextAllowedAt: 1 } });
+        return (held && held.nextAllowedAt) || fallback;
+    };
+
+    await col.updateOne(
+        { _id, windowStart: { $lt: new Date(now.getTime() - USER_WINDOW_MS) }, $or: open },
+        { $set: { windowStart: now, fails: 0 } }
+    );
+
+    let doc;
+    try {
+        doc = docOf(await col.findOneAndUpdate(
+            { _id, $or: open },
+            { $inc: { fails: 1 }, $set: { touchedAt: now }, $setOnInsert: { windowStart: now } },
+            { upsert: true, returnDocument: "after" }
+        ));
+    } catch (e) {
+        if (!(e && e.code === 11000)) throw e;
+        return { lockedUntil: await heldUntil(new Date(now.getTime() + USER_LOCK_BASE_MS)) };
+    }
+
+    const fails = (doc && doc.fails) || 1;
+    if (fails <= USER_LOCK_AFTER) {
+        return {
+            release: () => col.updateOne({ _id }, { $inc: { fails: -1 } }).catch(() => {})
+        };
+    }
+
+    /* Over. Lock it — once: the same "not locked" filter means only the
+       first request of a burst to get here sets the lock and doubles the
+       level, and the rest are refused under the lock it set. */
+    const remembered = doc.lastLockAt && now.getTime() - new Date(doc.lastLockAt).getTime() < USER_LOCK_MEMORY_MS;
+    const level = remembered ? (Number(doc.level) || 0) : 0;
+    const until = new Date(now.getTime() + lockLength(level));
+    const set = await col.updateOne(
+        { _id, $or: open },
+        { $set: { nextAllowedAt: until, level: level + 1, lastLockAt: now, fails: 0, windowStart: now, touchedAt: now } }
+    );
+    if (!set.modifiedCount) return { lockedUntil: await heldUntil(until) };
+    return { lockedUntil: until, justLocked: true };
 }
 
 /* Claims a place under the cap, or returns the 429 to send instead.
@@ -138,22 +314,31 @@ function clientIp(event) {
    account rather than not at all. Failing open on the whole check would
    make the header its own bypass.
 
-   Returns { refused } or { settle(reason), slow }: settle(null) is a
-   success and removes the row, settle("…") records the failure; `slow` is
-   true when the username is over its all-hosts ceiling and the caller
-   should wait LOGIN_SLOW_MS before answering, whatever the answer. Throws
-   if the database does — the caller answers 503 rather than letting an
-   attempt through unthrottled.
+   Then the username lock (see THE USERNAME LOCK above), for a caller whose
+   network the account does not know. `findAccount` is how this finds out:
+   the account row, or null, looked up only once the per-host caps have let
+   the attempt through, so a throttled attempt still never reaches the
+   accounts. It is looked up whether or not the name is real, and the lock
+   treats "no account" and "not a known network" alike, so neither the
+   answer nor its timing says which names exist.
+
+   Returns { refused } or { settle(reason), account }: `account` is what
+   findAccount found, so the caller need not ask again; settle(null) is a
+   success, and removes the row and hands back the lock claim; settle("…")
+   records the failure, and the claim stays counted. Throws if the database
+   does — the caller answers 503 rather than letting an attempt through
+   unthrottled.
 
    The current-password check on a password change (the PUT below) goes
    through here too, filed as the same "login-failed" with its own reason.
    It is the same guessing game — a stolen session trying passwords against
    its own account — so it shares the same caps, and the activity page
    already shows it without being taught a new kind of row. */
-async function loginThrottle(db, event, username) {
+async function loginThrottle(db, event, username, findAccount) {
     const type = "login-failed";
     const since = new Date(Date.now() - LOGIN_WINDOW_MS);
     const ip = clientIp(event);
+    const net = clientNet(event);
     const activity = db.collection(ACTIVITY);
 
     // The same shape _audit.js's record() writes, so the activity page reads
@@ -162,49 +347,86 @@ async function loginThrottle(db, event, username) {
         at: new Date(),
         type,
         ip,
+        net,
         agent: ((event.headers || {})["user-agent"] || "").slice(0, 180),
         username,
         reason: "checking"
     });
 
-    /* `ip` is null for an unidentified caller, and { ip: null } matches
+    /* `net` is null for an unidentified caller, and { net: null } matches
        exactly the rows written without one — so the pair count is
-       "this username, from nowhere in particular" in that case. */
-    const [byIp, byPair, byUser] = await Promise.all([
-        ip ? activity.countDocuments({ type, ip, at: { $gte: since } },
+       "this username, from nowhere in particular" in that case.
+
+       The name is matched as typed OR as maskedName leaves it, because a
+       settled "no such account" row no longer holds the typed name (see
+       settle below) and would otherwise drop out of its own count. */
+    const names = { $in: [username, maskedName(username)] };
+    const [byIp, byPair] = await Promise.all([
+        net ? activity.countDocuments({ type, net, at: { $gte: since } },
             { limit: LOGIN_MAX_PER_IP + 1 }) : Promise.resolve(0),
-        activity.countDocuments({ type, username, ip, at: { $gte: since } },
-            { limit: LOGIN_MAX_PER_USER_IP + 1 }),
-        activity.countDocuments({ type, username, at: { $gte: since } },
-            { limit: LOGIN_SLOW_PER_USER + 1 })
+        activity.countDocuments({ type, username: names, net, at: { $gte: since } },
+            { limit: LOGIN_MAX_PER_USER_IP + 1 })
     ]);
+
+    const refuse = (seconds) => ({
+        refused: {
+            statusCode: 429,
+            headers: { ...SECURITY_HEADERS, "Retry-After": String(Math.max(1, Math.ceil(seconds))) },
+            body: JSON.stringify({ error: "Too many sign-in attempts. Try again in a few minutes." })
+        }
+    });
 
     // Strictly more than the cap, because the count includes this attempt's
     // own row: ten earlier failures plus this one is eleven, and refused.
-    // byUser is deliberately NOT here — see the top of this section.
     if (byIp > LOGIN_MAX_PER_IP || byPair > LOGIN_MAX_PER_USER_IP) {
         await activity.deleteOne({ _id: insertedId }).catch(() => {});
-        return {
-            refused: {
-                statusCode: 429,
-                headers: { ...SECURITY_HEADERS, "Retry-After": String(Math.ceil(LOGIN_WINDOW_MS / 1000)) },
-                body: JSON.stringify({ error: "Too many sign-in attempts. Try again in a few minutes." })
-            }
-        };
+        return refuse(LOGIN_WINDOW_MS / 1000);
+    }
+
+    /* The username lock, for a network the account has not signed in from.
+       If the account lookup or the claim throws, the row is taken back out
+       and the error goes up to the caller's 503 — an attempt is never let
+       through with the lock unasked. */
+    let account = null;
+    let claim = null;
+    try {
+        account = findAccount ? await findAccount() : null;
+        if (!isKnownNet(account, net)) claim = await claimUserAttempt(db, username);
+    } catch (e) {
+        await activity.deleteOne({ _id: insertedId }).catch(() => {});
+        throw e;
+    }
+    if (claim && claim.lockedUntil) {
+        /* The attempt that SET the lock stays in the log, filed as what it
+           was, so a lock never happens without a trace on the activity page;
+           every refusal under it takes its row back, as the per-host
+           refusals do. Masked for a name that is not an account. */
+        if (claim.justLocked) {
+            await activity.updateOne({ _id: insertedId }, {
+                $set: { reason: "username locked", ...(account ? {} : { username: maskedName(username) }) }
+            }).catch(() => {});
+        } else {
+            await activity.deleteOne({ _id: insertedId }).catch(() => {});
+        }
+        return refuse((new Date(claim.lockedUntil).getTime() - Date.now()) / 1000);
     }
 
     /* Settling cannot fail the sign-in. If it does not land, the row simply
        stays as a failure marked "checking" — which still counts, so the
        throttle errs towards stricter rather than looser. */
+    /* `noAccount` swaps the typed name for maskedName's hash as the failure
+       is filed — see maskedName. The row carries the typed name only for
+       the moment between the insert above and this. */
     return {
-        slow: byUser > LOGIN_SLOW_PER_USER,
-        settle: (reason) => (reason
-            ? activity.updateOne({ _id: insertedId }, { $set: { reason } })
-            : activity.deleteOne({ _id: insertedId })).catch(() => {})
+        account,
+        settle: (reason, { noAccount = false } = {}) => Promise.all([
+            (reason
+                ? activity.updateOne({ _id: insertedId }, { $set: { reason, ...(noAccount ? { username: maskedName(username) } : {}) } })
+                : activity.deleteOne({ _id: insertedId })).catch(() => {}),
+            !reason && claim && claim.release ? claim.release() : null
+        ])
     };
 }
-
-const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /* A bcrypt hash of nothing in particular, compared against when the account
    does not exist.
@@ -246,6 +468,12 @@ async function ensureUsernameIndex(admins) {
 
 const TAKEN = () => json(409, { error: "That username already exists" });
 
+// The bootstrap's one-at-a-time claim — see the login below. The lease is
+// longer than any function may run, so a live bootstrap is never overtaken.
+const BOOTSTRAP_CLAIMS = "admin_bootstrap";
+const BOOTSTRAP_LEASE_MS = 60 * 1000;
+const BOOTSTRAP_BUSY = () => json(409, { error: "The first account is already being set up. Try signing in again in a moment." });
+
 async function handlePost(event, body, db, admins) {
     if (body.action === "login") {
         const username = text(body.username).trim();
@@ -258,53 +486,89 @@ async function handlePost(event, body, db, admins) {
            lookup below still uses the whole name. */
         const tried = username.slice(0, LOGGED_NAME_MAX);
 
-        /* Before the accounts are asked anything and before bcrypt runs,
-           so a throttled attempt is the cheapest response this function
-           has rather than its most expensive one. */
-        const attempt = await loginThrottle(db, event, tried);
+        /* Before bcrypt runs, so a throttled attempt is the cheapest
+           response this function has rather than its most expensive one.
+           The account is looked up inside, after the per-host caps, to ask
+           whether this network is one it knows (see THE USERNAME LOCK). */
+        const attempt = await loginThrottle(db, event, tried, () => admins.findOne({ username }));
         if (attempt.refused) return attempt.refused;
-        /* The all-hosts ceiling: slowed, never refused. Before the password
-           is looked at, so a right answer and a wrong one wait the same. */
-        if (attempt.slow) await pause(LOGIN_SLOW_MS);
 
         const count = await admins.countDocuments();
         if (count === 0) {
-            if (!process.env.ADMIN_PASSWORD || password !== process.env.ADMIN_PASSWORD) {
+            /* BOOTSTRAP IS FOR THE PERMANENT OWNER ONLY. It used to take any
+               username at all, so whoever reached an empty admins collection
+               first with the shared password — after an accidental wipe, say
+               — got to name the site's first owner, and it need not have
+               been the person the whole role system is built around. */
+            if (username !== PERMANENT_OWNER || !process.env.ADMIN_PASSWORD || password !== process.env.ADMIN_PASSWORD) {
                 /* AWAITED. The row IS the counter loginThrottle reads; see
-                   there. Paid only on a failure. */
-                await attempt.settle("bootstrap password");
+                   there. Paid only on a failure. With no accounts at all,
+                   any other name is by definition not one. */
+                await attempt.settle("bootstrap password", { noAccount: username !== PERMANENT_OWNER });
                 return json(401, { error: "Invalid username or password" });
             }
             await attempt.settle(null);
+            /* AND IT HAPPENS ONCE. Two bootstraps fired together both saw
+               zero admins above, and both went on to insert — with the
+               unique index as the only thing between them and two owners
+               (or, had the index failed to build, nothing at all). Now each
+               must first win a claim on one sentinel document, whose `_id` is
+               unique in every collection whatever else fails to build: an
+               upsert that only matches a claim older than the lease, so
+               exactly one request of a burst updates or inserts it, and
+               every other gets a match on nothing and a duplicate key.
+               A lease rather than a permanent marker so that this stays
+               the recovery route it has always been, should every account
+               ever be deleted again. The winner counts again after winning,
+               so a bootstrap that finished just before is not repeated. */
+            try {
+                await db.collection(BOOTSTRAP_CLAIMS).updateOne(
+                    { _id: "bootstrap", at: { $lt: new Date(Date.now() - BOOTSTRAP_LEASE_MS) } },
+                    { $set: { at: new Date() } },
+                    { upsert: true }
+                );
+            } catch (e) {
+                if (e && e.code === 11000) return BOOTSTRAP_BUSY();
+                throw e;
+            }
+            if (await admins.countDocuments() !== 0) return BOOTSTRAP_BUSY();
             await ensureUsernameIndex(admins);
             const passwordHash = await bcrypt.hash(password, 10);
-            const newAdmin = { username, passwordHash, role: "owner", tokenVersion: newTokenVersion(), createdAt: new Date().toISOString() };
+            // The network it was set up from is its first known one.
+            const firstNet = clientNet(event);
+            const newAdmin = { username, passwordHash, role: "owner", tokenVersion: newTokenVersion(), knownNets: firstNet ? [firstNet] : [], createdAt: new Date().toISOString() };
             try {
                 await admins.insertOne(newAdmin);
             } catch (e) {
                 if (e && e.code === 11000) return TAKEN();
                 throw e;
             }
-            record(event, "login", { username, role: "owner", note: "first account, bootstrapped" });
+            await record(event, "login", { username, role: "owner", note: "first account, bootstrapped" });
             return json(200, { token: signToken(username, newAdmin.tokenVersion), username, role: resolveRole(newAdmin) });
         }
 
-        const admin = await admins.findOne({ username });
+        // Found by the throttle already; the same row, not a second read.
+        const admin = attempt.account;
         // Runs a hash either way — see DUMMY_HASH above for why.
         if (!(await passwordMatches(password, admin))) {
             /* Logged with the username that was TRIED, which is the point:
                a run of failures against a real account is the thing worth
-               noticing. The password itself is never recorded.
+               noticing. The password itself is never recorded — and a name
+               that is not an account is filed as a hash (see maskedName),
+               since that is so often a password typed one box early.
 
                Awaited: this row is what the next attempt is counted
                against, and the reason is what the activity page shows. */
-            await attempt.settle(admin ? "wrong password" : "no such account");
+            await attempt.settle(admin ? "wrong password" : "no such account", { noAccount: !admin });
             return json(401, { error: "Invalid username or password" });
         }
         // A correct password never counts towards anybody's cap.
         await attempt.settle(null);
+        // And from now on this network is one the account knows.
+        await rememberNet(admins, admin, clientNet(event));
         const token = signToken(username, admin.tokenVersion);
-        record(event, "login", { username, role: resolveRole(admin), session: sessionOf({ headers: { "x-admin-token": token } }) });
+        // Awaited, briefly — see record() in _audit.js.
+        await record(event, "login", { username, role: resolveRole(admin), session: sessionOf({ headers: { "x-admin-token": token } }) });
         return json(200, { token, username, role: resolveRole(admin) });
     }
 
@@ -320,13 +584,15 @@ async function handlePost(event, body, db, admins) {
         /* Every admin page load verifies its token, so this is a free
            heartbeat: the gap between a session's first and last record is
            how long that person had the admin open. */
-        record(event, "session", { username, session: sessionOf(event) });
+        await record(event, "session", { username, session: sessionOf(event) });
         return json(200, { username, role: resolveRole(admin) });
     }
 
     if (body.action === "create") {
         if (!isAuthorized(event)) return UNAUTHORIZED;
-        if (!(await canWrite(event))) return READ_ONLY;
+        // refuseWrite: a deleted or signed-out account is a 401, not
+        // "view-only" — see there in _auth.js.
+        if (!(await canWrite(event))) return await refuseWrite(event);
         const username = text(body.username).trim();
         const password = text(body.password);
         // Anything unrecognised lands on "admin" rather than being taken
@@ -380,6 +646,9 @@ exports.handler = async (event) => {
         } catch (e) {
             return json(400, { error: "Invalid request body" });
         }
+        // "null" parses too, and body.action then threw — answered as an
+        // outage below when it is only a malformed request.
+        if (!body || typeof body !== "object") body = {};
 
         /* The whole of the POST inside one try. This is the one handler here
            anybody on the internet can reach without signing in, and a
@@ -409,7 +678,11 @@ exports.handler = async (event) => {
         return await handleRest(event, db, admins);
     } catch (e) {
         console.error(`auth: ${event.httpMethod} failed`, e);
-        return AUTH_UNAVAILABLE;
+        /* Only the tagged lookup failure is "the database is unavailable".
+           Every exception used to be answered that way, so a plain bug read
+           as an outage to retry, forever, and hid itself doing it. */
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        return json(500, { error: "Something went wrong with that request." });
     }
 };
 
@@ -417,8 +690,10 @@ async function handleRest(event, db, admins) {
     if (event.httpMethod === "GET") {
         if (!(await hasAccount(event))) return UNAUTHORIZED;
         // tokenVersion stays server-side with the hash: it is nothing a
-        // viewer needs, and half of what a forged session would.
-        const all = await admins.find({}, { projection: { _id: 0, passwordHash: 0, tokenVersion: 0 } }).toArray();
+        // viewer needs, and half of what a forged session would. knownNets
+        // too — it is where each admin signs in from, which is nobody
+        // else's business, and the list of networks the lock never touches.
+        const all = await admins.find({}, { projection: { _id: 0, passwordHash: 0, tokenVersion: 0, knownNets: 0 } }).toArray();
         return json(200, all.map(a => ({ ...a, role: resolveRole(a) })));
     }
 
@@ -457,8 +732,10 @@ async function handleRest(event, db, admins) {
         if (username === PERMANENT_OWNER && requesterUsername !== PERMANENT_OWNER) {
             return json(403, { error: "Only that account can change its own password" });
         }
-        if (username !== requesterUsername) {
-            const requester = await admins.findOne({ username: requesterUsername });
+        const isSelf = username === requesterUsername;
+        let requester = null;
+        if (!isSelf) {
+            requester = await admins.findOne({ username: requesterUsername });
             if (resolveRole(requester) !== "owner") {
                 return json(403, { error: "Only an owner can reset another admin's password" });
             }
@@ -481,17 +758,43 @@ async function handleRest(event, db, admins) {
 
            An owner resetting SOMEBODY ELSE'S password does not need that
            person's; that is what an owner reset is for. */
-        if (username === requesterUsername) {
+        if (isSelf) {
             const current = text(body.currentPassword);
             const WRONG_CURRENT = json(403, { error: "Your current password is wrong." });
             if (!current) return WRONG_CURRENT;
-            const attempt = await loginThrottle(db, event, username.slice(0, LOGGED_NAME_MAX));
+            const attempt = await loginThrottle(db, event, username.slice(0, LOGGED_NAME_MAX), () => admins.findOne({ username }));
             if (attempt.refused) return attempt.refused;
-            if (attempt.slow) await pause(LOGIN_SLOW_MS);
-            const self = await admins.findOne({ username });
-            if (!(await passwordMatches(current, self))) {
+            if (!(await passwordMatches(current, attempt.account))) {
                 await attempt.settle("wrong current password");
                 return WRONG_CURRENT;
+            }
+            await attempt.settle(null);
+        } else {
+            /* ...but it does need the OWNER'S. A lifted owner token was
+               otherwise enough to set any other account's password to one
+               of the thief's choosing and sign in as it — a second account
+               to come back through after the first session is shut. So the
+               owner re-enters their own password, checked against THEIR row
+               (the requester's, never the target's), through the same
+               throttle and filed against their name, exactly as the
+               self-service check above is.
+
+               `requesterPassword` is the field; `currentPassword` is taken in
+               its place when it is absent, because both mean the same thing
+               — the caller's own password — and js/api.js's
+               resetAdminPassword already sends its fourth argument under that
+               name. One argument, one meaning, whoever the target is.
+
+               403 for missing and wrong alike, never 401, for the reason
+               given above: the session is fine, and a 401 signs it out. */
+            const own = text(body.requesterPassword) || text(body.currentPassword);
+            const NEED_OWN = json(403, { error: "Your own password is needed to reset someone else's." });
+            if (!own) return NEED_OWN;
+            const attempt = await loginThrottle(db, event, requesterUsername.slice(0, LOGGED_NAME_MAX), async () => requester);
+            if (attempt.refused) return attempt.refused;
+            if (!(await passwordMatches(own, attempt.account))) {
+                await attempt.settle("wrong own password (resetting another account)");
+                return NEED_OWN;
             }
             await attempt.settle(null);
         }
@@ -499,25 +802,33 @@ async function handleRest(event, db, admins) {
         /* A new tokenVersion with the new password, which signs out every
            session the account had — see tokenIsCurrent in _auth.js. A reset
            is usually BECAUSE somebody else has the old password, and a reset
-           that left their session running for twelve hours reset nothing. */
+           that left their session running for twelve hours reset nothing.
+
+           For the same reason an owner's reset of another account forgets
+           that account's known networks: if somebody else had the password,
+           the networks they signed in from are "known" too, and would be
+           spared the username lock while they guessed the new one. Changing
+           your OWN password keeps them — it is the owner being locked out
+           that the list exists to prevent, and nothing about a change made
+           by the account's own holder says those networks are not theirs. */
         const tokenVersion = newTokenVersion();
         const result = await admins.findOneAndUpdate(
             { username },
-            { $set: { passwordHash, tokenVersion } },
-            { returnDocument: "after", projection: { _id: 0, passwordHash: 0, tokenVersion: 0 } }
+            { $set: { passwordHash, tokenVersion, ...(isSelf ? {} : { knownNets: [] }) } },
+            { returnDocument: "after", projection: { _id: 0, passwordHash: 0, tokenVersion: 0, knownNets: 0 } }
         );
         if (!result) return json(404, { error: "Admin not found" });
         /* Changing your OWN password signs out the session you did it from
            too, so the reply carries a replacement token minted under the new
            version. A page that does not pick it up simply asks its user to
            sign in again with the password they have just chosen. */
-        const fresh = username === requesterUsername ? { token: signToken(username, tokenVersion) } : {};
+        const fresh = isSelf ? { token: signToken(username, tokenVersion) } : {};
         return json(200, { ...result, role: resolveRole(result), ...fresh });
     }
 
     if (event.httpMethod === "DELETE") {
         if (!isAuthorized(event)) return UNAUTHORIZED;
-        if (!(await canWrite(event))) return READ_ONLY;
+        if (!(await canWrite(event))) return await refuseWrite(event);
         const requester = await admins.findOne({ username: usernameFromToken(event) });
         if (resolveRole(requester) !== "owner") {
             return json(403, { error: "Only an owner can delete admin accounts" });

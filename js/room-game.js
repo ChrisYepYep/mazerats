@@ -169,11 +169,14 @@
                against what that level allows, so it has to be the real one.
                secondsLeft stops here. */
             endedAt: null,
+            // When the last seat in the sequence was sat on — see `tick`.
+            satAt: null,
 
             start(now) {
                 this.round = Drop.createRound(level, o);
                 this.state = RUNNING;
                 this.endedAt = null;
+                this.satAt = null;
                 this.sat = [];
                 this.penalty = 0;
                 this.score = 0;
@@ -277,7 +280,21 @@
                 /* BEFORE the clock, so that a round finishing on the same tick
                    its time runs out is a win. The player did everything asked;
                    the last piece simply landed late. */
-                if (this.complete()) { this.finish(now); return true; }
+                /* FINISHED WHEN IT FINISHED, not when this frame saw it. The
+                   round is done the instant its last piece touched down (or
+                   came off the queue with nowhere to go) — round.quietAt —
+                   or its last seat was sat on, whichever was later. Stamped
+                   with `now`, the finish was as late as the frame: up to
+                   66ms at 15fps, charged to the clock and to the time bonus,
+                   so the same round was worth less on a slower screen. Never
+                   later than now, and never before the round began. */
+                if (this.complete()) {
+                    const r = this.round;
+                    const at = Math.max(r.started, r.quietAt === null ? r.started : r.quietAt,
+                        this.satAt === null ? r.started : this.satAt);
+                    this.finish(Math.min(now, at));
+                    return true;
+                }
 
                 if (this.secondsLeft(now) <= 0) {
                     this.state = LOST;
@@ -341,6 +358,7 @@
                 }
 
                 this.sat.push(seat);
+                this.satAt = now;
                 this.streak++;
                 if (this.streak > this.best) this.best = this.streak;
                 const bonus = Math.min(this.streak - 1, STREAK_MAX) * STREAK_STEP;
@@ -386,6 +404,16 @@
                scored. The page asks this to hold the seat until it lands. */
             inAir(f) {
                 return Boolean(f && this.round && this.round.falling.some(p => p.furni === f));
+            },
+
+            /* When a landed piece actually touched down, on the game clock, or
+               null for one that never fell (decor) or has not landed. The page
+               holds a seat walked into mid-fall and starts its beat from HERE —
+               the frame that notices the landing can be a whole frame later. */
+            landedAt(f) {
+                if (!f || !this.round || !this.round.landings) return null;
+                const at = this.round.landings.get(f);
+                return at === undefined ? null : at;
             },
 
             /* THE ROUND, FROZEN, for the run to keep.

@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   850 rules, 1400 declarations, hues 350 (surfaces) / 212 (accents).
+   864 rules, 1416 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -23,6 +23,7 @@
     --parchment-dim: #969ba0;
     --unknown: #83878c;
     --unknown-text: #a2a5a9;
+    --amber-text: #778594;
     --border: rgba(113, 130, 149, 0.35);
     --chrome-fill: #171011;
     --chrome-highlight: #2f2022;
@@ -286,7 +287,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .site-footer a {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .site-footer a:hover,
@@ -578,7 +579,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .chrome-list-row .row-creator {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .row-date {
@@ -977,6 +978,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     outline: none;
 }
 
+[data-theme="crimson"] .furni-card-also:focus-visible {
+    outline: 2px solid #2c1e20;
+}
+
 [data-theme="crimson"] .furni-card-link {
     color: #2f2023;
 }
@@ -985,6 +990,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .furni-card-link:focus-visible {
     color: #130d0e;
     outline: none;
+}
+
+[data-theme="crimson"] .furni-card-link:focus-visible {
+    outline: 2px solid #2c1e20;
 }
 
 [data-theme="crimson"] .lightbox-overlay {
@@ -1113,6 +1122,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     outline: none;
 }
 
+[data-theme="crimson"] .old-version-thumb:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="crimson"] .old-version-thumb.active {
     border-color: var(--amber-bright);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 1px var(--amber);
@@ -1221,7 +1234,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .ec-modal-label {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .room-desc-panel {
@@ -1258,7 +1271,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .glyph-group-title {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .glyph-btn {
@@ -1512,7 +1525,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .admin-address-follow {
     background: none;
     border: 0;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .admin-checkbox-group {
@@ -1805,6 +1818,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     outline: none;
 }
 
+[data-theme="crimson"] .console-missing-name:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="crimson"] .console-missing-needs,
 [data-theme="crimson"] .console-missing-note {
     color: #eeeeee;
@@ -2037,7 +2054,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .modal-article-kicker {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .modal-article-title {
@@ -2078,7 +2095,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .modal-article-source a {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .modal-article-source a:hover {
@@ -2199,7 +2216,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .row-when {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .furni-filter {
@@ -2229,7 +2246,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .legal-eyebrow {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .legal-doc h1 {
@@ -2516,7 +2533,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .guess-sheet-tab-label {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .guess-sheet-inner {
@@ -2578,7 +2595,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .guess-picture-flag {
     background: rgba(0, 0, 0, 0.66);
     border: 1px solid var(--border);
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .guess-panel {
@@ -2633,7 +2650,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .guess-status {
-    color: var(--danger);
+    color: var(--danger-text);
 }
 
 [data-theme="crimson"] .guess-option {
@@ -2733,7 +2750,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .guess-reveal-link {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .guess-summary-waiting {
@@ -2825,7 +2842,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .guess-board-games {
     border: 1px solid var(--border);
     background: rgba(0, 0, 0, 0.28);
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .guess-board-games span {
@@ -3042,7 +3059,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .guides-pill {
     border: 1px solid var(--border);
     background: rgba(0, 0, 0, 0.28);
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .guides-card {
@@ -3056,6 +3073,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     border-color: var(--amber);
     background: rgba(56, 38, 41, 0.22);
     outline: none;
+}
+
+[data-theme="crimson"] .guides-card:focus-visible {
+    outline: 2px solid var(--amber-bright);
 }
 
 [data-theme="crimson"] .guide-thumb {
@@ -3101,7 +3122,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .guide-contents-title {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .guide-section-title {
@@ -3182,7 +3203,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .guides-edit-section-num {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .guides-pic img {
@@ -3342,12 +3363,12 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .progress-head-sm {
-    color: var(--amber);
+    color: var(--amber-text);
     text-shadow: 2px 2px 0 var(--bg-black);
 }
 
 [data-theme="crimson"] .progress-count {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .progress-bignum {
@@ -3423,6 +3444,11 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     color: var(--unknown);
 }
 
+[data-theme="crimson"] .progress-saved-closed {
+    border: 1px solid var(--unknown-text, var(--unknown));
+    color: var(--unknown-text, var(--unknown));
+}
+
 [data-theme="crimson"] .updatelog-intro {
     color: var(--parchment-dim);
 }
@@ -3457,6 +3483,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .incomplete-help:focus-visible {
     background: #e2e4e5;
     outline: none;
+}
+
+[data-theme="crimson"] .incomplete-help:focus-visible {
+    outline: 2px solid #2c1e20;
 }
 
 @media (max-width: 999px) {
@@ -3495,11 +3525,21 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     }
 }
 
+@media (max-width: 999px) {
+    [data-theme="crimson"] .incomplete-strip-help:focus-visible {
+        outline: 2px solid var(--amber-bright);
+    }
+}
+
 [data-theme="crimson"] button.tag.tag-filter:hover,
 [data-theme="crimson"] button.tag.tag-filter:focus-visible {
     border-color: var(--amber);
     color: var(--parchment);
     outline: none;
+}
+
+[data-theme="crimson"] button.tag.tag-filter:focus-visible {
+    outline: 2px solid var(--amber-bright);
 }
 
 [data-theme="crimson"] button.tag.tag-by {
@@ -3591,7 +3631,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .updatelog-change {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .admin-tab-btn {
@@ -3639,6 +3679,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .ctl-status.is-bad {
+    color: var(--danger-text);
+}
+
+[data-theme="crimson"] #ff-state-warning {
     color: var(--danger-text);
 }
 
@@ -3770,7 +3814,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .furni-head-filter {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .furni-rooms-count {
@@ -3867,6 +3911,18 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .odd-tile:focus-visible {
     border-color: var(--amber-bright);
     outline: none;
+}
+
+[data-theme="crimson"] .odd-tile:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="crimson"] .odd-tile.is-unavailable {
+    background: var(--bg-panel);
+}
+
+[data-theme="crimson"] .odd-tile.is-unavailable .odd-tile-missing {
+    color: var(--parchment-dim);
 }
 
 [data-theme="crimson"] .admin-daily-player {
@@ -4070,7 +4126,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .rc-changed {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .rc-preset,
@@ -4097,7 +4153,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .rc-group > h4 {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .rc-count {
@@ -4165,7 +4221,7 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 }
 
 [data-theme="crimson"] .rc-sprites h4 {
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 [data-theme="crimson"] .rc-sprite {
@@ -4214,6 +4270,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
     background: var(--chrome-fill);
     border-color: var(--amber);
     color: var(--parchment);
+}
+
+[data-theme="crimson"] .daily-bonus {
+    color: var(--parchment-dim);
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION
@@ -4380,10 +4440,22 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 [data-theme="crimson"] .chrome-body .btn,
 [data-theme="crimson"] .modal-body .btn,
 [data-theme="crimson"] .chrome-nav-btn.active,
-[data-theme="crimson"] .old-versions-pill.is-showing,
 [data-theme="crimson"] .console-tab-label,
 [data-theme="crimson"] .featured-frame .chrome-nav-btn-recommended {
     color: #e6f2ff;
+}
+
+/* The labels on a flat --amber fill: not inverted but measured, because a
+   mid-tone fill takes neither label reliably. 4.66:1 here. See
+   tools/themes.js. .old-versions-pill.is-showing moved here from the list
+   above: its fill is --amber too, and pale on it failed in three palettes. */
+[data-theme="crimson"] .gallery-pause.is-paused,
+[data-theme="crimson"] .old-versions-pill.is-showing,
+[data-theme="crimson"] .tag-chip.selected,
+[data-theme="crimson"] .archive-empty-jump-count,
+[data-theme="crimson"] .admin-nav-count,
+[data-theme="crimson"] .de-chip.is-marked {
+    color: #000000;
 }
 
 /* The dark label carried its own light text-shadow to lift it off the tan.

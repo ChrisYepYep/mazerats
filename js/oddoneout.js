@@ -180,7 +180,12 @@
     }
 
     function bankDay() {
-        if (stats.lastDay === day()) return;
+        /* Once per day, and never a day older than the last one banked: a
+           day banked from the server's record (refreshDay) can be the day
+           before one already banked here, and counting it then would move
+           lastDay backwards and restart the streak. ISO days compare as
+           strings. */
+        if (stats.lastDay && stats.lastDay >= day()) return;
         stats.streak = stats.lastDay === window.Daily.dayBefore(day()) ? stats.streak + 1 : 1;
         stats.days += 1;
         stats.bestDay = Math.max(stats.bestDay || 0, score());
@@ -206,49 +211,142 @@
        and that is what this page shows. The day is scored from those
        records, never from anything this page sends later.
 
-       The mode is settled by the day's first pick and kept: a day begun
-       signed out stays unrecorded even after signing in (it is sent with
-       `anon`, and filed with no bonus once it is finished — see scoreClaim
-       in netlify/functions/daily-scores.js), because a day half recorded
-       and half not could not be scored from either half.
+       The mode is settled by the day's first pick. A day begun signed out
+       is sent with `anon` while the player stays signed out, and is filed
+       with no bonus once it is finished (scoreClaim in
+       netlify/functions/daily-scores.js). If they sign in part-way, the day
+       becomes recorded: the server refuses `anon` from a signed-in request
+       now (it was a free answer check), so the picks already made are
+       recorded first (adoptRecorded) and the rest follow — whole, because
+       a day half recorded and half not could be scored from neither half.
+       Still untimed, so still no bonus, as before.
 
        While a pick is on its way the others are ignored; a pick that could
        not be judged (no connection, a server having a moment) leaves the
        round as it was, says so, and can simply be made again. */
-    async function choose(tileIndex) {
+    async function choose(tileIndex, again) {
         if (finished() || picking) return;
         const index = roundNow();
         const round = dealt()[index];
         if (!round || !round.tiles[tileIndex]) return;
-        if (!state.mode) state.mode = signedIn() ? "account" : "anon";
 
         const forDay = day();
         picking = true;
         setPicking(index, tileIndex, true);
-        const reply = await window.Daily.move("odd", forDay, index, { tile: tileIndex }, { anon: state.mode === "anon" });
+        /* The mode, settled by the day's first pick. NOT SETTLED ON A SIGN-IN
+           CHECK THAT FAILED: Account.unsure is set when "who am I" could not
+           be asked at all (a network blink on load — see js/account.js),
+           and reading that as signed out used to settle a signed-in player's
+           whole day as unrecorded. It is asked again first; if it still
+           cannot be answered, the pick goes out without `anon` and the
+           server's reply (`recorded`) settles the mode instead — the server
+           can read the session cookie even when this page could not. */
+        if (!state.mode) {
+            if (window.Account && Account.unsure) { try { await Account.refresh(); } catch (e) { /* still unsure */ } }
+            if (signedIn()) state.mode = "account";
+            else if (!(window.Account && Account.unsure)) state.mode = "anon";
+        }
+        /* A day begun signed out, and the player has signed in since: its
+           picks so far are recorded first (adoptRecorded), and this one and
+           the rest go out recorded too. The server no longer answers `anon`
+           from a signed-in request at all — see the note at the POST in
+           netlify/functions/daily-scores.js. */
+        if (state.mode === "anon" && signedIn()) {
+            const adopted = await adoptRecorded(index);
+            if (!state || state.day !== forDay || roundNow() !== index) { picking = false; return; }
+            // "signed-out": the server saw no session after all, so the day
+            // carries on as it was, unrecorded.
+            if (!adopted) {
+                picking = false;
+                setPicking(index, tileIndex, false);
+                pickFailed(index);
+                return;
+            }
+        }
+        const wasMode = state.mode;
+        const reply = await window.Daily.move("odd", forDay, index, { tile: tileIndex }, { anon: wasMode === "anon" });
         picking = false;
         setPicking(index, tileIndex, false);
         // The day was replaced while the pick was out (a reset, a new day).
         if (!state || state.day !== forDay || roundNow() !== index) return;
 
         const body = reply.body || {};
+        /* Sent as signed out, and the server can see a session this page
+           could not (a sign-in in another tab, or a check that failed on
+           load). Asked again, the day's picks so far are recorded, and the
+           pick is made again — recorded. Once: `again` stops a loop. */
+        if (window.Daily.refusedAsSignedIn(reply)) {
+            if (window.Account) { try { await Account.refresh(); } catch (e) { /* the server already said */ } }
+            if (!state || state.day !== forDay || roundNow() !== index) return;
+            if (!again) {
+                picking = true;
+                setPicking(index, tileIndex, true);
+                const adopted = await adoptRecorded(index);
+                picking = false;
+                setPicking(index, tileIndex, false);
+                if (!state || state.day !== forDay || roundNow() !== index) return;
+                if (adopted === true) return choose(tileIndex, true);
+            }
+            pickFailed(index);
+            return;
+        }
+        /* Signed out, and this network has asked for more verdicts today
+           than anybody playing could (claimAnonMove in
+           netlify/functions/_speed.js). Signing in carries on recorded. */
+        if (reply.status === 429 && body.reason === "anon-limit") {
+            noteWithActions(index,
+                "Too many signed-out picks have come from your network today. Sign in to carry on — your picks so far are kept.",
+                [["Sign in", () => { if (window.Account && Account.signIn) Account.signIn(); }]]);
+            return;
+        }
         if (reply.status !== 200 || typeof body.right !== "boolean") {
             /* Refused because the day has closed — a round begun before
                midnight and picked after the grace. With nothing played yet
-               the day is simply swapped for today's (see refreshDay);
-               part-way through, it is the honest end of a day begun
-               yesterday, and the picks made so far stay on this device. */
+               the day is simply swapped for today's (see refreshDay). */
             if (reply.status === 400 && !state.picks.length) return refreshDay().then(() => { render(); settleFocus(); });
+            /* Part-way through, it is the honest end of a day begun
+               yesterday: the picks made so far stay on this device, and the
+               player is told so and offered today's rounds. It used to fall
+               through to pickFailed below — "try it again" — which could
+               never succeed, so a round in progress at 00:05 asked to be
+               tried again for as long as the window stayed open. */
+            if (reply.status === 400 && (/not open/i.test(String(body.error || "")) || forDay !== window.Daily.today())) {
+                dayEnded(index);
+                return;
+            }
             /* The server's record and this page's disagree (a round out of
                order, a day reset elsewhere): read the day again, which
-               brings the recorded picks with it. */
+               brings the recorded picks with it — or, when the server has
+               none at all, clears a day an administrator has given back
+               (see refreshDay). */
             if (reply.status === 409) return refreshDay().then(() => { render(); settleFocus(); });
             pickFailed(index);
             return;
         }
-        // Answered but not recorded while this day was meant to be: the
-        // sign-in lapsed. The day carries on unrecorded rather than stalling.
-        if (state.mode === "account" && !body.recorded) state.mode = "anon";
+        /* Answered but NOT RECORDED while this day was meant to be: the
+           server did not see the session. That used to switch the day to
+           unrecorded on the spot, silently — and a day with some rounds
+           recorded and the rest not can be filed from neither half, so the
+           whole day was lost to the board. Now the sign-in is asked again.
+           Back (another tab signed in again, a cookie refreshed): the pick
+           is simply made again, recorded this time. Genuinely gone: the pick
+           is not taken, and the player is told and offered a way back in —
+           signing in reloads the page, which picks up the recorded rounds
+           from the server — or to carry on unrecorded knowingly. */
+        if (wasMode === "account" && !body.recorded) {
+            let back = false;
+            try { back = Boolean(await Account.refresh()); } catch (e) { back = false; }
+            if (!state || state.day !== forDay || roundNow() !== index) return;
+            // Once: a second "not recorded" straight after a sign-in that
+            // says it is fine is not something asking again will fix.
+            if (back && !again) return choose(tileIndex, true);
+            if (!back && Account.unsure) { pickFailed(index); return; }
+            signInLapsed(index);
+            return;
+        }
+        // The first pick of a day whose sign-in could not be checked: the
+        // server's answer says which kind of day it is.
+        if (!state.mode) state.mode = body.recorded ? "account" : "anon";
 
         const pick = body.already && Number.isInteger(body.tile)
             ? { tile: body.tile, right: body.right }
@@ -259,6 +357,43 @@
         if (state.done) bankDay();
         render();
         settleFocus();
+    }
+
+    /* A day begun signed out, recorded now the player is signed in: the
+       picks already made are sent again, in order, as recorded picks (see
+       Daily.replay in js/daily.js, which has the why — and why the day
+       stays untimed). What the server answers for each stands, so a round
+       another device played first is shown as the server has it.
+
+       Answers true when every pick is on file and the day is now an
+       account day; "signed-out" when the server turned out not to see a
+       session after all (a sign-in that lapsed), and the day carries on as
+       it was; false when a pick could not be recorded just now, which a
+       second try simply repeats — rounds already on file answer `already`. */
+    async function adoptRecorded(index) {
+        const forDay = day();
+        const sheet = roundSheets[index];
+        const note = sheet && sheet.inner.querySelector(".odd-pick-note");
+        if (note && state.picks.length) { note.textContent = "Signed in — recording your picks so far first…"; note.hidden = false; }
+        const list = state.picks.map((p, i) => ({ round: i, data: { tile: p.tile } }));
+        const { ok, replies } = await window.Daily.replay("odd", forDay, list);
+        if (note) { note.hidden = true; note.textContent = ""; }
+        if (!state || state.day !== forDay) return false;
+        replies.forEach((r, i) => {
+            const b = r.body || {};
+            if (r.status === 200 && b.recorded && typeof b.right === "boolean" && state.picks[i]) {
+                state.picks[i] = { tile: Number.isInteger(b.tile) ? b.tile : state.picks[i].tile, right: b.right };
+            }
+        });
+        const last = replies[replies.length - 1];
+        if (!ok && last && last.status === 200 && last.body && last.body.recorded === false) {
+            if (window.Account) { try { await Account.refresh(); } catch (e) { /* signed out either way */ } }
+            return "signed-out";
+        }
+        if (!ok) { saveState(); return false; }
+        state.mode = "account";
+        saveState();
+        return true;
     }
 
     // The pressed tile, while its pick is being judged — and every tile in
@@ -278,6 +413,60 @@
         const text = "That pick did not reach the server, so it has not counted. Try it again.";
         if (note) { note.textContent = text; note.hidden = false; }
         announce(text);
+    }
+
+    /* The round's note with something to press under it: the words, then
+       one button per action. Written as elements rather than markup so the
+       handlers are bound to exactly these buttons. */
+    function noteWithActions(index, text, actions) {
+        const sheet = roundSheets[index];
+        const note = sheet && sheet.inner.querySelector(".odd-pick-note");
+        if (note) {
+            note.textContent = text + " ";
+            actions.forEach(([label, run]) => {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "guess-btn";
+                btn.textContent = label;
+                btn.addEventListener("click", () => { btn.disabled = true; run(); });
+                note.appendChild(btn);
+            });
+            note.hidden = false;
+        }
+        announce(text);
+    }
+
+    /* The day this round belongs to has closed under it (see choose). Its
+       picks stay in storage only until today's deal replaces them, which
+       is the button's job: refreshDay asks for the old day, is refused, and
+       deals today. */
+    function dayEnded(index) {
+        noteWithActions(index,
+            "This day's rounds closed at five past midnight (UTC), so that pick can't count. Your picks so far are kept on this device.",
+            [["Play today's rounds", () => {
+                refreshDay().then(() => { showSplash = true; render(); settleFocus(); });
+            }]]);
+    }
+
+    /* The session went away part-way through a recorded day (see choose).
+       Signing in again is a page load, which reads the recorded rounds back
+       from the server and carries on from them; carrying on without is the
+       player's call, and they are told what it costs. */
+    function signInLapsed(index) {
+        noteWithActions(index,
+            "You've been signed out, so that pick wasn't recorded. Sign in again to carry on — the rounds already recorded are kept.",
+            [
+                ["Sign in again", () => { if (window.Account && Account.signIn) Account.signIn(); }],
+                ["Carry on unlisted", () => {
+                    // Unrecorded from here, so the day can't reach the
+                    // board: its first rounds are on file and the rest
+                    // would not be, and a day is filed whole or not at all.
+                    state.mode = "anon";
+                    saveState();
+                    const note = roundSheets[index] && roundSheets[index].inner.querySelector(".odd-pick-note");
+                    if (note) { note.textContent = "Carrying on without recording. Pick again."; }
+                }]
+            ]);
     }
 
     /* Where the keyboard goes after a pick, and what is said out loud.
@@ -524,8 +713,88 @@
         if (!state.picks.length && state.mode !== "anon" && window.Daily.start) window.Daily.start("odd", day());
         view = "round";
         const sheet = roundSheets[roundNow()];
-        if (sheet) sheet.inner.innerHTML = roundHtml(rounds[roundNow()]);
+        if (sheet) {
+            sheet.inner.innerHTML = roundHtml(rounds[roundNow()]);
+            watchTiles(sheet);
+        }
         layout();
+    }
+
+    /* A picture that will not load, and what the round does about it.
+
+       The deal is stored for the day (netlify/functions/_deal.js), so a
+       picture deleted or replaced in the archive after it was dealt leaves
+       a round pointing at nothing — and a broken-image icon in one of four
+       tiles, with nothing said, reads as the game being broken. Each tile
+       now watches its own picture: a failure is tried again twice by
+       itself, a few seconds apart (a picture can fail for a moment on a
+       bad connection, or while the image CDN warms up), and after that the
+       tile says "Picture unavailable" and the round's note offers a retry.
+       The tile stays pressable throughout — the pick is the server's to
+       judge, and a round with one missing picture can still be played on
+       the other three rather than blocking the day. */
+    const TILE_RETRY_MS = [2000, 6000];
+    function watchTiles(sheet) {
+        sheet.inner.querySelectorAll(".odd-tile img").forEach(img => {
+            const src = img.getAttribute("src");
+            let tries = 0;
+            img.addEventListener("load", () => markTile(img, false));
+            img.addEventListener("error", () => {
+                if (!img.isConnected) return;
+                if (tries < TILE_RETRY_MS.length) {
+                    const wait = TILE_RETRY_MS[tries++];
+                    setTimeout(() => { if (img.isConnected) reloadTile(img, src); }, wait);
+                    return;
+                }
+                markTile(img, true);
+                offerTileRetry(sheet);
+            });
+        });
+    }
+
+    // Asked for again. Emptied first, so the browser really does ask rather
+    // than deciding the same src is already settled.
+    function reloadTile(img, src) {
+        img.removeAttribute("src");
+        img.setAttribute("src", src);
+    }
+
+    function markTile(img, unavailable) {
+        const btn = img.closest(".odd-tile");
+        if (!btn) return;
+        btn.classList.toggle("is-unavailable", unavailable);
+        img.hidden = unavailable;
+        let flag = btn.querySelector(".odd-tile-missing");
+        if (unavailable && !flag) {
+            flag = document.createElement("span");
+            flag.className = "odd-tile-missing daily-note";
+            flag.textContent = "Picture unavailable";
+            btn.appendChild(flag);
+        } else if (!unavailable && flag) {
+            flag.remove();
+        }
+        const n = Number(btn.dataset.tile) + 1;
+        btn.setAttribute("aria-label", unavailable ? `Picture ${n}, which would not load` : `Picture ${n}`);
+    }
+
+    function offerTileRetry(sheet) {
+        const note = sheet.inner.querySelector(".odd-pick-note");
+        if (!note || note.querySelector(".odd-tile-retry")) return;
+        note.textContent = "A picture in this round would not load. You can still pick from the others. ";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "guess-btn odd-tile-retry";
+        btn.textContent = "Try the pictures again";
+        btn.addEventListener("click", () => {
+            note.hidden = true;
+            note.textContent = "";
+            sheet.inner.querySelectorAll(".odd-tile.is-unavailable img").forEach(img => {
+                markTile(img, false);
+                reloadTile(img, img.getAttribute("src"));
+            });
+        });
+        note.appendChild(btn);
+        note.hidden = false;
     }
 
     /* The rules, on the way in. This game's premise cannot be worked out by
@@ -550,7 +819,8 @@
                     <li><span class="guess-rules-n" aria-hidden="true">2</span>
                         <p>The three that belong are different rooms, so go on <strong>the building</strong>: the floor, the palette, how densely it is furnished.</p></li>
                     <li><span class="guess-rules-n" aria-hidden="true">3</span>
-                        <p>One pick a round, ten points each. Everyone gets the same five, new at midnight, UTC.</p></li>
+                        <p>One pick a round. ${escapeHtml(window.Daily.bonusRule(String(POINTS_EACH), "picking"))}
+                            Everyone gets the same five, new at midnight, UTC.</p></li>
                 </ol>
 
                 <button type="button" class="guess-btn guess-btn--lead" id="odd-start">
@@ -577,14 +847,39 @@
                 how densely it is furnished.</p>`;
     }
 
+    /* The day as the server filed it — { day, points, bonus } — from the
+       finishing submission's answer, or from the deal's `score` when the
+       window is opened on a day already filed. The only place a speed bonus
+       can come from: the page never knows the time. In memory only; every
+       open brings it back with the deal. */
+    let served = null;
+
+    /* The line under the day's points: the bonus and the total the boards
+       show, or why there is none. Worded once, for both games, by
+       Daily.bonusLine (js/daily.js), which has the cases. */
+    function bonusText() {
+        const s = served && served.day === day() ? served : null;
+        return window.Daily.bonusLine({ score: s, signedIn: signedIn(), mode: state.mode });
+    }
+
+    function drawBonus() {
+        const line = document.getElementById("odd-bonus");
+        if (!line) return;
+        const text = bonusText();
+        line.textContent = text;
+        line.hidden = !text;
+    }
+
     function resultsHtml() {
         const rounds = dealt();
         const right = state.picks.filter(p => p.right).length;
+        const bonus = bonusText();
 
         return `
             <div class="guess-summary daily-summary">
                 <p class="guess-score daily-verdict" role="status" aria-live="polite">${verdictFor(right)}</p>
                 <p class="guess-points"><strong>${score()}</strong><span>points</span></p>
+                <p class="daily-bonus" id="odd-bonus"${bonus ? "" : " hidden"}>${escapeHtml(bonus)}</p>
                 <p class="guess-next-up">${right} of ${rounds.length} spotted</p>
                 <p class="guess-grid" aria-label="Result grid">${shareGrid()}</p>
                 <dl class="guess-stats">
@@ -683,7 +978,37 @@
                 window.Daily.submit("odd", forDay, state.picks.map(p => ({ tile: p.tile })))
                     .then(res => {
                         submitting = false;
-                        if (state && state.day === forDay && (res.ok || !res.retry)) {
+                        // The filed day's base and bonus — just now, or
+                        // already on file — for the line under the points.
+                        const b = res.body;
+                        if (res.ok && b && Number.isFinite(b.points)) {
+                            served = { day: forDay, points: b.points, bonus: b.bonus || 0 };
+                            if (state && state.day === forDay) drawBonus();
+                        }
+                        /* `final`, not "not worth retrying now": a lapsed
+                           session, a server record that is behind, and a
+                           day still inside late filing all used to be
+                           marked posted here and never sent again. See
+                           filed() in js/daily.js. */
+                        if (state && state.day === forDay && res.final) {
+                            state.posted = true;
+                            saveState();
+                        }
+                        /* The server has fewer rounds recorded than this
+                           page finished — the day cannot be filed until
+                           they are played. Read the day again: refreshDay
+                           takes the server's record for a signed-in day,
+                           so the rounds it is missing come back up. */
+                        if (state && state.day === forDay && res.body && res.body.reason === "unfinished") {
+                            if (state.mode === "account") {
+                                refreshDay().then(() => { showSplash = false; render(); settleFocus(); });
+                                return;
+                            }
+                            /* A day carried on unlisted after its first
+                               rounds were recorded: the server will only
+                               ever file the recorded half, and there is no
+                               more of it coming, so it is settled here
+                               rather than sent again on every open. */
                             state.posted = true;
                             saveState();
                         }
@@ -728,6 +1053,13 @@
         // Whether somebody is signed in decides what a pick does, so it is
         // known before anything is dealt. A failure reads as signed out.
         if (window.Account) { try { await Account.ready(); } catch (e) { /* signed out */ } }
+        /* The check on page load could not be made at all (Account.unsure —
+           a network blink, not an answer). Asked once more now, since the
+           window being opened is usually well after the load: settling the
+           day's mode on a failed check is how a signed-in player used to
+           play a whole day unrecorded. choose() asks again if it is still
+           unsure at the first pick. */
+        if (window.Account && Account.unsure) { try { await Account.refresh(); } catch (e) { /* still unsure */ } }
         /* A day given back by an administrator lands here: the ticket is
            claimed before the stored day is read, so what loads is the fresh
            day rather than the one being cleared. The in-memory copy goes
@@ -778,20 +1110,79 @@
             if (!state) state = saved && saved.day === window.Daily.today() ? saved : blankDay();
             return;
         }
+        /* A finished day that never reached the board, about to be put
+           away for a different one: filed first. Only today's or the carried
+           day is ever kept in state, so a finished day whose submission fell
+           over — at 00:04, say, with the retry on the next open at 09:00 —
+           used to be replaced here by today's blank day and never sent
+           again. The server still takes it for a while if its picks were
+           recorded in time (LATE FILING in netlify/functions/daily-scores.js;
+           Daily.fileable says how long). Not awaited for its answer beyond
+           this: whatever it says, that day is over on this device. */
+        const owed = [state, saved].find(s => s && s.day !== reply.day && s.done && !s.posted);
+        if (owed && signedIn() && window.Daily.fileable && window.Daily.fileable(owed.day)) {
+            await window.Daily.submit("odd", owed.day, owed.picks.map(p => ({ tile: p.tile })));
+        }
+
         deal = { day: reply.day, rounds: reply.rounds };
+        // A day already filed brings its own figures, bonus included, so a
+        // results card reopened later says what the board says.
+        if (reply.score && Number.isFinite(reply.score.points)) {
+            served = { day: reply.day, points: reply.score.points, bonus: reply.score.bonus || 0 };
+        }
         const mine = [state, saved].filter(s => s && s.day === reply.day)
             .sort((a, b) => progressOf(b) - progressOf(a))[0];
         state = mine || blankDay(reply.day);
         if (!("posted" in state)) state.posted = false;
+        const wasDone = state.done;
 
-        const recorded = Array.isArray(reply.progress) ? reply.progress : [];
-        if (recorded.length && recorded.length >= state.picks.length) {
+        /* The server's record, laid over this device's copy.
+
+           `progress` is an array only when the server knows who is asking
+           (null signed out, or when it could not read the record), so an
+           array — even an empty one — is the server's word on what was
+           recorded for this player today.
+
+           A day played signed in (mode "account") takes the server's record
+           WHEREVER IT DIFFERS, shorter included. Every pick such a day keeps
+           was recorded before it was kept (see choose), so a server with
+           fewer has lost some: an administrator's reset while the window
+           was open, or a pick taken while the session had lapsed, before
+           that was caught. Keeping the longer local copy is what used to
+           loop: every pick after it was refused as out of order, the 409
+           read the day again, the day again kept the local copy, and so on
+           for as long as the window stayed open. Taken from the server, the
+           player picks up at the first round it does not have.
+
+           An EMPTY record for a day played signed in is a day given back —
+           the reset clears daily_starts (daily-games.js) — so the ticket
+           the reset left is claimed here too, as open() does; otherwise the
+           next open would claim it and wipe the replay. Any other day takes
+           the server's record only when it is further on, as it always has
+           (picks made on another device). A day already filed is left as
+           it is: the reset deletes the filed row, so `filed` means no reset
+           happened. */
+        const recorded = Array.isArray(reply.progress) ? reply.progress : null;
+        const accountDay = state.mode === "account" && !reply.filed && recorded;
+        if (accountDay && !recorded.length && state.picks.length) {
+            await window.Daily.claimReset("odd");
+            state = blankDay(reply.day);
+        } else if (recorded && recorded.length &&
+                (accountDay ? recorded.length !== state.picks.length : recorded.length >= state.picks.length)) {
             state.picks = recorded.map(p => ({ tile: p.tile, right: Boolean(p.right) }));
             state.mode = "account";
             state.done = state.picks.length >= deal.rounds.length;
         }
         if (reply.filed) state.posted = true;
         saveState();
+
+        /* A day that became finished just now — finished on another device
+           and brought here by the server's record — is banked here too.
+           Only choose() and the storage listener used to bank, so the
+           streak on this device never heard of a day finished elsewhere and
+           broke the next day. bankDay counts a day once, and stats are read
+           fresh first because open() reads them only after this. */
+        if (state.done && !wasDone) { loadStats(); bankDay(); }
     }
 
     function close() {

@@ -51,7 +51,7 @@ const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED, usernameF
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
 const { isSafeKey } = require("./_keys");
-const { assignSlugs, settleSlug, idFor, PROJECTION: SLUG_FIELDS } = require("./_slugs");
+const { assignSlugs, settleSlug, idFor, recheckSlug, loadRetired, retireAddresses, slugify: slugifyAddress, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -63,11 +63,11 @@ const LIMITS = { title: 120, category: 40, summary: 600, heading: 120, body: 800
 const STATUSES = ["draft", "published"];
 const CONFLICT = "Someone else saved this guide since you opened it - reload it to see their changes.";
 
+/* An asked-for id (the starter guide's) tidied into an address: the one
+   rule every address is made by (_slugs.js — accents folded, Habbo's
+   picture glyphs left out), rather than a copy of it kept here. */
 function slugify(text) {
-    return (text || "").toLowerCase().trim()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/(^-|-$)/g, "")
-        .slice(0, 80) || "guide";
+    return slugifyAddress(text) || "guide";
 }
 
 const text = (v, max) => (typeof v === "string" ? v.replace(/\r\n?/g, "\n").trim().slice(0, max) : "");
@@ -183,7 +183,13 @@ exports.handler = async (event) => {
            ones: a draft holds its address too, and working it out over the
            published ones alone would let the page and the share function
            disagree the moment a draft shared a name (see _slugs.js). */
-        const slugs = assignSlugs(list, "guide");
+        // With the deleted guides' addresses, as share.js and the sitemap
+        // work them out — see _slugs.js.
+        const retired = await loadRetired(db, "guide").catch(e => {
+            console.error("guides: retired addresses unreadable", e);
+            return [];
+        });
+        const slugs = assignSlugs(list, "guide", retired);
         list.forEach(g => { g.slug = slugs.get(g.id) || g.id; });
         if (!full) {
             list = list.filter(g => g.status === "published")
@@ -203,6 +209,12 @@ exports.handler = async (event) => {
         if (event.httpMethod === "DELETE") {
             const id = String(params.id || "");
             if (!id) return json(400, { error: "Missing guide id" });
+            // Its addresses stay reserved, so a link to it answers 410 rather
+            // than opening whichever guide takes the title next — see rooms.js.
+            const all = await guides.find({}, { projection: SLUG_FIELDS }).toArray();
+            const doomed = all.find(r => r && r.id === id);
+            if (!doomed) return json(404, { error: "Guide not found" });
+            await retireAddresses(db, "guide", doomed, assignSlugs(all, "guide", await loadRetired(db, "guide")).get(id));
             const result = await guides.deleteOne({ id });
             if (!result.deletedCount) return json(404, { error: "Guide not found" });
             return json(200, { deleted: id });
@@ -223,13 +235,14 @@ exports.handler = async (event) => {
             guide.slug = body.slug;
             guide._slugAuto = body._slugAuto;
             const everyGuide = () => guides.find({}, { projection: SLUG_FIELDS }).toArray();
-            const slugProblem = settleSlug(await everyGuide(), "guide", null, guide);
+            const retired = await loadRetired(db, "guide");
+            const slugProblem = settleSlug(await everyGuide(), "guide", null, guide, retired);
             if (slugProblem) return json(400, { error: slugProblem });
             /* An id the caller asked for (the starter guide's) is kept as
                asked where it is free; otherwise the settled address, or the
                nearest thing nothing answers to — see idFor in _slugs.js. */
             const wanted = (typeof body.id === "string" && slugify(body.id)) || guide.slug;
-            let id = idFor(await everyGuide(), "guide", wanted);
+            let id = idFor(await everyGuide(), "guide", wanted, retired);
             for (let attempt = 0; ; attempt++) {
                 const record = {
                     ...guide, id,
@@ -242,11 +255,13 @@ exports.handler = async (event) => {
                 try {
                     await guides.insertOne(record);
                     const { _id, ...clean } = record;
-                    return json(201, clean);
+                    // The same address settled twice at once — see recheckSlug
+                    // in _slugs.js.
+                    return json(201, (await recheckSlug(guides, "guide", id, retired)) || clean);
                 } catch (e) {
                     // Same attempt-and-retry as rooms.js: the unique index, not a
                     // prior lookup, is what stops two guides sharing an address.
-                    if (e.code === 11000 && attempt < 50) { id = idFor(await everyGuide(), "guide", wanted); continue; }
+                    if (e.code === 11000 && attempt < 50) { id = idFor(await everyGuide(), "guide", wanted, retired); continue; }
                     throw e;
                 }
             }
@@ -275,7 +290,8 @@ exports.handler = async (event) => {
             // Its address, which follows a new title (see _slugs.js).
             update.slug = body.slug;
             update._slugAuto = body._slugAuto;
-            const slugProblem = settleSlug(await guides.find({}, { projection: SLUG_FIELDS }).toArray(), "guide", before, update);
+            const retired = await loadRetired(db, "guide");
+            const slugProblem = settleSlug(await guides.find({}, { projection: SLUG_FIELDS }).toArray(), "guide", before, update, retired);
             if (slugProblem) return json(400, { error: slugProblem });
             const wasPublic = before.status === "published";
             if (guide.status === "published" && !before.publishedAt) {
@@ -319,7 +335,7 @@ exports.handler = async (event) => {
             );
             const saved = result && (result.value !== undefined ? result.value : result);
             if (!saved || !saved.id) return json(409, { error: CONFLICT });
-            return json(200, saved);
+            return json(200, (await recheckSlug(guides, "guide", id, retired)) || saved);
         }
 
         return json(405, { error: "Method not allowed" });

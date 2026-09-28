@@ -94,6 +94,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const ffToggleEl = document.getElementById("ff-state-toggle");
     const ffToggleBtns = document.querySelectorAll(".ff-state-btn");
     const ffToggleStatus = document.getElementById("ff-state-status");
+    // The switch-against-launch-date warning — its own line, see
+    // sayFfMismatch and the note in warren.html.
+    const ffMismatchEl = document.getElementById("ff-state-warning");
     // The site-wide palette switch, beneath the landing one.
     const themeToggleEl = document.getElementById("theme-toggle");
     const themeToggleBtns = document.querySelectorAll(".theme-btn");
@@ -197,6 +200,8 @@ document.addEventListener("DOMContentLoaded", () => {
        OTHER people's, which is a different permission entirely. */
     const selfPasswordInput = document.getElementById("self-password");
     const selfPasswordCurrentInput = document.getElementById("self-password-current");
+    // The new one typed a second time — see the note in warren.html.
+    const selfPasswordConfirmInput = document.getElementById("self-password-confirm");
     const selfPasswordBtn = document.getElementById("self-password-btn");
     const selfPasswordStatus = document.getElementById("self-password-status");
 
@@ -235,6 +240,16 @@ document.addEventListener("DOMContentLoaded", () => {
         // Checked here only to save a round trip and give a faster answer;
         // the endpoint enforces its own rules regardless of what this says.
         if (next.length < 8) { sayPassword("At least 8 characters.", false); return; }
+        /* Typed twice, and the two must agree. The field shows only bullets,
+           so a slip could not be seen — and the change retires every session
+           this account has, this one included, so a mistyped new password
+           was a lock-out with no signed-in screen left to fix it from. The
+           Admins tab's reset form has always asked for a confirmation; this
+           one never did. Skipped only if the page has no confirm field. */
+        if (selfPasswordConfirmInput && passwordValue(selfPasswordConfirmInput) !== next) {
+            sayPassword("The new passwords don't match — type it the same both times.", false);
+            return;
+        }
         selfPasswordBtn.disabled = true;
         sayPassword("Saving…", true);
         try {
@@ -248,8 +263,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Cleared on success, so a new password is never left sitting in
             // a field on an unattended screen — through the module, so its
             // own copy of the value goes too (see passwordValue).
-            clearPassword(selfPasswordInput);
-            clearPassword(selfPasswordCurrentInput);
+            clearSelfPasswordFields();
             sayPassword("Password changed.", true);
         } catch (err) {
             // A wrong current password is a 403 with its own message, and
@@ -266,8 +280,17 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // All three, through the module (see passwordValue) — used on success,
+    // and by lockOut and doLogout so a password is never left typed into a
+    // tab the next person to sit down can open.
+    function clearSelfPasswordFields() {
+        clearPassword(selfPasswordInput);
+        clearPassword(selfPasswordCurrentInput);
+        clearPassword(selfPasswordConfirmInput);
+    }
+
     if (selfPasswordBtn) selfPasswordBtn.addEventListener("click", saveOwnPassword);
-    [selfPasswordCurrentInput, selfPasswordInput].forEach(input => {
+    [selfPasswordCurrentInput, selfPasswordInput, selfPasswordConfirmInput].forEach(input => {
         if (!input) return;
         // Enter saves, and must not reach anything else — see the furni
         // search for the same trap, though there is no form around this one.
@@ -430,10 +453,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
         try {
             const result = await Api.login(username, password);
+            /* A different person signing in over a session that ran out —
+               see lastSignedInAs. Worked out before the new account is
+               installed, and acted on after, so the panels reload as it. */
+            const switched = !!lastSignedInAs && lastSignedInAs !== result.username;
             adminToken = result.token;
             currentUsername = result.username;
             currentUserRole = result.role || "admin";
+            lastSignedInAs = result.username;
             writeToken(adminToken);
+            /* Emptied the moment it has done its job. It used to keep the
+               password, so the next "Session expired" box — twelve hours
+               later, on a screen that may have been left unattended — opened
+               already filled in, one press of Unlock from signed in. The
+               module's reset listener clears its hidden partner too (see
+               js/password-field.js), not just the bullets. */
+            loginForm.reset();
+            if (switched) resetAccountPanels();
             await enterAdmin();
         } catch (err) {
             /* Only a failure of the login itself belongs in the login box.
@@ -465,6 +501,13 @@ document.addEventListener("DOMContentLoaded", () => {
         adminToken = "";
         currentUsername = "";
         currentUserRole = "admin";
+        /* The role's classes come off with the role. Left on, a view-only
+           or Albus account's own sign-in box was greyed out — the Unlock
+           button matches `body.is-viewer .admin-form-actions button` — and
+           the keyboard click-blocker below cancelled its submit, so that
+           account could not sign back in at all. applyRoleVisibility puts
+           them back for whoever signs in. */
+        document.body.classList.remove("is-viewer", "is-albus");
         adminContent.style.display = "none";
         if (adminRailEl) adminRailEl.style.display = "none";
         landingToggleEl.style.display = "none";
@@ -472,9 +515,48 @@ document.addEventListener("DOMContentLoaded", () => {
         if (ffLaunchAtEl) ffLaunchAtEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
+        /* Passwords out of every field, and the run log out of its tables
+           (ffClear) — the next person to sign in on this tab may not be
+           this one. The open edits are deliberately KEPT: the point of
+           this box over a reload is that the same admin signs back in and
+           carries on. If somebody else signs in instead, the login handler
+           clears those as well (resetAccountPanels).
+
+           The sign-in box is only emptied when it is not already up: a
+           second 401 arriving from a request that was already in flight
+           must not wipe what the admin is part-way through typing into it. */
+        if (!loginModal.classList.contains("open")) loginForm.reset();
+        clearSelfPasswordFields();
+        sayPassword("", true);
+        ffClear();
         loginModal.classList.add("open");
         loginError.textContent = "Session expired — log in again.";
         loginError.style.display = "block";
+    }
+
+    /* Who was signed in on this tab last, kept through a lockOut (which
+       clears currentUsername) and cleared by a log out. It is how the login
+       handler tells "the same admin, back after the session ran out" — whose
+       open edits are waiting under the sign-in box — from somebody else
+       sitting down at it, for whom they are not. */
+    let lastSignedInAs = "";
+
+    /* Everything a different account must not inherit from the last one:
+       the run log, the Missing Pieces and Guides panels (each reloads as the
+       new account the next time it is shown), and any form left open by the
+       last person — which the new one would otherwise be able to save under
+       their own name. The forms are closed without deleting their uploads:
+       those were the other account's, and a view-only successor could not
+       delete them anyway, so they are left rather than half-cleaned. */
+    function resetAccountPanels() {
+        ffClear();
+        refusedUploads.clear();
+        furniRescue.clear();
+        Object.keys(COLLECTIONS).forEach(key => closeForm(key));
+        closeAdminsForm();
+        closeContributorsForm();
+        if (window.AdminDeadEnds) window.AdminDeadEnds.reset();
+        if (window.AdminGuides) window.AdminGuides.reset();
     }
 
     /* The panels that live in files of their own (js/admin-guides.js,
@@ -492,26 +574,77 @@ document.addEventListener("DOMContentLoaded", () => {
        awaited, because the discard's deletes need the token this is about
        to throw away. */
     let loggingOut = false;
+
+    /* While the discards below are out (a full read of the archive, then
+       the deletes), the page is held still: the button says so, and every
+       click, key and submit is swallowed before it reaches anything. It
+       used to stay live — so a + Add Maze pressed in those seconds opened a
+       fresh form, the admin typed into it, and the log out then closed it
+       without a word when the awaits came back. body.is-logging-out is
+       there for the stylesheet to dim the page by. */
+    function setLoggingOut(on) {
+        loggingOut = on;
+        if (logoutBtn) {
+            logoutBtn.disabled = on;
+            logoutBtn.textContent = on ? "Logging out…" : "Log out";
+        }
+        document.body.classList.toggle("is-logging-out", on);
+        if (on) document.body.setAttribute("aria-busy", "true");
+        else document.body.removeAttribute("aria-busy");
+        document.body.style.cursor = on ? "progress" : "";
+    }
+    ["click", "dblclick", "auxclick", "keydown", "beforeinput", "submit", "paste", "drop", "dragstart"].forEach(type => {
+        document.addEventListener(type, e => {
+            if (!loggingOut) return;
+            e.preventDefault();
+            e.stopPropagation();
+        }, true);
+    });
+
     async function doLogout() {
         if (loggingOut) return;
         const keys = Object.keys(COLLECTIONS);
-        if (keys.some(refuseWhileSaving)) return;
-        if (keys.some(isFormDirty)) {
-            const ok = await showConfirmDialog("Log out and discard your unsaved changes? Anything you have added or edited in the open form will be lost.");
-            if (!ok) return;
-            if (keys.some(refuseWhileSaving)) return;
-        }
-        loggingOut = true;
+        /* The Guides editor lives in js/admin-guides.js and has its own
+           unsaved-changes check, which logging out never asked: a guide
+           half-written was simply lost. It is asked here beside the maze
+           and event forms (window.AdminGuides). */
+        const guides = window.AdminGuides || null;
+        const refused = () => keys.some(refuseWhileSaving) || !!(guides && guides.refuseWhileSaving());
+        const dirty = () => keys.some(isFormDirty) || !!(guides && guides.isDirty());
+        const saving = () => keys.some(key => COLLECTIONS[key].formEl._saving) || !!(guides && guides.isSaving());
+        let loggedOut = false;
         try {
-            // Each discard takes its list off the form synchronously; the
-            // forms are then closed BEFORE the awaits, or the check inside
-            // would find the pictures still in use by the very form being
-            // thrown away and spare every one of them.
-            const discards = keys.map(key => discardFormUploads(key));
-            keys.forEach(key => closeForm(key));
-            await Promise.all(discards);
+            /* Round again if, once the awaits are back, something is open
+               and changed after all. Nothing should be — the page is held
+               still meanwhile — but closing a form is the one thing here
+               that loses work, so the question is asked again rather than
+               assumed, with the page released for the dialog. Declining it
+               leaves this admin signed in: nothing has been dropped yet. */
+            for (;;) {
+                if (refused()) return;
+                if (dirty()) {
+                    const ok = await showConfirmDialog("Log out and discard your unsaved changes? Anything you have added or edited in the open form will be lost.");
+                    if (!ok) return;
+                    if (refused()) return;
+                }
+                setLoggingOut(true);
+                // Each discard takes its list off the form synchronously; the
+                // forms are then closed BEFORE the awaits, or the check inside
+                // would find the pictures still in use by the very form being
+                // thrown away and spare every one of them.
+                const discards = keys.map(key => discardFormUploads(key));
+                keys.forEach(key => closeForm(key));
+                // Its deletes go out at once, with the token still valid.
+                if (guides) guides.close();
+                // A refused save's parked pictures, and its rescued furni.
+                discards.push(forgetRefusedEdits());
+                await Promise.all(discards);
+                if (!dirty() && !saving()) break;
+                setLoggingOut(false);
+            }
+            loggedOut = true;
         } finally {
-            loggingOut = false;
+            if (!loggedOut) setLoggingOut(false);
         }
         stopFurniPolling();
         writeToken("");
@@ -534,13 +667,23 @@ document.addEventListener("DOMContentLoaded", () => {
         if (ffLaunchAtEl) ffLaunchAtEl.style.display = "none";
         if (ffToggleEl) ffToggleEl.style.display = "none";
         if (themeToggleEl) themeToggleEl.style.display = "none";
+        // The role's classes too — see lockOut for what they did to the
+        // sign-in box of a view-only account.
+        document.body.classList.remove("is-viewer", "is-albus");
+        // Nothing of this account's is left for the next one: the run log,
+        // and the panels in their own files (both reload when next shown,
+        // as whoever is signed in by then).
+        lastSignedInAs = "";
+        ffClear();
+        if (window.AdminDeadEnds) window.AdminDeadEnds.reset();
+        if (window.AdminGuides) window.AdminGuides.reset();
         loginModal.classList.add("open");
         loginError.style.display = "none";
         loginForm.reset();
         // Not in a form, so the reset above does not reach them.
-        clearPassword(selfPasswordInput);
-        clearPassword(selfPasswordCurrentInput);
+        clearSelfPasswordFields();
         sayPassword("", true);
+        setLoggingOut(false);
     }
 
     /* ---------- activity log (owner only) ----------
@@ -1029,17 +1172,44 @@ document.addEventListener("DOMContentLoaded", () => {
     let ffLoaded = false;
     let recolourMounted = false;
 
+    /* Counted, like the Missing Pieces panel's loads: a read still out when
+       the session ends (see ffClear) must not draw the last account's run
+       log — addresses and all — over the next one's panel. */
+    let ffLoadGen = 0;
+
     async function loadFallinFurni() {
         if (!adminToken) return;
+        const gen = ++ffLoadGen;
         ffSummaryEl.innerHTML = '<span class="admin-hint">Loading…</span>';
         try {
-            ffRender(await Api.getFallinFurniRuns(adminToken, ffRangeEl && ffRangeEl.value));
+            const data = await Api.getFallinFurniRuns(adminToken, ffRangeEl && ffRangeEl.value);
+            if (gen !== ffLoadGen) return;
+            ffRender(data);
             ffLoaded = true;
         } catch (err) {
+            if (gen !== ffLoadGen) return;
             if (err.status === 401) { lockOut(); return; }
             ffSummaryEl.innerHTML = '<span class="admin-hint">' +
                 escapeHtml(err.message || "Couldn't load the run log.") + '</span>';
         }
+    }
+
+    /* The run log, emptied and marked unloaded. It was loaded once per page
+       (ffLoaded), so after a log out, or a session running out, the tables
+       stayed filled for whoever signed in next on the same tab: an owner's
+       view of every player's address, read by a view-only account that the
+       server would never have sent them to. Called by lockOut and doLogout;
+       the next showing of the panel reads it again as the new account. */
+    function ffClear() {
+        ffLoadGen++;
+        ffLoaded = false;
+        if (ffSummaryEl) ffSummaryEl.innerHTML = "";
+        if (ffChartsEl) ffChartsEl.innerHTML = "";
+        [ffLevelsEl, ffPlayersEl, ffAddressesEl].forEach(table => {
+            const body = table && table.querySelector("tbody");
+            if (body) body.innerHTML = "";
+        });
+        if (ffRunsEl) ffRunsEl.innerHTML = "";
     }
 
     if (ffRefreshBtn) ffRefreshBtn.addEventListener("click", loadFallinFurni);
@@ -1121,6 +1291,13 @@ document.addEventListener("DOMContentLoaded", () => {
        first place, so in practice this only ever fires for the keyboard. */
     document.addEventListener("click", e => {
         if (!document.body.classList.contains("is-viewer")) return;
+        /* Never the sign-in box. Its Unlock button sits in an
+           .admin-form-actions like any other form's, so the view-only
+           greying caught it, and this then cancelled the one press a
+           view-only account needed to sign back in after its session ran
+           out. lockOut and doLogout now take the class off as well; this
+           is the backstop for anything that puts the box up without them. */
+        if (e.target.closest("#login-form")) return;
         const control = e.target.closest("button, a");
         if (!control || getComputedStyle(control).pointerEvents !== "none") return;
         e.preventDefault();
@@ -1434,9 +1611,32 @@ document.addEventListener("DOMContentLoaded", () => {
     // session expiring mid-edit would fail the delete silently, leaving the
     // orphaned blob in storage with no indication anything went wrong.
     // Routed through the same lockOut() the rest of the file uses instead.
+    //
+    // …and then taken back out of it. Every caller is a BACKGROUND job that
+    // nobody is waiting on (a save's clean-up, a discarded edit, an orphaned
+    // upload), and each can finish after the session it started in has
+    // ended: a delete sent after a log out, or with a token that a change of
+    // password had just retired, came back 401 and threw the sign-in box up
+    // over a perfectly good session — or over the login screen itself. So a
+    // failure here is never a lockOut. A session that really has expired is
+    // found by the next thing the admin does, which does lock out. The
+    // callers that wait on the database first (freshReferencedKeys) check
+    // that the same person is still signed in before they get here.
+    //
+    // A 409 is the server refusing to delete a picture a record still uses
+    // (upload.js answers { inUse: true }: another maze, event or guide took
+    // it on after this page last looked). That is not a failure at all —
+    // the picture is meant to stay — so it is left, silently, and above all
+    // never read as a signed-out session. Api._write surfaces it as
+    // err.status 409 (and err.data.inUse, where js/api.js passes the body
+    // on); either is enough. A 503 is upload.js unable to ask the database
+    // whether anything uses the picture, so it keeps it: the same outcome,
+    // left the same way.
     function deleteImageSafe(key) {
+        if (!adminToken) return;
         Api.deleteImage(adminToken, key).catch(err => {
-            if (err.status === 401) lockOut();
+            if (err && (err.status === 409 || err.status === 503 || (err.data && err.data.inUse))) return; // kept: leave it
+            /* anything else: see above */
         });
     }
 
@@ -1500,14 +1700,23 @@ document.addEventListener("DOMContentLoaded", () => {
        careful. If the read fails, the answer is null and the caller deletes
        NOTHING: an orphan left in storage costs a few kilobytes, a picture
        deleted from under a live record is a broken maze. */
+    /* Only ever called from background clean-up (see deleteImageSafe), so a
+       401 is not a lockOut here either, and the answer is null — delete
+       nothing — if the account signed in has changed while the read was
+       out: logged out, or somebody else signed in on this tab. The same
+       person with a new token (their own password change, or signing back
+       in after the session ran out) carries on; the deletes that follow are
+       synchronous, so they go with that person's current token. */
     async function freshReferencedKeys() {
+        const who = currentUsername;
+        if (!adminToken || !who) return null;
         let rooms, events;
         try {
             [rooms, events] = await Promise.all([Api.getRoomsFull(adminToken), Api.getEventsFull(adminToken)]);
         } catch (err) {
-            if (err && err.status === 401) lockOut();
             return null;
         }
+        if (!adminToken || currentUsername !== who) return null;
         const keys = allReferencedKeys();
         (rooms || []).concat(events || []).forEach(item => imageKeysOf(item).forEach(k => keys.add(k)));
         return keys;
@@ -1558,13 +1767,135 @@ document.addEventListener("DOMContentLoaded", () => {
        old address's furni as belonging to no picture. Every hand-added
        piece in that room went with it. The entry moves to the new address
        instead; submitForm's furniPatch then sends the new key set and the
-       old one null. */
+       old one null.
+
+       The move is remembered too (_furniMoves: new address -> the address
+       the record was opened at), so the save can say where it came from:
+       the patch entry for the new address carries `from`, and rooms.js
+       applies the admin's changes to whatever is stored at the old address
+       NOW — a scan that finished that room while the form was open moves
+       across with it rather than being lost. A record moved twice still
+       names the address it was opened at. */
     function moveFurniKey(formEl, oldUrl, newUrl) {
         const draft = formEl && formEl._furniDraft;
         if (!draft || !oldUrl || !newUrl || oldUrl === newUrl || !draft[oldUrl]) return;
-        if (!draft[newUrl]) draft[newUrl] = draft[oldUrl];
+        const moves = formEl._furniMoves || (formEl._furniMoves = new Map());
+        if (!draft[newUrl]) {
+            draft[newUrl] = draft[oldUrl];
+            moves.set(newUrl, moves.get(oldUrl) || oldUrl);
+        }
+        moves.delete(oldUrl);
         delete draft[oldUrl];
         if (formEl._renderFurni) formEl._renderFurni();
+    }
+
+    /* ---------- furni, saved piece by piece ----------
+
+       A save sends each room it changed as { base, draft }: the room's
+       record as this form opened it, and as the admin left it. rooms.js
+       applies only the difference to the record stored at that moment
+       (netlify/functions/_furni-merge.js), so a furni scan that rewrote the
+       room while the form was open keeps what it found, and the admin's
+       adds, removals and Hide/Show land on top.
+
+       It used to send the room's whole record, which replaced the stored
+       one: hide one false positive in a room the scan had just redone, and
+       every new detection in that room went.
+
+       mergeFurniRecord and furniPieceKey are _furni-merge.js's mergeRecord
+       and pieceKey, repeated here for putting a refused save's changes
+       back on top of the newer record (applyFurniRescue). Keep them in
+       step; see that file for why a piece is keyed by its furni, its icon
+       and where it stands. */
+    const furniOwn = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
+    const furniIsObj = v => !!v && typeof v === "object" && !Array.isArray(v);
+    const FURNI_UNSAFE = new Set(["__proto__", "constructor", "prototype"]);
+
+    function furniPieceKey(f) {
+        if (!furniIsObj(f)) return "";
+        const what = f.url || f.className || f.name || "";
+        const at = Array.isArray(f.at) ? f.at.join(",") : "";
+        return what + "|" + (f.icon || "") + "|" + at;
+    }
+
+    function furniKeyed(items) {
+        const seen = new Map();
+        return (Array.isArray(items) ? items : []).map(f => {
+            const k = furniPieceKey(f);
+            const n = (seen.get(k) || 0) + 1;
+            seen.set(k, n);
+            return [n === 1 ? k : k + "#" + n, f];
+        });
+    }
+
+    function furniWithChanges(target, base, draft, skip) {
+        const out = { ...(furniIsObj(target) ? target : {}) };
+        const b = furniIsObj(base) ? base : {};
+        const d = furniIsObj(draft) ? draft : {};
+        new Set([...Object.keys(b), ...Object.keys(d)]).forEach(k => {
+            if (FURNI_UNSAFE.has(k) || (skip && k === skip)) return;
+            if (JSON.stringify(b[k]) === JSON.stringify(d[k])) return;
+            if (furniOwn(d, k)) out[k] = d[k];
+            else delete out[k];
+        });
+        return out;
+    }
+
+    function mergeFurniRecord(current, base, draft) {
+        const cur = furniIsObj(current) ? current : null;
+        const b = furniIsObj(base) ? base : {};
+        const d = furniIsObj(draft) ? draft : {};
+        const out = furniWithChanges(cur || {}, b, d, "items");
+        const baseItems = new Map(furniKeyed(b.items));
+        const draftItems = new Map(furniKeyed(d.items));
+        const items = [];
+        const kept = new Set();
+        for (const [k, f] of furniKeyed(cur ? cur.items : [])) {
+            if (baseItems.has(k) && !draftItems.has(k)) continue;
+            items.push(baseItems.has(k) && furniIsObj(f) ? furniWithChanges(f, baseItems.get(k), draftItems.get(k)) : f);
+            kept.add(k);
+        }
+        for (const [k, f] of draftItems) {
+            if (!baseItems.has(k) && !kept.has(k)) items.push(f);
+        }
+        out.items = items;
+        return out;
+    }
+
+    /* The furniPatch for a save. `original` is the furni as the form opened
+       it, `draft` as the editor has it now, `keep` every picture address
+       the saved record will still have (old versions included), `moves`
+       the form's _furniMoves. Returns { patch, dropped }.
+
+         - a room whose record changed: { base, draft }, with `from` when it
+           was moved from another address (see moveFurniKey),
+         - a record for a picture the maze no longer has (an orphan), or one
+           removed from the draft: null, which rooms.js reads as "remove
+           this picture's record". `dropped` counts the orphans. */
+    function buildFurniPatch(original, draft, keep, moves) {
+        const patch = {};
+        let dropped = 0;
+        for (const [image, record] of Object.entries(draft || {})) {
+            if (!keep.has(image)) continue;
+            if (JSON.stringify(record) === JSON.stringify(original[image])) continue;
+            const from = moves && moves.get(image);
+            const movedFrom = !furniOwn(original, image) && from && furniOwn(original, from) ? from : null;
+            const entry = {
+                base: movedFrom ? original[movedFrom] : (furniOwn(original, image) ? original[image] : null),
+                draft: record
+            };
+            if (movedFrom) entry.from = movedFrom;
+            patch[image] = entry;
+        }
+        for (const image of new Set([...Object.keys(original || {}), ...Object.keys(draft || {})])) {
+            if (!keep.has(image)) {
+                patch[image] = null;
+                dropped++;
+            } else if (!furniOwn(draft, image) && furniOwn(original, image)) {
+                patch[image] = null;
+            }
+        }
+        return { patch, dropped };
     }
 
     /* Every upload the maze/event form makes goes through here, for two
@@ -1654,6 +1985,86 @@ document.addEventListener("DOMContentLoaded", () => {
         // be using one of these again (added back by URL), which spares it.
         Object.keys(COLLECTIONS).forEach(other => formImageKeys(COLLECTIONS[other].formEl).forEach(k => referenced.add(k)));
         uploads.forEach(k => { if (!referenced.has(k)) deleteImageSafe(k); });
+    }
+
+    /* ---------- what a refused (409) save leaves behind ----------
+
+       See the 409 branch in submitForm for why. Both are keyed by
+       "rooms:<id>" / "events:<id>", held for this page only, and dropped
+       when the account changes (forgetRefusedEdits). */
+    const refusedUploads = new Map();   // record -> Set of image keys
+    const furniRescue = new Map();      // record -> { patch }
+    const rescueKeyOf = (key, id) => key + ":" + id;
+
+    function parkRefusedUploads(key, id, uploads) {
+        if (!uploads || !uploads.size) return;
+        const k = rescueKeyOf(key, id);
+        const parked = refusedUploads.get(k) || new Set();
+        uploads.forEach(u => parked.add(u));
+        refusedUploads.set(k, parked);
+    }
+
+    // The next opening of the record takes them on as its own uploads, so
+    // its Save or Cancel clears whatever it does not end up using.
+    function takeParkedUploads(formEl, key, id) {
+        const k = rescueKeyOf(key, id);
+        const parked = refusedUploads.get(k);
+        if (!parked || !formEl._sessionUploads) return;
+        parked.forEach(u => formEl._sessionUploads.add(u));
+        refusedUploads.delete(k);
+    }
+
+    /* The refused furni changes, laid back over the record as it is stored
+       now — merged piece by piece, as rooms.js merges a save
+       (mergeFurniRecord), not room by room. A room the other person ALSO
+       changed keeps their changes and gains this admin's: it used to be
+       replaced whole by this admin's copy, which undid theirs there. A
+       room this admin's save removed is removed. Applied after the form's
+       opening snapshot, so the form reads as changed and Cancel asks
+       before throwing them away a second time.
+
+       Every entry reads the draft as it was before any of them, so a
+       moved room's null for its old address cannot remove the record the
+       new address is built from; and the move is remembered, so the next
+       save sends `from` as the refused one did. */
+    function applyFurniRescue(formEl, key, id) {
+        const k = rescueKeyOf(key, id);
+        const rescue = furniRescue.get(k);
+        const draft = formEl._furniDraft;
+        if (!rescue || !draft) return;
+        furniRescue.delete(k);
+        const fresh = JSON.parse(JSON.stringify(draft));
+        const moves = formEl._furniMoves || (formEl._furniMoves = new Map());
+        let restored = 0;
+        for (const [image, entry] of Object.entries(rescue.patch)) {
+            if (FURNI_UNSAFE.has(image)) continue;
+            restored++;
+            if (entry === null) { delete draft[image]; continue; }
+            const here = furniOwn(fresh, image);
+            const from = !here && entry.from && furniOwn(fresh, entry.from) ? entry.from : null;
+            draft[image] = mergeFurniRecord(here ? fresh[image] : from ? fresh[from] : undefined, entry.base, entry.draft);
+            if (from) moves.set(image, from);
+        }
+        if (!restored) return;
+        if (formEl._renderFurni) formEl._renderFurni();
+        formNotice(formEl, "Your furni changes from the refused save are back on " + restored +
+            (restored === 1 ? " room" : " rooms") + ", on top of the other save's. Check them, then Save.");
+    }
+
+    /* On a log out or a change of account. The parked pictures are
+       discarded as a Cancel would (only what nothing points at), with the
+       token that uploaded them — so this is awaited by doLogout before it
+       drops the token. */
+    async function forgetRefusedEdits() {
+        const parked = new Set();
+        refusedUploads.forEach(set => set.forEach(u => parked.add(u)));
+        refusedUploads.clear();
+        furniRescue.clear();
+        if (!parked.size || !adminToken) return;
+        const referenced = await freshReferencedKeys();
+        if (!referenced) return;
+        Object.keys(COLLECTIONS).forEach(other => formImageKeys(COLLECTIONS[other].formEl).forEach(k => referenced.add(k)));
+        parked.forEach(k => { if (!referenced.has(k)) deleteImageSafe(k); });
     }
 
     // Wraps a file input in a much larger drag-and-drop target instead of
@@ -3805,12 +4216,18 @@ document.addEventListener("DOMContentLoaded", () => {
            Save wrote A's furni onto B. */
         cfg.formEl._furniDraft = null;
         cfg.formEl._renderFurni = null;
+        // Rooms moved to a new picture address in this opening — see
+        // moveFurniKey. Another record's moves mean nothing here.
+        cfg.formEl._furniMoves = new Map();
 
         /* The after-save bookkeeping — see imageKeysOf and
            discardFormUploads. What the stored record held when this form
            opened is what the form may delete after a save. */
         cfg.formEl._pendingDeletes = new Set();
         cfg.formEl._sessionUploads = new Set();
+        // A refused save's pictures, if this record had one — see the 409
+        // branch in submitForm.
+        if (isEdit) takeParkedUploads(cfg.formEl, key, editId);
         cfg.formEl._storedKeys = imageKeysOf(item);
         cfg.formEl._saveAmbiguous = false;
         // This opening, as distinct from the last one on the same element:
@@ -4204,6 +4621,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // Taken last, once every draft and field above has been assigned,
         // so it records the form exactly as the admin first sees it.
         cfg.formEl._openSnapshot = formSnapshot(cfg.formEl);
+        // After the snapshot, on purpose: rescued furni is a change the
+        // admin still has to save — see applyFurniRescue.
+        if (isEdit) applyFurniRescue(cfg.formEl, key, editId);
 
         activeFormKey = key;
         floatingActionsEl.classList.add("open");
@@ -4254,7 +4674,14 @@ document.addEventListener("DOMContentLoaded", () => {
             furni: formEl._furniDraft || null,
             tags: formEl._selectedTags ? [...formEl._selectedTags].sort() : null,
             entranceOld: formEl._entranceOldVersions || null,
-            finishOld: formEl._finishOldVersions || null
+            finishOld: formEl._finishOldVersions || null,
+            /* The Address field is deliberately unnamed (see html() in
+               js/admin-address.js), so FormData above never sees it — and
+               an edit that only changed the address read as clean: Cancel
+               threw it away without asking, and so did logging out. What
+               the save would send is compared instead of the input's text,
+               so a field tidied on blur is not a change by itself. */
+            address: formEl._address ? JSON.stringify(formEl._address.payload()) : null
         });
     }
 
@@ -4318,6 +4745,7 @@ document.addEventListener("DOMContentLoaded", () => {
         cfg.formEl._galleryDraft = null;
         cfg.formEl._relatedDraft = null;
         cfg.formEl._furniDraft = null;
+        cfg.formEl._furniMoves = null;
         cfg.formEl._renderFurni = null;
         cfg.formEl._selectedTags = null;
         cfg.formEl._expandedOldVersions = null;
@@ -4363,6 +4791,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
         let tagPool = [];
         let tagPoolFailed = false;
+
+        /* Add and Enter are wired BEFORE the tag list is fetched, not after.
+           They used to be attached at the end of this function, behind the
+           await — so for as long as the list took to arrive, a new tag typed
+           and Added did nothing at all, and Enter in the box did nothing
+           either, with no sign that anything had been ignored. Pressed
+           early, the add now waits for the list and then happens by itself
+           (it needs the list to know whether the tag is already in it). */
+        let tagsLoaded = false;
+        let addQueued = false;
+        addBtn.addEventListener("click", addNewTag);
+        newInput.addEventListener("keydown", e => {
+            if (e.key === "Enter") { e.preventDefault(); addNewTag(); }
+        });
+
         try {
             tagPool = await Api.getTags();
         } catch (e) {
@@ -4372,6 +4815,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // The form moved on while the list loaded; the new opening has its
         // own picker.
         if (!stillOpen()) return;
+        tagsLoaded = true;
 
         /* Built as elements rather than a joined string of markup. A tag is
            free text anyone with write access can create (see addNewTag
@@ -4411,6 +4855,13 @@ document.addEventListener("DOMContentLoaded", () => {
         async function addNewTag() {
             const label = newInput.value.trim();
             if (!label) return;
+            if (!tagsLoaded) {
+                // Held until the list is in — see the handlers above.
+                addQueued = true;
+                status.textContent = "Adding it once the tag list has loaded…";
+                status.style.display = "block";
+                return;
+            }
             addBtn.disabled = true;
             status.style.display = "none";
             try {
@@ -4433,12 +4884,12 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
-        addBtn.addEventListener("click", addNewTag);
-        newInput.addEventListener("keydown", e => {
-            if (e.key === "Enter") { e.preventDefault(); addNewTag(); }
-        });
-
         renderChips();
+        if (addQueued) {
+            addQueued = false;
+            status.style.display = "none";
+            addNewTag();
+        }
     }
 
     /* What is wrong with an event's four date fields, or "" if nothing is.
@@ -4627,10 +5078,13 @@ document.addEventListener("DOMContentLoaded", () => {
            room the scan had just done whenever one room was edited.
 
            So `furni` is never sent now. furniPatch carries only the picture
-           addresses this form changed: { "<image url>": record } for a room
-           edited here, null for one to delete. rooms.js applies it to the
-           furni AS STORED, under its own furniRev compare-and-set, so a room
-           nobody touched here keeps whatever the scan wrote into it.
+           addresses this form changed: { "<image url>": { base, draft } }
+           for a room edited here, null for one to delete. rooms.js applies
+           it to the furni AS STORED, under its own furniRev compare-and-set,
+           so a room nobody touched here keeps whatever the scan wrote into
+           it — and a room edited here keeps the scan's new pieces too, since
+           only what the admin changed between base and draft is applied
+           (see buildFurniPatch).
            furniRev is the server's counter and goes back out of the spread
            along with furni itself. Built just below, after the entrance and
            finish are known, because the orphan pruning needs them. */
@@ -4687,25 +5141,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
             let original = {};
             try { original = JSON.parse(form._furniOriginal || "{}") || {}; } catch (e) { original = {}; }
-            const draft = form._furniDraft;
-            const patch = {};
-            let dropped = 0;
-            // Changed or new here: sent as the draft has it.
-            for (const [image, record] of Object.entries(draft)) {
-                if (!keep.has(image)) continue;
-                if (JSON.stringify(record) !== JSON.stringify(original[image])) patch[image] = record;
-            }
-            // Deleted here (a replaced picture's old address — see
-            // moveFurniKey), or an orphan of a picture this maze no longer
-            // has: null, which rooms.js reads as "remove this key".
-            for (const image of new Set([...Object.keys(original), ...Object.keys(draft)])) {
-                if (!keep.has(image)) {
-                    patch[image] = null;
-                    dropped++;
-                } else if (!(image in draft) && (image in original)) {
-                    patch[image] = null;
-                }
-            }
+            // Changed rooms as { base, draft }, so rooms.js merges piece by
+            // piece; deleted and orphaned ones as null. See buildFurniPatch.
+            const { patch, dropped } = buildFurniPatch(original, form._furniDraft, keep, form._furniMoves);
             if (dropped) console.info(`Dropping ${dropped} furni record${dropped === 1 ? "" : "s"} with no matching picture.`);
             if (Object.keys(patch).length) payload.furniPatch = patch;
         }
@@ -4783,7 +5221,52 @@ document.addEventListener("DOMContentLoaded", () => {
                plainly and the form kept open, so nothing typed is lost —
                but not saved over their work either. */
             if (err.status === 409) {
-                refuse("Someone else saved this record since you opened it. Your edits are still here: copy anything you need before reopening it.");
+                /* Two things the refused edit made are kept past the form
+                   closing, because "copy anything you need" could not cover
+                   them: they are not text.
+
+                   The PICTURES it uploaded. Reopening the record discards
+                   the form, and a discard deletes the edit's uploads — so
+                   the picture the admin was told to copy was gone by the
+                   time they went to use it. They are parked against the
+                   record instead (parkRefusedUploads): the next opening of
+                   it takes them on as its own, so Add from URL can put one
+                   back, and that edit's Save or Cancel clears whatever it
+                   does not use, exactly as for its own uploads.
+
+                   The FURNI changes. A furni-only save that failed used to
+                   leave the record moved on, and every retry was then a 409
+                   (rooms.js now writes the two together, so it should not
+                   recur — but a 409 from somebody else's save is the same
+                   story). Reopening threw the draft away with the form, with
+                   nothing to say so. The changed rooms are kept, and put
+                   back on top of the stored version when the record is next
+                   opened — see applyFurniRescue in openForm. */
+                if (editId !== null) {
+                    parkRefusedUploads(key, editId, form._sessionUploads);
+                    form._sessionUploads = new Set();
+                    // Each entry carries its own base, which is what the
+                    // rescue merges against — see applyFurniRescue.
+                    if (payload.furniPatch) furniRescue.set(rescueKeyOf(key, editId), { patch: payload.furniPatch });
+                }
+                /* Not every 409 is somebody else's save. rooms.js answers a
+                   save from a page older than furniPatch — one that sends
+                   the whole furni object — with "This page is out of date.
+                   Reload /warren…", and the fixed wording below hid that,
+                   sending the admin round Reopen for ever when the only fix
+                   was a reload. The server's own words are shown whenever
+                   they are not its usual "Someone else saved" line. */
+                const serverSays = String(err.message || "");
+                const outOfDate = /out of date/i.test(serverSays);
+                if (outOfDate || (serverSays && !/^Someone else saved/i.test(serverSays))) {
+                    refuse(serverSays + (outOfDate
+                        ? " Copy anything you need from this form first: a reload closes it."
+                        : " Your edits are still here: copy anything you need before reopening it."));
+                } else {
+                    refuse("Someone else saved this record since you opened it. Your edits are still here: copy any text you need before reopening it." +
+                        (payload.furniPatch ? " Your furni changes are kept, and put back on top of their version when you reopen it, for you to check and save." : "") +
+                        " Pictures you uploaded are kept as well: right-click one and copy its address, then add it again with Add from URL once reopened.");
+                }
                 await refreshAfterConflict(key, editId);
             } else {
                 // A dropped connection or a server error can arrive AFTER
@@ -4823,7 +5306,9 @@ document.addEventListener("DOMContentLoaded", () => {
         else if (idx !== -1) items.splice(idx, 1);
         renderList(key);
         const errorEl = cfg.formEl.querySelector(".admin-form-error");
-        if (record && errorEl && cfg.formEl.dataset.editId === editId) {
+        // Not after "out of date" (see submitForm): there are no "their
+        // changes" to see, only a reload to do.
+        if (record && errorEl && cfg.formEl.dataset.editId === editId && !/out of date/i.test(errorEl.textContent)) {
             errorEl.textContent += " Reopening it now will show their changes.";
         }
     }
@@ -4967,14 +5452,23 @@ document.addEventListener("DOMContentLoaded", () => {
         /* Your own row asks for your current password too. The server treats
            a change to the caller's own password as the "self" case and
            refuses it without one (auth.js) — the same rule as the account
-           tab's box, which this is just another way into. Somebody else's
-           row, reset by an owner, needs no such thing. */
+           tab's box, which this is just another way into.
+
+           Somebody else's row, reset by an owner, asks for the OWNER'S own
+           password (requesterPassword). A reset hands whoever does it a
+           working login to that account, so a session token alone — one
+           left open on a shared machine, or lifted from one — was enough to
+           take over every other account on the site. auth.js now refuses
+           such a reset (403) unless the password of the account asking for
+           it comes with it. The field is an ordinary password input, so
+           js/password-field.js enhances it like the others. */
         const isSelf = username === currentUsername;
         adminsFormEl.innerHTML = `
             <h3 class="admin-form-title">Reset Password — ${escapeHtml(username)}</h3>
             ${isSelf ? fieldRow("Your current password", `<input type="password" name="currentPassword" required autocomplete="current-password">`) : ""}
             ${fieldRow("New password (8+ characters)", `<input type="password" name="password" required minlength="8" autocomplete="new-password">`)}
             ${fieldRow("Confirm new password", `<input type="password" name="confirm" required minlength="8" autocomplete="new-password">`)}
+            ${isSelf ? "" : fieldRow("Your password (to confirm it's you)", `<input type="password" name="requesterPassword" required autocomplete="current-password">`)}
             <p class="admin-form-error" style="display:none;"></p>
             <div class="admin-form-actions">
                 <button type="submit" class="admin-action-pill admin-pill-solid">Save</button>
@@ -5022,8 +5516,14 @@ document.addEventListener("DOMContentLoaded", () => {
             } else {
                 // Read through FormData, which gets the real values from
                 // js/password-field.js's hidden partners, not the masks.
+                /* The fourth argument is YOUR password in both cases — on
+                   your own row the current one (currentPassword), on
+                   somebody else's the one that proves it is you asking
+                   (requesterPassword; see openResetForm). auth.js reads
+                   either as the caller's own password, so it goes as
+                   currentPassword whichever field it came from. */
                 const changed = await Api.resetAdminPassword(adminToken, adminsFormEl.dataset.username, data.password,
-                    data.currentPassword || undefined);
+                    data.currentPassword || data.requesterPassword || undefined);
                 // An owner resetting their own row from this list: keep them
                 // signed in with the replacement token (see saveOwnPassword).
                 if (changed && changed.token) {
@@ -5034,11 +5534,32 @@ document.addEventListener("DOMContentLoaded", () => {
             closeAdminsForm();
             await loadAdmins();
         } catch (err) {
-            if (err.status === 401) { lockOut(); return; }
-            errorEl.textContent = err.message || "Something went wrong saving this.";
-            errorEl.style.display = "block";
+            // Save usable again BEFORE the login goes up, as the maze form
+            // does: signing back in returns to this same form, and it used
+            // to be left disabled on "Saving…" with no way to try again.
             submitBtn.disabled = false;
             submitBtn.textContent = "Save";
+            if (err.status === 401) { lockOut(); return; }
+            /* 403 on a reset is the server's own words about the password
+               it was given — yours, missing or wrong (auth.js). Said here,
+               in the form, with the field emptied and focused for another
+               go; it is not a signed-out session, so never a lockOut. */
+            // The named input is password-field.js's hidden partner once
+            // enhanced; the one to clear and focus is the visible field
+            // beside it.
+            const own = adminsFormEl.querySelector('[name="requesterPassword"], [name="currentPassword"]');
+            if (err.status === 403 && adminsFormEl.dataset.mode === "reset" && own) {
+                const wrap = own.closest(".password-field");
+                const visible = wrap ? wrap.querySelector("input:not([type=hidden])") : own;
+                clearPassword(visible);
+                if (visible) visible.focus();
+            }
+            // Password attempts are rate-limited (auth.js): 429 is that,
+            // said plainly rather than as the server's status line.
+            errorEl.textContent = err.status === 429
+                ? "Too many attempts. Try again later."
+                : err.message || "Something went wrong saving this.";
+            errorEl.style.display = "block";
         }
     });
 
@@ -5630,8 +6151,12 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentFfState = "";
     let currentFfLaunchAt = "";
 
+    /* Written to #ff-state-warning, not to the switch's status line. The two
+       shared #ff-state-status, so a failed save's error was blanked by the
+       next recompute and the warning vanished whenever a save cleared the
+       line for its own answer. */
     function sayFfMismatch() {
-        if (!ffToggleStatus || !currentFfState) return;
+        if (!ffMismatchEl || !currentFfState) return;
         const at = currentFfLaunchAt ? new Date(currentFfLaunchAt).getTime() : NaN;
         let warning = "";
         if (!isNaN(at)) {
@@ -5642,8 +6167,28 @@ document.addEventListener("DOMContentLoaded", () => {
                 warning = "Heads up: Fallin' Furni's launch date has passed, but its switch isn't on Live — Launch Week is running on a game players can't open.";
             }
         }
-        ffToggleStatus.textContent = warning;
-        ffToggleStatus.style.display = warning ? "block" : "none";
+        ffMismatchEl.textContent = warning;
+        ffMismatchEl.style.display = warning ? "block" : "none";
+    }
+
+    /* The warning depends on the clock as well as on the two settings: a
+       panel left open across the launch moment went on saying "still ahead"
+       about a date that had passed, because it was only worked out on load
+       and on a save. So it is worked out again whenever the tab holding it
+       is shown (hover, focus or a tap — see the Nav and Control tabs near
+       the top), and once a minute while it is on screen. A hidden panel is
+       skipped; showing it recomputes anyway. */
+    if (ffMismatchEl) {
+        const ffWarningTab = ffMismatchEl.closest(".admin-tab");
+        if (ffWarningTab) {
+            ["mouseenter", "focusin", "click"].forEach(type =>
+                ffWarningTab.addEventListener(type, sayFfMismatch));
+        }
+        setInterval(() => {
+            if (ffMismatchEl.getClientRects().length || (ffWarningTab && ffWarningTab.matches(".is-open, :hover, :focus-within"))) {
+                sayFfMismatch();
+            }
+        }, 60000);
     }
 
     async function loadLandingState() {
@@ -5940,7 +6485,17 @@ document.addEventListener("DOMContentLoaded", () => {
             // Only the session this poll was asked under can be expired by
             // it — a 401 landing after a logout must not put "Session
             // expired" into a login box nobody's session ran out in.
-            if (err.status === 401) { if (adminToken === askedWith) lockOut(); else stopFurniPolling(); return; }
+            /* And a 401 for a token that has since been REPLACED is not the
+               end of anything: changing your own password retires every
+               session, this poll's included, and hands the page a new
+               token. Stopping here froze the progress bar half-way through a
+               healthy scan. That stale answer is skipped; the next tick asks
+               with the new token. Only no token at all stops the polling. */
+            if (err.status === 401) {
+                if (adminToken === askedWith) lockOut();
+                else if (!adminToken) stopFurniPolling();
+                return;
+            }
             // 503: the database could not be asked who this is (_auth.js's
             // AUTH_UNAVAILABLE). A blip, not an answer — keep polling.
             if (err.status === 503) return;
@@ -6703,6 +7258,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!result) { lockOut(); return; }
             currentUsername = result.username;
             currentUserRole = result.role || "admin";
+            // Who this tab belongs to, for the login handler's "is this
+            // somebody else?" when the session later runs out.
+            lastSignedInAs = result.username;
             // The same backstop as the login form's: said in the panel, not
             // left as an unhandled rejection behind a half-drawn page.
             enterAdmin().catch(err => showLoadBanner("Something went wrong opening the panel: " +

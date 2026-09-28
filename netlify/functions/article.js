@@ -11,7 +11,7 @@
    Admin-only and write-gated: it takes a URL and fetches it, which is the
    shape of an open proxy if left standing in the road. The allowlist below
    is the real guard; the auth check is the fence around it. */
-const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE } = require("./_auth");
+const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -38,6 +38,81 @@ const ARTICLE_URL = /^https:\/\/origins\.habbo\.com\/community\/article\/(\d+)(?
 const UA = "Mozilla/5.0 (compatible; MazeRatsBot/1.0; +https://mazerats.net; link-preview like Twitterbot)";
 
 const FETCH_TIMEOUT_MS = 12000;
+
+/* Redirects are followed by hand, and only so far.
+
+   This used to fetch with redirect: "follow", which checked the URL it was
+   GIVEN against ARTICLE_URL and then went wherever the answer pointed — so
+   the allowlist guarded the first hop and nothing after it. Anything on
+   origins.habbo.com that redirects (a login bounce, a moved page, an open
+   redirect somewhere on the host) turned this into a fetch of any address
+   at all, from inside Netlify, with the body handed back to the caller. Now
+   every Location is resolved and held to the same pattern before it is
+   followed, and a chain longer than MAX_REDIRECTS is refused outright. */
+const MAX_REDIRECTS = 3;
+
+/* And no page is read past this. A real article is a few hundred KB; a
+   response that keeps streaming would otherwise be buffered whole into a
+   function with a fixed memory ceiling. */
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+/* The article page, fetched under both rules above. Throws an Error with
+   `userMessage` for a refusal worth explaining; anything else (the abort,
+   a network failure) is left for the caller to word. */
+async function fetchArticle(url, signal) {
+    let current = url;
+    for (let hop = 0; ; hop++) {
+        const res = await fetch(current, {
+            headers: { "user-agent": UA, "accept": "text/html" },
+            signal,
+            redirect: "manual"
+        });
+        if (res.status >= 300 && res.status < 400) {
+            const location = res.headers.get("location");
+            if (!location) return res;
+            if (hop >= MAX_REDIRECTS) throw refusal("That article link redirects too many times.");
+            let next;
+            try {
+                next = new URL(location, current).href;
+            } catch (e) {
+                throw refusal("That article link redirects somewhere unreadable.");
+            }
+            if (!ARTICLE_URL.test(next)) throw refusal("That article link redirects away from Habbo's articles, so it was not followed.");
+            // Nothing of the redirect's own body is wanted.
+            if (res.body && res.body.cancel) await res.body.cancel().catch(() => {});
+            current = next;
+            continue;
+        }
+        return res;
+    }
+}
+
+function refusal(message) {
+    const err = new Error(message);
+    err.userMessage = message;
+    return err;
+}
+
+// The body as text, refused once it passes MAX_BODY_BYTES.
+async function readCapped(res) {
+    const declared = Number(res.headers.get("content-length"));
+    if (declared > MAX_BODY_BYTES) throw refusal("That page is far larger than an article should be.");
+    if (!res.body || !res.body.getReader) return (await res.text()).slice(0, MAX_BODY_BYTES);
+    const reader = res.body.getReader();
+    const chunks = [];
+    let total = 0;
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_BODY_BYTES) {
+            await reader.cancel().catch(() => {});
+            throw refusal("That page is far larger than an article should be.");
+        }
+        chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks).toString("utf8");
+}
 
 /* ---------- pulling the article out of the page ----------
 
@@ -247,13 +322,25 @@ exports.handler = async (event) => {
     /* canWrite throws when the account lookup cannot be made (lookUpRole
        in _auth.js): answered as a 503 to retry, not a stack trace and not
        the 401 that would sign the admin page out. */
+    /* And ONLY that: anything else thrown here is a fault, not an outage,
+       and gets the generic 500 below rather than a "try again" that would
+       never come right. */
     let allowed;
     try {
         allowed = await canWrite(event);
     } catch (e) {
-        return AUTH_UNAVAILABLE;
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        console.error("article: permission check failed", e);
+        return json(500, { error: "Something went wrong with that request." });
     }
-    if (!allowed) return READ_ONLY;
+    // refuseWrite, not READ_ONLY: a deleted account's token is a 401.
+    if (!allowed) {
+        try {
+            return await refuseWrite(event);
+        } catch (e) {
+            return AUTH_UNAVAILABLE;
+        }
+    }
 
     let body;
     try {
@@ -261,6 +348,8 @@ exports.handler = async (event) => {
     } catch (e) {
         return json(400, { error: "Invalid request body" });
     }
+    // "null" parses too, and body.url then threw — an unhandled 500.
+    if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
 
     const url = String(body.url || "").trim();
     if (!ARTICLE_URL.test(url)) {
@@ -268,23 +357,26 @@ exports.handler = async (event) => {
     }
 
     let html;
+    /* The timer covers the whole read — every hop and the body — rather
+       than only until the first headers arrived, which is where it used to
+       be cleared: a server that answered promptly and then trickled the
+       body could hold the function to the platform's limit. */
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-        const res = await fetch(url, {
-            headers: { "user-agent": UA, "accept": "text/html" },
-            signal: controller.signal,
-            redirect: "follow"
-        });
-        clearTimeout(timer);
+        const res = await fetchArticle(url, controller.signal);
         if (!res.ok) return json(502, { error: "Habbo answered " + res.status + " for that article." });
-        html = await res.text();
+        html = await readCapped(res);
     } catch (e) {
         return json(502, {
-            error: e.name === "AbortError"
-                ? "Habbo took too long to answer."
-                : "Could not reach Habbo to read that article."
+            error: e.userMessage
+                ? e.userMessage
+                : e.name === "AbortError"
+                    ? "Habbo took too long to answer."
+                    : "Could not reach Habbo to read that article."
         });
+    } finally {
+        clearTimeout(timer);
     }
 
     const parsed = extract(html, url);

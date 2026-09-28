@@ -65,17 +65,37 @@
        and every later open returned that same dead promise instead of
        asking again. The abort lands in the catch like any failure, which
        clears `loading` and draws the existing retry state. The timer is not
-       cleared on the headers, so a body that stalls is covered as well. */
+       cleared on the headers, so a body that stalls is covered as well.
+
+       TWO ATTEMPTS, 10s then 15s — the pair _getWithFallback uses, and for
+       its reason: the likeliest cause of a slow answer is a cold function,
+       and the second ask usually finds it warm. With one 10s attempt a cold
+       start on a phone was "Couldn't load the guides" and a Retry button,
+       for a list that would have arrived a couple of seconds later. */
+    const LOAD_ATTEMPTS = [10000, 15000];
+
+    function fetchList(url) {
+        const attempt = i => {
+            const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+            const timer = controller ? setTimeout(() => controller.abort(), LOAD_ATTEMPTS[i]) : null;
+            return fetch(url, {
+                headers: { Accept: "application/json" },
+                signal: controller ? controller.signal : undefined
+            })
+                .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+                .then(list => { clearTimeout(timer); return list; }, e => {
+                    clearTimeout(timer);
+                    if (i + 1 < LOAD_ATTEMPTS.length) return attempt(i + 1);
+                    throw e;
+                });
+        };
+        return attempt(0);
+    }
+
     function load(fresh) {
         if (loading && !fresh) return loading;
         failed = false;
-        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-        if (controller) setTimeout(() => controller.abort(), 10000);
-        loading = fetch(URL_ + (fresh ? `?fresh=${Date.now()}` : ""), {
-            headers: { Accept: "application/json" },
-            signal: controller ? controller.signal : undefined
-        })
-            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+        loading = fetchList(URL_ + (fresh ? `?fresh=${Date.now()}` : ""))
             .then(list => {
                 guides = Array.isArray(list) ? list.filter(g => g && g.id) : [];
                 loaded = true;

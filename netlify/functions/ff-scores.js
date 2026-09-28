@@ -491,8 +491,10 @@ function maxPointsFor(level) {
    first N of whatever is published by the time the run ends — an owner
    publishing, unpublishing or reordering levels in the middle of somebody's
    run used to move the floor and ceiling under it, and refuse it for
-   levels it never played. A listed level still has to be published now:
-   a draft's numbers are not the game's.
+   levels it never played. A listed level has to have been published in
+   the version the run played (see LEVELS AS PLAYED) — or, for a run that
+   did not say which version, published now: a draft's numbers are not the
+   game's.
 
    The rounds are what RoomGame banks: the levels cleared, and at most one
    more at the end that was not — the round lost on the last life, or the
@@ -558,17 +560,85 @@ function minPointsFor(level) {
     return -10 * (Math.ceil(secs / 2) + 10);
 }
 
+/* ---- THE LEVEL LIST HAS TO BE THE GAME'S, FROM THE TOP.
+
+   `ids` was only checked for being published levels, each once. Nothing
+   said they were the levels the game deals, in the order it deals them —
+   so a run could list the five easiest levels in the game as its first
+   five, play those, and be ranked beside runs that fought through levels
+   one to five. Every per-level check below would pass, because each round
+   really was inside its own level's numbers.
+
+   So the list must be a PREFIX OF THE PUBLISHED ORDER: level one first, and
+   no published level skipped before the last one listed. The page deals
+   every published level, sorted by `order` (see ff-levels.js), so an honest
+   list is the whole order as it stood when the page read it.
+
+   "As it stood" is the catch, and the reason this is not a plain equality.
+   The page reads the list once, at load, through the edge cache, whose
+   copy may be up to a day old (stale-while-revalidate, see _cache.js) — so
+   the list a run was dealt can predate a level being published, moved or
+   unpublished by that long, plus the run itself. The code above already
+   tolerates those edits (see THE BREAKDOWN), and this must not start
+   refusing the runs it was written to let through. So a level changed
+   within LEVEL_LIST_SLACK_MS before the run's token was issued is left out
+   of the comparison: it may be missing from the list, or sit anywhere in
+   it. A level unpublished mid-run is still refused, as it always was, by
+   the "not published" check below. Only levels that have held still since
+   well before the run are held to the order — which is every level, on
+   every day the owner is not editing them.
+
+   Levels that share an `order` value have no defined order between them
+   (Mongo returns ties however it likes), so ties may come in either order,
+   and the prefix is only enforced strictly below the last listed value.
+
+   A page left open for more than a day across a reorder would be refused
+   by that slack alone — which is why, when the run says which VERSION of
+   each level it was dealt (see LEVELS AS PLAYED), the slack is replaced by
+   something exact: `published` is then the levels as they stood when the
+   token was issued, and `settledBefore` the moment the page's list is
+   known to be at least as new as. The 26 hours are only the fallback, for
+   a run that came without versions. */
+const LEVEL_LIST_SLACK_MS = 26 * 60 * 60 * 1000;
+
+function followsPublishedOrder(ids, published, startedAt, settledAt) {
+    const settledBefore = Number.isFinite(settledAt) ? settledAt
+        : (Number.isFinite(startedAt) ? startedAt : Date.now()) - LEVEL_LIST_SLACK_MS;
+    const changedAt = (lv) => {
+        const ms = Date.parse(lv.updatedAt || lv.createdAt || "");
+        return Number.isFinite(ms) ? ms : -Infinity;      // no stamp: older than stamps
+    };
+    const settled = (lv) => changedAt(lv) < settledBefore;
+    const orderOf = (lv) => Number(lv.order) || 0;
+    const byId = new Map(published.map(lv => [String(lv.id), lv]));
+    let last = -Infinity;
+    for (const id of ids) {
+        const lv = byId.get(id);
+        if (!lv || !settled(lv)) continue;
+        if (orderOf(lv) < last) return false;       // out of order
+        last = orderOf(lv);
+    }
+    const listed = new Set(ids);
+    // A settled level ahead of the last one listed, and missing: skipped.
+    return !published.some(lv => settled(lv) && !listed.has(String(lv.id)) && orderOf(lv) < last);
+}
+
 // { dealt, rounds } or { error }. `totals` is the body's own levels/ms/points.
-function checkBreakdown(body, totals, published) {
+// `startedAt` is the run token's `t`; see THE LEVEL LIST HAS TO BE THE GAME'S.
+// `view`, when given, is levelsAsPlayed's answer: each id's level AS PLAYED,
+// and the published order as of the token. Without it, as it always was —
+// every level as it stands now.
+function checkBreakdown(body, totals, published, startedAt, view) {
     const bad = (error) => ({ error });
     const ids = Array.isArray(body.ids) ? body.ids : null;
     const rounds = Array.isArray(body.rounds) ? body.rounds : null;
     if (!ids || !rounds || !ids.length || !rounds.length) {
         return bad("That run came without its level-by-level breakdown");
     }
-    if (ids.length > published.length) return bad("More levels than exist");
+    const listable = view ? Math.max(published.length, view.order.length) : published.length;
+    if (ids.length > listable) return bad("More levels than exist");
 
-    const byId = new Map(published.map(lv => [String(lv.id), lv]));
+    const byId = view ? view.dealt : new Map(published.map(lv => [String(lv.id), lv]));
     const seen = new Set();
     const dealt = [];
     for (const id of ids) {
@@ -579,6 +649,10 @@ function checkBreakdown(body, totals, published) {
         if (!lv) return bad("That run lists a level that is not published");
         seen.add(id);
         dealt.push(lv);
+    }
+    if (!(view ? followsPublishedOrder(ids, view.order, startedAt, view.settledBefore)
+               : followsPublishedOrder(ids, published, startedAt))) {
+        return bad("That run's levels are not the game's, in the game's order");
     }
     if (rounds.length > dealt.length) return bad("That run has more rounds than levels");
 
@@ -624,6 +698,161 @@ function checkBreakdown(body, totals, published) {
     return { dealt, rounds: out };
 }
 
+/* ---------------------------------------------------------------- LEVELS AS PLAYED
+
+   Every check above reads a level's numbers, and until now they were the
+   level's numbers as they stood when the run was SUBMITTED. An owner
+   shortening a clock, slowing the drops or unpublishing a level while
+   somebody was mid-run had their honest run refused for rules it never
+   played under. Levels are versioned now (see VERSIONS in ff-levels.js):
+   each save bumps the level's `rev` and keeps a snapshot of what these
+   checks read, in ff_level_versions, and the page sends back `revs`, the
+   version of each level in `ids` it was dealt.
+
+   EACH LEVEL IS JUDGED BY THE VERSION IT WAS PLAYED AT, found in this order:
+
+     1. the level as it stands, if it IS that version, was published, and
+        was last written before the token was issued;
+     2. otherwise that version's snapshot, if it was published and written
+        before the token;
+     3. otherwise the level as it stands, if it is published — exactly how
+        every run was judged before, so a run with no `revs` (a page from
+        before this), a version that has expired, or one that never existed
+        is no worse off than it was.
+
+   "BEFORE THE TOKEN" is what keeps the choice honest. A page has to have
+   the level to play it, and it fetches the levels before Play is pressed,
+   so any version it can really have played was written before its token.
+   One written later cannot have been, and falls through to step 3. An
+   OLDER version is honoured however old it is — a tab left open overnight
+   is still an honest player — for as long as the store keeps it.
+
+   AND THE VERSIONS HAVE TO HAVE BEEN LIVE TOGETHER. The page reads every
+   level in one request, so the versions it was dealt were all current at
+   one moment. That moment is at least the newest of their stamps, and
+   before any of them was replaced. A mix that never coexisted — the easy
+   old clock of one level beside a level added after it changed — is not
+   anything a page was ever served, and the whole run falls back to step 3.
+
+   THE ORDER CHECK GETS THE SAME TREATMENT. `order` is the levels as they
+   stood when the token was issued — each one's current document if it has
+   not been written since, otherwise its newest snapshot from before — so a
+   level unpublished or moved mid-run is judged where it was. And when
+   every level resolved to a version, the 26-hour slack becomes exact: the
+   page's list was read no earlier than the newest version it holds, so
+   only a level changed after THAT can honestly be missing from it or out
+   of place in it. A level that has held still since is held to the order,
+   however long the tab was open. */
+const VERSIONS = "ff_level_versions";
+const MAX_REV = 1e9;
+
+// ms, or -Infinity for a level that has never been stamped — the same
+// reading followsPublishedOrder gives it.
+function changedAtOf(lv) {
+    const ms = Date.parse((lv && (lv.updatedAt || lv.createdAt)) || "");
+    return Number.isFinite(ms) ? ms : -Infinity;
+}
+const revOf = (lv) => (Number.isInteger(lv && lv.rev) && lv.rev >= 0 ? lv.rev : 0);
+const msOf = (d) => (d instanceof Date ? d.getTime() : Date.parse(d || ""));
+
+/* The view checkBreakdown takes, or null when there is nothing to build one
+   from. `all` is every level document, published or not; `startedAt` the
+   token's `t`. Reads at most two small queries of ff_level_versions. */
+async function levelsAsPlayed(db, body, all, startedAt) {
+    const ids = Array.isArray(body.ids) ? body.ids : null;
+    if (!ids || !Number.isFinite(startedAt)) return null;
+    if (!ids.every(id => typeof id === "string" && id && id.length <= MAX_LEVEL_ID)) return null;
+    // Only a revs list that lines up with the ids, entry for entry, is read.
+    let revs = Array.isArray(body.revs) && body.revs.length === ids.length ? body.revs : null;
+    if (revs && !revs.every(r => Number.isInteger(r) && r >= 0 && r <= MAX_REV)) revs = null;
+
+    const t = startedAt;
+    const current = new Map(all.map(lv => [String(lv.id), lv]));
+    const col = db.collection(VERSIONS);
+
+    // The versions played, and the one after each — that is when it stopped
+    // being current, for AND THE VERSIONS HAVE TO HAVE BEEN LIVE TOGETHER.
+    const snaps = new Map();
+    if (revs) {
+        const keys = [];
+        ids.forEach((id, i) => { keys.push(`${id}:${revs[i]}`, `${id}:${revs[i] + 1}`); });
+        const rows = await col.find({ _id: { $in: keys } }, { projection: { supersededAt: 0 } }).toArray();
+        for (const s of rows) snaps.set(String(s._id), s);
+    }
+
+    const playedAs = (id, rev) => {
+        const cur = current.get(id);
+        if (cur && revOf(cur) === rev && cur.published === true && changedAtOf(cur) <= t) {
+            return { level: cur, at: changedAtOf(cur), until: Infinity };
+        }
+        const snap = snaps.get(`${id}:${rev}`);
+        const at = snap ? msOf(snap.at) : NaN;
+        if (!snap || snap.published !== true || !(at <= t)) return null;
+        const next = snaps.get(`${id}:${rev + 1}`);
+        const until = next ? msOf(next.at)
+            : (cur && revOf(cur) === rev + 1 ? changedAtOf(cur) : Infinity);
+        return { level: snap, at, until };
+    };
+
+    const resolve = (useRevs) => {
+        const dealt = new Map();
+        let versioned = Boolean(useRevs), newest = -Infinity, soonestGone = Infinity;
+        ids.forEach((id, i) => {
+            const played = useRevs ? playedAs(id, revs[i]) : null;
+            if (played) {
+                dealt.set(id, played.level);
+                newest = Math.max(newest, played.at);
+                soonestGone = Math.min(soonestGone, played.until);
+                return;
+            }
+            versioned = false;
+            const cur = current.get(id);
+            if (cur && cur.published === true) dealt.set(id, cur);
+        });
+        return { dealt, versioned, newest, soonestGone };
+    };
+    let r = resolve(revs);
+    if (r.versioned && !(r.soonestGone > r.newest)) r = resolve(null);
+
+    /* The published order as the token found it. A level written since has
+       its newest snapshot from before the token read instead; one with none
+       (created after, or its versions expired) is left out, which exempts
+       it from the order check exactly as a recent change always did. */
+    const since = all.filter(lv => changedAtOf(lv) > t).map(lv => String(lv.id));
+    const before = new Map();
+    if (since.length) {
+        const rows = await col.find({ id: { $in: since }, at: { $lte: new Date(t) } },
+            { projection: { supersededAt: 0 } }).toArray();
+        for (const s of rows) {
+            const had = before.get(s.id);
+            if (!had || s.rev > had.rev) before.set(s.id, s);
+        }
+    }
+    const order = [];
+    for (const lv of all) {
+        const id = String(lv.id);
+        const was = changedAtOf(lv) <= t ? lv : before.get(id);
+        if (!was || was.published !== true) continue;
+        const changed = was === lv ? changedAtOf(lv) : msOf(was.at);
+        order.push({
+            id, order: was.order,
+            updatedAt: Number.isFinite(changed) ? new Date(changed).toISOString() : undefined
+        });
+    }
+    order.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+
+    return {
+        dealt: r.dealt,
+        order,
+        /* Exact when every level is a known version; the old slack when
+           not. Never -Infinity: a list of levels that were never stamped
+           still has to hold the unstamped ones to the order, and those read
+           as -Infinity themselves (see changedAtOf). */
+        settledBefore: r.versioned ? Math.max(r.newest, -Number.MAX_VALUE) : t - LEVEL_LIST_SLACK_MS,
+        versioned: r.versioned
+    };
+}
+
 /* ---------------------------------------------------------------- THE RUN LOG
 
    The page logs every run to ff-runs.js as well, with the same token, and
@@ -637,19 +866,35 @@ function checkBreakdown(body, totals, published) {
    THE LOG MAY BE A MOMENT BEHIND. The page sends it first and waits for it,
    but a run reported as the tab closes sends both at once (see reportRun in
    js/fallinfurni.js), and either can land first. So this looks a few times
-   over a couple of seconds before deciding there is none. */
+   before deciding there is none.
+
+   FOR ABOUT FIVE SECONDS, BACKING OFF. It was five looks 400ms apart, 1.6
+   seconds in all — and the log's own request has a cold start to get
+   through, a database connection, a read of the levels and its rate-limit
+   counts before it writes anything. On a tab closing at the end of a run,
+   which sends both at once, the score regularly gave up first and the run
+   was lost as "no-run-log" with its log arriving a moment later. The looks
+   now start close together, for the ordinary case where the log is only
+   just behind, and spread out towards the end, so the whole wait is about
+   five seconds for a handful of reads — well inside the ten a function is
+   given, with the rest of this request's work on either side of it.
+
+   WHY NOT TAKE THE SCORE WITHOUT ITS LOG and check it when the log turns
+   up: that would make "send no log" a way round the one check that needs
+   two requests to agree, unless the score were held somewhere pending and
+   judged later by ff-runs — a second place that writes the board, for a
+   race that a longer wait closes. The wait is the smaller change. */
 const RUN_LOG = "ff_runs";
-const RUN_LOG_TRIES = 5;
-const RUN_LOG_GAP_MS = 400;
+const RUN_LOG_GAPS_MS = [200, 300, 500, 700, 1000, 1200, 1200];
 
 async function findRunLog(db, rid) {
     const col = db.collection(RUN_LOG);
-    for (let i = 0; i < RUN_LOG_TRIES; i++) {
+    for (let i = 0; ; i++) {
         const row = await col.findOne({ rid }, { projection: { _id: 0, levels: 1, points: 1 } });
         if (row) return row;
-        if (i < RUN_LOG_TRIES - 1) await new Promise(r => setTimeout(r, RUN_LOG_GAP_MS));
+        if (i >= RUN_LOG_GAPS_MS.length) return null;
+        await new Promise(r => setTimeout(r, RUN_LOG_GAPS_MS[i]));
     }
-    return null;
 }
 
 // A sentence saying how they differ, or null when they agree.
@@ -798,7 +1043,15 @@ exports.handler = async (event) => {
         const token = signRun(player, now);
         // The first Play press after the launch date marks the week's start.
         if (token) await noteOpened(db, gate, now);
-        return json(200, token ? { token } : { token: null, reason: "unavailable" });
+        /* OPEN, BUT BEFORE THE LAUNCH. The switch and the date are set
+           separately, and the switch can be opened first — whereupon the run
+           plays, and is refused at its end because its token predates the
+           launch (see below). The page then said "The game isn't open yet"
+           about a game the player had just played. So the token says when
+           runs start to count, and the page can say that instead, up front. */
+        const early = gate.launchMs !== null && now < gate.launchMs;
+        if (!token) return json(200, { token: null, reason: "unavailable" });
+        return json(200, early ? { token, countsFrom: gate.launchAt } : { token });
     }
 
     /* Not signed in is not an error — the game is playable either way, and
@@ -849,8 +1102,11 @@ exports.handler = async (event) => {
        for something that happened while it was being played. Closing the
        game stops new runs; the ones already started finish, and their tokens
        expire three hours after issue whatever happens. */
+    /* Begun before the launch: still "closed" to the board, but with the
+       moment it opens, so the page can say "Runs count from …" rather than
+       telling somebody who has just played it that the game is shut. */
     if (gate.launchMs !== null && claims.t < gate.launchMs) {
-        return json(200, { recorded: false, reason: "closed" });
+        return json(200, { recorded: false, reason: "closed", countsFrom: gate.launchAt });
     }
     /* ms is game time, which never runs faster than the wall clock — so a
        run claiming more of it than has passed since its token was issued
@@ -859,26 +1115,34 @@ exports.handler = async (event) => {
         return json(400, { error: "That run is longer than the time since it started" });
     }
 
-    let published;
+    /* EVERY level, drafts included, since LEVELS AS PLAYED needs to know
+       what the unpublished ones were when the token was issued — a level
+       unpublished mid-run was published then. `published` is still what it
+       always was, for the checks that want the levels as they are now. */
+    let all, published, view;
     try {
-        published = await db.collection(LEVELS)
-            .find({ published: true }, { projection: { _id: 0 } })
+        all = await db.collection(LEVELS)
+            .find({}, { projection: { _id: 0 } })
             .sort({ order: 1 })
             .toArray();
+        published = all.filter(lv => lv.published === true);
+        view = await levelsAsPlayed(db, body, all, claims.t);
         await ensureUniqueIndex(scores, "playerId");
     } catch (e) {
         console.error("ff-scores: could not read the levels", e);
         return json(503, { error: "The leaderboard could not be updated just now." });
     }
 
-    if (levels > published.length) {
+    // Now, or as the token found them: a level unpublished mid-run was one.
+    if (levels > Math.max(published.length, view ? view.order.length : 0)) {
         return json(400, { error: "More levels than exist" });
     }
 
     /* LEVEL BY LEVEL — see THE BREAKDOWN. Everything below is judged against
        the levels THIS run was dealt, by id, not against the first `levels`
-       of whatever is published now. */
-    const checked = checkBreakdown(body, { levels, ms, points }, published);
+       of whatever is published now — and each at the version it was played
+       at, when the run says so (see LEVELS AS PLAYED). */
+    const checked = checkBreakdown(body, { levels, ms, points }, published, claims.t, view);
     if (checked.error) return json(400, { error: checked.error });
     const dealt = checked.dealt;
 
@@ -1054,4 +1318,5 @@ module.exports.logDisagrees = logDisagrees;
 module.exports.floorMsFor = floorMsFor;
 module.exports.maxPointsFor = maxPointsFor;
 module.exports.earnedFloorMs = earnedFloorMs;
+module.exports.levelsAsPlayed = levelsAsPlayed;
 module.exports.launchWeek = launchWeek;

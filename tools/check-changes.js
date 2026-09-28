@@ -108,6 +108,15 @@ check("tag ORDER is a real change",
 check("furni listing updated",
     describe(room(), { ...room(), furni: { "r1.png": [[0, "bonsai.png"]] } }), ["furni"]);
 
+// The address and the furni write's bookkeeping are not news: a record
+// saved before slugManual existed gains the flag on its next save, and that
+// alone used to report "details".
+check("address-only save reports nothing",
+    describe(room(), { ...room(), slug: "tlm", slugAliases: ["the-little-maze"], slugManual: true, _slugAuto: false }), []);
+
+check("furni bookkeeping alone reports nothing",
+    describe(room(), { ...room(), furniRev: 7, furniPatch: { "r1.png": null } }), []);
+
 check("links",
     describe(room(), { ...room(), habboLink: "https://habbo.com/x" }), ["links"]);
 

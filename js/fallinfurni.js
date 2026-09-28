@@ -1028,19 +1028,46 @@
        under the finger at the click is not the one the player aimed at —
        they were not aiming at one at all. See the canvas click handler. */
     let fullscreenTapAt = 0;
+    /* THE TAP THAT ASKED, until its own click has come through — and the
+       swallow above is only armed from it once fullscreen has actually come
+       in (the fullscreenchange listener). It used to be armed the moment the
+       request was MADE, so a request the browser turned down — no
+       fullscreen on this device, or not a gesture it would honour — still
+       ate the tap, and the player's first touch on the room did nothing
+       for no reason they could see. If the click lands before fullscreen
+       does, the layout has not jumped yet and the tile under the finger is
+       the one they aimed at, so it walks. */
+    let fullscreenAskAt = 0;
+    // A request in flight, so a second tap does not make a second one.
+    let fullscreenPending = false;
 
-    // Returns whether it actually asked.
+    /* Returns whether it actually asked.
+
+       `fullscreenAsked` is set when the request SUCCEEDS, not when it is
+       made, and put back on a refusal. Set up front, a request the browser
+       rejected (Chrome refuses one from a tap it does not count as a user
+       gesture) used up the rotation's only ask, and the next tap - which
+       would have been allowed - was never offered it. */
     function goFullscreen() {
         const el = document.documentElement;
         const req = el.requestFullscreen || el.webkitRequestFullscreen;
         if (!req || document.fullscreenElement || document.webkitFullscreenElement) return false;
-        if (fullscreenAsked || fullscreenRefused) return false;
-        fullscreenAsked = true;
-        Promise.resolve(req.call(el)).then(() => {
+        if (fullscreenAsked || fullscreenRefused || fullscreenPending) return false;
+        fullscreenPending = true;
+        let asking;
+        try { asking = Promise.resolve(req.call(el)); }
+        catch (e) { asking = Promise.reject(e); }       // old WebKit throws rather than rejects
+        asking.then(() => {
+            fullscreenPending = false;
+            fullscreenAsked = true;
             fullscreenOurs = true;
             const lock = screen.orientation && screen.orientation.lock;
             if (lock) Promise.resolve(lock.call(screen.orientation, "landscape")).catch(() => {});
-        }).catch(() => {});
+        }).catch(() => {
+            fullscreenPending = false;
+            fullscreenAsked = false;
+            fullscreenAskAt = 0;
+        });
         return true;
     }
 
@@ -1121,17 +1148,37 @@
         }
 
         /* The gesture that buys fullscreen — at most once per rotation, and
-           not at all once the player has left it; see goFullscreen. */
-        document.addEventListener("pointerdown", () => {
+           not at all once the player has left it; see goFullscreen.
+
+           ON THE WAY UP, NOT DOWN. A pointerdown is not the end of a tap —
+           it is also the start of a scroll, a pinch or a long press — and
+           asking from it put the page into fullscreen under a finger that
+           was still moving, which then landed as a drag across a room that
+           had just changed size. Released, it is a tap; and a touch
+           pointerup is itself a gesture the browsers accept for this. */
+        document.addEventListener("pointerup", () => {
             if (document.body.classList.contains("ff-immersive") && goFullscreen()) {
-                fullscreenTapAt = performance.now();
+                fullscreenAskAt = performance.now();
             }
         }, { passive: true });
 
         /* Leaving a fullscreen WE entered is the player's answer, and it is
            kept. A fullscreen they entered themselves is not ours to track. */
         const leftFullscreen = () => {
-            if (document.fullscreenElement || document.webkitFullscreenElement) return;
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                /* ENTERED, and it was our ask: NOW the layout jumps, so the
+                   asking tap's click - if it has not come through yet - is
+                   aimed at a room that has moved. Arm the swallow for it;
+                   see fullscreenAskAt. Bounded by the same second the click
+                   handler allows, so a fullscreen that took its time cannot
+                   eat a later, deliberate tap. */
+                if ((fullscreenPending || fullscreenOurs) && fullscreenAskAt
+                    && performance.now() - fullscreenAskAt < 1000) {
+                    fullscreenTapAt = fullscreenAskAt;
+                }
+                fullscreenAskAt = 0;
+                return;
+            }
             if (fullscreenOurs) fullscreenRefused = true;
             fullscreenOurs = false;
         };
@@ -1216,14 +1263,23 @@
             state.acceptHeld = true;
             return;
         }
-        /* Landed. The beat is restarted from THIS frame — the first that
-           has seen it on the floor — and not from the last one that saw it
-           falling, which was before it touched down: stamped with that, the
-           seat would count as sat on a few milliseconds before it existed,
-           and the round's time would be shorter than its own drops allow. */
+        /* Landed. The beat is restarted from THE LANDING — the moment the
+           piece touched down, which the round knows (Game.landedAt) — and
+           not from the last frame that saw it falling, which was before it
+           touched down: stamped with that, the seat would count as sat on a
+           few milliseconds before it existed, and the round's time would be
+           shorter than its own drops allow.
+
+           Nor from THIS frame, the first that has seen it on the floor, as
+           it was: the walk runs before the round's tick, so the landing is
+           only seen the frame after it happened, and at 15fps that frame is
+           66ms late - charged to the player's clock for every held seat, on
+           a slow screen and not a fast one. `now` stays the fallback for a
+           piece the round has no landing for. */
         if (state.acceptHeld) {
             state.acceptHeld = false;
-            state.acceptAt = now;
+            const landed = game && game.landedAt ? game.landedAt(pending) : null;
+            state.acceptAt = landed === null ? now : Math.min(now, landed);
         }
 
         /* THE BEAT IS NOT PLAY TIME. A seat reached with less than ACCEPT_MS
@@ -1289,7 +1345,12 @@
                FINISHED round, so level two drew level one's furni and then
                advanced again. The player says when to go on now, and
                `showRoundEnd` is the one place that moves between levels. */
-            roundEndedAt = now;
+            /* When the round ENDED, which the round stamped itself — the
+               landing or the seat that finished it, see `tick` in
+               room-game.js — rather than this frame, which noticed it up to
+               a frame later. This is the moment the run's time is read at. */
+            roundEndedAt = (game.endedAt !== null && game.endedAt !== undefined)
+                ? Math.min(now, game.endedAt) || now : now;
             showRoundEnd(now);
             // If that was the run's last round, the board is told now rather
             // than when the button is pressed - see settleRun.
@@ -3649,6 +3710,12 @@
         submitRun(cleared, points, o.endedAt || 0, {
             rounds: scoredRounds(levels),
             ids: (theRun.levels || []).map(l => String((l && l.id) || "")),
+            /* And the VERSION of each, as ff-levels.js served it: the board
+               judges every round by the level as it was played, so an owner
+               editing one mid-run does not refuse this run for numbers it
+               never saw (see LEVELS AS PLAYED in ff-scores.js). A level from
+               before versions has no rev, which is version 0. */
+            revs: (theRun.levels || []).map(l => (l && Number.isInteger(l.rev) && l.rev >= 0 ? l.rev : 0)),
             logged, unloading: !!o.unloading
         });
     }
@@ -3750,6 +3817,9 @@
        runSubmitted keeps this from sending it twice. */
     window.addEventListener("pagehide", (ev) => {
         if (ev.persisted) return;
+        /* A score still waiting on the log goes NOW - see unsentScore. First,
+           and whatever `run` is: it belongs to a run that already settled. */
+        flushUnsentScore();
         if (!run) return;
         const done = run.settled();
         reportRun(run, done ? (done.result === "finished" ? "won" : "lost") : "abandoned",
@@ -3774,14 +3844,67 @@
     let runTokenNow = null;
     // Once per run: the board is told when the result settles, and only then.
     let runSubmitted = false;
+    /* A SCORE THAT HAS BEEN DECIDED BUT NOT YET SENT: { body, sent }, or null.
+
+       submitRun waits — for the token, then for up to LOG_WAIT_MS on the run
+       log — before it sends the score, and runSubmitted is set before it
+       starts. So a tab closed on the last round's panel during that wait
+       (which is exactly when people close it: the run is over) lost the
+       score outright. pagehide came round, reportRun saw runSubmitted, and
+       returned; the await it was waiting on never got its turn. The run's
+       best result of the evening was simply never sent.
+
+       So the body is kept here from the moment it is known, and pagehide
+       sends it at once if it is still here, the same way the unloading path
+       sends everything: keepalive, with the token as it stands. `sent` is
+       shared with submitRun, so whichever gets there first is the only one
+       that sends. */
+    let unsentScore = null;
+
+    function flushUnsentScore() {
+        const p = unsentScore;
+        if (!p || p.sent) return;
+        p.sent = true;
+        unsentScore = null;
+        try {
+            fetch("/.netlify/functions/ff-scores", {
+                method: "POST", credentials: "same-origin", keepalive: true,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ...p.body, run: p.token || null })
+            }).catch(() => {});
+        } catch (e) { /* a browser that refuses keepalive; nothing else can be done now */ }
+    }
+
+    /* WHEN RUNS START TO COUNT, if this run began before they do: the token
+       says so (see ?action=start in ff-scores.js) when the game's switch has
+       been opened ahead of its launch date. The board refuses such a run at
+       its end with the same date, and the page says "Runs count from …"
+       rather than that the game is not open — which the player, having just
+       played it, knows to be false. */
+    let runCountsFrom = null;
 
     function requestRunToken() {
+        runCountsFrom = null;
         return fetch("/.netlify/functions/ff-scores?action=start", {
             method: "POST", credentials: "same-origin"
         })
             .then(r => (r.ok ? r.json() : null))
-            .then(d => (d && typeof d.token === "string" ? d.token : null))
+            .then(d => {
+                if (d && typeof d.countsFrom === "string") runCountsFrom = d.countsFrom;
+                return d && typeof d.token === "string" ? d.token : null;
+            })
             .catch(() => null);
+    }
+
+    /* The launch as the player's own clock reads it: a moment, not a day,
+       since the switch and the date can be hours apart on the same one. */
+    function countsFromText(iso) {
+        const d = new Date(Date.parse(iso));
+        if (isNaN(d.getTime())) return null;
+        return d.toLocaleString("en-GB", {
+            weekday: "long", day: "numeric", month: "long",
+            hour: "2-digit", minute: "2-digit", timeZoneName: "short"
+        });
     }
 
     /* SUBMITTED THE MOMENT THE RESULT IS KNOWN, not when a button is pressed.
@@ -3839,6 +3962,22 @@
         // below belongs to the old one and is dropped rather than written
         // over the new run's panel.
         const tokenFor = runToken;
+        /* THE SCORE, READY TO GO, held where pagehide can reach it — see
+           unsentScore. Put there before the first await, because it is the
+           awaits that the tab can close during. */
+        const pending = {
+            body: {
+                levels: levelsCleared, ms, points, run: null,
+                rounds: x.rounds || [], ids: x.ids || [], revs: x.revs || []
+            },
+            sent: false,
+            /* THIS run's token, as soon as it is known — not runTokenNow at
+               the moment of sending, which belongs to whatever run is
+               current by then. */
+            token: runTokenNow
+        };
+        if (tokenFor) tokenFor.then((t) => { pending.token = t; });
+        unsentScore = pending;
         /* Unloading, nothing may be awaited before the request is made: the
            page can be gone before an await's turn comes round. The token is
            long back by then in practice, so the settled copy is used. */
@@ -3850,6 +3989,10 @@
         if (!x.unloading && x.logged) {
             await Promise.race([x.logged, new Promise(r => setTimeout(r, LOG_WAIT_MS))]);
         }
+        // The tab began closing during the wait, and pagehide sent it.
+        if (pending.sent) return;
+        pending.sent = true;
+        if (unsentScore === pending) unsentScore = null;
         try {
             const res = await fetch("/.netlify/functions/ff-scores", {
                 method: "POST",
@@ -3863,10 +4006,7 @@
                 // whose contents came from the page rather than the session).
                 /* `rounds` and `ids` are the per-level breakdown the server
                    now checks the totals against — see ff-scores.js. */
-                body: JSON.stringify({
-                    levels: levelsCleared, ms, points, run: token,
-                    rounds: x.rounds || [], ids: x.ids || []
-                })
+                body: JSON.stringify({ ...pending.body, run: token })
             });
             const data = await res.json().catch(() => ({}));
             if (runToken !== tokenFor) return;
@@ -3886,8 +4026,13 @@
                 status(`Not your best - ${Number(data.best.points || 0).toLocaleString()} points still stands.`, "busy");
             } else if (data.reason === "closed") {
                 /* An admin testing the game while it is shut. The server keeps
-                   those runs off the public board; this just says so plainly. */
-                boardSays("The game isn't open yet, so this run stays off the leaderboard.", false);
+                   those runs off the public board; this just says so plainly.
+                   OR the game open ahead of its launch date, when the server
+                   says from when runs count — see runCountsFrom. */
+                const from = countsFromText(data.countsFrom || runCountsFrom || "");
+                boardSays(from
+                    ? `Runs count from ${from}, so this one stays off the leaderboard.`
+                    : "The game isn't open yet, so this run stays off the leaderboard.", false);
             } else if (data.reason === "no-run-token" || data.reason === "stale-run"
                 || data.reason === "no-run-log") {
                 /* The start request never came back (or the run outlived its
@@ -4725,6 +4870,12 @@
                fullscreenTapAt. A second is far longer than a tap's click
                follows its pointerdown and far shorter than a deliberate
                second tap. */
+            /* Armed only once fullscreen has really come in (see
+               fullscreenAskAt), so a refused request costs no tap. Any click
+               clears the ask as well: the asking tap's click has now been
+               and gone, and a fullscreen arriving after it must not eat the
+               next one. */
+            fullscreenAskAt = 0;
             if (fullscreenTapAt && performance.now() - fullscreenTapAt < 1000) {
                 fullscreenTapAt = 0;
                 return;

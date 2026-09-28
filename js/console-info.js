@@ -360,9 +360,17 @@ document.addEventListener("DOMContentLoaded", () => {
     /* On a leash, like every other request now (see _timedFetch in
        js/api.js): a POST that hung left the button disabled and "Sending..."
        on screen for good. 30s for the lead, past Netlify's 26s ceiling on a
-       function so a slow save is not reported as a failure it wasn't; 90s
-       for an image, which is the visitor's upload bandwidth. Retrying after
-       either is safe now — see clientRef and uploadedKeys below. */
+       function so a slow save is not reported as a failure it wasn't; for an
+       image, a leash sized to the picture (Api.uploadTimeout), since that
+       time is the visitor's upload bandwidth. Retrying after either is safe
+       now — see clientRef and uploadedKeys below.
+
+       "Nothing will be sent twice" is only true of the SAME submission: the
+       server answers a repeated clientRef with the lead it already has, so a
+       form changed after a failed send is a new submission with a new ref
+       (see editedSubmission), and the message says as much. */
+    const TOO_LONG = "That took too long. Press Send again: unless you change something first, nothing will be sent twice.";
+
     async function postJson(url, body, ms) {
         const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
         if (controller) setTimeout(() => controller.abort(), ms || 30000);
@@ -376,11 +384,23 @@ document.addEventListener("DOMContentLoaded", () => {
                 signal: controller ? controller.signal : undefined
             });
         } catch (e) {
-            if (e && e.name === "AbortError") throw new Error("That took too long. Press Send again: nothing will be sent twice.");
+            if (e && e.name === "AbortError") throw new Error(TOO_LONG);
             throw new Error("That didn't send. Check your connection and try again.");
         }
-        const out = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(out.error || "That didn't send. Try again in a minute.");
+        /* The leash is still running while the body is read, so it can run
+           out HERE — and this used to swallow that into {}, which on an
+           upload made the stored key `undefined` and sent the lead on with a
+           hole where the picture was. A timeout during the read is the same
+           timeout, and a 2xx whose body can't be read is not a success. */
+        let out;
+        try {
+            out = await res.json();
+        } catch (e) {
+            if (e && e.name === "AbortError") throw new Error(TOO_LONG);
+            if (res.ok) throw new Error("That didn't send. Try again in a minute.");
+            out = {};
+        }
+        if (!res.ok) throw new Error((out && out.error) || "That didn't send. Try again in a minute.");
         return out;
     }
 
@@ -452,6 +472,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (fileCount > DeadEnds.LEAD_IMAGES_MAX) { say(`Up to ${DeadEnds.LEAD_IMAGES_MAX} images at a time.`, true); return; }
 
         sending = true;
+        editedWhileSending = false;
         const sendBtn = document.getElementById("ci-send");
         sendBtn.disabled = true;
         if (!clientRef) clientRef = newClientRef();
@@ -466,7 +487,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     const had = uploadedKeys.get(f);
                     if (had) { images.push(had); continue; }
                     say(`Sending image ${done} of ${fileCount}...`);
-                    const up = await postJson(`${LEADS_URL}?action=upload`, { dataUrl: await readAsDataUrl(f) }, 90000);
+                    const dataUrl = await readAsDataUrl(f);
+                    // Sized to the picture, as js/api.js sizes the admin's
+                    // uploads: a flat 90s cut off a 4MB image on a slow
+                    // uplink that was getting there.
+                    const ms = typeof Api !== "undefined" && Api.uploadTimeout ? Api.uploadTimeout(dataUrl.length) : 90000;
+                    const up = await postJson(`${LEADS_URL}?action=upload`, { dataUrl }, ms);
+                    if (!up || !up.key) throw new Error("That didn't send. Try again in a minute.");
                     uploadedKeys.set(f, up.key);
                     images.push(up.key);
                 }
@@ -489,12 +516,43 @@ document.addEventListener("DOMContentLoaded", () => {
             renderInfo();
             Console.showThanks("A person reads every submission, anything that fills a gap will be added to the archive and credit given to you. Thank you!");
         } catch (err) {
+            // Changed while this was on its way: that change is not in what
+            // was sent, so the retry is a new submission (editedSubmission).
+            if (editedWhileSending) clientRef = null;
             say(err.message, true);
         } finally {
             sending = false;
+            editedWhileSending = false;
             if (document.body.contains(sendBtn)) sendBtn.disabled = false;
         }
     }
+
+    /* A CHANGED FORM IS A NEW SUBMISSION.
+
+       clientRef is kept through retries so a lead that DID land before its
+       answer timed out is not saved twice. But the server answers a repeated
+       ref with the lead it already has and throws the new body away — so a
+       visitor who, after "That took too long", fixed a typo or added a row
+       and pressed Send again was told "Thank you!" for the first version,
+       and their edit silently went nowhere. Any change to the form after a
+       ref has been made now drops it; the next Send makes a fresh one. A
+       change made while a send is still in flight is held until that send
+       has answered (see the catch above): if it succeeded the form is
+       redrawn anyway, and if it failed the ref goes then. Uploaded pictures
+       are unaffected — uploadedKeys is keyed by the File, which an edit
+       elsewhere does not change. */
+    let editedWhileSending = false;
+    function editedSubmission() {
+        if (!clientRef) return;
+        if (sending) editedWhileSending = true;
+        else clientRef = null;
+    }
+    infoBody.addEventListener("input", editedSubmission);
+    infoBody.addEventListener("change", editedSubmission);
+    infoBody.addEventListener("click", e => {
+        // Adding or removing a row changes the submission as surely as typing.
+        if (e.target.id === "ci-add" || e.target.classList.contains("console-info-remove")) editedSubmission();
+    });
 
     /* ------------------------------------------------------------ opening */
 

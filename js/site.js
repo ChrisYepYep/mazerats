@@ -253,7 +253,14 @@ const FocusTrap = (() => {
     const FLOATING = "#console-modal, .console-modal, .photo-frame, .furni-card";
     // Top-level things that are not page content, or that must go on being
     // heard while a window is up (the "Saved" note is a live region).
-    const NEVER_INERT = "script, style, link, template, noscript, [role='status'], [role='alert'], [aria-live], .saved-note, [data-trap-keep]";
+    //
+    // .ff-rotate is Fallin' Furni's "turn your screen sideways" gate. It is a
+    // top-level cover over the whole page, and with the game's pause dialog
+    // open it was made inert along with everything else — so a phone turned
+    // upright mid-pause showed a gate whose "Back to Maze Rats" could not be
+    // pressed, over a dialog that could not be seen. Named here as well as by
+    // the data-trap-keep the page puts on it, so neither alone is load-bearing.
+    const NEVER_INERT = "script, style, link, template, noscript, [role='status'], [role='alert'], [aria-live], .saved-note, .ff-rotate, [data-trap-keep]";
     const CANDIDATES = [
         "a[href]", "area[href]", "button", "input", "select", "textarea", "iframe",
         "summary", "audio[controls]", "video[controls]", "[tabindex]",
@@ -364,20 +371,57 @@ const FocusTrap = (() => {
         }
     }
 
+    /* What else is open beside the front window and stays in its Tab cycle,
+       after the window's own controls.
+
+       The "Saved" note and the Habbo Console are never made inert (see
+       NEVER_INERT and FLOATING), so a pointer could always reach them — but
+       the cycle below is moved by hand around the dialog's region alone, so
+       from the keyboard they were simply unreachable while the maze window
+       was open: Tab went round the window and never came out. The note's
+       "Take me there" is the one thing it offers, and the console is a whole
+       window. They are appended to the END of the cycle rather than skipped,
+       so Tab past the window's last control visits them and then wraps. */
+    const KEPT_IN_CYCLE = ".saved-note, #console-modal";
+
+    function extrasFor(top) {
+        return Array.from(document.querySelectorAll(KEPT_IN_CYCLE)).filter(el =>
+            !top.region.contains(el) && !el.classList.contains("is-out") && isShown(el));
+    }
+
     document.addEventListener("keydown", e => {
         if (e.key !== "Tab" || e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return;
-        const top = topDialog();
-        sync(top);
-        if (!top) return;
+        /* Through the same safety net refresh() has. The mutation observer's
+           refresh() was wrapped, but this handler called topDialog() and
+           sync() bare, so anything that threw in them (a getComputedStyle
+           on a node mid-removal, a comparison against a window being torn
+           down) threw on EVERY Tab for as long as the condition lasted, and
+           left whatever sync() had half-done — inert set on the page, the
+           scroll lock on — with nothing to undo it. Now a failure hands the
+           page back (refresh's own catch) and Tab is left to the browser,
+           before anything is prevented. The list is built inside the same
+           net, for the same reason. */
+        let top, extras, list, inExtra;
         const active = document.activeElement;
-        // A floating window OUTSIDE the dialog (the console) keeps the
-        // browser's own Tab order. The maze window's photo frames and furni
-        // cards live inside its overlay now, so they are part of the region
-        // and Tab cycles through them with everything else.
-        const floating = active && active !== document.body && active.closest && active.closest(FLOATING);
-        if (floating && !top.region.contains(floating)) return;
-
-        const list = tabbables(top.region);
+        try {
+            top = topDialog();
+            sync(top);
+            if (!top) return;
+            extras = extrasFor(top);
+            inExtra = el => extras.some(x => x.contains(el));
+            // A floating window OUTSIDE the dialog keeps the browser's own
+            // Tab order — unless it is one of the extras above, which are
+            // part of the cycle. The maze window's photo frames and furni
+            // cards live inside its overlay now, so they are part of the
+            // region and Tab cycles through them with everything else.
+            const floating = active && active !== document.body && active.closest && active.closest(FLOATING);
+            if (floating && !top.region.contains(floating) && !inExtra(floating)) return;
+            list = tabbables(top.region);
+            extras.forEach(x => { list.push(...tabbables(x)); });
+        } catch (err) {
+            refresh();
+            return;
+        }
         e.preventDefault();
         if (!list.length) {
             // Nothing to move between: hold focus on the window itself.
@@ -390,7 +434,7 @@ const FocusTrap = (() => {
             moveTo(list[(idx + (e.shiftKey ? list.length - 1 : 1)) % list.length]);
             return;
         }
-        if (!active || !top.region.contains(active)) {
+        if (!active || (!top.region.contains(active) && !inExtra(active))) {
             moveTo(list[0]);
             return;
         }
@@ -462,6 +506,31 @@ const FocusTrap = (() => {
     if (document.body) observe();
     else document.addEventListener("DOMContentLoaded", observe);
 
+    /* AND WHEN home.html's GATE REVEALS THE PAGE.
+
+       <html> ships visibility:hidden until the gate in home.html's <head>
+       has decided, and isShown() rightly counts everything under it as not
+       shown. A window opened in that time — a pasted /maze/<slug> link opens
+       the room modal as soon as the data lands, which can be before the gate
+       answers — was therefore not a dialog as far as this trap knew, and
+       nothing told it otherwise when the page appeared: the reveal is a
+       style change on <html>, and the observer above watches <body>. Tab
+       walked straight out of the window behind it until something else
+       happened to touch a dialog.
+
+       So <html>'s own style and the gate's peek flag are watched too (not
+       its class: sync() writes has-open-dialog there, and must not wake
+       itself up), the gate's reveal() calls refresh() itself when this has
+       loaded, and one more refresh at DOMContentLoaded covers a reveal that
+       happened while this file was still on its way. */
+    try {
+        new MutationObserver(refresh).observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ["style", "data-gate-peek"]
+        });
+    } catch (e) { /* no observer: the gate's own call below still reaches it */ }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", refresh);
+
     return { refresh };
 })();
 window.FocusTrap = FocusTrap;
@@ -506,14 +575,44 @@ window.RecordAddress = RecordAddress;
    <head> said at load: at /maze/<slug> the share function wrote the maze's
    tags there, and keeps the archive's in data-archive (see
    netlify/functions/share.js). Closing the window leaves the archive, so the
-   archive's are the ones put back. */
+   archive's are the ones put back.
+
+   ---- A STACK OF HOLDERS, NOT ONE (28 Sept 2026).
+
+   It used to remember a single owner. Open a maze, open the Guides over it,
+   close the Guides: restore("guides") put the ARCHIVE's title back, under a
+   maze window that was still open and still naming its maze in the address
+   bar. And the other order — close the maze first — did nothing at all,
+   because "modal" was no longer the owner, so the guide's title outlived its
+   window. Now every holder is kept in the order it arrived, restore(who)
+   takes out that one wherever it sits, and what shows is whoever is left on
+   top — or the archive's, once nobody is. A holder that names itself again
+   (the Guides moving from one guide to the next) is updated where it
+   stands rather than moved to the top, so it cannot jump in front of a
+   window opened after it. */
 const PageMeta = (() => {
     const titleEl = () => document.querySelector("title");
     const canonicalEl = () => document.querySelector('link[rel="canonical"]');
     const ogUrlEl = () => document.querySelector('meta[property="og:url"]');
     const archive = (el, attr) => (el ? (el.hasAttribute("data-archive") ? el.getAttribute("data-archive") : el.getAttribute(attr)) : null);
     let saved = null;
-    let owner = null;
+    const holders = [];         // { who, title, url }, oldest first
+
+    // Whoever is on top, or the archive's own when nobody is.
+    function apply() {
+        const top = holders[holders.length - 1];
+        const title = top && top.title ? top.title : saved.title;
+        document.title = title;
+        const c = canonicalEl(), o = ogUrlEl();
+        if (top && top.url) {
+            if (c) c.setAttribute("href", top.url);
+            if (o) o.setAttribute("content", top.url);
+        } else {
+            if (c && saved.canonical !== null) c.setAttribute("href", saved.canonical);
+            if (o && saved.ogUrl !== null) o.setAttribute("content", saved.ogUrl);
+        }
+    }
+
     return {
         /* Names `url` and `title` for as long as `who` holds it. A second
            window taking over keeps the page's originals rather than saving
@@ -531,23 +630,28 @@ const PageMeta = (() => {
                 d.innerHTML = saved.title;
                 saved.title = d.value;
             }
-            owner = who;
-            if (title) document.title = title;
-            if (url) {
-                const c = canonicalEl(), o = ogUrlEl();
-                if (c) c.setAttribute("href", url);
-                if (o) o.setAttribute("content", url);
+            const entry = holders.find(h => h.who === who);
+            if (entry) {
+                entry.title = title;
+                entry.url = url;
+            } else {
+                holders.push({ who, title, url });
             }
+            apply();
         },
-        // Puts the page's own back, if `who` is still the one holding it.
+        /* Lets go of `who`'s hold, and shows whoever is left — the page's
+           own once nobody is. No `who` lets go of everything. */
         restore(who) {
-            if (!saved || (who && owner && who !== owner)) return;
-            document.title = saved.title;
-            const c = canonicalEl(), o = ogUrlEl();
-            if (c && saved.canonical !== null) c.setAttribute("href", saved.canonical);
-            if (o && saved.ogUrl !== null) o.setAttribute("content", saved.ogUrl);
-            saved = null;
-            owner = null;
+            if (!saved) return;
+            if (who) {
+                const at = holders.findIndex(h => h.who === who);
+                if (at === -1) return;
+                holders.splice(at, 1);
+            } else {
+                holders.length = 0;
+            }
+            apply();
+            if (!holders.length) saved = null;
         }
     };
 })();
@@ -583,7 +687,10 @@ document.addEventListener("click", e => {
     if (window.RecordAddress && RecordAddress.parse(location.pathname)) {
         const oldURL = location.href;
         try {
-            history.replaceState(history.state, "", "#" + frag);
+            // The whole path, not "#frag" alone: a relative URL here
+            // resolves against <base href="/">, which made it "/#frag" —
+            // the landing page's address, not this one.
+            history.replaceState(history.state, "", location.pathname + location.search + "#" + frag);
             window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL: location.href }));
             const el = document.getElementById(frag);
             if (el) el.scrollIntoView();
@@ -685,7 +792,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     // is rebuilt and an event has dropped out of it, "the one after the
     // current one" has to be found again rather than assumed to be index+1.
     let showing = upcoming[0] || null;
-    slideEl.innerHTML = slideMarkup(showing);
+
+    /* Every write of the slide goes through here, for two things the bare
+       innerHTML did not do.
+
+       FOCUS FOLLOWS THE LINK. The hold below keeps the ticker still while it
+       has focus, but an event that ENDS under that focus is still replaced —
+       and innerHTML throws the focused <a> away, dropping a keyboard user on
+       <body> at the top of the page. So when focus was inside the widget it
+       is put on the new link, without scrolling. ("No upcoming events" has
+       no link to take it; that one case still lets focus go.)
+
+       THE GATED REWRITE. The link points at /event/<slug>, which on a gated
+       site bounces a visitor through home.html's gate to the landing page.
+       The rewrite at the foot of this file runs once at DOMContentLoaded,
+       before this slide exists, so it is run again on every slide written. */
+    function writeSlide(event) {
+        const hadFocus = widget.contains(document.activeElement);
+        slideEl.innerHTML = slideMarkup(event);
+        if (typeof pointGatedLinksHome === "function") pointGatedLinksHome(slideEl);
+        if (hadFocus && !widget.contains(document.activeElement)) {
+            const link = slideEl.querySelector("a[href]");
+            if (link) link.focus({ preventScroll: true });
+        }
+    }
+    writeSlide(showing);
 
     /* HELD STILL while somebody is pointing at it or has tabbed into it.
        It used to turn over every ten seconds regardless, so a reader halfway
@@ -722,7 +853,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (only !== showing) {
                 showing = only;
                 index = 0;
-                slideEl.innerHTML = slideMarkup(showing);
+                writeSlide(showing);
             }
             return;
         }
@@ -736,7 +867,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const nextIndex = at === -1 ? (index % upcoming.length) : (at + 1) % upcoming.length;
 
         if (hovered || focused || (reducedMotion && reducedMotion.matches)) {
-            slideEl.innerHTML = slideMarkup(upcoming[nextIndex]);
+            writeSlide(upcoming[nextIndex]);
             index = nextIndex;
             showing = upcoming[nextIndex];
             return;
@@ -754,7 +885,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         slideEl.style.transition = "none";
         slideEl.style.transform = "translateY(100%)";
-        slideEl.innerHTML = slideMarkup(upcoming[nextIndex]);
+        writeSlide(upcoming[nextIndex]);
 
         // Commits the "start" transforms above before the transition to
         // their end state is requested below — otherwise both style
@@ -840,8 +971,13 @@ document.addEventListener("DOMContentLoaded", () => {
    Written against the cached value rather than site.js's own settings fetch
    on purpose. That fetch resolves some time after the page is usable, and a
    link that changes where it points while somebody is reaching for it is a
-   worse thing than the round trip this avoids. */
-document.addEventListener("DOMContentLoaded", () => {
+   worse thing than the round trip this avoids.
+
+   A FUNCTION NOW, taking the part of the page to look in, because not every
+   such link exists at DOMContentLoaded: the header ticker writes its
+   /event/<slug> link later, and again on every turn, and calls this on
+   each new slide (see writeSlide). */
+function pointGatedLinksHome(root) {
     let state = null, token = null;
     try {
         state = localStorage.getItem("mazerats_landing_state");
@@ -849,6 +985,13 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) { return; }      // private mode: nothing known, change nothing
     if (token) return;
     if (state !== "coming-soon" && state !== "maintenance") return;
+    /* Never on the archive itself. A visitor looking at home.html has been
+       let in by its gate — and this can run BEFORE that gate has written its
+       answer (the page parses while it is still hidden, and the ticker can
+       land first), so a cached "coming-soon" from last week would otherwise
+       point the ticker's and the archive's own links at the landing page on
+       the very visit the site opened to them. */
+    if (document.body && document.body.dataset.page === "home") return;
 
     /* Every spelling of the archive's address, not just the bare filename.
        The page answers to /home and /home.html alike, links to it are
@@ -860,12 +1003,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
        The fragment is dropped rather than carried over: it names a maze in
        an archive this visitor cannot open, and the landing page has nothing
-       to do with it. */
-    const ARCHIVE = /^(?:\/)?home(?:\.html)?(?:[#?].*)?$/;
-    document.querySelectorAll("a[href]").forEach(a => {
+       to do with it.
+
+       AND THE RECORD ADDRESSES. /maze/<slug>, /event/<slug> and
+       /guides/<slug> are home.html too (served by netlify/functions/share.js)
+       behind the same gate, and they are what the ticker, js/guess.js and
+       the share pages link to now. Matching only the "home" spellings missed
+       every one of them — the same bug, one rename later. */
+    const ARCHIVE = /^(?:\/)?(?:home(?:\.html)?|(?:maze|event|guides)\/[^?#]*)(?:[#?].*)?$/;
+    (root || document).querySelectorAll("a[href]").forEach(a => {
         if (ARCHIVE.test(a.getAttribute("href") || "")) a.href = "/";
     });
-});
+}
+document.addEventListener("DOMContentLoaded", () => pointGatedLinksHome(document));
 
 // Privacy Policy link, appended onto the end of .site-footer's own
 // copyright line (its last <p>) rather than as a separate line of its

@@ -34,7 +34,7 @@
    with it — so a preset cannot carry `}` out of its declaration and start
    writing rules of its own. */
 const { getDb } = require("./_db");
-const { isAuthorized, canWrite, refuseWrite, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE } = require("./_auth");
+const { isAuthorized, canWrite, refuseWrite, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson } = require("./_cache");
 
@@ -159,7 +159,10 @@ exports.handler = async (event) => {
         return await write(event, db, col, params);
     } catch (e) {
         console.error("palettes: write failed", e);
-        return AUTH_UNAVAILABLE;
+        /* Only the tagged lookup failure is an outage to retry; anything
+           else is a fault, and answering it as "unavailable" hid it. */
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        return json(500, { error: "The palette could not be saved." });
     }
 };
 

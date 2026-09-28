@@ -13,7 +13,13 @@
    is already easy to find. */
 const { getDb } = require("./_db");
 const { headersFor } = require("./_headers");
-const { assignSlugs, PROJECTION: SLUG_FIELDS } = require("./_slugs");
+const { assignSlugs, loadRetired, PROJECTION: SLUG_FIELDS } = require("./_slugs");
+
+/* The deleted records' addresses, which the API works addresses out
+   around (see _slugs.js); the same here so the two cannot disagree. None
+   when they cannot be read, as the API does: every record's address is
+   stored, and a stored one does not depend on them. */
+const retiredOf = (db, kind) => loadRetired(db, kind).catch(() => []);
 
 const CACHE = "public, s-maxage=3600, stale-while-revalidate=86400";
 /* What the pages-only fallback goes out with when the database could not be
@@ -43,7 +49,10 @@ function esc(str) {
 // value teaches a crawler to ignore the field. Records carry "YYYY-MM-DD"
 // (a maze's opening) or a full ISO timestamp (an event's start).
 function lastmod(value) {
-    const text = String(value || "").slice(0, 10);
+    // A stamp some other tool stored as a Date reads as its instant, not as
+    // "Mon Sep 28…", which the check below would throw away.
+    const at = value instanceof Date && !isNaN(value.getTime()) ? value.toISOString() : value;
+    const text = String(at || "").slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return "";
     // Never a day that has not happened: a modification date in the future
     // is exactly the made-up value that teaches a crawler to ignore the field.
@@ -88,10 +97,11 @@ exports.handler = async (event) => {
     let cache = CACHE;
     try {
         const db = await getDb();
-        const [rooms, events, settings] = await Promise.all([
-            db.collection("rooms").find({}, { projection: { ...SLUG_FIELDS, added: 1 } }).toArray(),
+        const [rooms, events, settings, retiredRooms, retiredEvents, retiredGuides] = await Promise.all([
+            db.collection("rooms").find({}, { projection: { ...SLUG_FIELDS, updatedAt: 1, createdAt: 1 } }).toArray(),
             db.collection("events").find({}, { projection: { ...SLUG_FIELDS, updatedAt: 1, createdAt: 1 } }).toArray(),
-            db.collection("settings").findOne({ _id: "site" }, { projection: { fallinFurniState: 1 } }).catch(() => null)
+            db.collection("settings").findOne({ _id: "site" }, { projection: { fallinFurniState: 1 } }).catch(() => null),
+            retiredOf(db, "maze"), retiredOf(db, "event"), retiredOf(db, "guide")
         ]);
         /* The game, at its pretty address — the one it names as canonical and
            the one people actually paste. Only while it is open: it launches
@@ -104,10 +114,16 @@ exports.handler = async (event) => {
         /* Each at its own address, /maze/<slug> — the canonical the page
            names there, worked out by the same rule (see _slugs.js). Listing
            an id that 301s to the slug would be listing a redirect. */
-        const roomSlugs = assignSlugs(rooms, "maze");
-        const eventSlugs = assignSlugs(events, "event");
+        const roomSlugs = assignSlugs(rooms, "maze", retiredRooms);
+        const eventSlugs = assignSlugs(events, "event", retiredEvents);
+        /* When the RECORD last changed, as for events below. It was `added`,
+           which is when the maze opened in the hotel — often years before
+           the page existed — so a maze that gained forty room shots last
+           week told crawlers its page had not changed since 2024, and they
+           had no reason to come back for them. A maze saved before either
+           stamp existed sends no lastmod, which is the honest answer. */
         rooms.forEach(r => {
-            if (r.id) entries.push(url(`${origin}/maze/${encodeURIComponent(roomSlugs.get(r.id))}`, lastmod(r.added), "0.8"));
+            if (r.id) entries.push(url(`${origin}/maze/${encodeURIComponent(roomSlugs.get(r.id))}`, lastmod(r.updatedAt || r.createdAt), "0.8"));
         });
         events.forEach(e => {
             // When the RECORD last changed, not when the event is: an
@@ -123,7 +139,7 @@ exports.handler = async (event) => {
             .catch(() => []);
         // Addresses over every guide, drafts too, as the API works them out;
         // only the published ones are listed.
-        const guideSlugs = assignSlugs(guides, "guide");
+        const guideSlugs = assignSlugs(guides, "guide", retiredGuides);
         const published = guides.filter(g => g.status === "published");
         /* No entry for /guides itself. It is home.html with the window open,
            and home.html names /home as its canonical, so listing /guides

@@ -11,6 +11,14 @@
          not told the encoding by a header has to guess — and a guess of
          anything but UTF-8 garbles every dash and heart on the page. -->
     <meta charset="UTF-8">
+    <!-- Every relative address on this page (css/, js/, assets/, the art
+         the game fetches) resolves from the site's root, wherever the page
+         is served. Netlify also serves it at /fallinfurni/ with a trailing
+         slash, and there "css/style.css" asked for
+         /fallinfurni/css/style.css and the game came up with no stylesheet
+         and no scripts. Straight after the charset, as in home.html, so it
+         is in force before the first relative address is read. -->
+    <base href="/">
     <!-- THE GAME'S OWN MAINTENANCE SWITCH, and the admin pills.
 
          This is NOT the site gate that used to live here. That one held the
@@ -26,12 +34,20 @@
                                          the note on data-ff-gate below for
                                          why that is not the same as hiding
                                          the page, and why it has a leash
-           it FAILS OPEN                 no answer, a failed request, a
-                                         browser with the script blocked —
-                                         all of them show the game. Closing a
-                                         working game because a settings call
-                                         timed out is a worse outcome than
-                                         leaving it open a little too long
+           it FAILS CLOSED               no answer, a failed request or a
+                                         hung one all read as closed, worded
+                                         from the last state this browser
+                                         saw. The owner's rule (28 Sept
+                                         2026): nobody gets in during
+                                         Maintenance, and an outage is
+                                         exactly when the game is likely to
+                                         be in Maintenance on purpose. Same
+                                         rule as home.html and
+                                         unreadableLandingState in js/api.js.
+                                         Only a browser with the script
+                                         blocked still sees the game, which
+                                         the server refuses a run token to
+                                         anyway while it is shut
            an admin plays regardless     which is the point of closing it
            it has TWO closed states      "coming soon" and "maintenance",
                                          mechanically identical and differing
@@ -45,6 +61,9 @@
     (function () {
         var TOKEN_KEY = "mazerats_admin_token";
         var LANDING_STATE_KEY = "mazerats_landing_state";   // shared with js/api.js
+        // The game's own switch as last seen, for the wording when it cannot
+        // be read — see unreadableFfState below.
+        var FF_STATE_KEY = "mazerats_ff_state";
         /* THE SAME TEST AS js/fallinfurni.js, character for character. This
            was /[?&]edit\b/, and \b is a word boundary, so `?edit-x` and
            `?edit.1` matched here while URLSearchParams.has("edit") in the game
@@ -68,14 +87,14 @@
            a flicker, it is a second or more of a form that is about to be
            taken away. Somebody could start typing their name into it.
 
-           WHAT IT DOES NOT CHANGE IS THE FAILING OPEN, and that is the whole
-           difficulty of doing this at all. Hiding the way in by default is
-           one keystroke away from a game that nobody can play when the
-           settings endpoint has a bad afternoon. So this attribute is not
-           "closed", it is "not yet known", and EVERY path out of the question
-           clears it — answered live, answered closed, request failed,
-           request hung past the leash below, script never ran at all. The
-           form is hidden while the question is open and never for longer.
+           THIS ATTRIBUTE IS "NOT YET KNOWN", NOT "CLOSED", and EVERY path out
+           of the question clears it — answered live, answered closed, request
+           failed, request hung past the leash below, script never ran at all.
+           The form is hidden while the question is open and never for longer.
+           What a path out LEAVES behind is the other attribute: a failed or
+           hung request now ends in closeGame, with its notice, rather than in
+           a bare Play button (see FAILS CLOSED above), so the way in is
+           replaced by a sentence saying why rather than by nothing.
 
            The room behind the title still loads and still draws throughout.
            What is held back is the four things you could act on, and only
@@ -93,9 +112,9 @@
 
            6s, as in home.html's gate. Long enough that no ordinary answer
            races it, short enough that nobody sits looking at a game they
-           cannot start. Clearing an already-cleared attribute is harmless,
-           so this does not need to know whether it won. */
-        setTimeout(openGate, 6000);
+           cannot start. It takes the UNREADABLE path, the same as a failed
+           request — a hung settings call is no more an answer than a 500 —
+           and is set up further down, once that path exists. */
 
         function closeGame(state) {
             function run() {
@@ -175,46 +194,72 @@
             .then(function (res) { return res.ok ? res.json() : null; });
         try { window.__mrSettings = settingsRequest; } catch (e) { /* nothing depends on this */ }
 
-        settingsRequest
-            .then(function (settings) {
-                // No answer is not an answer to hold the form back for.
-                if (!settings) { openGate(); return null; }
-                try { localStorage.setItem(LANDING_STATE_KEY, settings.landingState); } catch (e) { /* private mode */ }
+        /* WHAT TO BELIEVE WHEN THE SETTINGS CANNOT BE READ: closed, always.
+           The memory only picks the WORDING, exactly as unreadableLandingState
+           does in js/api.js — anyone who has seen the game open or in
+           Maintenance is told Maintenance, and anyone else Coming Soon, since
+           telling a first-time visitor "back soon" about a game they have
+           never seen open would be a promise about nothing. "enter" is the
+           site's word for open rather than the game's ("live"); it is read
+           too, so a value written under either name means the same thing. */
+        function unreadableFfState() {
+            var last = null;
+            try { last = localStorage.getItem(FF_STATE_KEY); } catch (e) { /* private mode */ }
+            return last === "live" || last === "enter" || last === "maintenance"
+                ? "maintenance" : "coming-soon";
+        }
 
-                var siteGated = settings.landingState === "coming-soon" ||
-                                settings.landingState === "maintenance";
-                /* Either closed state takes the way in away; they differ only
-                   in the wording, which is passed along rather than decided
-                   again further down. */
-                var ffState = settings.fallinFurniState;
-                var gameClosed = ffState === "maintenance" || ffState === "coming-soon";
-                if (!siteGated && !gameClosed) { openGate(); return null; }
-                /* An open game with a gated SITE still has nothing to hide:
-                   the pills below are about the site, not about whether this
-                   game can be played. */
-                if (!gameClosed) openGate();
+        /* The verify call, on a leash of its own. The page leash below only
+           covers the SETTINGS request; once that has answered "closed", a
+           verify that hung would leave the way in hidden with no notice
+           beside it for good. Six seconds and it counts as not-an-admin,
+           which is the reading the .catch below already takes for a failure. */
+        function verifyAdmin() {
+            var verify = fetch("/.netlify/functions/auth", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-admin-token": token },
+                body: JSON.stringify({ action: "verify" })
+            }).then(function (res) { return res && res.ok ? res.json() : null; });
+            var leash = new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 6000); });
+            return Promise.race([verify, leash]);
+        }
 
-                /* Both questions need the same answer — is this an admin? —
-                   so the token is verified once and both act on it. No token
-                   is a definite no, and for a closed game that is the end of
-                   it: the notice goes up without waiting on a second request.
+        /* ONE DECISION PER PAGE, taken by whichever comes first: the real
+           answer, a failed request, or the leash. A REAL answer arriving
+           after the leash has already closed the game still counts if it
+           says the game is open — see lateAnswer — because the leash was
+           only ever standing in for it. */
+        var decided = false;
+        var closedByDefault = false;
 
-                   The editor is left alone either way. It has its own owner
-                   check in js/fallinfurni.js and being able to work on the
-                   game is the whole reason for closing it. */
-                if (!token) {
-                    if (gameClosed && !EDITING) closeGame(ffState);
-                    // Editing a closed game, or a closed-game path that did
-                    // not close it: either way the question is settled.
-                    else openGate();
-                    return null;
-                }
-                return fetch("/.netlify/functions/auth", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", "x-admin-token": token },
-                    body: JSON.stringify({ action: "verify" })
-                })
-                    .then(function (res) { return res && res.ok ? res.json() : null; })
+        function decide(ffState, siteGated) {
+            decided = true;
+            /* Either closed state takes the way in away; they differ only
+               in the wording, which is passed along rather than decided
+               again further down. */
+            var gameClosed = ffState === "maintenance" || ffState === "coming-soon";
+            if (!siteGated && !gameClosed) { openGate(); return null; }
+            /* An open game with a gated SITE still has nothing to hide:
+               the pills below are about the site, not about whether this
+               game can be played. */
+            if (!gameClosed) openGate();
+
+            /* Both questions need the same answer — is this an admin? —
+               so the token is verified once and both act on it. No token
+               is a definite no, and for a closed game that is the end of
+               it: the notice goes up without waiting on a second request.
+
+               The editor is left alone either way. It has its own owner
+               check in js/fallinfurni.js and being able to work on the
+               game is the whole reason for closing it. */
+            if (!token) {
+                if (gameClosed && !EDITING) closeGame(ffState);
+                // Editing a closed game, or a closed-game path that did
+                // not close it: either way the question is settled.
+                else openGate();
+                return null;
+            }
+            return verifyAdmin()
                     .then(function (who) {
                         var isAdmin = !!(who && who.username);
                         if (gameClosed) {
@@ -239,8 +284,49 @@
                         if (gameClosed && !EDITING) closeGame(ffState);
                         else openGate();
                     });
+        }
+
+        // No readable answer: closed, in the remembered wording, with the
+        // admin and editor exceptions intact. The site is not known to be
+        // gated, so no Dev Mode pills — they are decoration, not a way in.
+        function decideUnreadable() {
+            if (decided) return;
+            closedByDefault = true;
+            decide(unreadableFfState(), false);
+        }
+
+        /* The real answer after the leash already closed the game: an open
+           game is opened after all, and a closed one is already closed. */
+        function lateAnswer(settings) {
+            var ffState = settings.fallinFurniState;
+            if (!closedByDefault || ffState === "maintenance" || ffState === "coming-soon") return;
+            function run() {
+                document.body.removeAttribute("data-ff-closed");
+                openGate();
+            }
+            if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
+            else run();
+        }
+
+        setTimeout(decideUnreadable, 6000);
+
+        settingsRequest
+            .then(function (settings) {
+                /* No answer, or one without the landing state the settings
+                   endpoint always sends, is not an answer: closed. */
+                if (!settings || !settings.landingState) { decideUnreadable(); return null; }
+                try { localStorage.setItem(LANDING_STATE_KEY, settings.landingState); } catch (e) { /* private mode */ }
+                // A game that has never set its switch is live, as in ff-scores.js.
+                var ffState = settings.fallinFurniState || "live";
+                try { localStorage.setItem(FF_STATE_KEY, ffState); } catch (e) { /* private mode */ }
+                if (decided) { lateAnswer(settings); return null; }
+                var siteGated = settings.landingState === "coming-soon" ||
+                                settings.landingState === "maintenance";
+                return decide(ffState, siteGated);
             })
-            .catch(function () { openGate(); /* fail open: the game stays playable */ });
+            // A network rejection (or a body that is not JSON) takes the same
+            // closed path, rather than leaving the way in hidden until the leash.
+            .catch(function () { decideUnreadable(); });
     })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -326,6 +412,15 @@
     <link id="theme-css" rel="stylesheet">
     <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
     <link rel="stylesheet" href="css/fallinfurni.css">
+    <!-- Umami, the aggregate visit counts — the same loader as index.html,
+         character for character, and the same reasons: built by script so
+         Global Privacy Control can stop it being loaded at all, Do Not Track
+         honoured by Umami itself, and nothing after # recorded. Loaded on
+         every visit rather than after the gate, as home.html waits to: this
+         page never sends anybody away, so a visit here is always a visit,
+         closed game or not. The CSP on /* already allows cloud.umami.is for
+         the script and gateway.umami.is for what it sends. -->
+    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");document.head.appendChild(s);}catch(e){}})();</script>
 </head>
 <body data-page="fallinfurni">
 
@@ -402,8 +497,17 @@
                          js/fallinfurni.js; this is only what it says before
                          the script has run. The canvas is focusable from
                          script, and the arrow keys walk. -->
+                    <!-- role="application": a bare canvas has no role, and
+                         screen readers drop an aria-label on an element
+                         without one, so the room's name was never read. It
+                         takes the arrow keys now, which is what the
+                         application role is for - the reader passes keys
+                         through to it instead of reading the page with
+                         them - and the description says which keys. -->
                     <canvas id="ff-canvas" width="720" height="498"
-                            aria-label="A Habbo room"></canvas>
+                            role="application" aria-label="A Habbo room"
+                            aria-describedby="ff-canvas-keys"></canvas>
+                    <p id="ff-canvas-keys" class="visually-hidden">Arrow keys walk one tile along the room's grid: up and down, left and right follow the edges of the floor. Walk onto the seats in the order they land.</p>
 
                     <!-- Loading a room, the way the client does it: a small
                          box with a bar and the words "Loading room", over
@@ -1123,7 +1227,11 @@
     <!-- id is ff-rotate-GATE, not ff-rotate: the level editor's own rotate
          button already owns that one, and getElementById was handing this
          element's aria state to a button in the builder. -->
-    <div class="ff-rotate" id="ff-rotate-gate" role="alertdialog" aria-hidden="true"
+    <!-- data-trap-keep: the pause dialog's focus trap (js/site.js) makes
+         everything outside it inert, and it must never take this with it -
+         a phone turned upright while paused would get a gate over the
+         screen whose one way out could not be reached. -->
+    <div class="ff-rotate" id="ff-rotate-gate" data-trap-keep role="alertdialog" aria-hidden="true"
          aria-labelledby="ff-rotate-say" aria-describedby="ff-rotate-sub">
         <div class="ff-rotate-inner">
             <div class="ff-rotate-phone" aria-hidden="true">

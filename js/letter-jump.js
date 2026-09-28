@@ -56,12 +56,21 @@ document.addEventListener("keydown", e => {
         ? (text => sortableName(text))
         : (text => text);
 
+    /* A jump, not a glide, for anyone who has asked for less motion. The
+       rest of the site honours prefers-reduced-motion (the gallery swaps
+       rather than slides, the carousel never advances), and this was the
+       one scroll that animated regardless — a smooth run down a long list
+       on every key press. Read per press, so switching the setting takes
+       effect without a reload. */
+    const reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    const behavior = reduceMotion ? "auto" : "smooth";
+
     document.querySelectorAll(".chrome-list").forEach(list => {
         if (list.offsetParent === null) return;
         const match = Array.from(list.querySelectorAll(":scope > .chrome-list-row")).find(row => {
             const h3 = row.querySelector("h3");
             return h3 && readable(h3.textContent.trim()).toLowerCase().startsWith(letter);
         });
-        if (match) match.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        if (match) match.scrollIntoView({ behavior, block: "nearest" });
     });
 });

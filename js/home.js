@@ -126,6 +126,33 @@ document.addEventListener("DOMContentLoaded", () => {
        happened to change the sort, because updateChrome only writes the
        select when sortBy itself moves. */
     sortSelect.value = sortBy;
+
+    /* On a phone the sort menu shares its row with Timeline and Furni, and
+       at the 16px iOS needs (see the search row at the end of style.css)
+       "Sort by: Maze Name" is wider than what those two leave it, so it
+       showed "Sort by: Maze Nar". There the options drop their "Sort by: "
+       — the menu still has its label ("Sort the archive") for a screen
+       reader — and get it back on a wider screen.
+
+       Any touch screen too, not only a narrow one: there the menu is 16px
+       at every width (same reason), and on a tablet "Sort by: Maze Owner"
+       took 189px of a 512px row and left the search box 165px, too narrow
+       for its own placeholder. */
+    /* Each option keeps its full wording in data-full; updateChrome writes
+       the Maze/Event wording through the same function, so the two cannot
+       disagree about which to show. */
+    const SORT_PREFIX = "Sort by: ";
+    const narrowSort = window.matchMedia ? window.matchMedia("(max-width: 640px), (pointer: coarse)") : null;
+    function sortOptionText(full) {
+        return narrowSort && narrowSort.matches && full.startsWith(SORT_PREFIX) ? full.slice(SORT_PREFIX.length) : full;
+    }
+    [...sortSelect.options].forEach(o => { o.dataset.full = o.textContent; });
+    const fitSortLabels = () => [...sortSelect.options].forEach(o => { o.textContent = sortOptionText(o.dataset.full); });
+    fitSortLabels();
+    if (narrowSort) {
+        if (narrowSort.addEventListener) narrowSort.addEventListener("change", fitSortLabels);
+        else if (narrowSort.addListener) narrowSort.addListener(fitSortLabels);
+    }
     let query = "";
     // Independent of topView/mazesSub/eventsSub — layers a featured pick
     // over whichever category is active rather than replacing it, so
@@ -921,7 +948,47 @@ document.addEventListener("DOMContentLoaded", () => {
        keystroke would be worse than one that ignores them. The hash is left
        alone — it belongs to the maze window (see syncModalHistory). */
     let syncedSearch = null;
+
+    /* WHILE TYPING, THE ADDRESS WAITS. Every replaceState is a page view to
+       Umami (it follows history changes), and this ran on every keystroke,
+       so typing "christmas" logged nine page views of nine half-words. The
+       LIST still filters on every key — render is untouched — but the
+       address is only written once typing stops for SEARCH_URL_SETTLE_MS,
+       or at once when the box loses focus or Enter is pressed (see the
+       search box's listeners). searchTyping is set by the input listener
+       for the length of its own render and nothing else, so every other
+       render (a tab, a chip, the popstate re-sync) still writes at once
+       and cancels a wait that is pending. */
+    const SEARCH_URL_SETTLE_MS = 600;
+    let searchTyping = false;
+    let searchUrlTimer = null;
     function syncSearchToUrl() {
+        clearTimeout(searchUrlTimer);
+        searchUrlTimer = null;
+        if (searchTyping) {
+            searchUrlTimer = setTimeout(flushSearchToUrl, SEARCH_URL_SETTLE_MS);
+            return;
+        }
+        writeSearchToUrl();
+    }
+    // Writes a wait that is pending now; nothing if none is.
+    function flushSearchToUrl() {
+        if (searchUrlTimer === null) return;
+        clearTimeout(searchUrlTimer);
+        searchUrlTimer = null;
+        writeSearchToUrl();
+    }
+    function writeSearchToUrl() {
+        /* Not while the address is a maze window's, nor while a step back
+           off one is on its way. A filter chip closes the window and sets
+           a search in the same moment (see applyFilterChip), and the
+           history.back() that closing takes has not landed yet — so this
+           wrote ?q= onto the MAZE's entry, the one being left, where it
+           stayed for Forward to bring back. The popstate that ends the
+           step back re-syncs (see leaveModalHistory's listener), and
+           syncedSearch is left alone here so that it still counts as
+           unsynced until then. */
+        if (pendingBack || onModalAddress()) return;
         const q = query.trim();
         if (q === syncedSearch) return;
         syncedSearch = q;
@@ -1002,12 +1069,21 @@ document.addEventListener("DOMContentLoaded", () => {
     // data keeps working alongside anything added through the new editor.
     function normalizeGalleryItem(entry) {
         if (typeof entry === "string") return { image: entry, label: deriveGalleryLabel(entry), bonus: false, runThrough: false, oldVersions: [] };
+        /* Each field through asText/asList. deriveGalleryLabel calls
+           .split on what it is given, so an object with no image (a room
+           added in the admin before its screenshot — the "Awaiting Room
+           Image" case, which is meant to work) or with a number or object
+           there threw out of openModal; and an oldVersions that was not a
+           list threw later, on the room change that filtered it. A room
+           with neither image nor label is captioned plain "Room" (its
+           "3 of 10" position still says which). */
+        const image = asText(entry.image);
         return {
-            image: entry.image,
-            label: entry.label || deriveGalleryLabel(entry.image),
+            image,
+            label: asText(entry.label) || (image ? deriveGalleryLabel(image) : "Room"),
             bonus: !!entry.bonus,
             runThrough: !!entry.runThrough,
-            oldVersions: entry.oldVersions || []
+            oldVersions: asList(entry.oldVersions)
         };
     }
 
@@ -1230,7 +1306,8 @@ document.addEventListener("DOMContentLoaded", () => {
            Retitled rather than duplicated, so there is still one <select>
            with one set of values and nothing downstream has to know. */
         sortLabelOptions.forEach(({ opt, maze, event }) => {
-            opt.textContent = isEvents ? event : maze;
+            opt.dataset.full = isEvents ? event : maze;
+            opt.textContent = sortOptionText(opt.dataset.full);
         });
         if (isEvents && sortBy.startsWith("difficulty")) {
             sortBy = "name";
@@ -1322,9 +1399,18 @@ document.addEventListener("DOMContentLoaded", () => {
         if (img.decode) img.decode().catch(() => {});
     }
 
+    /* A record's key across BOTH collections. Ids are only unique within
+       one: "christmas-maze" is a maze and an event, so anything keyed on
+       the bare id treated the two as one — the event's gallery counted as
+       warmed because the maze's had been, and a render's focus restore
+       could land on the wrong one of the pair. */
+    function recordKey(n) {
+        return (n && n.isGuide ? "guide:" : n && n.isEvent ? "event:" : "maze:") + String((n && n.id) || "");
+    }
+
     function warmGallery(n) {
         if (!n || !imgCdn) return;
-        const key = n.id || n.name;
+        const key = n.id ? recordKey(n) : n.name;
         if (!key || warmedGalleries.has(key)) return;
         warmedGalleries.add(key);
 
@@ -1514,8 +1600,41 @@ document.addEventListener("DOMContentLoaded", () => {
     const pendingTicks = { walked: new Set(), saved: new Set() };
     const accountTicks = { walked: new Set(), saved: new Set() };
 
+    /* WHOSE each pending tick is. The pending book used to be anybody's:
+       tick a maze while signed in as one player, sign out before the
+       account confirmed it (a slow request, a tab closed mid-save), and
+       the next player to sign in on this browser uploaded it as their own
+       — syncWalked pushed the whole book to whoever it found. Each pending
+       id now carries the player id it was ticked under (none for a tick
+       made signed out, which the first account to sign in adopts, as it
+       always did), and only the signed-in player's own ids are ever
+       pushed. Another player's stay in the book, untouched, for when they
+       sign in here again. Kept beside the book rather than inside it so a
+       browser with the old plain-array book still reads it. */
+    const PENDING_BY_KEY = { walked: "mazerats_walked_pending_by", saved: "mazerats_saved_pending_by" };
+    const pendingOwner = { walked: new Map(), saved: new Map() };
+
+    /* UN-TICKS, KEPT UNTIL THEY LAND. An un-tick went to the account as a
+       single fire-and-forget DELETE, so one that failed — offline, a
+       timeout, the tab closed first — was simply lost, and the next sync
+       read the account's copy as "ticked on another device" and put the
+       maze straight back. Each removal now waits in this book (id → the
+       player it was made under) until the account is known to have let go
+       of it: the forget call reporting success, or a later fetch that no
+       longer lists it. syncWalked retries whatever is still here, and
+       nothing in it is re-added from the account meanwhile. */
+    const FORGET_KEY = { walked: "mazerats_walked_forget", saved: "mazerats_saved_forget" };
+    const pendingForget = { walked: new Map(), saved: new Map() };
+
     function tickSet(list) { return list === "walked" ? walkedIds : savedIds; }
     function persistTickSet(list) { if (list === "walked") saveWalked(); else persistSaved(); }
+
+    // The signed-in player's id as a string, or null — what the two books
+    // above are tagged with.
+    function currentPlayerId() {
+        const me = window.Account && Account.current;
+        return me && me.id != null ? String(me.id) : null;
+    }
 
     function readIdSet(key) {
         try {
@@ -1528,23 +1647,98 @@ document.addEventListener("DOMContentLoaded", () => {
     function writeIdSet(key, set) {
         try { localStorage.setItem(key, JSON.stringify([...set])); } catch (e) { /* private mode */ }
     }
+    // { id: playerId } maps, for the two tagged books. Anything that is not
+    // a plain object of strings reads as empty rather than throwing.
+    function readIdMap(key) {
+        try {
+            const raw = localStorage.getItem(key);
+            const obj = raw ? JSON.parse(raw) : null;
+            const map = new Map();
+            if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+                Object.keys(obj).forEach(id => {
+                    const who = obj[id];
+                    map.set(id, typeof who === "string" && who ? who : null);
+                });
+            }
+            return map;
+        } catch (e) { return new Map(); }
+    }
+    function writeIdMap(key, map) {
+        const obj = {};
+        map.forEach((who, id) => { obj[id] = who || ""; });
+        try { localStorage.setItem(key, JSON.stringify(obj)); } catch (e) { /* private mode */ }
+    }
     function persistBooks(list) {
         writeIdSet(PENDING_KEY[list], pendingTicks[list]);
         writeIdSet(ACCOUNT_KEY[list], accountTicks[list]);
+        // Owners only for ids still pending: the map must not outgrow the book.
+        [...pendingOwner[list].keys()].forEach(id => { if (!pendingTicks[list].has(id)) pendingOwner[list].delete(id); });
+        writeIdMap(PENDING_BY_KEY[list], pendingOwner[list]);
+        writeIdMap(FORGET_KEY[list], pendingForget[list]);
     }
 
-    // After loadWalked and loadSaved, which it reads.
-    function loadTickBooks() {
-        TICK_LISTS.forEach(list => {
-            accountTicks[list] = readIdSet(ACCOUNT_KEY[list]) || new Set();
-            const stored = readIdSet(PENDING_KEY[list]);
-            if (stored) {
-                pendingTicks[list] = stored;
-            } else {
-                pendingTicks[list] = new Set([...tickSet(list)].filter(id => !accountTicks[list].has(id)));
-                persistBooks(list);
-            }
+    // After loadWalked and loadSaved, which it reads. One list at a time so
+    // another tab's write (see the storage listener below) can reload just
+    // the list it touched.
+    function loadTickBook(list) {
+        accountTicks[list] = readIdSet(ACCOUNT_KEY[list]) || new Set();
+        pendingOwner[list] = readIdMap(PENDING_BY_KEY[list]);
+        pendingForget[list] = readIdMap(FORGET_KEY[list]);
+        const stored = readIdSet(PENDING_KEY[list]);
+        if (stored) {
+            pendingTicks[list] = stored;
+        } else {
+            pendingTicks[list] = new Set([...tickSet(list)].filter(id => !accountTicks[list].has(id)));
+            persistBooks(list);
+        }
+    }
+    function loadTickBooks() { TICK_LISTS.forEach(loadTickBook); }
+
+    /* Whether a book entry tagged `who` is the signed-in player's to act
+       on. An untagged pending tick (made signed out) is adopted by whoever
+       is signed in — see pushablePending — so it counts as theirs. */
+    function isMine(who, me) { return !who || who === me; }
+
+    /* The pending ids that may go up to the signed-in account: its own,
+       and any made signed out, which are tagged with it from here on so a
+       failed push is not later handed to somebody else instead. */
+    function pushablePending(list) {
+        const me = currentPlayerId();
+        if (!me) return [];
+        let adopted = false;
+        const out = [];
+        pendingTicks[list].forEach(id => {
+            const who = pendingOwner[list].get(id) || null;
+            if (!isMine(who, me)) return;
+            if (!who) { pendingOwner[list].set(id, me); adopted = true; }
+            out.push(id);
         });
+        if (adopted) persistBooks(list);
+        return out;
+    }
+
+    /* Sends one removal and clears its entry only when the account says it
+       went. Account.forgetWalked/forgetSaved are expected to resolve true
+       on a 2xx; anything that is not exactly true (false, a failure, or
+       an older account.js that resolves nothing at all) leaves the entry
+       where it is, for syncWalked to retry — or to clear once a fetch
+       shows the account no longer holds the id. Cleared only if the id has
+       not been touched again since this left: a re-tick in the meantime
+       has taken it out of the book already, and a fresh un-tick has its
+       own send on the way. */
+    function sendForget(list, id) {
+        if (!window.Account || !Account.current) return;
+        const fn = list === "walked" ? Account.forgetWalked : Account.forgetSaved;
+        if (typeof fn !== "function") return;
+        const at = tickTouchedAt[list].get(id) || 0;
+        let sent;
+        try { sent = fn(id); } catch (e) { return; }
+        Promise.resolve(sent).then(ok => {
+            if (ok !== true) return;
+            if ((tickTouchedAt[list].get(id) || 0) !== at || !pendingForget[list].has(id)) return;
+            pendingForget[list].delete(id);
+            persistBooks(list);
+        }, () => { /* stays in the book; the next sync tries again */ });
     }
 
     /* When each id was last ticked or un-ticked by hand, as a running
@@ -1556,14 +1750,26 @@ document.addEventListener("DOMContentLoaded", () => {
     // A tick or un-tick made by hand on this device.
     function noteTick(list, id, on) {
         tickTouchedAt[list].set(id, ++tickEditSeq);
+        const me = currentPlayerId();
         accountTicks[list].delete(id);
-        if (on) pendingTicks[list].add(id);
-        else pendingTicks[list].delete(id);
+        if (on) {
+            pendingTicks[list].add(id);
+            // Tagged with who ticked it — see PENDING_BY_KEY.
+            if (me) pendingOwner[list].set(id, me);
+            else pendingOwner[list].delete(id);
+            // A re-tick is the visitor's last word; the removal is off.
+            pendingForget[list].delete(id);
+        } else {
+            pendingTicks[list].delete(id);
+            // Signed out there is no account to tell, and nothing of the
+            // account's is on this browser to take back (dropAccountTicks
+            // has already taken it), so only a signed-in un-tick is booked.
+            if (me) pendingForget[list].set(id, me);
+        }
         persistBooks(list);
-        if (window.Account && Account.current) {
-            if (on) Account.saveState({ [list]: [...pendingTicks[list]] });
-            else if (list === "walked") Account.forgetWalked(id);
-            else Account.forgetSaved(id);
+        if (me) {
+            if (on) Account.saveState({ [list]: pushablePending(list) });
+            else sendForget(list, id);
         }
     }
 
@@ -1582,11 +1788,15 @@ document.addEventListener("DOMContentLoaded", () => {
     function confirmTicks(state) {
         if (!state) return;
         const signedIn = !!(window.Account && Account.current);
+        const me = currentPlayerId();
         TICK_LISTS.forEach(list => {
             const server = new Set(Array.isArray(state[list]) ? state[list] : []);
             let changed = false;
             pendingTicks[list].forEach(id => {
                 if (!server.has(id)) return;
+                // Another player's tick is theirs to have confirmed, not
+                // this account's to claim — see PENDING_BY_KEY.
+                if (!isMine(pendingOwner[list].get(id), me)) return;
                 pendingTicks[list].delete(id);
                 if (signedIn && tickSet(list).has(id)) accountTicks[list].add(id);
                 changed = true;
@@ -1623,22 +1833,41 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (touchedSince(id)) return;
                     if (!server.has(id)) { accountTicks[list].delete(id); local.delete(id); changed = true; }
                 });
+                /* Un-ticks still waiting to land (see FORGET_KEY). One the
+                   account no longer lists HAS landed, whatever the forget
+                   call said, and leaves the book; one it still lists is
+                   sent again. Another player's removals are left for them. */
+                const me = currentPlayerId();
+                const forgetting = new Set();
+                pendingForget[list].forEach((who, id) => {
+                    if (!isMine(who, me) || touchedSince(id)) return;
+                    if (!server.has(id)) { pendingForget[list].delete(id); return; }
+                    forgetting.add(id);
+                });
                 server.forEach(id => {
                     if (touchedSince(id)) return;
+                    // Still being taken off the account: this answer is the
+                    // account before the removal, not a tick from elsewhere.
+                    if (forgetting.has(id)) return;
                     if (!local.has(id)) { local.add(id); accountTicks[list].add(id); changed = true; }
                 });
                 // Confirmed, so the account's now — see confirmTicks for
                 // why it has to join that book rather than just leave this.
                 pendingTicks[list].forEach(id => {
                     if (touchedSince(id) || !server.has(id)) return;
+                    if (!isMine(pendingOwner[list].get(id), me)) return;
                     pendingTicks[list].delete(id);
                     accountTicks[list].add(id);
                 });
                 /* Only what was ticked HERE and the account has not seen goes
                    up, so a device that is merely up to date (or out of date)
-                   stays quiet. */
-                if (pendingTicks[list].size) patch[list] = [...pendingTicks[list]];
+                   stays quiet. And only this player's own — see
+                   pushablePending: another account's unconfirmed ticks used
+                   to go up with them. */
+                const up = pushablePending(list);
+                if (up.length) patch[list] = up;
                 persistBooks(list);
+                forgetting.forEach(id => sendForget(list, id));
                 if (changed) { persistTickSet(list); anyChange = true; }
             });
 
@@ -1647,10 +1876,28 @@ document.addEventListener("DOMContentLoaded", () => {
                 // In place: this lands whenever the network says, not when
                 // the visitor did anything — see renderInPlace.
                 renderInPlace();
+                repaintToggles();
                 updateWalkedCount();
                 refreshProgressIfOpen();
             }
         });
+    }
+
+    /* Every Completed and Save button on the page, painted from the sets as
+       they are now.
+
+       renderInPlace redraws the LISTS, but an open maze window builds its
+       own buttons once, when it opens, and nothing redrew them. A sync that
+       brought a tick in from another device left the window saying
+       "Completed?" over a maze that was completed — and since the click
+       read the set rather than the button, the next press, meant as a
+       tick, took the tick away. Called wherever the sets change without a
+       hand on the button: the account's answer, a sign-out, another tab. */
+    function repaintToggles() {
+        document.querySelectorAll(".walked-toggle[data-walked-id]")
+            .forEach(btn => paintWalkedToggle(btn, isWalked(btn.dataset.walkedId)));
+        document.querySelectorAll(".saved-toggle[data-saved-id]")
+            .forEach(btn => paintSavedToggle(btn, isSaved(btn.dataset.savedId)));
     }
 
     // Nobody signed in (a sign-out, or a session that has lapsed): the
@@ -1670,10 +1917,47 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         if (anyChange) {
             renderInPlace();
+            repaintToggles();
             updateWalkedCount();
             refreshProgressIfOpen();
         }
     }
+
+    /* ANOTHER TAB'S TICKS. Each tab held the lists in memory from its own
+       load and wrote the whole set back on every tick, so with the archive
+       open in two tabs the second tick overwrote the first tab's — and the
+       books beside them went the same way. The browser tells every other
+       tab when one writes a key, so a tab now re-reads the list (and its
+       books) the moment another changes it, and its own next write starts
+       from the merged truth rather than a stale copy. */
+    // Which list a stored key belongs to. Worked out when asked rather than
+    // up here, where SAVED_KEY (declared further down) is not defined yet.
+    function tickListOfKey(key) {
+        return TICK_LISTS.find(list =>
+            [list === "walked" ? WALKED_KEY : SAVED_KEY, PENDING_KEY[list], ACCOUNT_KEY[list],
+                PENDING_BY_KEY[list], FORGET_KEY[list]].includes(key)) || null;
+    }
+    window.addEventListener("storage", e => {
+        try { if (e.storageArea && e.storageArea !== localStorage) return; } catch (err) { return; }
+        // A null key is a clear() of the whole store: both lists.
+        const one = e.key == null ? null : tickListOfKey(e.key);
+        const lists = e.key == null ? TICK_LISTS : one ? [one] : [];
+        if (!lists.length) return;
+        lists.forEach(list => {
+            if (list === "walked") loadWalked(); else loadSaved();
+            loadTickBook(list);
+        });
+        // One tick in the other tab writes up to five keys (the list and
+        // its four books), so the redraw waits for the burst to finish.
+        clearTimeout(tickStorageRedraw);
+        tickStorageRedraw = setTimeout(() => {
+            renderInPlace();
+            repaintToggles();
+            updateWalkedCount();
+            refreshProgressIfOpen();
+        }, 0);
+    });
+    let tickStorageRedraw = null;
 
     function onAccountAnswer(me) {
         if (me) syncWalked();
@@ -1733,9 +2017,14 @@ document.addEventListener("DOMContentLoaded", () => {
             .some(t => String(t).trim().toLowerCase() === HALLWAY_TAG);
     }
 
+    /* Collab mazes count (28 Sept 2026). They were left out along with the
+       closed ones, but Collab says who BUILT a maze, not whether it can be
+       walked: they sit in their own tab and are as walkable as any open one,
+       so completing one earned nothing and the total quietly ignored a whole
+       tab. Only Closed — gone from the hotel — and hallways stay out. */
     function walkableRooms() {
         return ROOMS.filter(r =>
-            (r.status === "open" || r.status === "unknown") && !isHallway(r));
+            (r.status === "open" || r.status === "unknown" || r.status === "collab") && !isHallway(r));
     }
 
     function updateWalkedCount() {
@@ -1840,8 +2129,10 @@ document.addEventListener("DOMContentLoaded", () => {
        Pressing Save turned a button into "Saved" and that was the whole of
        the feedback. It is honest and it is useless: it confirms the press,
        which the reader already knew about, and says nothing about the list
-       they have just joined. The list does exist — Your Progress, under "Saved
-       to complete" — but it is behind the burger, under two other headings,
+       they have just joined. The list does exist — Your Progress, under
+       "Saved" (the heading was "Saved to complete" once, and this note went
+       on quoting it after it changed) — but it is behind the burger, under
+       two other headings,
        and nothing on the way to it mentions saving. So the reasonable
        conclusion from the button alone is that Save is a bookmark that goes
        nowhere, which is exactly what it looked like.
@@ -1889,7 +2180,7 @@ document.addEventListener("DOMContentLoaded", () => {
         note.setAttribute("aria-live", "polite");
         note.innerHTML = `
             <p class="saved-note-text">Saved. It is waiting for you in
-                <strong>Your Progress</strong>, under &ldquo;Saved to complete&rdquo;.</p>
+                <strong>Your Progress</strong>, under &ldquo;Saved&rdquo;.</p>
             <div class="saved-note-actions">
                 <button type="button" class="saved-note-go">Take me there</button>
                 <button type="button" class="saved-note-close" aria-label="Dismiss">Got it</button>
@@ -1913,10 +2204,16 @@ document.addEventListener("DOMContentLoaded", () => {
            almost always open when this is, and Your Progress opening
            underneath it (both are .modal-overlay windows at the same layer,
            and the room modal comes later in the page) was a button that
-           appeared to do nothing. closeModal is a no-op when it is shut. */
+           appeared to do nothing.
+
+           openProgress closes the modal itself, and it has to be the one
+           that does: it takes the modal's opener (the row the maze was
+           opened from) as its own before letting the modal go. Closing it
+           here first threw that opener away (keepFocus clears it), so Your
+           Progress recorded this note's button — gone a moment later — and
+           closing it dropped focus to <body>. */
         note.querySelector(".saved-note-go").addEventListener("click", () => {
             close();
-            closeModal({ keepFocus: true });
             openProgress();
         });
 
@@ -1977,8 +2274,13 @@ document.addEventListener("DOMContentLoaded", () => {
         if (walkBtn) {
             e.stopPropagation();
             e.preventDefault();
+            /* The opposite of what the BUTTON showed, not of what the set
+               holds. They can differ for a moment — a sync or another tab
+               changed the set and the repaint has not reached this button
+               yet — and the press means "change what I can see". Reading
+               the set turned a press meant as a tick into an un-tick. */
             const id = walkBtn.dataset.walkedId;
-            setWalked(id, !isWalked(id));
+            setWalked(id, walkBtn.getAttribute("aria-pressed") !== "true");
             return;
         }
         // The save toggle sits inside the same row and needs the same
@@ -1987,8 +2289,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (saveBtn) {
             e.stopPropagation();
             e.preventDefault();
+            // From the button's own state, as Completed above.
             const id = saveBtn.dataset.savedId;
-            setSaved(id, !isSaved(id));
+            setSaved(id, saveBtn.getAttribute("aria-pressed") !== "true");
         }
     }, true);
 
@@ -2056,7 +2359,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const showDate = isOpenView || n.isEvent;
 
         return `
-            <div class="chrome-list-row featured" data-record-id="${escapeHtml(n.id || "")}" data-difficulty="${cssToken(n.difficulty)}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
+            <div class="chrome-list-row featured" data-record-id="${escapeHtml(n.id || "")}" data-focus-key="${escapeHtml(recordKey(n))}" data-difficulty="${cssToken(n.difficulty)}" tabindex="0" role="button" aria-label="View ${escapeHtml(n.name || "maze")}" data-track="${n.dateFieldLabel === "Date" ? "event-open" : "maze-open"}" data-track-label="${escapeHtml(n.name || "")}">
                 <div class="row-thumb">
                     ${n.thumb ? `<div class="row-thumb-crop"><img class="row-thumb-img" src="${rowThumbUrl(n.thumb)}" alt="${escapeHtml(rowThumbAlt(n))}" loading="lazy"></div>` : ""}
                 </div>
@@ -2151,8 +2454,19 @@ document.addEventListener("DOMContentLoaded", () => {
        and a guide has none of their fields. */
     function guideLogItems() {
         const list = window.Guides && Guides.loaded() ? Guides.list() : [];
-        return list.filter(g => g.publishedAt).map(g => {
-            const updated = !!(g.updatedAt && g.updatedAt.slice(0, 10) > g.publishedAt.slice(0, 10));
+        return list.filter(g => g && g.publishedAt).map(g => {
+            /* String() on both dates: a guide whose stamp came back as
+               anything but a string (a number, a Date-shaped object) threw
+               on .slice here, and this runs inside the side menu's badge
+               count — so one odd guide took the whole menu down with it.
+               And the day compared is the READER'S, as the log groups by
+               (see localDayKey): comparing UTC days called an edit made
+               late in the evening, local time, an "update" to a guide
+               published that same local day, and the log then filed it
+               under a day it did not group by. */
+            const published = String(g.publishedAt);
+            const edited = g.updatedAt ? String(g.updatedAt) : "";
+            const updated = !!(edited && localDayKey(edited) > localDayKey(published));
             const n = {
                 isGuide: true,
                 id: g.id,
@@ -2160,10 +2474,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 // The same fallback the Guides window uses (js/guide-text.js).
                 thumb: typeof GuideText !== "undefined" ? GuideText.thumbOf(g) : (g.thumb || ""),
                 category: g.category || "",
-                archivedAt: g.publishedAt,
-                updatedAt: g.updatedAt || "",
+                archivedAt: published,
+                updatedAt: edited,
                 changes: Array.isArray(g.changes) ? g.changes : [],
-                activityAt: updated ? g.updatedAt : g.publishedAt,
+                activityAt: updated ? edited : published,
                 activity: updated ? "updated" : "added",
                 _haystack: [g.title, g.category, g.summary, "guide"].join(" ").toLowerCase()
             };
@@ -2198,8 +2512,10 @@ document.addEventListener("DOMContentLoaded", () => {
                real server stamp — a record nobody has edited since it was
                added simply doesn't have one, and says nothing rather than
                repeating the first date. */
-            n.archivedAt = archivedAt(item, isEvent);
-            n.updatedAt = item.updatedAt || "";
+            // As strings, whatever the record held: they are sliced and
+            // compared below, and a non-string threw (see guideLogItems).
+            n.archivedAt = String(archivedAt(item, isEvent) || "");
+            n.updatedAt = item.updatedAt ? String(item.updatedAt) : "";
             /* Carried across here rather than in normalize(), alongside the
                other three fields this log needs and nothing else does.
                normalize builds an explicit shape — it does not spread the
@@ -2209,10 +2525,17 @@ document.addEventListener("DOMContentLoaded", () => {
             /* What the log groups and captions by: the day something
                happened, and which of the two things happened. An edit made
                the same day a record was catalogued is part of cataloguing
-               it, so only a later day counts as an update. */
+               it, so only a later day counts as an update.
+
+               The reader's day, through localDayKey, which is what the log
+               GROUPS by. This compared UTC days while the grouping used
+               local ones, so an edit at 00:30 BST to something archived the
+               evening before was headed under the new day and captioned
+               "Added", and one late on the same local evening was an
+               "update" to something added a few hours earlier. */
             n.activityAt = at;
             n.activity = (n.updatedAt && n.archivedAt
-                && n.updatedAt.slice(0, 10) > n.archivedAt.slice(0, 10))
+                && localDayKey(n.updatedAt) > localDayKey(n.archivedAt))
                 ? "updated" : "added";
             return { n, at, own };
         };
@@ -2223,7 +2546,7 @@ document.addEventListener("DOMContentLoaded", () => {
             /* Most recent activity first — added or edited, whichever came
                last — and among everything sharing the backfill date with
                nothing since, newest in its own right first. */
-            .sort((a, b) => b.at.localeCompare(a.at) || String(b.own).localeCompare(String(a.own)))
+            .sort((a, b) => String(b.at).localeCompare(String(a.at)) || String(b.own).localeCompare(String(a.own)))
             .map(x => x.n);
     }
 
@@ -2246,11 +2569,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const WHATS_NEW_RECENT_DAYS = 14;
 
     function whatsNewRecentCount() {
-        const cutoff = new Date(Date.now() - WHATS_NEW_RECENT_DAYS * 86400000)
-            .toISOString().slice(0, 10);
-        // Same string comparison the ranking uses: both sides are ISO, so
-        // the first ten characters are the day and the day is the question.
-        return whatsNewItems().filter(n => String(n.activityAt || "").slice(0, 10) >= cutoff).length;
+        // The reader's day on both sides, as the log itself groups (see
+        // localDayKey) — the cutoff was a UTC day compared against UTC
+        // slices, so the badge and the log disagreed about the edge.
+        const now = new Date();
+        const back = new Date(now.getFullYear(), now.getMonth(), now.getDate() - WHATS_NEW_RECENT_DAYS, 12);
+        const cutoff = localDayKey(back.toISOString());
+        return whatsNewItems().filter(n => localDayKey(n.activityAt) >= cutoff).length;
     }
 
     /* The dated line What's New adds to a row, and nowhere else adds.
@@ -2266,7 +2591,8 @@ document.addEventListener("DOMContentLoaded", () => {
         ];
         // Only when it is genuinely later than the day it arrived: an edit
         // made an hour after cataloguing is part of cataloguing it.
-        if (n.updatedAt && n.updatedAt.slice(0, 10) > n.archivedAt.slice(0, 10)) {
+        // Local days, as the caption decides it — see whatsNewItems.
+        if (n.updatedAt && localDayKey(n.updatedAt) > localDayKey(n.archivedAt)) {
             parts.push(`<span class="row-when-item">Edited: ${escapeHtml(formatMazeDate(n.updatedAt))}</span>`);
         }
         // No separator glyph between them: a bullet or a dash would have to
@@ -2393,7 +2719,21 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    /* The log's headings say "Today" and "Yesterday", which are only true
+       on the day they were drawn. Left open over midnight, the log went on
+       calling yesterday "Today" until something else happened to redraw
+       it. So the reader's day is noted at each draw and checked once a
+       minute while the log is showing; when it has turned over, the log is
+       drawn again in place (keeping focus and scroll, as any unasked-for
+       render must). A minute late at midnight is fine; a day late is not. */
+    let whatsNewDrawnDay = null;
+    setInterval(() => {
+        if (!showWhatsNew || !whatsNewDrawnDay) return;
+        if (localDayKey(new Date().toISOString()) !== whatsNewDrawnDay) renderInPlace();
+    }, 60000);
+
     function renderWhatsNew() {
+        whatsNewDrawnDay = localDayKey(new Date().toISOString());
         const items = whatsNewItems().filter(matchesQuery);
         currentItems = items;
 
@@ -2430,7 +2770,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <ul class="updatelog-entries">
                             ${group.entries.map(({ n, i }) => `
                                 <li>
-                                    <button type="button" class="updatelog-entry" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}">
+                                    <button type="button" class="updatelog-entry" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}" data-focus-key="${escapeHtml(recordKey(n))}">
                                         <span class="updatelog-verb is-${n.activity}">${n.activity === "updated" ? "Updated" : "Added"}</span>
                                         ${n.thumb
                                             ? `<img class="updatelog-thumb" src="${escapeHtml(rowThumbUrl(n.thumb))}" alt="" loading="lazy" decoding="async">`
@@ -2592,7 +2932,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <span class="timeline-dot" aria-hidden="true"></span>
                 <div class="timeline-entry-body">
                     <p class="timeline-entry-name">
-                        ${medal}<button type="button" class="timeline-open" data-timeline-index="${index}" data-record-id="${escapeHtml(entry.id)}">${escapeHtml(entry.name)}</button>
+                        ${medal}<button type="button" class="timeline-open" data-timeline-index="${index}" data-record-id="${escapeHtml(entry.id)}" data-focus-key="${escapeHtml(entry.kind + ":" + entry.id)}">${escapeHtml(entry.name)}</button>
                         <span class="timeline-badge status-badge status-${cssToken(entry.statusKey)}">${escapeHtml(entry.statusLabel)}</span>
                     </p>
                     ${entry.by ? `<p class="timeline-entry-by">${entry.kind === "event" ? "Event hosted" : "Maze built"} by ${escapeHtml(entry.by)}</p>` : ""}
@@ -2718,23 +3058,34 @@ document.addEventListener("DOMContentLoaded", () => {
        user part-way down the list was thrown back to the top of the page by
        a timer. So the focused entry's record id is noted before the render
        and the entry with the same id is focused after it, if it is still
-       there. Rows, What's New entries and timeline entries all carry
-       data-record-id for this.
+       there.
+
+       Keyed on data-focus-key, not the bare record id. The id alone is not
+       unique ("christmas-maze" is a maze AND an event — see recordKey), and
+       the controls that are not records at all had nothing to be found by:
+       the furni browser's tiles, the furni listing's room rows, the chip's
+       Back and Clear, and the empty state's "Search events instead" (which
+       sits in emptyEl, beside the grid rather than in it). Each of those
+       lost focus to <body> on the 15s tick. Every one of them now carries
+       a stable key: rows, What's New and timeline entries their kind and
+       id, the rest what they are.
 
        Nothing happens unless focus was on one of those entries, so a render
        from typing in the search box or pressing a tab is untouched. */
     function render() {
         const active = document.activeElement;
-        const held = active && active.closest && active.closest("[data-record-id]");
-        const container = held && (grid.contains(held) ? grid : featuredFrameList.contains(held) ? featuredFrameList : null);
-        const keep = container && held.dataset.recordId
-            ? { container, id: held.dataset.recordId, cls: held.classList[0] }
+        const held = active && active.closest && active.closest("[data-focus-key]");
+        const container = held && (grid.contains(held) ? grid
+            : featuredFrameList.contains(held) ? featuredFrameList
+                : emptyEl.contains(held) ? emptyEl : null);
+        const keep = container && held.dataset.focusKey
+            ? { container, key: held.dataset.focusKey, cls: held.classList[0] }
             : null;
         renderView();
         // Still focused on something that survived the render: leave it be.
         if (!keep || (document.activeElement !== document.body && keep.container.contains(document.activeElement))) return;
-        const again = Array.from(keep.container.querySelectorAll("[data-record-id]"))
-            .find(el => el.dataset.recordId === keep.id && el.classList.contains(keep.cls));
+        const again = Array.from(keep.container.querySelectorAll("[data-focus-key]"))
+            .find(el => el.dataset.focusKey === keep.key && el.classList.contains(keep.cls));
         if (again) again.focus({ preventScroll: true });
     }
 
@@ -2977,6 +3328,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "archive-empty-jump";
+        // Found again after a background render — see render().
+        btn.dataset.focusKey = "jump:" + other;
         const label = document.createElement("span");
         label.className = "archive-empty-jump-label";
         label.textContent = other === "events" ? "Search events instead" : "Search mazes instead";
@@ -3572,6 +3925,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // and sliding in from a stale leftover position would look like a glitch).
     function showGalleryImage(index, opts = {}) {
         if (!activeGallery || !activeGallery.length) return;
+        // Taken before anything is rebuilt — see rescueModalFocus at the end.
+        const focusBefore = document.activeElement;
         const nextIndex = (index + activeGallery.length) % activeGallery.length;
         // Direction is read off the raw, pre-wrap index vs. the current one
         // so wrapping past either end (last -> first via Next, first -> last
@@ -3634,10 +3989,16 @@ document.addEventListener("DOMContentLoaded", () => {
         // gallery, not to the maze — so moving to the next room drops any
         // older version that is up rather than leaving it over a picture it
         // has nothing to do with.
-        oldVersionsGallery = (g.oldVersions || []).filter(v => v && v.image);
+        // asList, not `|| []`: a hand-edited record with oldVersions as an
+        // object or a string got past the `||` and threw on .filter, taking
+        // the whole room change down with it.
+        oldVersionsGallery = asList(g.oldVersions).filter(v => v && v.image);
         resetOldVersionInstant();
         renderOldVersionsRail();
         oldVersionsPill.style.display = oldVersionsGallery.length ? "inline-flex" : "none";
+        // Both pills live in the picture's top-left corner; the frame says
+        // when this one is up so the Pause pill steps down beneath it.
+        if (oldVersionsPill.parentElement) oldVersionsPill.parentElement.classList.toggle("has-old-versions", oldVersionsGallery.length > 0);
         markActiveOldVersion();
 
         galleryStrip.querySelectorAll("img, .gallery-strip-missing").forEach((thumb, i) => {
@@ -3651,16 +4012,7 @@ document.addEventListener("DOMContentLoaded", () => {
            picture the visitor was looking at. Measured off the two rects
            rather than offsetLeft, which counts from whatever positioned
            ancestor the strip happens to have rather than from the strip. */
-        const activeThumb = galleryStrip.children[activeIndex];
-        if (activeThumb) {
-            const stripRect = galleryStrip.getBoundingClientRect();
-            const thumbRect = activeThumb.getBoundingClientRect();
-            galleryStrip.scrollTo({
-                left: galleryStrip.scrollLeft + (thumbRect.left - stripRect.left)
-                    - (galleryStrip.clientWidth - thumbRect.width) / 2,
-                behavior: reducedMotionQuery.matches ? "auto" : "smooth"
-            });
-        }
+        scrollGalleryStripToActive();
 
         if (lightboxOverlay.classList.contains("open")) {
             // Nothing to zoom into for a room with no image — close rather
@@ -3675,6 +4027,46 @@ document.addEventListener("DOMContentLoaded", () => {
                 lightboxCounter.textContent = position ? `${label} — ${position}` : label;
             }
         }
+        rescueModalFocus(focusBefore);
+    }
+
+    /* Centres the active thumbnail in the strip (see the comment at its call
+       in showGalleryImage for why it is a scrollTo and not scrollIntoView).
+       Its own function because openModal runs it a second time: on a fresh
+       open, showGalleryImage runs while the overlay is still display:none,
+       every rect measures 0 and the strip stayed at the start — so a maze
+       opened on its fifth room showed the first thumbnails with the lit one
+       out of sight. */
+    function scrollGalleryStripToActive(instant) {
+        const activeThumb = galleryStrip.children[activeIndex];
+        if (!activeThumb) return;
+        const stripRect = galleryStrip.getBoundingClientRect();
+        const thumbRect = activeThumb.getBoundingClientRect();
+        galleryStrip.scrollTo({
+            left: galleryStrip.scrollLeft + (thumbRect.left - stripRect.left)
+                - (galleryStrip.clientWidth - thumbRect.width) / 2,
+            behavior: instant || reducedMotionQuery.matches ? "auto" : "smooth"
+        });
+    }
+
+    /* A room change rebuilds the furni row and the older-version picker
+       from scratch, and hides the big picture for a room still "Awaiting
+       Room Image". Whatever of those held keyboard focus was thrown away or
+       hidden under it, and focus fell to <body> — out of the window, where
+       the next Tab starts from the top of the page behind the overlay. When
+       that has happened, focus goes to the Next arrow (the control that
+       most likely caused it, and the natural way on), or failing that to
+       the window itself. Only rescues focus that was inside the window;
+       anything that has already moved it somewhere real is left alone. */
+    function rescueModalFocus(lost) {
+        // (A removed element is no longer "contained", hence the isConnected.)
+        if (!lost || lost === document.body || (lost.isConnected && !modalOverlay.contains(lost))) return;
+        if (!modalOverlay.classList.contains("open") || modalOverlay.classList.contains("closing")) return;
+        if (lost.isConnected && lost.getClientRects().length) return;
+        const now = document.activeElement;
+        if (now && now !== document.body && now !== lost) return;
+        const next = [galleryNext, modalCard].find(el => el && el.getClientRects().length);
+        if (next) next.focus({ preventScroll: true });
     }
 
     function stopAutoAdvance() {
@@ -3729,7 +4121,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // The button only exists where there is something for it to stop.
     function syncGalleryPauseBtn() {
         if (!galleryPauseBtn) return;
-        const shown = !!(activeGallery && activeGallery.length >= 2) && !reducedMotionQuery.matches;
+        /* Nor while an older version is up: restartAutoAdvance refuses to
+           run then (see its oldVersionShown guard), so "Play" there was a
+           button that did visibly nothing. markActiveOldVersion re-syncs
+           this whenever an older version comes or goes. */
+        const shown = !!(activeGallery && activeGallery.length >= 2) && !reducedMotionQuery.matches
+            && oldVersionShown < 0;
         galleryPauseBtn.style.display = shown ? "inline-flex" : "none";
         galleryPauseBtn.textContent = carouselPausedByUser ? "▶︎ Play" : "❚❚ Pause"; // U+FE0E: iOS would otherwise draw the emoji play button
         galleryPauseBtn.setAttribute("aria-label", carouselPausedByUser ? "Play the slideshow" : "Pause the slideshow");
@@ -3741,7 +4138,17 @@ document.addEventListener("DOMContentLoaded", () => {
             carouselPausedByUser = !carouselPausedByUser;
             syncGalleryPauseBtn();
             if (carouselPausedByUser) stopAutoAdvance();
-            else restartAutoAdvance();
+            else {
+                /* Play moves on at once. The button sits on the picture, so
+                   the pointer that pressed it (or the focus left on it) is
+                   exactly what carouselHeld counts as "someone is looking" —
+                   every tick after Play declined, and Play looked broken.
+                   One step now shows it took; the countdown then runs from
+                   here as usual and the hold applies again once the visitor
+                   moves away. */
+                showGalleryImage(activeIndex + 1);
+                restartAutoAdvance();
+            }
         });
     }
 
@@ -4068,6 +4475,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const PHOTO_FRAME_Z = 300;   // must match .photo-frame z-index in the CSS
+    // Fewer than the 19 slots between PHOTO_FRAME_Z and the cards' 320 —
+    // see openPhotoFrame.
+    const MAX_PHOTO_FRAMES = 12;
 
     function bringPhotoFrameToFront(frame) {
         // Kept under 320, where the furni cards start (see furniCardTopZ):
@@ -4091,6 +4501,16 @@ document.addEventListener("DOMContentLoaded", () => {
            the top of the page. Back to the photo icon that opened it, or to
            the window itself when that icon has gone. */
         const hadFocus = frame.contains(document.activeElement);
+        /* Closed mid-pan or mid-drag (Escape with the button still down):
+           a removed element's lost capture is reported to the document, not
+           to the box, so neither endPan nor endFrameDrag ever ran and body
+           was left with user-select:none — no text on the page could be
+           selected until a reload. Nothing can be mid-gesture on a frame
+           that is going, so both are undone here. */
+        if (frame.classList.contains("is-panning") || dragFrame === frame) {
+            document.body.style.userSelect = "";
+            if (dragFrame === frame) { dragFrame = null; dragPointerId = null; }
+        }
         frame.remove();
         if (!openPhotoFrames.length) photoFrameTopZ = PHOTO_FRAME_Z;
         syncPhotoStripToFrames();
@@ -4124,7 +4544,10 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!furni) return;
         const queue = [];
         for (const record of Object.values(furni)) {
-            for (const item of (record && record.items) || []) {
+            // asList: an `items` that is truthy but not a list (an object, a
+            // string) made for...of throw — or walk a string's characters.
+            // A bare array is a valid record too (see renderFurniStrip).
+            for (const item of Array.isArray(record) ? record : asList(record && record.items)) {
                 if (!item || item.hidden || !item.icon) continue;
                 if (warmedFurniIcons.has(item.icon)) continue;
                 warmedFurniIcons.add(item.icon);
@@ -4273,7 +4696,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // nothing can still say whether it was scanned and skipped or
         // simply had no furni in it. A plain array is accepted too, for
         // anything added by hand.
-        const list = Array.isArray(record) ? record : (record && record.items) || [];
+        // asList rather than `|| []`: an `items` that was an object or a
+        // string got through and threw on .filter below.
+        const list = Array.isArray(record) ? record : asList(record && record.items);
         // Hidden ones stay in the record — the admin can put them back, and
         // a rescan would only find a false positive again — but never reach
         // the site.
@@ -4751,10 +5176,14 @@ document.addEventListener("DOMContentLoaded", () => {
            A display name is carried alongside the key because the key is
            whatever identified it (a FurniIndex URL, usually), which is not
            something to put in front of a reader. */
+        /* Named from the same live, visible scans the index and the furni
+           browser read (see furniBrowserEntries), so "N furni the scan has
+           identified" here is the browser's "pieces identified" too. */
         const names = new Map();
-        ROOMS.forEach(room => {
-            Object.values(room.furni || {}).forEach(record => {
-                (record && record.items ? record.items : []).forEach(item => {
+        ROOMS.filter(room => !isHallway(room)).forEach(room => {
+            liveFurniRecords(room).forEach(([, record]) => {
+                asList(record && record.items).forEach(item => {
+                    if (!item || item.hidden) return;
                     const key = furniKeyOf(item);
                     if (key && item.name && !names.has(key)) names.set(key, item.name);
                 });
@@ -4842,9 +5271,18 @@ document.addEventListener("DOMContentLoaded", () => {
            found ONLY in the hallway would otherwise be listed with a count
            of zero and fall through all three bands, which sort on 1, 2-4
            and 5+. It would vanish from the page without saying so. */
+        /* Walked the way buildFurniIndex walks it — only pictures still in
+           the record (liveFurniRecords), and never an item an admin hid —
+           so a piece's tile and its count come from the same scans. This
+           read every scan ever stored, including ones for pictures since
+           deleted, so a piece seen only in a removed picture was listed
+           with a count the index did not agree with (often zero, which
+           fell through every band), and the head's "pieces identified"
+           counted it. Anything the index has no maze for is dropped below. */
         ROOMS.filter(room => !isHallway(room)).forEach(room => {
-            Object.values(room.furni || {}).forEach(record => {
-                (record && record.items ? record.items : []).forEach(item => {
+            liveFurniRecords(room).forEach(([, record]) => {
+                asList(record && record.items).forEach(item => {
+                    if (!item || item.hidden) return;
                     const key = furniKeyOf(item);
                     if (!key || seen.has(key)) return;
                     const mazes = furniIndexByKey.get(key) || [];
@@ -4864,7 +5302,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         });
         return [...seen.values()]
-            .filter(f => f.name && f.name !== f.key)
+            .filter(f => f.name && f.name !== f.key && f.mazes > 0)
             // Rarest first, and alphabetically within a count so the grid
             // has an order you can follow rather than an arbitrary one.
             .sort((a, b) => a.mazes - b.mazes || compareNames(a.name, b.name));
@@ -4881,7 +5319,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ? `${f.name} — used only by ${f.only.name}`
             : `${f.name} — in ${f.mazes} mazes`;
         return `
-            <button type="button" class="furni-tile" data-furni-key="${escapeHtml(f.key)}"
+            <button type="button" class="furni-tile" data-furni-key="${escapeHtml(f.key)}" data-focus-key="${escapeHtml("furni:" + f.key)}"
                     aria-label="${escapeHtml(label)}">
                 <span class="furni-tile-art">
                     ${f.icon
@@ -5171,7 +5609,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const g = (room.gallery || []).find(x => (x && x.image) === image
             || (typeof x === "string" && x === image));
         if (g) return normalizeGalleryItem(g).label;
-        return deriveGalleryLabel(image);
+        /* Through asText, as normalizeGalleryItem now does: deriveGalleryLabel
+           calls .split on what it is given, so a picture that was not a
+           string threw here and took the whole furni room listing with it.
+           Nothing to derive a name from reads as plain "Room". */
+        const path = asText(image);
+        return path ? deriveGalleryLabel(path) : "Room";
     }
 
     /* Entrance first, then the gallery in its stored order, then finish —
@@ -5238,6 +5681,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             ${group.rooms.map(e => `
                                 <li>
                                     <button type="button" class="furni-room-row"
+                                            data-focus-key="${escapeHtml("room:" + e.room.id + "|" + e.image)}"
                                             data-room-id="${escapeHtml(e.room.id)}"
                                             data-room-image="${escapeHtml(e.image)}">
                                         <img class="furni-room-shot" src="${escapeHtml(rowThumbUrl(e.image))}"
@@ -5293,13 +5737,13 @@ document.addEventListener("DOMContentLoaded", () => {
             ? `<img class="furni-filter-icon" src="${escapeHtml(furniFilter.icon)}" alt="">`
             : "";
         const back = furniFilter.fromMazeId
-            ? `<button type="button" class="furni-filter-btn" id="furni-filter-back">Back</button>`
+            ? `<button type="button" class="furni-filter-btn" id="furni-filter-back" data-focus-key="furni-filter-back">Back</button>`
             : "";
         return `<div class="furni-filter">
                 ${icon}
                 <span class="furni-filter-text">Mazes with <strong>${escapeHtml(furniFilter.name)}</strong></span>
                 ${back}
-                <button type="button" class="furni-filter-btn" id="furni-filter-clear" aria-label="Show the whole archive again">Clear</button>
+                <button type="button" class="furni-filter-btn" id="furni-filter-clear" data-focus-key="furni-filter-clear" aria-label="Show the whole archive again">Clear</button>
             </div>`;
     }
 
@@ -5820,6 +6264,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
         box.addEventListener("pointerup", endPan);
         box.addEventListener("pointercancel", endPan);
+        /* Capture can be lost without a pointerup reaching the box — the
+           frame closed by Escape mid-pan, the window blurring, the browser
+           taking the gesture. endPan was then never run and body kept
+           user-select:none, leaving every piece of text on the page
+           unselectable until a reload. endPan ignores pointers it has
+           already let go of, so the lostpointercapture that follows an
+           ordinary release (and endPan's own releasePointerCapture) is a
+           no-op; its tap check only fires on a real pointerup. */
+        box.addEventListener("lostpointercapture", endPan);
 
         /* One tap switches between the fitted view and full size; two double
            the whole frame. Both start with a first tap, so the single-tap
@@ -5940,6 +6393,15 @@ document.addEventListener("DOMContentLoaded", () => {
         frame.querySelector(".photo-frame-photo").src = imgCdn(entry.image, 1200, null, 80);
         frame.querySelector(".photo-frame-photo").alt = entry.name || "";
         frame.querySelector(".photo-frame-name").textContent = entry.name || "";
+
+        /* At most MAX_PHOTO_FRAMES open at once; the one opened longest ago
+           makes way. The frames' band is 300-319 (the cards start at 320),
+           and raiseInStack's renumbering can only keep a pile inside it if
+           the pile is smaller than the band — a maze with twenty-odd related
+           pictures, all opened, renumbered its frames straight up through
+           the furni cards' numbers and buried a card under a frame. Twelve
+           is more than fit on a screen side by side anyway. */
+        while (openPhotoFrames.length >= MAX_PHOTO_FRAMES) closePhotoFrame(openPhotoFrames[0]);
 
         bringPhotoFrameToFront(frame);
         frame.querySelector(".photo-frame-close").addEventListener("click", () => closePhotoFrame(frame));
@@ -6081,6 +6543,8 @@ document.addEventListener("DOMContentLoaded", () => {
     modalGalleryImg.addEventListener("keydown", e => {
         if (e.key !== "Enter" && e.key !== " ") return;
         if (!activeGallery) return;
+        // Covered by an older version — see markActiveOldVersion.
+        if (oldVersionShown >= 0) return;
         e.preventDefault();
         openLightbox();
     });
@@ -6114,8 +6578,18 @@ document.addEventListener("DOMContentLoaded", () => {
         lightboxOverlay.classList.remove("open");
         const back = lightboxTriggerEl;
         lightboxTriggerEl = null;
-        if (wasOpen && back && document.body.contains(back) && lightboxOverlay.contains(document.activeElement)) {
-            back.focus({ preventScroll: true });
+        /* The trigger has to be on screen as well as in the document. The
+           usual trigger is the big picture itself, and paging the lightbox
+           on to a room still "Awaiting Room Image" closes the lightbox with
+           that picture display:none — focus() on it silently did nothing,
+           and focus was left on the lightbox's hidden X, i.e. nowhere. The
+           Next arrow is then the natural place to be (it is how the visitor
+           moves on from the empty room); the window itself if not even that
+           is showing. */
+        if (wasOpen && lightboxOverlay.contains(document.activeElement)) {
+            const target = [back, galleryNext, modalCard].find(el =>
+                el && document.body.contains(el) && el.getClientRects().length);
+            if (target) target.focus({ preventScroll: true });
         }
         // Only resume the carousel if the room modal itself is still open
         // AND not already on its way out — closeModal() also calls this (to
@@ -6199,6 +6673,18 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.classList.toggle("active", i === oldVersionShown);
         });
         oldVersionsPill.classList.toggle("is-showing", oldVersionShown >= 0);
+        syncGalleryPauseBtn();
+        /* The current room's picture sits UNDER an older version while one
+           is up, but stayed in the tab order as "Enlarge this picture" — and
+           Enter on it opened the lightbox on the current room, not the older
+           one on screen. Out of the tab order while it is covered (the
+           keydown handler also declines then), and back in once it is not,
+           but only if setGalleryImageOperable had made it a control at all. */
+        if (oldVersionShown >= 0) {
+            if (modalGalleryImg.hasAttribute("tabindex")) modalGalleryImg.setAttribute("tabindex", "-1");
+        } else if (modalGalleryImg.getAttribute("role") === "button") {
+            modalGalleryImg.setAttribute("tabindex", "0");
+        }
         if (!oldVersionsAvailable()) return;
         oldVersionsPill.textContent = oldVersionShown >= 0
             ? "Back to current"
@@ -6502,6 +6988,20 @@ document.addEventListener("DOMContentLoaded", () => {
        clipboard permission that was refused. */
     // The window's polite status line (see #modal-status in home.html).
     const modalStatus = document.getElementById("modal-status");
+    // The pending "fill it a beat later" of the last announcement — see say()
+    // in renderShareButton.
+    let modalStatusTimer = null;
+
+    /* Emptied whenever the window opens or closes. It kept its last line
+       ("Link copied") across records, so the next maze opened with a stale
+       announcement sitting in its live region — read out again by a screen
+       reader walking the window, about a link to a different maze. The
+       pending timer goes too, or a close within 60ms of a press refilled it. */
+    function clearModalStatus() {
+        clearTimeout(modalStatusTimer);
+        modalStatusTimer = null;
+        if (modalStatus) modalStatus.textContent = "";
+    }
 
     function shareUrlFor(n) {
         const path = modalAddress(n);
@@ -6534,7 +7034,8 @@ document.addEventListener("DOMContentLoaded", () => {
                a beat later, so a second press still counts as a change. */
             if (modalStatus && spoken) {
                 modalStatus.textContent = "";
-                setTimeout(() => { modalStatus.textContent = spoken; }, 60);
+                clearTimeout(modalStatusTimer);
+                modalStatusTimer = setTimeout(() => { modalStatus.textContent = spoken; }, 60);
             }
             clearTimeout(resetTimer);
             // Long enough to read, short enough that the button is back to
@@ -6551,6 +7052,29 @@ document.addEventListener("DOMContentLoaded", () => {
            the address, each one squeezing the phone's action bar further. */
         let field = null;
         let fieldTimer = null;
+        /* Taken away after eight seconds — but never from under focus. It
+           is focused and selected the moment it appears, and removing it
+           while the visitor was still in it (reaching for Ctrl+C, or away
+           in another app to paste) dropped focus on <body>, outside the
+           window. While it holds focus it waits for focus to leave; the
+           check runs a tick after blur, by when activeElement names where
+           focus went — and a blur from switching apps leaves it still
+           pointing at the field, so the wait simply continues. */
+        let fieldWaiting = false;
+        const dropField = () => {
+            if (!field || !field.isConnected) return;
+            if (document.activeElement === field) {
+                if (!fieldWaiting) {
+                    fieldWaiting = true;
+                    field.addEventListener("blur", () => {
+                        fieldWaiting = false;
+                        setTimeout(dropField, 0);
+                    }, { once: true });
+                }
+                return;
+            }
+            field.remove();
+        };
 
         btn.addEventListener("click", async () => {
             try {
@@ -6576,7 +7100,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 try { field.setSelectionRange(0, url.length); } catch (err) { /* not a text field */ }
                 say("Copy this", "Couldn't copy automatically. The link is selected, ready to copy.");
                 clearTimeout(fieldTimer);
-                fieldTimer = setTimeout(() => { if (field) field.remove(); }, 8000);
+                fieldTimer = setTimeout(dropField, 8000);
             }
         });
 
@@ -6714,10 +7238,24 @@ document.addEventListener("DOMContentLoaded", () => {
     let modalItem = null;
 
     function openModal(n, opts = {}) {
+        const previousItem = modalItem;
         modalItem = n;
         /* Read before "closing" is taken off below: a window mid-close still
            carries "open", and that case is a fresh open, not a swap. */
         const swapping = modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing");
+        clearModalStatus();
+        /* A different record starts at the top. The description box and
+           the overlay (which is what scrolls on a phone) kept their scroll
+           positions across a swap — a card's "also in" from far down one
+           maze's description opened the next maze scrolled halfway through
+           its own text, or with the phone's window scrolled past the
+           picture. The same record re-shown (Back and Forward landing on the
+           window already up) keeps its place. */
+        if (!swapping || previousItem !== n) {
+            const descBox = document.getElementById("room-desc-box");
+            if (descBox) descBox.scrollTop = 0;
+            modalOverlay.scrollTop = 0;
+        }
         // Invalidates any in-flight closeModal() from a rapid re-open (its
         // animationend/fallback would otherwise fire later and rip the
         // "open"/"closing" classes off this new instance mid-view).
@@ -6916,17 +7454,19 @@ document.addEventListener("DOMContentLoaded", () => {
         // get a roomIndex/roomTotal, so the position counter (built in
         // showGalleryImage) never counts the bookends.
         const entranceItem = n.entrance && n.entrance.image
-            ? { image: n.entrance.image, label: n.entrance.label || "Entrance", kind: "entrance", oldVersions: n.entrance.oldVersions || [] }
+            ? { image: n.entrance.image, label: n.entrance.label || "Entrance", kind: "entrance", oldVersions: asList(n.entrance.oldVersions) }
             : null;
         const finishItem = n.finish && n.finish.image
-            ? { image: n.finish.image, label: n.finish.label || "Finish", kind: "finish", oldVersions: n.finish.oldVersions || [] }
+            ? { image: n.finish.image, label: n.finish.label || "Finish", kind: "finish", oldVersions: asList(n.finish.oldVersions) }
             : null;
         /* Anything that is not an entry is dropped before it is normalized.
            One null in a stored gallery (a half-finished admin edit, a bad
            import) made normalizeGalleryItem read .image off null, which
            threw out of openModal — and the page's own error handling then
            took the whole archive to its failed state, over one blank room. */
-        const roomItems = (n.gallery || [])
+        // asList: a gallery stored as something other than a list (an
+        // object, a string) got past `|| []` and threw on .filter.
+        const roomItems = asList(n.gallery)
             .filter(g => typeof g === "string" || (g && typeof g === "object"))
             .map(normalizeGalleryItem);
         // Run-through and bonus rooms (a walk-through / a side quest, not a
@@ -7075,6 +7615,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     : "";
             }
             oldVersionsPill.style.display = "none";
+            if (oldVersionsPill.parentElement) oldVersionsPill.parentElement.classList.remove("has-old-versions");
         }
 
         // Old-version images belong to whichever room is currently showing
@@ -7085,6 +7626,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const wasOpen = modalOverlay.classList.contains("open");
         modalOverlay.classList.add("open");
+        /* The thumbnail strip was centred on the active room by
+           showGalleryImage above — while the overlay was still display:none
+           on a fresh open, where every rect measures 0 and the scroll went
+           nowhere. Once more a frame after "open" is on, when there is a
+           layout to measure; instant, since this is where the strip starts
+           rather than a move the visitor asked for. Skipped if another
+           record or a close has got in first. */
+        if (activeGallery) {
+            requestAnimationFrame(() => {
+                if (modalItem !== n || !activeGallery) return;
+                if (!modalOverlay.classList.contains("open") || modalOverlay.classList.contains("closing")) return;
+                scrollGalleryStripToActive(true);
+            });
+        }
         // Started (or, for a record with no gallery, stopped — a timer left
         // from the previous maze would otherwise tick on over this one) only
         // now the window is open; see restartAutoAdvance's first guard.
@@ -7141,19 +7696,49 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!opts.fromHistory) leaveModalHistory();
 
         if (opts.keepFocus) modalTriggerEl = null;
+        clearModalStatus();
 
+        /* Only the card's OWN modalOut ends the close. animationend bubbles,
+           so with { once: true } the first animation to finish anywhere in
+           the window — a thumbnail's, a furni card's, the actions tab's —
+           spent the listener and hid the overlay before modalOut had played
+           (the same trap hideOldVersion's transitionend fell into). Taken
+           off again in finish, so the 300ms fallback finishing first does
+           not leave it waiting to fire on the next close. */
+        const onAnimationEnd = e => {
+            if (e.target !== modalCard || e.animationName !== "modalOut") return;
+            finish();
+        };
         const finish = () => {
+            modalCard.removeEventListener("animationend", onAnimationEnd);
             if (token !== modalCloseToken) return; // superseded by a reopen
             modalOverlay.classList.remove("open", "closing");
             activeGallery = null;
-            // Back to whatever row (or other trigger) opened this modal —
-            // guarded in case it's no longer in the page (e.g. the list
-            // re-rendered while the modal was open) rather than calling
-            // .focus() on a detached element.
-            if (modalTriggerEl && document.body.contains(modalTriggerEl)) modalTriggerEl.focus();
+            /* Back to whatever row (or other trigger) opened this modal —
+               guarded in case it's no longer in the page (e.g. the list
+               re-rendered while the modal was open) rather than calling
+               .focus() on a detached element. And it has to be SHOWING: a
+               maze opened from Your Progress was opened by a row in a
+               window that has since closed, and focus() on a hidden element
+               does nothing, leaving focus on <body> with the window gone.
+               The archive window (tabindex="-1", the skip link's target) is
+               the fallback — where the visitor is, and where Tab carries on
+               from. Focus that has already gone somewhere real outside this
+               window (another window opening over it) is left there. */
+            const now = document.activeElement;
+            const focusIsOurs = !now || now === document.body || modalOverlay.contains(now);
+            if (focusIsOurs && !opts.keepFocus) {
+                const rendered = el => el && document.body.contains(el) && el.getClientRects().length;
+                // <body> (a window opened from its address, with nothing
+                // focused) is no trigger to go back to either.
+                const back = modalTriggerEl !== document.body && rendered(modalTriggerEl) ? modalTriggerEl : null;
+                const fallback = document.getElementById("browse-window");
+                if (back) back.focus();
+                else if (rendered(fallback)) fallback.focus({ preventScroll: true });
+            }
             modalTriggerEl = null;
         };
-        modalCard.addEventListener("animationend", finish, { once: true });
+        modalCard.addEventListener("animationend", onAnimationEnd);
         // Fallback in case animationend never fires (e.g. the tab was
         // backgrounded mid-animation and the browser skipped the frame) —
         // the modal must not get stuck permanently mid-close.
@@ -7287,6 +7872,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function leaveModalHistory() {
+        /* A step back is already on its way. Close, reopen and close again
+           before it lands and the address still names the maze (the back
+           has not happened yet), so this used to take a SECOND
+           history.back() — which, once the first landed, stepped off the
+           archive's own entry and out of the site. The step in flight
+           already takes the window's entry away; the reopen that was
+           waiting to push its own (pendingPush) is what this close undoes,
+           so it is simply dropped. */
+        if (pendingBack) { pendingPush = null; return; }
         if (!onModalAddress()) return;
         if (ownsModalEntry()) {
             pendingBack = true;
@@ -7349,8 +7943,16 @@ document.addEventListener("DOMContentLoaded", () => {
         // event — but it is in the address (?q=), which Umami records; the
         // privacy policy says so.
         if (e.target.value.trim()) noteSearch();
-        render();
+        // The list at once; the address when typing settles — see
+        // syncSearchToUrl. try/finally so a render that throws cannot leave
+        // every later render thinking it is typing.
+        searchTyping = true;
+        try { render(); } finally { searchTyping = false; }
     });
+    // Leaving the box, or pressing Enter in it, is the end of typing: the
+    // address catches up now rather than 600ms later.
+    searchInput.addEventListener("blur", flushSearchToUrl);
+    searchInput.addEventListener("keydown", e => { if (e.key === "Enter") flushSearchToUrl(); });
 
     sortSelect.addEventListener("change", e => {
         sortBy = e.target.value;
@@ -7395,6 +7997,19 @@ document.addEventListener("DOMContentLoaded", () => {
            same walkableRooms set the headline figure is taken over. */
         const walkableIds = new Set(walkable.map(r => r.id));
         const toWalk = savedRooms.filter(r => walkableIds.has(r.id) && !walkedIds.has(r.id));
+        /* What the Saved LIST shows: every saved maze not yet completed,
+           closed ones included. Filtering the list the way toWalk is
+           filtered made saving a closed maze look broken — the button said
+           Saved and the panel said "Nothing saved yet". A closed one is
+           listed with a Closed tag instead, and still counts toward none of
+           the completion figures. */
+        /* The tag reads the STATUS, not the completion set. It was
+           "!walkable", and walkable leaves out collabs too, so every saved
+           collab maze was labelled Closed when it is nothing of the sort.
+           (Collabs now count towards completion as well — see
+           walkableRooms.) */
+        const savedShown = savedRooms.filter(r => !walkedIds.has(r.id))
+            .map(r => ({ room: r, closed: r.status === "closed" }));
 
         const byDifficulty = {};
         walkable.forEach(r => {
@@ -7404,7 +8019,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (walkedIds.has(r.id)) byDifficulty[d].walked++;
         });
 
-        return { walkable, walkedHere, savedRooms, toWalk, byDifficulty };
+        return { walkable, walkedHere, savedRooms, toWalk, savedShown, byDifficulty };
     }
 
     /* For the console's Profile page (js/console-profile.js): the same
@@ -7413,7 +8028,15 @@ document.addEventListener("DOMContentLoaded", () => {
     window.ArchiveProgress = {
         figures() {
             const f = progressFigures();
-            return { done: f.walkedHere.length, total: f.walkable.length, toWalk: f.toWalk.length };
+            /* `saved` is the Saved LIST's count — the figure the window's
+               own heading and the side menu's "· N saved" both show — so a
+               Profile line labelled Saved can agree with them. `toWalk` is
+               kept, and is a different number on purpose: saved mazes that
+               can still be completed, which leaves out closed ones. */
+            return {
+                done: f.walkedHere.length, total: f.walkable.length,
+                toWalk: f.toWalk.length, saved: f.savedShown.length
+            };
         },
         open: () => openProgress()
     };
@@ -7459,11 +8082,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 </li>`;
             }).join("");
 
-        const savedList = f.toWalk.length
-            ? `<ul class="progress-saved">${f.toWalk.map(r => `
+        const savedList = f.savedShown.length
+            ? `<ul class="progress-saved">${f.savedShown.map(({ room: r, closed }) => `
                 <li><button type="button" class="progress-saved-row" data-open-maze="${escapeHtml(r.id)}">
                     <span class="progress-saved-name">${escapeHtml(r.name || r.id)}</span>
-                    <span class="progress-saved-by">${escapeHtml(r.creator || "")}</span>
+                    <span class="progress-saved-by">${closed
+                        ? `<span class="progress-saved-closed" title="Closed, so it can't be completed now">Closed</span>`
+                        : ""}${escapeHtml(r.creator || "")}</span>
                 </button></li>`).join("")}</ul>`
             : `<p class="progress-note">Nothing saved yet. Open a maze and press <strong>Save</strong> to keep it here.</p>`;
 
@@ -7504,7 +8129,7 @@ document.addEventListener("DOMContentLoaded", () => {
             </section>
 
             <section class="progress-block">
-                <h4 class="progress-head-sm">Saved to complete${f.toWalk.length ? ` <span class="progress-count">${f.toWalk.length}</span>` : ""}</h4>
+                <h4 class="progress-head-sm">Saved${f.savedShown.length ? ` <span class="progress-count">${f.savedShown.length}</span>` : ""}</h4>
                 ${savedList}
             </section>`;
     }
@@ -7522,8 +8147,17 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.addEventListener("click", () => {
                 const room = ROOMS.find(r => r.id === btn.dataset.openMaze);
                 if (!room) return;
+                /* This window's opener is carried on to the maze's, so
+                   closing the maze hands focus to what opened Your Progress
+                   in the first place. openModal takes the focused element
+                   as its opener, and here that is this row — inside a
+                   window that has just shut — so closing the maze dropped
+                   focus to <body>. Read before closeProgress, which
+                   forgets it. */
+                const opener = progressTriggerEl;
                 closeProgress({ keepFocus: true });
                 openModal(normalize(room, false));
+                modalTriggerEl = focusLanding(opener);
             });
         });
     }
@@ -7534,6 +8168,24 @@ document.addEventListener("DOMContentLoaded", () => {
        document. Only recorded on a fresh open, so re-rendering an open
        window cannot overwrite the real opener with something inside it. */
     let progressTriggerEl = null;
+
+    /* Where focus can usefully go back to, given what opened a window.
+
+       Something still on the page and outside every window: itself. A row
+       of the side menu (hidden and inert once the menu shuts), anything
+       inside the maze window or this one (both about to be shut), a
+       control that has since been removed, or nothing at all: the side
+       menu's spine, which is always there and is where every one of these
+       hand-offs began or could have. Without the fallback, each of those
+       cases put focus on <body>, behind the overlays, at the top of the
+       document. */
+    function focusLanding(el) {
+        const spine = document.getElementById("side-spine");
+        if (!el || el === document.body || !document.body.contains(el) || typeof el.focus !== "function") return spine;
+        if (el.closest && el.closest("#side-menu, #progress-overlay, .saved-note")) return spine;
+        if (modalOverlay.contains(el)) return spine;
+        return el;
+    }
 
     function openProgress() {
         const overlay = document.getElementById("progress-overlay");
@@ -7585,12 +8237,12 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.classList.remove("modal-open");
         const back = progressTriggerEl;
         progressTriggerEl = null;
-        if (opts.keepFocus || !back || !document.body.contains(back)) return;
+        if (opts.keepFocus) return;
         // The side menu's own rows are hidden once the menu shuts, so a row
-        // that opened this is no place to land — its spine is.
-        const landing = back.closest && back.closest("#side-menu")
-            ? document.getElementById("side-spine")
-            : back;
+        // that opened this is no place to land — its spine is. So is an
+        // opener that has gone, which used to leave focus on <body>: see
+        // focusLanding.
+        const landing = focusLanding(back);
         if (landing && typeof landing.focus === "function") landing.focus({ preventScroll: true });
     }
 
@@ -7946,15 +8598,35 @@ document.addEventListener("DOMContentLoaded", () => {
             .catch(() => { /* fail open, as the game's own gate does */ });
     }
 
+    /* One row's figure, or a plain fallback if working it out throws.
+
+       Every row's second line and badge is computed from something else —
+       a game's status hook, the progress figures, the What's New log, the
+       guides — and they were all worked out in one go, unguarded, while the
+       menu was being built. So one bad record anywhere (a guide whose date
+       was not a string, a game hook that threw) took the WHOLE menu down:
+       the burger opened onto nothing, and every game and window behind it
+       was unreachable. A row that cannot say its figure now says its
+       static line instead, and the rest of the menu is untouched. */
+    function menuFigure(compute, fallback) {
+        try {
+            const v = compute();
+            return v == null ? fallback : v;
+        } catch (e) {
+            console.warn("A side menu row could not work out its figure", e);
+            return fallback;
+        }
+    }
+
     function sideMenuEntries() {
-        const g = typeof window.GuessStatus === "function" ? window.GuessStatus() : null;
+        const g = menuFigure(() => typeof window.GuessStatus === "function" ? window.GuessStatus() : null, null);
         // The last fortnight's worth, not the log's length — see
         // WHATS_NEW_RECENT_DAYS for why the two are different numbers.
-        const fresh = whatsNewRecentCount();
-        const f = progressFigures();
-        const de = deadEndFigures();
+        const fresh = menuFigure(whatsNewRecentCount, 0);
+        const f = menuFigure(progressFigures, null);
+        const de = menuFigure(deadEndFigures, null);
 
-        const o = typeof window.OddOneOutStatus === "function" ? window.OddOneOutStatus() : null;
+        const o = menuFigure(() => typeof window.OddOneOutStatus === "function" ? window.OddOneOutStatus() : null, null);
 
         /* Read fresh rather than captured once, for the same reason
            featuredFrameCount is — a phone turned landscape crosses this
@@ -7977,16 +8649,16 @@ document.addEventListener("DOMContentLoaded", () => {
             {
                 // How-to guides, in a window of their own (js/guides.js).
                 name: "Guides",
-                state: guidesState(),
+                state: menuFigure(guidesState, "How furni mazes work"),
                 badge: "",
                 on: false,
                 run: () => { if (window.Guides) Guides.open(); }
             },
             {
                 name: "Missing Pieces",
-                state: de === null ? "Help finish the archive"
+                state: menuFigure(() => de === null ? "Help finish the archive"
                     : de ? `${de} ${de === 1 ? "record needs" : "records need"} your help`
-                        : "Every record is complete",
+                        : "Every record is complete", "Help finish the archive"),
                 badge: "",
                 on: false,
                 // The console's list, not a view of the archive: each entry
@@ -7995,8 +8667,8 @@ document.addEventListener("DOMContentLoaded", () => {
             },
             {
                 name: "Your Progress",
-                state: `${f.walkedHere.length} of ${f.walkable.length} completed`
-                    + (f.toWalk.length ? ` · ${f.toWalk.length} saved` : ""),
+                state: menuFigure(() => `${f.walkedHere.length} of ${f.walkable.length} completed`
+                    + (f.savedShown.length ? ` · ${f.savedShown.length} saved` : ""), "Completed and saved mazes"),
                 badge: "",
                 on: false,
                 run: openProgress
@@ -8013,10 +8685,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 // no "Daily" heading any more to say which games reset each
                 // morning. See .side-menu-tag.
                 tag: "Daily",
-                state: !g ? "Today's five rooms"
+                state: menuFigure(() => !g ? "Today's five rooms"
                     : g.finished ? `Done — ${g.points} points`
                         : g.started ? `${g.done} of ${g.total} rooms done`
-                            : "Not played today",
+                            : "Not played today", "Today's five rooms"),
                 /* No points badge: the line below already says "Done — N
                    points", and at the side menu's width the badge pushed the
                    DAILY tag onto a line of its own. */
@@ -8029,10 +8701,10 @@ document.addEventListener("DOMContentLoaded", () => {
             {
                 name: "Odd One Out",
                 tag: "Daily",
-                state: !o ? "Spot the room that does not belong"
+                state: menuFigure(() => !o ? "Spot the room that does not belong"
                     : o.finished ? `Done — ${o.points} points`
                         : o.started ? `${o.done} of ${o.total} rounds done`
-                            : "Not played today",
+                            : "Not played today", "Spot the room that does not belong"),
                 badge: "",
                 on: false,
                 run: () => { if (typeof window.openOddOneOut === "function") window.openOddOneOut(); }
@@ -8361,8 +9033,10 @@ document.addEventListener("DOMContentLoaded", () => {
     featuredMazesBtn.addEventListener("click", () => {
         showFeatured = !showFeatured;
         // The two layered views are alternatives, not a stack: the featured
-        // panel covers the list What's New would be writing into.
-        if (showFeatured) { showWhatsNew = false; showFurni = false; furniFilter = null; }
+        // panel covers the list What's New would be writing into. The
+        // Timeline too, which was missed: opening Featured from it left the
+        // Timeline drawn underneath, waiting when Featured was closed.
+        if (showFeatured) { showWhatsNew = false; showTimeline = false; showFurni = false; furniFilter = null; }
         searchInput.value = "";
         query = "";
         render();
@@ -8473,8 +9147,22 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     modalClose.addEventListener("click", closeModal);
+    /* The backdrop closes the window only when the WHOLE press was on it.
+       A click's target is the nearest common ancestor of where the press
+       went down and where it came up, so a drag that began on the window
+       (selecting the description, dragging a photo frame or furni card —
+       both live inside this overlay — past its edge) and ended on the
+       backdrop was reported as a click on the overlay itself and shut the
+       window mid-gesture. Remember where the press started and require
+       both ends on the overlay. */
+    let overlayPressTarget = null;
+    modalOverlay.addEventListener("pointerdown", e => {
+        overlayPressTarget = e.target;
+    });
     modalOverlay.addEventListener("click", e => {
-        if (e.target === modalOverlay) closeModal();
+        const pressedOnBackdrop = overlayPressTarget === modalOverlay;
+        overlayPressTarget = null;
+        if (e.target === modalOverlay && pressedOnBackdrop) closeModal();
     });
     // The window's filter chips — tags, difficulty, hotel, "More by".
     modalOverlay.addEventListener("click", e => {
@@ -8552,7 +9240,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const typing = focusEl && (focusEl.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(focusEl.tagName));
         const inWindow = !focusEl || focusEl === document.body
             || modalOverlay.contains(focusEl) || lightboxOverlay.contains(focusEl);
-        if (activeGallery && !typing && inWindow) {
+        /* ...but not from the controls the room change itself rebuilds or
+           that float over the window. An arrow on a furni tile, an older
+           version's thumbnail or the pill flipped the room, the rebuild
+           threw the focused element away (focus fell to <body>) and left
+           any open furni card describing a room no longer shown. Frames and
+           cards are drawn over the window; arrows there are theirs, not
+           the gallery's. */
+        const ownArrows = focusEl && focusEl.closest &&
+            focusEl.closest("#furni-strip, #old-versions-rail, #old-versions-pill, .photo-frame, .furni-card");
+        if (activeGallery && !typing && inWindow && !ownArrows) {
             if (e.key === "ArrowLeft") { showGalleryImage(activeIndex - 1); restartAutoAdvance(); }
             if (e.key === "ArrowRight") { showGalleryImage(activeIndex + 1); restartAutoAdvance(); }
         }
@@ -8595,6 +9292,17 @@ document.addEventListener("DOMContentLoaded", () => {
         // modal leaves the visitor somewhere that contains it.
         topView = "mazes";
         showFeatured = false;
+        /* And out of the layered views, as applyFilterChip does. Switching
+           the tab underneath them changed nothing on screen: What's New,
+           the Timeline and the furni browser each draw over the tab, so a
+           link or a Back step opened the maze over whichever of them was
+           up, and closing it left the visitor somewhere that did not list
+           it. The search is left alone — a filter the visitor typed is
+           theirs to clear. */
+        showWhatsNew = false;
+        showTimeline = false;
+        showFurni = false;
+        furniFilter = null;
         mazesSub = record.status === "closed" ? "archived" : record.status === "collab" ? "collab" : "open";
         render();
         openModal(normalize(record, false), opts);

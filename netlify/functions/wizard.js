@@ -64,17 +64,38 @@ const UNLOCK_WINDOW_MS = 60 * 1000;
 const UNLOCK_MAX = 12;
 const unlockHits = new Map();               // address -> timestamps
 
-function unlockLimited(address) {
+/* CHARGED FOR WRONG CODES, NOT FOR EVERY CODE.
+
+   It used to be charged per code sent, right ones included. A returning
+   visitor's browser replays every code they have found (see keptCodes in
+   js/wizard.js), so anybody with more than twelve found was refused on
+   every load before typing anything — and the more of the puzzle they had
+   solved, the more certainly they were locked out of it.
+
+   A code that opens something is not a guess anybody needs slowing down:
+   whoever sent it has the answer already. So the allowance is spent on the
+   codes that open nothing, which is exactly the word-list attack this is
+   for, one miss at a time as before. `unlockSpent` reads what is left
+   without spending it, so a request can be refused before it costs a
+   database read; `unlockCharge` spends. */
+function unlockSpent(address) {
     const now = Date.now();
     const seen = (unlockHits.get(address) || []).filter(t => now - t < UNLOCK_WINDOW_MS);
-    seen.push(now);
+    unlockHits.set(address, seen);
+    return seen.length;
+}
+
+function unlockCharge(address, n) {
+    const now = Date.now();
+    const seen = (unlockHits.get(address) || []).filter(t => now - t < UNLOCK_WINDOW_MS);
+    for (let i = 0; i < n; i++) seen.push(now);
     unlockHits.set(address, seen);
     if (unlockHits.size > 500) {
         for (const [k, v] of unlockHits) {
             if (!v.some(t => now - t < UNLOCK_WINDOW_MS)) unlockHits.delete(k);
         }
     }
-    return seen.length > UNLOCK_MAX;
+    return seen.length;
 }
 
 /* Codes are compared with the case and the spacing taken out of them, so
@@ -389,6 +410,12 @@ exports.handler = async (event) => {
     try {
         return await route(event, wizard);
     } catch (e) {
+        /* The tagged "could not look the account up" error has to get out of
+           here as the 503 it is. This catch sits INSIDE the outer wrapper at
+           the bottom of the file, so it saw that error first and turned it
+           into a 500 — and the wrapper's isAuthUnavailable check never had
+           anything left to catch. */
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
         console.error("wizard: request failed", e);
         return json(500, { error: "The atlas could not be reached just now" });
     }
@@ -512,8 +539,8 @@ async function route(event, wizard) {
            seven passages already open would otherwise spend seven requests
            re-opening them on every page load, which is both slow and enough
            to leave them rate-limited before they have typed anything. The
-           limiter is charged per code either way, so batching buys a round
-           trip and not a larger allowance. */
+           limiter is charged per WRONG code either way (see unlockCharge),
+           so batching buys a round trip and not a larger allowance. */
         const asked = Array.isArray(body.codes) ? body.codes
             : body.code === undefined ? [] : [body.code];
         const codes = [...new Set(asked.map(normaliseCode))]
@@ -524,23 +551,36 @@ async function route(event, wizard) {
 
         const address = event.headers["x-nf-client-connection-ip"] ||
             event.headers["client-ip"] || "unknown";
-        let limited = false;
-        for (let i = 0; i < Math.max(1, codes.length); i++) {
-            if (unlockLimited(address)) limited = true;
+        const tooMany = () => json(429, { error: "Too many tries just now — wait a minute and think again." });
+        // Already out of allowance: refused before it costs a database read.
+        if (unlockSpent(address) >= UNLOCK_MAX) return tooMany();
+        if (!codes.length) {
+            // Not a guess, but still a request; charged one, as it always was.
+            unlockCharge(address, 1);
+            return json(200, { ok: false, found: [] });
         }
-        if (limited) {
-            return json(429, { error: "Too many tries just now — wait a minute and think again." });
-        }
-        if (!codes.length) return json(200, { ok: false, found: [] });
 
         /* Every enabled secret, then matched here by opens() rather than by an
            exact $in in the query: "ends with" is not something an index can
            answer, and there are a handful of secrets, not thousands. */
-        const reveals = (await wizard.find(
+        const enabledReveals = (await wizard.find(
             { kind: "reveal", enabled: { $ne: false } },
             { projection: { _id: 0 } }
-        ).toArray()).filter(r => typeof r.code === "string" &&
-            codes.some(buffer => opens(buffer, r.code)));
+        ).toArray()).filter(r => typeof r.code === "string");
+        const reveals = enabledReveals.filter(r => codes.some(buffer => opens(buffer, r.code)));
+
+        /* THE MISSES are what is charged — see unlockCharge. And if they are
+           more than the allowance had left, NOTHING is answered, found or
+           not: otherwise one request of forty codes would test forty words
+           against an allowance of twelve, and hand back whichever hit. All
+           of them are charged, so a batch that tries it is locked out for the
+           window like anybody else who guessed too much. */
+        const misses = codes.filter(buffer => !enabledReveals.some(r => opens(buffer, r.code))).length;
+        if (misses) {
+            const before = unlockSpent(address);
+            unlockCharge(address, misses);
+            if (before + misses > UNLOCK_MAX) return tooMany();
+        }
 
         /* What was behind them. Fetched by id rather than trusted from the
            reveal records, so a room that has since been deleted simply is not
@@ -604,12 +644,21 @@ async function route(event, wizard) {
             : new Set();
         const offMap = id => !!id && (stillHeld.rooms.has(id) || hiddenRooms.has(id));
 
+        /* AND NOT A TRAIL THAT IS HIDDEN ITSELF. The ends were checked and
+           the trail's own `hidden` flag was not: a trail an admin had hidden
+           on purpose — a route kept back for a later secret, a dead end drawn
+           and parked — that happened to touch a revealed room came back
+           through here with `hidden` cleared by shown() below, and was drawn.
+           The public GET never sends a hidden trail; this is the one way one
+           gets out, and only when a reveal names it in its own `paths`
+           (those come through pathById, not through here), which is the
+           admin saying in so many words that this trail is part of it. */
         const linking = revealedRoomIds.length
             ? (await wizard.find({
                 kind: "path",
                 $or: [{ from: { $in: revealedRoomIds } }, { to: { $in: revealedRoomIds } }]
             }, { projection: { _id: 0 } }).toArray()).filter(p =>
-                !stillHeld.paths.has(p.id) && !offMap(p.from) && !offMap(p.to))
+                !p.hidden && !stillHeld.paths.has(p.id) && !offMap(p.from) && !offMap(p.to))
             : [];
 
         // Which reveal each linking trail belongs to — the one that owns a

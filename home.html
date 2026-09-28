@@ -47,9 +47,49 @@
     (function () {
         var TOKEN_KEY = "mazerats_admin_token";
 
+        var revealed = false;
         function reveal() {
             document.documentElement.style.visibility = "";
             document.documentElement.removeAttribute("data-gate-peek");
+            if (revealed) return;
+            revealed = true;
+            /* The focus trap (js/site.js) counts everything under a hidden
+               <html> as not shown, so a window opened while this was still
+               deciding was invisible to it. It also watches <html> for this
+               change, but it may not have loaded yet — or may have, and this
+               is the call that makes sure. */
+            try { if (window.FocusTrap) window.FocusTrap.refresh(); } catch (e) { /* the trap's own business */ }
+            loadUmami();
+        }
+
+        /* Umami, the aggregate visit counts — loaded from HERE, once this
+           gate has let the visitor in, and no earlier.
+
+           It used to be a line of its own further down the <head>, which ran
+           on every load of this page: a gated visitor bounced to the landing
+           page had already been counted as a visit to /home, so on launch
+           morning the archive's figures were padded with everybody it had
+           turned away. The landing page counts them on its own.
+
+           Built by script rather than a plain <script src>, because a plain
+           tag cannot ask the browser first: with Global Privacy Control on,
+           it is not loaded at all. Do Not Track is honoured by Umami itself
+           (data-do-not-track), and data-exclude-hash keeps the part of an
+           address after # out of it — a palette preview link carries a
+           private token there. The search (?q=) is kept on purpose: the
+           privacy policy says searches are recorded, and why. js/track.js,
+           the site's own record, honours both signals too. */
+        function loadUmami() {
+            try {
+                if (navigator.globalPrivacyControl === true) return;
+                var s = document.createElement("script");
+                s.defer = true;
+                s.src = "https://cloud.umami.is/script.js";
+                s.setAttribute("data-website-id", "8dee5429-29ff-4efb-bec1-c124c8d6fb18");
+                s.setAttribute("data-do-not-track", "true");
+                s.setAttribute("data-exclude-hash", "true");
+                document.head.appendChild(s);
+            } catch (e) { /* counts are not worth a broken page */ }
         }
 
         /* ---- THE BLANK SECOND BETWEEN THE TWO PAGES ----
@@ -162,7 +202,52 @@
         var cameInOpen = false;
         try { cameInOpen = localStorage.getItem("mazerats_landing_state") === "enter"; } catch (e) { /* private mode */ }
         var settingsRequest = getSettings();
-        try { window.__mrSettings = settingsRequest; } catch (e) { /* nothing depends on this */ }
+
+        function isGated(s) { return s === "coming-soon" || s === "maintenance"; }
+
+        /* ONE MORE ASK, for a visitor the site has just let in.
+
+           /settings is cached at the edge for a few seconds and served
+           stale while it refreshes, so for the first minute or so after
+           the site opens, a node can still answer "coming-soon". The
+           landing page's watcher (js/welcome.js) asks past that cache,
+           sees the site open, writes "enter" and sends the visitor
+           here — where this gate, reading the ordinary cached answer,
+           bounced them straight back to the landing page. On launch
+           morning that is everybody.
+
+           So a visitor whose last answer was "enter" is asked once
+           more, past the cache, before being turned away. Anyone
+           else goes straight to the ordinary gated path below.
+
+           PART OF THE PUBLISHED ANSWER, NOT A SIDE ROAD OFF IT (28 Sept
+           2026). It used to run inside the gate's own chain, after the
+           stale body had been published to the page as __mrSettings — so
+           the page was let in on the fresh "enter" while js/api.js went on
+           handing every caller the stale "coming-soon", and wrote THAT back
+           to mazerats_landing_state behind the gate's "enter". The next
+           visit then started from "coming-soon": no loading-screen peek, no
+           one more ask, and links pointed at the landing page. Now the ask
+           is folded into the promise that is published, so the gate, api.js
+           and everything after them read and remember the same answer.
+
+           ?fresh= is a ten-second bucket rather than Date.now(), as in
+           js/welcome.js's poll: the function ignores the query and the edge
+           keys on it, so every visitor in the same ten seconds shares one
+           edge entry — a crowd arriving on launch morning costs a handful of
+           function runs rather than one each — and no answer it gets can be
+           older than the bucket. */
+        var decided = settingsRequest.then(function (settings) {
+            if (!cameInOpen || !settings || !isGated(settings.landingState)) return settings;
+            return fetchWithTimeout("/.netlify/functions/settings?fresh=" + Math.floor(Date.now() / 10000), { cache: "no-store" }, 8000)
+                .then(function (res) { return res.ok ? res.json() : null; })
+                .catch(function () { return null; })
+                .then(function (fresh) {
+                    var s = fresh && fresh.landingState;
+                    return s && !isGated(s) ? fresh : settings;
+                });
+        });
+        try { window.__mrSettings = decided; } catch (e) { /* nothing depends on this */ }
 
         // Same "Dev Mode" pill js/site.js used to add — the DOM isn't
         // necessarily parsed yet the moment the settings/auth fetches
@@ -202,9 +287,14 @@
             try { return localStorage.getItem(LANDING_STATE_KEY); } catch (e) { return null; }
         }
 
-        // The request published above, not a second one.
-        settingsRequest
+        // The answer published above, not a second request.
+        decided
             .then(function (settings) {
+                // An answer with no state in it is no answer: without this a
+                // body of {} read as "not gated" and revealed the site.
+                if (!settings || typeof settings.landingState !== "string" || !settings.landingState) {
+                    throw new Error("no landing state");
+                }
                 rememberState(settings.landingState);
                 /* The palette, from the settings this gate has already
                    fetched — no second request for it.
@@ -242,49 +332,35 @@
                 return settings.landingState;
             })
             .catch(function () {
-                /* Settings unreachable. This used to reveal() outright — fail
-                   open — which meant an outage or a slow cold start put the
-                   whole site in front of visitors while it was still gated,
-                   and js/api.js's own fallback did the same thing on the page
-                   that links here. Falling back to the last state actually
-                   seen keeps a live site working through a hiccup for anyone
-                   who has been here before, without opening a gated one to
-                   someone who hasn't. */
-                return lastKnownState() || "coming-soon";
+                /* Settings unreachable: the gate stays SHUT, for everybody.
+
+                   This used to reveal() outright — fail open — and then, for
+                   a while, fell back to the last state this browser saw, so
+                   a returning visitor who remembered "enter" was let in. But
+                   the moments settings cannot be read are exactly the moments
+                   the site is most likely to be in Maintenance on purpose — a
+                   database move, a bad deploy being rolled back — and "they
+                   were allowed in last time" says nothing about now (28 Sept
+                   2026: nobody is let in during Maintenance, full stop).
+
+                   So no answer is a gated answer. What it is CALLED only
+                   matters to the landing page's button: someone who has seen
+                   the site open, or seen it in Maintenance, is told
+                   Maintenance, which is the truth as far as they can tell;
+                   anyone else is told Coming Soon. The landing page's watcher
+                   (js/welcome.js) lets them straight back in the moment a
+                   real "enter" arrives, and an admin still gets through on
+                   their token below. The same rule is in js/api.js's
+                   fallback, so the two halves of the gate cannot disagree. */
+                var last = lastKnownState();
+                return last === "enter" || last === "maintenance" ? "maintenance" : "coming-soon";
             })
             .then(function (state) {
-                if (state !== "coming-soon" && state !== "maintenance") {
+                // Already past the one more ask, if this visitor was owed
+                // one: see `decided` above.
+                if (!isGated(state)) {
                     reveal();
                     return;
-                }
-
-                /* ONE MORE ASK, for a visitor the site has just let in.
-
-                   /settings is cached at the edge for a few seconds and served
-                   stale while it refreshes, so for the first minute or so after
-                   the site opens, a node can still answer "coming-soon". The
-                   landing page's watcher (js/welcome.js) asks past that cache,
-                   sees the site open, writes "enter" and sends the visitor
-                   here — where this gate, reading the ordinary cached answer,
-                   bounced them straight back to the landing page. On launch
-                   morning that is everybody.
-
-                   So a visitor whose last answer was "enter" is asked once
-                   more, past the cache, before being turned away. Anyone
-                   else goes straight to the ordinary gated path below. */
-                if (cameInOpen) {
-                    return fetchWithTimeout("/.netlify/functions/settings?fresh=" + Date.now(), { cache: "no-store" }, 8000)
-                        .then(function (res) { return res.ok ? res.json() : null; })
-                        .catch(function () { return null; })
-                        .then(function (fresh) {
-                            var s = fresh && fresh.landingState;
-                            if (s && s !== "coming-soon" && s !== "maintenance") {
-                                rememberState(s);
-                                reveal();
-                                return;
-                            }
-                            return gatedVisitor();
-                        });
                 }
                 return gatedVisitor();
             })
@@ -363,6 +439,7 @@
          somebody pastes. -->
     <link rel="canonical" href="https://mazerats.net/home">
     <meta property="og:url" content="https://mazerats.net/home">
+    <meta property="og:site_name" content="Maze Rats">
     <meta property="og:title" content="Maze Rats">
     <meta property="og:description" content="An archive preserving the history of maze rooms across Habbo Hotel: Origins.">
     <meta property="og:type" content="website">
@@ -404,15 +481,11 @@
     <link rel="stylesheet" href="css/style.css?v=2">
     <link id="theme-css" rel="stylesheet">
     <script>(function(){try{var t=localStorage.getItem("mazerats_theme");if(!t||t==="classic"||!/^[a-z]+$/.test(t))return;document.documentElement.setAttribute("data-theme",t);document.getElementById("theme-css").href="css/theme-"+t+".css";}catch(e){}})();</script>
-    <!-- Umami, the aggregate visit counts. Loaded by this line rather than a
-         plain <script src>, because a plain tag cannot ask the browser first:
-         with Global Privacy Control on, it is not loaded at all. Do Not Track
-         is honoured by Umami itself (data-do-not-track), and data-exclude-hash
-         keeps the part of an address after # out of it — a palette preview
-         link carries a private token there. The search (?q=) is kept on
-         purpose: the privacy policy says searches are recorded, and why.
-         js/track.js, the site's own record, honours both signals too. -->
-    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");document.head.appendChild(s);}catch(e){}})();</script>
+    <!-- Umami is not loaded here. On this page it waits for the gate at the
+         top of <head> to let the visitor in — see loadUmami() there — so a
+         gated visitor bounced to the landing page is not counted as a visit
+         to the archive. index.html, privacy.html, 404.html and wizard.html
+         keep their own loaders as they were. -->
 </head>
 <body data-page="home">
 
@@ -1205,9 +1278,21 @@
         </div>
     </div>
 
-    <!-- Room detail modal -->
-    <div class="modal-overlay" id="room-modal">
-        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-name" tabindex="-1">
+    <!-- Room detail modal
+
+         The dialog is the OVERLAY, not the .modal card inside it. The
+         window's photo frames and furni cards are added to this overlay
+         beside the card (see openPhotoFrame and openFurniCard in
+         js/home.js), and with aria-modal on the card they sat outside the
+         dialog: a screen reader was told "nothing outside this card
+         exists" and so could not read the frame or the card the visitor
+         had just opened. The card keeps tabindex="-1" (openModal focuses
+         it) but no role of its own, so there is one dialog, not two
+         nested. js/site.js's FocusTrap already used this overlay as the
+         trap region (regionOf finds the nearest .modal-overlay, which is
+         now the dialog itself). -->
+    <div class="modal-overlay" id="room-modal" role="dialog" aria-modal="true" aria-labelledby="modal-name">
+        <div class="modal" tabindex="-1">
             <!-- Save, Completed and Share, on a tab against this window's
                  right edge — the same spine the archive window wears, doing
                  the same job for the same reason.

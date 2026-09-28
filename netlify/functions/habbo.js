@@ -113,6 +113,39 @@ async function archivedCreditHotel(db, name) {
     return null;
 }
 
+/* Names this instance has recently found NOT credited, remembered in memory
+   for a few minutes.
+
+   The refusal above is the right answer and was also the most expensive
+   one: a name that is not credited never gets a habbo_cache row, so the
+   fast path never finds it, and every ask for it ran both unindexable regex
+   scans again. A script walking random names therefore cost the database
+   two collection scans per request, which is the open proxy turned inward.
+   Remembered here, a repeat costs nothing at all; a genuinely new credit
+   shows up within NOT_CREDITED_TTL_MS. Bounded like room-figure.js's cache,
+   oldest out first, so invented names cannot grow it without limit. Per
+   warm instance only — it blunts a loop, it is not a guarantee. */
+const NOT_CREDITED_TTL_MS = 5 * 60 * 1000;
+const NOT_CREDITED_MAX = 2000;
+const notCredited = new Map();      // lowercased name -> when it was refused
+
+function recentlyNotCredited(lower) {
+    const at = notCredited.get(lower);
+    if (at === undefined) return false;
+    if (Date.now() - at < NOT_CREDITED_TTL_MS) return true;
+    notCredited.delete(lower);
+    return false;
+}
+
+function rememberNotCredited(lower) {
+    notCredited.delete(lower);
+    notCredited.set(lower, Date.now());
+    for (const k of notCredited.keys()) {
+        if (notCredited.size <= NOT_CREDITED_MAX) break;
+        notCredited.delete(k);
+    }
+}
+
 async function fetchOriginsProfile(host, name) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -165,6 +198,8 @@ exports.handler = async (event) => {
     const name = ((event.queryStringParameters || {}).name || "").trim();
     if (!name) return json(400, { error: "Missing name" });
     if (name.length > 60) return json(400, { error: "Name is too long" });
+    // Before the database is so much as connected to — see notCredited.
+    if (recentlyNotCredited(name.toLowerCase())) return json(404, { error: "Not credited in this archive" });
 
     let db;
     try {
@@ -203,7 +238,10 @@ exports.handler = async (event) => {
         if (rows.length === 1) return cachedAnswer(rows[0]);
 
         hotelCode = await archivedCreditHotel(db, name);
-        if (hotelCode === null) return json(404, { error: "Not credited in this archive" });
+        if (hotelCode === null) {
+            rememberNotCredited(lower);
+            return json(404, { error: "Not credited in this archive" });
+        }
         cached = await cache.findOne({ key: `${ORIGINS_HOSTS[hotelCode] || DEFAULT_HOST}:${lower}` }, { projection: { _id: 0 } });
     } catch (e) {
         console.error("habbo: archive lookup failed", e);

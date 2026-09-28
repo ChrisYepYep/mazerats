@@ -131,12 +131,60 @@ const GLOBAL_PER_DAY = 10000;
    Furni takes minutes; thirty in ten minutes is a household playing flat
    out, with room to spare.
 
-   Counted on the `ip` each row already carries, so this adds nothing to
-   what is stored (see the note on addresses above). A request with no
+   Counted on the `net` each row carries — the address, or its /64 for
+   IPv6, see clientNet below — and only over the rows that were not
+   vouched for by a signed-in run token (see WHY A SIGNED-IN RUN IS NOT
+   COUNTED). It was counted on the raw `ip`, which an IPv6 client could
+   change on every request. A request with no
    address is not counted — the same choice contact.js makes, and for the
    same reason: a shared stand-in would let strangers throttle each other. */
 const RATE_LIMIT_COUNT = 30;
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+
+/* ----------------------------------------------------------------------
+   WHY A SIGNED-IN RUN IS NOT COUNTED AGAINST EITHER CEILING ABOVE
+
+   Both ceilings used to count every row, and the leaderboard refuses a
+   score whose run log is missing (see THE RUN LOG in ff-scores.js). So the
+   caps were not only a limit on this collection — they were a switch that
+   turned the board off. A loop posting junk from a handful of addresses
+   filled GLOBAL_PER_HOUR, every honest log after that came back 429 "busy",
+   and every honest score after THAT came back "no-run-log". One stranger
+   could shut the leaderboard for an hour at a time. The per-address cap did
+   the same thing on a smaller scale to a household or a school sharing one
+   connection: the thirty-first run was refused its log and so its score.
+
+   A log that carries a VALID RUN TOKEN BOUND TO THE SIGNED-IN PLAYER who
+   sent it is a different thing from an anonymous POST. The token was minted
+   by ff-scores for that Discord account, one row per token (the unique rid
+   index), so a flood of those needs a flood of accounts. Those rows skip the
+   address and global ceilings — which are left to the token-less rows they
+   were written for, and COUNT only those rows, so honest signed-in play can
+   never fill them up either — and are held instead to a ceiling of their
+   own, per account. Generous: a round that ends on the first seat takes
+   seconds, and a player who dies at once and presses Play again all
+   evening still sits far below it. A signed-out token proves nothing about
+   who sent it (they are free to mint), so it is treated as no token. */
+const PLAYER_RATE_LIMIT_COUNT = 60;
+const PLAYER_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+const PLAYER_PER_DAY = 600;
+/* The rows the address and global ceilings count: everything EXCEPT a log
+   that was exempt from them. Written as the complement of "a token AND an
+   account" because that is exactly the test the exemption applies below —
+   a row with a signed-out token has an rid and no playerId, and still
+   counts. */
+const COUNTED = { $or: [{ rid: { $exists: false } }, { playerId: null }] };
+
+/* THE ADDRESS AS A SUBSCRIBER, for the per-address limit: clientNet from
+   _net.js, the helper every limiter on the site now counts with.
+
+   An IPv4 address is roughly one household. An IPv6 address is not: an ISP
+   hands every subscriber a whole /64 and a machine can pick a fresh address
+   from it for every request, so a limit keyed on the full address limited
+   nothing. The /64 is the unit that is one connection, and an IPv4 address
+   written as IPv6 (::ffff:1.2.3.4) is the IPv4 address. Null when Netlify
+   gave no address, which the limit skips, as it always did. */
+const { clientNet } = require("./_net");
 
 /* The database prunes the log itself, as track.js has it do for site
    events: a TTL index on `at` rather than a deleteMany on every write, which
@@ -154,6 +202,10 @@ async function ensureIndexes(db) {
     await col.createIndex({ at: 1 }, { expireAfterSeconds: KEEP_DAYS * 24 * 60 * 60 })
         .catch(e => { ttl = false; console.warn("ff-runs: TTL index not created -", e.message); });
     await col.createIndex({ ip: 1, at: -1 }).catch(() => {});
+    // What the per-address and per-account limits count on now; see
+    // clientNet and PLAYER_RATE_LIMIT_COUNT.
+    await col.createIndex({ net: 1, at: -1 }).catch(() => {});
+    await col.createIndex({ playerId: 1, at: -1 }).catch(() => {});
     /* One log row per run token, and the leaderboard's way in: ff-scores.js
        looks a run up by `rid` to check the score against it. Partial, so the
        rows with no token (signed-out starts that failed, and every row from
@@ -355,6 +407,12 @@ async function record(db, event) {
         habbo: habboName(body.habbo),
         // Read from the request, never from the body — see clientIp.
         ip: clientIp(event),
+        /* The subscriber that address belongs to — the address itself for
+           IPv4, its /64 for IPv6 — which is what the per-address limit counts
+           on (see clientNet). Derived from `ip`, so nothing new is known
+           about anybody; stored so the limit can be a plain indexed count
+           rather than a parse of every recent row. Never sent to the panel. */
+        net: clientNet(event),
         /* COUNTED here, not taken from the body. The page sends its own tally
            and it is the same number, but deriving it means a request cannot
            claim two hundred levels cleared while sending one round — which
@@ -382,27 +440,53 @@ async function record(db, event) {
         v: 1
     };
     if (claims) doc.rid = claims.rid;
+    /* A LOG THE LEADERBOARD WILL READ: a token minted for this very account.
+       See WHY A SIGNED-IN RUN IS NOT COUNTED. readRun already refuses a
+       token bound to somebody else; this also needs it to be bound at all,
+       and a session to be bound to — an unbound token is anybody's. */
+    const vouched = Boolean(claims && player && claims.sub
+        && String(claims.sub) === String(player.id));
 
     try {
         const ttl = await ensureIndexes(db);
         const col = db.collection(COLLECTION);
-        if (doc.ip) {
-            const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
-            const recent = await col.countDocuments({ ip: doc.ip, at: { $gte: since } },
-                { limit: RATE_LIMIT_COUNT });
-            if (recent >= RATE_LIMIT_COUNT) {
+        if (vouched) {
+            /* Per account instead, over ten minutes and a day. playerId is
+               the session's (see `doc` above), never the body's. */
+            const tenMin = await col.countDocuments(
+                { playerId: doc.playerId, at: { $gte: new Date(Date.now() - PLAYER_RATE_LIMIT_WINDOW_MS) } },
+                { limit: PLAYER_RATE_LIMIT_COUNT });
+            const perDay = tenMin >= PLAYER_RATE_LIMIT_COUNT ? PLAYER_PER_DAY
+                : await col.countDocuments(
+                    { playerId: doc.playerId, at: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+                    { limit: PLAYER_PER_DAY });
+            if (tenMin >= PLAYER_RATE_LIMIT_COUNT || perDay >= PLAYER_PER_DAY) {
                 return json(429, { recorded: false, reason: "rate" });
             }
-        }
-        // Everybody at once — see GLOBAL_PER_HOUR. Both walk the `at` index.
-        const hour = await col.countDocuments({ at: { $gte: new Date(Date.now() - 60 * 60 * 1000) } },
-            { limit: GLOBAL_PER_HOUR });
-        const day = hour >= GLOBAL_PER_HOUR ? GLOBAL_PER_DAY
-            : await col.countDocuments({ at: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
-                { limit: GLOBAL_PER_DAY });
-        if (hour >= GLOBAL_PER_HOUR || day >= GLOBAL_PER_DAY) {
-            console.warn("ff-runs: the global run-log cap is full", { hour, day });
-            return json(429, { recorded: false, reason: "busy" });
+        } else {
+            /* Keyed on the SUBSCRIBER, not the raw address — see
+               clientNet — and counting only rows that were not vouched
+               for, so a household's signed-in runs never use up the
+               allowance its signed-out ones are held to. */
+            if (doc.net) {
+                const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
+                const recent = await col.countDocuments({ net: doc.net, at: { $gte: since }, ...COUNTED },
+                    { limit: RATE_LIMIT_COUNT });
+                if (recent >= RATE_LIMIT_COUNT) {
+                    return json(429, { recorded: false, reason: "rate" });
+                }
+            }
+            // Everybody at once — see GLOBAL_PER_HOUR. Both walk the `at`
+            // index, and count only the rows this ceiling is for.
+            const hour = await col.countDocuments({ at: { $gte: new Date(Date.now() - 60 * 60 * 1000) }, ...COUNTED },
+                { limit: GLOBAL_PER_HOUR });
+            const day = hour >= GLOBAL_PER_HOUR ? GLOBAL_PER_DAY
+                : await col.countDocuments({ at: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }, ...COUNTED },
+                    { limit: GLOBAL_PER_DAY });
+            if (hour >= GLOBAL_PER_HOUR || day >= GLOBAL_PER_DAY) {
+                console.warn("ff-runs: the global run-log cap is full", { hour, day });
+                return json(429, { recorded: false, reason: "busy" });
+            }
         }
         try {
             await col.insertOne(doc);
@@ -473,7 +557,10 @@ async function report(db, event) {
     const personal = (WRITE_SCOPES[role] || []).includes("site");
 
     const asked = ((event.queryStringParameters || {}).range || "30d");
-    const range = RANGES[asked] ? asked : "30d";
+    /* An OWN key only. `RANGES[asked]` was true for ?range=constructor or
+       ?range=toString, and RANGES.constructor() is not a date - the read
+       below then threw on it instead of falling back to the default. */
+    const range = Object.prototype.hasOwnProperty.call(RANGES, asked) ? asked : "30d";
     const since = RANGES[range]();
 
     /* The one read, caught like the write in `record` is: a raw throw here
@@ -740,7 +827,9 @@ async function report(db, event) {
        The address and the account id go only to a caller allowed them. */
     const keepLevels = maxLevelsFor(knownIds ? knownIds.size : 50);
     const recent = rows.slice(0, RECENT).map(r => {
-        const { rid, ip, playerId, ...rest } = r;
+        // `net` is the address again, only coarser, so it goes where `ip`
+        // goes: nowhere, for this panel. It is not shown to anybody.
+        const { rid, ip, net, playerId, ...rest } = r;
         const out = { ...rest, levels: (r.levels || []).slice(0, keepLevels) };
         if (personal) { out.ip = ip === undefined ? null : ip; out.playerId = playerId === undefined ? null : playerId; }
         return out;

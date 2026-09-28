@@ -2,7 +2,8 @@
    room-by-room gallery screenshots) in Netlify Blobs, gated by the same
    x-admin-token used by rooms.js/events.js. Images are served back out
    through image.js. */
-const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED, AUTH_UNAVAILABLE } = require("./_auth");
+const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
+const { getDb } = require("./_db");
 const { imagesStore } = require("./_images");
 const { SECURITY_HEADERS } = require("./_headers");
 const { isSafeKey } = require("./_keys");
@@ -49,6 +50,77 @@ function folderOfKey(key) {
     return slash === -1 ? "" : key.slice(0, slash);
 }
 
+/* ---- A PICTURE STILL IN USE IS NOT DELETED.
+
+   The admin pages decide what to delete from the records they happen to
+   have loaded (see imageKeysOf and deleteImageSafe in js/admin.js), and a
+   picture can be pointed at from places those pages never load: a
+   thumbnail set by hand to another maze's picture, a Missing Pieces copy
+   waiting to be added, the Guess the Maze round being played right now.
+   A delete is the one write here that cannot be taken back, so the server
+   checks for itself, whatever the page thought.
+
+   Every stored reference is the same string upload.js hands back —
+   "/.netlify/functions/image?key=<key>", the key never percent-encoded (see
+   the POST below) — so the test is a match on that string, anchored at the
+   key's end so "…/1.png" is not found inside "…/1.png2". The pattern also
+   accepts the key percent-encoded and the URL made absolute, which nothing
+   writes today and a pasted address one day might; a false "in use" costs
+   an orphaned file, a false "not in use" costs a broken page.
+
+   One query per collection, each an $or over every field that can hold a
+   picture, all side by side:
+     rooms, events   thumb; entrance, finish, gallery[] and relatedImages[],
+                     each as a bare string (the oldest records) or as
+                     { image }, and every oldVersions[] under them, again
+                     either shape — Mongo's dotted paths reach through arrays;
+     guides          thumb, sections[].image;
+     daily_deals     today's and yesterday's (the day still being scored),
+                     which hold the raw gallery references they were dealt
+                     from — Odd One Out's rounds[].tiles[].image, Guess the
+                     Maze's rounds[].image;
+     dead_end_leads  `promoted`, the copies an accepted lead made;
+     wizard          a layer's or room's image and thumb, a room's
+                     labelImage, the map's background, detail and footprint.
+   A field added to any of these later has to be added here too. */
+const IMAGE_URL_PREFIX = "/.netlify/functions/image?key=";
+
+const PICTURE_FIELDS = (() => {
+    const either = (base) => [base, `${base}.image`, `${base}.oldVersions`, `${base}.oldVersions.image`];
+    return {
+        rooms: ["thumb", ...either("entrance"), ...either("finish"), ...either("gallery"),
+            ...either("relatedImages"), "oldVersions", "oldVersions.image"],
+        guides: ["thumb", "sections.image"],
+        dead_end_leads: ["promoted"],
+        wizard: ["image", "thumb", "labelImage", "background", "backgroundDetail", "footprint"]
+    };
+})();
+
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function referencePattern(key) {
+    const forms = [key, encodeURIComponent(key)].map(escapeRegex);
+    return new RegExp(`${escapeRegex(IMAGE_URL_PREFIX)}(?:${forms.join("|")})(?:[&#]|$)`);
+}
+
+async function isInUse(db, key) {
+    const rx = referencePattern(key);
+    const anyOf = (fields) => ({ $or: fields.map(f => ({ [f]: rx })) });
+    const hit = (name, filter) => db.collection(name).countDocuments(filter, { limit: 1 }).then(n => n > 0);
+    const day = (offset) => new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10);
+    const found = await Promise.all([
+        hit("rooms", anyOf(PICTURE_FIELDS.rooms)),
+        hit("events", anyOf(PICTURE_FIELDS.rooms)),
+        hit("guides", anyOf(PICTURE_FIELDS.guides)),
+        hit("daily_deals", { day: { $in: [day(0), day(1)] }, ...anyOf(["rounds.image", "rounds.tiles.image"]) }),
+        hit("dead_end_leads", anyOf(PICTURE_FIELDS.dead_end_leads)),
+        hit("wizard", anyOf(PICTURE_FIELDS.wizard))
+    ]);
+    return found.some(Boolean);
+}
+
+const IN_USE = () => json(409, { error: "That picture is still in use.", inUse: true });
+
 /* The whole handler inside one try. The blob write and delete had nothing
    around them, so a Blobs outage answered with Lambda's errorType and stack
    trace in the body; and canWrite now throws when the account lookup cannot
@@ -59,7 +131,10 @@ exports.handler = async (event) => {
         return await handle(event);
     } catch (e) {
         console.error("upload: request failed", e);
-        return AUTH_UNAVAILABLE;
+        /* Only the tagged lookup failure is an outage to retry; anything
+           else is a fault, and answering it as "unavailable" hid it. */
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        return json(500, { error: "The upload could not be completed." });
     }
 };
 
@@ -138,6 +213,18 @@ async function handle(event) {
         const scope = Object.prototype.hasOwnProperty.call(FOLDER_SCOPES, keyFolder) ? FOLDER_SCOPES[keyFolder] : null;
         if (!scope) return json(400, { error: "Unknown image folder" });
         if (!(await canWrite(event, scope))) return await refuseWrite(event);
+        /* See isInUse. A database that cannot answer is not a "no": the
+           delete waits, as a 503, rather than guessing in the one direction
+           that cannot be undone. The admin pages send these deletes in the
+           background and let a failure go, so the file simply stays. */
+        let inUse;
+        try {
+            inUse = await isInUse(await getDb(), key);
+        } catch (e) {
+            console.error("upload: could not check whether a picture is in use", e);
+            return json(503, { error: "Couldn't check whether that picture is in use. It was not deleted." });
+        }
+        if (inUse) return IN_USE();
         await store.delete(key);
         return json(200, { deleted: key });
     }

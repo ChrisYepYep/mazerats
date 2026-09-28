@@ -204,7 +204,11 @@ window.Daily = (function () {
     /* One move — a tile picked, a name guessed — sent the moment it is made,
        and the server's verdict back. `data` is the game's own part of it
        ({ tile } or { guess }), `anon` a day begun signed out (see the note
-       at the POST in daily-scores.js).
+       at the POST in daily-scores.js). The server refuses `anon` from a
+       request that carries a session — 400, reason "signed-in" — and the
+       game answers that by recording the day instead (see replay below).
+       `untimed` sends a signed-in move WITHOUT starting the day's clock
+       first, for replay only.
 
        A signed-in player's move waits for the day's start to have landed,
        or the server would find no clock and time nothing. A move the server
@@ -219,6 +223,18 @@ window.Daily = (function () {
         const o = opts || {};
         const key = game + ":" + day;
         if (!o.anon && startsInFlight.has(key)) await startsInFlight.get(key);
+        /* A signed-in round 0 move whose start this page never saw land
+           sends the start again first, and waits for it. The start used to
+           be tried once, as the first pictures came up, and a request that
+           fell over there made the WHOLE day untimed: the server, finding
+           no start when the first move arrived, wrote the day as noClock
+           (rowForMove in netlify/functions/_speed.js) and no round of it
+           could earn a bonus. Only round 0, because only round 0 can still
+           be timed — a start that lands after it has been played would
+           find the untimed row already there and change nothing. start()
+           itself does nothing signed out, or when the server has already
+           refused it (a closed day), so this cannot loop. */
+        if (!o.anon && !o.untimed && round === 0 && !startConfirmed.has(key)) await start(game, day, o.url);
         const payload = Object.assign({ game, day, action: "move", round }, data, o.anon ? { anon: true } : {});
         let reply = { status: 0, body: null };
         for (let attempt = 0; attempt < 4; attempt++) {
@@ -233,6 +249,103 @@ window.Daily = (function () {
         return reply;
     }
 
+    /* Whether a move's answer is the server refusing `anon` because the
+       request carried a session (see move). */
+    const refusedAsSignedIn = reply => Boolean(reply && reply.status === 400 && reply.body && reply.body.reason === "signed-in");
+
+    /* A day begun signed out, RECORDED after the player has signed in part
+       of the way through it.
+
+       The server used to answer a signed-in player's `anon` moves without
+       recording them, so a day begun signed out simply carried on
+       unrecorded and was filed from the page's own moves at the end
+       (scoreClaim). It refuses those now — they were a free answer check
+       for anyone signed in — and a day half recorded and half not can be
+       filed from neither half. So the moves already made are sent again,
+       in order, as recorded moves, and the day carries on recorded from
+       there.
+
+       UNTIMED. No start is sent first, so the server writes the day as
+       noClock (rowForMove in netlify/functions/_speed.js) and it earns no
+       speed bonus — exactly what a day begun signed out always earned.
+       Starting a clock here would time a replay, and a replay of moves
+       already made takes a second a round, which would be most of the
+       bonus for nothing. (If another device already started the day's
+       clock, the replay is timed against THAT start, which is the honest
+       reading of it.)
+
+       SAFE TO REPEAT. A round the server already has answers `already`
+       (Odd One Out) or `already`/`repeat` (Guess the Maze) with the
+       server's own record, so a replay cut off half-way can simply be run
+       again, and a round another device played first comes back as the
+       server has it. Each round's first move waits MIN_MOVE_MS after the
+       round before, as any recorded move does; move() waits it out.
+
+       `list` is [{ round, data }] in the order made. Answers
+       { ok, replies }: ok only if every move came back recorded. */
+    async function replay(game, day, list, opts) {
+        const o = opts || {};
+        const replies = [];
+        for (const item of list || []) {
+            const reply = await move(game, day, item.round, item.data, { url: o.url, untimed: true });
+            replies.push(reply);
+            if (reply.status !== 200 || !reply.body || !reply.body.recorded) return { ok: false, replies };
+        }
+        return { ok: true, replies };
+    }
+
+    /* ---------- the speed bonus, as the games show it ----------
+
+       The most a round's bonus can be: 36, a point for every second under
+       37 a right answer took, and no round can be answered in under a
+       second (ROUND_BONUS_SECONDS and MIN_MOVE_MS in
+       netlify/functions/_speed.js, where HOW BIG IT IS has the arithmetic).
+       Written here once, for both games' rules, and compared with the
+       server's figure by tools/check-daily-parity.js. */
+    const SPEED_BONUS_MAX = 36;
+
+    /* The line under a finished day's points, saying what the speed bonus
+       made of it. Pure — every case is decided from what is passed in, so
+       the parity check can run it — and the same for both games.
+
+       `score` is the day as the SERVER filed it ({ points, bonus }): the
+       finishing submission's answer, or the deal's `score` on a reload. It
+       is the only source of a bonus, because only the server keeps the
+       time. The card's big number stays the base points — the unit the
+       card's own streak and best-day figures count in (statsFor in
+       netlify/functions/player-data.js) — and this line carries the bonus
+       and the total beside it, the total being the number the boards and
+       the Profile rank and show. So every number on the card is labelled
+       with what it counts, and the total matches the board underneath.
+
+         filed, with a bonus      "50 + 161 speed bonus = 211 on the boards"
+         filed, no bonus, begun signed out
+                                  "No speed bonus: this day began signed out."
+         filed, no bonus          "No speed bonus this time."
+         signed in, not filed yet nothing, until the submission answers
+         signed out               "Sign in before you play to earn a speed
+                                   bonus as well." — a signed-out day earns
+                                   none, so it never shows one. */
+    function bonusLine(opts) {
+        const o = opts || {};
+        const s = o.score;
+        if (s && Number.isFinite(Number(s.points))) {
+            const points = Number(s.points) || 0;
+            const bonus = Number(s.bonus) || 0;
+            if (bonus > 0) return `${points} + ${bonus} speed bonus = ${points + bonus} on the boards`;
+            return o.mode === "anon" ? "No speed bonus: this day began signed out." : "No speed bonus this time.";
+        }
+        if (!o.signedIn) return "Sign in before you play to earn a speed bonus as well.";
+        return "";
+    }
+
+    /* The rule both splashes add, in the site's plain words, from the real
+       numbers. `each` is what a right answer scores ("10", or Guess the
+       Maze's "10 on the first view"). */
+    function bonusRule(each, verb) {
+        return `Right answers score ${each}, plus a speed bonus of up to ${SPEED_BONUS_MAX} for ${verb} quickly when you're signed in.`;
+    }
+
     /* Posts a finished day. Silent by design — whether a score reached a
        board is not something to interrupt somebody's result with, and the
        board underneath is the confirmation. Signed out it still posts and
@@ -240,14 +353,60 @@ window.Daily = (function () {
 
        `moves` is only read by the server for a day played signed out (it
        scores a signed-in day from the moves it recorded). Answers
-       { ok, body, retry }: `ok` when the day is on file (just now, or
-       already), `retry` when it is worth sending again later — no answer,
-       or a server that could not answer — as opposed to a refusal that
-       will only be refused again. */
+       { ok, body, retry, final } — see filed() below for what each means,
+       and for why `final`, not "not retry", is what marks a day posted. */
     async function submit(game, day, moves) {
         const { status, body } = await post(SCORES_URL, { game, day, moves });
-        const ok = status === 200 && body && (body.recorded || body.reason === "already");
-        return { ok: Boolean(ok), body, retry: !ok && (status === 0 || status >= 500 || status === 429) };
+        return Object.assign({ body }, filed(status, body, day));
+    }
+
+    /* How long after a day a finished day of it may still be filed: the
+       server takes a finished day late when every move was recorded before
+       the day closed (LATE FILING in netlify/functions/daily-scores.js),
+       for as long as it still has the moves — two days, the life of a row
+       in daily_starts (_speed.js). Past that, nothing can file it. */
+    const LATE_FILE_DAYS = 2;
+    function fileable(day) {
+        if (typeof day !== "string") return false;
+        let earliest = today();
+        for (let i = 0; i < LATE_FILE_DAYS; i++) earliest = dayBefore(earliest);
+        return day >= earliest && day <= today();
+    }
+
+    /* What a finishing submission's answer means for the day, for both
+       games (Guess the Maze posts to its own endpoint and asks this too):
+
+         ok      the day is on file — just now, or already
+         retry   worth sending again soon: no answer, or a server that
+                 could not give one
+         final   the day is settled, filed or not, and should be marked
+                 posted so it is never sent again
+
+       FINAL IS NARROWER THAN "NOT RETRY", which is what the games used to
+       mark posted on. Three answers that are not worth an immediate retry
+       can still end with the day filed, and marking them posted lost the
+       day for good:
+         - signed out (a 200 saying so, or Guess the Maze's 401): the
+           session lapsed; signing in again files it;
+         - 409 "unfinished": the server's record is behind the page's, and
+           the game reads the day again to finish it (see refreshDay in
+           either game);
+         - 400 "That day is not open" while the day is still fileable: a
+           server from before LATE FILING, or a clock a moment out; the
+           next open tries again, until fileable() says no more.
+       Any other refusal (a bad request, a day with nothing to deal) will
+       be refused again and is final. */
+    function filed(status, body, day) {
+        const b = body || {};
+        const ok = Boolean(status === 200 && (b.recorded || b.reason === "already"));
+        if (ok) return { ok, retry: false, final: true };
+        const retry = status === 0 || status >= 500 || status === 429;
+        const later = retry ||
+            (status === 200 && b.reason === "signed-out") ||
+            status === 401 ||
+            (status === 409 && b.reason === "unfinished") ||
+            (status === 400 && /not open/i.test(String(b.error || "")) && fileable(day));
+        return { ok, retry, final: !later };
     }
 
     /* Starts the clock for the day's speed bonus. The server keeps the time
@@ -274,14 +433,18 @@ window.Daily = (function () {
        the pick. */
     const startSent = new Set();
     const startsInFlight = new Map();
+    // The starts the server has said it has (a 200), which move() reads to
+    // know whether round 0 is going out with a clock behind it.
+    const startConfirmed = new Set();
     function start(game, day, url) {
         const key = game + ":" + day;
-        if (startSent.has(key) || !window.Account) return Promise.resolve();
+        if (startSent.has(key) || !window.Account) return startsInFlight.get(key) || Promise.resolve();
         startSent.add(key);
         const job = (async () => {
             try { await Account.ready(); } catch (e) { startSent.delete(key); return; }
             if (!Account.current) { startSent.delete(key); return; }
             const { status } = await post(url || SCORES_URL, { game, day, action: "start" });
+            if (status === 200) startConfirmed.add(key);
             // A refusal (a closed day, say) will be refused again; only a
             // server that could not answer is worth another go.
             if (status === 0 || status >= 500) startSent.delete(key);
@@ -492,6 +655,7 @@ window.Daily = (function () {
 
     return {
         today, now, setServerNow, seededRandom, dayBefore, request,
-        claimReset, deal, move, submit, start, clock, scoreCell, boards, ranks
+        claimReset, deal, move, replay, refusedAsSignedIn, submit, filed, fileable, start, clock, scoreCell, boards, ranks,
+        SPEED_BONUS_MAX, bonusLine, bonusRule
     };
 })();

@@ -107,7 +107,13 @@
         return (data && (data.rooms || data.items)) || [];
     }
 
+    /* Counted, so a load that was still on its way when the account changed
+       (see reset) is dropped rather than drawing the last account's leads
+       over the next one's panel. */
+    let loadGen = 0;
+
     async function loadAll() {
+        const gen = ++loadGen;
         leadsEl.innerHTML = '<p class="admin-empty">Loading…</p>';
         recordsEl.innerHTML = "";
         try {
@@ -117,6 +123,7 @@
                 Api.getRoomsFull(token()),
                 Api.getEventsFull(token())
             ]);
+            if (gen !== loadGen) return;
             leads = leadData.leads || [];
             counts = leadData.counts || counts;
             flags = new Map((flagData.flags || []).map(f => [keyOf(f.type, f.id), f]));
@@ -129,6 +136,7 @@
             renderLeads();
             renderRecords();
         } catch (err) {
+            if (gen !== loadGen) return;
             if (sessionGone(err)) {
                 // Not left saying "Loading…" behind the sign-in box.
                 if (typeof window.AdminLockOut === "function") {
@@ -713,7 +721,16 @@
             try {
                 await call(FLAGS_URL, "PUT", body);
             } catch (err) {
-                if (sessionGone(err)) return;
+                /* The sign-in box is up over the editor, which is kept (see
+                   sessionGone) — but its status line used to stay on
+                   "Saving…" underneath, so after signing back in it read as
+                   a save still in flight rather than one that never
+                   happened, and nothing said to press Save again. */
+                if (sessionGone(err)) {
+                    status.textContent = "Not saved: your session had expired. Sign in, then press Save again.";
+                    status.classList.add("is-bad");
+                    return;
+                }
                 status.textContent = err.message;
                 status.classList.add("is-bad");
                 return;
@@ -758,6 +775,42 @@
     }
     new MutationObserver(maybeMount).observe(panel, { attributes: true, attributeFilter: ["hidden"] });
     maybeMount();
+
+    /* Forget everything the last account loaded. admin.js calls this on a
+       log out, and when a DIFFERENT account signs in after the session ran
+       out (window.AdminDeadEnds.reset — see resetAccountPanels there).
+
+       Mounting was once per page, so the leads — senders' IP addresses and
+       all, which only owners and admins are sent — stayed on screen for
+       whoever signed in next on the same tab, view-only accounts included,
+       with an editor and its unsaved ticks still open from the last person.
+       The quarantined screenshots were fetched with the last token too, and
+       go with it. Loads again straight away if the panel is the one showing
+       and somebody is signed in; otherwise the next time it is shown. */
+    function reset() {
+        // A load still running for the last account lands on nothing.
+        loadGen++;
+        mounted = false;
+        leadStatus = "new";
+        leads = [];
+        counts = { new: 0, accepted: 0, rejected: 0 };
+        flags = new Map();
+        trail = new Map();
+        records = [];
+        openEditor = null;
+        editorDraft = null;
+        const urls = Array.from(imageUrls.values());
+        imageUrls.clear();
+        urls.forEach(p => p.then(u => URL.revokeObjectURL(u)).catch(() => {}));
+        leadsEl.innerHTML = "";
+        recordsEl.innerHTML = "";
+        leadTabs.innerHTML = "";
+        if (navCount) { navCount.textContent = ""; navCount.hidden = true; }
+        if (!token()) return;
+        maybeMount();
+        badge();
+    }
+    window.AdminDeadEnds = { reset };
 
     /* The nav badge wants the number of new leads before anybody opens the
        panel, so that is fetched on its own, once the page has signed in. It

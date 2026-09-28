@@ -32,6 +32,22 @@
        a colour to be seen rather than read. */
     --danger-text: #d67a60;
     --unknown-text: #a0937c;
+    /* THE AMBER, AS TEXT.
+
+       --amber is a mid tone, which is what a border or a fill wants, and
+       two dozen rules also set small text in it: the row's builder line,
+       the eyebrows, the pills, the progress counts. In classic that reads
+       (5.1:1 on --chrome-row). The palettes map it by its lightness, which
+       puts it among the ACCENTS rather than the text, and on the same row
+       it measured 3.9:1 in Deep Purple, 3.6:1 in Witching Hour and 4.3:1
+       in Crimson.
+
+       So text takes this instead. Here it is the same value as --amber, so
+       classic does not change at all; tools/themes.js (solveAmberText)
+       keeps each palette's --amber hue and lifts only its lightness, until
+       it is back to classic's 5.1:1 on the row. Fills and borders stay on
+       --amber. */
+    --amber-text: #ab8b64;
     --border: rgba(201, 151, 79, 0.35);
     --shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
 
@@ -200,6 +216,24 @@ html {
        window opened and shifted everything right, then back on close.
        Phones use overlay scrollbars, which take no gutter either way. */
     scrollbar-gutter: stable;
+}
+/* ...except on the pages that never scroll the viewport at all, where the
+   kept gutter was only ever an empty 10px strip down the right edge with
+   nothing to hold its place for. The admin panel (body overflow: hidden, a
+   100dvh shell that scrolls its own panes — and a body overflow is handed
+   to the viewport, which is exactly the case the gutter is reserved for,
+   so the strip showed permanently), the landing page and Fallin' Furni are
+   each sized to the window.
+
+   Not "only while a window is open" (html.has-open-dialog), which looks
+   tidier and moves the bug rather than fixing it: on a page with no
+   scrollbar, reserving the gutter at the moment a window opens shifts the
+   whole page 10px left — the very jump the gutter exists to prevent — and
+   the pages that never scroll are the ones this block is about. */
+html:has(> body[data-page="admin"]),
+html:has(> body[data-page="welcome"]),
+html:has(> body[data-page="fallinfurni"]) {
+    scrollbar-gutter: auto;
 }
 
 /* REDUCED MOTION, for the movements that had no opt-out of their own.
@@ -1058,7 +1092,7 @@ main { display: block; flex: 1 0 auto; }
 }
 
 .site-footer a {
-    color: var(--amber);
+    color: var(--amber-text);
     text-decoration: none;
 }
 
@@ -1424,6 +1458,8 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-family: 'Silkscreen', monospace;
     font-size: 0.95rem;
     line-height: 1.4;
+    /* --amber, not --amber-text: a half-faded colon between the digits is
+       punctuation for the eye, not words anyone reads. */
     color: var(--amber);
     opacity: 0.5;
 }
@@ -2751,7 +2787,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-weight: 400;
     font-size: 0.5625rem;
     line-height: 17.76px;
-    color: var(--amber);
+    color: var(--amber-text);
     margin: 0 0 4px;
 }
 
@@ -4072,6 +4108,12 @@ body[data-page="home"] .hero { padding-top: 18px; }
     transform: none;
 }
 
+/* The Pause pill shares that corner. When the older-versions pill is up
+   (js/home.js marks the frame .has-old-versions), Pause steps down under
+   it rather than sitting on top of it. */
+.modal-thumb-frame .gallery-pause { top: 4px; left: 4px; }
+.modal-thumb-frame.has-old-versions .gallery-pause { top: 28px; }
+
 .modal-thumb {
     height: 220px;
     padding: 20px;
@@ -4496,7 +4538,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
    It lives INSIDE the room window's overlay now (#room-modal, z-index 100),
    not on <body>, and the 300 below is ranked only within that overlay: it
    puts a frame above the room window itself, and nothing more. The lightbox
-   (200) is a sibling of the overlay, so it now opens OVER any frames rather
+   (250) is a sibling of the overlay, so it now opens OVER any frames rather
    than under them — which is the right way round for the picture someone
    has just asked to see full size. Fixed still means the viewport: the
    overlay has no transform or filter to become their containing block.
@@ -5196,6 +5238,12 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: #3d1800;
     outline: none;
 }
+/* The hover's colour step alone was the only sign of keyboard focus, and
+   one shade darker on a word is nothing anyone tabbing can find. The ring,
+   but the side menu's dark one (#6b4b18) rather than the site's usual
+   --amber-bright: this card is pale paper, where --amber-bright measures
+   1.66:1 against it and #6b4b18 5.76:1. */
+.furni-card-also:focus-visible { outline: 2px solid #6b4b18; outline-offset: 2px; }
 
 .furni-card-also[hidden] { display: none; }
 
@@ -5218,6 +5266,8 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: #3d1800;
     outline: none;
 }
+/* The same dark ring as .furni-card-also above, on the same paper. */
+.furni-card-link:focus-visible { outline: 2px solid #6b4b18; outline-offset: 2px; }
 
 /* ---------- image lightbox ---------- */
 
@@ -5228,7 +5278,14 @@ body[data-page="home"] .hero { padding-top: 18px; }
     display: none;
     align-items: center;
     justify-content: center;
-    z-index: 200;
+    /* Above the console (.console-modal, 200). The two used to share 200,
+       and a tie between body-level layers goes to DOM order — the console
+       comes later in the page, so a picture opened full size while the
+       console was up sat BEHIND it, with the console's frame over the
+       middle of the image, and Escape (js/site.js's EscapeLayers, which
+       ranks by the same computed z-index) could close the wrong one first.
+       Still under the falling furni (400) and the saved note (900). */
+    z-index: 250;
     padding: 50px;
 }
 
@@ -5680,6 +5737,13 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-color: var(--amber);
     outline: none;
 }
+/* The hover lift was the only sign of keyboard focus — and the active
+   thumb is also --amber-edged, so tabbing onto it showed nothing at all.
+   The site's ring, drawn INSIDE the thumb: the rail scrolls sideways
+   (overflow-x: auto, which clips on both axes) with 3px between thumbs, so
+   a ring outside would be cut off at the rail's edges and overlap the
+   neighbour between them. */
+.old-version-thumb:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: -2px; }
 
 /* The one currently up. Brighter than hover and it stays put — a lifted
    active thumb would be indistinguishable from the one under the cursor. */
@@ -6245,7 +6309,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-weight: 700;
     font-size: 0.5625rem;
     line-height: 1.35;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 .ec-modal-label[hidden] { display: none; }
@@ -6444,7 +6508,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-size: 0.5rem;
     letter-spacing: 0.5px;
     text-transform: uppercase;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 .glyph-group-title:first-child { margin-top: 0; }
 
@@ -6894,6 +6958,21 @@ body.is-viewer #admins-form[data-self="true"] .admin-form-actions button {
     pointer-events: auto;
 }
 
+/* ...and the sign-in box's Unlock. Its button sits in an
+   .admin-form-actions like any other form's, so whenever the box went up
+   with body.is-viewer still set from a view-only session, the line above
+   greyed Unlock out and took the pointer off it: the one way back in,
+   unpressable. js/admin.js's lockOut and doLogout take the class off now,
+   and its keyboard guard skips #login-form; this is the stylesheet's half
+   of the same backstop, for anything that puts the box up without them.
+   Signing in writes nothing. The hover glow is left to the admin button
+   rule, which outranks the viewer rule's box-shadow anyway. */
+body.is-viewer #login-form .admin-form-actions button {
+    opacity: 1;
+    cursor: var(--cursor-pointer);
+    pointer-events: auto;
+}
+
 .admin-field {
     display: flex;
     flex-direction: column;
@@ -6975,6 +7054,12 @@ body[data-page="admin"] .search-box input {
    concealed — a real password is spaced as it was written. */
 .password-field input[data-masked="true"] {
     letter-spacing: 0.14em;
+}
+/* ...but not the placeholder, which is words rather than mask glyphs. The
+   spacing above reached it too, and spread "Confirm new password" a good
+   30px wider than it is, past the end of its field in the account panel. */
+.password-field input[data-masked="true"]:placeholder-shown {
+    letter-spacing: normal;
 }
 
 .password-toggle {
@@ -7345,7 +7430,7 @@ body[data-page="admin"] .search-box input {
     background: none;
     border: 0;
     padding: 0;
-    color: var(--amber);
+    color: var(--amber-text);
     font: inherit;
     text-decoration: underline;
     cursor: pointer;
@@ -8422,6 +8507,10 @@ body[data-page="admin"] .search-box input {
 }
 .console-missing-name:hover,
 .console-missing-name:focus-visible { text-decoration: underline; outline: none; }
+/* An underline was the only sign of keyboard focus, the same as the mouse
+   gets on hover, and in 9px type it is two pixels of difference. The
+   site's ring. */
+.console-missing-name:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
 .console-missing-needs,
 .console-missing-note {
@@ -9680,7 +9769,7 @@ body[data-page="admin"] .site-footer p {
     font-size: 0.55rem;
     letter-spacing: 1px;
     text-transform: uppercase;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 .modal-article-title {
@@ -9774,7 +9863,7 @@ body[data-page="admin"] .site-footer p {
     font-size: 0.78rem;
 }
 
-.modal-article-source a { color: var(--amber); }
+.modal-article-source a { color: var(--amber-text); }
 .modal-article-source a:hover { color: var(--amber-bright); }
 
 /* ---------- the admin's own article field ---------- */
@@ -10184,7 +10273,7 @@ body[data-page="admin"] #activity-sessions {
     font-weight: 400;
     font-size: 0.5625rem;
     line-height: 1.5;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 .row-when-item { white-space: nowrap; }
@@ -10277,7 +10366,7 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.6rem;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 /* The weight is restated, and it is not a detail.
@@ -11734,7 +11823,7 @@ body[data-page="admin"] #activity-sessions {
     line-height: 1;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 .guess-sheet-inner {
@@ -11937,7 +12026,7 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.5625rem;
     font-weight: 400;
     letter-spacing: 0.04em;
-    color: var(--amber);
+    color: var(--amber-text);
     pointer-events: none;
 }
 
@@ -12023,7 +12112,11 @@ body[data-page="admin"] #activity-sessions {
 .guess-status {
     margin: 0;
     font-size: 0.68rem;
-    color: var(--danger);
+    /* --danger-text, not --danger: --danger is a border colour, 2.4-3:1
+       against the site's dark panels, and this line is now where a round says its
+       picture would not load or its guess did not reach the server — words
+       someone has to be able to read to act on the button after them. */
+    color: var(--danger-text);
 }
 
 /* ---------- the five names ----------
@@ -12221,7 +12314,7 @@ body[data-page="admin"] #activity-sessions {
 .guess-reveal-link {
     align-self: flex-start;
     font-size: 0.7rem;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 /* --- the results ---------------------------------------------------------
@@ -12669,7 +12762,7 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.5625rem;
     font-weight: 400;
     line-height: 1.5;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 .guess-board-games span { color: var(--unknown); }
@@ -12985,8 +13078,8 @@ body[data-page="admin"] #activity-sessions {
    browser, so the single showing it gets was spent invisibly.
 
    900 clears everything that can be open at the same time: the room modal
-   and the other .modal-overlay windows (100), the lightbox and the console
-   (200), and the photo frames and furni cards (300 and 320, each climbing
+   and the other .modal-overlay windows (100), the console (200) and the
+   lightbox (250), and the photo frames and furni cards (300 and 320, each climbing
    by one per bring-to-front). It stays under the skip link (999), which
    has to beat everything. */
 .saved-note {
@@ -13170,7 +13263,7 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.5625rem;
     font-weight: 400;
     line-height: 1.5;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 /* ---- the list ---- */
@@ -13203,6 +13296,10 @@ body[data-page="admin"] #activity-sessions {
     background: rgba(120, 90, 45, 0.22);
     outline: none;
 }
+/* The hover look alone told a keyboard nothing: the pointer is usually
+   still resting on some other card, which then looks exactly as focused
+   as the one that is. The site's ring. */
+.guides-card:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 
 /* ---- a guide's thumbnail: the frame IS the picture's edge ----
 
@@ -13323,7 +13420,7 @@ body[data-page="admin"] #activity-sessions {
     font-weight: 400;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 /* Two columns of contents where there is room: a fifteen-section guide's
    list would otherwise be a screen of its own before the guide starts. */
@@ -13521,7 +13618,7 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.5625rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 .guides-edit-section-tools { display: flex; gap: 6px; }
 
@@ -13927,11 +14024,11 @@ body[data-page="admin"] #activity-sessions {
     font-weight: 400;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--amber);
+    color: var(--amber-text);
     text-shadow: 2px 2px 0 var(--bg-black);
 }
 
-.progress-count { color: var(--amber); }
+.progress-count { color: var(--amber-text); }
 
 .progress-bignum {
     display: flex;
@@ -14086,6 +14183,19 @@ body[data-page="admin"] #activity-sessions {
 .progress-saved-row:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
 .progress-saved-by { color: var(--unknown); font-size: 0.62rem; white-space: nowrap; }
+/* A saved maze that has since closed: still listed, so saving it visibly
+   worked, but marked, since it can't be completed now. */
+.progress-saved-closed {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 0 5px;
+    border: 1px solid var(--unknown-text, var(--unknown));
+    border-radius: 3px;
+    color: var(--unknown-text, var(--unknown));
+    font-size: 0.56rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
 
 /* ---------- What's New, as an update log ----------
 
@@ -14194,6 +14304,11 @@ body[data-page="admin"] #activity-sessions {
 }
 .incomplete-help:hover,
 .incomplete-help:focus-visible { background: #e6cfae; outline: none; }
+/* The hover's lighter fill was the only sign of keyboard focus. A ring,
+   but the side menu's dark one: this card is pale paper, where the site's
+   --amber-bright ring measures 1.25:1 against the button and #6b4b18
+   4.31:1. */
+.incomplete-help:focus-visible { outline: 2px solid #6b4b18; outline-offset: 2px; }
 
 /* The narrow version: a strip across the foot of the meta row, saying what
    is missing in a word each, with the Add Maze Info button at its end.
@@ -14252,6 +14367,9 @@ body[data-page="admin"] #activity-sessions {
     }
     .incomplete-strip-help:hover,
     .incomplete-strip-help:focus-visible { background: #e6cfae; outline: none; }
+    /* The strip is dark, unlike the card above, so this one takes the
+       site's own ring. */
+    .incomplete-strip-help:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 }
 
 /* The window's filters: the same chips, pressable. A pointer and a lift on
@@ -14267,6 +14385,9 @@ button.tag.tag-filter:focus-visible {
     color: var(--parchment);
     outline: none;
 }
+/* The hover look alone was the only sign of keyboard focus, and it is one
+   border shade on a chip. The site's ring. */
+button.tag.tag-filter:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 /* "More by" is a person rather than a property of the maze, so it is set a
    little apart: no fill, the name in its own colour. */
 button.tag.tag-by { background: transparent; border-style: dashed; }
@@ -14451,7 +14572,7 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
    text. */
 .updatelog-change {
     font-size: 0.62rem;
-    color: var(--amber);
+    color: var(--amber-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -14621,8 +14742,14 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
    which is a different question from "what can I do here". */
 .admin-tab-user { margin-right: 14px; }
 
+/* 280px, from 230, for the "Confirm new password" row. Save moved down
+   beside that field when it was added, and the panel (sized by its fields'
+   own width, 241px, since 230 never bound) left it 166px — less the eye
+   button's 40px column — so its placeholder stopped at "Confirm new passw".
+   The two fields above it have the row to themselves and simply run the
+   extra width. Held inside a phone's width all the same. */
 .admin-drop-user {
-    min-width: 230px;
+    min-width: min(280px, calc(100vw - 48px));
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -14664,6 +14791,16 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
 /* --danger-text, not --danger: an error message is text, and --danger is a
    border colour at about 2.5:1 against these panels. */
 .ctl-status.is-bad { color: var(--danger-text); }
+
+/* Fallin' Furni's switch disagreeing with its launch date. It has a line of
+   its own now (see warren.html) and was set in the ordinary status grey, so
+   "Heads up: ... Launch Week is running on a game players can't open" read
+   like a routine "Saved".
+   --danger-text rather than an amber: tools/themes.js holds it as
+   information, so it is the same warning red in every palette (4.7:1 on
+   this panel in classic, more in the darker palettes), where an amber
+   token turns lavender or steel with the theme and stops saying "warning". */
+#ff-state-warning { color: var(--danger-text); }
 
 /* The palette is a panel now, so it is capped and scrolls rather than running
    off the bottom of the window the way a full-height column never could. */
@@ -15234,7 +15371,7 @@ textarea.ctl-input.de-note {
 .furni-head-filter {
     margin: 12px 0 0;
     font-size: 0.68rem;
-    color: var(--amber);
+    color: var(--amber-text);
 }
 
 @media (max-width: 700px) {
@@ -15659,6 +15796,49 @@ textarea.ctl-input.de-note {
     border-color: var(--amber-bright);
     transform: translateY(-2px);
     outline: none;
+}
+/* The hover lift was the only sign of keyboard focus, so a tile under a
+   resting pointer looked every bit as chosen as the one Tab had reached.
+   The site's ring. */
+.odd-tile:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+
+/* A picture that would not load, after js/oddoneout.js's own retries. The
+   tile STAYS pickable — the round can still be played from the other three
+   and the missing one can still be the answer — so it keeps its size, its
+   lift and its hover edge, and only says what happened: an empty, dashed
+   tile with "Picture unavailable" in the middle of it, in the pixel face
+   the rest of the daily chrome is lettered in. The border's colour is left
+   to .odd-tile and its hover, so pointing at it still lights it up. */
+.odd-tile.is-unavailable {
+    border-style: dashed;
+    background: var(--bg-panel);
+}
+.odd-tile.is-unavailable .odd-tile-missing {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    text-align: center;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--parchment-dim);
+}
+
+/* A note that carries its own way out: "Try the pictures again", "Sign in
+   again", "Play today's rounds". The scripts put .guess-btn buttons straight
+   after the sentence, inline, and a bare button there sat hard against the
+   last word and, when the line wrapped, rode up into the line above it.
+   Air above, so a wrapped button clears the text, and between two buttons;
+   the space the scripts write after the sentence is the gap before the
+   first. */
+.odd-pick-note .guess-btn,
+.guess-status .guess-btn {
+    margin: 6px 6px 0 0;
+    vertical-align: baseline;
 }
 
 /* ---------- the admin's daily-games panel ----------
@@ -16524,7 +16704,7 @@ textarea.ctl-input.de-note {
 }
 .rc-bar .btn { padding: 4px 10px; font-size: 0.78rem; }
 .rc-sep { flex: 0 0 1px; align-self: stretch; background: var(--border); margin: 0 2px; }
-.rc-changed { margin-left: auto; font-size: 0.78rem; color: var(--amber); }
+.rc-changed { margin-left: auto; font-size: 0.78rem; color: var(--amber-text); }
 .rc-preset, .rc-nameinput { font: inherit; font-size: 0.8rem; padding: 4px 6px;
     background: var(--bg-black); color: var(--parchment); border: 1px solid var(--border); border-radius: 3px; }
 .rc-nameinput { width: 190px; }
@@ -16538,7 +16718,7 @@ textarea.ctl-input.de-note {
 
 .rc-group { margin: 0 0 18px; }
 .rc-group > h4 { margin: 0 0 6px; font-size: 0.8rem; letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--amber); }
+    text-transform: uppercase; color: var(--amber-text); }
 .rc-count { color: var(--parchment-dim); font-weight: normal; letter-spacing: 0; text-transform: none; }
 
 .rc-row {
@@ -16586,7 +16766,7 @@ textarea.ctl-input.de-note {
 .rc-sprites { margin: 0 0 14px; padding: 10px;
     background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; }
 .rc-sprites h4 { margin: 0 0 4px; font-size: 0.8rem; letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--amber); }
+    text-transform: uppercase; color: var(--amber-text); }
 .rc-sprite-grid { display: grid; gap: 10px; margin-top: 8px;
     grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); }
 .rc-sprite { padding: 8px; background: var(--bg-black); border: 1px solid var(--border); border-radius: 3px; }
@@ -16689,6 +16869,27 @@ body[data-page="admin"] .btn-enter-mini.active {
     color: var(--parchment);
 }
 
+/* Logging out. While js/admin.js discards the drafts and waits on the
+   server, every click, key and submit is swallowed (see setLoggingOut) —
+   and nothing on screen said so, so the page looked live and simply ignored
+   whatever was pressed. Dimmed a little, and the progress cursor over all
+   of it, so it reads as busy rather than broken.
+
+   The rail's other tabs dim, but not the account tab: its dropdown holds
+   the Log out button, which is saying "Logging out…" and is the one thing
+   worth reading. The cursor is !important because every button on the page
+   sets its own pointer, at every specificity from a class to an id, and
+   for these few seconds none of them is pressable. */
+body.is-logging-out #admin-content,
+body.is-logging-out #admin-rail .admin-tab:not(.admin-tab-user) {
+    opacity: 0.55;
+    transition: opacity 0.15s;
+}
+body.is-logging-out,
+body.is-logging-out * {
+    cursor: progress !important;
+}
+
 /* ---------- Fallin' Furni, Coming Soon: the seats that fall ----------
 
    js/furni-rain.js drops them when the side menu's Fallin' Furni row is
@@ -16725,3 +16926,178 @@ body[data-page="admin"] .btn-enter-mini.active {
     0%, 100% { opacity: 0; }
     25%, 70% { opacity: 1; }
 }
+
+/* ---------- the archive's search row, under a finger ----------
+
+   The phone block below fixed the row at 640px and under, and a tablet was
+   left with the same ragged row one size up. With a touch pointer the
+   coarse block above grows Timeline and Furni to 44px, the iOS-zoom rule
+   takes the search field and the sort menu to 16px text on 4px padding,
+   and nothing matches them up: measured at 768 and 1024, the search 29px,
+   the sort 31px, the two buttons 44px, three heights on one line. And the
+   desktop's 210px cap, sized for 12.5px text, held the field to 165px once
+   the row shared out, and the 16px placeholder "Search by name, builder, or
+   tag..." was cut off partway.
+
+   So every touch width gets what the phone block settled on: all three at
+   one 32px height, the buttons keeping a 44px press through an invisible
+   ::after (as the header pills do), and the search taking the room the
+   view switch leaves. Placed before the phone block, which restates the
+   same things for its two-row layout and must still win below 640px. */
+@media (pointer: coarse) {
+    #search-wrap .search-box {
+        max-width: none;
+    }
+    #search-wrap .search-box input,
+    #search-wrap .sort-box select {
+        height: 32px;
+    }
+    #search-wrap .view-switch-btn {
+        position: relative;
+        min-height: 0;
+        height: 32px;
+    }
+    #search-wrap .view-switch-btn::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: max(100%, 44px);
+        height: 44px;
+        transform: translate(-50%, -50%);
+    }
+}
+
+/* ---------- the archive's search row, on a phone ----------
+
+   Last in the file on purpose: the 640px block and the coarse-pointer block
+   above both reach these controls, and this has to win over both.
+
+   It had drifted into three ragged rows: the search field stopped at 210px
+   in a 290px row (its desktop cap was still in force under the "take the
+   whole line" rule), the sort menu sat alone on a second row in 16px type,
+   and Timeline and Furni were 44px-tall boxes on a third, pushed to the
+   right with a gap beside them. Now it is two rows: the search the whole
+   width, then the sort menu taking what the two buttons leave, all three at
+   one height.
+
+   The 16px text stays: under it iOS zooms the page in on focus. And the
+   buttons still answer a 44px thumb — the box is 32px, and an invisible
+   ::after stretches the press area back out, as the header pills do (see
+   "controls that keep their size and gain a reach"). */
+@media (max-width: 640px) {
+    #search-wrap .search-box {
+        flex: 1 1 100%;
+        max-width: none;
+    }
+    #search-wrap .search-box input {
+        height: 32px;
+    }
+    #search-wrap .sort-box {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+    #search-wrap .sort-box select {
+        width: 100%;
+        max-width: none;
+        height: 32px;
+    }
+    #search-wrap .view-switch {
+        margin-left: 0;
+    }
+    #search-wrap .view-switch-btn {
+        position: relative;
+        min-height: 0;
+        height: 32px;
+    }
+    #search-wrap .view-switch-btn::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: max(100%, 44px);
+        height: 44px;
+        transform: translate(-50%, -50%);
+    }
+}
+
+/* The narrowest phones, where the sort menu is left too little of the row.
+
+   At 320px the sort takes what Timeline and Furni leave, 109px, and its own
+   10px of padding either side plus the native arrow left the 16px words
+   too little room: "Maze Name" showed as "Maze Nar" even with the "Sort
+   by: " dropped. Taking the padding in on the menu and a few pixels off
+   each button's sides gives the sort back the width its longest option
+   needs, without changing a height or a font size — the 16px stays, or
+   iOS zooms the page on focus. 375 and up already fit, and are untouched. */
+@media (max-width: 360px) {
+    #search-wrap .sort-box select {
+        padding-left: 6px;
+        padding-right: 4px;
+    }
+    #search-wrap .view-switch-btn {
+        padding-left: 7px;
+        padding-right: 7px;
+    }
+}
+
+/* AN EVENT'S SLIDESHOW HOLDS STILL ON A PHONE (28 Sept 2026).
+
+   On a wide screen an event's frame hugs each picture (see "event
+   thumbnails: viewport hugs the image" above), which is right for a single
+   banner. But with a gallery playing, every slide is a different shape, so
+   on a phone the frame grew and shrank on every advance — and the builder
+   card, the description and the links under it jumped up and down with it,
+   several times a minute, under the reader's thumb. On a phone with a
+   gallery the frame is now held at the panel height and each picture is
+   contained inside it, exactly as a maze's is. The arrows and pills go back
+   to the frame's edges, which on a screen this narrow are within a few
+   pixels of the picture's anyway. A single banner with no gallery still
+   hugs its picture: it never changes, so it never jumps. */
+@media (max-width: 640px) {
+    .modal-thumb.modal-thumb-full.is-event.has-gallery .modal-thumb-frame {
+        height: var(--event-thumb-h);
+        width: 100%;
+    }
+    .modal-thumb-full.is-event.has-gallery .gallery-viewport {
+        width: 100%;
+        height: 100%;
+    }
+    .modal-thumb-full.is-event.has-gallery .gallery-viewport img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        max-height: none;
+        object-fit: contain;
+    }
+}
+
+/* ==========================================================================
+   DAILY GAMES — the speed bonus on the results card (28 Sept 2026)
+
+   Both games' results cards (js/guess.js renderSummary, js/oddoneout.js
+   resultsHtml) now say what the speed bonus made of the day, on one line
+   straight under the big points figure: "50 + 161 speed bonus = 211 on the
+   boards", or why there is none. The big figure stays the base points —
+   the unit the streak and best-day figures beneath it count in — and this
+   line carries the bonus and the total the boards rank by. The wording is
+   Daily.bonusLine in js/daily.js.
+
+   Small and quiet, because it qualifies the number above it rather than
+   competing with it: the paper-dim colour of the other secondary lines on
+   the card, and pulled up against the figure it belongs to, since the
+   card's column puts 10–14px between every line (.guess-summary's gap,
+   and .odd-deck's) and at that distance it read as a line of its own. The
+   figures in it are tabular, like the points. Only this block's rules; it
+   restates nothing else, so it cannot fight the narrow-layout block.
+   ========================================================================== */
+.daily-bonus {
+    margin: -6px 0 0;
+    font-size: 0.74rem;
+    line-height: 1.4;
+    color: var(--parchment-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.daily-bonus[hidden] { display: none; }

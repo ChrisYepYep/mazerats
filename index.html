@@ -2,6 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- Every relative address on this page (css/, js/, assets/) resolves
+         from the site's root, wherever the page is served — an address that
+         lands here with a trailing slash asked for its stylesheet and
+         scripts one folder down, and got a bare page. Straight after the
+         charset, as in home.html, so it is in force before the first
+         relative address is read. A fragment-only link (the footer's
+         #privacy, the header's #event-… slides) would resolve to "/#x"
+         under this; js/site.js keeps those on the page whenever a <base>
+         exists. -->
+    <base href="/">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
@@ -18,6 +28,7 @@
     <title>Maze Rats — Every Maze. One Place.</title>
     <meta name="description" content="The front door to Maze Rats, a fan-run archive of the maze rooms built across Habbo Hotel: Origins — their rooms, their builders, and the ones that are gone but not forgotten.">
     <link rel="canonical" href="https://mazerats.net/">
+    <meta property="og:site_name" content="Maze Rats">
     <meta property="og:title" content="Maze Rats">
     <meta property="og:description" content="An archive preserving the history of maze rooms across Habbo Hotel: Origins.">
     <meta property="og:type" content="website">

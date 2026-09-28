@@ -42,6 +42,19 @@ const REFRESH_BUDGET_MS = 8000;
    path, so the archive never waits on this one. */
 const COLD_BUDGET_MS = 60000;
 
+/* ...but only for the command-line tools. Inside a function, "no copy to
+   fall back on" is exactly when an anonymous caller can make this walk
+   thirteen pages for up to a minute, again and again, on a public URL — the
+   cache is empty on a fresh deploy, or whenever the Blobs read fails. So a
+   function gets the ordinary REFRESH_BUDGET_MS cap either way, and the
+   failure backoff below applies with no copy too (answering the failure
+   straight away instead of trying again). Told apart by the script that was
+   started, exactly as _db.js tells them apart for its socket timeouts, and
+   for the same reason: the admin's scan button spawns a tool with the
+   function's whole environment copied across, so only the entry point says
+   which one this is. */
+const IN_FUNCTION = !(require.main && /[\\/]tools[\\/][^\\/]+$/.test(require.main.filename || ""));
+
 /* After a refresh fails, how long a stale copy is served without trying
    again. Without it, every request on a day FurniIndex is down would spend
    its own five seconds finding that out. */
@@ -159,9 +172,14 @@ async function getCatalogue({ force = false } = {}) {
     const cached = await store.get(CACHE_KEY, { type: "json" }).catch(() => null);
     if (!force && cached && Date.now() - cached.fetchedAt < MAX_AGE_MS) return cached;
     if (!force && cached && Date.now() - lastFailureAt < RETRY_AFTER_FAILURE_MS) return cached;
+    // No copy, inside a function: the backoff holds all the same — see
+    // IN_FUNCTION. The owner's forced refresh is still let through.
+    if (!force && !cached && IN_FUNCTION && Date.now() - lastFailureAt < RETRY_AFTER_FAILURE_MS) {
+        throw new Error("FurniIndex failed moments ago; not asking again yet");
+    }
     let fresh;
     try {
-        fresh = await fetchCatalogue(cached && !force ? REFRESH_BUDGET_MS : COLD_BUDGET_MS);
+        fresh = await fetchCatalogue(cached && !force ? REFRESH_BUDGET_MS : (IN_FUNCTION ? REFRESH_BUDGET_MS : COLD_BUDGET_MS));
     } catch (e) {
         lastFailureAt = Date.now();
         if (!force && cached) {

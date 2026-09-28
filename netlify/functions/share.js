@@ -26,7 +26,7 @@
 const fs = require("fs");
 const path = require("path");
 const { getDb } = require("./_db");
-const { resolveSlug, PROJECTION: SLUG_FIELDS } = require("./_slugs");
+const { resolveSlug, isRetired, loadRetired, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 
 /* How long a page may be reused. Chat clients cache aggressively on their
    own; this mostly keeps a link pasted twenty times in one channel from
@@ -261,12 +261,28 @@ function guideImage(origin, thumb) {
     return `${origin}/.netlify/images?${params.toString()}`;
 }
 
+/* A stored field as text, or "" for anything that is not text.
+
+   The fields below come from the database as whatever was stored, and the
+   API that stores them checks their shape only loosely. `.trim()` on a
+   description that was a number or an object threw, and a throw here is
+   not the "not found" page: it is Netlify's bare 502, at a record's own
+   address, cached by nobody but seen by everyone who clicks the link. A
+   number is kept (it is somebody's text that happened to parse); an object
+   or a list says nothing a preview could show. */
+function textOf(v) {
+    if (typeof v === "string") return v;
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+    return "";
+}
+
 // The same rule the site uses (GuideText.thumbOf in js/guide-text.js): the
 // guide's own thumbnail, else its first section picture, else none.
+// Sections that are not a list count as none — see textOf.
 function guideThumb(guide) {
-    if (guide.thumb) return guide.thumb;
-    const withPic = (guide.sections || []).find(s => s && s.image);
-    return withPic ? withPic.image : "";
+    if (textOf(guide.thumb)) return textOf(guide.thumb);
+    const withPic = (Array.isArray(guide.sections) ? guide.sections : []).find(s => s && textOf(s.image));
+    return withPic ? textOf(withPic.image) : "";
 }
 
 // Long enough to say something, short enough that no client truncates it
@@ -279,10 +295,13 @@ function clip(text) {
 // One line of prose about the thing, for the preview's body text. Falls
 // back through what a record actually tends to have.
 function describe(record, isEvent) {
+    // Through textOf: a stored value that is not text threw on .trim() —
+    // see textOf above.
+    const host = textOf(record.host).trim(), creator = textOf(record.creator).trim();
     const who = isEvent
-        ? (record.host ? `Hosted by ${record.host}.` : "")
-        : (record.creator ? `Built by ${record.creator}.` : "");
-    const what = (record.description || record.details || "").trim();
+        ? (host ? `Hosted by ${host}.` : "")
+        : (creator ? `Built by ${creator}.` : "");
+    const what = (textOf(record.description) || textOf(record.details)).trim();
     const tail = isEvent
         ? "An event in the Maze Rats archive of Habbo Origins."
         : "A maze in the Maze Rats archive of Habbo Origins.";
@@ -294,8 +313,8 @@ function tagsFor(kind, record, origin, slug) {
     const recordRef = `${kind}:${record.id}`;
     if (kind === "guide") {
         return {
-            title: record.title || "Guides",
-            description: clip(record.summary) || "A guide in the Maze Rats archive of Habbo Origins.",
+            title: textOf(record.title) || "Guides",
+            description: clip(textOf(record.summary)) || "A guide in the Maze Rats archive of Habbo Origins.",
             image: guideImage(origin, guideThumb(record)),
             sized: false,
             canonical,
@@ -305,13 +324,15 @@ function tagsFor(kind, record, origin, slug) {
     const isEvent = kind === "event";
     // The same fallback chain the site's own cards use (see normalize in
     // js/home.js): the thumbnail, then the entrance shot, then the first
-    // room in the gallery.
-    const thumb = record.thumb
-        || (record.entrance && record.entrance.image)
-        || (record.gallery && record.gallery[0] && record.gallery[0].image)
+    // room in the gallery. Each through textOf, so an odd stored value is
+    // skipped rather than sent to the image CDN as "[object Object]".
+    const first = Array.isArray(record.gallery) ? record.gallery[0] : null;
+    const thumb = textOf(record.thumb)
+        || textOf(record.entrance && record.entrance.image)
+        || textOf(first && first.image)
         || "";
     return {
-        title: (isEvent ? record.title : record.name) || "Maze Rats",
+        title: textOf(isEvent ? record.title : record.name) || "Maze Rats",
         description: describe(record, isEvent),
         image: previewImage(origin, thumb),
         sized: true,
@@ -322,7 +343,18 @@ function tagsFor(kind, record, origin, slug) {
 
 /* ---------- answering ---------- */
 
-async function pageResponse(statusCode, tags, cache) {
+/* WHICH QUERY STRINGS MAKE A DIFFERENT PAGE. By default the edge keys its
+   cache on the whole address, query string and all, so /maze/x?utm_source=…
+   (or any junk a link picked up on its travels) was a fresh copy, fetched
+   from the database, for every variation. Only these change the answer:
+   `fresh` (/warren's View link, which must never be handed a cached copy —
+   see the redirect below; its answers are no-store) and the direct-call test
+   parameters read by requestedSlug. Everything else now shares one copy. */
+const VARY = { "Netlify-Vary": "query=fresh|maze|event|guide" };
+
+// `extra` is any header this one answer needs on top (the DB-down page's
+// noindex, below).
+async function pageResponse(statusCode, tags, cache, extra) {
     let html;
     try {
         html = await archivePage();
@@ -334,9 +366,23 @@ async function pageResponse(statusCode, tags, cache) {
     }
     return {
         statusCode,
-        headers: { ...PAGE_HEADERS, "Cache-Control": cache },
+        headers: { ...PAGE_HEADERS, ...VARY, "Cache-Control": cache, ...(extra || {}) },
         body: tags ? withTags(html, tags) : html
     };
+}
+
+/* The database lookup, given this long before the page goes out without it.
+   A cluster that is slow rather than down (a cold connection, a failover)
+   could hold the lookup past the function's own 10-second limit, and then
+   the visitor got Netlify's bare timeout page instead of the archive. Well
+   inside that, the plain-archive fallback below is the better answer. */
+const LOOKUP_MS = 4000;
+function withinTime(promise, ms) {
+    let timer;
+    const late = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`share: lookup took over ${ms}ms`)), ms);
+    });
+    return Promise.race([promise, late]).finally(() => clearTimeout(timer));
 }
 
 const COLLECTION = { maze: "rooms", event: "events", guide: "guides" };
@@ -357,28 +403,64 @@ exports.handler = async (event) => {
     };
     // Short-cached: a record that is being added right now should not sit
     // behind a cached not-found for ten minutes.
-    const MISS_CACHE = "public, max-age=0, must-revalidate, s-maxage=60";
+    /* ?fresh=1 is /warren's View link, asking for the page as just saved.
+       It used to be cached like any other answer — under its own key, but
+       cached all the same, so a second View within ten minutes showed the
+       first save's copy. Never stored now. */
+    const fresh = Object.prototype.hasOwnProperty.call(event.queryStringParameters || {}, "fresh");
+    const MISS_CACHE = fresh ? "no-store" : "public, max-age=0, must-revalidate, s-maxage=60";
+    const HIT_CACHE = fresh ? "no-store" : CACHE;
     if (!asked) return pageResponse(404, notFound, MISS_CACHE);
     const { slug, kind } = asked;
 
-    let found, record;
+    let found, record, gone;
     try {
-        const coll = (await getDb()).collection(COLLECTION[kind]);
-        const all = await coll.find({}, { projection: { ...SLUG_FIELDS, status: 1 } }).toArray();
-        found = resolveSlug(all, kind, slug);
-        if (found && !isPublic(kind, found.record)) found = null;
-        if (found && found.current) {
-            record = await coll.findOne({ id: found.record.id }, { projection: { _id: 0 } });
-        }
+        ({ found, record, gone } = await withinTime((async () => {
+            const db = await getDb();
+            const coll = db.collection(COLLECTION[kind]);
+            /* The deleted records' addresses, read alongside: the addresses
+               are worked out around them exactly as the API does, and one
+               that names nothing live may be one of them. Unreadable is
+               none, as it is for the API (see loadRetired). */
+            const [all, retired] = await Promise.all([
+                coll.find({}, { projection: { ...SLUG_FIELDS, status: 1 } }).toArray(),
+                loadRetired(db, kind).catch(e => {
+                    console.error("share: retired addresses unreadable", e);
+                    return [];
+                })
+            ]);
+            let hit = resolveSlug(all, kind, slug, retired);
+            if (hit && !isPublic(kind, hit.record)) hit = null;
+            const doc = hit && hit.current
+                ? await coll.findOne({ id: hit.record.id }, { projection: { _id: 0 } })
+                : null;
+            return { found: hit, record: doc, gone: !hit && isRetired(retired, slug) };
+        })(), LOOKUP_MS));
     } catch (e) {
-        /* The database being down is not a reason to turn the visitor away:
-           the page itself works from its own offline copy, and opens the
-           record from the address if it can. Served as the plain archive,
-           and not cached, so the tags come back as soon as the database
-           does. */
+        /* The database being down (or too slow — see withinTime) is not a
+           reason to turn the visitor away: the page itself works from its
+           own offline copy, and opens the record from the address if it
+           can. Served as the plain archive, and not cached, so the tags
+           come back as soon as the database does.
+
+           noindex, because to a crawler this is the archive's own page at a
+           record's address, with the archive's title and canonical: indexed
+           during an outage, it would sit in the results as a duplicate of
+           /home under the maze's URL. The next crawl gets the real page. */
         console.error("share: lookup failed", e);
-        return pageResponse(200, null, "no-store");
+        return pageResponse(200, null, "no-store", { "X-Robots-Tag": "noindex" });
     }
+    /* A DELETED RECORD'S ADDRESS: 410 Gone, not 404. It was here and has
+       been removed on purpose, which is worth saying to a search engine —
+       a 410 drops the entry for good, where a 404 is retried for weeks in
+       case it was a mistake. The address stays reserved (_slugs.js), so
+       this answer never changes into somebody else's page.
+
+       The plain archive, as the database-down answer serves it: the page
+       itself says the record is not there when it cannot open it from the
+       address. noindex, because to a crawler it is /home under a dead
+       address. */
+    if (!found && gone) return pageResponse(410, null, MISS_CACHE, { "X-Robots-Tag": "noindex" });
     if (!found) return pageResponse(404, notFound, MISS_CACHE);
 
     // An older address — the id, or a slug from before a rename.
@@ -400,8 +482,8 @@ exports.handler = async (event) => {
         };
     }
     if (!record) return pageResponse(404, notFound, MISS_CACHE);
-    return pageResponse(200, tagsFor(kind, record, origin, found.slug), CACHE);
+    return pageResponse(200, tagsFor(kind, record, origin, found.slug), HIT_CACHE);
 };
 
 // For tools/check-share-headers.js and the local tests.
-exports._test = { withTags, PAGE_HEADERS, requestedSlug };
+exports._test = { withTags, PAGE_HEADERS, requestedSlug, tagsFor };

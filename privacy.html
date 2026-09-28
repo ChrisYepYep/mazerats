@@ -2,6 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- Every relative address on this page (css/, js/, assets/) resolves
+         from the site's root, wherever the page is served. Netlify also
+         serves it at /privacy/ with a trailing slash, and there
+         "css/style.css" asked for /privacy/css/style.css and the page came
+         up with no stylesheet and no scripts. Straight after the charset,
+         as in home.html, so it is in force before the first relative
+         address is read. The skip link's href="#legal-main" would resolve
+         to "/#legal-main" under this; js/site.js keeps fragment links on
+         the page whenever a <base> exists. -->
+    <base href="/">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
@@ -10,6 +20,19 @@
     <title>Privacy Policy — Maze Rats</title>
     <meta name="description" content="How Maze Rats handles the information you give it: what is collected, what it is used for, how long it is kept, and how to have it removed.">
     <link rel="canonical" href="https://mazerats.net/privacy">
+    <!-- A link to this page pasted into Discord or anywhere else unfurled
+         as a bare URL: it was the one page with no share tags at all. The
+         same card as the rest of the site, with this page's own title. -->
+    <meta property="og:url" content="https://mazerats.net/privacy">
+    <meta property="og:site_name" content="Maze Rats">
+    <meta property="og:title" content="Privacy Policy — Maze Rats">
+    <meta property="og:description" content="How Maze Rats handles the information you give it: what is collected, what it is used for, how long it is kept, and how to have it removed.">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
     <!-- Bitmap copies of the MZ mark below, for the browsers that take no SVG
          favicon (Safari, until recently) and for a phone's home screen, which
          asks for a 180px picture of its own and showed a blank tile without

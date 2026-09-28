@@ -50,8 +50,9 @@
        Gone entirely, screenshots and all. */
 const crypto = require("crypto");
 const { getDb, ensureUniqueIndex, ensureIndex } = require("./_db");
-const { hasAccount, canWrite, roleOf, WRITE_SCOPES, usernameFromToken, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
+const { hasAccount, canWrite, refuseWrite, roleOf, WRITE_SCOPES, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { playerFrom } = require("./_player");
+const { clientIp, clientNet, claimNotifySlot, isBanned, forgetOldAddresses } = require("./_net");
 const { SECURITY_HEADERS } = require("./_headers");
 const { imagesStore } = require("./_images");
 const DeadEnds = require("../../js/dead-ends.js");
@@ -75,11 +76,40 @@ const REVIEW_NOTE_MAX = 500;
 /* Throttles. Leads are cheap to read and cheap to reject, so the limit is
    about not being flooded rather than about cost; uploads are the expensive
    thing and get the tighter rope, counted per ADDRESS and per SIGNED-IN
-   PLAYER, so neither a new Discord account nor a new address resets it. */
+   PLAYER, so neither a new Discord account nor a new address resets it.
+
+   "Address" means the subscriber — `net`, from _net.js — not the exact IP.
+   Counting the exact address let anyone on IPv6 take a fresh allowance with
+   every one of the /64's addresses, which is to say an unlimited one. */
 const LEAD_LIMIT = 6;
 const UPLOAD_LIMIT = 12;
 const WINDOW_MS = 10 * 60 * 1000;
 const ORPHAN_AGE_MS = 24 * 60 * 60 * 1000;
+
+/* BYTES, not just files. The caps above count uploads, and each may be 4MB,
+   so twelve every ten minutes was ~7GB a day into the image store from one
+   signed-in visitor, and nothing at all bounded the site as a whole. Two
+   daily ceilings now: one per player (two full eight-picture submissions
+   and change), and one across everybody, which is what actually protects
+   the store from many accounts at once. Counted on a per-day document in
+   UPLOAD_QUOTAS, bumped and read back in one atomic step and taken back
+   out if the upload is then refused. */
+const UPLOAD_QUOTAS = "dead_end_upload_quotas";
+const PLAYER_BYTES_PER_DAY = 48 * 1024 * 1024;
+const GLOBAL_BYTES_PER_DAY = 500 * 1024 * 1024;
+
+/* How many orphaned uploads each sweep clears. The admin's queue read
+   used to take 40, which a single day of abandoned forms could outrun; it
+   now takes far more, and every upload also sweeps a few (see handleUpload),
+   so the store is kept tidy by the traffic that fills it and not only by
+   an admin happening to look. */
+const SWEEP_BATCH = 200;
+const UPLOAD_SWEEP_BATCH = 5;
+
+// Lead emails per clock hour, across every sender — see claimNotifySlot in
+// _net.js. Leads past it are saved as always; only the email is skipped.
+const EMAILS_PER_HOUR = 12;
+const EMAIL_TIMEOUT_MS = 5000;
 // How long an accept's claim on copying a lead's images holds before a
 // later accept may take it over — see "PROMOTE" in handleReview. Longer
 // than any function may run, so a live copy is never trampled.
@@ -99,11 +129,8 @@ function sniff(buffer) {
     return SIGNATURES.find(s => s.test(buffer)) || null;
 }
 
-// Netlify's own value only — see clientIp in contact.js for why never
+// clientIp and clientNet come from _net.js: Netlify's own value only, never
 // x-forwarded-for.
-function clientIp(event) {
-    return (event.headers || {})["x-nf-client-connection-ip"] || null;
-}
 
 function slugify(v) {
     return String(v || "").toLowerCase().trim()
@@ -114,19 +141,50 @@ function slugify(v) {
 // A quiet success, for a bot or a banned address — see contact.js.
 const decoy = () => json(201, { id: crypto.randomUUID(), status: "new" });
 
-let indexed = false;
-async function ensureIndexes(db) {
-    if (indexed) return;
+/* Built once per warm instance, each index on its own, and never allowed to
+   stop a request.
+
+   This used to await the two unique builds bare, and set its flag only if
+   every build succeeded. So one that failed — duplicates already stored
+   would do it — threw out of the handler's connect block as "the database
+   is not answering" on EVERY lead and upload from then on (ensureUniqueIndex
+   remembers only successes, so each request tried again, and failed again).
+   Missing Pieces would have stopped taking submissions over an index. Now
+   each build is caught and logged on its own, the way auth.js's
+   ensureUsernameIndex does, and the whole set is memoised as one promise so
+   concurrent requests share a single attempt. What a missing index costs
+   is said beside each one: the id and key are random UUIDs, and the
+   clientRef check has its findOne. */
+let indexing = null;
+function ensureIndexes(db) {
+    if (!indexing) indexing = buildIndexes(db);
+    return indexing;
+}
+
+async function buildIndexes(db) {
     const leads = db.collection("dead_end_leads");
     const uploads = db.collection("dead_end_uploads");
-    await ensureUniqueIndex(leads, "id");
-    await ensureUniqueIndex(uploads, "key");
+    const attempt = async (what, build) => {
+        try {
+            await build();
+        } catch (e) {
+            console.error(`dead-end-leads: ${what} index unavailable`, e);
+        }
+    };
+    await attempt("leads.id", () => ensureUniqueIndex(leads, "id"));
+    await attempt("uploads.key", () => ensureUniqueIndex(uploads, "key"));
+    // ensureIndex swallows its own failures already.
     await ensureIndex(leads, { status: 1, createdAt: -1 });
     await ensureIndex(leads, { ip: 1, createdAt: -1 });
+    await ensureIndex(leads, { net: 1, createdAt: -1 });
     await ensureIndex(leads, { type: 1, recordId: 1 });
     await ensureIndex(uploads, { ip: 1, at: -1 });
+    await ensureIndex(uploads, { net: 1, at: -1 });
     await ensureIndex(uploads, { playerId: 1, at: -1 });
     await ensureIndex(uploads, { claimed: 1, at: 1 });
+    // The byte-quota day counters sweep themselves after two days.
+    await attempt("upload quota TTL", () =>
+        db.collection(UPLOAD_QUOTAS).createIndex({ at: 1 }, { expireAfterSeconds: 2 * 24 * 60 * 60 }));
     /* One lead per (sender, clientRef) — see handleLead. Partial, so the
        leads sent before clientRef existed (and any sent without one) are not
        all "duplicates" of each other under a missing value. Built here
@@ -134,37 +192,70 @@ async function ensureIndexes(db) {
        filter; if it cannot be built, the findOne check in handleLead still
        catches every retry that is not a dead-heat race, and the log says
        why. */
-    try {
-        await leads.createIndex({ sender: 1, clientRef: 1 }, {
-            unique: true,
-            partialFilterExpression: { clientRef: { $type: "string" } }
-        });
-    } catch (e) {
-        console.error("dead-end-leads: clientRef index unavailable", e);
-    }
-    indexed = true;
+    await attempt("clientRef", () => leads.createIndex({ sender: 1, clientRef: 1 }, {
+        unique: true,
+        partialFilterExpression: { clientRef: { $type: "string" } }
+    }));
 }
 
-async function isBanned(db, ip) {
-    if (!ip) return false;
-    return (await db.collection("bans").countDocuments({ ip }, { limit: 1 })) > 0;
+/* isBanned is _net.js's now, shared with contact.js: it matches the
+   caller's address OR its network, so a ban on an IPv6 sender holds across
+   their whole /64. See bans.js. */
+
+/* Thirty days on, a lead and an upload record lose the sender's address —
+   see forgetOldAddresses in _net.js, and the privacy policy, which promises
+   it. The words, the pictures and who signed them stay. A lead sent without
+   signing in also has the address in `sender` ("ip:<address>", the
+   clientRef bookkeeping in handleLead), which a retry stops mattering to
+   within minutes, so that goes too; a signed-in sender's "p:<id>" is not an
+   address and stays. Both collections date their rows with Date objects. */
+async function forgetOldSenders(db) {
+    await forgetOldAddresses(db.collection("dead_end_leads"), {
+        extra: { filter: { sender: { $regex: "^ip:" } }, unset: { sender: "" } }
+    });
+    await forgetOldAddresses(db.collection("dead_end_uploads"), { field: "at" });
 }
 
-/* Uploads nobody claimed. Swept when an admin opens the queue rather than on
-   a timer, because this site has no timers — and a bounded batch, so a large
-   backlog is cleared over a few visits instead of making one of them slow.
-   The blob goes first: a record without its blob is harmless, a blob with no
-   record pointing at it is exactly the litter this exists to prevent. */
-async function sweepOrphans(db) {
+/* Uploads nobody claimed. Swept when an admin opens the queue and, a few at
+   a time, on every upload (see SWEEP_BATCH) rather than on a timer, because
+   this site has no timers — and a bounded batch, so a large backlog is
+   cleared over a few visits instead of making one of them slow. The blobs
+   are deleted side by side rather than one after another, so a batch costs
+   about one round trip. The blob goes first: a record without its blob is
+   harmless, a blob with no record pointing at it is exactly the litter this
+   exists to prevent. */
+async function sweepOrphans(db, limit = SWEEP_BATCH) {
     const uploads = db.collection("dead_end_uploads");
     const cutoff = new Date(Date.now() - ORPHAN_AGE_MS);
-    const stale = await uploads.find({ claimed: false, at: { $lt: cutoff } }, { projection: { key: 1 } }).limit(40).toArray();
+    const stale = await uploads.find({ claimed: false, at: { $lt: cutoff } }, { projection: { key: 1 } }).limit(limit).toArray();
     if (!stale.length) return;
     const store = imagesStore();
-    for (const u of stale) {
-        try { await store.delete(u.key); } catch (e) { /* already gone */ }
-    }
+    await Promise.all(stale.map(u => Promise.resolve().then(() => store.delete(u.key)).catch(() => { /* already gone */ })));
     await uploads.deleteMany({ key: { $in: stale.map(u => u.key) } });
+}
+
+/* Bumps today's byte counters for one upload — the player's and everybody's
+   — and says whether both are still inside their quota. Over either, both
+   bumps are taken back, so an upload that was refused does not count
+   against the quota as though it had been stored, and the answer is false. Same one-round-trip counter as
+   track.js's overGlobal. */
+async function withinByteQuota(db, playerId, bytes) {
+    const col = db.collection(UPLOAD_QUOTAS);
+    const day = new Date(Math.floor(Date.now() / 86400000) * 86400000);
+    const stamp = day.toISOString().slice(0, 10);
+    const bump = (id, n) => col.findOneAndUpdate(
+        { _id: id },
+        { $inc: { bytes: n }, $setOnInsert: { at: day } },
+        { upsert: true, returnDocument: "after" }
+    ).then(doc => {
+        const row = doc && doc.value !== undefined ? doc.value : doc;
+        return (row && row.bytes) || 0;
+    });
+    const ids = [`p:${playerId}:${stamp}`, `all:${stamp}`];
+    const [mine, everyone] = await Promise.all([bump(ids[0], bytes), bump(ids[1], bytes)]);
+    if (mine <= PLAYER_BYTES_PER_DAY && everyone <= GLOBAL_BYTES_PER_DAY) return true;
+    await Promise.all(ids.map(id => col.updateOne({ _id: id }, { $inc: { bytes: -bytes } }))).catch(() => {});
+    return false;
 }
 
 async function deleteImages(db, keys) {
@@ -185,9 +276,17 @@ async function notify(lead, recordName) {
     const from = process.env.CONTACT_FROM_EMAIL || "Maze Rats <onboarding@resend.dev>";
     const lines = lead.items.map(it =>
         `${DeadEnds.leadKindLabel(it.kind, lead.type)}: ${it.value || ""}${it.images.length ? ` (${it.images.length} image${it.images.length === 1 ? "" : "s"})` : ""}`);
+    /* Bounded, as contact.js's is. The lead is saved and the sender's reply
+       waits on this, so a Resend that hung held the request open until the
+       platform killed it — and the sender saw a failure for a lead that had
+       arrived, and sent it again. Aborted, it is one more failed
+       notification in the catch below. */
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), EMAIL_TIMEOUT_MS);
     try {
         await fetch("https://api.resend.com/emails", {
             method: "POST",
+            signal: controller.signal,
             headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
             body: JSON.stringify({
                 from,
@@ -200,6 +299,8 @@ async function notify(lead, recordName) {
         });
     } catch (e) {
         console.warn("dead-end-leads: email notification failed", e.message);
+    } finally {
+        clearTimeout(timer);
     }
 }
 
@@ -215,14 +316,17 @@ async function handleUpload(event, db) {
     } catch (e) {
         return json(400, { error: "Invalid request body" });
     }
+    // "null" parses too, and body.dataUrl then threw a 500.
+    if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
 
     const ip = clientIp(event);
-    if (await isBanned(db, ip)) return json(201, { key: `tips/void/${crypto.randomUUID()}.png` });
+    const net = clientNet(event);
+    if (await isBanned(db, event)) return json(201, { key: `tips/void/${crypto.randomUUID()}.png` });
 
     const uploads = db.collection("dead_end_uploads");
     const countRecent = () => uploads.countDocuments({
         at: { $gte: new Date(Date.now() - WINDOW_MS) },
-        $or: [{ playerId: player.id }, ...(ip ? [{ ip }] : [])]
+        $or: [{ playerId: player.id }, ...(net ? [{ net }] : [])]
     });
     // A cheap early refusal only; the real check is after the insert below.
     if (await countRecent() >= UPLOAD_LIMIT) {
@@ -256,6 +360,7 @@ async function handleUpload(event, db) {
         bytes: buffer.length,
         playerId: player.id,
         ip,
+        net,
         at: new Date(),
         claimed: false
     });
@@ -263,12 +368,20 @@ async function handleUpload(event, db) {
         await uploads.deleteOne({ key });
         return json(429, { error: "That is a lot of screenshots at once. Give it ten minutes." });
     }
+    // The day's bytes, after the count so a burst refused there costs none.
+    if (!(await withinByteQuota(db, player.id, buffer.length))) {
+        await uploads.deleteOne({ key });
+        return json(429, { error: "That is as many screenshots as can be taken today. Try again tomorrow." });
+    }
     try {
         await imagesStore().set(key, buffer, { metadata: { contentType: kind.mime } });
     } catch (e) {
         await uploads.deleteOne({ key }).catch(() => {});
         throw e;
     }
+    // A few of yesterday's abandoned uploads out as this one comes in — see
+    // SWEEP_BATCH. Never allowed to fail the upload it rides on.
+    await sweepOrphans(db, UPLOAD_SWEEP_BATCH).catch(() => {});
     return json(201, { key });
 }
 
@@ -346,7 +459,9 @@ async function handleLead(event, db) {
     }
 
     const ip = clientIp(event);
-    if (await isBanned(db, ip)) return decoy();
+    // What the throttle counts, and what a ban matches besides the address.
+    const net = clientNet(event);
+    if (await isBanned(db, event)) return decoy();
 
     const leads = db.collection("dead_end_leads");
     const player = playerFrom(event);
@@ -366,9 +481,9 @@ async function handleLead(event, db) {
         if (prior) return json(200, { id: prior.id, status: prior.status, duplicate: true });
     }
     const TOO_MANY_LEADS = "Thanks for all of these. Give it ten minutes before sending more.";
-    const countRecentLeads = () => leads.countDocuments({ ip, createdAt: { $gte: new Date(Date.now() - WINDOW_MS) } });
+    const countRecentLeads = () => leads.countDocuments({ net, createdAt: { $gte: new Date(Date.now() - WINDOW_MS) } });
     // A cheap early refusal only; the real check follows the insert below.
-    if (ip && await countRecentLeads() >= LEAD_LIMIT) {
+    if (net && await countRecentLeads() >= LEAD_LIMIT) {
         return json(429, { error: TOO_MANY_LEADS });
     }
 
@@ -432,6 +547,7 @@ async function handleLead(event, db) {
         // signPlayer in _player.js, and contact.js for why it matters.
         from: player ? { id: player.id, name: player.name, username: player.username || null, verified: true } : null,
         ip,
+        net,
         status: "new",
         createdAt: new Date(),
         // Only when there is one: the unique index is partial on a string
@@ -459,14 +575,14 @@ async function handleLead(event, db) {
         if (!prior) throw e;
         return json(200, { id: prior.id, status: prior.status, duplicate: true });
     }
-    if (ip && await countRecentLeads() > LEAD_LIMIT) {
+    if (net && await countRecentLeads() > LEAD_LIMIT) {
         await leads.deleteOne({ id: lead.id });
         if (images.length) {
             await db.collection("dead_end_uploads").updateMany({ key: { $in: images.map(i => i.key) } }, { $set: { claimed: false } });
         }
         return json(429, { error: TOO_MANY_LEADS });
     }
-    await notify(lead, recordName);
+    if (await claimNotifySlot(db, "dead-end-leads", EMAILS_PER_HOUR)) await notify(lead, recordName);
     return json(201, { id: lead.id, status: "new" });
 }
 
@@ -479,6 +595,8 @@ async function handleReview(event, db) {
     } catch (e) {
         return json(400, { error: "Invalid request body" });
     }
+    // "null" parses too, and body.id then threw a 500.
+    if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
     const id = text(body.id);
     const status = text(body.status);
     const note = text(body.note).trim();
@@ -750,6 +868,9 @@ exports.handler = async (event) => {
     const q = event.queryStringParameters || {};
 
     try {
+        // Cannot throw, and runs at most hourly; see forgetOldSenders.
+        if (event.httpMethod === "POST" || event.httpMethod === "GET") await forgetOldSenders(db);
+
         if (event.httpMethod === "POST") {
             return q.action === "upload" ? await handleUpload(event, db) : await handleLead(event, db);
         }
@@ -774,9 +895,10 @@ exports.handler = async (event) => {
                address or id, and nobody needs it on screen. */
             const role = await roleOf(event);
             const full = (WRITE_SCOPES[role] || []).includes("site");
+            // `net` is limiter bookkeeping (see handleLead), shown to nobody.
             const projection = full
-                ? { _id: 0, sender: 0 }
-                : { _id: 0, sender: 0, ip: 0, "from.id": 0 };
+                ? { _id: 0, sender: 0, net: 0 }
+                : { _id: 0, sender: 0, net: 0, ip: 0, "from.id": 0 };
             const list = await db.collection("dead_end_leads")
                 .find(filter, { projection })
                 .sort({ createdAt: -1 })
@@ -790,9 +912,9 @@ exports.handler = async (event) => {
             return json(200, { leads: list, counts: byStatus });
         }
 
-        if (!(await canWrite(event))) {
-            return (await hasAccount(event)) ? READ_ONLY : UNAUTHORIZED;
-        }
+        // refuseWrite answers a missing account with the 401 this did by
+        // hand, and words the refusal for a viewer and an atlas account.
+        if (!(await canWrite(event))) return await refuseWrite(event);
 
         if (event.httpMethod === "PATCH") return await handleReview(event, db);
 

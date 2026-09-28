@@ -83,19 +83,56 @@ exports.handler = async (event) => {
     const since = RANGES[range]();
     const window = since ? { at: { $gte: since } } : {};
 
-    // In a try, so a failed read is JSON the panel can show rather than an
-    // unhandled rejection and Netlify's bare 502.
-    let rows;
+    /* FAILED SIGN-INS ARE READ SEPARATELY, and only as many as are worth
+       listing.
+
+       This was one query for the newest MAX_EVENTS rows of every kind. A
+       failed login is the one row a stranger can write — as fast as the
+       throttle lets them, from as many addresses as they have — so a
+       night's guessing filled all four hundred places, and the sign-ins,
+       sessions and saves the page exists to show fell off the end: an
+       attacker could push their own successful login out of sight by
+       failing enough first. Now the admins' own rows get their MAX_EVENTS
+       to themselves, the failures are COUNTED in full, summarised by
+       address and by name, and only the newest MAX_FAILED_LISTED of them
+       are listed among the events.
+
+       In a try, so a failed read is JSON the panel can show rather than an
+       unhandled rejection and Netlify's bare 502. */
+    const FAILED = "login-failed";
+    const MAX_FAILED_LISTED = 50;
+    const activity = db.collection(COLLECTION);
+    let rows, failedRows, failedCount, failedBy;
     try {
-        rows = await db.collection(COLLECTION)
-            .find(window, { projection: { _id: 0 } })
-            .sort({ at: -1 })
-            .limit(MAX_EVENTS)
-            .toArray();
+        [rows, failedRows, failedCount, failedBy] = await Promise.all([
+            activity.find({ ...window, type: { $ne: FAILED } }, { projection: { _id: 0, net: 0 } })
+                .sort({ at: -1 }).limit(MAX_EVENTS).toArray(),
+            activity.find({ ...window, type: FAILED }, { projection: { _id: 0, net: 0 } })
+                .sort({ at: -1 }).limit(MAX_FAILED_LISTED).toArray(),
+            activity.countDocuments({ ...window, type: FAILED }),
+            activity.aggregate([
+                { $match: { ...window, type: FAILED } },
+                {
+                    $facet: {
+                        byIp: [{ $group: { _id: "$ip", n: { $sum: 1 }, last: { $max: "$at" } } }, { $sort: { n: -1 } }, { $limit: 10 }],
+                        byName: [{ $group: { _id: "$username", n: { $sum: 1 }, last: { $max: "$at" } } }, { $sort: { n: -1 } }, { $limit: 10 }],
+                    },
+                },
+            ]).toArray(),
+        ]);
     } catch (e) {
         console.error("admin-activity: read failed", e);
         return json(500, { error: "Could not read the activity log" });
     }
+    const truncated = rows.length === MAX_EVENTS || failedCount > failedRows.length;
+    const summary = (failedBy && failedBy[0]) || {};
+    const failedLogins = {
+        total: failedCount,
+        byIp: (summary.byIp || []).map(r => ({ ip: r._id, n: r.n, last: r.last })),
+        byName: (summary.byName || []).map(r => ({ username: r._id, n: r.n, last: r.last })),
+    };
+    // One list for the page, newest first, as it has always been.
+    rows = rows.concat(failedRows).sort((a, b) => new Date(b.at) - new Date(a.at));
 
     /* Group into sessions. A session is one username plus one JWT issued-at,
        so it survives page reloads and ends when the token does. Records with
@@ -134,7 +171,8 @@ exports.handler = async (event) => {
         }))
         .sort((a, b) => new Date(b.lastAt) - new Date(a.lastAt));
 
-    const failures = rows.filter(r => r.type === "login-failed").length;
+    // Counted in full now (see above), not out of whatever fitted in the list.
+    const failures = failedCount;
 
     /* What visitors use, aggregated. Deliberately only ever counted, never
        listed: the rows carry no address and no account, and the session id
@@ -160,7 +198,12 @@ exports.handler = async (event) => {
                     { $group: { _id: "$session" } },
                     { $count: "n" },
                 ],
-                byName: [{ $group: { _id: "$name", n: { $sum: 1 } } }, { $sort: { n: -1 } }],
+                /* Capped like its neighbours. track.js now accepts only the
+                   names the site sends, but rows written before that are
+                   kept for 60 days, and a facet's whole output is one
+                   16MB document — a flood of invented names could fail
+                   the aggregation, and with it every number on the panel. */
+                byName: [{ $group: { _id: "$name", n: { $sum: 1 } } }, { $sort: { n: -1 } }, { $limit: 50 }],
                 topMazes: [
                     { $match: { name: "maze-open", label: { $ne: null } } },
                     { $group: { _id: "$label", n: { $sum: 1 } } }, { $sort: { n: -1 } }, { $limit: 10 },
@@ -203,6 +246,9 @@ exports.handler = async (event) => {
         },
         sessions: sessionList,
         events: rows,
-        truncated: rows.length === MAX_EVENTS,
+        // Per address and per name — see the reads above. Nothing on the
+        // page draws it yet; it is here for the panel to pick up.
+        failedLogins,
+        truncated,
     });
 };

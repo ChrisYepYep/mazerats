@@ -19,6 +19,8 @@
 
 const crypto = require("crypto");
 const { getDb } = require("./_db");
+// subscriberOf lived here first; _net.js shares it with every other limiter.
+const { clientIp, subscriberOf } = require("./_net");
 
 const COLLECTION = "site_events";
 
@@ -68,29 +70,38 @@ const LIMIT_BATCHES = 60;
 const LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const GLOBAL_ROWS_PER_MIN = 1500;
 
-/* The part of an address that identifies one subscriber: IPv4 as it is, an
-   IPv4 dressed as IPv6 (::ffff:1.2.3.4) as the IPv4 underneath, and any
-   other IPv6 as its first four groups — the /64 — after expanding "::".
-   Nothing here is stored; it only feeds the HMAC below. */
-function subscriberOf(ip) {
-    const s = String(ip).trim().toLowerCase().replace(/%.*$/, "");     // a zone id is local noise
-    if (!s.includes(":")) return s;
-    const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(s);
-    if (mapped) return mapped[1];
-    const halves = s.split("::");
-    const head = halves[0] ? halves[0].split(":") : [];
-    const tail = halves.length > 1 && halves[1] ? halves[1].split(":") : [];
-    // A trailing dotted quad fills two groups, not one.
-    const width = (list) => list.length + (list.length && list[list.length - 1].includes(".") ? 1 : 0);
-    const groups = halves.length > 1
-        ? [...head, ...Array(Math.max(0, 8 - width(head) - width(tail))).fill("0"), ...tail]
-        : head;
-    return groups.slice(0, 4).map(g => (parseInt(g, 16) || 0).toString(16)).join(":") + "::/64";
-}
+/* AND A CEILING PER DAY. The per-minute one alone still let a patient
+   flood through: 1,500 rows a minute is 2.16 million a day, every one of them
+   kept for 60 days — enough to fill a small cluster by itself without ever
+   tripping the minute cap. A real launch day is a few thousand visits of a
+   few dozen clicks each, so thirty thousand rows is room for a very good day
+   while holding the worst case to 1.8 million rows over the whole retention
+   window. Over it, the day's remaining telemetry is dropped, which is the
+   same trade the minute cap makes: the numbers are a nicety. */
+const GLOBAL_ROWS_PER_DAY = 30000;
+// The day counters' own expiry, on their own field: the TTL index on `at`
+// sweeps after the ten-minute limiter window, which would reset a day's
+// count ten minutes into it.
+const DAY_COUNTER_KEEP_S = 2 * 24 * 60 * 60;
+
+/* The names js/track.js actually sends, and nothing else. Anything was
+   accepted before, so the event list was whatever a stranger typed into it:
+   the activity page's "by name" breakdown could be filled with junk names
+   (one group each), and a script could spend the whole day's allowance on
+   rows nobody would ever read. Read from the call sites — js/track.js's own
+   "page", the one Track.event("search") in js/home.js, and every data-track
+   / dataset.track in js/home.js. A new data-track needs adding here, or its
+   clicks are dropped quietly. */
+const EVENT_NAMES = new Set([
+    "page", "search", "tab", "whats-new", "timeline",
+    "maze-open", "event-open", "photo-open",
+    "furni-open", "furni-browse", "furni-also-list",
+    "walked-toggle", "saved-toggle", "share-copy"
+]);
 
 function limiterKey(event) {
-    // Netlify's own value only — see clientIp in contact.js.
-    const ip = (event.headers || {})["x-nf-client-connection-ip"];
+    // Netlify's own value only — see clientIp in _net.js.
+    const ip = clientIp(event);
     if (!ip) return null;
     const day = new Date().toISOString().slice(0, 10);
     return crypto.createHmac("sha256", process.env.SESSION_SECRET || "maze-rats-track")
@@ -123,7 +134,17 @@ async function overGlobal(db, rows) {
         { $inc: { n: rows }, $setOnInsert: { at: minute } },
         { upsert: true, returnDocument: "after" }
     );
-    return Boolean(doc) && doc.n > GLOBAL_ROWS_PER_MIN;
+    if (Boolean(doc) && doc.n > GLOBAL_ROWS_PER_MIN) return true;
+    /* The day's counter, the same way. Bumped only by batches the minute
+       let through, so a burst refused above does not also eat into the day.
+       `dayAt`, not `at` — see DAY_COUNTER_KEEP_S. */
+    const day = new Date(Math.floor(Date.now() / 86400000) * 86400000);
+    const daily = await db.collection(LIMITS).findOneAndUpdate(
+        { _id: `global-day:${day.toISOString().slice(0, 10)}` },
+        { $inc: { n: rows }, $setOnInsert: { dayAt: day } },
+        { upsert: true, returnDocument: "after" }
+    );
+    return Boolean(daily) && daily.n > GLOBAL_ROWS_PER_DAY;
 }
 const KEEP_DAYS = 60;              // matches the retention the policy states
 const MAX_EVENTS_PER_BATCH = 20;
@@ -144,6 +165,7 @@ async function ensureIndexes(db) {
     const limits = db.collection(LIMITS);
     await limits.createIndex({ at: 1 }, { expireAfterSeconds: LIMIT_WINDOW_MS / 1000 }).catch(() => {});
     await limits.createIndex({ k: 1, at: 1 }).catch(() => {});
+    await limits.createIndex({ dayAt: 1 }, { expireAfterSeconds: DAY_COUNTER_KEEP_S }).catch(() => {});
     ensured = true;
 }
 
@@ -174,7 +196,8 @@ exports.handler = async (event) => {
 
     const rows = events.map(e => {
         const name = clean(e && e.name, MAX_NAME);
-        if (!name) return null;
+        // Only names the site sends — see EVENT_NAMES.
+        if (!name || !EVENT_NAMES.has(name)) return null;
         /* The client's clock is not trusted to set the retention window — a
            wrong one could park a row outside the TTL forever — so the time is
            taken here, and the client's own stamp is used only to keep a

@@ -7,7 +7,7 @@
    this page does.
 
    Signed in, it shows:
-     - the archive: how many mazes completed, how many saved to do, with the
+     - the archive: how many mazes completed, how many saved, with the
        Your Progress window a press away (figures from js/home.js through
        window.ArchiveProgress, so the two cannot disagree);
      - the daily games: today, the streak, days played and place, for each
@@ -97,11 +97,17 @@ document.addEventListener("DOMContentLoaded", () => {
             return `${head("The archive")}<p class="console-blurb">Loading...</p>`;
         }
         const pct = Math.round((f.done / f.total) * 100);
+        /* "Saved", counted as the Saved list counts it (f.saved: closed
+           mazes included), so it matches the Your Progress heading and the
+           side menu's "· N saved" a press away. It read "Saved to do" off
+           f.toWalk, which leaves closed mazes out, and the same player saw
+           two different saved counts on two screens. toWalk stays as the
+           fallback for a home.js that does not export `saved` yet. */
         return `
             ${head("The archive")}
             ${line("Completed", `${esc(num(f.done))} / ${esc(num(f.total))}`)}
             <div class="console-profile-bar" role="img" aria-label="${pct}% completed"><span style="width:${pct}%"></span></div>
-            ${line("Saved to do", esc(num(f.toWalk)))}
+            ${line("Saved", esc(num(typeof f.saved === "number" ? f.saved : f.toWalk)))}
             <button type="button" class="console-btn console-profile-btn" data-act="progress">Your Progress</button>`;
     }
 
@@ -115,7 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <li>Credit for what you send in</li>
             </ul>
             <button type="button" class="console-btn console-profile-btn" data-act="signin">Sign in with Discord</button>
-            <p class="console-note console-profile-note">We only see your Discord name, picture and account ID. Nothing else.</p>
+            <p class="console-note console-profile-note">We only see your Discord username, display name, picture and account ID. Nothing else.</p>
             ${rule}
             ${archiveBlock()}
             ${rule}

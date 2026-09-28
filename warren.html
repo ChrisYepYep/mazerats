@@ -2,6 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- Every relative address on this page (css/, js/, assets/) resolves
+         from the site's root, wherever the page is served. Netlify also
+         serves it at /warren/ with a trailing slash, and there
+         "css/style.css" asked for /warren/css/style.css and the editor came
+         up unstyled with none of its scripts. Straight after the charset,
+         as in home.html, so it is in force before the first relative
+         address is read. A fragment-only link would resolve to "/#x" under
+         this; js/site.js keeps those on the page whenever a <base> exists. -->
+    <base href="/">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Caveat is here for the atlas panel, which letters room names in
@@ -147,6 +156,17 @@
                         <input type="password" id="self-password" class="ctl-input"
                                autocomplete="new-password" placeholder="New password"
                                aria-label="New password (at least 8 characters)">
+                    </div>
+                    <!-- Typed twice. The field masks what is typed, and a
+                         slip in a password nobody can see locks the account
+                         out of itself the moment it saves: the change retires
+                         every session, this one included, so there is no
+                         signed-in screen left to put it right from. The Save
+                         button sits on this row, the last thing filled in. -->
+                    <div class="ctl-row">
+                        <input type="password" id="self-password-confirm" class="ctl-input"
+                               autocomplete="new-password" placeholder="Confirm new password"
+                               aria-label="Confirm new password">
                         <button type="button" class="ctl-btn" id="self-password-btn">Save</button>
                     </div>
                     <p class="ctl-status" id="self-password-status" style="display:none;"></p>
@@ -269,6 +289,16 @@
                                 </div>
                                 </div>
                                 <p class="ctl-status" id="ff-state-status" style="display:none;"></p>
+                                <!-- The switch-against-launch-date warning, on a
+                                     line of its own. It used to share the one
+                                     above with the switch's errors, so each wiped
+                                     the other: a failed save hid the warning, and
+                                     the warning's next recompute blanked the
+                                     error. It is also time-dependent (the launch
+                                     passes while the page sits open), so
+                                     js/admin.js recomputes it when this tab is
+                                     shown and every minute while it is. -->
+                                <p class="ctl-status" id="ff-state-warning" style="display:none;"></p>
                             </div>
 
                             <!-- Fallin' Furni's own launch date, beside its

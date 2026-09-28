@@ -137,9 +137,11 @@
        worth more than a miss.
 
        Ten a round, so 50 is a perfect day — the same as Odd One Out next
-       door, and small enough that the speed bonus (up to 37 for each room
-       named right, a point for every second under 37 it took; added on the
-       board, see netlify/functions/_speed.js) is worth playing for. The same
+       door, and small enough that the speed bonus (up to 36 for each room
+       named right, a point for every second under 37 it took — and no room
+       can be named in under a second, because the server refuses a first
+       guess sooner than MIN_MOVE_MS; added on the board, see
+       netlify/functions/_speed.js) is worth playing for. The same
        array is kept by the server to score a submitted day (see
        netlify/functions/guess-scores.js), so the two can never disagree
        about what a round was worth. Change one, change both. */
@@ -166,6 +168,7 @@
     let stats = null;     // the running record across days, as SHOWN — see shownStats
     let rounds = [];      // { image, cx, cy, img } per round, once ready
     let preparing = {};   // round index -> true while its picture is loading
+    let unloadable = {};  // round index -> true once its picture has failed for good; see prepareRound
     let dealGen = 0;      // bumped whenever the deal is thrown away; see forgetDeal
     let guessing = false; // a guess on its way to be judged
 
@@ -225,7 +228,10 @@
             const img = new Image();
             // Same origin (everything goes through /.netlify/images), so the
             // canvas is never tainted and getImageData works — which the
-            // whole scoring pass below depends on.
+            // whole scoring pass below depends on. The deal's picture is a
+            // deal-image address now (netlify/functions/deal-image.js), on
+            // this origin too, and still goes through the image CDN as its
+            // source, so nothing about that changes.
             img.onload = () => resolve(img);
             img.onerror = () => reject(new Error("image failed"));
             img.src = src;
@@ -331,7 +337,9 @@
     function draw(i) {
         const sheet = roundSheet(i);
         const data = rounds[i];
+        if (sheet && !data && unloadable[i]) return drawUnavailable(sheet);
         if (!sheet || !data || !data.img) return;
+        sheet.refs.canvas.setAttribute("aria-label", "A cropped piece of a maze room from the archive");
 
         const img = data.img;
         const result = state.results[i];
@@ -364,6 +372,23 @@
         const cx = Math.max(half, Math.min(w - half, data.cx));
         const cy = Math.max(half, Math.min(h - half, data.cy));
         out.drawImage(img, cx - half, cy - half, size, size, 0, 0, side, side);
+    }
+
+    /* The frame of a room whose picture would not load (see prepareRound):
+       said in the frame itself, where the picture would be, rather than
+       left as an empty square that looks like one still on its way. Drawn
+       in a mid grey, which reads on the dark frame in either theme. */
+    function drawUnavailable(sheet) {
+        const canvas = sheet.refs.canvas;
+        const out = canvas.getContext("2d");
+        const side = canvas.width;
+        out.clearRect(0, 0, side, side);
+        out.fillStyle = "#8a8a8a";
+        out.textAlign = "center";
+        out.textBaseline = "middle";
+        out.font = `${Math.round(side / 18)}px sans-serif`;
+        out.fillText("Picture unavailable", side / 2, side / 2);
+        canvas.setAttribute("aria-label", "This room's picture is unavailable");
     }
 
     // ---------- what is remembered ----------
@@ -527,7 +552,15 @@
 
     /* Counted into the device's own record, which is saved; and into the
        account's figures in memory too, so the card is right straight away —
-       submitDay then replaces those with the server's own count. */
+       submitDay then replaces those with the server's own count.
+
+       In BASE points (dayPoints), on both sides. The account's count
+       (statsFor in netlify/functions/player-data.js) added the speed bonus
+       for a while, so the same card read "50 points" for a perfect day and
+       "Best day 83" under it when signed in, and 50 and 50 signed out. It
+       counts base points now, as this does: every number on the card is in
+       the units the card scores the day in, as on Odd One Out's. The boards
+       and the Profile still rank by, and show, the total. */
     function countDay() {
         const solved = state.results.filter(r => r.won).length;
         const scored = dayPoints();
@@ -560,11 +593,30 @@
        is already ready or already loading, which is what lets the next
        round be started quietly in the background (see below) without any
        coordination at the call sites. */
-    async function prepareRound(i) {
+    /* A PICTURE THAT WILL NOT LOAD no longer stops the day.
+
+       The deal is stored for the day (netlify/functions/_deal.js), so a
+       picture deleted or replaced in the archive after it was dealt leaves
+       a room pointing at nothing. The failure used to say "try again in a
+       moment" with nothing to press, and submitGuess refuses a room whose
+       picture is not in hand — so the room could not be played, the day
+       could not be finished, and it never reached the board.
+
+       Now a failure is tried again by itself, twice, a few seconds apart
+       (PICTURE_RETRY_MS: a bad moment on the connection, or the image CDN
+       warming up, is the usual cause). After that the room is marked
+       `unloadable`: the frame says so, the status line offers a retry, and
+       the five names can still be pressed — a room named without its
+       picture is a poor round, but a day that can be finished is better
+       than one that cannot. A picture that arrives later (a retry that
+       works) is drawn as normal. */
+    const PICTURE_RETRY_MS = [2000, 6000];
+    async function prepareRound(i, attempt) {
         if (i == null || i < 0 || i >= ROUNDS) return;
         if (rounds[i] || preparing[i]) return;
         const pick = picks()[i];
         if (!pick) return;
+        const tried = attempt || 0;
 
         preparing[i] = true;
         setBusy(i, true);
@@ -576,12 +628,17 @@
         } catch (e) {
             if (gen !== dealGen) return;
             preparing[i] = false;
-            setBusy(i, false);
-            const sheet = roundSheet(i);
-            if (sheet) {
-                sheet.refs.status.textContent = "That room's picture would not load. Try again in a moment.";
-                sheet.refs.status.hidden = false;
+            if (tried < PICTURE_RETRY_MS.length) {
+                // Still busy-looking while it waits, as a load would be.
+                setTimeout(() => { if (gen === dealGen) prepareRound(i, tried + 1); }, PICTURE_RETRY_MS[tried]);
+                return;
             }
+            setBusy(i, false);
+            unloadable[i] = true;
+            pictureUnavailable(i);
+            renderRound(i);
+            // The next room is not held up by this one's picture.
+            if (i + 1 < ROUNDS) prepareRound(i + 1);
             return;
         }
         /* The day moved on while the picture was on its way — the window
@@ -603,6 +660,12 @@
         };
         preparing[i] = false;
         setBusy(i, false);
+        if (unloadable[i]) {
+            // A retry that worked: the unavailable notice goes with it.
+            unloadable[i] = false;
+            const sheet = roundSheet(i);
+            if (sheet) { sheet.refs.status.hidden = true; sheet.refs.status.textContent = ""; }
+        }
         renderRound(i);
 
         /* The next room's picture, fetched while this one is being played.
@@ -614,6 +677,31 @@
     function setBusy(i, on) {
         const sheet = roundSheet(i);
         if (sheet) sheet.el.classList.toggle("is-busy", on);
+    }
+
+    /* The status line of a room whose picture has failed for good, with a
+       button to try it once more. Written as elements, so the handler is
+       bound to exactly this button; the status line is role="status", so
+       the words are read out as they arrive. */
+    function pictureUnavailable(i) {
+        const sheet = roundSheet(i);
+        if (!sheet) return;
+        const status = sheet.refs.status;
+        status.textContent = "This room's picture wouldn't load. You can still name it from the five below. ";
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "guess-btn";
+        retry.textContent = "Try the picture again";
+        retry.addEventListener("click", () => {
+            retry.disabled = true;
+            status.textContent = "Loading the picture again…";
+            unloadable[i] = false;
+            // One try from a button, no automatic ones after it: the
+            // player has already waited through those once.
+            prepareRound(i, PICTURE_RETRY_MS.length);
+        });
+        status.appendChild(retry);
+        status.hidden = false;
     }
 
     // ---------- guessing ----------
@@ -640,45 +728,135 @@
        if another tab or device has played this round, the answer carries
        that round as the server has it, and that is what is shown.
 
-       The mode is settled by the day's first guess and kept, as Odd One
-       Out's is (see choose in js/oddoneout.js): a day begun signed out is
-       sent with `anon`, is not recorded, and is filed from this page's own
-       guesses with no bonus once finished. Signed out, the server cannot
+       The mode is settled by the day's first guess, as Odd One Out's is
+       (see choose in js/oddoneout.js): a day begun signed out is sent with
+       `anon` while the player stays signed out, is not recorded, and is
+       filed from this page's own guesses with no bonus once finished. If
+       they sign in part-way, the day becomes recorded — the server refuses
+       `anon` from a signed-in request now — by recording the guesses
+       already made first (adoptRecorded), still untimed. Signed out, the server cannot
        count, so the page says when a guess is its last (`final`) to be told
        the answer.
 
        While a guess is on its way the other names are ignored; one that
        could not be judged leaves the round as it was, says so, and can
        simply be made again. */
-    async function submitGuess(name) {
+    async function submitGuess(name, again) {
         const index = state.round;
         const result = currentResult();
         // Not before the picture is on screen: a guess at a room nobody has
-        // seen yet is not a guess about the room.
-        if (!result || result.done || guessing || !picks()[index] || !rounds[index]) return;
-        if (!state.mode) state.mode = signedIn() ? "account" : "anon";
+        // seen yet is not a guess about the room. Unless the picture has
+        // failed for good (unloadable — see prepareRound), when the names
+        // are all there is, and refusing them was what stopped the day.
+        if (!result || result.done || guessing || !picks()[index] || !(rounds[index] || unloadable[index])) return;
         const forDay = state.day;
-        const anon = state.mode === "anon";
         const final = result.guesses.length + 1 >= TRIES;
 
         guessing = true;
         const sheet = roundSheet(index);
         if (sheet) sheet.el.classList.add("is-busy");
-        const reply = await Daily.move("guess", forDay, index, { guess: name, final }, { anon, url: BOARDS_URL });
+        /* The mode, settled by the day's first guess — but not on a sign-in
+           check that FAILED rather than answered (Account.unsure; see
+           js/account.js), which used to settle a signed-in player's day as
+           unrecorded. Asked again first; still unsure, the guess goes out
+           without `anon` and the server's `recorded` settles it, since the
+           server can read the session even when this page could not ask. As
+           choose() in js/oddoneout.js. */
+        if (!state.mode) {
+            if (window.Account && Account.unsure) { try { await Account.refresh(); } catch (e) { /* still unsure */ } }
+            if (signedIn()) state.mode = "account";
+            else if (!(window.Account && Account.unsure)) state.mode = "anon";
+        }
+        /* A day begun signed out, and the player has signed in since: its
+           guesses so far are recorded first (adoptRecorded), and this one
+           and the rest go out recorded too. The server no longer answers
+           `anon` from a signed-in request — see the note at the POST in
+           netlify/functions/guess-scores.js. */
+        if (state.mode === "anon" && signedIn()) {
+            const adopted = await adoptRecorded(sheet);
+            if (!state || state.day !== forDay || state.round !== index) { guessing = false; return; }
+            // "signed-out": the server saw no session after all, so the day
+            // carries on as it was, unrecorded.
+            if (!adopted) {
+                guessing = false;
+                if (sheet) sheet.el.classList.remove("is-busy");
+                guessFailed(sheet);
+                return;
+            }
+            // The round in hand may have been finished by the replay (another
+            // device played it first): nothing left to guess in it.
+            if (currentResult().done) {
+                guessing = false;
+                if (sheet) sheet.el.classList.remove("is-busy");
+                renderAll();
+                return;
+            }
+        }
+        const wasMode = state.mode;
+        const reply = await Daily.move("guess", forDay, index, { guess: name, final }, { anon: wasMode === "anon", url: BOARDS_URL });
         guessing = false;
         if (sheet) sheet.el.classList.remove("is-busy");
         if (!state || state.day !== forDay || state.round !== index) return;
 
         const body = reply.body || {};
+        /* Sent as signed out, and the server can see a session this page
+           could not (a sign-in in another tab, a check that failed on load):
+           the day's guesses so far are recorded and this one is made again,
+           recorded. Once — `again` stops a loop. As choose() in
+           js/oddoneout.js. */
+        if (Daily.refusedAsSignedIn(reply)) {
+            if (window.Account) { try { await Account.refresh(); } catch (e) { /* the server already said */ } }
+            if (!state || state.day !== forDay || state.round !== index) return;
+            if (!again) {
+                guessing = true;
+                if (sheet) sheet.el.classList.add("is-busy");
+                const adopted = await adoptRecorded(sheet);
+                guessing = false;
+                if (sheet) sheet.el.classList.remove("is-busy");
+                if (!state || state.day !== forDay || state.round !== index) return;
+                if (adopted === true) {
+                    if (currentResult().done) { renderAll(); return; }
+                    return submitGuess(name, true);
+                }
+            }
+            guessFailed(sheet);
+            return;
+        }
+        /* Signed out, and this network has asked for more verdicts today
+           than anybody playing could (claimAnonMove in
+           netlify/functions/_speed.js). Signing in carries on recorded. */
+        if (reply.status === 429 && body.reason === "anon-limit") {
+            if (sheet) statusWithAction(sheet,
+                "Too many signed-out guesses have come from your network today. Sign in to carry on — your guesses so far are kept.",
+                "Sign in", () => { if (window.Account && Account.signIn) Account.signIn(); });
+            return;
+        }
         if (reply.status !== 200) {
             /* The day has closed under a round not yet begun — a window
                opened before midnight: today's deal is fetched and played
                instead (see refreshDay). Or the server's record disagrees
-               with this page's (a reset elsewhere): read it again. */
+               with this page's (a reset elsewhere): read it again —
+               refreshDay takes the server's record for a signed-in day, and
+               clears one the server has nothing for (a reset). */
             if ((reply.status === 400 && !anyGuesses()) || reply.status === 409) {
                 await refreshDay();
                 renderAll();
                 prepareRound(state.round);
+                return;
+            }
+            /* The day has closed under a round in progress. It used to fall
+               to "try it again" below, which could never work: a guess made
+               at 00:06 on a room begun at 23:58 asked to be retried for as
+               long as the window was open. Now it says the day is over and
+               offers today's rooms; the guesses made stay on this device. */
+            if (reply.status === 400 && (/not open/i.test(String(body.error || "")) || !dayStillOpen(forDay))) {
+                if (sheet) statusWithAction(sheet,
+                    "This day's rooms closed at five past midnight (UTC), so that guess can't count. Your guesses so far are kept on this device.",
+                    "Play today's rooms", async () => {
+                        forgetDeal();
+                        await start();
+                        if (state) goTo("intro");
+                    });
                 return;
             }
             if (sheet) {
@@ -688,9 +866,34 @@
             }
             return;
         }
-        // Answered but not recorded while this day was meant to be: the
-        // sign-in lapsed. The day carries on unrecorded rather than stalling.
-        if (state.mode === "account" && !body.recorded) state.mode = "anon";
+        /* Answered but NOT RECORDED while this day was meant to be: the
+           server did not see the session. It used to switch the day to
+           unrecorded silently, and a day recorded in part can be filed from
+           neither part — so the whole day was lost to the board. Now the
+           sign-in is asked again: back, and the guess is made again,
+           recorded this time (once — see `again`); gone, and the guess is
+           not taken, and the player is offered a way back in (signing in
+           reloads the page, and the recorded rooms come back from the
+           server) or to carry on unlisted knowing what that costs. */
+        if (wasMode === "account" && !body.recorded) {
+            let back = false;
+            try { back = Boolean(await Account.refresh()); } catch (e) { back = false; }
+            if (!state || state.day !== forDay || state.round !== index) return;
+            if (back && !again) return submitGuess(name, true);
+            if (!back && Account.unsure) {
+                if (sheet) {
+                    sheet.refs.status.textContent = "That guess did not reach the server, so it has not counted. Try it again.";
+                    sheet.refs.status.hidden = false;
+                    announce(sheet, sheet.refs.status.textContent);
+                }
+                return;
+            }
+            if (sheet) signInLapsed(sheet);
+            return;
+        }
+        // The first guess of a day whose sign-in could not be checked: the
+        // server's answer says which kind of day it is.
+        if (!state.mode) state.mode = body.recorded ? "account" : "anon";
 
         if (Array.isArray(body.guesses)) {
             // The round as the server has it — which, if another tab got
@@ -716,6 +919,90 @@
     }
 
     const anyGuesses = () => Boolean(state && state.results.some(r => r.guesses.length));
+
+    function guessFailed(sheet) {
+        if (!sheet) return;
+        sheet.refs.status.textContent = "That guess did not reach the server, so it has not counted. Try it again.";
+        sheet.refs.status.hidden = false;
+        announce(sheet, sheet.refs.status.textContent);
+    }
+
+    /* A day begun signed out, recorded now the player is signed in: every
+       guess already made is sent again, in order, as a recorded guess (see
+       Daily.replay in js/daily.js for the why, and for why the day stays
+       untimed and earns no bonus, as a day begun signed out always has).
+       Each round comes back as the server has it — a room another device
+       finished first included — and that is what is kept.
+
+       Answers true when every guess is on file and the day is now an
+       account day; "signed-out" when the server turned out not to see a
+       session after all, and the day carries on unrecorded as it was;
+       false when a guess could not be recorded just now, which trying again
+       repeats harmlessly (a guess already on file answers `repeat` or
+       `already`). As adoptRecorded in js/oddoneout.js. */
+    async function adoptRecorded(sheet) {
+        const forDay = state.day;
+        const list = [];
+        state.results.forEach((r, i) => r.guesses.forEach(g => list.push({ round: i, data: { guess: g.name } })));
+        const status = sheet && sheet.refs.status;
+        if (status && list.length) { status.textContent = "Signed in — recording your guesses so far first…"; status.hidden = false; }
+        const { ok, replies } = await Daily.replay("guess", forDay, list, { url: BOARDS_URL });
+        if (status) { status.hidden = true; status.textContent = ""; }
+        if (!state || state.day !== forDay) return false;
+        replies.forEach((r, k) => {
+            const b = r.body || {};
+            const result = state.results[list[k].round];
+            if (r.status !== 200 || !b.recorded || !Array.isArray(b.guesses) || !result) return;
+            result.guesses = b.guesses.map(g => ({ name: g.name, correct: Boolean(g.correct) }));
+            result.done = Boolean(b.done);
+            result.won = Boolean(b.won);
+            if (b.answer) result.answer = b.answer;
+        });
+        const last = replies[replies.length - 1];
+        if (!ok && last && last.status === 200 && last.body && last.body.recorded === false) {
+            if (window.Account) { try { await Account.refresh(); } catch (e) { /* signed out either way */ } }
+            return "signed-out";
+        }
+        if (!ok) { saveState(); return false; }
+        state.mode = "account";
+        saveState();
+        return true;
+    }
+
+    /* A room's status line with buttons under the words, for the two
+       refusals that need the player to choose something (see submitGuess).
+       Elements rather than markup, so each handler is bound to exactly its
+       button; the line is role="status", so the words are read out too.
+       `actions` is a list of [label, run]. */
+    function statusWithAction(sheet, text, ...rest) {
+        const actions = [];
+        for (let k = 0; k + 1 < rest.length; k += 2) actions.push([rest[k], rest[k + 1]]);
+        const status = sheet.refs.status;
+        status.textContent = text + " ";
+        actions.forEach(([label, run]) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "guess-btn";
+            btn.textContent = label;
+            btn.addEventListener("click", () => { btn.disabled = true; run(); });
+            status.appendChild(btn);
+        });
+        status.hidden = false;
+    }
+
+    function signInLapsed(sheet) {
+        statusWithAction(sheet,
+            "You've been signed out, so that guess wasn't recorded. Sign in again to carry on — the rooms already recorded are kept.",
+            "Sign in again", () => { if (window.Account && Account.signIn) Account.signIn(); },
+            "Carry on unlisted", () => {
+                /* Unrecorded from here, so this day can't reach the board:
+                   its first rooms are on file and the rest would not be,
+                   and a day is filed whole or not at all. */
+                state.mode = "anon";
+                saveState();
+                sheet.refs.status.textContent = "Carrying on without recording. Guess again.";
+            });
+    }
 
     /* Where the keyboard goes after a guess, and what is said out loud.
 
@@ -992,6 +1279,9 @@
         refs.pips.innerHTML = pipsHtml(i);
 
         draw(i);
+        // Pressing a name hides the status line (wireRound); a room still
+        // without its picture keeps saying so, and keeps its retry.
+        if (unloadable[i] && !rounds[i] && !roundOver && refs.status.hidden) pictureUnavailable(i);
 
         /* The five names stay up after the round ends, wearing the answer —
            see renderOptions. There is no longer a separate list of guesses
@@ -1093,6 +1383,28 @@
         });
     }
 
+    /* The speed bonus, told on the splash with the rest of the rules. The
+       rules are markup in home.html, and the scoring half of them lives
+       here and on the server, so the sentence is written from the real
+       numbers — POINTS above and Daily.SPEED_BONUS_MAX, which
+       tools/check-daily-parity.js holds to netlify/functions/_speed.js —
+       and added to the second rule, the one about guesses and views, as a
+       sentence rather than a fourth rule: the splash is centred in a sheet
+       of fixed height, and a whole extra rule is the thing most likely to
+       push it past that on a short screen. Once, and not at all if the
+       markup already carries it (data-bonus-rule), so writing it into
+       home.html later needs no change here. */
+    function addBonusRule() {
+        const rules = el.deck && el.deck.querySelector('[data-kind="intro"] .guess-rules');
+        if (!rules || rules.querySelector("[data-bonus-rule]") || !window.Daily || !Daily.bonusRule) return;
+        const p = rules.querySelectorAll("li p")[1] || rules.querySelector("li:last-child p");
+        if (!p) return;
+        const extra = document.createElement("span");
+        extra.setAttribute("data-bonus-rule", "");
+        extra.textContent = " " + Daily.bonusRule(`${POINTS[0]} on the first view, ${POINTS[1]} on the second and ${POINTS[2]} on the third`, "naming the maze");
+        p.appendChild(extra);
+    }
+
     function renderIntro() {
         const done = state.done;
         const played = state.results.some(r => r.guesses.length);
@@ -1139,9 +1451,14 @@
         }
         const solved = state.results.filter(r => r.won).length;
         const scored = dayPoints();
+        const bonus = bonusText();
         shownStats();
+        /* The big number stays the base points, the unit the stats
+           underneath count in; the line under it is the speed bonus and the
+           total the boards show (see Daily.bonusLine in js/daily.js). */
         el.summary.innerHTML = `
             <p class="guess-points"><strong>${scored}</strong><span>points</span></p>
+            <p class="daily-bonus" id="guess-bonus"${bonus ? "" : " hidden"}>${escapeHtml(bonus)}</p>
             <p class="guess-score">${solved} of ${ROUNDS} rooms found</p>
             <p class="guess-grid" aria-label="Result grid">${state.results.map(squareFor).join("")}</p>
             <dl class="guess-stats">
@@ -1181,6 +1498,26 @@
         if (share) share.addEventListener("click", () => copyResult(share));
         tickCountdown();
         renderBoards();
+    }
+
+    /* The day as the server filed it — { day, points, bonus } — from
+       submitDay's answer, or from the deal's `score` when the window opens
+       on a day already filed. The only source of a speed bonus, since only
+       the server keeps the time. In memory only: every open brings it back
+       with the deal. As `served` in js/oddoneout.js. */
+    let served = null;
+
+    function bonusText() {
+        const s = served && state && served.day === state.day ? served : null;
+        return Daily.bonusLine({ score: s, signedIn: signedIn(), mode: state ? state.mode : null });
+    }
+
+    function drawBonus() {
+        const line = document.getElementById("guess-bonus");
+        if (!line) return;
+        const text = bonusText();
+        line.textContent = text;
+        line.hidden = !text;
     }
 
     function renderAll() {
@@ -1305,10 +1642,16 @@
        ends it IS the mark, recorded by the server with the guess (see
        submitGuess and netlify/functions/_speed.js). */
 
+    /* Fileable, not merely open: a finished day whose guesses were all
+       recorded before the day closed is still taken by the server after
+       it (LATE FILING in netlify/functions/guess-scores.js), for as long as
+       Daily.fileable says. This used to stop at dayStillOpen, so a day
+       whose POST fell over at 00:04 was never sent again from 00:05 on —
+       five recorded rooms and no row. */
     function submitIfOwed() {
         if (!state || !state.done || state.posted || postedDay === state.day) return;
         if (!window.Account || !Account.current) return;
-        if (!dayStillOpen(state.day)) return;
+        if (!(Daily.fileable ? Daily.fileable(state.day) : dayStillOpen(state.day))) return;
         submitDay();
     }
 
@@ -1335,17 +1678,45 @@
             body: JSON.stringify({ day: forDay, rounds })
         });
         if (postedDay === forDay) postedDay = "";
-        const sent = status === 200 && body && (body.recorded || body.reason === "already");
         /* A failed POST used to be the end of it. Now the day stays owed —
            `posted` unset, and saved that way — so it is sent again when the
            results are next reached or the window next opened, on this visit
-           or a later one. Only a refusal that would be refused again (a
-           closed day, say) is given up on. Nothing below is worth doing for
-           a day the server has not got. */
-        const retry = status === 0 || status >= 500 || status === 429;
-        if (state && state.day === forDay && (sent || !retry)) {
+           or a later one. Only a refusal that settles the day is given up
+           on — Daily.filed decides, the same rule Odd One Out's submission
+           follows. It used to be anything not worth an immediate retry,
+           which counted a lapsed session (401), a server record behind this
+           page's (409 "unfinished") and a day still inside late filing as
+           settled, and so lost each of them for good. Nothing below is
+           worth doing for a day the server has not got. */
+        const outcome = Daily.filed(status, body, forDay);
+        const sent = outcome.ok;
+        // The filed day's base and bonus — just now, or already on file —
+        // for the line under the points.
+        if (sent && body && Number.isFinite(body.points)) {
+            served = { day: forDay, points: body.points, bonus: body.bonus || 0 };
+            if (state && state.day === forDay) drawBonus();
+        }
+        if (state && state.day === forDay && outcome.final) {
             state.posted = true;
             saveState();
+        }
+        /* The server has fewer rooms recorded than this page finished (see
+           applyRecorded): read the day again, which brings the missing rooms
+           back up to be played, for a day played signed in. A day carried
+           on unlisted after its first rooms were recorded can never be
+           filed, so it is settled instead of being sent again forever. */
+        if (state && state.day === forDay && body && body.reason === "unfinished") {
+            if (state.mode === "account") {
+                if (await refreshDay()) {
+                    renderAll();
+                    prepareRound(state.round);
+                    goTo(state.done ? "results" : "intro");
+                }
+            } else {
+                state.posted = true;
+                saveState();
+            }
+            return;
         }
         if (!sent) return;
 
@@ -1629,31 +2000,84 @@
         if (!reply) reply = await Daily.deal("guess", null, BOARDS_URL);
         if (!reply) return false;
 
+        /* A finished day that never reached the board, about to be put away
+           for a different one, is filed first. Only today's or a carried
+           day is ever kept, so a day whose submission fell over just before
+           00:05 was replaced here by today's and never sent again; the
+           server still files it for a while if its guesses were recorded in
+           time (LATE FILING in netlify/functions/guess-scores.js, and
+           Daily.fileable). Its answer changes nothing here: that day is
+           over on this device either way. */
+        const owed = [state, saved].find(s => s && s.v === STATE_VERSION && s.day !== reply.day && s.done && !s.posted);
+        if (owed && signedIn() && Daily.fileable && Daily.fileable(owed.day)) {
+            await Daily.request(BOARDS_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ day: owed.day, rounds: owed.results.map(r => ({ guesses: r.guesses.map(g => g.name) })) })
+            });
+        }
+
         if (!deal || deal.day !== reply.day) {
             dealGen += 1;
             rounds = [];
             preparing = {};
+            unloadable = {};
         }
         deal = { day: reply.day, rounds: reply.rounds };
+        // A day already filed brings its own figures, bonus included, so a
+        // results card reopened later says what the board says.
+        if (reply.score && Number.isFinite(reply.score.points)) {
+            served = { day: reply.day, points: reply.score.points, bonus: reply.score.bonus || 0 };
+        }
         const mine = [state, saved].filter(s => s && s.v === STATE_VERSION && s.day === reply.day)
             .sort((a, b) => progressOf(b) - progressOf(a))[0];
         state = mine || blankDay(reply.day);
         recorded = Array.isArray(reply.progress) ? reply.progress : null;
-        applyRecorded();
+        recordedFiled = Boolean(reply.filed);
+        if (applyRecorded() === "reset") await Daily.claimReset("guess");
         if (reply.filed) state.posted = true;
         saveState();
         return true;
     }
 
-    /* The server's record of the day, laid over this page's copy when it is
-       at least as far on. It is what the day will be scored from, so where
-       the two differ it is the one to show. */
+    /* The server's record of the day, laid over this page's copy. It is
+       what the day will be scored from, so where the two differ it is the
+       one to show.
+
+       `recorded` is an array only when the server knew who was asking —
+       null signed out, or when the record could not be read — so an array,
+       even an empty one, is the server's word on this player's day.
+
+       A day played signed in (mode "account") takes the server's record
+       WHEREVER IT DIFFERS, shorter included: every guess such a day keeps
+       was recorded before it was kept (see submitGuess), so a server with
+       fewer has lost some — an administrator's reset while the window was
+       open, or a guess taken while the session had lapsed, before that was
+       caught. Keeping the longer local copy is what used to loop: every
+       guess after it was refused as out of order, the 409 read the day
+       again, the day again kept the local copy, and so on. And an EMPTY
+       record for such a day is a day given back (the reset clears
+       daily_starts), so the day here is cleared too, and the caller claims
+       the reset's ticket so the next open does not wipe the replay; this
+       answers "reset" to say so. A day already filed is left alone — a
+       reset deletes the filed row, so `filed` means none happened.
+
+       Any other day takes the record only when it is at least as far on,
+       as it always has (guesses made on another device). */
+    let recordedFiled = false;
     function applyRecorded() {
+        if (!state) return;
+        const accountDay = state.mode === "account" && !recordedFiled && Array.isArray(recorded);
+        if (accountDay && !recorded.length) {
+            if (!anyGuesses()) return;
+            state = blankDay(state.day);
+            return "reset";
+        }
         const rec = recorded || [];
-        if (!rec.length || !state) return;
+        if (!rec.length) return;
         const total = rec.reduce((n, r) => n + r.guesses.length, 0) +
             (rec.length === ROUNDS && rec[ROUNDS - 1].done ? 1 : 0);
-        if (total < progressOf(state)) return;
+        if (!accountDay && total < progressOf(state)) return;
         state.results = Array.from({ length: ROUNDS }, (_, i) => (rec[i]
             ? {
                 guesses: rec[i].guesses.map(g => ({ name: g.name, correct: Boolean(g.correct) })),
@@ -1680,6 +2104,13 @@
         // Whether somebody is signed in decides what a guess does, so it
         // is known before anything is dealt. A failure reads as signed out.
         if (window.Account) { try { await Account.ready(); } catch (e) { /* signed out */ } }
+        /* A check on page load that could not be made at all (Account.unsure
+           — a network blink, not an answer) is asked once more, since the
+           window is usually opened well after the load. Settling on a failed
+           check is how a signed-in player used to play a whole day
+           unrecorded; submitGuess asks again at the first guess if it is
+           still unsure. */
+        if (window.Account && Account.unsure) { try { await Account.refresh(); } catch (e) { /* still unsure */ } }
 
         /* THE DAY IS THE SERVER'S. It used to be dealt here from the
            archive — and when the archive could not be reached, from the
@@ -1720,7 +2151,9 @@
             if (remote) {
                 adoptAccountDay(remote.guess);
                 if (remote.stats) accountStats = { ...localStats, ...remote.stats };
-                applyRecorded();
+                // "reset": the mirror held a day the server no longer has —
+                // see applyRecorded — so the reset's ticket is spent here.
+                if (applyRecorded() === "reset") await Daily.claimReset("guess");
                 saveState();
             }
         }
@@ -1793,8 +2226,10 @@
         state = null;
         rounds = [];
         preparing = {};
+        unloadable = {};
         deal = null;
         recorded = null;
+        recordedFiled = false;
         boards = null;
         boardsState = "idle";
         boardsQueued = false;
@@ -1971,6 +2406,7 @@
            business (see window.openGuessGame). */
         if (!el.overlay || !el.deck) return;
         if (!buildDeck()) return;
+        addBonusRule();
 
         el.close.addEventListener("click", close);
         el.overlay.addEventListener("click", e => { if (e.target === el.overlay) close(); });

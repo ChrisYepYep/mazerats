@@ -1,4 +1,5 @@
 const { SECURITY_HEADERS } = require("./_headers");
+const { subscriberOf } = require("./_net");
 /* One Origins habbo's figure string, for the room game to wear.
 
    WHY THIS IS NOT habbo.js. That function answers the same question for the
@@ -132,8 +133,13 @@ exports.handler = async (event) => {
         return json(400, { error: "That is not a habbo name." });
     }
 
-    const address = event.headers["x-nf-client-connection-ip"] ||
-        event.headers["client-ip"] || "unknown";
+    /* Keyed on the subscriber (see _net.js), not the exact address: on IPv6
+       one visitor holds a whole /64, and a fresh address per request walked
+       straight past twelve-a-minute. The client-ip fallback and "unknown"
+       are kept as they were — this limiter is in memory and per instance,
+       so a shared bucket for callers with no address costs only them. */
+    const raw = event.headers["x-nf-client-connection-ip"] || event.headers["client-ip"];
+    const address = raw ? subscriberOf(raw) : "unknown";
     if (rateLimited(address)) {
         // A hyphen, not an em dash: this sentence is shown inside the game
         // window, where Volter Goldfish draws U+2014 as a picture.

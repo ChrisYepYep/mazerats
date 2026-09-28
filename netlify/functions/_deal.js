@@ -215,28 +215,165 @@ function dealGuess(rooms, day, seedOf) {
 
 const DEALERS = { odd: dealOdd, guess: dealGuess };
 
+/* ---------------------------------------------------- the picture addresses
+
+   THE PICTURE'S OWN ADDRESS WAS AN ANSWER. publicRounds used to send each
+   tile and each Guess picture as it is stored, and an uploaded picture is
+   stored under rooms/<the maze's id or draft id>/… — so in Odd One Out the
+   imposter was simply the one tile of four whose folder differed from the
+   other three, and a Guess picture could be looked up in the public /rooms
+   list to find the maze it belongs to. No playing needed; reading the deal
+   reply was enough.
+
+   Every picture a deal hands out is now an address on deal-image.js
+   instead, which says nothing about where the picture lives:
+
+     /.netlify/functions/deal-image?g=<game>&d=<day>&r=<round>&t=<tile>&s=<sig>
+
+   `t` is the tile's place in its round (always 0 for Guess the Maze, one
+   picture a round), and the tiles are already shuffled by the dealer, so
+   the place says nothing either. `s` is an HMAC under SESSION_SECRET —
+   the secret secretSeed deals with — of those four AND the stored picture
+   reference itself. Two things follow from signing the reference too:
+
+     - nobody can mint an address, for a day or a round they were not
+       handed, without the secret; and an address can only ever mean the
+       one picture it was signed for;
+     - if a stored deal is corrected (see the note on the memo below: a
+       picture deleted mid-day, fixed by editing or deleting the day's
+       document), the corrected tile gets a NEW address. The old one stops
+       verifying rather than serving the new picture under a URL that the
+       edge may already hold the old bytes for — which, with the long
+       immutable cache deal-image asks for, would have been one tile of a
+       round showing yesterday's correction and not today's.
+
+   WHAT THIS DOES NOT STOP. The bytes are still the archive's own bytes:
+   somebody determined can fetch every picture in the public archive and
+   match the tile they were dealt against them, byte for byte or by eye,
+   and learn which maze it came from. That is a real effort against a
+   daily game worth a few points, and it is the honest limit of hiding an
+   answer in a picture everybody has to be able to see. It raises the bar
+   from "read the JSON" to "build an index of the archive"; it does not
+   make the game unbeatable, and nothing short of serving altered pictures
+   would.
+
+   If SESSION_SECRET is missing (a local setup without it) the addresses
+   are signed with a fixed development key, and say so once in the log, as
+   secretSeed does: the game still works, and what is lost is only what a
+   missing secret has lost everywhere else on the site. deal-image still
+   refuses a day outside its window whatever the signature says. */
+const IMAGE_FUNCTION = "/.netlify/functions/deal-image";
+const DEV_IMAGE_KEY = "mazerats-deal-image-no-secret";
+let warnedNoImageSecret = false;
+
+function imageKey() {
+    const secret = process.env.SESSION_SECRET;
+    if (secret) return secret;
+    if (!warnedNoImageSecret) {
+        warnedNoImageSecret = true;
+        console.warn("_deal: SESSION_SECRET is not set, so the deal's picture addresses are signed with a development key");
+    }
+    return DEV_IMAGE_KEY;
+}
+
+/* The signature on one picture's address. Joined on newlines, which no
+   stored image reference can contain (safeImageRef in _url.js refuses
+   control characters), so no two different sets of fields can join into
+   the same string. 128 bits of the HMAC, base64url so it sits in a query
+   string untouched. */
+function imageSig(game, day, round, tile, image) {
+    return crypto.createHmac("sha256", imageKey())
+        .update(["deal-image", game, day, round, tile, image].join("\n"))
+        .digest("base64url")
+        .slice(0, 22);
+}
+
+function imageAddress(game, day, round, tile, image) {
+    const qs = new URLSearchParams({
+        g: game, d: day, r: String(round), t: String(tile), s: imageSig(game, day, round, tile, image)
+    });
+    return IMAGE_FUNCTION + "?" + qs.toString();
+}
+
+/* The stored picture reference an address names, or null if the deal has
+   no such picture. Guess the Maze has one picture a round, so only tile 0
+   exists there. */
+function imageRefAt(deal, game, round, tile) {
+    const r = deal && Array.isArray(deal.rounds) ? deal.rounds[round] : null;
+    if (!r) return null;
+    if (game === "odd") {
+        const t = Array.isArray(r.tiles) ? r.tiles[tile] : null;
+        return t && typeof t.image === "string" && t.image ? t.image : null;
+    }
+    if (game === "guess") return tile === 0 && typeof r.image === "string" && r.image ? r.image : null;
+    return null;
+}
+
+/* Whether `sig` is the signature for this picture, compared in constant
+   time so the comparison cannot be timed a character at a time. */
+function imageSigMatches(game, day, round, tile, image, sig) {
+    if (typeof sig !== "string" || typeof image !== "string") return false;
+    const want = Buffer.from(imageSig(game, day, round, tile, image));
+    const got = Buffer.from(sig);
+    return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+
 /* What the page is sent: the pictures and, for Guess, the five names — and
    nothing that says which is right. Odd One Out's `odd` flags and both
    games' maze names and ids stay on the server until a move has been
    judged. Built field by field rather than by deleting the secret ones, so
    a field added to a stored round later is private until somebody decides
-   otherwise. */
-function publicRounds(game, rounds) {
-    if (game === "odd") {
-        return (rounds || []).map(r => ({ tiles: (r.tiles || []).map(t => ({ image: t.image })) }));
+   otherwise.
+
+   Each picture goes out as its deal-image address (see above), never as
+   the stored reference. `day` is required for that, and a call without
+   one THROWS rather than quietly falling back to the raw references — a
+   caller that forgot the day would otherwise be the leak this closes. */
+function publicRounds(game, rounds, day) {
+    if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+        throw new Error("publicRounds needs the day, to sign the picture addresses");
     }
-    return (rounds || []).map(r => ({ image: r.image, options: r.options.slice(), crop: r.crop }));
+    if (game === "odd") {
+        return (rounds || []).map((r, i) => ({
+            tiles: (r.tiles || []).map((t, j) => ({ image: imageAddress("odd", day, i, j, t.image) }))
+        }));
+    }
+    return (rounds || []).map((r, i) => ({
+        image: imageAddress("guess", day, i, 0, r.image),
+        options: r.options.slice(),
+        crop: r.crop
+    }));
 }
 
 /* ---------------------------------------------------- the snapshot */
 
-/* Deals are never edited once written, so a warm container can keep the
-   ones it has read. Only a handful: today, the day just ended, per game. */
+/* A warm container keeps the deals it has read — only a handful: today,
+   the day just ended, per game — but only for MEMO_TTL_MS.
+
+   It used to keep them for the life of the container, on the grounds that
+   a deal is never edited once written. The code never edits one; a person
+   can. A picture deleted from the archive mid-day leaves today's stored
+   deal pointing at nothing, and the fix is to correct (or delete, so it is
+   dealt again) the document in daily_deals — which every container that
+   had already read the day then ignored until Netlify happened to recycle
+   it, so the same day was judged against two different deals depending on
+   which container answered. A minute is short enough that a correction
+   reaches everybody before anyone has noticed two answers, and long enough
+   that a busy day still reads the collection about once a minute per
+   container rather than once a move. */
 const memo = new Map();
 const MEMO_MAX = 8;
+const MEMO_TTL_MS = 60 * 1000;
 function remember(key, doc) {
-    memo.set(key, doc);
+    memo.delete(key);          // re-inserted, so the oldest is still first out
+    memo.set(key, { doc, at: Date.now() });
     while (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value);
+}
+function recalled(key) {
+    const hit = memo.get(key);
+    if (!hit) return null;
+    if (Date.now() - hit.at > MEMO_TTL_MS) { memo.delete(key); return null; }
+    return hit.doc;
 }
 
 /* The day's deal: read if it was stored, dealt and stored if not.
@@ -256,7 +393,8 @@ async function dealFor(db, ensureUniqueIndex, game, day) {
     const dealer = DEALERS[game];
     if (!dealer) throw new Error("no such daily game: " + game);
     const key = game + ":" + day;
-    if (memo.has(key)) return memo.get(key);
+    const held = recalled(key);
+    if (held) return held;
 
     const col = db.collection(COLLECTION);
     await ensureUniqueIndex(col, ["game", "day"]);
@@ -287,8 +425,27 @@ async function dealFor(db, ensureUniqueIndex, game, day) {
     return doc;
 }
 
+/* The day's deal ONLY IF IT IS ALREADY STORED — null otherwise, and never
+   dealt here. For deal-image.js, which is reached by addresses a deal reply
+   handed out, so the day it names has always been dealt by the time a
+   genuine request arrives. Reading without dealing means no request for a
+   picture, however it is made, can be what causes a day to be dealt. The
+   same memo as dealFor, so a busy day's pictures cost about one read a
+   minute per container rather than one per tile. */
+async function storedDeal(db, game, day) {
+    if (!DEALERS[game]) return null;
+    const key = game + ":" + day;
+    const held = recalled(key);
+    if (held) return held;
+    const doc = await db.collection(COLLECTION).findOne({ game, day }, { projection: { _id: 0 } });
+    if (!doc) return null;
+    remember(key, doc);
+    return doc;
+}
+
 module.exports = {
-    COLLECTION, ROUNDS, ROOM_PROJECTION,
-    secretSeed, dealOdd, dealGuess, publicRounds, dealFor,
+    COLLECTION, ROUNDS, ROOM_PROJECTION, MEMO_TTL_MS, IMAGE_FUNCTION,
+    secretSeed, dealOdd, dealGuess, publicRounds, dealFor, storedDeal,
+    imageSig, imageAddress, imageRefAt, imageSigMatches,
     _forgetMemo: () => memo.clear()      // for the tests only
 };

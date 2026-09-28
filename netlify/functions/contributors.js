@@ -1,7 +1,7 @@
 /* /.netlify/functions/contributors — CRUD API for the console modal's
    Contributors page. Mirrors rooms.js/events.js. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE } = require("./_auth");
+const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -109,7 +109,10 @@ exports.handler = async (event) => {
         return await write(event, contributors);
     } catch (e) {
         console.error("contributors: write failed", e);
-        return AUTH_UNAVAILABLE;
+        /* Only the tagged lookup failure is an outage to retry; anything
+           else is a fault, and answering it as "unavailable" hid it. */
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        return json(500, { error: "The contributor could not be saved." });
     }
 };
 
@@ -117,8 +120,9 @@ async function write(event, contributors) {
     if (!isAuthorized(event)) return UNAUTHORIZED;
     // canWrite, not isAuthorized: a viewer is a real logged-in account and
     // passes isAuthorized quite correctly — it just isn't allowed to change
-    // anything. See _auth.js.
-    if (!(await canWrite(event))) return READ_ONLY;
+    // anything. See _auth.js. refuseWrite words the refusal, and answers a
+    // deleted account's token with the 401 it has earned.
+    if (!(await canWrite(event))) return await refuseWrite(event);
 
     // Parsed once, and guarded: an unparseable body used to throw straight
     // out of the handler, which Netlify turns into a bare 502 with nothing

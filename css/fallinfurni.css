@@ -1979,3 +1979,47 @@ body.ff-immersive .ff-window {
     transform-origin: center center;
     z-index: 40;
 }
+
+/* ---- THE NAME FIELD IS DRAWN AT 16px AND SHRUNK BACK TO 9px.
+
+   Safari on an iPhone zooms the whole page in on any field whose text is
+   under 16px the moment it is focused, and leaves it zoomed after the
+   keyboard has gone. #ff-name is Volter at 9px, so tapping it to type a
+   name zoomed the title screen in on the box and left the Play button, the
+   board and half the room off the edge of the phone.
+
+   It cannot simply be 16px: Volter is a 9px bitmap face, and at 16px it is
+   1.78 screen pixels to a font pixel — neither crisp nor the look of the
+   window it sits in. So this is the console's trick (see .console-input in
+   style.css): the field is laid out at 16/9 of its size with 16px text,
+   then scaled by 9/16 from its top-left corner. What is painted is the 9px
+   field that was there, rasterised at its final size so Volter lands back
+   on whole pixels, while the font-size Safari checks is 16px.
+
+   A transform moves nothing around it, so the extra layout size is handed
+   back with negative margins: the old width and height minus the new. The
+   height is set rather than left to the line — 28px, which is what the
+   9px line (10px in Volter's metrics) plus the 8px padding and the border
+   came to — and the button beside it is given the same, with the row no
+   longer stretching them to match, because the field's LAYOUT box is now
+   the tall one and would have stretched the button to 50px.
+
+   Coarse pointers only: a mouse never zooms, and a desk keeps the field
+   exactly as it was. Last in the file so it wins over the window's font
+   rule and the rounding above. */
+@media (pointer: coarse) {
+    .ff-title-row { align-items: flex-start; }
+    .ff-title-row button { height: 28px; }
+    .ff-window .ff-title-row input#ff-name {
+        font-size: 16px;
+        transform: scale(0.5625);
+        transform-origin: 0 0;
+        width: calc(190px / 0.5625);
+        height: calc(28px / 0.5625);
+        padding: 0 calc(10px / 0.5625);
+        border-width: calc(1px / 0.5625);
+        border-radius: calc(8px / 0.5625);
+        margin-right: calc(190px - 190px / 0.5625);
+        margin-bottom: calc(28px - 28px / 0.5625);
+    }
+}

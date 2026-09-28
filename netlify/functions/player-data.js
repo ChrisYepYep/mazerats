@@ -29,7 +29,6 @@ const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { today } = require("./_daily");
 const { launchCut, afterLaunch } = require("./daily-scores");
-const { totalOf } = require("./_speed");
 
 const COLLECTION = "player_state";
 const SCORES = "guess_scores";
@@ -91,6 +90,22 @@ function cleanGuess(g) {
     if (typeof g.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(g.day)) return null;
     if (!Array.isArray(g.results) || g.results.length !== ROUNDS) return null;
 
+    /* v, mode, posted and each round's answer are KEPT. They used to be
+       stripped here, and the mirror was dead from the day the page started
+       checking them: js/guess.js only adopts a mirror whose `v` is its own
+       STATE_VERSION (adoptAccountDay), because a copy without it may be a
+       day the page dealt itself before the server dealt the days — so every
+       mirror this wrote was ignored, and a day begun on a phone could not be
+       carried on at a desk. `mode` is what the day is filed as (recorded or
+       not), `posted` whether it reached the board, and `answer` the maze a
+       finished round turned out to be, which the page only ever learns from
+       the server's verdict and cannot show again without. All four are
+       still checked for shape and size, like everything else here. */
+    const str = (v, n) => (typeof v === "string" ? v.slice(0, n) : "");
+    const answerOf = a => (a && typeof a === "object" && typeof a.name === "string"
+        ? { id: str(a.id, 80), name: str(a.name, 120), slug: typeof a.slug === "string" ? a.slug.slice(0, 120) : null, creator: str(a.creator, 120) }
+        : null);
+
     const results = g.results.map(r => {
         const guesses = Array.isArray(r && r.guesses) ? r.guesses.slice(0, 8) : [];
         return {
@@ -99,16 +114,21 @@ function cleanGuess(g) {
                 correct: Boolean(x && x.correct)
             })),
             done: Boolean(r && r.done),
-            won: Boolean(r && r.won)
+            won: Boolean(r && r.won),
+            answer: answerOf(r && r.answer)
         };
     });
 
     const round = Number(g.round);
+    const v = Number(g.v);
     return {
+        v: Number.isInteger(v) && v > 0 && v < 1000 ? v : null,
         day: g.day,
         round: Number.isInteger(round) && round >= 0 && round < ROUNDS ? round : 0,
         results,
-        done: Boolean(g.done)
+        done: Boolean(g.done),
+        mode: g.mode === "account" || g.mode === "anon" ? g.mode : null,
+        posted: Boolean(g.posted)
     };
 }
 
@@ -139,7 +159,7 @@ async function statsFor(db, playerId) {
     const launch = await launchCut(db);
     const query = launch ? { playerId, day: { $gte: launch.day }, ...afterLaunch(launch) } : { playerId };
     const rows = await db.collection(SCORES)
-        .find(query, { projection: { _id: 0, day: 1, points: 1, bonus: 1, solved: 1 } })
+        .find(query, { projection: { _id: 0, day: 1, points: 1, solved: 1 } })
         .sort({ day: 1 })
         .toArray();
 
@@ -147,15 +167,31 @@ async function statsFor(db, playerId) {
         return { days: 0, points: 0, solved: 0, rounds: 0, bestDay: 0, streak: 0, best: 0, lastDay: "" };
     }
 
-    /* Points and best day are TOTALS — base points plus the speed bonus
-       (see _speed.js) — so the all-time figure here is the one the boards
-       and the Profile show for the same days. An older row has no bonus
-       and adds none. */
+    /* Points and best day are BASE points — what each day scored for its
+       rooms, without the speed bonus — because these figures are drawn on
+       Guess the Maze's own results card, beside the day's own score, and
+       that score is the base too. The card does show the bonus now, but on
+       a line of its own under the score that names it and the total it
+       makes ("50 + 161 speed bonus = 211 on the boards" — Daily.bonusLine
+       in js/daily.js), so every figure on the card still says which it is.
+
+       They were totals (base plus bonus, as the boards and the Profile
+       count) for a while, and that made the one card count two ways: a
+       perfect day read "50 points" at the top and "Best day 83" underneath
+       it for a signed-in player, while the same card signed out — counted
+       on the device, which never knows a bonus (js/guess.js, countDay) —
+       said 50 and 50. Base on both sides is the version where every number
+       on the card is in the units the card itself scores in, and it is the
+       same as Odd One Out's card, which only ever counts base. The boards
+       and the Profile rank by the total and still show it; a signed-out
+       player's days carry no bonus anyway, so for them the two were always
+       the same number. */
     let points = 0, solved = 0, bestDay = 0;
     rows.forEach(r => {
-        points += totalOf(r);
+        const base = Number(r.points) || 0;
+        points += base;
         solved += r.solved || 0;
-        bestDay = Math.max(bestDay, totalOf(r));
+        bestDay = Math.max(bestDay, base);
     });
 
     const days = rows.map(r => r.day);

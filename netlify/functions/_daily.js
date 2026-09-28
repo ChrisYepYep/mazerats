@@ -48,6 +48,24 @@ function dayIsOpen(day) {
     return day === justEnded;
 }
 
+/* The instant a day stops taking moves: the midnight after it, plus the
+   grace. NaN for anything that is not a day.
+
+   For the one request that may arrive later than that — the FINISHING
+   submission of a day whose every move was recorded in time (see the POST
+   in daily-scores.js and guess-scores.js). The moves are what the day is
+   scored from, and each was stamped by the server when it landed, so a day
+   whose last move is inside this line was played inside it, whenever the
+   request saying "file it" turns up. That request used to be held to
+   dayIsOpen like everything else, so a finished day whose POST fell over
+   at 00:04 and was retried at 00:06 was refused, and the page (reading a
+   400 as final) never sent it again: five recorded rounds, no row. */
+function dayClosesAt(day) {
+    if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return NaN;
+    const start = Date.parse(day + "T00:00:00Z");
+    return Number.isFinite(start) ? start + 24 * 60 * 60 * 1000 + GRACE_MS : NaN;
+}
+
 // mulberry32, exactly as the page runs it.
 function seededRandom(seed) {
     let a = seed >>> 0;
@@ -221,6 +239,6 @@ function rangeBounds(kind, todayStr) {
 }
 
 module.exports = {
-    today, dayIsOpen, GRACE_MS, seededRandom, seedFrom, shuffle,
+    today, dayIsOpen, dayClosesAt, GRACE_MS, seededRandom, seedFrom, shuffle,
     FEATURED_DAYS, daySeed, isFeaturedDay, isHallway, existedBefore, rangeBounds
 };

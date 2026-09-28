@@ -6,7 +6,7 @@
    the request body, leaving the other untouched. Stored as a single
    document with a fixed _id, since there's only ever one. */
 const { getDb } = require("./_db");
-const { isAuthorized, canWrite, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE } = require("./_auth");
+const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, GATE_CDN_CACHE } = require("./_cache");
 
@@ -151,7 +151,10 @@ exports.handler = async (event) => {
         return await write(event, settings);
     } catch (e) {
         console.error("settings: write failed", e);
-        return AUTH_UNAVAILABLE;
+        /* Only the tagged lookup failure is an outage to retry; anything
+           else is a fault, and answering it as "unavailable" hid it. */
+        if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        return json(500, { error: "The settings could not be saved." });
     }
 };
 
@@ -159,8 +162,9 @@ async function write(event, settings) {
     if (!isAuthorized(event)) return UNAUTHORIZED;
     // canWrite, not isAuthorized: a viewer is a real logged-in account and
     // passes isAuthorized quite correctly — it just isn't allowed to change
-    // anything. See _auth.js.
-    if (!(await canWrite(event))) return READ_ONLY;
+    // anything. See _auth.js. refuseWrite words the refusal, and answers a
+    // deleted account's token with the 401 it has earned.
+    if (!(await canWrite(event))) return await refuseWrite(event);
 
     if (event.httpMethod === "PUT") {
         let body;
@@ -169,6 +173,8 @@ async function write(event, settings) {
         } catch (e) {
             return json(400, { error: "Invalid request body" });
         }
+        // "null" parses too, and body.landingState then threw a 500.
+        if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
         const update = {};
         if (body.landingState !== undefined) {
             if (!VALID_STATES.includes(body.landingState)) {

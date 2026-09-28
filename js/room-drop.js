@@ -535,6 +535,17 @@
             started: null,
             nextAt: 0,
             done: false,
+            /* WHEN THE ROOM LAST CHANGED, on the game clock: the moment the
+               latest piece actually touched down (its start plus the fall),
+               or the moment the latest piece with nowhere to go came off the
+               queue. Not the frame that noticed either — that can be a whole
+               frame later at a low frame rate, and the round FINISHES at this
+               moment when it was the last thing left (see finish in
+               room-game.js). null until something happens. */
+            quietAt: null,
+            // Each landed piece's own landing moment, for the page's held
+            // seat (see landedAt in room-game.js). Keyed by the furni itself.
+            landings: new Map(),
 
             /* Advance the round. `now` is a timestamp, `playerTile` where the
                player is, and `sat` the seats already taken — which the round
@@ -554,6 +565,10 @@
                         this.falling.splice(i, 1);
                         this.placed.push(p.furni);
                         this.landed.push(p.furni);
+                        // When it landed, not when this frame saw it; see quietAt.
+                        const landedAt = Math.min(now, p.at + level.rules.dropSpeedMs);
+                        this.quietAt = this.quietAt === null ? landedAt : Math.max(this.quietAt, landedAt);
+                        this.landings.set(p.furni, landedAt);
                         changed = true;
                     } else {
                         // Ease in: slow at the top, quick at the bottom.
@@ -607,6 +622,13 @@
                     }
 
                     this.queue.shift();
+                    if (!spot) {
+                        /* Skipped at its turn, which is `nextAt` unless the
+                           frame is so late the schedule restarts from now —
+                           the same rule as the `due` below. */
+                        const skippedAt = now - this.nextAt > DROP_CATCHUP_MS ? now : this.nextAt;
+                        this.quietAt = this.quietAt === null ? skippedAt : Math.max(this.quietAt, skippedAt);
+                    }
                     if (spot) {
                         const furni = Furni.make(entry.className, spot.x, spot.y, {
                             meta, rotation, role: entry.role,
