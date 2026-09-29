@@ -66,13 +66,18 @@
    day (claimAnonMove in _speed.js). A leaderboard here is a thing to
    enjoy, not a thing to defend. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { playerFrom } = require("./_player");
+const { playerFrom, publicName } = require("./_player");
 const { clientNet } = require("./_net");
 const { today, dayIsOpen, dayClosesAt, rangeBounds } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
 const speed = require("./_speed");
 const deals = require("./_deal");
+// No raw Discord id or nicknamed avatar on a public board (29 Sept 2026).
+const { publicLists } = require("./_publicid");
+/* The ban gate for every POST, and banned accounts off the boards (29 Sept
+   2026). _bans.js requires nothing of this file, so there is no cycle. */
+const { writeRefusal, withoutBanned } = require("./_bans");
 
 const COLLECTION = "daily_scores";
 const BOARD_SIZE = 10;
@@ -418,6 +423,17 @@ async function combinedBoards(db, event, params) {
             playerTotals(daily, liveGames(span(all.from, all.to))), playerTotals(guess, span(all.from, all.to))
         ]);
 
+        /* No raw Discord id and no nicknamed player's avatar leaves here
+           (29 Sept 2026) — see _publicid.js. fold() still ranks and
+           tie-breaks on the raw id, which never leaves this function; only
+           the finished lists are swapped over, with one nickname read for
+           all four. */
+        /* Banned accounts off first (29 Sept 2026; withoutBanned in
+           _bans.js), while the ids are still the raw ones. */
+        const [bDay, bWeek, bMonth, bAll] = await publicLists(db, await withoutBanned(db, [
+            fold(dToday, gToday), fold(dWeek, gWeek), fold(dMonth, gMonth), fold(dAll, gAll)
+        ]));
+
         /* Eight aggregations across two collections is the most
            expensive read on the site, and the answer is the same for
            everybody — so it goes behind the edge for fifteen seconds like
@@ -427,10 +443,10 @@ async function combinedBoards(db, event, params) {
             weekFrom: week.from,
             monthFrom: month.from,
             combined: true,
-            day: fold(dToday, gToday),
-            week: fold(dWeek, gWeek),
-            month: fold(dMonth, gMonth),
-            allTime: fold(dAll, gAll)
+            day: bDay,
+            week: bWeek,
+            month: bMonth,
+            allTime: bAll
         }, { cdn: BOARD_CDN_CACHE });
     } catch (e) {
         return json(500, { error: "Could not read the scores" });
@@ -514,6 +530,24 @@ exports.handler = async (event) => {
                 board(col, game, fromLaunch(month.from, launch), month.to, launch),
                 board(col, game, fromLaunch(all.from, launch), all.to, launch)
             ]);
+            /* `points` is the total, as on every board; `ms` the time taken,
+               null when the day was never timed. Then every list through
+               publicLists (29 Sept 2026): the public id in place of the
+               Discord one, and no avatar for a player with a nickname — see
+               _publicid.js. Inside the try, since it reads the players
+               collection (and fails closed on its own if that read fails). */
+            /* And a banned account's rows left out of all four, before the
+               ids are swapped (29 Sept 2026; withoutBanned in _bans.js). */
+            [todayRows, weekRows, monthRows, allRows] = await publicLists(db, await withoutBanned(db, [
+                todayRows.map(r => ({
+                    id: r.playerId, name: r.name, avatar: r.avatar,
+                    points: speed.totalOf(r), base: r.points || 0, bonus: r.bonus || 0,
+                    ms: Number.isFinite(r.ms) ? r.ms : null,
+                    solved: r.solved,
+                    grid: Array.isArray(r.grid) ? r.grid : null
+                })),
+                weekRows, monthRows, allRows
+            ]));
         } catch (e) {
             console.error("daily-scores: board read failed", e);
             return json(500, { error: "Could not read the scores" });
@@ -526,15 +560,8 @@ exports.handler = async (event) => {
             date: day,
             weekFrom: week.from,
             monthFrom: month.from,
-            /* `points` is the total, as on every board; `ms` the time taken,
-               null when the day was never timed. */
-            day: todayRows.map(r => ({
-                id: r.playerId, name: r.name, avatar: r.avatar,
-                points: speed.totalOf(r), base: r.points || 0, bonus: r.bonus || 0,
-                ms: Number.isFinite(r.ms) ? r.ms : null,
-                solved: r.solved,
-                grid: Array.isArray(r.grid) ? r.grid : null
-            })),
+            // Shaped and made public above, inside the try.
+            day: todayRows,
             week: weekRows,
             month: monthRows,
             allTime: allRows
@@ -549,6 +576,8 @@ exports.handler = async (event) => {
 
         let body = {};
         try { body = JSON.parse(event.body || "{}"); } catch (e) { body = {}; }
+        // `null` parses cleanly and then has nothing to read a field off.
+        if (!body || typeof body !== "object") body = {};
         const game = String(body.game || "");
         if (!GAMES.includes(game)) return json(400, { error: "Unknown game" });
 
@@ -564,6 +593,17 @@ exports.handler = async (event) => {
         // and anything signed out, is still held to the open day here.
         const open = dayIsOpen(day);
         if (!open && (body.action !== undefined || !player)) return json(400, { error: "That day is not open" });
+
+        /* BANNED, AND THE REJECTED NICKNAME (29 Sept 2026; see _bans.js).
+           Every POST here — a pick, a start, a finished day, signed in or
+           out (a signed-out pick is judged by the network's bans) — is
+           refused with 403 { error, banned } for a banned account or
+           network, and a signed-in player whose nickname the admins have
+           rejected is refused with 403 { error, nickRequired: true } until
+           they choose another (player-nick.js). Ahead of the deal and every
+           write, so a refused request costs one memoised lookup. */
+        const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true });
+        if (refusal) return refusal;
 
         /* ---------- one pick ----------
 
@@ -595,9 +635,11 @@ exports.handler = async (event) => {
            (claimAnonMove in _speed.js). The private-window route above is
            still open, deliberately — a signed-out player has to be able to
            play — but it was unmetered, so a script could ask every tile of
-           every round. The cap is three times a day's picks and then some,
-           which no person playing the day ever reaches; past it the answer
-           is 429 and the page suggests signing in. */
+           every round. The cap is twenty times a day's picks and then some
+           (see ANON_MULTIPLE in _speed.js: a school or a phone network puts
+           many players behind one address), which no one address of real
+           players reaches; past it the answer is 429 and the page suggests
+           signing in. */
         if (body.action === "move") {
             if (String(event.body || "").length > speed.MAX_START_BODY) return privateJson(413, { error: "Too large" });
             const round = speed.markRound(body.round, ROUNDS);
@@ -623,9 +665,16 @@ exports.handler = async (event) => {
                 if (!allowed) return privateJson(429, { reason: "anon-limit", error: "Too many picks from this network today" });
                 return privateJson(200, { recorded: false, tile, right: Boolean(dealt.tiles[tile].odd) });
             }
+            /* `replay: true` is a pick made signed out and sent again now
+               the day is recorded (Daily.replay in js/daily.js). Recording
+               one marks the day untimed for good, so a replay run against
+               a clock another device started earns no bonus for picks made
+               long before (recordOddPick in _speed.js; 28 Sept 2026). Only
+               `true` counts, like `anon`. */
+            const replayed = body.replay === true;
             let outcome;
             try {
-                outcome = await speed.recordOddPick(db, ensureUniqueIndex, day, player.id, round, tile, dealt, arrived);
+                outcome = await speed.recordOddPick(db, ensureUniqueIndex, day, player.id, round, tile, dealt, arrived, replayed);
             } catch (e) {
                 console.error("daily-scores: could not record a pick", e);
                 return privateJson(503, { error: "The pick could not be recorded just now" });
@@ -735,11 +784,16 @@ exports.handler = async (event) => {
            rather than a day that fails to record. */
         const { bonus, ms, roundSecs } = speed.dayBonus(clock, scored.grid.map(g => g > 0), arrived);
 
+        /* Their nickname if they have one, else their Discord name — read
+           from the players row, not the session (publicName in _player.js;
+           28 Sept 2026). */
+        const shown = await publicName(db, player);
+
         try {
             await col.insertOne({
                 game, day,
                 playerId: player.id,
-                name: player.name,
+                name: shown,
                 avatar: player.avatar,
                 // Still the base score; the boards add `bonus` to it. `ms`
                 // (the whole day) and `roundSecs` (each round) only when
@@ -857,3 +911,8 @@ module.exports.filedScore = filedScore;
 // For the tests: the pure scoring halves.
 module.exports.scoreRecorded = scoreRecorded;
 module.exports.scoreClaim = scoreClaim;
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("daily-scores", exports.handler);

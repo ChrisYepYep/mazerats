@@ -1013,11 +1013,13 @@
                             saveState();
                         }
                         const still = document.getElementById("odd-boards");
-                        window.Daily.boards(still, "odd", { points: score(), day: forDay, fresh: res.ok });
+                        // listed: whether the day went up under the
+                        // player's name, for the nickname line (28 Sept 2026).
+                        window.Daily.boards(still, "odd", { points: score(), day: forDay, fresh: res.ok, listed: !!(state && state.mode === "account") });
                     });
             }
         } else {
-            window.Daily.boards(host, "odd", { points: score(), day: forDay });
+            window.Daily.boards(host, "odd", { points: score(), day: forDay, listed: !!(state && state.mode === "account") });
         }
 
         const share = document.getElementById("odd-share");
@@ -1042,6 +1044,24 @@
 
     async function open(retrying) {
         if (!el.overlay) return;
+        /* Locked out of the games — a ban, or a nickname the admins asked
+           to change (29 Sept 2026; Account.mayPlay in js/account.js). The
+           one gate every way in passes, as in js/guess.js: it says why in a
+           window of its own and nothing is dealt, and the empty window
+           js/daily-loader.js may have opened while this file downloaded is
+           shut again. Signed out and unbanned, nothing changes.
+
+           mayPlay knows nobody until the first "who am I" has answered, and
+           says yes, so the gate waits for that answer first (see guess.js). */
+        if (!retrying && window.Account && typeof Account.mayPlay === "function" && !Account.known && typeof Account.ready === "function") {
+            try { await Account.ready(); } catch (e) { /* signed out */ }
+        }
+        if (!retrying && window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay()) {
+            el.overlay.classList.remove("open");
+            if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
+            if (location.pathname === "/odd") history.replaceState({}, "", "/home");
+            return;
+        }
         if (!retrying && !el.overlay.classList.contains("open")) {
             const active = document.activeElement;
             opener = active && active !== document.body && !el.overlay.contains(active) ? active : null;
@@ -1129,6 +1149,16 @@
         // results card reopened later says what the board says.
         if (reply.score && Number.isFinite(reply.score.points)) {
             served = { day: reply.day, points: reply.score.points, bonus: reply.score.bonus || 0 };
+        } else if (Array.isArray(reply.progress)) {
+            /* And a day the server says is NOT on file forgets the figures
+               kept for it. An administrator's reset takes the filed row
+               away, and a page that was not reloaded kept the old row's
+               "50 + N speed bonus = …" on the replayed day's card until the
+               new submission answered — and for good if that submission
+               failed. Only when `progress` is an array, the server's word
+               that it read this player's day: a record it could not read
+               says nothing about what is filed (28 Sept 2026). */
+            served = null;
         }
         const mine = [state, saved].filter(s => s && s.day === reply.day)
             .sort((a, b) => progressOf(b) - progressOf(a))[0];

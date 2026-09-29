@@ -95,8 +95,21 @@
 
     window.Track = { event: track };
 
-    // Which page, and nothing about how you got here.
-    track("page", document.body.dataset.page || "unknown");
+    /* Which page, and nothing about how you got here.
+
+       The archive's own page view waits until home.html's gate has let the
+       visitor IN (28 Sept 2026). This ran as soon as the file loaded, while
+       the gate was still asking whether the site was open — and a Coming
+       Soon or Maintenance visitor sent back to the landing page had already
+       been counted as a visit to the archive, flushed on the way out. Umami
+       was moved behind the gate for exactly this reason; this was missed.
+       Every other page counts at once, as before. */
+    const page = document.body.dataset.page || "unknown";
+    if (page === "home" && !window.__mrRevealed) {
+        document.addEventListener("mazerats:revealed", function () { track("page", page); }, { once: true });
+    } else {
+        track("page", page);
+    }
 
     /* One delegated listener rather than a hook in every component: anything
        that wants to be counted marks itself up with data-track, so adding a

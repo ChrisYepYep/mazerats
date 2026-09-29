@@ -239,6 +239,13 @@
         const stub = function () {
             if (ready(name)) return window[GAMES[name].open]();
 
+            /* Locked out of the games (a ban, or a nickname to change): once
+               the account is known, say so now, rather than opening the empty
+               window first only for the game file to shut it again and leave
+               focus nowhere. mayPlay shows the notice itself. Not known yet,
+               the game's own open() waits and asks (29 Sept 2026). */
+            if (window.Account && Account.known && typeof Account.mayPlay === "function" && !Account.mayPlay()) return;
+
             const overlay = openShell(name);
             const slow = setTimeout(() => sayLoading(name), SLOW_AFTER);
 

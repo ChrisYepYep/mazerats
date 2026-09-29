@@ -7,7 +7,8 @@
    second answer to argue with.
 
    What it reads, and from where:
-     players          when they first signed in (discord-auth.js)
+     players          when they first signed in (discord-auth.js), and
+                      their nickname (player-nick.js)
      guess_scores     Guess the Maze days, points and streaks
      daily_scores     Odd One Out, the same (daily-scores.js; game "odd")
      ff_scores        their best Fallin' Furni run and where it ranks
@@ -21,7 +22,7 @@
    worked out over every player, not only the ten a board shows — being
    27th is still worth knowing when the board stops at 10. */
 const { getDb } = require("./_db");
-const { playerFrom } = require("./_player");
+const { playerFrom, playerView } = require("./_player");
 const { today } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { totalOf } = require("./_speed");
@@ -218,7 +219,11 @@ exports.handler = async (event) => {
         // total — see gameStats.
         const rowShape = { projection: { _id: 0, day: 1, points: 1, bonus: 1, solved: 1, rounds: 1 } };
         const [profile, guessRows, oddRows, board, ffMine, leadCounts] = await Promise.all([
-            db.collection("players").findOne({ id }, { projection: { _id: 0, joinedAt: 1 } }),
+            // With the nickname fields, for the Profile's name (see below).
+            // nickLocked too (29 Sept 2026): playerView reads it off this
+            // row, and a projection that left it out made every Profile
+            // report the nickname unlocked, whatever the admins had set.
+            db.collection("players").findOne({ id }, { projection: { _id: 0, joinedAt: 1, name: 1, avatar: 1, nick: 1, nickAsked: 1, nickLocked: 1 } }),
             guessCol.find({ playerId: id, ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
             dailyCol.find({ playerId: id, game: "odd", ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
             boardTotals(guessCol, dailyCol, launch),
@@ -254,9 +259,18 @@ exports.handler = async (event) => {
             if (r._id === "new") leads.waiting += r.n;
         });
 
+        /* The name as `me` gives it (playerView in _player.js; 28 Sept
+           2026): `name` is still the Discord display name, `displayName` is
+           the nickname when there is one, and that is what the page shows. */
+        const who = playerView(player, profile);
         return json(200, {
             day,
-            player: { id, name: player.name, avatar: player.avatar || null, joinedAt: (profile && profile.joinedAt) || null },
+            player: {
+                id, name: who.name, nick: who.nick, displayName: who.displayName, nickAsked: who.nickAsked,
+                // The admins locked it (29 Sept 2026; see player-nick.js).
+                nickLocked: who.nickLocked,
+                avatar: who.avatar, joinedAt: (profile && profile.joinedAt) || null
+            },
             games: {
                 guess: { ...gameStats(guessRows, day), place: placeIn(board.guess, id, myGuess) },
                 odd: { ...gameStats(oddRows, day), place: placeIn(board.odd, id, myOdd) }
@@ -266,6 +280,12 @@ exports.handler = async (event) => {
             leads
         });
     } catch (e) {
+        console.error("player-profile: read failed", e);
         return json(500, { error: "Could not read your profile" });
     }
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("player-profile", exports.handler);

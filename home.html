@@ -14,6 +14,21 @@
          and leave the page. The skip link below and the footer's #privacy
          are kept on the page by a click handler in js/site.js. -->
     <base href="/">
+    <!-- ERROR REPORTING, ahead of everything that can fail (28 Sept 2026).
+         js/error-report.js has to be listening before the gate below runs,
+         or a failure in the gate — the one script that can leave this page
+         blank — would be the one failure nobody hears about. A plain,
+         blocking <script src>, because async would let the gate run first:
+         it is a few kilobytes, revalidated rather than refetched, and it
+         never throws (see its header). Every public page and the Warren
+         carry the same two lines.
+
+         The meta is the build the page was deployed as: "dev" in the repo,
+         stamped with the commit and the build time by tools/build-minify.js
+         on Netlify, and sent with every report so the Errors tab can say
+         which deploy a failure started with. -->
+    <meta name="mazerats:build" content="dev">
+    <script src="/js/error-report.js?v=2"></script>
     <!-- The charset comes before even the gate. A browser only honours a
          charset declaration inside the first 1024 bytes of the document;
          past that it has already guessed an encoding and may re-parse the
@@ -47,6 +62,19 @@
     (function () {
         var TOKEN_KEY = "mazerats_admin_token";
 
+        /* A whole-site ban this browser has been told about (js/account.js,
+           BLOCK_KEY; 29 Sept 2026): straight back to the landing page, which
+           shows it as Maintenance, before anything of the archive is drawn.
+           An ended cool-down is ignored here, and the landing page tidies
+           the note away. */
+        try {
+            var blocked = JSON.parse(localStorage.getItem("mazerats_blocked") || "null");
+            if (blocked && typeof blocked === "object" && (!blocked.until || Date.parse(blocked.until) > Date.now())) {
+                location.replace("/");
+                return;
+            }
+        } catch (e) { /* unreadable: `me` decides, in js/account.js */ }
+
         var revealed = false;
         function reveal() {
             document.documentElement.style.visibility = "";
@@ -60,6 +88,13 @@
                is the call that makes sure. */
             try { if (window.FocusTrap) window.FocusTrap.refresh(); } catch (e) { /* the trap's own business */ }
             loadUmami();
+            /* And the site's own page count (js/track.js) waits for this too,
+               for the same reason Umami does — see there. A flag for a
+               tracker that loads after this, an event for one already here. */
+            try {
+                window.__mrRevealed = true;
+                document.dispatchEvent(new Event("mazerats:revealed"));
+            } catch (e) { /* counts are not worth a broken page */ }
         }
 
         /* Umami, the aggregate visit counts — loaded from HERE, once this
@@ -88,6 +123,10 @@
                 s.setAttribute("data-website-id", "8dee5429-29ff-4efb-bec1-c124c8d6fb18");
                 s.setAttribute("data-do-not-track", "true");
                 s.setAttribute("data-exclude-hash", "true");
+                /* Counted only on the real site: without this, every page opened
+                   on the local dev server (localhost:8888) was a visit in the
+                   live figures (29 Sept 2026). */
+                s.setAttribute("data-domains", "mazerats.net");
                 document.head.appendChild(s);
             } catch (e) { /* counts are not worth a broken page */ }
         }

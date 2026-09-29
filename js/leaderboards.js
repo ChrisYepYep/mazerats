@@ -192,7 +192,18 @@
             empty = "No runs recorded yet.";
         } else {
             list = data[range] || [];
-            isMe = row => !!(who && row.id === who.id);
+            // By id, never by name: a nickname can change between the day a
+            // row was filed and today (28 Sept 2026), and two players can
+            // share a Discord display name.
+            //
+            // By the PUBLIC id (29 Sept 2026): the boards stopped sending
+            // the Discord one (netlify/functions/_publicid.js) and `me`
+            // hands the player their own as who.publicId. The raw id second,
+            // for a board answer cached from before the deploy; the two
+            // shapes cannot collide (see isMine in js/daily.js, which is not
+            // always on this page, hence the copy).
+            isMe = row => !!(who && row && row.id &&
+                ((who.publicId && row.id === who.publicId) || row.id === who.id));
             extra = g.key === "all" ? (row => gamesPill(row.games))
                 : range === "day" ? (() => "<span></span>")
                     : (row => daysPill(row.days));
@@ -202,7 +213,7 @@
         let foot = "";
         if (!who) {
             foot = `<div class="guess-board-note guess-board-invite">
-                        Scores are listed under your Discord name.
+                        Scores are listed under your Discord name, or a nickname you choose.
                         <button type="button" class="guess-btn" data-boards-signin>Sign in with Discord</button>
                     </div>`;
         } else if (!list.some(isMe)) {

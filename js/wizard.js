@@ -173,6 +173,26 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // ---------- the room sheet ----------
 
+    /* The Status line shows a word, not the stored value (28 Sept 2026). The
+       record keeps the lowercase keys the admin inspector's STATUS_OPTIONS
+       writes (js/admin-wizard.js) — "secret", "unnamed", "entrance" — and the
+       sheet was printing them raw, which read as a database leaking through.
+       The server does not police the field, so anything not listed here is
+       still shown, just with its first letter raised. */
+    const STATUS_LABELS = {
+        entrance: "Entrance",
+        unwalked: "Not walked yet",
+        gone: "Gone",
+        secret: "Secret",
+        unnamed: "Unnamed"
+    };
+    function statusLabel(status) {
+        const key = String(status).trim().toLowerCase();
+        if (STATUS_LABELS[key]) return STATUS_LABELS[key];
+        const s = String(status).trim();
+        return s.charAt(0).toUpperCase() + s.slice(1);
+    }
+
     function openRoom(id, { push = true } = {}) {
         const room = roomById(id);
         // Hidden is hidden, whoever asks - see roomIdFromPath.
@@ -210,7 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const meta = [];
         if (room.floor) meta.push(["Floor", room.floor]);
-        if (room.status) meta.push(["Status", room.status]);
+        if (room.status) meta.push(["Status", statusLabel(room.status)]);
         modalMeta.innerHTML = meta
             .map(([k, v]) => `<div class="wiz-meta-item"><span>${escapeHtml(k)}</span><strong>${escapeHtml(v)}</strong></div>`)
             .join("");
@@ -281,20 +301,37 @@ document.addEventListener("DOMContentLoaded", () => {
            refresh and a share all still land on the room you are looking
            at. What is given up is stepping BACK through the rooms you walked,
            and that is the right trade: nobody was getting that far, because
-           the way out was broken. */
+           the way out was broken.
+
+           Every entry also says whether THIS page pushed it (28 Sept 2026).
+           A pasted /wizard/<room> link opens its sheet without pushing, so
+           the landing entry is the browser's own and Back from it leaves the
+           Atlas. Walking on from there used to stamp {room} onto that entry,
+           and closing then took the room in the state as licence to call
+           history.back() — which left the Atlas altogether in the same tab,
+           or did nothing at all in a fresh one and left the sheet's address
+           behind. A replace keeps whatever the entry already was: pushed if
+           the page pushed it, not if it was the landing. */
         if (push) {
             const url = `/wizard/${addressFor(room.id)}`;
-            const entry = { room: room.id };
+            const pushed = alreadyOpen ? !!(history.state && history.state.pushed) : true;
+            const entry = { room: room.id, pushed };
             if (alreadyOpen) history.replaceState(entry, "", url);
             else history.pushState(entry, "", url);
         }
     }
 
+    /* Closing steps back only over an entry this page pushed — that entry
+       sits on top of the plain /wizard it came from, so Back lands on the
+       map and popstate finds the sheet already shut. Anything else (the
+       entry a pasted room link landed on) is rewritten to /wizard in place,
+       since stepping back from it would leave the page. (28 Sept 2026) */
     function closeRoom({ pop = true } = {}) {
         if (!modal.classList.contains("open")) return;
         modal.classList.remove("open");
-        if (pop && history.state && history.state.room) history.back();
-        else if (pop) history.replaceState({}, "", "/wizard");
+        if (!pop) return;
+        if (history.state && history.state.pushed) history.back();
+        else history.replaceState({}, "", "/wizard");
     }
 
     modalClose.addEventListener("click", () => closeRoom());
@@ -707,6 +744,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 secretInput.value = "";
                 secretInput.blur();       // the keyboard down, so the reveal is seen
                 setSheet(false);
+            } else if (sayTrouble(answer)) {
+                // Rate-limited or unreachable: said in words, not shaken,
+                // because the word may well have been right. See sayTrouble.
             } else if (!answer.superseded) {
                 /* A miss says nothing - that is the design - but the field
                    is left holding the word so a typo can be mended rather
@@ -1585,13 +1625,35 @@ document.addEventListener("DOMContentLoaded", () => {
     let forgetTimer = 0;
     let whisperTimer = 0;
 
-    function whisper(text) {
+    function whisper(text, holdMs = 2000) {
         if (!whisperEl) return;
         clearTimeout(whisperTimer);
         if (text.length < 2) { whisperEl.hidden = true; return; }
         whisperEl.textContent = text;
         whisperEl.hidden = false;
-        whisperTimer = setTimeout(() => { whisperEl.hidden = true; }, 2000);
+        whisperTimer = setTimeout(() => { whisperEl.hidden = true; }, holdMs);
+    }
+
+    /* The two answers that are NOT a miss (28 Sept 2026). A miss says
+       nothing — that is the puzzle — but a 429 from the rate limiter
+       (Api.unlockWizardSecret turns it into { tooMany: true }) and a request
+       that never reached the endpoint ({ failed: true }) were being treated
+       as one: the phone's line shook as if the word were wrong, and the
+       keyboard path said nothing at all, so the reader was told the right
+       word was wrong and went off to try others. These are said out loud
+       through the whisper instead, held long enough to read. Returns
+       whether it spoke, so a caller knows not to shake as well. */
+    function sayTrouble(answer) {
+        if (!answer) return false;
+        if (answer.tooMany) {
+            whisper("Too many tries just now — wait a minute and try again.", 4500);
+            return true;
+        }
+        if (answer.failed) {
+            whisper("Couldn't check that — try again.", 4500);
+            return true;
+        }
+        return false;
     }
 
     document.addEventListener("keydown", e => {
@@ -1622,6 +1684,8 @@ document.addEventListener("DOMContentLoaded", () => {
             if (answer.fresh && answer.fresh.length) {
                 buffer = "";
                 if (whisperEl) whisperEl.hidden = true;
+            } else {
+                sayTrouble(answer);
             }
         }, 650);
     });

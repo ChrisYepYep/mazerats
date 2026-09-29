@@ -9,6 +9,21 @@
 // early, render-blocking inline script in home.html's own <head> instead —
 // see the comment there for why it has to run that early.
 
+// A whole-site ban this browser has been told about (js/account.js,
+// BLOCK_KEY; 29 Sept 2026): every page but the landing page, the privacy
+// policy and the Warren sends the visitor back to the landing page, which
+// shows it as Maintenance (js/welcome.js). home.html makes the same check
+// earlier, in its <head>; this catches the pages that have no such gate.
+(function () {
+    if (/^\/(?:$|index(?:\.html)?$|privacy|warren)/.test(location.pathname)) return;
+    try {
+        const blocked = JSON.parse(localStorage.getItem("mazerats_blocked") || "null");
+        if (blocked && typeof blocked === "object" && (!blocked.until || Date.parse(blocked.until) > Date.now())) {
+            location.replace("/");
+        }
+    } catch (e) { /* unreadable: nothing to act on */ }
+})();
+
 // Alphabetical sorting starts at the first real letter or number in a name,
 // ignoring anything before it. Maze names can open with one of Volter
 // Goldfish's picture glyphs (a star, a skull — see the palette on the admin
@@ -385,6 +400,9 @@ const FocusTrap = (() => {
     const KEPT_IN_CYCLE = ".saved-note, #console-modal";
 
     function extrasFor(top) {
+        /* The forced "Pick a new nickname" window is answer-only: Tab must
+           not walk out of it into the console behind (29 Sept 2026). */
+        if (top.region.matches && top.region.matches(".nick-overlay.is-forced")) return [];
         return Array.from(document.querySelectorAll(KEPT_IN_CYCLE)).filter(el =>
             !top.region.contains(el) && !el.classList.contains("is-out") && isShown(el));
     }

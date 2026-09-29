@@ -226,12 +226,10 @@
     function loadImage(src) {
         return new Promise((resolve, reject) => {
             const img = new Image();
-            // Same origin (everything goes through /.netlify/images), so the
-            // canvas is never tainted and getImageData works — which the
-            // whole scoring pass below depends on. The deal's picture is a
-            // deal-image address now (netlify/functions/deal-image.js), on
-            // this origin too, and still goes through the image CDN as its
-            // source, so nothing about that changes.
+            // Same origin, so the canvas is never tainted and getImageData
+            // works — which the whole scoring pass below depends on. The
+            // deal's picture is a deal-image address
+            // (netlify/functions/deal-image.js), on this origin.
             img.onload = () => resolve(img);
             img.onerror = () => reject(new Error("image failed"));
             img.src = src;
@@ -359,6 +357,9 @@
         if (solvedOrSpent) {
             // The whole picture once the round is over, letterboxed rather
             // than cropped: the answer should be the room as it really is.
+            // (As deal-image serves it: a 16:10 frame of the screenshot, so
+            // the very widest shots lose a little at the sides — see ONE
+            // SIZE PER GAME in deal-image.js, 28 Sept 2026.)
             const scale = Math.min(side / w, side / h);
             const dw = w * scale, dh = h * scale;
             out.drawImage(img, (side - dw) / 2, (side - dh) / 2, dw, dh);
@@ -622,9 +623,18 @@
         setBusy(i, true);
         const gen = dealGen;
 
+        /* The deal-image address as it is, not wrapped in imgCdn (28 Sept
+           2026). deal-image serves every Guess picture through the image CDN
+           at one fixed 704x440 JPEG, so no picture's size or shape says which
+           maze it is (ONE SIZE PER GAME in deal-image.js). This used to ask
+           for it again at w=900 with the aspect kept, which was the leak
+           when the picture came as uploaded; on the fixed picture it could
+           only re-encode it a second time, since the CDN never enlarges. The
+           crop below reads naturalWidth/naturalHeight, so it takes the
+           fixed size as it comes. */
         let img = null;
         try {
-            img = await loadImage(imgCdn(pick.image, 900, null, 82));
+            img = await loadImage(pick.image);
         } catch (e) {
             if (gen !== dealGen) return;
             preparing[i] = false;
@@ -1765,6 +1775,19 @@
                       aria-label="${solved} of ${ROUNDS} found">${cells}</span>`;
     }
 
+    /* The player's own row, by the public id the boards send now and `me`
+       hands back as Account.current.publicId (29 Sept 2026; see
+       netlify/functions/_publicid.js), then by the raw id for a board
+       answer cached from before the deploy. Daily.isMine when js/daily.js
+       is on the page, which it is beside every game; the copy is for when
+       it is not, like the positional ranks below. `who` is Account.current,
+       or null. */
+    function isMine(row, who) {
+        if (window.Daily && Daily.isMine) return Daily.isMine(row, who);
+        if (!row || !row.id || !who) return false;
+        return (Boolean(who.publicId) && row.id === who.publicId) || row.id === who.id;
+    }
+
     function boardRows(list, mine, empty) {
         if (!list || !list.length) {
             return `<li class="guess-board-empty">${escapeHtml(empty)}</li>`;
@@ -1775,7 +1798,7 @@
            only for a page somehow without js/daily.js. */
         const place = window.Daily && Daily.ranks ? Daily.ranks(list) : list.map((r, i) => i + 1);
         return list.map((row, i) => `
-            <li class="guess-board-row${mine && row.id === mine ? " is-me" : ""}">
+            <li class="guess-board-row${isMine(row, mine) ? " is-me" : ""}">
                 <span class="guess-board-rank" aria-hidden="true">${place[i]}</span>
                 ${row.avatar
                     ? `<img class="guess-board-face" src="${escapeHtml(row.avatar)}" alt="" aria-hidden="true" loading="lazy">`
@@ -1836,7 +1859,8 @@
         const host = boardColumns();
         if (!host) return;
 
-        const me = window.Account && Account.current ? Account.current.id : null;
+        // The whole account, not its id — see isMine.
+        const me = window.Account && Account.current ? Account.current : null;
 
         if (boardsState === "loading" || boardsState === "idle") {
             host.innerHTML = `<p class="guess-board-note">Fetching the scores…</p>`;
@@ -1850,8 +1874,16 @@
         /* The prompt to sign in belongs here and only here — at the moment
            there is a score worth putting somewhere. Asking on the way IN to
            a game nobody has played yet is asking for a login to do nothing
-           with. */
-        const invite = me ? "" : `
+           with.
+
+           Signed in with no nickname, the same spot says which name the
+           score went up under and offers to choose another (28 Sept 2026;
+           Account.nickHintHtml in js/account.js draws it, answers its
+           button, and takes it off the card once a nickname is set). Only
+           for a day played signed in (mode "account"): a day carried on
+           unlisted went up under no name at all. */
+        const listed = !!(state && state.mode === "account");
+        const invite = me ? (listed && window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "") : `
             <p class="guess-board-note guess-board-invite">
                 Your ${dayPoints()} points are saved on this device.
                 <button type="button" class="guess-btn" id="guess-board-signin">Sign in with Discord to be listed</button>
@@ -2028,6 +2060,15 @@
         // results card reopened later says what the board says.
         if (reply.score && Number.isFinite(reply.score.points)) {
             served = { day: reply.day, points: reply.score.points, bonus: reply.score.bonus || 0 };
+        } else if (Array.isArray(reply.progress)) {
+            /* And a day the server says is NOT on file forgets the figures
+               kept for it, as in js/oddoneout.js: after an administrator's
+               reset a page that was not reloaded showed the old row's
+               "50 + N speed bonus = …" on the replayed day until the new
+               submission answered, and for good if it failed. Only when
+               `progress` is an array — the server's word that it read this
+               player's day (28 Sept 2026). */
+            served = null;
         }
         const mine = [state, saved].filter(s => s && s.v === STATE_VERSION && s.day === reply.day)
             .sort((a, b) => progressOf(b) - progressOf(a))[0];
@@ -2172,8 +2213,37 @@
     // Whatever had focus when the window opened, for close() to hand back
     // to — as js/oddoneout.js does. Only recorded on a real open.
     let opener = null;
+    // Set once open() has waited for the first "who am I", so it only ever
+    // waits the once.
+    let waitedForAccount = false;
 
     function open() {
+        /* Locked out of the games — a ban, or a nickname the admins asked
+           to change (29 Sept 2026; Account.mayPlay in js/account.js). Every
+           way in comes through here (the side menu, the Leaderboards'
+           Play, a pasted /guess), so this is the one gate. It says why in
+           a window of its own and nothing is dealt. js/daily-loader.js may
+           already have opened this window empty while the file downloaded,
+           so that is shut again. Signed out and unbanned, mayPlay is true
+           and nothing changes.
+
+           Before the first "who am I" has answered, mayPlay knows nobody and
+           says yes, so a pasted /guess or a quick Play dealt a locked player
+           a round they only heard was refused at their first pick. So it
+           waits for that answer, then comes back through here. */
+        if (!waitedForAccount && window.Account && typeof Account.mayPlay === "function" && !Account.known && typeof Account.ready === "function") {
+            waitedForAccount = true;
+            Promise.resolve().then(() => Account.ready()).catch(() => {}).then(() => open());
+            return;
+        }
+        if (window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay()) {
+            el.overlay.classList.remove("open");
+            if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
+            // A pasted /guess should not leave the address bar on a game
+            // that never opened.
+            if (location.pathname === "/guess") history.replaceState({}, "", "/home");
+            return;
+        }
         if (!el.overlay.classList.contains("open")) {
             const active = document.activeElement;
             opener = active && active !== document.body && !el.overlay.contains(active) ? active : null;

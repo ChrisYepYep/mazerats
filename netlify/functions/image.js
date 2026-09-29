@@ -114,3 +114,9 @@ exports.handler = async (event) => {
         isBase64Encoded: true
     };
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers — these bytes included — is
+   unchanged. */
+exports.handler = require("./_errors").withErrorReporting("image", exports.handler);

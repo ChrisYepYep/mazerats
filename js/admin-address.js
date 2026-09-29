@@ -15,9 +15,18 @@
    Either way the old address keeps working — the server keeps it as an
    alias and sends it on to the new one.
 
-   slugify and isAutomatic are the server's rules (netlify/functions/
-   _slugs.js), repeated so the field can show what will be saved as it is
-   typed. Keep them in step.
+   slugify, isAutomatic and numbered are the server's rules (netlify/
+   functions/_slugs.js), repeated so the field can show what will be saved
+   as it is typed. Keep them in step.
+
+   A DELETED RECORD'S ADDRESSES are reserved too (retired_addresses on the
+   server; see the header of _slugs.js). Until 28 Sept 2026 this field did
+   not know them: an address typed by hand that a deleted maze once had
+   passed the check here and was refused by Save, and a new maze following
+   a deleted one's name was quietly given "-2" while the note said only
+   "Follows the name." The caller now passes `retired` (the kind's retired
+   addresses, read with ?full=1&retired=1), and the note shows the address
+   the save will really give — number and all.
    =========================================================== */
 (function () {
     "use strict";
@@ -60,6 +69,16 @@
         });
     }
 
+    // A slug with -N on the end, for a clash: numbered in _slugs.js, which
+    // cuts the stem short enough for the number and drops a hyphen the cut
+    // leaves behind.
+    function numbered(base, n) {
+        return `${base.slice(0, MAX - 4).replace(/-+$/, "")}-${n}`;
+    }
+
+    // What a deleted record of each kind is called in the notes.
+    const NOUNS = { maze: "maze", event: "event", guides: "guide" };
+
     const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({
         "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
     }[c]));
@@ -91,9 +110,13 @@
        taken(slug)  the title of ANOTHER record answering to that address,
                     or "" — checked as the field is typed, so a clash shows
                     before Save rather than after it
+       retired(slug) true when a DELETED record of this kind had that
+                    address (28 Sept 2026). Never asked about the record's
+                    own current address, which the server lets it keep
+                    even if it is on the list (holder in settleSlug).
 
        Returns { payload() } — { slug, _slugAuto } for the save body. */
-    function wire(root, { titleInput, current, manual, taken, prefix, state }) {
+    function wire(root, { titleInput, current, manual, taken, retired, prefix, state }) {
         const box = root.querySelector("[data-address]");
         const input = root.querySelector("[data-address-input]");
         const note = root.querySelector("[data-address-note]");
@@ -122,21 +145,65 @@
         const keep = () => { st.value = input.value; };
 
         const wanted = () => (st.following ? slugify(titleInput.value) : slugify(input.value));
+        const noun = NOUNS[prefix] || "record";
+
+        /* Who holds an address: { title } for another live record,
+           { retired: true } for a deleted one, or null. The record's own
+           current address is never "retired" to itself — the server lets a
+           record keep an address that is also on the list (see holder in
+           settleSlug), so saying otherwise here would be a false alarm. */
+        function holderOf(slug) {
+            if (!slug) return null;
+            const title = typeof taken === "function" ? taken(slug) : "";
+            if (title) return { title };
+            if (slug !== current && typeof retired === "function" && retired(slug)) return { retired: true };
+            return null;
+        }
+
+        /* The address a following field will really be saved at: the name's
+           slug, or -2, -3… past every one somebody holds — the same walk
+           settleSlug does on the server. */
+        function projected(base) {
+            if (!base || !holderOf(base)) return base;
+            let n = 2;
+            while (holderOf(numbered(base, n))) n++;
+            return numbered(base, n);
+        }
+
+        // Following and the name has moved (or the record is new): the
+        // address is worked out afresh from the name. Otherwise a following
+        // field keeps the address the record has now.
+        const moving = () => st.nameMoved || !current;
+        const following = () => (moving() ? projected(slugify(titleInput.value)) : current);
 
         function say() {
             keep();
             const slug = wanted();
-            const holder = slug && typeof taken === "function" ? taken(slug) : "";
             const bits = [];
+            let holder = null;
+            let actual = slug;
             if (st.following) {
                 bits.push("Follows the name.");
-                if (holder) bits.push(`"${esc(holder)}" has that address, so this gets a number on the end.`);
+                if (moving() && slug) {
+                    holder = holderOf(slug);
+                    actual = projected(slug);
+                    if (holder) {
+                        const who = holder.retired
+                            ? `A deleted ${noun} had /${esc(prefix)}/${esc(slug)}`
+                            : `"${esc(holder.title)}" has /${esc(prefix)}/${esc(slug)}`;
+                        bits.push(`${who}, so this one will be /${esc(prefix)}/<strong>${esc(actual)}</strong>.`);
+                    }
+                } else {
+                    actual = current;
+                }
             } else {
+                holder = holderOf(slug);
                 bits.push("Set by hand, so it stays when the name changes.");
                 if (!slug) bits.push("<strong>It needs at least one letter or number.</strong>");
-                else if (holder) bits.push(`<strong>"${esc(holder)}" already has this address. Choose another.</strong>`);
+                else if (holder && holder.retired) bits.push(`<strong>That address belonged to a deleted ${noun} and can't be reused. Choose another.</strong>`);
+                else if (holder) bits.push(`<strong>"${esc(holder.title)}" already has this address. Choose another.</strong>`);
             }
-            if (current && slug && slug !== current && !(st.following && !st.nameMoved)) {
+            if (current && actual && actual !== current) {
                 bits.push(`The old address, /${esc(prefix)}/${esc(current)}, will keep working.`);
             }
             if (!st.following) bits.push(`<button type="button" class="admin-address-follow" data-address-follow>Follow the name instead</button>`);
@@ -147,18 +214,21 @@
 
         titleInput.addEventListener("input", () => {
             st.nameMoved = true;
-            if (st.following) input.value = slugify(titleInput.value);
+            if (st.following) input.value = following();
             say();
         });
         input.addEventListener("input", () => {
             const typed = slugify(input.value);
-            st.following = !input.value.trim() || typed === slugify(titleInput.value) || (!st.nameMoved && typed === current && st.startFollowing);
+            const named = slugify(titleInput.value);
+            st.following = !input.value.trim() || typed === named || (!!typed && typed === projected(named))
+                || (!st.nameMoved && typed === current && st.startFollowing);
             say();
         });
         // Tidied into what will actually be saved once the typing is done,
-        // so what the field shows is the address.
+        // so what the field shows is the address — the -2 included, when
+        // somebody (or a deleted record) already has the name's own.
         input.addEventListener("blur", () => {
-            if (st.following) input.value = st.nameMoved || !current ? slugify(titleInput.value) : current;
+            if (st.following) input.value = following();
             else input.value = slugify(input.value);
             say();
         });
@@ -166,7 +236,7 @@
             if (!e.target.closest("[data-address-follow]")) return;
             st.following = true;
             st.nameMoved = true;
-            input.value = slugify(titleInput.value);
+            input.value = following();
             say();
             input.focus();
         });
@@ -185,11 +255,22 @@
                 if (st.following) return "";
                 const slug = slugify(input.value);
                 if (!slug) return "The address needs at least one letter or number.";
-                const holder = typeof taken === "function" ? taken(slug) : "";
-                return holder ? `"${holder}" already has the address "${slug}". Choose another.` : "";
+                const holder = holderOf(slug);
+                if (holder && holder.retired) return `The address "${slug}" belonged to a deleted ${noun} and can't be reused. Choose another.`;
+                return holder ? `"${holder.title}" already has the address "${slug}". Choose another.` : "";
             }
         };
     }
 
-    window.AddressField = { html, wire, slugify };
+    /* A kind's retired addresses (the `retired` list ?full=1&retired=1
+       sends) as the retired(slug) wire() takes. Lower-cased both sides, as
+       retiredSet in _slugs.js does: an id kept on the list may have
+       capitals, and an address is always matched lower-cased. */
+    function retiredCheck(list) {
+        const set = new Set((Array.isArray(list) ? list : [])
+            .filter(s => typeof s === "string" && s).map(s => s.toLowerCase()));
+        return slug => !!slug && set.has(String(slug).toLowerCase());
+    }
+
+    window.AddressField = { html, wire, slugify, retiredCheck };
 })();

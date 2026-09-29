@@ -37,8 +37,12 @@
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const { getDb, ensureUniqueIndex, ensureIndex } = require("./_db");
-const { playerFrom } = require("./_player");
+const { playerFrom, publicName } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
+// No nicknamed player's Discord avatar on the board (29 Sept 2026).
+const { nickedAmong, publicAvatar } = require("./_publicid");
+// The ban gate on both POSTs, and banned accounts off the boards (29 Sept 2026).
+const { writeRefusal, withoutBanned } = require("./_bans");
 
 const COLLECTION = "ff_scores";
 const LEVELS = "ff_levels";
@@ -761,6 +765,10 @@ const msOf = (d) => (d instanceof Date ? d.getTime() : Date.parse(d || ""));
 async function levelsAsPlayed(db, body, all, startedAt) {
     const ids = Array.isArray(body.ids) ? body.ids : null;
     if (!ids || !Number.isFinite(startedAt)) return null;
+    // More ids than there are levels can never be a real run, and building a
+    // query key per id would let a huge list overrun Mongo's 16MB limit.
+    // Without a view, checkBreakdown refuses it as "More levels than exist".
+    if (ids.length > all.length) return null;
     if (!ids.every(id => typeof id === "string" && id && id.length <= MAX_LEVEL_ID)) return null;
     // Only a revs list that lines up with the ids, entry for entry, is read.
     let revs = Array.isArray(body.revs) && body.revs.length === ids.length ? body.revs : null;
@@ -925,11 +933,21 @@ function logDisagrees(log, rounds, points) {
    visitor's browser and waiting for the first piece of code that decided to
    display it. A stored cross-site scripting hole with the scripting part not
    written yet. Removed rather than escaped: an unused field cannot be escaped
-   wrongly later. The name on the board is the Discord one, which comes from
-   the signed session and not from the request body. */
-const clean = (row) => ({
+   wrongly later. The name on the board is the player's nickname or Discord
+   name, from their players row and the signed session (publicName in
+   _player.js), never from the request body.
+
+   NO ID, AND THE AVATAR ONLY FOR A PLAYER WITHOUT A NICKNAME (29 Sept
+   2026). The rows here never carried the player id — the page finds its own
+   row by name, points and time — but the avatar is a cdn.discordapp.com
+   address with the Discord id in it, so a nicknamed player was one copy
+   and paste from their Discord account. `nicked` is the set nickedAmong
+   (_publicid.js) read for the rows being answered, or null when it could
+   not be read (every avatar hidden). Left out — the caller's OWN row, sent
+   only to them and never cached — the stored avatar goes back as it was. */
+const clean = (row, nicked) => ({
     name: row.name,
-    avatar: row.avatar || null,
+    avatar: nicked === undefined ? (row.avatar || null) : publicAvatar(row.avatar, row.playerId, nicked),
     points: Number(row.points) || 0,
     levels: row.levels,
     ms: row.ms,
@@ -969,19 +987,27 @@ exports.handler = async (event) => {
         let gate = { launchAt: null, ffLaunchAt: null };
         try {
             gate = await readGate(db);
-            const top = await scores
+            /* A banned account's row left off the board (29 Sept 2026;
+               withoutBanned in _bans.js) — one read for the list. */
+            const [top] = await withoutBanned(db, [await scores
                 .find(sinceLaunch(gate), { projection: { _id: 0 } })
                 .sort({ points: -1, ms: 1, at: 1 })
                 .limit(TOP)
-                .toArray();
+                .toArray()], r => r && r.playerId);
 
-            out = { count: top.length, top: top.map(clean) };
+            // One nickname read for the board — see clean() above.
+            const nicked = await nickedAmong(db, top.map(r => r.playerId));
+            out = { count: top.length, top: top.map(r => clean(r, nicked)) };
             if (player) {
                 const mine = await scores.findOne({ playerId: player.id }, { projection: { _id: 0 } });
                 /* The same cut as the table: a best run from before launch is
                    not on the board, so it is not "your" place on it either. */
                 out.you = afterLaunch(gate, mine) ? clean(mine) : null;
-                out.signedIn = { name: player.name || player.username, id: player.id };
+                /* The name they will be on the board as: the nickname when
+                   they have one (publicName in _player.js; 28 Sept 2026).
+                   It fell back to the Discord USERNAME here, which is the
+                   one handle a nickname exists to keep off the page. */
+                out.signedIn = { name: await publicName(db, player), id: player.id };
             }
         } catch (e) {
             console.error("ff-scores: could not read the board", e);
@@ -1006,12 +1032,14 @@ exports.handler = async (event) => {
             try {
                 const meetCol = db.collection(TOURNAMENT_COLLECTION);
                 await ensureIndex(meetCol, { tid: 1, points: -1, ms: 1, at: 1 });
-                const rows = await meetCol
+                // Banned accounts off this board too (29 Sept 2026).
+                const [rows] = await withoutBanned(db, [await meetCol
                     .find({ tid: meet.id, ...sinceLaunch(gate) }, { projection: { _id: 0 } })
                     .sort({ points: -1, ms: 1, at: 1 })
                     .limit(TOP)
-                    .toArray();
-                out.tournament = { ...meet, top: rows.map(clean) };
+                    .toArray()], r => r && r.playerId);
+                const meetNicked = await nickedAmong(db, rows.map(r => r.playerId));
+                out.tournament = { ...meet, top: rows.map(r => clean(r, meetNicked)) };
                 if (player) {
                     const mine = await db.collection(TOURNAMENT_COLLECTION)
                         .findOne({ tid: meet.id, playerId: player.id }, { projection: { _id: 0 } });
@@ -1024,6 +1052,16 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" });
+
+    /* BANNED, AND THE REJECTED NICKNAME (29 Sept 2026; see _bans.js). Both
+       POSTs — the run token and the finished run, signed out included (the
+       network's bans) — are 403 { error, banned } for a banned account or
+       network, and 403 { error, nickRequired: true } for a signed-in player
+       whose nickname the admins have rejected, until they choose another.
+       Refused at the token, a run is refused before it is played, which is
+       the kinder moment to be told. */
+    const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true });
+    if (refusal) return refusal;
 
     /* THE START OF A RUN: a signed token, and nothing written. See THE RUN
        TOKEN above. Answered for signed-out players too — the token costs
@@ -1062,6 +1100,8 @@ exports.handler = async (event) => {
     let body = {};
     try { body = JSON.parse(event.body || "{}"); }
     catch { return json(400, { error: "Body is not JSON" }); }
+    // `null` parses cleanly and then has nothing to read a field off.
+    if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
 
     const levels = Math.max(0, Math.round(Number(body.levels) || 0));
     const ms = Math.max(0, Math.round(Number(body.ms) || 0));
@@ -1172,7 +1212,9 @@ exports.handler = async (event) => {
 
     const row = {
         playerId: player.id,
-        name: player.name || player.username || "Someone",
+        // The nickname when there is one, from the players row — see
+        // publicName in _player.js (28 Sept 2026).
+        name: await publicName(db, player),
         avatar: player.avatar || null,
         points, levels, ms,
         at: new Date().toISOString()
@@ -1320,3 +1362,8 @@ module.exports.maxPointsFor = maxPointsFor;
 module.exports.earnedFloorMs = earnedFloorMs;
 module.exports.levelsAsPlayed = levelsAsPlayed;
 module.exports.launchWeek = launchWeek;
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("ff-scores", exports.handler);

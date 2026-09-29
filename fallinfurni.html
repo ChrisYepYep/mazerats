@@ -19,6 +19,10 @@
          and no scripts. Straight after the charset, as in home.html, so it
          is in force before the first relative address is read. -->
     <base href="/">
+    <!-- Error reporting, first, and the build it was deployed as: see the
+         note on these two lines in home.html's <head> (28 Sept 2026). -->
+    <meta name="mazerats:build" content="dev">
+    <script src="/js/error-report.js?v=2"></script>
     <!-- THE GAME'S OWN MAINTENANCE SWITCH, and the admin pills.
 
          This is NOT the site gate that used to live here. That one held the
@@ -231,6 +235,13 @@
            only ever standing in for it. */
         var decided = false;
         var closedByDefault = false;
+        /* Set when a late real answer has opened the game (see lateAnswer).
+           The verify started by the unreadable path can still be in flight
+           then, and its "not an admin" used to close the game again — a live
+           game left saying "Coming soon!" until a reload. Once a real answer
+           has opened it, nothing from the guessed path may close it. */
+        var lateOpen = false;
+        function closeUnlessOpened(state) { if (!lateOpen) closeGame(state); }
 
         function decide(ffState, siteGated) {
             decided = true;
@@ -266,7 +277,7 @@
                             // An admin plays a closed game — which is the
                             // point of closing it — so the way in comes back.
                             if (isAdmin) { addMaintenancePill(ffState); openGate(); }
-                            else if (!EDITING) closeGame(ffState);
+                            else if (!EDITING) closeUnlessOpened(ffState);
                             else openGate();
                         }
                         if (siteGated && isAdmin) addPills();
@@ -281,7 +292,7 @@
                        precisely because being wrong costs an admin one reload
                        and costs a player nothing. */
                     .catch(function () {
-                        if (gameClosed && !EDITING) closeGame(ffState);
+                        if (gameClosed && !EDITING) closeUnlessOpened(ffState);
                         else openGate();
                     });
         }
@@ -300,6 +311,7 @@
         function lateAnswer(settings) {
             var ffState = settings.fallinFurniState;
             if (!closedByDefault || ffState === "maintenance" || ffState === "coming-soon") return;
+            lateOpen = true;
             function run() {
                 document.body.removeAttribute("data-ff-closed");
                 openGate();
@@ -420,7 +432,7 @@
          page never sends anybody away, so a visit here is always a visit,
          closed game or not. The CSP on /* already allows cloud.umami.is for
          the script and gateway.umami.is for what it sends. -->
-    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");document.head.appendChild(s);}catch(e){}})();</script>
+    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");s.setAttribute("data-domains","mazerats.net");document.head.appendChild(s);}catch(e){}})();</script>
 </head>
 <body data-page="fallinfurni">
 

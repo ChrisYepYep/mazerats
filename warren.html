@@ -11,6 +11,11 @@
          address is read. A fragment-only link would resolve to "/#x" under
          this; js/site.js keeps those on the page whenever a <base> exists. -->
     <base href="/">
+    <!-- Error reporting, first, and the build it was deployed as: see the
+         note on these two lines in home.html's <head> (28 Sept 2026). The
+         Warren's own failures are reported too; they are the site's. -->
+    <meta name="mazerats:build" content="dev">
+    <script src="/js/error-report.js?v=2"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Caveat is here for the atlas panel, which letters room names in
@@ -205,6 +210,7 @@
                                 <div class="admin-nav-col">
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="console" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Console</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="messages" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Messages</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="errors" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Errors</span><span class="admin-nav-count" id="errors-nav-count" title="Open errors seen in the last 24 hours" hidden></span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="recolour" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Recolour</span></button>
                                 </div>
                             </div>
@@ -219,6 +225,7 @@
                             <div class="ctl-card">
                                 <span class="ctl-label">People</span>
                                 <div class="admin-nav-col">
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="players" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Players</span><span class="admin-nav-count admin-nav-count-quiet" id="players-nav-count" title="Players who have signed in with Discord" hidden></span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="admins" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Admins</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="bans" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Bans</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="activity" id="activity-nav-btn" role="tab" aria-selected="false" hidden><span class="chrome-nav-btn-label">Activity</span></button>
@@ -396,6 +403,16 @@
                                     <button type="button" class="btn-enter-mini theme-btn" data-theme-state="witch"><i class="theme-dot" style="background:linear-gradient(135deg,#5b1584 0%,#92ff5c 100%)"></i>Witching Hour</button>
                                     <button type="button" class="btn-enter-mini theme-btn" data-theme-state="crimson"><i class="theme-dot" style="background:linear-gradient(135deg,#3c4249 0%,#ff5c60 100%)"></i>Crimson</button>
                                 </div>
+                                <!-- The palettes saved in Recolour (28 Sept 2026).
+                                     Pressing one puts it live, worn over the
+                                     theme it was made on; pressing a theme
+                                     above takes any palette off. Filled by
+                                     renderSavedPalettes in js/admin.js — NOT
+                                     .theme-btn, which the Recolour loader reads
+                                     as the list of built-in themes. -->
+                                <span class="ctl-label ctl-sublabel">Saved palettes</span>
+                                <div class="ctl-seg ctl-seg-themes ctl-seg-palettes" id="palette-toggle-saved" style="display:none;"></div>
+                                <p class="ctl-status" id="palette-toggle-empty">None saved yet — make one in Recolour.</p>
                                 <p class="ctl-status" id="theme-toggle-status" style="display:none;"></p>
                             </div>
 
@@ -542,10 +559,36 @@
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Messages</h3>
-                                        <p class="admin-hint">Submitted from the homepage console's Contact Us page. "Ban IP" blocks any further submissions from that address &mdash; see the Bans tab.</p>
+                                        <p class="admin-hint">Submitted from the homepage console's Contact Us page. "Ban IP" blocks that address (or its whole home network) &mdash; from everything but reading, or from the whole site, for a set time or for good &mdash; see the Bans tab.</p>
                                     </div>
                                 </header>
                                 <div class="chrome-list" id="contact-messages-list"></div>
+                            </section>
+
+                            <!-- ---------- Errors (28 Sept 2026) ----------
+                                 What went wrong in visitors' browsers and in
+                                 our own functions, grouped so one bug is one
+                                 row however many people hit it. Everything in
+                                 this panel is drawn by js/admin-errors.js; the
+                                 store is netlify/functions/site-errors.js.
+                                 Only the skeleton is here — the filters, list
+                                 and detail are built by the script, which
+                                 also says so when the endpoint is missing. -->
+                            <section class="admin-panel" data-panel="errors" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Errors</h3>
+                                        <p class="admin-hint">What broke on visitors' screens and in the site's functions, one row per distinct problem. Press a row for when it happened, who it happened to, the stack, and what the visitor did just before. Times are UTC; hover one for your local time.</p>
+                                    </div>
+                                    <div class="admin-activity-controls">
+                                        <span class="admin-hint se-updated" id="errors-updated"></span>
+                                        <button class="admin-action-pill" id="errors-refresh-btn" type="button">Refresh</button>
+                                    </div>
+                                </header>
+                                <div class="admin-activity-summary" id="errors-summary"></div>
+                                <div class="se-filters" id="errors-filters"></div>
+                                <div class="se-bulk" id="errors-bulk"></div>
+                                <div class="chrome-list" id="errors-list"></div>
                             </section>
 
                             <!-- ---------- Missing Pieces ----------
@@ -890,7 +933,7 @@
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Recolour</h3>
-                                        <p class="admin-hint">Every colour the site paints with, found by reading the stylesheet that is actually running &mdash; so this list is whatever the site looks like today, not a list kept up to date by hand. A palette stores only what you changed, which is why one saved last year still works after the CSS has moved on. <strong>The preview is this page</strong>: what you pick here is what you are looking at.</p>
+                                        <p class="admin-hint">Every colour the site paints with, found by reading the stylesheet that is actually running &mdash; so this list is whatever the site looks like today, not a list kept up to date by hand. A palette stores only what you changed, which is why one saved last year still works after the CSS has moved on. <strong>The preview is this page</strong>: what you pick here is what you are looking at. <strong>Load</strong> opens any existing skin to edit &mdash; a saved palette, or a copy of one of the built-in themes, which saves as a new palette and leaves the theme itself alone.</p>
                                     </div>
                                 </header>
                                 <div id="recolour-editor" class="rc-editor"><p class="admin-hint">Loading the palette&hellip;</p></div>
@@ -900,9 +943,17 @@
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Bans</h3>
-                                        <p class="admin-hint">Addresses blocked from the contact form. A banned sender still sees a normal "sent" confirmation &mdash; nothing is saved and no email goes out &mdash; so they are not nudged into simply switching address.</p>
+                                        <p class="admin-hint">Every ban and cool-down: on a Discord account, on an address or IPv6 /64, or on the network a signed-in player last came from. <strong>Everything but reading</strong> lets them browse but not sign in, play, appear on the boards, set a nickname or send anything; <strong>Whole site</strong> shows them a banned screen on every page but the privacy policy. A cool-down is a ban with an end. Ban a player from their row on the Players tab, or add any ban here. Times are UTC.</p>
+                                    </div>
+                                    <!-- Drawn and wired by js/admin.js (29 Sept 2026);
+                                         Add a ban is hidden for view-only accounts. -->
+                                    <div class="admin-activity-controls">
+                                        <button class="admin-action-pill" id="bans-add-btn" type="button" aria-controls="bans-add" aria-expanded="false" hidden>Add a ban</button>
+                                        <button class="admin-action-pill" id="bans-refresh-btn" type="button">Refresh</button>
                                     </div>
                                 </header>
+                                <div class="bn-add" id="bans-add" data-crumb-private hidden></div>
+                                <div class="se-filters bn-filters" id="bans-filters"></div>
                                 <div class="chrome-list" id="bans-list"></div>
                             </section>
 
@@ -1056,6 +1107,46 @@
                                 </header>
                                 <div class="chrome-list" id="admins-list"></div>
                                 <form class="admin-form" id="admins-form"></form>
+                                <!-- Forget a player moved to the Players tab
+                                     on 29 Sept 2026, as an action on each
+                                     player there, with a look-up box for the
+                                     ones who are not in the list. -->
+                            </section>
+
+                            <!-- ---------- Players (29 Sept 2026) ----------
+                                 Everybody who has signed in with Discord, and
+                                 the nicknames the boards show them by: set,
+                                 change, remove or lock one, show the
+                                 first-sign-in prompt again, and (owner only)
+                                 forget a player. Everything in this panel is
+                                 drawn by js/admin-players.js; the store is
+                                 netlify/functions/players-admin.js, and the
+                                 forget is still player-forget.js. Only the
+                                 skeleton is here. -->
+                            <section class="admin-panel" data-panel="players" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Players</h3>
+                                        <p class="admin-hint">Everyone who has signed in with Discord, newest sign-in first, with the nickname the leaderboards show them by. Press a row for their nickname history and what they have played, and to set, change, remove or lock their nickname. A nickname set here follows the same rules a player's own does and renames their existing board rows, but does not count towards their five changes a day. Times are UTC; hover one for your local time.</p>
+                                    </div>
+                                    <div class="admin-activity-controls">
+                                        <span class="admin-hint se-updated" id="players-updated"></span>
+                                        <button class="admin-action-pill" id="players-export-btn" type="button" title="Download the rows on screen as a CSV file">Export CSV</button>
+                                        <button class="admin-action-pill" id="players-refresh-btn" type="button">Refresh</button>
+                                    </div>
+                                </header>
+                                <div class="admin-activity-summary" id="players-summary"></div>
+                                <div class="se-filters" id="players-filters"></div>
+                                <div class="chrome-list pl-list" id="players-list"></div>
+                                <div class="pl-pager" id="players-pager"></div>
+                                <!-- Owner only (js/admin-players.js shows it):
+                                     a player who is not in the list above —
+                                     scores on a board but no players row,
+                                     because their sign-in's profile write
+                                     failed or they were forgotten while a
+                                     session lived on. player-forget.js finds
+                                     them by their board rows. -->
+                                <div class="pl-forget" id="players-forget" hidden></div>
                             </section>
 
                         </div>
@@ -1136,6 +1227,8 @@
     <script src="js/guide-text.js?v=2"></script>
     <script src="js/guides-starter.js?v=2"></script>
     <script src="js/admin-guides.js?v=2"></script>
+    <script src="js/admin-errors.js?v=1"></script>
+    <script src="js/admin-players.js?v=1"></script>
     <script src="js/password-field.js?v=2"></script>
     <script src="js/glyph-palette.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>

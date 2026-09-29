@@ -59,10 +59,26 @@ function cookieHeader(event) {
    two people can both be "Chris" — so anything that has to say WHO sent
    something (the contact form's "(signed in)", see contact.js) needs the
    handle and the id as well. Sessions minted before it existed simply lack
-   it until their next sign-in; callers treat it as optional. */
+   it until their next sign-in; callers treat it as optional.
+
+   `nick` and `nickAsked` ride along too (28 Sept 2026) — the nickname a
+   player chose for the site (player-nick.js) and whether they have been
+   offered the chance to choose one. `name` stays the DISCORD display name
+   and is never overwritten with the nick, because the admin-facing places
+   (contact.js, dead-end-leads.js) need to know who somebody is on Discord;
+   what the public sees is shownName below. The claims are a convenience,
+   not the record: the players row is, and every board write reads the nick
+   from there (publicName), so a session minted before a nick was set on
+   another device cannot put the Discord name back on a board. */
 function signPlayer(player) {
     return jwt.sign(
-        { sub: player.id, name: player.name, avatar: player.avatar || null, username: player.username || null },
+        {
+            sub: player.id, name: player.name, avatar: player.avatar || null, username: player.username || null,
+            nick: typeof player.nick === "string" && player.nick ? player.nick : null,
+            // Unknown stays unknown (null) rather than becoming "not asked" —
+            // see playerView.
+            nickAsked: typeof player.nickAsked === "boolean" ? player.nickAsked : null
+        },
         process.env.SESSION_SECRET,
         { expiresIn: MAX_AGE, audience: AUDIENCE }
     );
@@ -82,11 +98,117 @@ function playerFrom(event) {
         if (!claims || !claims.sub) return null;
         return {
             id: String(claims.sub), name: claims.name || "Someone", avatar: claims.avatar || null,
-            username: typeof claims.username === "string" && claims.username ? claims.username : null
+            username: typeof claims.username === "string" && claims.username ? claims.username : null,
+            nick: typeof claims.nick === "string" && claims.nick ? claims.nick : null,
+            /* null, not false, for a session minted before the claim
+               existed: "never asked" and "we cannot tell" are different
+               answers, and `me` (discord-auth.js) only falls back on this
+               when the players row cannot be read. */
+            nickAsked: typeof claims.nickAsked === "boolean" ? claims.nickAsked : null
         };
     } catch (e) {
         return null;
     }
+}
+
+/* ---- WHAT THE SITE CALLS A PLAYER (28 Sept 2026) ----
+
+   The nickname when they have chosen one, and their Discord display name
+   when they have not. Every public place a player's name appears — each
+   board row, the Profile, the Fallin' Furni title screen — shows this and
+   never `name` or `username` directly, so a player who has picked a
+   nickname is never shown by their Discord identity anywhere public. */
+function shownName(player) {
+    if (!player) return "Someone";
+    return (typeof player.nick === "string" && player.nick) || player.name || "Someone";
+}
+
+/* The name to WRITE onto a board row, read from the players row rather
+   than the cookie. One indexed read per score submitted, which is a handful
+   a day per player; what it buys is that a nick set (or cleared) on a phone
+   is what the laptop's next score carries, even though the laptop's session
+   was signed before the change and still says otherwise. If the read fails
+   the session's own idea is used — a score should not be refused because
+   the players row was briefly out of reach. */
+async function publicName(db, player) {
+    if (!player) return "Someone";
+    try {
+        const row = await db.collection("players").findOne({ id: player.id }, { projection: { _id: 0, nick: 1 } });
+        if (row) return (typeof row.nick === "string" && row.nick) || player.name || "Someone";
+    } catch (e) { /* fall through to the session */ }
+    return shownName(player);
+}
+
+/* A name boiled down to what a person would READ as the same name: lower
+   case, accents off, and only the letters and digits left — so "Chris R",
+   "chris.r" and "ChrisR" are one name, and so are "Zoë" and "Zoe".
+
+   It is the `nickKey` the unique index is on (player-nick.js), which is
+   what makes two nicknames that only differ in spacing or punctuation
+   count as taken, and the `nameKey`/`usernameKey` discord-auth.js stores
+   beside each Discord name, which the Warren's Players search reads (they
+   used to refuse a nickname for being somebody else's Discord name; that
+   rule went on 29 Sept 2026). The few letters that do not decompose are
+   spelled out by hand. */
+function nameKey(s) {
+    return String(s || "")
+        .normalize("NFD").replace(/[̀-ͯ]/g, "")
+        .toLowerCase()
+        .replace(/æ/g, "ae").replace(/œ/g, "oe").replace(/ß/g, "ss").replace(/ø/g, "o").replace(/ı/g, "i")
+        .replace(/[^a-z0-9]/g, "");
+}
+
+/* The player as `me` and player-nick.js answer with it: the session's
+   identity, brought up to date from the players row when there is one.
+   `row` is that row or null. The shape is the contract with js/account.js
+   (Account.current):
+     name         the Discord display name, as it always was
+     nick         the chosen nickname, or null
+     displayName  nick || name — what the site shows
+     nickAsked    whether the first-sign-in prompt has been shown
+     nickLocked   the admins have locked the nickname (29 Sept 2026; see
+                  LOCKED in player-nick.js): the page hides the field and
+                  says why. False when there is no row to ask.
+     nickRejected the admins have reviewed the nickname from the Warren and
+                  asked for a different one (29 Sept 2026; see FLAGGED in
+                  player-nick.js): the page asks the player, once a visit,
+                  to choose another, and the Profile says so. Only ever a
+                  boolean here — who rejected it, and when, stay on the row
+                  for the admins. False when there is no row to ask: the
+                  ask can wait for a visit when the database is answering,
+                  and nothing is lost by it, since the row keeps it until
+                  the player acts.
+                  Since 29 Sept 2026 the ask cannot be closed — "Save
+                  nickname" or "Refuse" — and while it stands every game
+                  write is refused (writeRefusal in _bans.js).
+     nickRefused  the player pressed "Refuse" on that window (player-nick.js,
+                  { refuse: true }): they browse on, the nickname and the
+                  rejection stay, and the games stay locked until they set
+                  a new one (what the page shows meanwhile is
+                  js/account.js's to decide). A new nickname clears it with
+                  nickRejected. False when there is no row to ask.
+   A row without nickAsked is a player from before nicknames existed, and
+   counts as not asked, so they are offered it once. With no row at all the
+   session's claim decides, and a session too old to have one is treated as
+   asked: prompting on "we could not tell" would nag the people who have
+   already answered every time the database blinked. */
+function playerView(player, row) {
+    if (!player) return null;
+    const nick = row ? ((typeof row.nick === "string" && row.nick) || null) : player.nick || null;
+    const name = (row && row.name) || player.name || "Someone";
+    const nickAsked = row ? row.nickAsked === true : player.nickAsked !== false;
+    return {
+        id: player.id,
+        name,
+        username: (row && row.username) || player.username || null,
+        avatar: row ? (row.avatar || null) : (player.avatar || null),
+        nick,
+        displayName: nick || name,
+        nickAsked,
+        nickLocked: !!(row && row.nickLocked === true),
+        nickRejected: !!(row && row.nickRejected && typeof row.nickRejected === "object"),
+        nickRefused: !!(row && row.nickRefused === true)
+    };
 }
 
 /* Secure is set unconditionally, including under `netlify dev` on plain
@@ -107,4 +229,4 @@ function clearCookie() {
     return `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
-module.exports = { COOKIE, AUDIENCE, MAX_AGE, signPlayer, playerFrom, setCookie, clearCookie, parseCookies };
+module.exports = { COOKIE, AUDIENCE, MAX_AGE, signPlayer, playerFrom, setCookie, clearCookie, parseCookies, shownName, publicName, playerView, nameKey };

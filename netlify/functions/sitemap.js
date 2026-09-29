@@ -29,6 +29,8 @@ const CACHE = "public, s-maxage=3600, stale-while-revalidate=86400";
    asked, long after the database was back. A minute, and no stale serving,
    so the next crawl after recovery gets the whole archive. */
 const FALLBACK_CACHE = "public, max-age=60, s-maxage=60";
+// What a failed settings read comes back as, told apart from "no document".
+const SETTINGS_UNREAD = Symbol("settings unread");
 
 /* The site's address from the deploy's configuration, never from the
    request's Host or x-forwarded-host — those are the caller's to set, and
@@ -100,16 +102,26 @@ exports.handler = async (event) => {
         const [rooms, events, settings, retiredRooms, retiredEvents, retiredGuides] = await Promise.all([
             db.collection("rooms").find({}, { projection: { ...SLUG_FIELDS, updatedAt: 1, createdAt: 1 } }).toArray(),
             db.collection("events").find({}, { projection: { ...SLUG_FIELDS, updatedAt: 1, createdAt: 1 } }).toArray(),
-            db.collection("settings").findOne({ _id: "site" }, { projection: { fallinFurniState: 1 } }).catch(() => null),
+            db.collection("settings").findOne({ _id: "site" }, { projection: { fallinFurniState: 1 } }).catch(() => SETTINGS_UNREAD),
             retiredOf(db, "maze"), retiredOf(db, "event"), retiredOf(db, "guide")
         ]);
+        /* A settings read that FAILED is not a settings document that is
+           not there (28 Sept 2026). No document means nobody has touched the
+           switches, and the defaults apply; a failed read means the switch
+           is unknown. It used to come back as null and so read as "live",
+           listing /fallinfurni — possibly the Coming Soon placeholder — for
+           a full hour. Now unknown is treated as not live, and the answer
+           goes out on the one-minute FALLBACK_CACHE so the next crawl gets
+           the real state. */
+        const settingsUnread = settings === SETTINGS_UNREAD;
+        if (settingsUnread) cache = FALLBACK_CACHE;
         /* The game, at its pretty address — the one it names as canonical and
            the one people actually paste. Only while it is open: it launches
            after the site, on its own switch (fallinFurniState, whose default
            is live — see settings.js), and a sitemap that offered the Coming
            Soon placeholder would get the placeholder indexed in the game's
            place. Below home because the archive is what the site is for. */
-        const ffState = (settings && settings.fallinFurniState) || "live";
+        const ffState = settingsUnread ? "unknown" : (settings && settings.fallinFurniState) || "live";
         if (ffState === "live") entries.splice(2, 0, url(`${origin}/fallinfurni`, "", "0.7"));
         /* Each at its own address, /maze/<slug> — the canonical the page
            names there, worked out by the same rule (see _slugs.js). Listing
@@ -133,10 +145,14 @@ exports.handler = async (event) => {
         });
         /* The Guides window and each published guide. Read on their own so a guides
            collection that does not exist yet costs the archive's entries
-           nothing. */
+           nothing. A read that fails still sends the rest, but on the
+           one-minute FALLBACK_CACHE (28 Sept 2026): it used to go out for
+           the full hour, a sitemap with every guide missing. (A collection
+           that does not exist reads as empty, not as a failure, so that
+           case keeps the full cache.) */
         const guides = await db.collection("guides")
             .find({}, { projection: { ...SLUG_FIELDS, status: 1, updatedAt: 1 } }).toArray()
-            .catch(() => []);
+            .catch(() => { cache = FALLBACK_CACHE; return []; });
         // Addresses over every guide, drafts too, as the API works them out;
         // only the published ones are listed.
         const guideSlugs = assignSlugs(guides, "guide", retiredGuides);
@@ -163,3 +179,8 @@ exports.handler = async (event) => {
             entries.join("\n") + "\n</urlset>\n"
     };
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("sitemap", exports.handler);

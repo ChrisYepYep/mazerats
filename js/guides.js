@@ -127,10 +127,15 @@
 
     // ------------------------------------------------------------ helpers
 
+    /* In UTC, as every other date on the site is (28 Sept 2026). In the
+       reader's own zone a guide published late in the evening, UK time, was
+       dated the next day for anyone east of here and the day before for
+       anyone far enough west — so the same guide carried different dates
+       for different readers. */
     function longDate(iso) {
         const d = new Date(iso);
         if (isNaN(d)) return "";
-        return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+        return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
     }
 
     function categories() {

@@ -52,7 +52,9 @@ const crypto = require("crypto");
 const { getDb, ensureUniqueIndex, ensureIndex } = require("./_db");
 const { hasAccount, canWrite, refuseWrite, roleOf, WRITE_SCOPES, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { playerFrom } = require("./_player");
-const { clientIp, clientNet, claimNotifySlot, isBanned, forgetOldAddresses } = require("./_net");
+const { clientIp, clientNet, claimNotifySlot, forgetOldAddresses } = require("./_net");
+// The ban check for both POSTs (29 Sept 2026).
+const { writeRefusal } = require("./_bans");
 const { SECURITY_HEADERS } = require("./_headers");
 const { imagesStore } = require("./_images");
 const DeadEnds = require("../../js/dead-ends.js");
@@ -178,6 +180,9 @@ async function buildIndexes(db) {
     await ensureIndex(leads, { ip: 1, createdAt: -1 });
     await ensureIndex(leads, { net: 1, createdAt: -1 });
     await ensureIndex(leads, { type: 1, recordId: 1 });
+    // The Profile counts a player's own submissions by `from.id` on every
+    // open (player-profile.js), and nickname renames update by it too.
+    await ensureIndex(leads, { "from.id": 1 });
     await ensureIndex(uploads, { ip: 1, at: -1 });
     await ensureIndex(uploads, { net: 1, at: -1 });
     await ensureIndex(uploads, { playerId: 1, at: -1 });
@@ -198,9 +203,10 @@ async function buildIndexes(db) {
     }));
 }
 
-/* isBanned is _net.js's now, shared with contact.js: it matches the
-   caller's address OR its network, so a ban on an IPv6 sender holds across
-   their whole /64. See bans.js. */
+/* The ban check is _bans.js's writeRefusal (29 Sept 2026), shared with every
+   other player and visitor write: it matches the caller's account, address,
+   /64 or network code, so a ban on an IPv6 sender holds across their whole
+   /64. See bans.js. */
 
 /* Thirty days on, a lead and an upload record lose the sender's address —
    see forgetOldAddresses in _net.js, and the privacy policy, which promises
@@ -208,10 +214,29 @@ async function buildIndexes(db) {
    signing in also has the address in `sender` ("ip:<address>", the
    clientRef bookkeeping in handleLead), which a retry stops mattering to
    within minutes, so that goes too; a signed-in sender's "p:<id>" is not an
-   address and stays. Both collections date their rows with Date objects. */
+   address and stays. Both collections date their rows with Date objects.
+
+   clientRef goes with the sender (28 Sept 2026). The partial unique index
+   on { sender, clientRef } covers every row whose clientRef is a string,
+   and a row whose sender has been unset sits in it as (null, clientRef).
+   Two anonymous leads with the same clientRef from different addresses —
+   a retry after the phone changed IP — were fine side by side, but the
+   moment both lost their sender they were the same key: E11000, the
+   updateMany stopped, and it stopped again on every later run, so no
+   address in that collection was ever forgotten after that. Dedupe means
+   nothing after thirty days, so the clientRef is dropped too and the row
+   leaves the index. The second branch of the $or picks up rows the old
+   pass already stripped of their sender but left in the index, so they
+   cannot collide with the next one. */
 async function forgetOldSenders(db) {
     await forgetOldAddresses(db.collection("dead_end_leads"), {
-        extra: { filter: { sender: { $regex: "^ip:" } }, unset: { sender: "" } }
+        extra: {
+            filter: { $or: [
+                { sender: { $regex: "^ip:" } },
+                { sender: { $exists: false }, clientRef: { $exists: true } }
+            ] },
+            unset: { sender: "", clientRef: "" }
+        }
     });
     await forgetOldAddresses(db.collection("dead_end_uploads"), { field: "at" });
 }
@@ -321,7 +346,10 @@ async function handleUpload(event, db) {
 
     const ip = clientIp(event);
     const net = clientNet(event);
-    if (await isBanned(db, event)) return json(201, { key: `tips/void/${crypto.randomUUID()}.png` });
+    /* Banned: 403, said plainly (29 Sept 2026) — it used to be a fake key
+       into tips/void/, for the silence contact.js explains the end of. */
+    const refusal = await writeRefusal(db, event, player.id);
+    if (refusal) return refusal;
 
     const uploads = db.collection("dead_end_uploads");
     const countRecent = () => uploads.countDocuments({
@@ -461,10 +489,14 @@ async function handleLead(event, db) {
     const ip = clientIp(event);
     // What the throttle counts, and what a ban matches besides the address.
     const net = clientNet(event);
-    if (await isBanned(db, event)) return decoy();
+    const player = playerFrom(event);
+    /* Banned — the account, the address, its /64 or its network code: 403,
+       said plainly (29 Sept 2026; it used to be the honeypot's decoy — see
+       contact.js for why the silence ended). A lookup that fails is a 503. */
+    const refusal = await writeRefusal(db, event, player ? player.id : null);
+    if (refusal) return refusal;
 
     const leads = db.collection("dead_end_leads");
-    const player = playerFrom(event);
     /* Who "the same sender" is, for clientRef: the Discord account when
        signed in (a phone changes address mid-retry; the account does not),
        otherwise the address. Neither — no session and no address — means
@@ -545,7 +577,9 @@ async function handleLead(event, db) {
         images,
         // username: Discord's unique handle beside the display name — see
         // signPlayer in _player.js, and contact.js for why it matters.
-        from: player ? { id: player.id, name: player.name, username: player.username || null, verified: true } : null,
+        // nick: the site nickname, if any (28 Sept 2026), kept in step by
+        // player-nick.js — what a credit for this lead should say.
+        from: player ? { id: player.id, name: player.name, username: player.username || null, nick: player.nick || null, verified: true } : null,
         ip,
         net,
         status: "new",
@@ -750,7 +784,18 @@ async function handleReview(event, db) {
         if (body.credit && lead.credited) {
             out.alreadyCredited = lead.credited;
         } else if (body.credit) {
-            const name = (text(body.creditName).trim() || lead.habboName || (lead.from && lead.from.name) || "").slice(0, HABBO_NAME_MAX);
+            /* The last fallback is the sender's name as the site shows it —
+               their nickname, read now from their players row, when they
+               have one (28 Sept 2026; see player-nick.js). A credit is
+               public, and `from.name` is their Discord name, kept for the
+               admins; a player who chose a nickname chose not to be
+               credited in public by that. */
+            let senderName = lead.from && lead.from.name;
+            if (lead.from && lead.from.id) {
+                const who = await db.collection("players").findOne({ id: lead.from.id }, { projection: { _id: 0, nick: 1 } }).catch(() => null);
+                if (who && who.nick) senderName = who.nick;
+            }
+            const name = (text(body.creditName).trim() || lead.habboName || senderName || "").slice(0, HABBO_NAME_MAX);
             const claim = name ? await leads.updateOne({ id, credited: null }, { $set: { credited: name } }) : null;
             if (claim && !claim.modifiedCount) out.alreadyCredited = true;
             if (claim && claim.modifiedCount) try {
@@ -938,3 +983,8 @@ exports.handler = async (event) => {
         return json(500, { error: "Something went wrong with that lead." });
     }
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("dead-end-leads", exports.handler);

@@ -78,7 +78,11 @@ const GLOBAL_ROWS_PER_MIN = 1500;
    while holding the worst case to 1.8 million rows over the whole retention
    window. Over it, the day's remaining telemetry is dropped, which is the
    same trade the minute cap makes: the numbers are a nicety. */
-const GLOBAL_ROWS_PER_DAY = 30000;
+/* Raised to 150,000 for launch (29 Sept 2026): thirty thousand was the
+   comment above's "very good day", but a few thousand visits of a few dozen
+   clicks each is 75-100k rows, so launch day would have gone quiet by lunch.
+   150k a day is still at most 9 million rows over the 60 days kept. */
+const GLOBAL_ROWS_PER_DAY = 150000;
 // The day counters' own expiry, on their own field: the TTL index on `at`
 // sweeps after the ten-minute limiter window, which would reset a day's
 // count ten minutes into it.
@@ -229,3 +233,8 @@ exports.handler = async (event) => {
 
 module.exports.COLLECTION = COLLECTION;
 module.exports.KEEP_DAYS = KEEP_DAYS;
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("track", exports.handler);

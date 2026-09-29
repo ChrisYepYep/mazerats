@@ -3,7 +3,8 @@
    GET                      every preset, for the editor and for the site
    GET ?id=slug             one, which is what a visitor wearing it fetches
    POST   {name, palette}   create, admin
-   PUT    {id, ...}         update or rename, admin
+   PUT    {id, ...}         update or rename, admin; with expectUpdatedAt,
+                            refused (409) if it has been saved since
    DELETE ?id=slug          remove, admin
 
    ----------------------------------------------------------------------
@@ -33,7 +34,7 @@
    than stored, and a key that does not look like a scanned key is dropped
    with it — so a preset cannot carry `}` out of its declaration and start
    writing rules of its own. */
-const { getDb } = require("./_db");
+const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, canWrite, refuseWrite, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson } = require("./_cache");
@@ -93,14 +94,54 @@ function cleanSprites(raw) {
    a free list of the accounts worth guessing passwords for. It is only
    added for a caller that has a valid admin token (the editor), and never
    on the edge-cached ?id= read, which is shared by everybody. */
+/* THE THEME A PALETTE IS WORN OVER (28 Sept 2026).
+
+   A palette is a diff against the stylesheet that was running while it was
+   edited — and that is style.css PLUS whichever built-in theme the editor's
+   page was wearing at the time, because the recolour engine catalogues every
+   sheet the page has loaded (see scan in js/recolour.js). So a palette made
+   while the site was on Pumpkin can hold colours that only exist in
+   css/theme-pumpkin.css, and every colour it does not mention is Pumpkin's.
+   Worn over Classic it would be a different palette from the one on screen
+   when it was saved.
+
+   baseTheme records that theme, and the Controls panel wears the palette
+   over it (settings.theme and settings.palette in one PUT — see
+   js/admin.js). Rows saved before this field existed have none, and are read
+   as Classic: until today the editor told anybody working over a theme to
+   switch the site to Classic first, because the theme painted over its
+   preview, and the built-in-theme loader in js/admin-recolour.js builds its
+   copies against Classic too. So Classic is what those palettes were judged
+   against.
+
+   Shape-checked only, like basedOn. The list of themes that exist is
+   VALID_THEMES in settings.js, which refuses an unknown one when the palette
+   is put live; the panel falls back to Classic for a name it has no button
+   for, so a stale value can never block going live. */
+const THEME_NAME = /^[a-z]{1,20}$/;
+const cleanTheme = (t) => THEME_NAME.test(String(t || "")) ? String(t) : null;
+
 const clean = (doc, withBy) => ({
     id: doc.id,
     name: doc.name,
     palette: doc.palette || { vars: {}, decls: {}, sprites: {} },
     basedOn: doc.basedOn || null,
+    baseTheme: cleanTheme(doc.baseTheme) || "classic",
     at: doc.at,
     updatedAt: doc.updatedAt || doc.at,
     ...(withBy ? { by: doc.by || null } : {})
+});
+
+/* The three refusals a save can meet, each given from two places — the read
+   before the write and the write itself (29 Sept 2026) — so they are written
+   once here and the editor sees the same words whichever one caught it. */
+const DUPLICATE = { error: "There is already a palette called that." };
+const DELETED = { error: "That palette has been deleted since you opened it. Use Save as new to keep your colours.", stale: true, deleted: true };
+const staleAnswer = (row) => ({
+    error: "Somebody saved this palette" + (row.by ? " (" + row.by + ")" : "") +
+        " after you opened it. Load it again to see theirs, or use Save as new to keep yours.",
+    stale: true,
+    updatedAt: row.updatedAt || row.at
 });
 
 exports.handler = async (event) => {
@@ -192,21 +233,107 @@ async function write(event, db, col, params) {
             sprites: cleanSprites(body.palette && body.palette.sprites)
         };
 
+        /* THE UNIQUE INDEX ON id (29 Sept 2026). Every check below is a read
+           followed by a write, and two saves in flight both read before
+           either writes — so on its own "is that name taken?" answered no to
+           both of two racing POSTs, and the second upsert quietly replaced
+           the first. The index is what makes the answer hold: whichever
+           insert lands second fails with E11000, and that is turned into the
+           same 409 the read would have given (see DUPLICATE below).
+
+           Memoised per warm instance by ensureUniqueIndex. A build that
+           fails (a pair of duplicate ids already stored, say) is logged and
+           NOT allowed to stop the save: the read-side checks still catch
+           every save that is not an exact race, and taking the recolour
+           editor down over an index would be the wrong trade three days
+           before launch. The log line is how it gets noticed. */
+        try { await ensureUniqueIndex(col, "id"); }
+        catch (e) { console.error("palettes: unique index on id could not be built", e); }
+
         const existing = await col.findOne({ id });
         /* A POST to a name already taken is the duplicate button's job, not a
            silent overwrite — somebody who meant to replace one sends a PUT. */
         if (event.httpMethod === "POST" && existing) {
-            return json(409, { error: "There is already a palette called that." });
+            return json(409, DUPLICATE);
+        }
+        /* THE STALE-WRITE CHECK (28 Sept 2026). The editor can now load any
+           saved palette and save it back, which makes two admins editing the
+           same one — or one admin in two tabs — an ordinary afternoon rather
+           than a curiosity. A PUT replaces the whole document, so without
+           this the second Save silently threw away every colour the first
+           one had changed.
+
+           So a PUT may carry the updatedAt it was loaded at, and is refused
+           when the stored one has moved on since; the editor keeps its
+           colours in memory and offers "Save as new". Optional, so an older
+           caller (or an import script) that sends none still saves as it
+           always did. A palette DELETED since it was loaded is refused the
+           same way, rather than quietly upserted back into existence under a
+           name somebody had just removed. Legacy rows with no updatedAt are
+           compared on `at`, which is what clean() has always reported as
+           their updatedAt. */
+        const checked = event.httpMethod === "PUT" && !!body.expectUpdatedAt;
+        if (checked) {
+            const expected = new Date(body.expectUpdatedAt).getTime();
+            if (!existing) return json(409, DELETED);
+            const stored = existing.updatedAt || existing.at;
+            if (stored && !isNaN(expected) && new Date(stored).getTime() !== expected) {
+                return json(409, staleAnswer(existing));
+            }
         }
         const now = new Date();
         const doc = {
             id, name, palette,
             basedOn: body.basedOn ? slug(body.basedOn) : (existing ? existing.basedOn : null),
+            // Sent by the editor on every save; an older caller that sends
+            // none keeps what the row had (see THE THEME A PALETTE IS WORN
+            // OVER, above).
+            baseTheme: cleanTheme(body.baseTheme) || (existing ? cleanTheme(existing.baseTheme) : null),
             at: existing ? existing.at : now,
             updatedAt: now,
             by: who || null
         };
-        await col.replaceOne({ id }, doc, { upsert: true });
+        /* THE WRITE ITSELF IS THE CHECK (29 Sept 2026). The stale-write check
+           above compares against a row read a moment ago, and then the save
+           used to replace unconditionally — so two admins who loaded the
+           same version and pressed Save together both passed the comparison
+           and both "won", the second silently throwing away the first's
+           colours: the very thing the check exists to stop.
+
+           So a checked PUT now writes only if the row is STILL at the version
+           it was read at: the filter carries the stored updatedAt (or, for a
+           legacy row that has none, the absence of one plus its `at`), and a
+           write that matches nothing lost the race and gets the same 409 as
+           a stale load. One document, one update, so Mongo decides the winner
+           atomically. It is an updateOne of every field rather than a
+           replaceOne because `doc` IS every field a palette row has (the
+           palette maps are $set whole, so a colour removed in the editor is
+           removed here too) — and $set cannot touch _id, which a replace
+           would have to be careful about.
+
+           A POST inserts rather than upserts, so the unique index can refuse
+           the loser of two racing creations; an unchecked PUT (an old caller,
+           an import script) upserts as it always has, and the index turns a
+           racing creation there into the same 409. */
+        try {
+            if (event.httpMethod === "POST") {
+                await col.insertOne({ ...doc });
+            } else if (checked) {
+                const version = existing.updatedAt
+                    ? { updatedAt: existing.updatedAt }
+                    : { updatedAt: { $exists: false }, at: existing.at != null ? existing.at : null };
+                const r = await col.updateOne({ id, ...version }, { $set: doc });
+                if (!r || r.matchedCount !== 1) {
+                    const now2 = await col.findOne({ id });
+                    return json(409, now2 ? staleAnswer(now2) : DELETED);
+                }
+            } else {
+                await col.replaceOne({ id }, doc, { upsert: true });
+            }
+        } catch (e) {
+            if (e && e.code === 11000) return json(409, DUPLICATE);
+            throw e;
+        }
         return json(existing ? 200 : 201, clean(doc, true));
     }
 
@@ -230,3 +357,8 @@ async function write(event, db, col, params) {
 
     return json(405, { error: "Method not allowed" });
 }
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("palettes", exports.handler);

@@ -487,3 +487,9 @@ exports.handler = async (event) => {
 
 // For tools/check-share-headers.js and the local tests.
 exports._test = { withTags, PAGE_HEADERS, requestedSlug, tagsFor };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above. The page it answers with — body, headers and all — comes
+   back as the very same object; only a 5xx or a throw is noted on the way. */
+exports.handler = require("./_errors").withErrorReporting("share", exports.handler);

@@ -247,15 +247,29 @@ const DEALERS = { odd: dealOdd, guess: dealGuess };
        immutable cache deal-image asks for, would have been one tile of a
        round showing yesterday's correction and not today's.
 
-   WHAT THIS DOES NOT STOP. The bytes are still the archive's own bytes:
-   somebody determined can fetch every picture in the public archive and
-   match the tile they were dealt against them, byte for byte or by eye,
-   and learn which maze it came from. That is a real effort against a
-   daily game worth a few points, and it is the honest limit of hiding an
-   answer in a picture everybody has to be able to see. It raises the bar
-   from "read the JSON" to "build an index of the archive"; it does not
-   make the game unbeatable, and nothing short of serving altered pictures
-   would.
+   THE PICTURE'S SIZE WAS AN ANSWER TOO (28 Sept 2026). With the address
+   hidden, the bytes behind it were still the archive's own, and most
+   mazes' screenshots share one pixel size per maze: the imposter was the
+   one tile of four with a different naturalWidth/naturalHeight in about
+   59% of Odd One Out rounds, and a Guess picture's shape matched only the
+   right name of the five in about 47%. deal-image now serves every picture
+   through the image CDN at one fixed size, shape and format per game (ONE
+   SIZE PER GAME in deal-image.js), so every tile of a round and every
+   round of a day measures the same, and the re-encoded bytes are no longer
+   the archive file's own, so its byte count cannot be looked up either.
+
+   WHAT THIS DOES NOT STOP. The picture still shows what it shows:
+   somebody determined can fetch every picture in the public archive, put
+   it through the same CDN pass (or simply compare by eye), match the tile
+   they were dealt against them, and learn which maze it came from. A
+   served file's length also still loosely follows how busy its picture
+   is, as any compressed picture's does — a room from another maze can be
+   plainer or busier than the other three, which the eye sees as well.
+   That is a real effort against a daily game worth a few points, and it is
+   the honest limit of hiding an answer in a picture everybody has to be
+   able to see. It raises the bar from "read the JSON" or "read the
+   picture sizes" to "build an index of the archive"; it does not make the
+   game unbeatable, and nothing short of serving altered pictures would.
 
    If SESSION_SECRET is missing (a local setup without it) the addresses
    are signed with a fixed development key, and say so once in the log, as

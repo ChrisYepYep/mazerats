@@ -835,8 +835,13 @@
         if (!level.id) {
             res = await post();
         } else {
+            /* The version this draft was opened from goes with it, so the
+               server can refuse a save over a level that has changed since —
+               see the PUT in netlify/functions/ff-levels.js. A level from
+               before versions has no rev, which the server also reads as 0. */
+            const baseRev = Number.isInteger(level.rev) ? level.rev : 0;
             res = await fetch("/.netlify/functions/ff-levels", {
-                method: "PUT", headers, body: JSON.stringify(level)
+                method: "PUT", headers, body: JSON.stringify({ ...level, baseRev })
             });
             // Deleted from under us — recreate it rather than losing the work.
             if (res.status === 404) res = await post();
@@ -844,6 +849,10 @@
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
+            // Changed elsewhere since this draft was opened: nothing written.
+            if (res.status === 409 && err.changed) {
+                throw new Error(err.error || "This level has been changed somewhere else. Load it again from the server first.");
+            }
             if (res.status === 409) {
                 throw new Error(`A level called “${level.name}” already exists - give this one a different name.`);
             }

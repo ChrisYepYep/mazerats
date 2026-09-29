@@ -279,3 +279,8 @@ exports.handler = async (event) => {
     if (!result.found) return json(404, { error: "No Origins profile for that name" });
     return json(200, { ...result.profile, cachedAt: fetchedAt, stale: false });
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("habbo", exports.handler);

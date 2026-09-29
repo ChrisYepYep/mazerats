@@ -32,6 +32,8 @@ const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, hasAccount, canWrite, refuseWrite, usernameFromToken, sessionOf, tokenPayload, tokenIsCurrent, UNAUTHORIZED, READ_ONLY, ROLES, PERMANENT_OWNER, resolveRole, signAdminToken, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { record, COLLECTION: ACTIVITY } = require("./_audit");
 const { SECURITY_HEADERS } = require("./_headers");
+// The cookie reader the player session already uses; see isKnownDevice.
+const { parseCookies } = require("./_player");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -114,7 +116,10 @@ const LOGGED_NAME_MAX = 60;
    account now remembers the networks (clientNet — the /64 for IPv6, the
    address for IPv4) it has signed in from successfully, most recent first,
    KNOWN_NETS_MAX of them. A request from one of those is never touched by
-   the username lock at all; only the per-host caps above apply to it. So
+   the username lock at all; only the per-host caps above apply to it. Nor,
+   since 28 Sept 2026, is one from a DEVICE the account has signed in on,
+   whatever network it is on now — see A DEVICE THE ACCOUNT HAS SIGNED IN
+   ON below. So
    the lock can be a real one for everybody else:
 
      - every attempt from an UNKNOWN network claims a place on one
@@ -205,6 +210,121 @@ async function rememberNet(admins, admin, net) {
     }
 }
 
+/* ---- A DEVICE THE ACCOUNT HAS SIGNED IN ON (28 Sept 2026).
+
+   Known networks were the only way past the username lock, and a network
+   is a poor stand-in for a person: a home line whose IPv4 address changes
+   overnight, a phone on a carrier that rotates its IPv6 prefix or puts a
+   whole town behind one NAT, a laptop on a hotel's Wi-Fi. Each of those is
+   the owner on an "unknown" network, and an attacker keeping ChrisYepYep
+   locked from a botnet kept the owner out along with everybody else —
+   exactly the lockout the known-networks list exists to prevent.
+
+   So a successful sign-in also leaves a cookie on the device it came from,
+   and a later attempt that carries one which verifies FOR THAT ACCOUNT is
+   treated as a known network: the username lock does not touch it, and
+   the per-host caps above still do (a stolen laptop is still only ten
+   guesses a quarter of an hour).
+
+   What the cookie is, and why each part:
+
+     - HttpOnly, Secure, SameSite=Strict, and Path=/.netlify/functions/auth,
+       so no page script can read it, it never rides on another site's
+       request, and it is sent to this function alone rather than with every
+       request the site makes. Secure is set under `netlify dev` too, as
+       _player.js sets it: browsers accept a Secure cookie from
+       http://localhost, and a production attribute should never be one
+       forgotten branch away from being dropped.
+     - One cookie per ACCOUNT, named by a keyed hash of the username
+       (deviceCookieName), so a helper signing in on the owner's machine
+       does not overwrite the owner's, and the name says nothing readable
+       about whose it is.
+     - The value is a random nonce, the time it was issued, and an HMAC
+       under SESSION_SECRET over those two plus the username, the account's
+       row id, its tokenVersion and its password hash. None of the account
+       parts is IN the cookie; they are read from the row when it comes back
+       and the MAC is worked out again. So it cannot be forged without the
+       secret, a cookie minted for one account is worthless for another
+       (another name, another row id), an account deleted and created again
+       under the same name gets a new row id, and a password reset or a
+       fresh tokenVersion — every password change makes both — leaves every
+       device cookie minted before it failing to verify. Nothing has to be
+       stored or revoked by hand.
+     - DEVICE_MAX_AGE_S, about six months, and re-issued (fresh nonce, fresh
+       clock) on every sign-in, so a device in regular use never ages out.
+
+   It is only ever checked for a name that IS an account, after the account
+   lookup the lock makes anyway, and a failed check is simply "not a known
+   device" — the attempt is then counted and answered exactly as one with
+   no cookie would be. So the cookie changes nothing about what a caller
+   without a valid one can learn about which names exist. */
+const DEVICE_COOKIE_PREFIX = "mr_adev_";
+const DEVICE_MAX_AGE_S = 180 * 24 * 60 * 60;
+const DEVICE_PATH = "/.netlify/functions/auth";
+// A clock a few minutes fast on another instance is not a forgery.
+const DEVICE_SKEW_S = 5 * 60;
+
+function deviceCookieName(username) {
+    return DEVICE_COOKIE_PREFIX + crypto.createHmac("sha256", process.env.SESSION_SECRET || "maze-rats-auth")
+        .update("admin-device-name:" + String(username)).digest("hex").slice(0, 16);
+}
+
+/* The MAC. JSON of an array rather than the parts joined with a separator,
+   so no choice of username can make two different sets of parts read the
+   same. `tokenVersion` and `passwordHash` are what make a password change
+   revoke it; a legacy row with no tokenVersion still has a hash. */
+function deviceMac(admin, nonce, issued) {
+    const parts = [
+        "admin-device", String(admin.username), String(admin._id),
+        admin.tokenVersion === undefined || admin.tokenVersion === null ? null : String(admin.tokenVersion),
+        String(admin.passwordHash || ""), String(nonce), String(issued)
+    ];
+    return crypto.createHmac("sha256", process.env.SESSION_SECRET || "maze-rats-auth")
+        .update(JSON.stringify(parts)).digest("base64url");
+}
+
+// The Set-Cookie line for a sign-in that has just succeeded on `admin`.
+function deviceCookie(admin) {
+    const nonce = crypto.randomBytes(16).toString("base64url");
+    const issued = Math.floor(Date.now() / 1000);
+    const value = `${nonce}.${issued}.${deviceMac(admin, nonce, issued)}`;
+    return `${deviceCookieName(admin.username)}=${value}; Path=${DEVICE_PATH}; HttpOnly; Secure; SameSite=Strict; Max-Age=${DEVICE_MAX_AGE_S}`;
+}
+
+/* Whether this request carries a device cookie that verifies for `admin`.
+   False for no account, no cookie, a malformed one, an expired one, one
+   minted for somebody else or before the account's password last changed. */
+function isKnownDevice(admin, event) {
+    if (!admin || !admin.username || !admin.passwordHash) return false;
+    const value = parseCookies(cookieHeaderOf(event))[deviceCookieName(admin.username)];
+    if (!value || value.length > 200) return false;
+    const parts = value.split(".");
+    if (parts.length !== 3) return false;
+    const [nonce, issuedText, mac] = parts;
+    if (!/^[A-Za-z0-9_-]{16,64}$/.test(nonce) || !/^\d{1,12}$/.test(issuedText)) return false;
+    const issued = Number(issuedText);
+    const now = Math.floor(Date.now() / 1000);
+    if (issued > now + DEVICE_SKEW_S || now - issued > DEVICE_MAX_AGE_S) return false;
+    const want = Buffer.from(deviceMac(admin, nonce, issued));
+    const got = Buffer.from(String(mac));
+    return want.length === got.length && crypto.timingSafeEqual(want, got);
+}
+
+function cookieHeaderOf(event) {
+    const h = (event && event.headers) || {};
+    return h.cookie || h.Cookie || "";
+}
+
+/* A sign-in's 200 with the device cookie on it. No-store as well: this
+   answer carries a session token, and nothing between here and the browser
+   has any business keeping a copy. */
+function withDevice(response, admin) {
+    return {
+        ...response,
+        headers: { ...response.headers, "Cache-Control": "no-store", "Set-Cookie": deviceCookie(admin) }
+    };
+}
+
 /* The lock's documents sweep themselves two days after they were last
    touched — past USER_LOCK_MEMORY_MS, so a lock's doubling is never
    forgotten early. Memoised per warm instance and never allowed to fail a
@@ -256,16 +376,33 @@ async function claimUserAttempt(db, name) {
         { $set: { windowStart: now, fails: 0 } }
     );
 
+    /* A duplicate key is not always "locked" (28 Sept 2026). When no lock
+       doc exists yet — the first attempt ever on a name — two claims fired
+       together both upsert; one inserts, the other collides on _id. The
+       server does not retry that upsert itself because the filter has an
+       $or, so the loser used to come back here and be told "locked" by a
+       doc that has no lock on it: a double-clicked first sign-in got a 429
+       and Retry-After 60. So the doc is read back, and only a live
+       nextAllowedAt counts as locked; otherwise the doc now exists and the
+       claim is simply made again, once — the retry matches it and cannot
+       insert, so it cannot collide the same way twice. */
+    const claim = () => col.findOneAndUpdate(
+        { _id, $or: open },
+        { $inc: { fails: 1 }, $set: { touchedAt: now }, $setOnInsert: { windowStart: now } },
+        { upsert: true, returnDocument: "after" }
+    );
     let doc;
-    try {
-        doc = docOf(await col.findOneAndUpdate(
-            { _id, $or: open },
-            { $inc: { fails: 1 }, $set: { touchedAt: now }, $setOnInsert: { windowStart: now } },
-            { upsert: true, returnDocument: "after" }
-        ));
-    } catch (e) {
-        if (!(e && e.code === 11000)) throw e;
-        return { lockedUntil: await heldUntil(new Date(now.getTime() + USER_LOCK_BASE_MS)) };
+    for (let tries = 0; ; tries++) {
+        try {
+            doc = docOf(await claim());
+            break;
+        } catch (e) {
+            if (!(e && e.code === 11000)) throw e;
+            const held = await col.findOne({ _id }, { projection: { nextAllowedAt: 1 } });
+            const until = held && held.nextAllowedAt;
+            if (until && new Date(until).getTime() > now.getTime()) return { lockedUntil: until };
+            if (tries >= 1) return { lockedUntil: until || new Date(now.getTime() + USER_LOCK_BASE_MS) };
+        }
     }
 
     const fails = (doc && doc.fails) || 1;
@@ -391,7 +528,9 @@ async function loginThrottle(db, event, username, findAccount) {
     let claim = null;
     try {
         account = findAccount ? await findAccount() : null;
-        if (!isKnownNet(account, net)) claim = await claimUserAttempt(db, username);
+        /* A device the account has signed in on counts as a known network
+           (28 Sept 2026) — see A DEVICE THE ACCOUNT HAS SIGNED IN ON. */
+        if (!isKnownNet(account, net) && !isKnownDevice(account, event)) claim = await claimUserAttempt(db, username);
     } catch (e) {
         await activity.deleteOne({ _id: insertedId }).catch(() => {});
         throw e;
@@ -544,7 +683,9 @@ async function handlePost(event, body, db, admins) {
                 throw e;
             }
             await record(event, "login", { username, role: "owner", note: "first account, bootstrapped" });
-            return json(200, { token: signToken(username, newAdmin.tokenVersion), username, role: resolveRole(newAdmin) });
+            // insertOne has put the row's _id on newAdmin, which the device
+            // cookie's MAC covers — see A DEVICE THE ACCOUNT HAS SIGNED IN ON.
+            return withDevice(json(200, { token: signToken(username, newAdmin.tokenVersion), username, role: resolveRole(newAdmin) }), newAdmin);
         }
 
         // Found by the throttle already; the same row, not a second read.
@@ -569,7 +710,9 @@ async function handlePost(event, body, db, admins) {
         const token = signToken(username, admin.tokenVersion);
         // Awaited, briefly — see record() in _audit.js.
         await record(event, "login", { username, role: resolveRole(admin), session: sessionOf({ headers: { "x-admin-token": token } }) });
-        return json(200, { token, username, role: resolveRole(admin) });
+        // And this device too, from now on (28 Sept 2026) — a fresh cookie
+        // on every sign-in, so one in regular use never ages out.
+        return withDevice(json(200, { token, username, role: resolveRole(admin) }), admin);
     }
 
     if (body.action === "verify") {
@@ -758,6 +901,8 @@ async function handleRest(event, db, admins) {
 
            An owner resetting SOMEBODY ELSE'S password does not need that
            person's; that is what an owner reset is for. */
+        // The caller's own row, for re-issuing this device's cookie below.
+        let selfRow = null;
         if (isSelf) {
             const current = text(body.currentPassword);
             const WRONG_CURRENT = json(403, { error: "Your current password is wrong." });
@@ -769,6 +914,7 @@ async function handleRest(event, db, admins) {
                 return WRONG_CURRENT;
             }
             await attempt.settle(null);
+            selfRow = attempt.account;
         } else {
             /* ...but it does need the OWNER'S. A lifted owner token was
                otherwise enough to set any other account's password to one
@@ -823,7 +969,14 @@ async function handleRest(event, db, admins) {
            version. A page that does not pick it up simply asks its user to
            sign in again with the password they have just chosen. */
         const fresh = isSelf ? { token: signToken(username, tokenVersion) } : {};
-        return json(200, { ...result, role: resolveRole(result), ...fresh });
+        const reply = json(200, { ...result, role: resolveRole(result), ...fresh });
+        /* The new hash and tokenVersion have just made every device cookie
+           this account had stop verifying (28 Sept 2026) — which is right
+           for an owner's reset, and right for the other devices of somebody
+           changing their own. The device they changed it FROM has proved
+           the password twice over, so it gets a new cookie, the way it gets
+           a new token; see A DEVICE THE ACCOUNT HAS SIGNED IN ON. */
+        return selfRow ? withDevice(reply, { ...selfRow, passwordHash, tokenVersion }) : reply;
     }
 
     if (event.httpMethod === "DELETE") {
@@ -850,3 +1003,8 @@ async function handleRest(event, db, admins) {
 
     return json(405, { error: "Method not allowed" });
 }
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("auth", exports.handler);

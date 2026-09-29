@@ -1,7 +1,9 @@
 /* Drives the welcome/splash screen (index.html) — swaps the Enter button's
    label and behavior based on the landing state set from the admin page
-   (see netlify/functions/settings.js). Defaults to a working "Enter" link
-   if the check fails, so a live/API hiccup never locks visitors out. */
+   (see netlify/functions/settings.js). If the check fails the door stays
+   SHUT (Maintenance or Coming Soon — see unreadableLandingState in
+   js/api.js): nobody is let in on a guess, and the watcher below opens it
+   the moment a real answer says the site is open. */
 /* ---------------------------------------------------- THE COUNTDOWN
 
    Under the Enter button while the site is gated and a launch date is set.
@@ -337,9 +339,139 @@ function warmTheArchive(btn) {
     });
 }
 
+/* ---------- A WHOLE-SITE BAN (29 Sept 2026) ----------
+
+   js/account.js keeps a note in this browser when `me` says the visitor has
+   a whole-site ban — { until, reason } under BLOCK_KEY — and every other
+   page sends them here. As the owner asked:
+     permanent   this page shows "Maintenance, Back Soon!", as a real
+                 maintenance window does, and nothing more. It does not say
+                 it is a ban.
+     cool-down   the same, with a pop-up (the red button, as the flagged-
+                 nickname one has) saying how long is left and the reason.
+   Whenever the note is there, `me` is asked again, so a ban that has been
+   lifted, or turned into a lighter one, clears the note and the page goes
+   on as normal. Nobody without the note pays for that request. */
+const BLOCK_KEY = "mazerats_blocked";
+
+function forgetBlock() {
+    try { localStorage.removeItem(BLOCK_KEY); } catch (e) { /* nothing to forget */ }
+}
+
+function blockIsLive(b) {
+    return !!b && typeof b === "object" && (!b.until || Date.parse(b.until) > Date.now());
+}
+
+async function blockedHere() {
+    let note = null;
+    try { note = JSON.parse(localStorage.getItem(BLOCK_KEY) || "null"); } catch (e) { return null; }
+    if (!note) return null;
+    if (!blockIsLive(note)) { forgetBlock(); return null; }
+    try {
+        const ctl = typeof AbortController === "function" ? new AbortController() : null;
+        const timer = ctl ? setTimeout(() => ctl.abort(), 8000) : 0;
+        const res = await fetch("/.netlify/functions/discord-auth?action=me", {
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+            signal: ctl ? ctl.signal : undefined
+        }).finally(() => clearTimeout(timer));
+        if (res.ok) {
+            const data = await res.json();
+            const b = data && data.ban;
+            if (!b || b.level !== "full" || !blockIsLive(b)) { forgetBlock(); return null; }
+            const fresh = {
+                until: typeof b.until === "string" && !isNaN(Date.parse(b.until)) ? b.until : null,
+                reason: typeof b.reason === "string" ? b.reason.trim() : ""
+            };
+            try { localStorage.setItem(BLOCK_KEY, JSON.stringify(fresh)); } catch (e) { /* the note stays as it was */ }
+            return fresh;
+        }
+    } catch (e) { /* unreachable: the note stands until it can be checked */ }
+    return note;
+}
+
+const BLOCK_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function blockUntilText(iso) {
+    const d = new Date(Date.parse(iso));
+    const two = n => String(n).padStart(2, "0");
+    return `${d.getUTCDate()} ${BLOCK_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${two(d.getUTCHours())}:${two(d.getUTCMinutes())} UTC`;
+}
+function blockTimeLeft(iso) {
+    const ms = Date.parse(iso) - Date.now();
+    if (!(ms > 0)) return "";
+    const m = Math.ceil(ms / 60000);
+    const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+    return d ? `${d}d ${h}h` : h ? `${h}h ${mm}m` : `${mm}m`;
+}
+function blockEsc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* The cool-down pop-up, laid out as the owner approved: the red button at
+   its own 26x26, then one line each for what happened, the time left and
+   the reason (the last only when one was given), and one OK. The time left
+   counts down while the page is open; when it runs out the note goes and
+   the page reloads as normal. */
+function showCoolDown(block, returnTo) {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay open nick-overlay notice-overlay";
+    overlay.innerHTML = `
+        <div class="modal confirm-modal notice-window notice-wide" role="dialog" aria-modal="true"
+             aria-labelledby="cooldown-title" aria-describedby="cooldown-text" tabindex="-1">
+            <div class="chrome-titlebar">
+                <h2 id="cooldown-title">Cool-Down</h2>
+                <button type="button" class="chrome-close" aria-label="Close"><img src="/assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+            </div>
+            <div class="chrome-frame">
+                <div class="modal-body notice-body">
+                    <img class="notice-image" src="/assets/img/red-button.png" width="26" height="26" alt="" aria-hidden="true">
+                    <div class="notice-text" id="cooldown-text"><p class="notice-lines">You've been put on a cool-down, so the site is closed to you for now.<br>Time left: <span class="notice-word" data-left></span> (until ${blockEsc(blockUntilText(block.until))}).${block.reason ? `<br>Reason: ${blockEsc(block.reason)}` : ""}</p></div>
+                    <div class="notice-actions"><button type="button" class="view-switch-btn notice-ok">OK</button></div>
+                </div>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    document.body.classList.add("modal-open");
+    const left = overlay.querySelector("[data-left]");
+    const tick = () => {
+        const text = blockTimeLeft(block.until);
+        if (!text) { forgetBlock(); location.reload(); return; }
+        left.textContent = text;
+    };
+    tick();
+    const timer = setInterval(tick, 15000);
+    // The end itself, to the second, rather than up to 15s late.
+    const endIn = Date.parse(block.until) - Date.now();
+    const ender = endIn < 2147483647 ? setTimeout(tick, endIn + 500) : 0;
+    function close() {
+        if (!overlay.isConnected) return;
+        overlay.remove();
+        if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
+        if (returnTo && typeof returnTo.focus === "function") returnTo.focus({ preventScroll: true });
+    }
+    // The count and the reload keep running after OK: the page still lets
+    // them in the moment it is over.
+    void timer; void ender;
+    overlay.querySelector(".notice-ok").addEventListener("click", close);
+    overlay.querySelector(".chrome-close").addEventListener("click", close);
+    overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+    if (window.EscapeLayers) EscapeLayers.register({ elements: () => (overlay.isConnected ? [overlay] : []), close });
+    overlay.querySelector(".notice-ok").focus({ preventScroll: true });
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
     const btn = document.getElementById("welcome-btn");
     const label = document.getElementById("welcome-btn-label");
+
+    /* Banned from the whole site: the Maintenance page, and a cool-down's
+       pop-up, instead of anything below — no countdown, and no poll, which
+       would send them into the archive the moment the site opened. */
+    const block = await blockedHere();
+    if (block) {
+        labelGated("maintenance");
+        if (block.until) showCoolDown(block, btn);
+        return;
+    }
 
     const { landingState, launchAt } = await Api.getSiteSettings();
 

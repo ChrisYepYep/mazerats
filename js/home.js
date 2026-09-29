@@ -221,6 +221,10 @@ document.addEventListener("DOMContentLoaded", () => {
        the first render() call and would still be in its temporal dead zone. */
     let loaderGone = false;
     let loadFailed = false;
+    /* A dead link's note, waiting for the loading screen to go (see
+       tellAddressMissing). Up here for the same temporal-dead-zone reason:
+       hideLoader reads it. */
+    let pendingMissingNote = null;
     let currentItems = [];
 
     // An event's status comes from its own start/end dates — see
@@ -1818,7 +1822,8 @@ document.addEventListener("DOMContentLoaded", () => {
            and is skipped below in all three directions. */
         const askedAt = tickEditSeq;
         Account.fetchState().then(state => {
-            if (!state) return;
+            // A failed read is tried again at the next announcement.
+            if (!state) { syncedFor = null; return; }
             let anyChange = false;
             const patch = {};
 
@@ -1959,9 +1964,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     let tickStorageRedraw = null;
 
+    /* Once per player, not once per announcement: nickname saves, "Not
+       now", a refused write and the rest all announce too, and each one
+       used to cost another player-data read (29 Sept 2026). */
+    let syncedFor = null;
     function onAccountAnswer(me) {
-        if (me) syncWalked();
-        else dropAccountTicks();
+        if (me) {
+            if (me.id === syncedFor) return;
+            syncedFor = me.id;
+            syncWalked();
+        } else {
+            syncedFor = null;
+            dropAccountTicks();
+        }
     }
 
     function isWalked(id) {
@@ -8096,7 +8111,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <section class="progress-head">
                 ${me && me.avatar ? `<img class="progress-face" src="${escapeHtml(me.avatar)}" alt="" aria-hidden="true">` : ""}
                 <div class="progress-head-text">
-                    <h3>${me ? escapeHtml(me.name) : "Your archive"}</h3>
+                    <h3>${me ? escapeHtml(me.displayName || me.name) : "Your archive"}</h3>
                     <p>${me
                         ? "Kept against your account, so it follows you between devices."
                         : `Kept in this browser. <button type="button" class="progress-signin" id="progress-signin">Sign in with Discord</button> to carry it with you.`}</p>
@@ -9328,6 +9343,94 @@ document.addEventListener("DOMContentLoaded", () => {
         return asked ? { ...record, slug: asked.key } : record;
     }
 
+    /* ---------- a dead link gets a note (29 Sept 2026) ----------
+
+       /maze/<slug> or /event/<slug> naming nothing used to land on the plain
+       archive with no word about why: the visitor followed a link to a
+       particular maze and got the front page, which reads as the site
+       having ignored them. Now a short note says the thing isn't here.
+
+       WHEN TO BELIEVE IT. The share function marks a plain miss (404) by
+       serving the page as "Not in the archive" — read here from og:title,
+       once, at start-up, before PageMeta puts the archive's own tags back.
+       A deleted record's address (410) and a database outage (200) are both
+       served as the untagged archive and cannot be told apart from the
+       markup, so for those the page's own answer decides: no match in the
+       LIVE archive means it is not there. On the offline copy
+       (Api._degraded) nothing has an address to match, so a miss there
+       proves nothing and says nothing — the offline notice is already
+       explaining why the archive is short.
+
+       Guides are not handled here: /guides/<unknown> opens the guides
+       window, which already says "That guide isn't available" inside it
+       (see draw in js/guides.js).
+
+       ONCE. It is only ever called for the address the page loaded with,
+       and that address is replaced with /home in the same breath (see
+       openFromAddress), so Back and Forward never come back to a dead
+       address to trip it again, and a reload is a reload of /home.
+
+       role=status, polite, and it never takes focus: the visitor has not
+       asked it anything, and the archive under it is what they should be
+       moving on to. Built on .saved-note — the fixed note at the foot of the
+       screen that phones and desktops both already see — with a close ×,
+       and it leaves by itself after a while unless it is being used. */
+    const SERVED_AS_MISSING = (() => {
+        const og = document.querySelector('meta[property="og:title"]');
+        return !!(og && /^Not in the archive$/.test(og.getAttribute("content") || ""));
+    })();
+
+    function tellAddressMissing(kind) {
+        const liveArchive = !(Api._degraded && Api._degraded.size);
+        if (!SERVED_AS_MISSING && !liveArchive) return;
+        const what = kind === "event" ? "event" : "maze";
+
+        const show = () => {
+            const old = document.getElementById("missing-note");
+            if (old) old.remove();
+            const note = document.createElement("div");
+            note.className = "saved-note missing-note";
+            note.id = "missing-note";
+            note.setAttribute("role", "status");
+            note.setAttribute("aria-live", "polite");
+            note.innerHTML = `
+                <p class="saved-note-text missing-note-text"></p>
+                <button type="button" class="missing-note-close" aria-label="Dismiss this note">&times;</button>`;
+            document.body.appendChild(note);
+            /* The words go in a moment after the region itself: a live
+               region that arrives already holding its text is announced by
+               some screen readers and silently skipped by others. */
+            const text = note.querySelector(".missing-note-text");
+            setTimeout(() => {
+                text.textContent = `That ${what} isn't in the archive — it may have been renamed or removed.`;
+            }, 60);
+
+            let timer = null;
+            const close = () => {
+                clearTimeout(timer);
+                if (!note.isConnected || note.classList.contains("is-out")) return;
+                note.classList.add("is-out");
+                // On a timer, not animationend — see tellWhereSavedGo.
+                setTimeout(() => note.remove(), 240);
+            };
+            note.querySelector(".missing-note-close").addEventListener("click", close);
+            /* Twelve seconds is long enough to read one sentence twice. Held
+               while the pointer or focus is on it, so it never vanishes from
+               under somebody reaching for the ×. */
+            const arm = () => { clearTimeout(timer); timer = setTimeout(close, 12000); };
+            note.addEventListener("pointerenter", () => clearTimeout(timer));
+            note.addEventListener("pointerleave", arm);
+            note.addEventListener("focusin", () => clearTimeout(timer));
+            note.addEventListener("focusout", arm);
+            arm();
+        };
+
+        // Not over the loading screen: it waits for hideLoader if that is
+        // still up (see pendingMissingNote).
+        if (loaderGone || !loaderEl || loaderEl.dataset.done) show();
+        else pendingMissingNote = show;
+    }
+
     function openFromAddress(how) {
         if (!dataLoaded) return;
         // Mid-way through stepping back off a closed modal's entries: the
@@ -9351,6 +9454,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     window.PageMeta.set("unknown-address", null, null);
                     window.PageMeta.restore("unknown-address");
                 }
+                // And says so, rather than leaving the visitor to wonder
+                // why their link showed the front page.
+                tellAddressMissing(asked.kind);
             }
             return;
         }
@@ -9526,6 +9632,13 @@ document.addEventListener("DOMContentLoaded", () => {
         // see render()'s !dataLoaded branch.
         loaderGone = true;
         if (!dataLoaded) render();
+        // After the loader's own 300ms fade, so the note arrives on the
+        // archive rather than on top of the loading screen.
+        if (pendingMissingNote) {
+            const show = pendingMissingNote;
+            pendingMissingNote = null;
+            setTimeout(show, 320);
+        }
     }
 
     /* Waits for every thumbnail, counting each as it lands. Resolves on error

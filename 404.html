@@ -7,6 +7,10 @@
          address was: /maze/a/b gets this page with /maze/a/ as its base, so
          a relative "css/style.css" asked for /maze/a/css/style.css — itself
          a 404 — and the page arrived unstyled and without its scripts. -->
+    <!-- Error reporting, first, and the build it was deployed as: see the
+         note on these two lines in home.html's <head> (28 Sept 2026). -->
+    <meta name="mazerats:build" content="dev">
+    <script src="/js/error-report.js?v=2"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800;900&family=Roboto:wght@400;500;700&family=Pixelify+Sans:wght@400;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
@@ -59,7 +63,7 @@
          link carries a private token there. The search (?q=) is kept on
          purpose: the privacy policy says searches are recorded, and why.
          js/track.js, the site's own record, honours both signals too. -->
-    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");document.head.appendChild(s);}catch(e){}})();</script>
+    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");s.setAttribute("data-domains","mazerats.net");document.head.appendChild(s);}catch(e){}})();</script>
 </head>
 <body data-page="notfound">
 

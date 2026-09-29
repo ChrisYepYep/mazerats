@@ -44,7 +44,13 @@
 
     let mounted = false;
     let guides = [];
-    let editing = null;         // the guide in the form, or null
+    /* Every address a deleted guide answered to (28 Sept 2026), read with
+       the list (see load). The server keeps them reserved so an old link
+       says the guide is gone rather than opening a different one, and the
+       Address field now knows it too. A delete from here reloads the list,
+       which brings the new ones with it. */
+    let retiredAddresses = [];
+    let editing = null;        // the guide in the form, or null
     let stored = null;          // the same guide as last saved (null for a new one)
     let snapshot = "";          // editing as it was opened, for "unsaved changes?"
     const uploaded = new Set(); // image keys uploaded during this edit
@@ -123,9 +129,19 @@
         const gen = ++loadGen;
         listEl.innerHTML = '<p class="admin-empty">Loading…</p>';
         try {
-            const data = await call(`${URL_}?full=1`, "GET");
+            /* &retired=1 (28 Sept 2026): the deleted guides' addresses come
+               back beside the list — { records, retired } — for the Address
+               field, which now treats them as taken, as the server does (see
+               retiredAddresses). A bare list is a server from before that,
+               and is read as it always was. */
+            const data = await call(`${URL_}?full=1&retired=1`, "GET");
             if (gen !== loadGen) return;
-            guides = Array.isArray(data) ? data : [];
+            if (Array.isArray(data)) {
+                guides = data;
+            } else {
+                guides = Array.isArray(data && data.records) ? data.records : [];
+                retiredAddresses = Array.isArray(data && data.retired) ? data.retired : [];
+            }
             renderList();
             renderStarter();
         } catch (err) {
@@ -147,9 +163,19 @@
 
     // ------------------------------------------------------------ the list
 
+    /* The starter counts as added under its own id OR a numbered copy of
+       it (28 Sept 2026). Deleting a guide retires its id, so a starter
+       deleted and added again comes back as "maze-fundamentals-2"; the
+       old exact-id check then kept offering it, and every click added
+       one more copy. The id is escaped, as it goes into a RegExp. */
+    function starterAdded(s) {
+        const own = new RegExp("^" + String(s.id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?:-\\d+)?$");
+        return guides.some(g => g && typeof g.id === "string" && own.test(g.id));
+    }
+
     function renderStarter() {
         const s = window.GUIDES_STARTER;
-        if (!s || guides.some(g => g.id === s.id)) { starterEl.innerHTML = ""; return; }
+        if (!s || starterAdded(s)) { starterEl.innerHTML = ""; return; }
         starterEl.innerHTML = `
             <div class="guides-starter">
                 <p><strong>${esc(s.title)}</strong> is ready to add: ${s.sections.length} sections on the basic tricks, written from markeh's Tutorial Maze, with its room pictures.</p>
@@ -412,7 +438,9 @@
                 const other = guides.find(x => (!stored || x.id !== stored.id)
                     && (x.slug === slug || x.id === slug || (Array.isArray(x.slugAliases) && x.slugAliases.includes(slug))));
                 return other ? other.title || other.id : "";
-            }
+            },
+            // A deleted guide's too (28 Sept 2026) — see retiredAddresses.
+            retired: slug => window.AddressField.retiredCheck(retiredAddresses)(slug)
         }) : null;
     }
 
@@ -723,6 +751,7 @@
             parked.clear();
             if (editing) closeEditor(true);
             guides = [];
+            retiredAddresses = [];
             listEl.innerHTML = "";
             starterEl.innerHTML = "";
             previewEl.hidden = true;

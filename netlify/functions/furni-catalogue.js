@@ -321,3 +321,8 @@ exports.handler = async (event) => {
 };
 
 module.exports.getCatalogue = getCatalogue;
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("furni-catalogue", exports.handler);

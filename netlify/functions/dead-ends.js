@@ -117,10 +117,13 @@ exports.handler = async (event) => {
             } catch (e) {
                 return json(400, { error: "Invalid request body" });
             }
+            // "null" is valid JSON and not a body; body.type on it was a
+            // TypeError and a bare 500 (28 Sept 2026).
+            if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
 
             const type = text(body.type);
             const recordId = text(body.id).trim();
-            if (!COLLECTION_OF[type]) return json(400, { error: "type must be maze or event" });
+            if (!Object.prototype.hasOwnProperty.call(COLLECTION_OF, type)) return json(400, { error: "type must be maze or event" });
             if (!recordId || recordId.length > 200) return json(400, { error: "Missing record id" });
 
             const note = text(body.note).trim();
@@ -172,7 +175,7 @@ exports.handler = async (event) => {
         if (event.httpMethod === "DELETE") {
             const type = text(q.type);
             const recordId = text(q.id).trim();
-            if (!COLLECTION_OF[type] || !recordId) return json(400, { error: "Missing type or id" });
+            if (!Object.prototype.hasOwnProperty.call(COLLECTION_OF, type) || !recordId) return json(400, { error: "Missing type or id" });
             const result = await flags.deleteOne({ key: `${type}:${recordId}` });
             return json(200, { cleared: result.deletedCount > 0 });
         }
@@ -199,3 +202,8 @@ exports.handler = async (event) => {
         throw e;
     }
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("dead-ends", exports.handler);

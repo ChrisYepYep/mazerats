@@ -403,14 +403,22 @@
        Null rather than a throw because both callers already branch on the
        answer, and a thrown error from inside prepare() would have to be caught
        around code whose other failures are meant to reach the console. */
+    /* On a leash (28 Sept 2026): a request that never answered — a stalled
+       mobile connection — left "Fetching levels…" up for good, with Play
+       disabled and no Retry, since Retry only shows once a failure is known.
+       An abort is a failure like any other, so it lands on null and Retry. */
     async function fetchPublished() {
+        const ctl = typeof AbortController === "function" ? new AbortController() : null;
+        const timer = ctl ? setTimeout(() => ctl.abort(), 15000) : 0;
         try {
-            const res = await fetch("/.netlify/functions/ff-levels");
+            const res = await fetch("/.netlify/functions/ff-levels", ctl ? { signal: ctl.signal } : undefined);
             if (!res.ok) return null;
             const data = await res.json();
             return (data.levels || []).map(l => normalise(l));
         } catch {
             return null;
+        } finally {
+            clearTimeout(timer);
         }
     }
 

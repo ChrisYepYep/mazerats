@@ -12,7 +12,10 @@
 
      start     the visitor is sent to Discord to approve
      callback  Discord sends them back here with a code
-     me        the page asks who is signed in (fetch, not navigation)
+     me        the page asks who is signed in (fetch, not navigation), and
+               since 29 Sept 2026 whether the visitor is banned:
+               { player: {... nickRefused }, ban: { level, until, reason } | null }
+               for signed-in and signed-out visitors alike (see meReply)
      signout   clears the cookie
 
    The OAuth scopes asked for are "identify" and nothing else: an id, a
@@ -32,8 +35,12 @@
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { signPlayer, playerFrom, setCookie, clearCookie, parseCookies } = require("./_player");
+const { signPlayer, playerFrom, setCookie, clearCookie, parseCookies, playerView, nameKey } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
+// The caller's own public board id, for `me` (29 Sept 2026).
+const { publicIdOf } = require("./_publicid");
+// Bans on `me` and at sign-in, and the network code (29 Sept 2026).
+const { banFor, netHashFor } = require("./_bans");
 
 const STATE_COOKIE = "mr_oauth";
 const STATE_TTL = 10 * 60;                 // ten minutes to finish a login
@@ -130,12 +137,96 @@ function avatarUrl(user) {
     return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=64`;
 }
 
+/* "Who am I", with the nickname (28 Sept 2026).
+
+   It used to answer from the cookie alone. It now reads the player's row as
+   well, because the nickname and whether they have been asked for one are
+   things that can change on ANOTHER device: a nick set on a phone has to be
+   what the laptop's header says on its next page load, and a prompt
+   dismissed on one should not come back on the other. One indexed read per
+   page load for a signed-in visitor, and none at all for anybody else.
+
+   When the row disagrees with the cookie about the nickname, a fresh cookie
+   goes back with the answer, so the session catches up without anybody
+   signing in again. Nothing else re-issues it here: a session that is
+   already right keeps its expiry, rather than every page view quietly
+   extending it.
+
+   If the row cannot be read the cookie answers on its own, as it always did
+   (see playerView in _player.js for what that means for the prompt). */
+/* `ban` (29 Sept 2026; see _bans.js): the most severe active ban on this
+   visitor — their account when signed in, and their address, /64 and
+   network code either way — as { level, until, reason }, or null. It is
+   what the page shows the banned screen from: a "full" ban blocks every
+   page but the privacy policy, and a "soft" one the games, the boards'
+   "you", sign-in and the forms. That blocking of READS is the page's (static
+   pages cannot be refused from here without an edge function; see _bans.js),
+   so this answers a banned visitor like anybody else — with the ban in it.
+   Signed out, this is now one memoised bans read per page load where it used
+   to be none; the lookup fails OPEN (banFor), so a database blip shows
+   nobody a banned screen. Never cached: json() says no-store. */
+const banView = (ban) => (ban ? { level: ban.level, until: ban.until, reason: ban.reason } : null);
+
+/* THE NETWORK CODE (29 Sept 2026; see netHashOf in _bans.js): the sign-in
+   and every `me` keep on the players row `netHash`, a keyed one-way code of
+   the network the player is on — never the address — and `netHashAt`, when
+   it was last seen, so the Warren can ban a signed-in troll's network. On
+   `me` it is written only when it has changed or is a day old, not on every
+   page load. Never allowed to fail the answer. */
+const NET_HASH_REFRESH_MS = 24 * 60 * 60 * 1000;
+function netHashUpdate(event, row) {
+    const netHash = netHashFor(event);
+    if (!netHash) return null;
+    const at = row && Date.parse(row.netHashAt);
+    if (row && row.netHash === netHash && Number.isFinite(at) && Date.now() - at < NET_HASH_REFRESH_MS) return null;
+    return { netHash, netHashAt: new Date().toISOString() };
+}
+
+async function meReply(event) {
+    const player = playerFrom(event);
+    let db = null;
+    try {
+        db = await getDb();
+    } catch (e) {
+        db = null;
+    }
+    const ban = db ? banView(await banFor(db, event, player ? player.id : null)) : null;
+    if (!player) return json(200, { player: null, ban });
+    let row = null;
+    try {
+        if (db) row = await db.collection("players").findOne({ id: player.id }, { projection: { _id: 0 } });
+    } catch (e) {
+        row = null;
+    }
+    if (row) {
+        const fresh = netHashUpdate(event, row);
+        if (fresh) {
+            try {
+                await db.collection("players").updateOne({ id: player.id }, { $set: fresh });
+            } catch (e) {
+                console.warn("discord-auth: could not store the network code", e.message);
+            }
+        }
+    }
+    const view = playerView(player, row);
+    /* `publicId` beside the rest (29 Sept 2026): the id the public boards
+       key this player's rows by instead of their Discord id (see
+       _publicid.js), so the page can still pick out "you". Added to the
+       answer only — the cookie below is signed from `view` as before and
+       never carries it; it is derived from the id every time. */
+    const answer = { ...view, publicId: publicIdOf(view.id) };
+    const stale = row && ((view.nick || null) !== (player.nick || null) || view.nickAsked !== player.nickAsked);
+    if (stale && process.env.SESSION_SECRET) {
+        return json(200, { player: answer, ban }, { "Set-Cookie": setCookie(signPlayer(view)) });
+    }
+    return json(200, { player: answer, ban });
+}
+
 exports.handler = async (event) => {
     const action = actionFrom(event);
 
     if (action === "me") {
-        const player = playerFrom(event);
-        return json(200, { player });
+        return meReply(event);
     }
 
     if (action === "signout") {
@@ -284,22 +375,91 @@ exports.handler = async (event) => {
             username: uniqueName(user),
             avatar: avatarUrl(user)
         };
+
+        /* A BANNED ACCOUNT OR NETWORK DOES NOT SIGN IN (29 Sept 2026; see
+           _bans.js) — soft or full, by account, address, /64 or network
+           code. Sent home with ?signin=banned, so the page can say why, and
+           no session cookie is set. A signed-out `me` asks by network only,
+           so it reports a network ban's level and end; an account ban's
+           refusal is known to the page by the ?signin=banned alone.
+
+           A banned ACCOUNT's existing row still gets the network code it
+           came from, so the Warren can go on to ban the network it is
+           trying from. No row is ever made for a refused sign-in.
+
+           The lookup fails OPEN (banFor), as the rest of this callback does
+           on a database it cannot reach: the session is still issued, and
+           every write that session makes asks the bans again for itself
+           (writeRefusal), failing closed. */
+        let db = null;
         try {
-            const db = await getDb();
+            db = await getDb();
+        } catch (e) {
+            db = null;
+        }
+        const ban = db ? await banFor(db, event, player.id) : null;
+        if (ban) {
+            const netHash = netHashFor(event);
+            if (netHash && ban.kind === "player") {
+                await db.collection("players").updateOne({ id: player.id },
+                    { $set: { netHash, netHashAt: new Date().toISOString() } }).catch(() => {});
+            }
+            return fail("banned");
+        }
+
+        try {
+            if (!db) throw new Error("no database");
             const players = db.collection("players");
             await ensureUniqueIndex(players, "id");
             const now = new Date().toISOString();
+            /* The nickname half (28 Sept 2026; see player-nick.js).
+
+               nameKey and usernameKey are the Discord name and handle boiled
+               down (nameKey in _player.js), written on every sign-in so they
+               follow a Discord rename. They were what let a nickname be
+               refused for being somebody else's Discord name; that rule
+               went on 29 Sept 2026 (see player-nick.js), and they stay
+               because the Warren's Players search (players-admin.js) finds
+               "chris.r" by typing "Chris R" through them.
+
+               nickAsked: false only on INSERT — a brand-new player, who is
+               offered a nickname once. A player from before nicknames has
+               no field at all, which playerView reads as not asked too, so
+               everybody already signed up is offered it once after this
+               deploys. That is on purpose. Never set here on an update:
+               re-signing in must not bring back a prompt somebody has
+               answered.
+
+               Then the row is read back, so the session carries the nick
+               and the answer from the start — `me` would correct it on the
+               first page load anyway, but a board write in between would
+               otherwise have only the Discord name to go on (publicName
+               reads the row regardless). */
+            /* netHash and netHashAt (29 Sept 2026): the network code — see
+               netHashUpdate above and netHashOf in _bans.js. Only when there
+               is an address to make it from. */
+            const netHash = netHashFor(event);
             await players.updateOne(
                 { id: player.id },
                 {
-                    $set: { name: player.name, username: player.username, avatar: player.avatar, seenAt: now },
-                    $setOnInsert: { id: player.id, joinedAt: now }
+                    $set: {
+                        name: player.name, username: player.username, avatar: player.avatar, seenAt: now,
+                        nameKey: nameKey(player.name), usernameKey: nameKey(player.username),
+                        ...(netHash ? { netHash, netHashAt: now } : {})
+                    },
+                    $setOnInsert: { id: player.id, joinedAt: now, nickAsked: false }
                 },
                 { upsert: true }
             );
+            const row = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, nickAsked: 1 } });
+            if (row) {
+                player.nick = (typeof row.nick === "string" && row.nick) || null;
+                player.nickAsked = row.nickAsked === true;
+            }
         } catch (e) {
             // The session is still worth issuing — the profile row is a
-            // convenience, and the next sign-in will write it.
+            // convenience, and the next sign-in will write it. The nick
+            // claims are left unset, so `me` asks the row once it can.
         }
 
         return redirect(`${origin}${safeReturn(claims.to)}`, [
@@ -310,3 +470,8 @@ exports.handler = async (event) => {
 
     return json(400, { error: "Unknown action" });
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("discord-auth", exports.handler);

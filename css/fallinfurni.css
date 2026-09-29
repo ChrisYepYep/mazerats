@@ -291,6 +291,15 @@ body.is-editing .ff-title { display: none; }
 
 .ff-title-row input:focus { outline: none; border-color: var(--amber); }
 
+/* 16px on touch screens (28 Sept 2026): with no size of its own the field
+   took the browser default, about 13px, and iOS zooms the whole page in on
+   focus for anything under 16px — and leaves it zoomed after the keyboard
+   has gone, on a page built to fill the screen exactly. The archive's own
+   fields are held at 16px for the same reason (see style.css). */
+@media (pointer: coarse) {
+    .ff-title-row input { font-size: 16px; }
+}
+
 .ff-title-row button {
     background: var(--wood-mid);
     border: 1px solid var(--amber);
@@ -1796,7 +1805,7 @@ html[data-ff-gate="checking"] .ff-board { display: none; }
     display: none;
     position: fixed;
     inset: 0;
-    z-index: 9000;              /* over the console modal, which is 8000 */
+    z-index: 9000;              /* over everything, the console (200) included */
     background: var(--bg-black, #1a1008);
     color: var(--parchment, #f4e4c1);
     align-items: center;
@@ -2021,5 +2030,50 @@ body.ff-immersive .ff-window {
         border-radius: calc(8px / 0.5625);
         margin-right: calc(190px - 190px / 0.5625);
         margin-bottom: calc(28px - 28px / 0.5625);
+    }
+}
+
+/* ---- A SHORT, WIDE SCREEN THAT IS NOT A PHONE (29 Sept 2026).
+
+   A phone on its side never reaches this: fallinfurni.js puts it in
+   body.ff-immersive (a coarse pointer and a screen whose short edge is under
+   820px), which takes the header, the intro and the footer away and scales
+   the window to the display — measured at 844x390, a 0.72 scale, the whole
+   window on screen and Play at y=204. That is also what fullscreen shows, so
+   every rule here is written :not(.ff-immersive) and leaves it untouched.
+
+   What is left is everything else at 390-500px tall and landscape: a
+   desktop browser dragged into a letterbox, a tablet in split view, a phone
+   whose browser does not report a coarse pointer. Those get the ordinary
+   scrolling page on purpose (see isHandheld in fallinfurni.js: a narrowed
+   desktop window should scroll, not be told to rotate). But at 844x390 that
+   page put the window's top at y=140, under a 46px sticky bar and a 60px
+   title block, so the title screen's Play button sat at y=423 — off the
+   bottom of the screen before anything had been scrolled.
+
+   So the page gives the game its height back:
+     - the intro collapses. The title and blurb say what the window's own
+       title screen says again in the middle of the stage; the heading is
+       kept for screen readers (visually hidden, not display: none) so the
+       page still has its h1;
+     - the top bar stops following the scroll. Sticky, it would sit over the
+       top 46px of a room that is taller than the screen; in the flow, one
+       flick of the page puts the whole height of the screen on the game.
+   The window starts at y=54 and Play lands at y=337, on the first screen.
+   The room itself is 543px of unscaled window and cannot fit 390px without
+   the scale only a handheld gets; scrolling the page 153px shows all of it. */
+@media (max-height: 500px) and (orientation: landscape) {
+    body[data-page="fallinfurni"]:not(.ff-immersive) .site-header { position: relative; }
+
+    body:not(.ff-immersive) .ff-page { padding-top: 8px; }
+
+    body:not(.ff-immersive) .ff-head {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
     }
 }

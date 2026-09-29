@@ -152,3 +152,8 @@ exports.handler = async (event) => {
 // Exposed for tests.
 exports.mondayOf = mondayOf;
 exports.isMonday = isMonday;
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("picks", exports.handler);

@@ -1599,11 +1599,20 @@ window.AdminWizard = (function () {
                        pointed at a file this had just thrown away, and the
                        map drew a hole where the picture was.
 
-                         401            the session ran out. Nothing is
-                                        rolled back: lockOut keeps the open
-                                        edits for the same admin signing
-                                        back in (see lockOut in admin.js),
-                                        and this replacement is one of them.
+                         401            the session ran out. Treated as
+                                        unknown (28 Sept 2026): rolled back
+                                        on screen, the file KEPT, and the
+                                        admin told to choose it again.
+                                        This used to keep the new URL on
+                                        the record on the grounds that
+                                        lockOut keeps open edits — but
+                                        nothing ever re-sent it: it is not
+                                        in `pending`, savePositions sends
+                                        positions only, and a map reload
+                                        carries only positions. So the
+                                        replacement was silently lost and
+                                        its upload orphaned. saveOneAnswer
+                                        has already called lockOut.
                          other 4xx      the server said no, so it certainly
                                         did not keep it: roll back, and the
                                         upload nothing points at goes.
@@ -1613,8 +1622,11 @@ window.AdminWizard = (function () {
                                         costs a little storage; deleting one
                                         the server kept breaks the map. */
                     const status = saved.err && saved.err.status;
-                    if (status === 401) return;
                     record.image = previous;
+                    if (status === 401) {
+                        say("Not replaced: sign in and choose the picture again.", "bad");
+                        return;
+                    }
                     if (status >= 400 && status < 500) dropUpload(uploaded.url);
                     return;
                 }

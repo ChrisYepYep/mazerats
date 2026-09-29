@@ -232,6 +232,19 @@ async function handle(event) {
             // is not a reviewer any more. One indexed lookup, on an admin-only
             // route the public payload below never takes.
             if (!(await hasAccount(event))) return UNAUTHORIZED;
+            /* ?full=1&retired=1 (28 Sept 2026): the same records, with the
+               deleted mazes' addresses beside them — { records, retired }.
+               /warren's Address field needs them to say, before Save, that
+               an address typed by hand belonged to a deleted maze (the save
+               would be refused), and to show the -2 a new maze following
+               a deleted one's name will really get. Asked for, not always
+               sent: every other caller of ?full=1 (the dead-ends panel, the
+               image clean-up, the tests) reads a bare list, and changing
+               that shape under them would break each one. Never on the
+               public GET below — which addresses were deleted is nobody
+               else's business. An unreadable list comes back empty, as it
+               does for the addresses above; the save still checks it. */
+            if (params.retired === "1") return cachedJson(event, { records: all, retired }, { cache: false });
             return cachedJson(event, all, { cache: false });
         }
         // Old addresses are the share function's business, not the page's.
@@ -567,3 +580,8 @@ exports.handler = async (event) => {
         return json(503, { error: "The archive couldn't be saved just now. Try again in a minute." });
     }
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("rooms", exports.handler);

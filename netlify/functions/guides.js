@@ -4,7 +4,8 @@
                   homepage's Guides window. Cached at the edge like the
                   archive.
    GET ?full=1    every guide, drafts included, for /warren. Admin only,
-                  never cached.
+                  never cached. With &retired=1, { records, retired }: the
+                  same list and the deleted guides' addresses.
    POST           a new guide.            } site-scope write, as rooms.js
    PUT            an edit to one.         } and events.js; a PUT carries
    DELETE ?id=    removes one.            } _baseRev (see below)
@@ -195,6 +196,11 @@ exports.handler = async (event) => {
             list = list.filter(g => g.status === "published")
                 .map(({ updatedBy, createdBy, rev, publicCopy, slugAliases, slugManual, ...g }) => g);
         }
+        // ?full=1&retired=1 (28 Sept 2026): with the deleted guides'
+        // addresses beside the list, for /warren's Address field — see the
+        // same step in rooms.js. Only on the admin read, which has already
+        // checked the account above; the public list never carries them.
+        if (full && params.retired === "1") return cachedJson(event, { records: list, retired }, { cache: false });
         return cachedJson(event, list, { cache: !full });
     }
 
@@ -360,3 +366,8 @@ exports.handler = async (event) => {
         throw e;
     }
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("guides", exports.handler);

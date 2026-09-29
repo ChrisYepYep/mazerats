@@ -37,6 +37,7 @@ const { getDb } = require("./_db");
 const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED, isAuthUnavailable, AUTH_UNAVAILABLE } = require("./_auth");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
+const { subscriberOf } = require("./_net");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -519,6 +520,9 @@ async function route(event, wizard) {
     } catch (e) {
         return json(400, { error: "Invalid request body" });
     }
+    // "null" and "3" are valid JSON and not a body; body.action on either
+    // was a TypeError and a bare 500 (28 Sept 2026).
+    if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
 
     /* Typing a code into the map.
 
@@ -549,8 +553,12 @@ async function route(event, wizard) {
             .filter(code => code && code.length <= 120)
             .slice(0, 40);
 
-        const address = event.headers["x-nf-client-connection-ip"] ||
-            event.headers["client-ip"] || "unknown";
+        /* Keyed on the subscriber, not the exact address (28 Sept 2026), as
+           room-figure.js does: on IPv6 one visitor holds a whole /64, and a
+           fresh address per request walked straight past twelve wrong codes
+           a minute. See subscriberOf in _net.js. */
+        const raw = event.headers["x-nf-client-connection-ip"] || event.headers["client-ip"];
+        const address = raw ? subscriberOf(raw) : "unknown";
         const tooMany = () => json(429, { error: "Too many tries just now — wait a minute and think again." });
         // Already out of allowance: refused before it costs a database read.
         if (unlockSpent(address) >= UNLOCK_MAX) return tooMany();
@@ -912,3 +920,8 @@ exports.handler = async (event) => {
         throw e;
     }
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("wizard", exports.handler);

@@ -83,6 +83,10 @@ async function handle(event) {
         if (params.full === "1") {
             // A live account, not just a signed token — see rooms.js.
             if (!(await hasAccount(event))) return UNAUTHORIZED;
+            // With the deleted events' addresses when asked (&retired=1,
+            // 28 Sept 2026) — see the same step in rooms.js for why it is
+            // asked for rather than always sent.
+            if (params.retired === "1") return cachedJson(event, { records: all, retired }, { cache: false });
             return cachedJson(event, all, { cache: false });
         }
         all.forEach(r => { delete r.slugAliases; delete r.slugManual; });
@@ -293,3 +297,8 @@ exports.handler = async (event) => {
         return json(503, { error: "The archive couldn't be saved just now. Try again in a minute." });
     }
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("events", exports.handler);

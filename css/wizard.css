@@ -1369,6 +1369,11 @@
 .admin-wiz-group:last-child,
 .admin-wiz-group-save { border-right: 0; padding-right: 0; }
 
+/* A group wider than the line it is on wraps within itself (29 Sept 2026):
+   on a phone the View group — lock, zoom, −, fit, + — ran off the right
+   edge, taking the zoom-in button with it. */
+.admin-wiz-group { flex-wrap: wrap; max-width: 100%; }
+
 .admin-wiz-group-label {
     font-family: 'Roboto', sans-serif;
     font-size: 0.62rem;

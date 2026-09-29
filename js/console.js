@@ -202,6 +202,13 @@ document.addEventListener("DOMContentLoaded", () => {
         clearPrivacyHash();
         const back = opener;
         opener = null;
+        /* Said aloud, as console:page is (29 Sept 2026): a page that works
+           while it is shown needs to know it no longer is. The Profile
+           (js/console-profile.js) kept `showing` true after the console
+           shut, and refetched player-profile at every later sign-in
+           announcement for a window nobody could see. Before the focus
+           return below, which may end the function early. */
+        try { document.dispatchEvent(new CustomEvent("console:close")); } catch (e) { /* no listeners, no loss */ }
         if ((opts && opts.keepFocus) || !hadFocus) return;
         let landing = canTakeFocus(back) ? back : null;
         if (!landing && back && back.closest && back.closest("#side-menu")) {
@@ -409,7 +416,13 @@ document.addEventListener("DOMContentLoaded", () => {
             // this one may have left its wording there.
             MazeConsole.showThanks();
         } catch (e) {
-            showStatus(e.message || "Something went wrong. Try again in a moment.", true);
+            // A blocked sender (403 { banned }) gets the site's own "Can't
+            // Send" notice instead of the raw words (29 Sept 2026).
+            if (window.Account && Account.writeRefused && Account.writeRefused(e.status, e.data, "send")) {
+                statusEl.style.display = "none";
+            } else {
+                showStatus(e.message || "Something went wrong. Try again in a moment.", true);
+            }
         } finally {
             sendBtn.disabled = false;
         }

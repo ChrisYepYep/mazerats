@@ -89,7 +89,47 @@ function minifyCss(source, file) {
     return out.styles;
 }
 
+/* THE BUILD STAMP (28 Sept 2026). Every page carries
+   <meta name="mazerats:build" content="dev">, which js/error-report.js sends
+   with each report so /warren's Errors tab can say which deploy a failure
+   began with. Here, on Netlify only (the same dryRun guard as everything
+   else in this file), "dev" becomes the commit's first seven characters and
+   the build time, e.g. "a1b2c3d 2026-10-03T09:14Z".
+
+   In this file rather than a step of its own so that netlify.toml's build
+   command does not change: this already runs on every deploy, already
+   refuses to touch a working copy, and already rewrites files in the
+   throwaway clone. share.js reads home.html from the function bundle, which
+   Netlify packs AFTER the build command, so the page it serves is stamped
+   too. A page without the placeholder is left alone; one that has it and is
+   not stamped is not a reason to fail a deploy, so a miss is only logged. */
+const BUILD_META = /(<meta name="mazerats:build" content=")dev(">)/;
+
+function buildStamp() {
+    const commit = String(process.env.COMMIT_REF || "").slice(0, 7) || "nocommit";
+    return commit + " " + new Date().toISOString().slice(0, 16) + "Z";
+}
+
+function stampPages() {
+    const stamp = buildStamp();
+    const stamped = [];
+    for (const name of fs.readdirSync(ROOT)) {
+        if (!/\.html$/.test(name)) continue;
+        const file = path.join(ROOT, name);
+        const html = fs.readFileSync(file, "utf8");
+        if (!BUILD_META.test(html)) continue;
+        if (!dryRun) fs.writeFileSync(file, html.replace(BUILD_META, "$1" + stamp + "$2"), "utf8");
+        stamped.push(name);
+    }
+    console.log((dryRun ? "build stamp (DRY RUN) " : "build stamp ") + JSON.stringify(stamp) + " -> " + (stamped.join(", ") || "no pages"));
+}
+
 (async () => {
+    try {
+        stampPages();
+    } catch (err) {
+        console.error("  !! the build stamp was not applied: " + err.message);
+    }
     let before = 0;
     let after = 0;
     const rows = [];

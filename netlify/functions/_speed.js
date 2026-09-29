@@ -320,8 +320,18 @@ function gateFor(row, round, now) {
 
    The write's filter carries every rule at once — this round not picked,
    not marked, the round before marked — so two picks racing for one round
-   cannot both land, and whichever lands first is the one that counts. */
-async function recordOddPick(db, ensureUniqueIndex, day, playerId, round, tile, dealRound, now) {
+   cannot both land, and whichever lands first is the one that counts.
+
+   `replay` is a move the page is sending again, made earlier while signed
+   out (Daily.replay in js/daily.js). Recording one marks the row noClock
+   in the same write, so the whole day reads as untimed (clockOf) and earns
+   no bonus. Without it a replay onto a row another device had already
+   started was timed against THAT start: rounds 1 on landed about a second
+   apart as the replay ran and each earned nearly the round's whole bonus,
+   for picks made long before (28 Sept 2026). Only ever set, never cleared,
+   so no later move can put the clock back. A replayed round the server
+   already has ("already") writes nothing and marks nothing. */
+async function recordOddPick(db, ensureUniqueIndex, day, playerId, round, tile, dealRound, now, replay) {
     const game = "odd";
     const col = db.collection(COLLECTION);
     if (!dealRound || !Number.isInteger(tile) || tile < 0 || tile >= dealRound.tiles.length) return { error: "bad-move" };
@@ -337,7 +347,9 @@ async function recordOddPick(db, ensureUniqueIndex, day, playerId, round, tile, 
     const at = new Date(now);
     const filter = { game, day, playerId, ["moves." + key]: { $exists: false }, ["marks." + key]: { $exists: false } };
     if (round > 0) filter["marks." + markKey(round - 1)] = { $exists: true };
-    const res = await col.updateOne(filter, { $set: { ["moves." + key]: { tile, right, at }, ["marks." + key]: at } });
+    const set = { ["moves." + key]: { tile, right, at }, ["marks." + key]: at };
+    if (replay) set.noClock = true;
+    const res = await col.updateOne(filter, { $set: set });
     if (res && res.matchedCount) return { moved: true, tile, right };
     // Lost a race: whatever landed first is the answer.
     const again = await col.findOne({ game, day, playerId });
@@ -363,8 +375,12 @@ const normalise = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
    Written with the round's guesses AS READ in the filter, so a guess from a
    second tab landing in between makes this one miss; it then reads again
-   and has another go, a few times at most. */
-async function recordGuess(db, ensureUniqueIndex, day, playerId, round, name, dealRound, tries, now) {
+   and has another go, a few times at most.
+
+   `replay` as for recordOddPick: a replayed guess that is recorded (moved)
+   marks the row noClock in the same write; `already` and `repeat` write
+   nothing and so mark nothing (28 Sept 2026). */
+async function recordGuess(db, ensureUniqueIndex, day, playerId, round, name, dealRound, tries, now, replay) {
     const game = "guess";
     const col = db.collection(COLLECTION);
     if (!dealRound || typeof name !== "string") return { error: "bad-move" };
@@ -399,6 +415,7 @@ async function recordGuess(db, ensureUniqueIndex, day, playerId, round, name, de
         if (round > 0) filter["marks." + markKey(round - 1)] = { $exists: true };
         const set = { ["moves." + key]: next };
         if (done) set["marks." + key] = at;
+        if (replay) set.noClock = true;
         const res = await col.updateOne(filter, { $set: set });
         if (res && res.matchedCount) return view(next, "moved");
     }
@@ -463,14 +480,23 @@ const MAX_START_BODY = 512;
    as clientNet in _net.js reads it (an IPv4 address, or an IPv6 /64,
    because one subscriber can put a fresh IPv6 address on every request) —
    and past anonMoveLimit the answer is 429. The limit is generous on
-   purpose: three times the most moves a day can take, plus ANON_SLACK, so
-   a household, an office, or a phone network putting many people behind
-   one address can all play signed out before anyone meets it, and a
+   purpose: twenty times the most moves a day can take, plus ANON_SLACK, so
+   a household, an office, a school, or a phone network putting many people
+   behind one address can all play signed out before anyone meets it, and a
    request retried after a dropped connection is not a move lost. Odd One
-   Out's five picks give 45; Guess the Maze's fifteen guesses give 75. What
-   it stops is the scale a script works at, which is the point; one person
-   asking a few answers early is the private-window route the notes above
-   already accept.
+   Out's five picks give 200; Guess the Maze's fifteen guesses give 400.
+
+   It was three times plus 30 (45 and 75) until 28 Sept 2026: about nine
+   full plays per shared IPv4 address, which a school's one address or a
+   phone network's carrier-grade NAT would meet by mid-morning of launch
+   day, and the people refused would be exactly the signed-out newcomers the
+   daily games are meant to bring in. Twenty full plays plus a hundred loose
+   moves still stops what the cap is for — a script walking every tile of
+   every round across many days and networks is the scale that matters, and
+   one network's day is still a small fixed allowance — while a classroom
+   no longer runs into it. What it stops is the scale a script works at,
+   which is the point; one person asking a few answers early is the
+   private-window route the notes above already accept.
 
    One counter document per (game, day, network), bumped and read back in
    a single atomic step — findOneAndUpdate with $inc and upsert — so a
@@ -488,8 +514,8 @@ const MAX_START_BODY = 512;
    address — never folded into one shared bucket that unrelated visitors
    would exhaust for each other. */
 const ANON_COLLECTION = "daily_anon_moves";
-const ANON_MULTIPLE = 3;
-const ANON_SLACK = 30;
+const ANON_MULTIPLE = 20;
+const ANON_SLACK = 100;
 
 // The day's cap for a game: `rounds` rounds of at most `perRound` moves.
 function anonMoveLimit(rounds, perRound) {

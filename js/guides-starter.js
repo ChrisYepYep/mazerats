@@ -86,11 +86,16 @@ window.GUIDES_STARTER = (function () {
                     "Real mazes rarely use one trick per room. Expect to combine them: a yellow-tile click to reach one seat, then a fridge to get past the next blockage."
                 ].join("\n\n")
             },
+            /* The rule as the published guide states it (28 Sept 2026). This
+               said "four stacking levels" / "four shelves", which is not the
+               rule, and contradicted the live Maze Basics guide that was
+               edited from it in /warren: a starter added again would have put
+               the wrong figure back. */
             {
-                heading: "Height and the four-shelf rule",
+                heading: "Height",
                 image: img("06-height-pods"),
                 body: [
-                    "Height matters. **You can only move to furni within four stacking levels of where you are now.** Builders use the z shelf as a unit of height, so think of it as four shelves up or down.",
+                    "Height matters. Builders use height as a way of creating tight-knit and interesting routes in their mazes. **You can only move to furni within 1.5 height,** for example if you're on the floor at 0.0, you can move up to a chair that has a height of 1.5, but not a chair that is 1.6 or more.",
                     "A seat that's too high to reach from the floor may be easy to reach from a seat that's already partway up. If you can't get onto something, look for a stepping stone at a height in between, and climb in stages."
                 ].join("\n\n")
             },

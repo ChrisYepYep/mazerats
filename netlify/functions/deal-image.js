@@ -14,9 +14,10 @@
         _deal.js's dealFor uses, and never deals a day that is not stored;
      3. finds the picture the address names, and checks the signature was
         made for exactly that picture;
-     4. fetches the picture's bytes itself, server side, from wherever the
-        reference points (the image function, a relative assets/ path on
-        the site, or an http(s) address), and answers with them.
+     4. fetches the picture itself, server side, through the site's image
+        CDN at the ONE fixed size, shape and format its game uses (see ONE
+        SIZE PER GAME, below), and answers with that — never the archive's
+        original bytes.
 
    Every refusal is a 404 with no-store, whichever check failed: a caller
    probing addresses learns nothing about which part was wrong, and a
@@ -28,10 +29,70 @@
    The answer comes from the site's own origin, so an <img> of it is
    same-origin and Guess the Maze's canvas is never tainted: its crop pass
    reads pixels with getImageData exactly as it did when the picture came
-   through /.netlify/images from the image function. Guess still asks for
-   the picture through the image CDN (imgCdn in js/site.js), with this
-   address as the source, as it did with the image function's; Odd One Out
-   still uses the address as a plain src.
+   through /.netlify/images from the image function. Both games now use the
+   address as a plain src (28 Sept 2026): Guess used to wrap it in the image
+   CDN again (imgCdn at w=900, aspect kept), and that second pass could only
+   re-encode a picture already sized here — the CDN never enlarges — so it
+   was dropped rather than left as a second place a size is decided.
+
+   ----------------------------------------------------------------------
+   ONE SIZE PER GAME (28 Sept 2026)
+
+   This used to pass the archive's original bytes straight through, and a
+   picture's pixel size is an answer too. Most mazes' screenshots were taken
+   in one client window, so they share one size per maze: in about 59% of
+   Odd One Out rounds the imposter was the only tile whose naturalWidth and
+   naturalHeight differed from the other three — invisible on the page, which
+   crops every tile square, and one line in the console. Guess the Maze went
+   through the image CDN at w=900 with the aspect kept, and the aspect alone
+   matched only the right name of the five in about 47% of rounds
+   (scratchpad scan3/leak-sim.js, the real dealers over the live archive).
+
+   So every picture now comes through the image CDN at one fixed output per
+   game — width, height, fit=cover, format and quality all fixed (PICTURE,
+   below) — whatever it was uploaded as. Every tile of a round, and every
+   round of a day, is the same number of pixels on each side, so size and
+   shape carry nothing; and the re-encode means the bytes are no longer the
+   archive file's own, so a byte count cannot be matched against it either.
+
+     Odd One Out  ODD_SIDE square, a centre crop. The page shows the tile
+                  as a square (object-fit: cover, centred, then zoomed
+                  towards its top right — .odd-tile img in style.css), so
+                  serving the centre square leaves what is on screen exactly
+                  as it was; the zoom is applied to the same pixels.
+     Guess        GUESS_W x GUESS_H, 16:10, a centre crop. The archive's
+                  screenshots run 1.47-1.98 wide to one high (median 1.57),
+                  so 16:10 trims the least from most of them. guess.js reads
+                  naturalWidth/naturalHeight and cuts its squares from
+                  whatever it is given, so it needs nothing but the smaller,
+                  fixed picture; the room shown whole at the end of a round
+                  is now this 16:10 frame of it, a little trimmed at the
+                  sides of the widest shots.
+
+   WHY THESE NUMBERS. The image CDN never enlarges: asked for more pixels
+   than the source has, it answers with the source's own size (checked on
+   `netlify dev`, 28 Sept 2026: a 746x481 picture asked for 1200x750 cover
+   came back 746x466, and fit=fill and fit=contain do no better). A size
+   bigger than the archive's smallest picture would therefore put that
+   picture — and every other picture from its maze, all the same size — back
+   out on its own. The smallest dealable screenshots today are 707 wide and
+   472 high, so the square is 450 and Guess's frame 704x440: every one of
+   the archive's 541 room pictures makes both exactly (scan3/byimg.json).
+   What that costs is resolution — a tile is still at least 1.4 source
+   pixels per CSS pixel at its largest, and Guess's tightest crop is ~70
+   source pixels blown up, where it was ~90 — which pixel art bears better
+   than most pictures do.
+
+   A picture uploaded later that is smaller than this still comes back
+   smaller, and so would still stand out. That is checked (sizeOf, below)
+   and said in the function log so it can be replaced, but the picture is
+   served anyway: one round where a console could tell is a smaller harm
+   than a round nobody can play all day.
+
+   WHAT IS STILL NOT HIDDEN is what the picture shows. A served picture can
+   be compared by eye, or pixel by pixel after the same CDN pass, with the
+   public archive — see "the picture addresses" in _deal.js, which has
+   always accepted that.
 
    ----------------------------------------------------------------------
    CACHED HARD, AND WHY THAT IS SAFE HERE
@@ -53,18 +114,22 @@
    PUBLIC_IMAGE_HEADERS in image.js).
 
    ----------------------------------------------------------------------
-   THE SIZE LIMIT
+   THE SIZE LIMIT, AND PICTURES FROM ELSEWHERE
 
    A function's answer can be at most 6MB, and base64 makes bytes a third
-   bigger, so a picture over MAX_DIRECT_BYTES is fetched again through the
-   site's image CDN at a bounded width (CDN_WIDTH) and that is served
-   instead. The archive's pictures are 100–750KB and the largest uploads
-   about 3MB, so this is a guard, not a path anybody normally takes. An
-   http(s) picture that big from somewhere else has no CDN route (the image
-   CDN only takes remote sources it has been told about) and is refused. */
+   bigger, so anything the CDN answers over MAX_BYTES is refused. At the
+   fixed sizes above a JPEG is well under 200KB, so this is a guard, not a
+   path anybody takes; the CDN fetches the original itself, so however big
+   the upload was never matters here.
+
+   An http(s) reference to somebody else's site has no route through the
+   image CDN (it only takes remote sources netlify.toml names, and this site
+   names none), and passing its bytes through as they are is exactly the
+   leak above, so it is refused (502). No room picture in the archive is one
+   today: uploads live behind the image function and the originals under
+   assets/. */
 const { getDb } = require("./_db");
 const { headersFor } = require("./_headers");
-const { imageUrl } = require("./_url");
 const { dayClosesAt } = require("./_daily");
 const deals = require("./_deal");
 
@@ -87,11 +152,21 @@ const IMAGE_HEADERS = {
     "Netlify-CDN-Cache-Control": `public, durable, s-maxage=${LIFE_S}, immutable`
 };
 
-/* A picture this big or smaller is served as it is; bigger goes through the
-   image CDN (see THE SIZE LIMIT). 4MB is 5.33MB in base64, leaving room for
-   the headers under the 6MB ceiling. */
-const MAX_DIRECT_BYTES = 4 * 1024 * 1024;
-const CDN_WIDTH = 1200;
+/* The one output each game's pictures are served at (see ONE SIZE PER
+   GAME). JPEG always: fm fixes the format, where without it the CDN picks
+   one from the browser's Accept header (share.js's previewImage met the
+   same thing), and one format for everybody is one set of bytes per tile
+   at the edge. */
+const ODD_SIDE = 450;
+const GUESS_W = 704, GUESS_H = 440;
+const PICTURE = {
+    odd: { w: ODD_SIDE, h: ODD_SIDE, q: 80 },
+    guess: { w: GUESS_W, h: GUESS_H, q: 85 }
+};
+
+/* Nothing bigger than this is sent (see THE SIZE LIMIT). 4MB is 5.33MB in
+   base64, leaving room for the headers under the 6MB ceiling. */
+const MAX_BYTES = 4 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 8000;
 
 const refuse = (statusCode, text) => ({
@@ -172,23 +247,57 @@ async function grab(url, fetchImpl, limit) {
     }
 }
 
-/* The picture behind a stored reference: as it is when it fits, through
-   the image CDN at CDN_WIDTH when it does not (see THE SIZE LIMIT). null
-   when it cannot be had. `fetchImpl` is the global fetch except in the
-   tests. */
-async function fetchPicture(ref, fetchImpl) {
+/* A JPEG's pixel size, read from its first frame header (SOF0-SOF15, less
+   the three markers in that range that are not frames), or null for
+   anything that is not a readable JPEG. Only the header is read: this is a
+   check on what the CDN sent, not a decoder. Pure. */
+function sizeOf(bytes) {
+    const b = bytes;
+    if (!b || b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return null;
+    let i = 2;
+    while (i + 9 < b.length) {
+        if (b[i] !== 0xff) return null;
+        const m = b[i + 1];
+        // Fill bytes, and the markers that carry no length.
+        if (m === 0xff) { i++; continue; }
+        if (m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; }
+        const len = b.readUInt16BE(i + 2);
+        if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+            return { w: b.readUInt16BE(i + 7), h: b.readUInt16BE(i + 5) };
+        }
+        if (len < 2) return null;
+        i += 2 + len;
+    }
+    return null;
+}
+
+/* The picture behind a stored reference, for `game`: through the site's
+   image CDN at that game's one fixed output (see ONE SIZE PER GAME), never
+   as it is stored. null when it cannot be had — including a reference to
+   somebody else's site, which has no CDN route (THE SIZE LIMIT). `fetchImpl`
+   is the global fetch except in the tests. */
+async function fetchPicture(ref, fetchImpl, game) {
+    const out = PICTURE[game];
+    if (!out || typeof ref !== "string" || !ref) return null;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith("//")) {
+        console.error("deal-image: a dealt picture is not on this site, so it cannot be served at a fixed size:", ref);
+        return null;
+    }
     const base = siteBase();
-    const url = imageUrl(base, ref);
-    if (!/^https?:\/\//i.test(url)) return null;
-    const direct = await grab(url, fetchImpl, MAX_DIRECT_BYTES);
-    if (direct && direct !== "big") return direct;
-    if (direct !== "big") return null;
-    // Too big to send as it is. Only a picture on this site can go through
-    // the site's image CDN; somebody else's cannot.
-    if (/^https?:/i.test(ref)) return null;
-    const qs = new URLSearchParams({ url: ref, w: String(CDN_WIDTH), q: "85" });
-    const smaller = await grab(`${base}/.netlify/images?${qs.toString()}`, fetchImpl, MAX_DIRECT_BYTES);
-    return smaller && smaller !== "big" ? smaller : null;
+    const qs = new URLSearchParams({
+        url: ref, w: String(out.w), h: String(out.h), fit: "cover", fm: "jpg", q: String(out.q)
+    });
+    const picture = await grab(`${base}/.netlify/images?${qs.toString()}`, fetchImpl, MAX_BYTES);
+    if (!picture || picture === "big") return null;
+    /* The CDN never enlarges (WHY THESE NUMBERS), so a picture smaller than
+       the fixed output comes back smaller, and would stand out from the
+       rest of its round. Served anyway — a round that will not load is the
+       worse failure — but said, with the reference, so it can be replaced. */
+    const got = sizeOf(picture.bytes);
+    if (!got || got.w !== out.w || got.h !== out.h) {
+        console.warn(`deal-image: ${ref} came back ${got ? got.w + "x" + got.h : "at an unreadable size"}, not ${out.w}x${out.h}; it is smaller than the ${game} pictures are served at, so its size stands out`);
+    }
+    return picture;
 }
 
 /* The whole request, with its collaborators passed in so the tests can run
@@ -219,7 +328,7 @@ async function serve(event, { db, fetchImpl, now }) {
         return refuse(404, "Not found");
     }
 
-    const picture = await fetchPicture(ref, fetchImpl);
+    const picture = await fetchPicture(ref, fetchImpl, addr.game);
     /* 502, no-store: the address was right and the picture behind it would
        not come. The games already try a failed picture again by themselves
        (watchTiles in js/oddoneout.js, prepareRound in js/guess.js), and a
@@ -242,5 +351,12 @@ exports.serve = serve;
 exports.servable = servable;
 exports.readAddress = readAddress;
 exports.fetchPicture = fetchPicture;
-exports.MAX_DIRECT_BYTES = MAX_DIRECT_BYTES;
+exports.sizeOf = sizeOf;
+exports.PICTURE = PICTURE;
+exports.MAX_BYTES = MAX_BYTES;
 exports.AFTER_CLOSE_MS = AFTER_CLOSE_MS;
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("deal-image", exports.handler);

@@ -44,7 +44,7 @@
    a day counts, and a second is answered with the first's score — so even
    that cannot be compounded, or used to check answers. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { playerFrom } = require("./_player");
+const { playerFrom, publicName } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 /* dayIsOpen and rangeBounds are rules about the clock and the calendar
    rather than about the game, and both games want the same answers. The
@@ -57,6 +57,10 @@ const { launchCut, afterLaunch, fromLaunch, isRealDay, filedScore } = require(".
 const { clientNet } = require("./_net");
 const speed = require("./_speed");
 const deals = require("./_deal");
+// No raw Discord id or nicknamed avatar on a public board (29 Sept 2026).
+const { publicLists } = require("./_publicid");
+// The ban gate and the boards' ban filter (29 Sept 2026).
+const { writeRefusal, withoutBanned } = require("./_bans");
 
 const COLLECTION = "guess_scores";
 const ROUNDS = 5;
@@ -357,16 +361,24 @@ exports.handler = async (event) => {
                 board(col, fromLaunch(all.from, launch), all.to, BOARD_SIZE, launch)
             ]);
 
+            /* The public id in place of the Discord one on every row, and
+               no avatar for a player with a nickname (29 Sept 2026) — one
+               nickname read for all four lists. See _publicid.js. */
+            // Banned accounts' rows off first, while the ids are still the
+            // raw ones (29 Sept 2026; withoutBanned in _bans.js).
+            const [bDay, bWeek, bMonth, bAll] = await publicLists(db,
+                await withoutBanned(db, [todayRows.map(dayRow), weekRows, monthRows, allRows]));
+
             // "date" is the day these are FOR; "day" is the board itself.
             // Named for how the page reads them, not for how they are stored.
             return json(200, {
                 date: day,
                 weekFrom: week.from,
                 monthFrom: month.from,
-                day: todayRows.map(dayRow),
-                week: weekRows,
-                month: monthRows,
-                allTime: allRows
+                day: bDay,
+                week: bWeek,
+                month: bMonth,
+                allTime: bAll
             });
         } catch (e) {
             return json(500, { error: "Could not read the scoreboard" });
@@ -387,6 +399,8 @@ exports.handler = async (event) => {
         } catch (e) {
             return json(400, { error: "Invalid request body" });
         }
+        // `null` parses cleanly and then has nothing to read a field off.
+        if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
 
         const day = String(body.day || "").slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json(400, { error: "Bad day" });
@@ -399,6 +413,15 @@ exports.handler = async (event) => {
         // FILING below, and the same rule in daily-scores.js.
         const open = dayIsOpen(day);
         if (!open && (body.action !== undefined || !player)) return json(400, { error: "That day is not open" });
+
+        /* BANNED, AND THE REJECTED NICKNAME (29 Sept 2026; see _bans.js and
+           the same gate in daily-scores.js). Every POST — a guess, a start,
+           a finished day, signed out included (judged by the network) — is
+           403 { error, banned } for a banned account or network, and 403
+           { error, nickRequired: true } for a signed-in player whose
+           nickname the admins have rejected, until they choose another. */
+        const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true });
+        if (refusal) return refusal;
 
         /* ---------- one guess ----------
 
@@ -430,9 +453,10 @@ exports.handler = async (event) => {
                the day instead, replaying any guesses it made signed out
                first (adoptRecorded in js/guess.js).
              - signed-out guesses are capped per network per day
-               (claimAnonMove in _speed.js), at three times a day's most
-               guesses and then some — beyond any person, well short of a
-               script asking every round of every day. */
+               (claimAnonMove in _speed.js), at twenty times a day's most
+               guesses and then some — room for a whole school or phone
+               network behind one address, and still a ceiling on a script
+               asking every round. */
         if (body.action === "move") {
             if (String(event.body || "").length > speed.MAX_START_BODY) return privateJson(413, { error: "Too large" });
             const round = speed.markRound(body.round, ROUNDS);
@@ -462,9 +486,16 @@ exports.handler = async (event) => {
                     answer: correct || body.final === true ? answerOf(dealt) : null
                 });
             }
+            /* `replay: true` is a guess made signed out and sent again now
+               the day is recorded (Daily.replay in js/daily.js). Recording
+               one marks the day untimed for good, so a replay run against
+               a clock another device started earns no bonus for guesses
+               made long before (recordGuess in _speed.js; 28 Sept 2026).
+               Only `true` counts, like `anon`. */
+            const replayed = body.replay === true;
             let outcome;
             try {
-                outcome = await speed.recordGuess(db, ensureUniqueIndex, day, player.id, round, offered, dealt, TRIES, arrived);
+                outcome = await speed.recordGuess(db, ensureUniqueIndex, day, player.id, round, offered, dealt, TRIES, arrived, replayed);
             } catch (e) {
                 console.error("guess-scores: could not record a guess", e);
                 return privateJson(503, { error: "The guess could not be recorded just now" });
@@ -569,11 +600,16 @@ exports.handler = async (event) => {
            untimed one — is no bonus rather than a day that fails to record. */
         const { bonus, ms, roundSecs } = speed.dayBonus(clock, grid.map(g => g > 0), arrived);
 
+        /* The name the board shows: their nickname if they have chosen one,
+           read from the players row rather than the session (publicName in
+           _player.js; 28 Sept 2026), else their Discord name. */
+        const shown = await publicName(db, player);
+
         try {
             await col.insertOne({
                 day,
                 playerId: player.id,
-                name: player.name,
+                name: shown,
                 avatar: player.avatar,
                 // `points` is still the base score, as it always was; the
                 // boards add `bonus` to it. `ms` (the whole day) and
@@ -655,3 +691,8 @@ async function dealReply(db, event, params) {
 // For the tests: the pure scoring halves.
 module.exports.scoreRecorded = scoreRecorded;
 module.exports.scoreClaim = scoreClaim;
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("guess-scores", exports.handler);

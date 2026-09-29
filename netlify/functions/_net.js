@@ -111,7 +111,14 @@ async function claimNotifySlot(db, kind, max) {
 
    False for a caller with no address at all, as each copy was: there is
    nothing to match, and a missing header is not a reason to swallow a
-   message. Throws if the database does; each caller already answers that. */
+   message. Throws if the database does; each caller already answers that.
+
+   SUPERSEDED (29 Sept 2026) by _bans.js, which contact.js and
+   dead-end-leads.js now ask instead: bans have levels, ends, and targets
+   beyond an address (a Discord account, a signed-in player's network
+   code), and an ended cool-down must not count — none of which this knows.
+   Kept, unused, only so nothing that still imports it breaks; ask
+   _bans.js's writeRefusal or banFor in anything new. */
 async function isBanned(db, event) {
     const ip = clientIp(event);
     if (!ip) return false;

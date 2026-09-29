@@ -126,3 +126,8 @@ exports.handler = async (event) => {
         return json(500, { error: `Couldn't start the local scan: ${err.message}` });
     }
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("furni-scan-local", exports.handler);

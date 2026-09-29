@@ -83,11 +83,59 @@
         return engine;
     }
 
+    /* A palette is worn OVER a theme (28 Sept 2026): the Controls panel
+       sets settings.theme and settings.palette together, and recolour.js
+       now scopes its overrides so they win against the theme's rules.
+
+       But the engine builds its catalogue by reading the sheets the browser
+       has already parsed, once, and the theme's sheet is a <link> whose href
+       is set in <head> — or changed by applyTheme when the settings answer
+       — and may not have arrived when the first apply runs. A catalogue
+       taken then has none of the theme's own rules in it, and a colour the
+       editor changed IN the theme (a palette made over Pumpkin can do that)
+       would find nothing to paint over. So if the theme's sheet is still on
+       its way, the palette is put on now and put on again, from a fresh
+       scan, when it lands. Nothing waits: the first apply is immediate.
+
+       Every wear rescans for the same reason: the remembered palette goes
+       on first, then the settings answer can switch the theme under it, and
+       the second wear must not paint from the first one's catalogue. Two or
+       three scans a page, and only on a page that has a palette at all.
+
+       `wearing` counts wears, so a late theme sheet cannot put back a
+       palette that has since been replaced or taken off. */
+    let wearing = 0;
+
     async function wear(palette) {
         if (!palette) return;
+        const seq = ++wearing;
         const R = await loadEngine();
-        if (!R) return;
-        R.apply(palette);
+        if (!R || seq !== wearing) return;
+        R.rescan();
+        /* base "/": the engine fetches the original art to recolour it as
+           base + "assets/img/<file>", and with no base that resolved against
+           the page's own folder — so on a nested address (/wizard/<room>
+           without its <base>, or the 404 page answering /maze/a/b) every
+           sprite 404'd and the art stayed the theme's. The same fix the
+           engine's own script src had, above. (28 Sept 2026) */
+        R.apply(palette, { base: "/" });
+        /* Whether a sheet is "still on its way" cannot be asked reliably —
+           a link whose href has just been changed can still report the OLD
+           sheet — so this simply listens for the theme's next load. One that
+           has already landed never fires, and the listener is inert. */
+        const link = document.getElementById("theme-css");
+        if (link && link.getAttribute("href")) {
+            link.addEventListener("load", () => {
+                if (seq !== wearing) return;
+                R.rescan();
+                R.apply(palette, { base: "/" });
+            }, { once: true });
+        }
+    }
+
+    function takeOff() {
+        wearing++;
+        if (window.Recolour) window.Recolour.clear();
     }
 
     /* The preview wins, and stops here — a tab opened to look at an unsaved
@@ -178,7 +226,7 @@
                        alive on returning visitors indefinitely. */
                     let had = false;
                     try { had = !!localStorage.getItem(CACHE_KEY); localStorage.removeItem(CACHE_KEY); } catch (e) {}
-                    if (had && window.Recolour) window.Recolour.clear();
+                    if (had) takeOff();
                     return;
                 }
                 const res = await fetch("/.netlify/functions/palettes?id=" +
@@ -193,7 +241,7 @@
                 if (res.status === 404) {
                     let had = false;
                     try { had = !!localStorage.getItem(CACHE_KEY); localStorage.removeItem(CACHE_KEY); } catch (e) {}
-                    if (had && window.Recolour) window.Recolour.clear();
+                    if (had) takeOff();
                     return;
                 }
                 if (!res.ok) return;

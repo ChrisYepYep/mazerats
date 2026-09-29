@@ -36,12 +36,13 @@
     /* [codepoint, Alt code (null where none reaches it), name (pictures
        only)]. The standard and beyond-range lists are written without the
        parts they never have, and filled out by cellsOf() below. */
+    /* The wording is kept to a few words on purpose (28 Sept 2026): the
+       window is a sheet to pick from, not an article about the font, and
+       the old paragraphs of explanation buried the tiles under them. */
     const GROUPS = [
         {
-            title: "Picture glyphs",
-            count: "24 of 120",
+            title: "Pictures",
             pic: true,
-            note: "Codes where Volter Goldfish draws a picture instead of the letter or symbol Unicode assigns to that slot — Alt+0165 is nominally a yen sign, for instance. Named by eye from the rendering.",
             items: [
                 [0x0192, 131, "Heart"],
                 [0x2020, 134, "Sparkle"],
@@ -70,9 +71,7 @@
             ]
         },
         {
-            title: "Standard characters",
-            count: "96 codes",
-            note: "These draw what you'd expect — accented letters, currency, punctuation, fractions. Included so the sheet is complete, and because a few are close calls worth judging yourself.",
+            title: "Letters & symbols",
             items: [
                 [0x20AC, 128], [0x0081, 129], [0x201A, 130], [0x201E, 132], [0x2026, 133], [0x02C6, 136],
                 [0x2039, 139], [0x0152, 140], [0x008D, 141], [0x008F, 143], [0x0090, 144], [0x2019, 146],
@@ -93,9 +92,9 @@
             ]
         },
         {
-            title: "Beyond the Alt range",
-            count: "48 codepoints",
-            note: "Mapped in the font but above U+00FF, so no Alt code reaches them. Paste the character or use its HTML entity instead. The three <code>U+F0xx</code> slots are the font's private-use area.",
+            // Above U+00FF, where no Alt code reaches: copy only.
+            title: "Copy only",
+            note: "No Alt code for these.",
             items: [
                 0x0131, 0x0152, 0x0153, 0x0178, 0x0192, 0x02C6, 0x02C7, 0x02D6,
                 0x02D8, 0x02D9, 0x02DA, 0x02DB, 0x02DD, 0x03C0, 0x1030, 0x2013,
@@ -138,34 +137,17 @@
         built = true;
 
         body.innerHTML = `
-            <p class="glyphs-intro">The little pictures you see in Habbo room names — the stars, hearts, arrows and
-                hands in names like <span class="glyphs-sample">&#170; Funky Maze &#170;</span> — are ordinary
-                characters typed with <strong>Alt codes</strong>. Habbo letters them in a font called Volter
-                Goldfish, and for a couple of dozen slots that font draws a picture where the rest of the world
-                draws a letter. This is every one of them.</p>
-            <div class="glyphs-how">
-                <h3 class="glyphs-how-title">Two ways to use it</h3>
-                <ol>
-                    <li><strong>Click any tile</strong> to copy that character, then paste it wherever you are
-                        naming something.</li>
-                    <li><strong>Or type it:</strong> hold <kbd>Alt</kbd> and type the four digits on the
-                        <em>numeric keypad</em> — the block of numbers on the right of a full keyboard. The
-                        row of numbers above the letters will not do it.</li>
-                </ol>
-                <p class="glyphs-how-note">Which is why this is for a computer rather than a phone: an Alt code
-                    needs a numeric keypad, and a phone has neither that nor anywhere to type one. Everything is
-                    still copyable by tapping a tile if you are on one anyway.</p>
+            <div class="glyphs-intro">
+                <p>These symbols only draw as pictures in Volter Goldfish, the font Habbo uses. Anywhere else they
+                    show up as ordinary letters, so they're really only useful in Habbo Origins, like in room names.</p>
+                <p>Click one to copy it, or hold <kbd>Alt</kbd> and type its code on the number pad.</p>
             </div>
             ${GROUPS.map((g, i) => `
                 <section class="glyphs-group" aria-labelledby="glyphs-group-${i}">
-                    <h3 class="glyphs-group-title" id="glyphs-group-${i}">${g.title} <span class="glyphs-count">${g.count}</span></h3>
-                    <p class="glyphs-note">${g.note}</p>
-                    <div class="glyphs-grid" data-group="${i}"></div>
+                    <h3 class="glyphs-group-title" id="glyphs-group-${i}">${g.title}</h3>
+                    ${g.note ? `<p class="glyphs-note">${g.note}</p>` : ""}
+                    <div class="glyphs-grid${g.pic ? " is-pics" : ""}" data-group="${i}"></div>
                 </section>`).join("")}
-            <p class="glyphs-foot">Read from <code>assets/fonts/VolterGoldfish.ttf</code> — 269 mapped codepoints in all,
-                95 of them printable ASCII. The bold cut carries 245, missing 25 of the upper-range glyphs, so a
-                picture that works in body text may vanish when something is set bold. Every tile is drawn in the
-                font itself, so what you see is the real thing.</p>
             <p class="visually-hidden" id="glyphs-status" role="status" aria-live="polite"></p>`;
 
         GROUPS.forEach((g, i) => {
@@ -189,7 +171,7 @@
         // would announce U+00AA as "feminine ordinal", which is the one
         // thing this tile is here to say it is not.
         btn.setAttribute("aria-label",
-            `${c.name ? c.name + ", " : ""}${c.alt !== null ? altLabel(c.alt) : "no Alt code"}, ${uniLabel(c.cp)}. Copy`);
+            `${c.name ? c.name + ", " : ""}${c.alt !== null ? altLabel(c.alt) : uniLabel(c.cp) + ", no Alt code"}. Copy`);
 
         const add = (cls, text) => {
             const s = document.createElement("span");
@@ -200,12 +182,14 @@
             return s;
         };
         add("glyphs-glyph", ch);
-        // No Alt code: a dash, set in Roboto (see .glyphs-alt.is-none) —
-        // in Volter an em dash is a pair of musical notes.
-        add("glyphs-alt" + (c.alt === null ? " is-none" : ""), c.alt !== null ? altLabel(c.alt) : "—");
-        add("glyphs-uni", uniLabel(c.cp));
-        if (c.name) add("glyphs-name", c.name);
-        add("glyphs-done", "Copied");
+        // The picture's name stays in the aria-label above, for a screen
+        // reader, but is not printed: the tile is just the glyph and its code.
+        /* The one line of small print under the glyph: its Alt code, or
+           "Copy" where none reaches it. It is also where "Copied!" shows
+           for a moment after a press (see copied), so the tile says what
+           happened right where it was pressed. */
+        const code = add("glyphs-alt", c.alt !== null ? altLabel(c.alt) : "Copy");
+        code.dataset.label = code.textContent;
         return btn;
     }
 
@@ -215,6 +199,13 @@
        back to one that would draw them, and the tile is a blank square. */
     function flagBlanks() {
         if (!document.fonts || !document.fonts.load) return;
+        /* Measured in the REGULAR cut, although the tiles draw bold first.
+           Where the regular cut draws nothing (U+0081 and its like), the
+           bold cut draws a placeholder box instead — so measured bold, those
+           slots looked like real glyphs and showed as a row of little boxes.
+           They are blanks either way; the regular cut is the one that says
+           so. (Nothing the regular cut draws becomes a box in bold: the
+           characters the bold cut lacks fall back to regular.) */
         document.fonts.load('36px "Volter Goldfish"').then(() => {
             const cv = document.createElement("canvas");
             cv.width = 64; cv.height = 64;
@@ -228,13 +219,9 @@
                 ctx.fillText(btn.dataset.ch, 8, 32);
                 const d = ctx.getImageData(0, 0, 64, 64).data;
                 for (let i = 3; i < d.length; i += 4) if (d[i] > 20) return;
+                // Faded and left empty (see .glyphs-cell.is-blank).
                 btn.classList.add("is-blank");
                 btn.querySelector(".glyphs-glyph").textContent = "";
-                const tag = document.createElement("span");
-                tag.className = "glyphs-name";
-                tag.textContent = "blank";
-                tag.setAttribute("aria-hidden", "true");
-                btn.insertBefore(tag, btn.querySelector(".glyphs-done"));
             });
         }, () => { /* no font, no flags: the tiles still copy */ });
     }
@@ -247,12 +234,22 @@
             if (status) status.textContent = "Couldn't copy. Select the character and press Ctrl+C.";
             return;
         }
-        btn.classList.remove("is-copied");
-        void btn.offsetWidth; // restart the flash on a second press
+        const code = btn.querySelector(".glyphs-alt");
         btn.classList.add("is-copied");
+        if (code) code.textContent = "Copied!";
         clearTimeout(btn._copiedTimer);
-        btn._copiedTimer = setTimeout(() => btn.classList.remove("is-copied"), 900);
-        if (status) status.textContent = `Copied. ${btn.getAttribute("aria-label").replace(/\. Copy$/, "")}`;
+        btn._copiedTimer = setTimeout(() => {
+            btn.classList.remove("is-copied");
+            if (code) code.textContent = code.dataset.label;
+        }, 900);
+        /* Emptied first and refilled a frame later: a screen reader does not
+           announce a live region whose text has not changed, so a second copy
+           of the same tile was silent. */
+        if (status) {
+            const said = `Copied. ${btn.getAttribute("aria-label").replace(/\. Copy$/, "")}`;
+            status.textContent = "";
+            requestAnimationFrame(() => { status.textContent = said; });
+        }
     }
 
     /* The clipboard API first; the old textarea route where there is none

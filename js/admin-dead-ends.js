@@ -442,7 +442,10 @@
         });
 
         const hasShots = lead.images && lead.images.length;
-        const creditName = lead.habboName || (lead.from && lead.from.name) || "";
+        // A player's chosen nickname before their Discord name (28 Sept
+        // 2026): the credit is public, and the nickname is the name they
+        // asked the site to show. dead-end-leads.js keeps `from.nick` current.
+        const creditName = lead.habboName || (lead.from && (lead.from.nick || lead.from.name)) || "";
         /* What an earlier accept already did. A lead accepted, reopened and
            accepted again opened this form with both boxes ticked, inviting a
            second copy of the screenshots and a second credit. The server now

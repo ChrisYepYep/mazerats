@@ -3166,14 +3166,25 @@
             ? "/.netlify/functions/furni-meta?classes=" + classList
             : "/.netlify/functions/furni-meta";
 
+        /* Both on a 15-second leash (28 Sept 2026): a request that never
+           answered left "Loading the furni…" up for good with no Retry. An
+           abort takes the same path as any other failure below. */
+        /* The leash holds until the BODY is read, not just the headers: a
+           connection that stalls mid-body hung the same way. */
+        const leashed = (url, read) => {
+            const ctl = typeof AbortController === "function" ? new AbortController() : null;
+            const timer = ctl ? setTimeout(() => ctl.abort(), 15000) : 0;
+            return fetch(url, ctl ? { signal: ctl.signal } : undefined)
+                .then(read)
+                .finally(() => clearTimeout(timer));
+        };
         const [cat, meta] = await Promise.all([
             // The artwork stays forgiving: a missing sprite grid is a piece
             // drawn late or not at all, not a game with no seats.
             noArt.length
-                ? fetch(catUrl).then(r => r.json()).catch(() => ({ items: [] }))
+                ? leashed(catUrl, r => r.json()).catch(() => ({ items: [] }))
                 : Promise.resolve({ items: [] }),
-            fetch(metaUrl)
-                .then(r => (r.ok ? r.json() : null))
+            leashed(metaUrl, r => (r.ok ? r.json() : null))
                 .catch(() => null)
         ]);
         for (const row of cat.items || []) {
@@ -3282,8 +3293,15 @@
         if (load && note !== undefined) load.textContent = note || "";
         const play = document.getElementById("ff-title-play");
         /* Unreachable disables Play too: there is nothing to play, and the
-           Retry beside the message is the one button that can change that. */
-        if (play) play.disabled = name === "loading" || name === "unreachable" || gameClosed();
+           Retry beside the message is the one button that can change that.
+
+           A CLOSED game is not written in here any more (28 Sept 2026). The
+           page's gate can close the game on a slow settings answer and open it
+           again when the real one arrives — and nothing re-ran this, so Play
+           stayed disabled on an open game until a reload. The CSS already
+           hides the form while the game is closed, and the submit handler
+           checks gameClosed() itself. */
+        if (play) play.disabled = name === "loading" || name === "unreachable";
     }
 
     const hideTitle = () => titleState("playing");
@@ -3309,6 +3327,13 @@
     async function prepare() {
         renderWho();
         if (window.Account) window.Account.ready().then(renderWho);
+        /* And on every later answer (28 Sept 2026): a nickname set from the
+           console, or a sign-in or out, changes what this line says. Once,
+           however many times prepare() runs (Retry calls it again). */
+        if (window.Account && window.Account.onChange && !whoWatched) {
+            whoWatched = true;
+            window.Account.onChange(renderWho);
+        }
         refreshBoard();
 
         titleState("loading", "Fetching levels…");
@@ -3354,6 +3379,7 @@
        games use — and it buys exactly one thing: a name on the leaderboard.
        The game is playable signed out, so nothing here gates Play. */
     let runStartedAt = 0;
+    let whoWatched = false;
 
     function renderWho() {
         const el = document.getElementById("ff-title-who");
@@ -3362,7 +3388,26 @@
         const me = acct && acct.current;
         el.innerHTML = "";
         if (me) {
-            el.append(`On the board as ${me.name} - `);
+            /* The name the board will show: the nickname when there is one
+               (28 Sept 2026). Without one, a "set a nickname" button sits
+               between the name and "sign out", opening the Console's Profile
+               on the field (Account.editNickname — this page carries the
+               console too). renderWho runs again on every Account change
+               (see showTitle), so the button goes once a nickname is set. */
+            const shown = acct.nameOf ? acct.nameOf(me) : me.name;
+            el.append(`On the board as ${shown} - `);
+            // Not over a nickname the admins have locked (29 Sept 2026): the
+            // Profile would only say it is locked, as the first-sign-in
+            // prompt already knows (wantsNickPrompt in js/account.js).
+            if (!me.nick && !me.nickLocked && acct.canNick && acct.canNick() && acct.editNickname) {
+                const nickBtn = document.createElement("button");
+                nickBtn.type = "button";
+                nickBtn.className = "ff-linkish";
+                nickBtn.textContent = "set a nickname";
+                nickBtn.addEventListener("click", () => acct.editNickname());
+                el.appendChild(nickBtn);
+                el.append(" - ");
+            }
             const out = document.createElement("button");
             out.type = "button";
             out.className = "ff-linkish";
@@ -4042,6 +4087,16 @@
                 boardSays("This run couldn't be entered on the leaderboard.", false);
             } else if (data.reason === "already-submitted") {
                 // Only reachable by a duplicate send; the first answer stands.
+            } else if (res.status === 403 && (data.banned || data.nickRequired)) {
+                /* Banned, or the nickname the admins asked to change (29
+                   Sept 2026). The run has ended by now, so the window that
+                   says why (Account.writeRefused in js/account.js) opens
+                   over the round-end panel rather than over play, and the
+                   board line says plainly the run did not go on. */
+                boardSays("This run couldn't be entered on the leaderboard.", false);
+                if (window.Account && typeof window.Account.writeRefused === "function") {
+                    window.Account.writeRefused(403, data, "play");
+                }
             } else if (res.status === 400 && data.error) {
                 /* REFUSED, and the server says why - a run faster than the
                    furni can fall, more points than the levels pay. That is
@@ -4673,6 +4728,18 @@
     }
 
 
+    /* Whether a player's Play has to stop here (29 Sept 2026): a ban, or a
+       nickname the admins asked to change. Account.mayPlay (js/account.js)
+       shows the window saying why and answers false; for anyone signed out
+       and unbanned, or signed in in good standing, it answers true and this
+       costs nothing. Never in the builder, whose Start tests a level and
+       writes nothing to the board. */
+    function playLocked() {
+        if (Editor) return false;
+        const A = window.Account;
+        return !!(A && typeof A.mayPlay === "function" && !A.mayPlay());
+    }
+
     /* In the builder, Start plays the level being edited — that is the point of
        having the button there. For a player it starts the RUN: the published
        levels in order, each one a round, dropping faster and landing further
@@ -5040,6 +5107,7 @@
                backstop: a form can still be submitted with the keyboard, and
                the attribute may land after the page has settled. */
             if (gameClosed()) return;
+            if (playLocked()) return;
             const play = document.getElementById("ff-title-play");
             if (play) play.disabled = true;
             try {
@@ -5062,6 +5130,7 @@
         document.getElementById("ff-round-go").addEventListener("click", nextRound);
         document.getElementById("ff-runend-close").addEventListener("click", hideRunEnd);
         document.getElementById("ff-runend-again").addEventListener("click", () => {
+            if (playLocked()) return;
             hideRunEnd();
             startRound().catch(e => status(`Could not start: ${e.message}`, "bad"));
         });

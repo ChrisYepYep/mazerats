@@ -148,7 +148,7 @@ exports.handler = async (event) => {
        _auth.js), which has to reach the admin page as a 503 it retries, not
        as the 401 that signs it out. */
     try {
-        return await write(event, settings);
+        return await write(event, settings, db);
     } catch (e) {
         console.error("settings: write failed", e);
         /* Only the tagged lookup failure is an outage to retry; anything
@@ -158,7 +158,7 @@ exports.handler = async (event) => {
     }
 };
 
-async function write(event, settings) {
+async function write(event, settings, db) {
     if (!isAuthorized(event)) return UNAUTHORIZED;
     // canWrite, not isAuthorized: a viewer is a real logged-in account and
     // passes isAuthorized quite correctly — it just isn't allowed to change
@@ -207,6 +207,14 @@ async function write(event, settings) {
             const p = String(body.palette || "").trim().toLowerCase();
             if (p && !/^[a-z0-9-]{1,40}$/.test(p)) {
                 return json(400, { error: "That is not a palette name." });
+            }
+            /* And one that exists (28 Sept 2026). The Controls panel now
+               puts palettes live from a list it read when it was opened, so
+               a palette deleted in another tab since then is an ordinary
+               click away — and setting it would point every visitor's page
+               at a 404. One indexed read, on an admin write. */
+            if (p && db && !(await db.collection("palettes").findOne({ id: p }, { projection: { _id: 1 } }))) {
+                return json(404, { error: "That palette has been deleted. Pick another." });
             }
             update.palette = p || null;
         }
@@ -262,9 +270,17 @@ async function write(event, settings) {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
             fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
-            theme: (doc && doc.theme) || DEFAULT_THEME
+            theme: (doc && doc.theme) || DEFAULT_THEME,
+            // Answered alongside the theme, now that the Controls panel
+            // sets them together and lights one of the two from the reply.
+            palette: (doc && doc.palette) || null
         });
     }
 
     return json(405, { error: "Method not allowed" });
 }
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("settings", exports.handler);

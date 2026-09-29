@@ -127,7 +127,18 @@ window.Daily = (function () {
             // fetch only throws on a network failure; a 4xx/5xx came back
             // as "spent" all the same, so the day was cleared while the
             // ticket stayed, to clear it again on the next open.
-            return spent.ok;
+            if (!spent.ok) return false;
+            /* The reset deleted the day's clock on the server (forgetDay in
+               netlify/functions/_speed.js), so this page's memory of having
+               started it is now wrong. start() remembers a start per game
+               and day for the whole visit, and a page that was not reloaded
+               used to replay the reset day without sending one: the server
+               found no clock at round 0, wrote the replay as noClock, and
+               the day the reset was meant to give back earned no speed
+               bonus at all. So every start this page remembers for the game
+               is forgotten here, whatever the day (28 Sept 2026). */
+            forgetStarts(game);
+            return true;
         } catch (e) {
             return false;
         }
@@ -169,6 +180,16 @@ window.Daily = (function () {
             const res = await fetch(url, Object.assign({ credentials: "same-origin" }, init, { signal: controller.signal }));
             let body = null;
             try { body = await res.json(); } catch (e) { body = null; }
+            /* A 403 saying the player is banned, or must choose a new
+               nickname before playing (29 Sept 2026): the window that says
+               so is js/account.js's (Account.writeRefused), shown here once
+               for every request the games make, so neither game has to
+               know. The games still see the refusal and treat it as they
+               treat any other a pick or guess could not survive. */
+            if (res.status === 403 && body && (body.banned || body.nickRequired)
+                && window.Account && typeof Account.writeRefused === "function") {
+                try { Account.writeRefused(403, body, "play"); } catch (e) { /* the refusal stands either way */ }
+            }
             return { status: res.status, body };
         } catch (e) {
             return { status: 0, body: null };
@@ -235,7 +256,10 @@ window.Daily = (function () {
            itself does nothing signed out, or when the server has already
            refused it (a closed day), so this cannot loop. */
         if (!o.anon && !o.untimed && round === 0 && !startConfirmed.has(key)) await start(game, day, o.url);
-        const payload = Object.assign({ game, day, action: "move", round }, data, o.anon ? { anon: true } : {});
+        // `replay` marks a move sent again by replay() below, which the
+        // server reads as "this day is not to be timed" (28 Sept 2026).
+        const payload = Object.assign({ game, day, action: "move", round }, data,
+            o.anon ? { anon: true } : {}, o.replay ? { replay: true } : {});
         let reply = { status: 0, body: null };
         for (let attempt = 0; attempt < 4; attempt++) {
             reply = await post(o.url || SCORES_URL, payload);
@@ -270,9 +294,17 @@ window.Daily = (function () {
        speed bonus — exactly what a day begun signed out always earned.
        Starting a clock here would time a replay, and a replay of moves
        already made takes a second a round, which would be most of the
-       bonus for nothing. (If another device already started the day's
-       clock, the replay is timed against THAT start, which is the honest
-       reading of it.)
+       bonus for nothing.
+
+       And untimed even when another device has already started the day's
+       clock. That case used to time the replay against the other device's
+       start, which sounded honest and was not: the rounds after the first
+       landed a second or so apart as the replay ran through them, and each
+       earned nearly the whole round's bonus for moves made long before. So
+       every replayed move now carries `replay: true`, and the server, on
+       recording one, marks the day's row noClock for good — the day earns
+       no bonus whichever device started a clock (rowForMove in
+       netlify/functions/_speed.js; 28 Sept 2026).
 
        SAFE TO REPEAT. A round the server already has answers `already`
        (Odd One Out) or `already`/`repeat` (Guess the Maze) with the
@@ -287,7 +319,7 @@ window.Daily = (function () {
         const o = opts || {};
         const replies = [];
         for (const item of list || []) {
-            const reply = await move(game, day, item.round, item.data, { url: o.url, untimed: true });
+            const reply = await move(game, day, item.round, item.data, { url: o.url, untimed: true, replay: true });
             replies.push(reply);
             if (reply.status !== 200 || !reply.body || !reply.body.recorded) return { ok: false, replies };
         }
@@ -454,6 +486,17 @@ window.Daily = (function () {
         return job;
     }
 
+    /* Forgets every start this page remembers for one game, on any day —
+       for claimReset, after an admin reset has deleted the clock on the
+       server. The keys are "game:day", so the prefix is the game and the
+       colon (28 Sept 2026). */
+    function forgetStarts(game) {
+        const prefix = game + ":";
+        for (const key of Array.from(startSent)) if (key.startsWith(prefix)) startSent.delete(key);
+        for (const key of Array.from(startConfirmed)) if (key.startsWith(prefix)) startConfirmed.delete(key);
+        for (const key of Array.from(startsInFlight.keys())) if (key.startsWith(prefix)) startsInFlight.delete(key);
+    }
+
     /* A time taken, as a board writes it: "1:42", or "1:02:05" past the
        hour. Only ever drawn on a single day's board, small, beside the
        total it helped earn. Published so Guess the Maze writes it the
@@ -545,11 +588,27 @@ window.Daily = (function () {
         return out;
     }
 
-    function rows(list, mine, empty) {
+    /* Whether a board row is the signed-in player's own (29 Sept 2026).
+
+       The boards no longer send the Discord id: a row's `id` is a public
+       one (publicIdOf in netlify/functions/_publicid.js), and `me` hands the
+       player their own as Account.current.publicId. The raw id is still
+       tried second, for a board answer from before the deploy that the edge
+       or the browser is still holding — a Discord id and a public id can
+       never be mistaken for each other (digits only, and 17 to 20 of them,
+       against 16 characters of base64url), so the fallback cannot match
+       somebody else's row. `who` is Account.current, or null. Published as
+       Daily.isMine for the other boards. */
+    function isMine(row, who) {
+        if (!row || !row.id || !who) return false;
+        return (Boolean(who.publicId) && row.id === who.publicId) || row.id === who.id;
+    }
+
+    function rows(list, who, empty) {
         if (!list || !list.length) return `<li class="guess-board-empty">${escapeHtml(empty)}</li>`;
         const place = ranks(list);
         return list.map((row, i) => `
-            <li class="guess-board-row${mine && row.id === mine ? " is-me" : ""}">
+            <li class="guess-board-row${isMine(row, who) ? " is-me" : ""}">
                 <span class="guess-board-rank" aria-hidden="true">${place[i]}</span>
                 ${row.avatar
                     ? `<img class="guess-board-face" src="${escapeHtml(row.avatar)}" alt="" aria-hidden="true" loading="lazy">`
@@ -595,7 +654,9 @@ window.Daily = (function () {
            midnight has already moved on from. */
         const forDay = o.day || today();
 
-        const me = () => (window.Account && Account.current ? Account.current.id : null);
+        // The whole account, not its id: rows() matches on the public id
+        // first (see isMine).
+        const me = () => (window.Account && Account.current ? Account.current : null);
 
         function draw() {
             if (!data) {
@@ -606,7 +667,13 @@ window.Daily = (function () {
                 panel.innerHTML = `<p class="guess-board-note">The scoreboard could not be reached just now.</p>`;
                 return;
             }
-            const invite = me() ? "" : `
+            /* Signed in with no nickname, the line that says which name the
+               score went up under, and a way to choose another (28 Sept
+               2026). Account.nickHintHtml draws it, answers its button and
+               takes it away again once a nickname is set. Not for a day
+               the game says was played unlisted (opts.listed === false),
+               which went up under no name at all. */
+            const invite = me() ? (o.listed !== false && window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "") : `
                 <p class="guess-board-note guess-board-invite">
                     Your ${o.points || 0} points are saved on this device.
                     <button type="button" class="guess-btn" data-daily-signin>Sign in with Discord to be listed</button>
@@ -655,7 +722,7 @@ window.Daily = (function () {
 
     return {
         today, now, setServerNow, seededRandom, dayBefore, request,
-        claimReset, deal, move, replay, refusedAsSignedIn, submit, filed, fileable, start, clock, scoreCell, boards, ranks,
+        claimReset, deal, move, replay, refusedAsSignedIn, submit, filed, fileable, start, clock, scoreCell, boards, ranks, isMine,
         SPEED_BONUS_MAX, bonusLine, bonusRule
     };
 })();

@@ -63,6 +63,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const adminsListEl = document.getElementById("admins-list");
     const adminsFormEl = document.getElementById("admins-form");
     const adminsAddBtn = document.getElementById("admins-add-btn");
+    /* Forget a player lived here, under the Admins list, until 29 Sept
+       2026. It is an action on each player in the Players tab now
+       (js/admin-players.js), which is told about sign-outs and role changes
+       through window.AdminPlayers below. */
     const contributorsListEl = document.getElementById("contributors-list");
     const contributorsFormEl = document.getElementById("contributors-form");
     const contributorsAddBtn = document.getElementById("contributors-add-btn");
@@ -101,6 +105,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const themeToggleEl = document.getElementById("theme-toggle");
     const themeToggleBtns = document.querySelectorAll(".theme-btn");
     const themeToggleStatus = document.getElementById("theme-toggle-status");
+    // Its second row: the palettes saved in Recolour (28 Sept 2026).
+    const paletteToggleRow = document.getElementById("palette-toggle-saved");
+    const paletteToggleEmpty = document.getElementById("palette-toggle-empty");
 
     /* ---- the Nav and Control tabs.
 
@@ -413,7 +420,8 @@ document.addEventListener("DOMContentLoaded", () => {
             statusOptions: [["open", "Open"], ["closed", "Closed"], ["collab", "Collab"], ["unknown", "Unknown"]],
             getAll: () => workingRooms,
             // The stored records as they are now — see refreshAfterConflict.
-            getFull: () => Api.getRoomsFull(adminToken),
+            // With the deleted mazes' addresses (readFullWithRetired).
+            getFull: () => readFullWithRetired("rooms"),
             create: item => Api.createRoom(adminToken, item),
             update: item => Api.updateRoom(adminToken, item),
             remove: id => Api.deleteRoom(adminToken, id),
@@ -429,7 +437,7 @@ document.addEventListener("DOMContentLoaded", () => {
             subtitleLabel: "Host (Habbo username)",
             statusOptions: [["upcoming", "Upcoming"], ["past", "Past"], ["archive", "Archive"]],
             getAll: () => workingEvents,
-            getFull: () => Api.getEventsFull(adminToken),
+            getFull: () => readFullWithRetired("events"),
             create: item => Api.createEvent(adminToken, item),
             update: item => Api.updateEvent(adminToken, item),
             remove: id => Api.deleteEvent(adminToken, id),
@@ -438,6 +446,48 @@ document.addEventListener("DOMContentLoaded", () => {
             addBtn: document.getElementById("events-add-btn")
         }
     };
+
+    /* The deleted records' addresses, per collection (28 Sept 2026).
+
+       Deleting a maze or event reserves every address it answered to
+       (retired_addresses; see _slugs.js), and the server refuses a save
+       that would hand one out again. The Address field did not know them,
+       so an address a deleted maze once had passed the check as it was
+       typed and failed on Save, and a new maze following a deleted one's
+       name was silently given "-2". The admin read now asks for them
+       (?full=1&retired=1 answers { records, retired }) and the field treats
+       them as taken — see js/admin-address.js.
+
+       Through Api._write with the URL spelt out, as js/admin-guides.js and
+       js/admin-dead-ends.js already read their own endpoints: Api's
+       getRoomsFull / getEventsFull keep answering a bare list, which the
+       image clean-up (freshReferencedKeys) and the Missing Pieces panel
+       still read. A bare list from a server without &retired=1 is taken
+       as it is, with no retired addresses known, which is how the page
+       behaved before: the save still checks. */
+    const retiredAddresses = { rooms: [], events: [] };
+    const RETIRED_URLS = {
+        rooms: "/.netlify/functions/rooms?full=1&retired=1",
+        events: "/.netlify/functions/events?full=1&retired=1"
+    };
+    async function readFullWithRetired(key) {
+        const data = await Api._write(RETIRED_URLS[key], "GET", adminToken);
+        if (Array.isArray(data)) return data;
+        retiredAddresses[key] = Array.isArray(data && data.retired) ? data.retired : [];
+        return Array.isArray(data && data.records) ? data.records : [];
+    }
+
+    /* A record just deleted from this page: its addresses go on the local
+       list at once, as retireAddresses put them on the server's — the one
+       it was at, its stored slug, every old one and its id — so a new
+       record given the same name straight afterwards already shows the -2
+       it will get, without waiting for the next full read. */
+    function retireLocally(key, item) {
+        if (!item || !retiredAddresses[key]) return;
+        const add = [item.slug, ...(Array.isArray(item.slugAliases) ? item.slugAliases : []), item.id]
+            .filter(s => typeof s === "string" && s);
+        retiredAddresses[key] = [...new Set(retiredAddresses[key].concat(add))];
+    }
 
     // ---------- login ----------
 
@@ -529,6 +579,10 @@ document.addEventListener("DOMContentLoaded", () => {
         clearSelfPasswordFields();
         sayPassword("", true);
         ffClear();
+        // A player looked up to be forgotten: personal details, cleared for
+        // the same reason as the run log (28 Sept 2026). In the Players tab
+        // since 29 Sept 2026 (js/admin-players.js).
+        if (window.AdminPlayers) window.AdminPlayers.clearPrivate();
         loginModal.classList.add("open");
         loginError.textContent = "Session expired — log in again.";
         loginError.style.display = "block";
@@ -557,6 +611,10 @@ document.addEventListener("DOMContentLoaded", () => {
         closeContributorsForm();
         if (window.AdminDeadEnds) window.AdminDeadEnds.reset();
         if (window.AdminGuides) window.AdminGuides.reset();
+        if (window.AdminErrors) window.AdminErrors.reset();
+        if (window.AdminPlayers) window.AdminPlayers.reset();
+        // The Bans tab's Add a ban and open Change forms (29 Sept 2026).
+        resetBanForms();
     }
 
     /* The panels that live in files of their own (js/admin-guides.js,
@@ -565,6 +623,15 @@ document.addEventListener("DOMContentLoaded", () => {
        underneath — rather than a "reload" button that threw the edit away.
        Recolour already had this, passed to it in showPanel. */
     window.AdminLockOut = () => lockOut();
+
+    /* The Errors panel (js/admin-errors.js, 28 Sept 2026) needs two more
+       things from here: who is signed in — its Resolve and Ignore are for
+       admins and owners, its Delete for the owner alone, and body.is-viewer
+       only says the first — and the page's own Yes/No dialog, rather than
+       the browser's confirm(), for its deletes. Read-only; neither lets the
+       panel change anything here. */
+    window.AdminRole = () => currentUserRole;
+    window.AdminConfirm = message => showConfirmDialog(message);
 
     /* Logging out used to close every form on the spot: unsaved work gone
        without a question, and every picture uploaded during the edit left
@@ -677,6 +744,8 @@ document.addEventListener("DOMContentLoaded", () => {
         ffClear();
         if (window.AdminDeadEnds) window.AdminDeadEnds.reset();
         if (window.AdminGuides) window.AdminGuides.reset();
+        if (window.AdminErrors) window.AdminErrors.reset();
+        if (window.AdminPlayers) window.AdminPlayers.reset();
         loginModal.classList.add("open");
         loginError.style.display = "none";
         loginForm.reset();
@@ -1313,6 +1382,11 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.classList.toggle("is-albus", currentUserRole === "wizard");
         if (activityNavBtn) activityNavBtn.hidden = !canReadActivity();
         if (furniSidebar) furniSidebar.hidden = !owner;
+        /* The Players tab (js/admin-players.js, 29 Sept 2026) draws its
+           write buttons and the owner's Forget from the role, so it is
+           told when that is known or has changed; it empties anything an
+           owner looked up there when the account is not one. */
+        if (window.AdminPlayers) window.AdminPlayers.roleChanged();
         /* The account tab's change-password box stays for EVERY role, view
            only included: changing your own password is the "self" scope,
            which WRITE_SCOPES in _auth.js gives to all of them. Nothing here
@@ -1407,9 +1481,10 @@ document.addEventListener("DOMContentLoaded", () => {
         clearLoadBanner();
         let archiveLoaded = false;
         try {
+            // With the deleted records' addresses — see readFullWithRetired.
             const [rooms, events] = await Promise.all([
-                Api.getRoomsFull(adminToken),
-                Api.getEventsFull(adminToken)
+                readFullWithRetired("rooms"),
+                readFullWithRetired("events")
             ]);
             workingRooms = rooms;
             workingEvents = events;
@@ -2026,7 +2101,22 @@ document.addEventListener("DOMContentLoaded", () => {
        Every entry reads the draft as it was before any of them, so a
        moved room's null for its old address cannot remove the record the
        new address is built from; and the move is remembered, so the next
-       save sends `from` as the refused one did. */
+       save sends `from` as the refused one did.
+
+       A null in the refused patch is NOT restored (28 Sept 2026). Those
+       nulls only ever come from GALLERY changes in the refused save — a
+       room removed, or a picture replaced in place — and the rescue does
+       not bring gallery changes back: the form reopens on the other
+       admin's record, with that room still in it. Deleting its furni
+       from the draft anyway left the room on screen with its furni gone,
+       and the next save sent `room: null`, so the server dropped the
+       room's whole furni record — data loss the admin never saw. If the
+       admin redoes the removal, the next save's orphan pruning
+       (buildFurniPatch) works the nulls out from the gallery they
+       actually have. The notice likewise counts only rooms the reopened
+       record shows: a room restored under an address it does not show
+       (a replacement the other save never had) is pruned on Save, so
+       telling the admin it is "back" would be untrue. */
     function applyFurniRescue(formEl, key, id) {
         const k = rescueKeyOf(key, id);
         const rescue = furniRescue.get(k);
@@ -2035,20 +2125,41 @@ document.addEventListener("DOMContentLoaded", () => {
         furniRescue.delete(k);
         const fresh = JSON.parse(JSON.stringify(draft));
         const moves = formEl._furniMoves || (formEl._furniMoves = new Map());
+        const shown = rescueShownRooms(formEl);
         let restored = 0;
         for (const [image, entry] of Object.entries(rescue.patch)) {
             if (FURNI_UNSAFE.has(image)) continue;
-            restored++;
-            if (entry === null) { delete draft[image]; continue; }
+            if (entry === null) continue;
             const here = furniOwn(fresh, image);
             const from = !here && entry.from && furniOwn(fresh, entry.from) ? entry.from : null;
             draft[image] = mergeFurniRecord(here ? fresh[image] : from ? fresh[from] : undefined, entry.base, entry.draft);
             if (from) moves.set(image, from);
+            if (shown.has(image)) restored++;
         }
-        if (!restored) return;
         if (formEl._renderFurni) formEl._renderFurni();
+        if (!restored) return;
         formNotice(formEl, "Your furni changes from the refused save are back on " + restored +
             (restored === 1 ? " room" : " rooms") + ", on top of the other save's. Check them, then Save.");
+    }
+
+    // The room pictures the reopened form shows: the same set a Save keeps
+    // furni for (entrance, finish, gallery, and their older versions), read
+    // from the form as it stands, so it is the other admin's record.
+    function rescueShownRooms(formEl) {
+        const shown = new Set();
+        const note = img => { if (img) shown.add(String(img).trim()); };
+        const field = name => {
+            const el = formEl.querySelector ? formEl.querySelector(`[name="${name}"]`) : null;
+            return el ? el.value : "";
+        };
+        const withOld = (image, olds) => {
+            note(image);
+            (olds || []).forEach(v => note(v && v.image));
+        };
+        withOld(field("entranceImage"), formEl._entranceOldVersions);
+        withOld(field("finishImage"), formEl._finishOldVersions);
+        (formEl._galleryDraft || []).forEach(g => g && withOld(g.image, g.oldVersions));
+        return shown;
     }
 
     /* On a log out or a change of account. The parked pictures are
@@ -4579,7 +4690,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 const other = cfg.getAll().find(r => r.id !== editId
                     && (r.slug === slug || r.id === slug || (Array.isArray(r.slugAliases) && r.slugAliases.includes(slug))));
                 return other ? other[cfg.fieldMap.title] || other.id : "";
-            }
+            },
+            // …and a deleted one's (28 Sept 2026), which the server refuses
+            // just the same — see readFullWithRetired. Read live, so a
+            // record deleted while this form is open counts at once.
+            retired: slug => window.AddressField.retiredCheck(retiredAddresses[key])(slug)
         }) : null;
         cfg.formEl.classList.add("is-open");
         cfg.addBtn.style.display = "none";
@@ -5338,6 +5453,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // or the request was in flight.
             const idx = items.findIndex(i => i.id === id);
             if (idx !== -1) items.splice(idx, 1);
+            retireLocally(key, item);
             renderList(key);
             cleanupItemImages(item);
         } catch (err) {
@@ -5573,6 +5689,11 @@ document.addEventListener("DOMContentLoaded", () => {
             alert(err.message || "Couldn't delete that account.");
         }
     }
+
+    /* ---------- forget a player ----------
+       Moved to the Players tab on 29 Sept 2026 — js/admin-players.js, which
+       carries the look-up, the labels for player-forget.js's counts and
+       the confirm, as an action on each player. */
 
     // ---------- console: contributors ----------
 
@@ -6194,7 +6315,7 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadLandingState() {
         try {
             // One read, every switch: they all live in the same settings document.
-            const { landingState, fallinFurniState, theme, launchAt, ffLaunchAt, fromCache } = await Api.getSiteSettings();
+            const { landingState, fallinFurniState, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await Api.getSiteSettings();
             /* The stand-in getSiteSettings answers with during an outage
                (fromCache, see js/api.js) has a GUESSED landing state and no
                Fallin' Furni state or palette at all. Lighting buttons from it
@@ -6224,9 +6345,12 @@ document.addEventListener("DOMContentLoaded", () => {
             // Whatever is stored, if a button offers it. This used to know
             // only purple, so with Pumpkin, Witching Hour or Crimson on the
             // site the panel lit Classic — the one palette that was not on.
-            const offered = Array.from(themeToggleBtns).some(btn => btn.dataset.themeState === theme);
-            const palette = offered ? theme : "classic";
-            themeToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.themeState === palette));
+            // Now one of two rows (28 Sept 2026): a live saved palette is
+            // lit instead of its theme — see lightPaletteCard.
+            siteTheme = offeredTheme(theme);
+            sitePalette = livePalette || null;
+            lightPaletteCard();
+            loadSavedPalettes();
         } catch (e) {
             // best-effort — the toggles just won't show anything highlighted.
             // The launch fields are empty, not loaded, so they stay unsavable.
@@ -6314,27 +6438,212 @@ document.addEventListener("DOMContentLoaded", () => {
        Applied to THIS page the moment it saves, rather than only on the next
        load, because the person pressing it is the one person who needs to see
        what they just chose. Everyone else picks it up on their next page
-       load, which is when every page reads the palette in its <head>. */
-    async function setTheme(theme, clickedBtn) {
-        themeToggleBtns.forEach(b => b.disabled = true);
+       load, which is when every page reads the palette in its <head>.
+
+       ------------------------------------------------------------------
+       AND THE SAVED PALETTES (28 Sept 2026)
+
+       The card has a second row: every palette saved in the Recolour
+       panel, one button each. Before this nothing on the Warren could set
+       settings.palette at all, so a palette could be made, saved and
+       previewed, and never go live.
+
+       ONE THING IS LIT. The site wears a built-in theme and, optionally, a
+       palette on top of it. With no palette the theme's button is lit; with
+       one, the palette's button is — and its theme is not, because that is
+       not a choice anybody made separately: it comes with the palette (see
+       baseThemeOf). Pressing a theme takes any palette off; pressing a
+       palette sets both. Either way it is ONE settings PUT carrying both
+       fields, so a visitor can never load the page between the two halves.
+
+       No confirmation, the same as the theme buttons: it changes a colour,
+       and the way back is the button next to it. */
+    let siteTheme = "classic";        // settings.theme, as a button offers it
+    let sitePalette = null;           // settings.palette: a saved palette's id, or null
+    let savedPalettes = [];           // the Recolour panel's list, as palettes.js answers it
+    let savedPalettesRead = false;    // false until a read has succeeded
+    let savedPalettesSeq = 0;
+    const PALETTES_EMPTY_TEXT = paletteToggleEmpty ? paletteToggleEmpty.textContent : "";
+
+    // Whatever is stored, if a button offers it; Classic otherwise.
+    function offeredTheme(theme) {
+        return Array.from(themeToggleBtns).some(btn => btn.dataset.themeState === theme) ? theme : "classic";
+    }
+    function themeLabel(theme) {
+        const btn = Array.from(themeToggleBtns).find(b => b.dataset.themeState === theme);
+        return btn ? btn.textContent.trim() : theme;
+    }
+
+    /* WHICH THEME A PALETTE IS WORN OVER.
+
+       A palette stores only what differs from the stylesheet that was
+       running while it was edited — and the Recolour editor previews on
+       this very page, so that is style.css plus whichever built-in theme
+       this page was wearing. The editor records that theme on the palette
+       as baseTheme when it saves (see baseThemeNow in js/admin-recolour.js,
+       and palettes.js), and wearing it over the same theme reproduces what
+       the editor showed. Anything else would not: every colour the palette
+       leaves alone would be a different theme's, and a colour it changed
+       that only exists in that theme's sheet would find nothing to paint.
+
+       NOT basedOn. That field says where the COLOURS came from — a copy of
+       Pumpkin loaded into the editor is "theme-pumpkin" — but the loader
+       builds that copy as overrides on CLASSIC (convertTheme reads the
+       theme back into Classic's colours), so its right base is whatever
+       the editor was wearing, usually Classic, not Pumpkin.
+
+       Palettes saved before baseTheme existed come back as "classic" from
+       palettes.js. That is what they were judged against: until today the
+       editor told anybody working over a theme to switch to Classic first,
+       because the theme painted over the preview. A name no button offers
+       falls back to Classic too, so a stale one can never block going live
+       (settings.js would refuse it). */
+    function baseThemeOf(p) {
+        return offeredTheme(p && p.baseTheme);
+    }
+
+    /* The swatch: the palette's own accent if it set one — the amber token
+       first, as the colour the site's accents are drawn in, then the
+       buttons' light anchor — and otherwise its base theme's dot, since an
+       untouched accent IS that theme's. Checked as a colour before it goes
+       anywhere near a style. */
+    const SWATCH_COLOUR = /^(#[0-9a-f]{3,8}|rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(,\s*[\d.]+\s*)?\))$/i;
+    function accentOf(p) {
+        const pal = (p && p.palette) || {};
+        const vars = pal.vars || {};
+        const art = (pal.sprites && pal.sprites.buttons) || {};
+        const own = [vars["--amber"], vars["--amber-bright"], art.light].find(c => c && SWATCH_COLOUR.test(String(c).trim()));
+        if (own) return String(own).trim();
+        const btn = Array.from(themeToggleBtns).find(b => b.dataset.themeState === baseThemeOf(p));
+        const dot = btn && btn.querySelector(".theme-dot");
+        return dot ? dot.style.background : "";
+    }
+
+    function paletteButtons() {
+        return paletteToggleRow ? Array.from(paletteToggleRow.querySelectorAll(".palette-btn")) : [];
+    }
+    function paletteCardButtons() {
+        return Array.from(themeToggleBtns).concat(paletteButtons());
+    }
+
+    /* A live palette that is not in the list (deleted since, by a delete
+       that did not report clearing it) counts as none: the card shows the
+       theme the site has fallen back to rather than lighting nothing. Until
+       the list has been read at all there is no telling, and nothing in the
+       palette row is lit. */
+    function lightPaletteCard() {
+        const known = savedPalettesRead ? savedPalettes.some(p => p.id === sitePalette) : !!sitePalette;
+        const live = sitePalette && known ? sitePalette : null;
+        themeToggleBtns.forEach(btn => btn.classList.toggle("active", !live && btn.dataset.themeState === siteTheme));
+        paletteButtons().forEach(btn => btn.classList.toggle("active", btn.dataset.paletteId === live));
+    }
+
+    // Built with the DOM rather than a string: a palette's name is typed by
+    // an admin and is not markup.
+    function renderSavedPalettes() {
+        if (!paletteToggleRow) return;
+        paletteToggleRow.textContent = "";
+        for (const p of savedPalettes) {
+            if (!p || !p.id) continue;
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "btn-enter-mini palette-btn";
+            btn.dataset.paletteId = p.id;
+            btn.title = "Put “" + p.name + "” live, over the " + themeLabel(baseThemeOf(p)) +
+                " theme it was made on. Reaches visitors on their next page load.";
+            const dot = document.createElement("i");
+            dot.className = "theme-dot";
+            dot.style.background = accentOf(p);
+            btn.append(dot, document.createTextNode(p.name || p.id));
+            btn.addEventListener("click", () => setSkin(baseThemeOf(p), p));
+            paletteToggleRow.appendChild(btn);
+        }
+        const any = paletteButtons().length > 0;
+        paletteToggleRow.style.display = any ? "" : "none";
+        if (paletteToggleEmpty) paletteToggleEmpty.style.display = any ? "none" : "";
+        lightPaletteCard();
+    }
+
+    // The same list the Recolour panel reads, through Api.getPalettes.
+    async function loadSavedPalettes() {
+        const seq = ++savedPalettesSeq;
+        try {
+            const list = await Api.getPalettes(adminToken);
+            if (seq !== savedPalettesSeq) return;
+            savedPalettes = list;
+            savedPalettesRead = true;
+            if (paletteToggleEmpty) paletteToggleEmpty.textContent = PALETTES_EMPTY_TEXT;
+        } catch (e) {
+            if (seq !== savedPalettesSeq) return;
+            savedPalettesRead = false;
+            savedPalettes = [];
+            if (paletteToggleEmpty) paletteToggleEmpty.textContent = "Couldn't read the saved palettes — reload to try again.";
+        }
+        renderSavedPalettes();
+    }
+
+    /* The one write behind every button on the card: a theme, and a palette
+       or none. Returns whether it went through. */
+    async function setSkin(theme, palette) {
+        const buttons = paletteCardButtons();
+        buttons.forEach(b => b.disabled = true);
         themeToggleStatus.style.display = "none";
         try {
-            await Api.updateSiteSettings(adminToken, { theme });
-            themeToggleBtns.forEach(b => b.classList.toggle("active", b === clickedBtn));
+            await Api.updateSiteSettings(adminToken, { theme, palette: palette ? palette.id : "" });
+            siteTheme = theme;
+            sitePalette = palette ? palette.id : null;
+            lightPaletteCard();
             Api.applyTheme(theme);
+            /* This page shows the THEME only. The Warren does not wear the
+               live palette — it is where palettes are edited, and the
+               Recolour panel's live preview paints this page with the one
+               being worked on — so it says where to look instead. */
+            if (palette) {
+                themeToggleStatus.textContent = "“" + (palette.name || palette.id) + "” is live, over " +
+                    themeLabel(theme) + ". This panel shows " + themeLabel(theme) +
+                    " alone; open the site to see the palette.";
+                themeToggleStatus.style.display = "block";
+            }
             return true;
         } catch (err) {
             if (err.status === 401) { lockOut(); return false; }
+            // Deleted in another tab since the list was read: re-read it,
+            // so the button goes away along with the palette.
+            if (err.status === 404 && palette) loadSavedPalettes();
             themeToggleStatus.textContent = err.message || "Couldn't change the palette.";
             themeToggleStatus.style.display = "block";
             return false;
         } finally {
-            themeToggleBtns.forEach(b => b.disabled = false);
+            paletteCardButtons().forEach(b => b.disabled = false);
         }
     }
 
     themeToggleBtns.forEach(btn => {
-        btn.addEventListener("click", () => setTheme(btn.dataset.themeState, btn));
+        btn.addEventListener("click", () => setSkin(btn.dataset.themeState, null));
+    });
+
+    /* Saved, renamed or deleted in the Recolour panel: js/admin-recolour.js
+       announces its fresh list, and the card redraws from it without a
+       second read. A delete that took the live palette off says so
+       (clearedLive, from palettes.js), and the card falls back to the theme
+       the site is now wearing alone. */
+    window.addEventListener("mazerats:palettes-changed", e => {
+        const d = (e && e.detail) || {};
+        if (d.clearedLive) {
+            sitePalette = null;
+            Api.forgetSiteSettings();
+            themeToggleStatus.textContent = "The live palette was deleted, so the site is back on " + themeLabel(siteTheme) + " alone.";
+            themeToggleStatus.style.display = "block";
+        }
+        if (Array.isArray(d.palettes)) {
+            savedPalettesSeq++;          // a read still in flight is older than this
+            savedPalettes = d.palettes;
+            savedPalettesRead = true;
+            if (paletteToggleEmpty) paletteToggleEmpty.textContent = PALETTES_EMPTY_TEXT;
+            renderSavedPalettes();
+        } else if (adminToken) {
+            loadSavedPalettes();
+        }
     });
 
     /* What each closed state says on the way in and once it is set. Keyed
@@ -6791,6 +7100,9 @@ document.addEventListener("DOMContentLoaded", () => {
            the admin never open it, so it is fetched when the panel is first
            shown rather than on sign-in. Refresh re-reads it after that. */
         if (name === "ffdata" && !ffLoaded) loadFallinFurni();
+        /* The ban list is re-read each time it is shown (29 Sept 2026):
+           cool-downs end on their own, and the Players tab bans too. */
+        if (name === "bans" && adminToken) loadBans();
         /* The contributor list is re-read every time its panel is shown,
            not only at sign-in. Accepting a lead in Missing Pieces can credit
            somebody server-side, and editing that person from a list loaded
@@ -7133,121 +7445,591 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ---------- bans ----------
+    /* The Bans tab (rebuilt 29 Sept 2026). It was a list of addresses
+       blocked from the contact form. Bans are site-wide now, with two
+       levels and an optional end (see window.AdminBanKit at the top of
+       js/admin-players.js for the owner's words for each), and on three
+       kinds of target: a Discord account ("player"), an address or IPv6
+       /64 typed in or taken from a message ("ip" / "net"), and the network
+       a signed-in player last came from, which the server keeps only as a
+       hash ("nethash"). This tab lists every one of them, filters them,
+       lifts and changes them, and adds a ban on anything; the Players tab
+       bans from a player's own row. The two share AdminBanKit for their
+       choices and wording, so the sentence an admin says Yes to reads the
+       same from either.
+
+       The old bans are still in the list the old way ({ ip, net, reason,
+       createdAt, createdBy }, no kind or level); AdminBanKit.normalise
+       reads both shapes. */
+
+    const bansFiltersEl = document.getElementById("bans-filters");
+    const bansAddEl = document.getElementById("bans-add");
+    const bansAddBtn = document.getElementById("bans-add-btn");
+    const bansRefreshBtn = document.getElementById("bans-refresh-btn");
+    let bansShow = "active";            // active | ended | all
+    let bansKind = "all";               // all | player | address | nethash
+    const bansEdits = new Map();        // ban id -> the Change form's state
+    let bansMsg = null;                 // { text, bad } under the filters
+    let bansBusy = false;
+    let bansGen = 0;
+    let bansAdd = null;                 // the Add a ban form's state, while open
+    let bansAddFound = null;            // what the player search found, or a message
+    let bansAddGen = 0;
+    let bansAddMsg = null;
+
+    const BAN_KINDS = [["all", "All kinds"], ["player", "Accounts"], ["address", "Addresses"], ["nethash", "Players' networks"]];
+    const BAN_SHOWS = [["active", "Active"], ["ended", "Expired"], ["all", "All"]];
+
+    const banKit = () => window.AdminBanKit || null;
+    const banApiReady = () => typeof Api.createBan === "function" && typeof Api.updateBan === "function" && typeof Api.liftBan === "function";
 
     async function loadBans() {
+        const gen = ++bansGen;
+        if (bansRefreshBtn) bansRefreshBtn.disabled = true;
         try {
-            workingBans = await Api.getBans(adminToken);
+            const data = await Api.getBans(adminToken);
+            if (gen !== bansGen) return;
+            workingBans = Array.isArray(data) ? data : (data && Array.isArray(data.bans) ? data.bans : []);
             bansFailed = "";
         } catch (err) {
+            if (gen !== bansGen) return;
             if (err.status === 401) { lockOut(); return; }
             workingBans = [];
             // "No bans yet." after a failed read would tell an admin the
             // address they banned last week is free to post again.
             bansFailed = err.message || "Couldn't load the ban list.";
+        } finally {
+            if (gen === bansGen && bansRefreshBtn) bansRefreshBtn.disabled = false;
         }
         renderBansList();
         // Each message row shows Ban or Unban depending on whether its own
         // address is on this list, so those have to be redrawn too.
         renderContactMessagesList();
     }
+    // For the Players tab, after it bans or lifts (js/admin-players.js).
+    window.AdminBansReload = () => (adminToken ? loadBans() : null);
 
+    function normalisedBans() {
+        const kit = banKit();
+        if (!kit) return [];
+        return workingBans.map(kit.normalise).filter(Boolean);
+    }
+
+    /* Whether a message's sender is caught: an active address ban on the
+       address itself, or on the /64 it sits in — the same two things
+       "Unban IP" (DELETE ?ip=) lifts. */
     function isBanned(ip) {
-        return Boolean(ip) && workingBans.some(ban => ban.ip === ip);
+        const kit = banKit();
+        if (!ip) return false;
+        if (!kit) return workingBans.some(ban => ban.ip === ip);
+        const now = Date.now();
+        return normalisedBans().some(n => kit.catchesIp(n, ip, now));
     }
 
     let bansFailed = "";
 
-    function renderBansList() {
-        if (bansFailed) {
-            showLoadFailure(bansListEl, bansFailed);
-            return;
+    function bansSay(text, bad) {
+        bansMsg = text ? { text, bad: !!bad } : null;
+        const el = document.getElementById("bans-status");
+        if (el) {
+            el.textContent = text || "";
+            el.classList.toggle("is-bad", !!bad);
         }
-        bansListEl.innerHTML = "";
-        if (!workingBans.length) {
-            const empty = document.createElement("p");
-            empty.className = "admin-empty";
-            empty.textContent = "No bans yet.";
-            bansListEl.appendChild(empty);
-            return;
-        }
-        workingBans.forEach(ban => {
-            const row = document.createElement("div");
-            row.className = "chrome-list-row admin-row";
+    }
 
-            const info = document.createElement("div");
-            info.className = "row-info";
+    function renderBanFilters(list) {
+        if (!bansFiltersEl) return;
+        const kit = banKit();
+        const now = Date.now();
+        const kindOf = n => (n.kind === "ip" || n.kind === "net" ? "address" : n.kind);
+        const inKind = list.filter(n => bansKind === "all" || kindOf(n) === bansKind);
+        const counts = {
+            active: inKind.filter(n => kit.isActive(n, now)).length,
+            ended: inKind.filter(n => !kit.isActive(n, now)).length,
+            all: inKind.length
+        };
+        const seg = (name, options, current, label, n) => `<div class="ctl-seg bn-filter-tabs" role="group" aria-label="${escapeHtml(label)}" data-bans-f="${name}">${options.map(([v, l]) =>
+            `<button type="button" class="btn-enter-mini${v === current ? " active" : ""}" data-v="${v}" aria-pressed="${v === current}">${escapeHtml(l)}${n && n[v] ? ` (${n[v]})` : ""}</button>`).join("")}</div>`;
+        bansFiltersEl.innerHTML =
+            seg("show", BAN_SHOWS, bansShow, "Which bans", counts) +
+            seg("kind", BAN_KINDS, bansKind, "What kind") +
+            `<p class="ctl-status" id="bans-status" role="status">${bansMsg ? escapeHtml(bansMsg.text) : ""}</p>`;
+        const status = document.getElementById("bans-status");
+        if (status && bansMsg) status.classList.toggle("is-bad", bansMsg.bad);
+    }
 
-            // Same reasoning as the contact message rows: the reason is
-            // admin-entered but the address is not, so both go in as text
-            // nodes rather than through innerHTML.
-            const heading = document.createElement("h3");
-            const ipEl = document.createElement("span");
-            ipEl.className = "admin-ban-ip";
-            ipEl.textContent = ban.ip;
-            heading.appendChild(ipEl);
-
-            const when = document.createElement("span");
-            when.className = "admin-contributor-count";
-            const bannedBy = ban.createdBy ? (" by " + ban.createdBy) : "";
-            when.textContent = " - " + new Date(ban.createdAt).toLocaleString() + bannedBy;
-            heading.appendChild(when);
-
-            info.appendChild(heading);
-
-            if (ban.reason) {
-                const reason = document.createElement("p");
-                reason.className = "row-creator";
-                reason.textContent = ban.reason;
-                info.appendChild(reason);
-            }
-
-            const actions = document.createElement("div");
-            actions.className = "admin-row-actions";
-            const unbanBtn = document.createElement("button");
-            unbanBtn.type = "button";
-            unbanBtn.className = "btn admin-delete-btn";
-            unbanBtn.textContent = "Unban";
-            unbanBtn.addEventListener("click", () => removeBan(ban));
-            actions.appendChild(unbanBtn);
-
-            row.appendChild(info);
-            row.appendChild(actions);
-            bansListEl.appendChild(row);
+    if (bansFiltersEl) {
+        bansFiltersEl.addEventListener("click", e => {
+            const b = e.target.closest("[data-v]");
+            const seg = b && b.closest("[data-bans-f]");
+            if (!seg) return;
+            if (seg.dataset.bansF === "show") bansShow = b.dataset.v;
+            else bansKind = b.dataset.v;
+            renderBansList();
         });
     }
 
-    async function removeBan(ban) {
-        if (!confirm("Unban " + ban.ip + "? They will be able to use the contact form again.")) return;
-        try {
-            await Api.deleteBan(adminToken, ban.id);
-            await loadBans();
-        } catch (err) {
-            if (err.status === 401) { lockOut(); return; }
-            alert(err.message || "Could not unban that address — try again.");
+    function banRowHtml(n, now) {
+        const kit = banKit();
+        const active = kit.isActive(n, now);
+        const editing = bansEdits.has(n.id);
+        const levelChip = n.level
+            ? `<span class="de-chip bn-chip-level bn-level-${n.level}" title="${escapeHtml(kit.levelLong(n.level))}">${escapeHtml(kit.levelShort(n.level))}</span>`
+            : `<span class="de-chip bn-chip-level" title="${escapeHtml(kit.levelLong(""))}">${escapeHtml(kit.levelShort(""))}</span>`;
+        const timeChip = !active
+            ? `<span class="de-chip bn-chip-ended">Expired</span>`
+            : n.until != null
+                ? `<span class="de-chip bn-chip-cooling" title="${escapeHtml(kit.fmtUtc(n.until))}">Cool-down · ${escapeHtml(kit.leftText(n.until - now))}</span>`
+                : `<span class="de-chip bn-chip-perm">Permanent</span>`;
+        let title = escapeHtml(kit.targetText(n));
+        if (n.kind === "player" && n.value) title = `${escapeHtml(n.name || "A player")} <span class="se-mono bn-id" title="${escapeHtml("Discord ID " + n.value)}">${escapeHtml(kit.shortId(n.value))}</span>`;
+        else if ((n.kind === "ip" || n.kind === "net") && n.value) title = `<span class="se-mono admin-ban-ip">${escapeHtml(n.value)}</span>`;
+        /* The address a network ban was made from (a message's Ban IP
+           stores both), or the network an old address ban also caught. */
+        const netNote = n.kind === "net" && n.raw.ip && n.raw.ip !== n.value
+            ? `<p class="se-when">From the address <span class="se-mono">${escapeHtml(n.raw.ip)}</span></p>`
+            : n.kind === "ip" && n.net && n.net !== n.value ? `<p class="se-when" title="An address ban catches the whole network it sits in">Also catches <span class="se-mono">${escapeHtml(n.net)}</span></p>` : "";
+        const actions = canWrite() && !editing ? `
+                <button type="button" class="btn admin-edit-btn" data-ban-act="change" data-ban-id="${escapeHtml(n.id)}"${active ? "" : ' title="Set a new level or length — it comes back into force"'}>Change</button>
+                <button type="button" class="btn admin-delete-btn" data-ban-act="lift" data-ban-id="${escapeHtml(n.id)}">${active ? "Lift" : "Remove"}</button>` : "";
+        const form = editing ? `
+                ${kit.formHtml(bansEdits.get(n.id), { change: true, ended: !kit.isActive(n, now), now, uid: "bans-edit-" + n.id })}
+                <div class="ctl-actions bn-edit-actions">
+                    <button type="button" class="ctl-btn bn-write" data-ban-act="change-save" data-ban-id="${escapeHtml(n.id)}"${bansBusy ? " disabled" : ""}>Save change</button>
+                    <button type="button" class="ctl-btn" data-ban-act="change-cancel" data-ban-id="${escapeHtml(n.id)}">Cancel</button>
+                </div>` : "";
+        return `
+            <div class="row-info">
+                <div class="se-row-head">
+                    <h3 class="bn-target">${title}</h3>
+                    <span class="de-chip bn-chip-kind">${escapeHtml(kit.kindText(n.kind))}</span>
+                    ${levelChip}
+                    ${timeChip}
+                </div>
+                ${netNote}
+                ${n.reason ? `<p class="row-creator bn-reason">${escapeHtml(n.reason)}</p>` : ""}
+                <p class="se-when">${escapeHtml(kit.untilText(n, now))} <span class="se-sep">·</span> by ${escapeHtml(n.by || "—")}, ${escapeHtml(kit.fmtUtc(n.at))}</p>
+                ${form}
+            </div>
+            ${actions ? `<div class="admin-row-actions">${actions}</div>` : ""}`;
+    }
+
+    function renderBansList() {
+        renderBansAdd();
+        if (bansFailed) {
+            if (bansFiltersEl) bansFiltersEl.innerHTML = "";
+            showLoadFailure(bansListEl, bansFailed);
+            return;
+        }
+        const kit = banKit();
+        if (!kit) {
+            bansListEl.innerHTML = '<p class="admin-empty admin-form-error">This copy of the page is out of date. Reload it to see the bans.</p>';
+            return;
+        }
+        const all = normalisedBans();
+        renderBanFilters(all);
+        const now = Date.now();
+        const kindOf = n => (n.kind === "ip" || n.kind === "net" ? "address" : n.kind);
+        const shown = all.filter(n =>
+            (bansKind === "all" || kindOf(n) === bansKind) &&
+            (bansShow === "all" || (bansShow === "active") === kit.isActive(n, now)));
+        // What is being typed in a Change form survives the redraw.
+        const active = document.activeElement;
+        const typing = active && bansListEl.contains(active) && active.dataset.bn
+            ? { id: (active.closest("[data-ban-row]") || { dataset: {} }).dataset.banRow, bn: active.dataset.bn } : null;
+        bansListEl.innerHTML = "";
+        if (!shown.length) {
+            const empty = document.createElement("p");
+            empty.className = "admin-empty";
+            empty.textContent = !all.length ? "No bans yet."
+                : bansShow === "active" ? "Nothing in force that matches." : "No bans match that.";
+            bansListEl.appendChild(empty);
+            return;
+        }
+        shown.forEach(n => {
+            const row = document.createElement("div");
+            row.className = "chrome-list-row admin-row bn-row" + (kit.isActive(n, now) ? "" : " is-ended");
+            row.dataset.banRow = n.id;
+            // Names and addresses: the click breadcrumb says only "button".
+            row.setAttribute("data-crumb-private", "");
+            row.innerHTML = banRowHtml(n, now);
+            const form = row.querySelector("[data-bn-form]");
+            if (form) kit.wire(form, bansEdits.get(n.id), null, Date.now);
+            bansListEl.appendChild(row);
+        });
+        if (typing && typing.id) {
+            const row = Array.from(bansListEl.querySelectorAll("[data-ban-row]")).find(r => r.dataset.banRow === typing.id);
+            const box = row && row.querySelector(`[data-bn="${typing.bn}"]`);
+            if (box) box.focus({ preventScroll: true });
         }
     }
 
-    async function banIp(ip) {
-        const reason = prompt("Ban " + ip + " from the contact form?\n\nOptional note about why (leave blank to skip):");
-        // prompt() returns null on Cancel and "" on an empty OK — only the
-        // first of those should abort the ban.
-        if (reason === null) return;
+    if (bansListEl) {
+        bansListEl.addEventListener("click", e => {
+            const b = e.target.closest("[data-ban-act]");
+            if (!b || b.disabled) return;
+            const n = normalisedBans().find(x => x.id === b.dataset.banId);
+            if (!n) return;
+            const act = b.dataset.banAct;
+            if (act === "lift") liftBan(n);
+            else if (act === "change") {
+                bansEdits.set(n.id, banKit().fresh({ level: n.level || "soft", length: banKit().isActive(n, Date.now()) ? "keep" : "24h", reason: n.reason || "" }));
+                renderBansList();
+            }
+            else if (act === "change-cancel") { bansEdits.delete(n.id); renderBansList(); }
+            else if (act === "change-save") changeBan(n);
+        });
+    }
+
+    // Everything the Players tab shows about bans is now out of date too.
+    function bansWritten() {
+        if (window.AdminPlayers && typeof window.AdminPlayers.bansChanged === "function") window.AdminPlayers.bansChanged();
+        return loadBans();
+    }
+
+    async function liftBan(n) {
+        const kit = banKit();
+        if (bansBusy || !canWrite()) return;
+        if (!banApiReady()) { bansSay("Not available yet — reload the page.", true); return; }
+        if (!(await showConfirmDialog(kit.liftHtml(n, Date.now())))) return;
+        bansBusy = true;
         try {
-            await Api.createBan(adminToken, ip, reason);
-            await loadBans();
+            await Api.liftBan(adminToken, n.id);
+            bansEdits.delete(n.id);
+            bansSay((kit.isActive(n, Date.now()) ? "Lifted: " : "Removed: ") + kit.targetText(n) + ".");
+            await bansWritten();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            bansSay("Not lifted: " + (err.status === 404 ? "it was already gone." : (err.message || "try again.")), true);
+            if (err.status === 404) bansWritten();
+        } finally {
+            bansBusy = false;
+        }
+    }
+
+    async function changeBan(n) {
+        const kit = banKit();
+        const state = bansEdits.get(n.id);
+        if (!state || bansBusy || !canWrite()) return;
+        if (!banApiReady()) { bansSay("Not available yet — reload the page.", true); return; }
+        const choice = kit.read(state, Date.now());
+        if (choice.error) { bansSay(choice.error, true); return; }
+        if (!(await showConfirmDialog(kit.changeHtml(kit.targetText(n), choice, n)))) return;
+        if (bansEdits.get(n.id) !== state) return;
+        bansBusy = true;
+        try {
+            await Api.updateBan(adminToken, kit.putBody(choice, n.id));
+            bansEdits.delete(n.id);
+            bansSay("Changed: " + kit.targetText(n) + ".");
+            await bansWritten();
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            bansSay("Not saved: " + (err.message || "try again."), true);
+        } finally {
+            bansBusy = false;
+        }
+    }
+
+    // ---- Add a ban
+
+    function renderBansAdd() {
+        if (!bansAddEl) return;
+        const kit = banKit();
+        const open = !!(bansAdd && kit && canWrite());
+        bansAddEl.hidden = !open;
+        if (bansAddBtn) {
+            bansAddBtn.hidden = !canWrite() || !kit;
+            bansAddBtn.setAttribute("aria-expanded", String(open));
+        }
+        if (!open) { bansAddEl.innerHTML = ""; return; }
+        const s = bansAdd;
+        const now = Date.now();
+        const typeSeg = `<div class="ctl-seg bn-seg" role="group" aria-label="What to ban" data-add-type>${[["address", "An address (IP or /64)"], ["player", "A player"]].map(([v, l]) =>
+            `<button type="button" class="btn-enter-mini${v === s.type ? " active" : ""}" data-v="${v}" aria-pressed="${v === s.type}">${escapeHtml(l)}</button>`).join("")}</div>`;
+        let targetPart;
+        if (s.type === "address") {
+            targetPart = `
+                <div class="bn-field">
+                    <label class="ctl-label" for="bans-add-ip">Address</label>
+                    <input type="text" class="ctl-input" id="bans-add-ip" data-add="ip" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="203.0.113.7, or 2001:db8:1:2::/64" value="${escapeHtml(s.ip || "")}">
+                    <p class="admin-hint bn-note">An IPv6 address is widened to its /64 by the server, the way a message's ban is: the next address along is the same household.</p>
+                </div>`;
+        } else if (s.pick) {
+            const p = s.pick;
+            targetPart = `
+                <div class="bn-field">
+                    <span class="ctl-label">Player</span>
+                    <p class="bn-picked"><strong>${escapeHtml(p.shown)}</strong> <span class="se-mono admin-hint">${escapeHtml(p.id)}</span>
+                        <button type="button" class="ctl-btn" data-add-act="unpick">Choose someone else</button></p>
+                </div>`;
+        } else {
+            const found = bansAddFound;
+            let results = "";
+            if (found && found.message) results = `<p class="admin-hint">${escapeHtml(found.message)}</p>`;
+            else if (found && found.list) {
+                results = found.list.length ? `<div class="bn-results">${found.list.map(p => `
+                    <div class="bn-result">
+                        <span><strong>${escapeHtml(p.shown)}</strong> <span class="admin-hint">${p.username ? "@" + escapeHtml(p.username) + " · " : ""}<span class="se-mono">${escapeHtml(p.id)}</span>${p.banned ? " · already banned" : ""}</span></span>
+                        <button type="button" class="ctl-btn" data-add-act="pick" data-id="${escapeHtml(p.id)}">Choose</button>
+                    </div>`).join("")}</div>` : `<p class="admin-hint">Nobody who has signed in matches that.</p>`;
+            }
+            targetPart = `
+                <div class="bn-field">
+                    <label class="ctl-label" for="bans-add-q">Player</label>
+                    <div class="ctl-row bn-find-row">
+                        <input type="search" class="ctl-input" id="bans-add-q" data-add="q" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="A Discord ID, nickname, name or @username" value="${escapeHtml(s.q || "")}">
+                        <button type="button" class="ctl-btn" data-add-act="find">Find</button>
+                    </div>
+                    ${results}
+                </div>`;
+        }
+        const ready = s.type === "address" || !!s.pick;
+        bansAddEl.innerHTML = `
+            <h4 class="admin-subheading se-sub">Add a ban</h4>
+            <div class="bn-field"><span class="ctl-label">Ban</span>${typeSeg}</div>
+            ${targetPart}
+            ${ready ? kit.formHtml(s.choice, { now, targets: s.type === "player" ? { net: !!(s.pick && s.pick.hasNetHash) } : null, uid: "bans-add" }) : ""}
+            <div class="ctl-actions">
+                ${ready ? `<button type="button" class="ctl-btn bn-write bn-go" data-add-act="go"${bansBusy ? " disabled" : ""}>Ban…</button>` : ""}
+                <button type="button" class="ctl-btn" data-add-act="close">Cancel</button>
+            </div>
+            <p class="ctl-status${bansAddMsg && bansAddMsg.bad ? " is-bad" : ""}" data-add-status role="status">${bansAddMsg ? escapeHtml(bansAddMsg.text) : ""}</p>`;
+        const form = bansAddEl.querySelector("[data-bn-form]");
+        if (form) kit.wire(form, s.choice, null, Date.now);
+    }
+
+    function addSay(text, bad) {
+        bansAddMsg = text ? { text, bad: !!bad } : null;
+        const el = bansAddEl && bansAddEl.querySelector("[data-add-status]");
+        if (el) {
+            el.textContent = text || "";
+            el.classList.toggle("is-bad", !!bad);
+        }
+    }
+
+    function openBansAdd(prefill) {
+        const kit = banKit();
+        if (!kit || !canWrite()) return;
+        bansAdd = Object.assign({ type: "address", ip: "", q: "", pick: null, choice: kit.fresh() }, prefill || {});
+        bansAddFound = null;
+        bansAddMsg = null;
+        renderBansAdd();
+        const first = bansAddEl.querySelector("[data-add]");
+        if (first) first.focus({ preventScroll: true });
+    }
+
+    async function findPlayers() {
+        const q = String(bansAdd && bansAdd.q || "").trim();
+        if (!q) { bansAddFound = { message: "Type a Discord ID or a name first." }; renderBansAdd(); return; }
+        if (typeof Api.getPlayers !== "function") { bansAddFound = { message: "This page is out of date. Reload it to use this." }; renderBansAdd(); return; }
+        const gen = ++bansAddGen;
+        bansAddFound = { message: "Looking…" };
+        renderBansAdd();
+        try {
+            const data = await Api.getPlayers(adminToken, { q, limit: 8 });
+            if (gen !== bansAddGen || !bansAdd) return;
+            const list = (Array.isArray(data && data.players) ? data.players : []).filter(p => p && p.id).map(p => ({
+                id: String(p.id),
+                shown: String(p.displayName || p.nick || p.name || p.username || "Someone"),
+                username: p.username ? String(p.username) : "",
+                hasNetHash: !!p.hasNetHash,
+                banned: !!(p.ban && banKit().chip(p.ban, Date.now()))
+            }));
+            bansAddFound = { list };
+        } catch (err) {
+            if (gen !== bansAddGen) return;
+            if (err.status === 401) { lockOut(); return; }
+            bansAddFound = { message: "Couldn't search: " + (err.message || "try again.") };
+        }
+        renderBansAdd();
+    }
+
+    async function addBanGo() {
+        const kit = banKit();
+        const s = bansAdd;
+        if (!s || bansBusy || !canWrite()) return;
+        if (!banApiReady()) { addSay("Not available yet — reload the page.", true); return; }
+        const choice = kit.read(s.choice, Date.now());
+        if (choice.error) { addSay(choice.error, true); return; }
+        let bodies;
+        let who;
+        let extra = "";
+        if (s.type === "address") {
+            const value = String(s.ip || "").trim().toLowerCase();
+            if (!kit.looksLikeAddress(value)) { addSay("That doesn't look like an IP address or an IPv6 /64.", true); return; }
+            /* IPv6 as "net": the server bans that address's /64, as the
+               hint above says and as the old message ban did. IPv4 is one
+               address either way. */
+            const kind = value.includes(":") ? "net" : "ip";
+            bodies = [Object.assign({ kind, value }, kit.postBody(choice))];
+            who = value;
+            // IPv4 is one address; an IPv6 one is widened to its /64.
+            if (value.includes(":")) extra = " Everyone on that /64 is caught, not only one address.";
+        } else {
+            const p = s.pick;
+            if (!p) { addSay("Choose a player first.", true); return; }
+            const t = s.choice.target;
+            const wantNet = t === "net" || t === "both";
+            if (wantNet && !p.hasNetHash) { addSay(kit.NO_NET, true); return; }
+            const kinds = t === "both" ? ["player", "nethash"] : [wantNet ? "nethash" : "player"];
+            bodies = kinds.map(kind => Object.assign({ kind, playerId: p.id }, kind === "player" ? { value: p.id } : {}, kit.postBody(choice)));
+            who = t === "both" ? `${p.shown}'s account and their network` : wantNet ? `${p.shown}'s network` : `${p.shown}'s account`;
+            if (t === "both") extra = " That's two bans, lifted separately.";
+        }
+        if (!(await showConfirmDialog(kit.summaryHtml(who, choice) + escapeHtml(extra)))) return;
+        if (bansAdd !== s || bansBusy) return;
+        bansBusy = true;
+        addSay("Banning…");
+        let done = 0;
+        let failed = null;
+        for (const body of bodies) {
+            try {
+                await Api.createBan(adminToken, body);
+                done++;
+            } catch (err) {
+                failed = { body, err };
+                break;
+            }
+        }
+        bansBusy = false;
+        if (failed && failed.err.status === 401) { lockOut(); return; }
+        if (!failed) {
+            bansAdd = null;
+            bansSay("Banned: " + who + ".");
+        } else {
+            // 409 is either "no network on file" (noNetHash) or "already banned".
+            const why = failed.err.status === 409 && failed.err.data && failed.err.data.noNetHash ? kit.NO_NET
+                : failed.err.status === 409 ? (failed.err.message || "that's already banned.") : (failed.err.message || "try again.");
+            addSay(done ? `Their account is banned, but not their network: ${why}` : `Not banned: ${why}`, true);
+        }
+        if (done) await bansWritten();
+        else renderBansAdd();
+    }
+
+    if (bansAddBtn) {
+        bansAddBtn.addEventListener("click", () => {
+            if (bansAdd) { bansAdd = null; renderBansAdd(); }
+            else openBansAdd();
+        });
+    }
+    if (bansRefreshBtn) bansRefreshBtn.addEventListener("click", () => { if (adminToken) loadBans(); });
+    if (bansAddEl) {
+        bansAddEl.addEventListener("input", e => {
+            const f = e.target.closest("[data-add]");
+            if (f && bansAdd) bansAdd[f.dataset.add] = f.value;
+        });
+        bansAddEl.addEventListener("keydown", e => {
+            if (e.key === "Enter" && e.target.closest('[data-add="q"]')) { e.preventDefault(); findPlayers(); }
+        });
+        bansAddEl.addEventListener("click", e => {
+            if (!bansAdd) return;
+            const type = e.target.closest("[data-add-type] [data-v]");
+            if (type) {
+                if (bansAdd.type !== type.dataset.v) {
+                    bansAdd.type = type.dataset.v;
+                    bansAdd.choice.target = "account";
+                    bansAddMsg = null;
+                    renderBansAdd();
+                }
+                return;
+            }
+            const b = e.target.closest("[data-add-act]");
+            if (!b || b.disabled) return;
+            const act = b.dataset.addAct;
+            if (act === "find") findPlayers();
+            else if (act === "pick") {
+                const p = bansAddFound && bansAddFound.list && bansAddFound.list.find(x => x.id === b.dataset.id);
+                if (p) { bansAdd.pick = p; bansAdd.choice.target = "account"; bansAddMsg = null; renderBansAdd(); }
+            } else if (act === "unpick") { bansAdd.pick = null; renderBansAdd(); }
+            else if (act === "close") { bansAdd = null; bansAddFound = null; renderBansAdd(); }
+            else if (act === "go") addBanGo();
+        });
+    }
+
+    /* "Ban IP" on a contact message (29 Sept 2026). It was a prompt() for
+       a reason and a ban on the contact form. Now that a ban has a level
+       and a length, the Are You Sure? carries the three choices itself, as
+       plain selects — the dialog's markup is one paragraph, and selects and
+       a text box are allowed in one — read back as they change, since the
+       dialog is gone by the time it answers. Permanent and "everything but
+       reading" are chosen to begin with: the nearest to what the button
+       used to do. */
+    let quickBan = null;
+    document.addEventListener("input", e => {
+        const f = e.target.closest && e.target.closest("[data-quick-ban]");
+        if (f && quickBan) quickBan[f.dataset.quickBan] = f.value;
+    });
+    document.addEventListener("change", e => {
+        const f = e.target.closest && e.target.closest("[data-quick-ban]");
+        if (f && quickBan) quickBan[f.dataset.quickBan] = f.value;
+    });
+
+    async function banIp(ip) {
+        const kit = banKit();
+        if (!kit || !banApiReady()) { alert("This copy of the page is out of date. Reload it to ban."); return; }
+        const mine = { level: "soft", length: "perm", reason: "" };
+        quickBan = mine;
+        const lengths = kit.LENGTHS.filter(([v]) => v !== "custom");
+        const ok = await showConfirmDialog(
+            `Ban <strong>${escapeHtml(ip)}</strong> (and its network)?` +
+            `<span class="bn-quick">` +
+            `<label><span class="ctl-label">Level</span><select data-quick-ban="level">${kit.LEVELS.map(([v, l]) => `<option value="${v}"${v === mine.level ? " selected" : ""}>${escapeHtml(l)}</option>`).join("")}</select></label>` +
+            `<label><span class="ctl-label">Length</span><select data-quick-ban="length">${lengths.map(([v, l]) => `<option value="${v}"${v === mine.length ? " selected" : ""}>${escapeHtml(l)}</option>`).join("")}</select></label>` +
+            `<label><span class="ctl-label">Reason (optional)</span><input type="text" data-quick-ban="reason" maxlength="${kit.REASON_MAX}" autocomplete="off"></label>` +
+            `</span>` +
+            `<span class="admin-hint bn-quick-note">Everything but reading: they can read the site but not sign in, play or send anything. Whole site: a banned screen on every page but the privacy policy. For a date and time, use Add a ban on the Bans tab.</span>`);
+        quickBan = null;
+        if (!ok) return;
+        const choice = kit.read({ level: mine.level, length: mine.length, reason: mine.reason }, Date.now());
+        if (choice.error) { alert(choice.error); return; }
+        try {
+            // "net" for IPv6: its /64, as this button always banned.
+            await Api.createBan(adminToken, Object.assign({ kind: ip.includes(":") ? "net" : "ip", value: ip }, kit.postBody(choice)));
+            await bansWritten();
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
             alert(err.message || "Could not ban that address — try again.");
         }
     }
 
+    // A different account signing in on this tab does not inherit these.
+    function resetBanForms() {
+        bansAdd = null;
+        bansAddFound = null;
+        bansAddMsg = null;
+        bansEdits.clear();
+        bansMsg = null;
+        renderBansAdd();
+    }
+
+    /* "Unban IP" on a message lifts EVERY ban on that address and its
+       network — a whole-site ban or a cool-down made from the Bans tab
+       included — so it names what it will lift and asks first (29 Sept
+       2026). */
     async function unbanIp(ip) {
+        if (bansBusy) return;
+        const kit = banKit();
+        const now = Date.now();
+        const caught = kit ? normalisedBans().filter(n => kit.catchesIp(n, ip, now)) : [];
+        const describe = n => {
+            const level = n.level === "full" ? "Whole site" : n.level === "soft" ? "Everything but reading" : "Messages only";
+            const end = n.until != null ? `until ${new Date(n.until).toUTCString().replace(/:\d\d GMT$/, " UTC")}` : "permanent";
+            const target = n.kind === "net" ? "network" : "address";
+            return `<br>· ${escapeHtml(level)}, ${escapeHtml(end)} (on the ${target}${n.reason ? ` — “${escapeHtml(n.reason)}”` : ""})`;
+        };
+        const message = caught.length
+            ? `This lifts ${caught.length === 1 ? "this ban" : `all ${caught.length} of these bans`} on <b>${escapeHtml(ip)}</b> and its network:${caught.map(describe).join("")}`
+            : `Lift every ban on <b>${escapeHtml(ip)}</b> and its network?`;
+        if (!(await showConfirmDialog(message))) return;
+        bansBusy = true;
         try {
             await Api.deleteBanByIp(adminToken, ip);
-            await loadBans();
+            await bansWritten();
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
             alert(err.message || "Could not unban that address — try again.");
+        } finally {
+            bansBusy = false;
         }
     }
 

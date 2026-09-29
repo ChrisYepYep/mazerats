@@ -46,6 +46,10 @@
         // honest answer at that point (nobody is known to be signed in yet).
         current: null,
 
+        // This visitor's ban — { level: "soft" | "full", until, reason } —
+        // or null, from the same `me` answer (29 Sept 2026; see BANS).
+        ban: null,
+
         // Resolves once the first "who am I" has come back. A caller that
         // needs certainty rather than a snapshot awaits this.
         ready() {
@@ -63,6 +67,14 @@
                 const data = await res.json();
                 Account.current = data && data.player ? data.player : null;
                 Account.unsure = false;
+                /* A ban rides on the same answer, beside the player rather
+                   than inside it, because it is given to signed-out
+                   visitors too (a blocked network). Null for nearly
+                   everybody, and then nothing below does anything; see
+                   BANS further down (29 Sept 2026). */
+                Account.ban = readBan(data && data.ban);
+                rememberBlock();
+                applyBan();
             } catch (e) {
                 // No session, no network, or the function is not deployed.
                 // All three mean the same thing to every caller: signed out.
@@ -72,6 +84,9 @@
                 // and should not do that because the network blinked.
                 Account.unsure = true;
             }
+            // The first answer is in, one way or the other: Account.mayPlay
+            // now means something (see the games' open()).
+            Account.known = true;
             announce();
             return Account.current;
         },
@@ -81,6 +96,12 @@
            with it, and a popup is the version that gets blocked. Where to
            come back to rides along and is validated server-side. */
         signIn(returnTo) {
+            /* A soft ban keeps the site readable but not the sign-in: the
+               server would only send Discord's answer back refused, so the
+               trip is not started and a small notice says why instead
+               (29 Sept 2026). Every Sign in on the site comes through here
+               — the header, the Profile's, Fallin' Furni's. */
+            if (activeBan()) { showBlocked("signin"); return; }
             const to = returnTo || (location.pathname + location.search + location.hash);
             // The clean path, matching what is registered with Discord (see
             // netlify.toml). "me" and "signout" below are only ever called
@@ -256,6 +277,238 @@
     Account.forgetWalked = id => forget("walked", id);
     Account.forgetSaved = id => forget("saved", id);
 
+    /* ---------- the nickname (28 Sept 2026) ----------
+
+       A player can choose the name the scoreboards show instead of their
+       Discord one. The server keeps it (netlify/functions, through
+       Api.setNickname / Api.markNickAsked in js/api.js) and adds three
+       fields to the player object this file already holds:
+
+         nick         the chosen nickname, or null
+         displayName  nick when there is one, else the Discord display name.
+                      THIS is what the site shows wherever it names the
+                      signed-in player: the header, the Sign out? window, the
+                      console's Profile, "On the board as".
+         nickAsked    whether the one-time "Choose a nickname?" window (see
+                      nickPrompt below) has been shown and answered
+         nickLocked   the site's admins have set or locked the nickname from
+                      the Warren (29 Sept 2026): the player cannot change it
+                      themselves, so the Profile shows it without the field,
+                      and neither the prompt nor the "Set a nickname" line is
+                      offered
+         nickRejected the admins have reviewed the nickname in the Warren
+                      and asked for a different one (29 Sept 2026; see
+                      FLAGGED in netlify/functions/player-nick.js). The name
+                      still stands, but the games are locked until the
+                      player saves a different one or clears it: the "Pick a
+                      new nickname" window (nickPrompt below) opens on every
+                      page load and cannot be dismissed, only answered, and
+                      the Profile says so under the name
+         nickRefused  the player answered that window with "Refuse" (29
+                      Sept 2026): it stops opening, and the games stay
+                      locked (see GAMES LOCKED below)
+
+       `name` stays the Discord display name. It is still the right word in
+       the two places that say what is RECORDED against a message or a lead
+       ("We've noted your Discord name", "Sending as"), because that is what
+       the server writes there.
+
+       Every piece of this is optional on the server's side: a page served
+       before the Api methods existed, or a player object without the new
+       fields, simply behaves as it did before — no prompt, no hint, the
+       Discord name everywhere. */
+    Account.nameOf = p => (p ? String(p.displayName || p.nick || p.name || "") : "");
+
+    // Whether this page can set a nickname at all. The other half of the
+    // feature ships separately, and a stale page may be missing it.
+    Account.canNick = () => typeof Api !== "undefined" && !!Api
+        && typeof Api.setNickname === "function" && typeof Api.markNickAsked === "function";
+
+    /* The server's rules, repeated for instant feedback while typing. The
+       server is the authority and says no in its own words (a 400 with a
+       message, or a 409 for a taken name), which the callers show just as
+       they show these. Reserved names are left to it: the list is its own.
+       Returns "" for a name worth sending, else what is wrong with it. */
+    const NICK_MIN = 2;
+    const NICK_MAX = 20;
+    Account.NICK_MAX = NICK_MAX;
+    /* The same letters netlify/functions/player-nick.js allows: the ones the
+       boards' pixel font can draw (Volter Goldfish draws a handful of
+       accented capitals as pictures; see PICTURE_GLYPHS in js/site.js). Kept
+       in step with that file by hand; if they drift, the server's answer is
+       the one shown. */
+    const NICK_LETTERS = "A-Za-zÀ-ÏÑ-ÖØ-Üß-ïñ-öø-üÿŒœŸ";
+    const NICK_ALLOWED = new RegExp(`^[${NICK_LETTERS}0-9 _.'!?-]+$`);
+    const NICK_STARTS = new RegExp(`^[${NICK_LETTERS}0-9]`);
+    const NICK_ENDS = new RegExp(`[${NICK_LETTERS}0-9!?]$`);
+    // As the server tidies a name before judging it: curly apostrophes made
+    // straight, runs of spaces made one, and none at either end.
+    Account.tidyNickname = raw => String(raw == null ? "" : raw)
+        .normalize("NFC").replace(/[‘’ʼ]/g, "'").replace(/\s+/g, " ").trim();
+    Account.checkNickname = raw => {
+        const nick = Account.tidyNickname(raw);
+        const length = [...nick].length;
+        if (length < NICK_MIN) return `Nicknames need at least ${NICK_MIN} characters.`;
+        if (length > NICK_MAX) return `Nicknames can be at most ${NICK_MAX} characters.`;
+        if (!NICK_ALLOWED.test(nick)) return "Nicknames can use letters, numbers, spaces and - _ . ' ! ? only.";
+        if (!NICK_STARTS.test(nick)) return "Start your nickname with a letter or a number.";
+        if (!NICK_ENDS.test(nick)) return "End your nickname with a letter, a number, ! or ?.";
+        return "";
+    };
+
+    // Takes whatever the server answered with — the player itself, or a
+    // body carrying it — and folds it into the one we hold.
+    function takePlayer(res) {
+        const p = res && res.player ? res.player : res;
+        if (p && typeof p === "object" && Account.current && (!p.id || p.id === Account.current.id)) {
+            Account.current = Object.assign({}, Account.current, p);
+        }
+    }
+
+    /* What a refusal means, in words for the player. The server's own
+       `error` wins wherever it sent one; these are for when it did not. */
+    function nickErrorText(e) {
+        const status = e && e.status;
+        const said = e && e.data && typeof e.data.error === "string" ? e.data.error : "";
+        if (status === 401) return "You've been signed out. Sign in again to set a nickname.";
+        if (said && (status === 400 || status === 403 || status === 409 || status === 429)) return said;
+        if (status === 403) return "Your nickname was set by the site's admins. Ask them if you'd like it changed.";
+        if (status === 409) return "That nickname is taken.";
+        if (status === 429) return "Too many changes just now. Try again later.";
+        return "Nicknames can't be saved just now. Try again in a moment.";
+    }
+    Account.nickErrorText = nickErrorText;
+
+    /* Sets the nickname (a string) or clears it ("" or null). Resolves with
+       the updated player; rejects with an Error whose message is ready to
+       show, keeping the server's .status and .data. A 401 also drops the
+       player, since the session it was acting for is gone. */
+    Account.setNickname = async nick => {
+        if (!Account.current) {
+            const err = new Error("Sign in to set a nickname.");
+            err.status = 401;
+            throw err;
+        }
+        if (!Account.canNick()) {
+            const err = new Error("Nicknames aren't available on this page yet. Reload it and try again.");
+            err.status = 0;
+            throw err;
+        }
+        const value = Account.tidyNickname(nick);
+        let flagged = null;
+        try {
+            const res = await Api.setNickname(value || null);
+            /* The word filter's note, when the name tripped it (29 Sept
+               2026). Api hangs it on the player NON-enumerably, so the
+               Object.assign in takePlayer never copies it into
+               Account.current — it is about this save, not the player. */
+            flagged = res && res.flagged ? res.flagged : null;
+            takePlayer(res);
+            // A save answers the first-sign-in question too (the server
+            // marks it); held here as well so a reply without the field
+            // does not leave the window due to open again.
+            if (Account.current) Account.current.nickAsked = true;
+        } catch (e) {
+            const err = new Error(nickErrorText(e));
+            err.status = e && e.status;
+            err.data = e && e.data;
+            err.field = e && e.data && e.data.field;
+            // The session this was acting for is gone. Asked again rather
+            // than assumed, so the header and every other listener hear it
+            // the way they hear any other "who am I".
+            if (err.status === 401) Account.refresh();
+            /* Locked by the admins while this page was open (29 Sept
+               2026): held here so the Profile redraws without the field
+               and nothing offers it again. */
+            if (err.status === 403 && err.data && err.data.locked && Account.current) {
+                Account.current = Object.assign({}, Account.current, { nickLocked: true });
+                announce();
+            }
+            throw err;
+        }
+        announce();
+        /* Saved, but the filter caught something in it: "Nickname Saved"
+           says so (see showFlagged). A turn later, so that whichever window
+           asked for the save — the Profile, which puts focus back on its
+           Change button, or a nickname prompt closing — has finished with
+           the focus first, and this one takes it and hands it back. Every
+           nickname save on the site comes through here, which is why the
+           window is opened here and not by the callers. */
+        if (flagged) setTimeout(() => showFlagged(flagged), 0);
+        return Account.current;
+    };
+
+    /* "Refuse" on the forced rename window (29 Sept 2026): the player keeps
+       the name the admins rejected and is told the games stay locked until
+       they choose another. The server marks nickRefused, which stops the
+       window opening on each visit; the lock itself (nickRejected) stays.
+       Never rejects: if the server could not be told, the refusal is held
+       for this page and the window simply asks again on the next load. */
+    Account.refuseNickname = async () => {
+        if (!Account.current) return null;
+        try {
+            if (typeof Api !== "undefined" && Api && typeof Api.refuseNickname === "function") {
+                takePlayer(await Api.refuseNickname());
+            }
+        } catch (e) {
+            if (e && e.status === 401) { Account.refresh(); return null; }
+        }
+        if (Account.current) Account.current = Object.assign({}, Account.current, { nickRefused: true });
+        announce();
+        return Account.current;
+    };
+
+    /* Records that the first-sign-in window has been answered, so it is only
+       ever asked once. Never rejects: if the server could not be told, the
+       worst case is being asked again on a later visit. */
+    Account.markNickAsked = async () => {
+        if (!Account.current) return null;
+        Account.current.nickAsked = true;
+        if (!Account.canNick()) return Account.current;
+        try {
+            takePlayer(await Api.markNickAsked());
+            if (Account.current) Account.current.nickAsked = true;
+            announce();
+        } catch (e) { /* asked again next visit, at worst */ }
+        return Account.current;
+    };
+
+    /* Somewhere to set it. The console's Profile page, with the field open
+       and focused, when this page has the console (js/console-profile.js
+       adds MazeConsole.editNickname); otherwise the archive, whose console
+       opens on the same field from the #nickname hash. */
+    Account.editNickname = () => {
+        const C = window.MazeConsole;
+        if (C && typeof C.editNickname === "function") C.editNickname();
+        else location.href = "/home#nickname";
+    };
+
+    /* The line the games put under a filed score (28 Sept 2026): "On the
+       board as <Discord name>. Set a nickname", shown only to a signed-in
+       player with no nickname. It is returned as markup because the boards
+       it sits in are drawn as markup (js/guess.js renderBoards, js/daily.js
+       boards); the button is answered by the one delegated listener below,
+       and every copy of the line is taken off the page the moment a
+       nickname exists (see the onChange at the bottom of this file), so a
+       results card left open does not go on offering it. */
+    Account.nickHintHtml = () => {
+        const me = Account.current;
+        if (!me || me.nick || me.nickLocked || !Account.canNick()) return "";
+        return `<p class="guess-board-note nick-hint" data-nick-hint-line>
+                    On the board as ${escapeHtml(Account.nameOf(me))}.
+                    <button type="button" class="guess-btn nick-hint-btn" data-nick-hint>Set a nickname</button>
+                </p>`;
+    };
+    document.addEventListener("click", e => {
+        const btn = e.target && e.target.closest ? e.target.closest("[data-nick-hint]") : null;
+        if (btn) Account.editNickname();
+    });
+    function dropNickHints() {
+        const me = Account.current;
+        if (me && !me.nick && !me.nickLocked) return;
+        document.querySelectorAll("[data-nick-hint-line]").forEach(el => el.remove());
+    }
+
     // A tick made in the last moments before the tab closes still counts.
     window.addEventListener("pagehide", () => {
         if (Object.keys(pendingPatch).length) flushState();
@@ -286,29 +539,782 @@
             return;
         }
 
-        /* Signed in, the button becomes the person: their avatar and name,
-           and pressing it signs out. One control rather than a name plus a
-           separate "sign out" link, because the header has room for one
-           thing and the name is what people look for to check they are
-           signed in as themselves.
+        /* Signed in, the button becomes the person: their avatar and name.
+           One control rather than a name plus a separate "sign out" link,
+           because the header has room for one thing and the name is what
+           people look for to check they are signed in as themselves.
 
-           The aria-label says what pressing does: announced as just the
-           name, a screen reader user had no way to know it signs out. It
-           still contains the visible name, so voice control ("click
-           <name>") finds it. */
+           Pressing it ASKS first (28 Sept 2026). It used to sign out on the
+           spot, and the name is exactly what people press to check whose
+           account this is — so checking signed them out. See
+           confirmSignOut below.
+
+           The aria-label says what pressing does, and still contains the
+           visible name, so voice control ("click <name>") finds it. */
+        /* The name shown is the nickname when there is one (28 Sept 2026),
+           since that is who the boards say they are; the tooltip keeps the
+           Discord name beside it, so the account is still recognisable. */
+        const shown = Account.nameOf(me);
+        const tip = me.nick && me.name && me.name !== shown
+            ? `Signed in as ${shown} (Discord: ${me.name})` : `Signed in as ${shown}`;
+        /* data-crumb (29 Sept 2026): js/error-report.js's click breadcrumb
+           reads a button's aria-label, and this one's is the player's name;
+           the privacy policy promises no names in error reports, so the
+           crumb says "Account button" instead. */
         host.innerHTML = `
             <button type="button" class="header-signin is-signed-in" id="account-signout"
-                    aria-label="Sign out ${escapeHtml(me.name)}"
-                    title="Signed in as ${escapeHtml(me.name)} — press to sign out">
+                    data-crumb="Account button"
+                    aria-haspopup="dialog"
+                    aria-label="Signed in as ${escapeHtml(shown)}: sign out…"
+                    title="${escapeHtml(tip)}">
                 ${me.avatar ? `<img class="header-signin-face" src="${escapeHtml(me.avatar)}" alt="" aria-hidden="true">` : ""}
-                <span class="header-signin-name">${escapeHtml(me.name)}</span>
+                <span class="header-signin-name">${escapeHtml(shown)}</span>
             </button>`;
         const btn = document.getElementById("account-signout");
         if (btn) btn.addEventListener("click", async () => {
+            if (!(await confirmSignOut())) return;
+            /* Focus kept somewhere real for the length of the sign-out (it
+               can take a few seconds: queued ticks are flushed first). A
+               disabled button cannot hold focus, so it waits on the name
+               before being disabled, and lands on the fresh "Sign in"
+               button once the header has been redrawn — rather than on
+               <body>, which leaves a keyboard or screen-reader user at the
+               top of the page. */
+            btn.focus({ preventScroll: true });
             btn.disabled = true;
             await Account.signOut();
+            const again = document.getElementById("account-signin");
+            if (again && (!document.activeElement || document.activeElement === document.body || !btn.isConnected)) {
+                again.focus({ preventScroll: true });
+            }
         });
     }
+
+    /* "Sign out?" — a small window in the site's own frame, the same
+       .modal-overlay / .modal / chrome titlebar every other window wears.
+
+       Resolves true only for the Sign out button. The ×, Escape, a press on
+       the dimmed page around it and "Stay signed in" all answer no, and the
+       window opens with focus on "Stay signed in", so a second Enter from
+       the press that opened it cannot sign anyone out by accident.
+
+       Built on demand rather than written into the pages, because two pages
+       carry the header (home.html and fallinfurni.html) and this is the one
+       file both load. Tab is kept inside it by js/site.js's FocusTrap, which
+       holds every visible aria-modal window, and Escape goes through
+       EscapeLayers so it closes this and not the window behind it. Only one
+       can be open: a second press while it is up is answered no. */
+    let signOutShowing = null;
+    let escapeRegistered = false;
+
+    function confirmSignOut() {
+        if (signOutShowing) return Promise.resolve(false);
+        const me = Account.current;
+        if (!me) return Promise.resolve(false);
+
+        return new Promise(resolve => {
+            const returnTo = document.activeElement;
+            const overlay = document.createElement("div");
+            overlay.className = "modal-overlay open signout-overlay";
+            overlay.innerHTML = `
+                <div class="modal confirm-modal signout-window" role="dialog" aria-modal="true"
+                     aria-labelledby="signout-title" aria-describedby="signout-message" tabindex="-1">
+                    <div class="chrome-titlebar">
+                        <h2 id="signout-title">Sign Out?</h2>
+                        <button type="button" class="chrome-close" aria-label="Stay signed in"><img src="/assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+                    </div>
+                    <div class="chrome-frame">
+                        <div class="modal-body signout-body">
+                            ${me.avatar ? `<img class="signout-face" src="${escapeHtml(me.avatar)}" alt="" aria-hidden="true">` : ""}
+                            <div class="confirm-message signout-message" id="signout-message" data-crumb-private>
+                                <p class="signout-who">Signed in as ${escapeHtml(Account.nameOf(me))}</p>
+                                <p class="signout-ask">Do you want to sign out?</p>
+                            </div>
+                            <div class="confirm-actions signout-actions">
+                                <button type="button" class="guess-btn guess-btn--lead" data-choice="yes">Sign out</button>
+                                <button type="button" class="guess-btn" data-choice="no">Stay signed in</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+            document.body.classList.add("modal-open");
+
+            function finish(yes) {
+                if (signOutShowing !== overlay) return;
+                signOutShowing = null;
+                overlay.remove();
+                if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
+                // Back to the name on "no". On "yes" the header is about to be
+                // redrawn, and the caller's own disabled button holds the spot.
+                if (!yes && returnTo && document.body.contains(returnTo) && typeof returnTo.focus === "function") {
+                    returnTo.focus({ preventScroll: true });
+                }
+                resolve(yes);
+            }
+            signOutShowing = overlay;
+            overlay.finish = finish;
+
+            overlay.querySelectorAll("[data-choice]").forEach(b => {
+                b.addEventListener("click", () => finish(b.dataset.choice === "yes"));
+            });
+            overlay.querySelector(".chrome-close").addEventListener("click", () => finish(false));
+            /* A press on the dimmed page closes it — but only a press that
+               STARTED there. Otherwise the second click of a double-click on
+               the name (which lands on this overlay, added by the first) shut
+               the window the moment it opened, and selecting the text and
+               letting go outside the card did the same. */
+            let downOnBackdrop = false;
+            overlay.addEventListener("pointerdown", e => { downOnBackdrop = e.target === overlay; });
+            overlay.addEventListener("click", e => {
+                if (e.target === overlay && downOnBackdrop) finish(false);
+                downOnBackdrop = false;
+            });
+
+            if (!escapeRegistered && window.EscapeLayers) {
+                escapeRegistered = true;
+                window.EscapeLayers.register({
+                    elements: () => signOutShowing ? [signOutShowing] : [],
+                    close: el => el.finish(false)
+                });
+            } else if (!window.EscapeLayers) {
+                // No site.js on this page: Escape still has to mean no.
+                const onKey = e => {
+                    if (e.key !== "Escape" || signOutShowing !== overlay) return;
+                    document.removeEventListener("keydown", onKey, true);
+                    finish(false);
+                };
+                document.addEventListener("keydown", onKey, true);
+            }
+
+            overlay.querySelector('[data-choice="no"]').focus();
+        });
+    }
+    Account.confirmSignOut = confirmSignOut;
+
+    /* "Choose a nickname?" (28 Sept 2026) — asked ONCE, the first time a
+       player is signed in, in the same frame as "Sign out?" above: the
+       .modal-overlay / .modal / chrome titlebar every window wears, over the
+       console (z-index 260 like that one; see .nick-overlay in the css).
+
+       Either answer is final. "Save nickname" sets it (the server marks the
+       question answered as part of that); "Not now", the ×, Escape and a
+       press on the dimmed page all call markNickAsked. The wording says
+       plainly that it is optional and can be changed later from the Profile,
+       because the window arrives uninvited straight after signing in.
+
+       WHEN IT OPENS. Only for a player object that says nickAsked: false (a
+       server without the feature sends no such field, and is never asked
+       for), only once per page load, and only while nothing else is in the
+       way. It waits — checking every second and a half — while any window
+       is open (a daily game, the room window a pasted maze link opened,
+       Your Progress, the leaderboards: all .modal-overlay.open), while a
+       Fallin' Furni round is being played, and while the tab is hidden; it
+       opens as soon as the page is clear. /warren never loads this file,
+       and is excluded here as well.
+
+       "PICK A NEW NICKNAME" is the same window, for a player whose
+       nickname the admins have rejected from the Warren (`nickRejected`;
+       see FLAGGED in netlify/functions/player-nick.js). It began as a
+       once-a-visit ask that "Not now" put off. The owner's revised
+       decision (29 Sept 2026): the games are locked until the name is
+       changed, and the ask cannot be put off, only answered. So it waits
+       for the page to be clear by exactly the rules above, and then:
+         - opens on EVERY page load until it is answered;
+         - has no ×, ignores Escape and the dimmed page, and keeps Tab
+           inside it (js/site.js's FocusTrap, as every aria-modal window);
+         - "Save nickname" saves a different name, which takes nickRejected
+           off on the server (player-nick.js) and unlocks the games;
+         - "Refuse" (Account.refuseNickname) keeps the name. The server
+           marks nickRefused and the window stops opening; the player can
+           browse as before, but the games stay locked, and pressing Play
+           offers this window again — dismissible that time, since they
+           came to it themselves (kind "rename"; see GAMES LOCKED).
+       The two never both want to open: the first needs no nickname, this
+       one needs one. */
+    let nickPromptShowing = null;
+    let nickPromptDone = false;
+    let renamePromptDone = false;
+    let nickPromptTimer = null;
+    let nickEscapeRegistered = false;
+
+    /* Which window, if either, this player is owed right now: "first" (the
+       first-sign-in "Choose a nickname?"), "rejected" (the forced "Pick a
+       new nickname") or null. Pure given its arguments, so the tests can
+       run it without a page: `me` the player, `s` what this page knows —
+       canNick, firstDone / renameDone (already shown this page load). Never
+       over a nickname the admins have locked: then there is nothing the
+       player could do about it. */
+    function promptKind(me, s) {
+        if (!me || me.nickLocked || !s.canNick) return null;
+        if (me.nickAsked === false && !me.nick && !s.firstDone) return "first";
+        if (me.nickRejected === true && me.nick && !me.nickRefused && !s.renameDone) return "rejected";
+        return null;
+    }
+    Account._promptKind = promptKind;
+
+    function pageIsBusy() {
+        if (/^\/warren/.test(location.pathname)) return true;
+        if (document.hidden || document.readyState !== "complete") return true;
+        if (document.querySelector(".modal-overlay.open")) return true;
+        if (document.body.classList.contains("modal-open")) return true;
+        // Any other window that has made itself modal — the lightbox,
+        // Fallin' Furni's pause — except inside the console, which is not.
+        for (const d of document.querySelectorAll('[aria-modal="true"]')) {
+            if (d.closest("#console-modal")) continue;
+            if (d.getClientRects().length) return true;
+        }
+        const ff = document.getElementById("ff-title");
+        if (ff && ff.dataset.state === "playing") return true;
+        /* Three more waits (29 Sept 2026). The loading screen: home.js
+           marks it data-done / .is-done and removes it 300ms later, and
+           until then the prompt would open behind the "LOADING" bar.
+           Somebody typing — a search, a room code, the Profile's own name
+           box: opening now would take the focus out from under the next
+           keystroke. And Fallin' Furni's "turn your screen sideways" gate
+           (body.ff-rotate-shut, set in js/fallinfurni.js), which sits over
+           everything and would hide the prompt until the phone turned. */
+        const loader = document.getElementById("site-loader");
+        if (loader && !loader.dataset.done && !loader.classList.contains("is-done")) return true;
+        const typing = document.activeElement;
+        if (typing && typing !== document.body
+            && (/^(?:INPUT|TEXTAREA|SELECT)$/.test(typing.tagName) || typing.isContentEditable)) return true;
+        if (document.body.classList.contains("ff-rotate-shut")) return true;
+        return false;
+    }
+
+    // Which window is wanted now, if any (see promptKind); null while one is up.
+    function wantsNickPrompt() {
+        const me = Account.current;
+        if (nickPromptShowing || !me) return null;
+        /* Not while banned: the server refuses every nickname answer from a
+           banned player, so the window could never be answered and would
+           come back on every page load. */
+        if (activeBan()) return null;
+        return promptKind(me, {
+            canNick: Account.canNick(),
+            firstDone: nickPromptDone,
+            renameDone: renamePromptDone
+        });
+    }
+
+    function scheduleNickPrompt() {
+        if (nickPromptTimer || !wantsNickPrompt()) return;
+        const tick = () => {
+            nickPromptTimer = null;
+            const kind = wantsNickPrompt();
+            if (!kind) return;
+            if (pageIsBusy()) { nickPromptTimer = setTimeout(tick, 1500); return; }
+            openNickPrompt(kind);
+        };
+        // A moment's grace first, so a window the page opens on its own at
+        // load (a pasted maze link's room) is up before the check.
+        nickPromptTimer = setTimeout(tick, 1200);
+    }
+
+    /* The window's words, by which of the three it is (see above). The
+       rejected ones name the nickname, so their text is marked
+       data-crumb-private for js/error-report.js's breadcrumb, as the
+       input already is. */
+    function nickPromptWords(kind, me) {
+        /* "Pick a new nickname", not "Please choose a new nickname": the
+           titlebar keeps 84px each side clear for the ×, which leaves 144px
+           of Volter, and the longer one was cut to "Please choose a ne…"
+           (measured, 29 Sept 2026). */
+        const asked = `The site's admins have asked you to pick a different nickname <span class="nick-dash">&mdash;</span> '${escapeHtml(me.nick || "")}' isn't one they can show on the boards.`;
+        if (kind === "rejected") {
+            return {
+                title: "Pick a new nickname",
+                text: `${asked} If you refuse, you can still browse the site, but you can't play any of the games until you choose one.`
+            };
+        }
+        if (kind === "rename") {
+            return {
+                title: "Pick a new nickname",
+                text: `${asked} Choose a new one to play the games again.`
+            };
+        }
+        return {
+            title: "Choose a nickname?",
+            text: `This is how you'll appear on the scoreboards. It's optional <span class="nick-dash">&mdash;</span> you can skip this and set or change it any time from your Profile in the Console.`
+        };
+    }
+
+    function openNickPrompt(kind) {
+        const me = Account.current;
+        if (!me || nickPromptShowing) return;
+        // Either rejected kind: the name they were asked to change.
+        const rejected = kind === "rejected" || kind === "rename";
+        // Only the one that opens by itself is forced (see above).
+        const forced = kind === "rejected";
+        if (rejected) renamePromptDone = true;
+        else nickPromptDone = true;
+        const words = nickPromptWords(kind, me);
+        const returnTo = document.activeElement;
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay open nick-overlay" + (forced ? " is-forced" : "");
+        overlay.innerHTML = `
+            <div class="modal confirm-modal nick-window" role="dialog" aria-modal="true"
+                 aria-labelledby="nick-prompt-title" aria-describedby="nick-prompt-text" tabindex="-1">
+                <div class="chrome-titlebar">
+                    <h2 id="nick-prompt-title">${escapeHtml(words.title)}</h2>
+                    ${forced ? "" : `<button type="button" class="chrome-close" aria-label="Not now"><img src="/assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>`}
+                </div>
+                <div class="chrome-frame">
+                    <div class="modal-body nick-prompt-body">
+                        <p class="nick-prompt-text" id="nick-prompt-text"${rejected ? " data-crumb-private" : ""}>${words.text}</p>
+                        <label class="nick-prompt-label" for="nick-prompt-input">${rejected ? "New nickname" : "Nickname"}</label>
+                        <input type="text" class="nick-prompt-input" id="nick-prompt-input" data-crumb-private
+                               maxlength="${NICK_MAX}" autocomplete="off" autocapitalize="off" spellcheck="false"
+                               placeholder="${escapeHtml(me.name || "")}" aria-describedby="nick-prompt-msg">
+                        <p class="nick-prompt-msg" id="nick-prompt-msg" role="status" aria-live="polite"></p>
+                        <div class="confirm-actions signout-actions nick-prompt-actions">
+                            <button type="button" class="guess-btn guess-btn--lead" data-nick-choice="save">Save nickname</button>
+                            <button type="button" class="guess-btn" data-nick-choice="skip">${forced ? "Refuse" : "Not now"}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        document.body.classList.add("modal-open");
+
+        const input = overlay.querySelector("#nick-prompt-input");
+        const msg = overlay.querySelector("#nick-prompt-msg");
+        const saveBtn = overlay.querySelector('[data-nick-choice="save"]');
+        const skipBtn = overlay.querySelector('[data-nick-choice="skip"]');
+        let busy = false;
+
+        function say(text, bad) {
+            msg.textContent = text || "";
+            msg.classList.toggle("is-error", !!bad);
+        }
+
+        function finish() {
+            if (nickPromptShowing !== overlay) return;
+            nickPromptShowing = null;
+            overlay.remove();
+            if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
+            if (returnTo && document.body.contains(returnTo) && typeof returnTo.focus === "function") {
+                returnTo.focus({ preventScroll: true });
+            }
+        }
+
+        // "Not now": for the rejected name, nothing is sent (see above).
+        function skip() {
+            if (busy) return;
+            if (!rejected) Account.markNickAsked();
+            finish();
+        }
+
+        /* "Refuse", the forced window's only other answer. Held busy while
+           the server is told, then closed whatever it said: refuseNickname
+           never rejects, and a refusal it could not deliver is simply asked
+           again on the next page load. */
+        async function refuse() {
+            if (busy) return;
+            busy = true;
+            saveBtn.disabled = skipBtn.disabled = true;
+            say("One moment...");
+            try { await Account.refuseNickname(); } finally {
+                busy = false;
+                finish();
+            }
+        }
+
+        async function save() {
+            if (busy) return;
+            const problem = Account.checkNickname(input.value);
+            if (problem) { say(problem, true); input.focus(); return; }
+            /* The same name again would be saved as "no change", and the
+               ask would stand — so say so here rather than close the window
+               on a save that answered nothing. Compared as the server
+               compares for "taken" would be too clever: a re-punctuated
+               name IS a different nickname, and the admins can look again. */
+            if (rejected && Account.tidyNickname(input.value) === (me.nick || "")) {
+                say("That's the nickname they asked you to change. Choose a different one.", true);
+                input.focus();
+                return;
+            }
+            busy = true;
+            saveBtn.disabled = skipBtn.disabled = true;
+            say("Saving...");
+            try {
+                await Account.setNickname(input.value);
+                finish();
+            } catch (e) {
+                say(e.message, true);
+                // Signed out underneath it, or the admins locked the
+                // nickname meanwhile: nothing left to save for.
+                if (e.status === 401 || e.status === 403) setTimeout(finish, 2500);
+                else input.focus();
+            } finally {
+                busy = false;
+                saveBtn.disabled = skipBtn.disabled = false;
+            }
+        }
+        nickPromptShowing = overlay;
+        /* What Escape does. The forced window answers it with nothing — but
+           it is still registered as the front layer, so the press stops
+           there instead of closing the console or a game behind it. */
+        overlay.finish = forced ? () => {} : skip;
+
+        // Said while typing, once there is something to judge; the server
+        // still has the last word when it is sent.
+        input.addEventListener("input", () => {
+            say(input.value.trim() ? Account.checkNickname(input.value) : "", true);
+        });
+        input.addEventListener("keydown", e => {
+            if (e.key === "Enter") { e.preventDefault(); save(); }
+        });
+        saveBtn.addEventListener("click", save);
+        skipBtn.addEventListener("click", forced ? refuse : skip);
+        const closeBtn = overlay.querySelector(".chrome-close");
+        if (closeBtn) closeBtn.addEventListener("click", skip);
+        // Only a press that STARTED on the dimmed page, as "Sign out?" does.
+        let downOnBackdrop = false;
+        overlay.addEventListener("pointerdown", e => { downOnBackdrop = e.target === overlay; });
+        overlay.addEventListener("click", e => {
+            if (!forced && e.target === overlay && downOnBackdrop) skip();
+            downOnBackdrop = false;
+        });
+
+        if (!nickEscapeRegistered && window.EscapeLayers) {
+            nickEscapeRegistered = true;
+            window.EscapeLayers.register({
+                elements: () => nickPromptShowing ? [nickPromptShowing] : [],
+                close: el => el.finish()
+            });
+        } else if (!window.EscapeLayers && !forced) {
+            const onKey = e => {
+                if (e.key !== "Escape" || nickPromptShowing !== overlay) return;
+                document.removeEventListener("keydown", onKey, true);
+                skip();
+            };
+            document.addEventListener("keydown", onKey, true);
+        }
+
+        input.focus();
+    }
+
+    /* ---------- small windows that say one thing (29 Sept 2026) ----------
+
+       "Nickname Saved", "Can't Play", "Set a New Nickname" and the like: the
+       frame "Sign out?" wears, over the console at z-index 260 (it carries
+       .nick-overlay for that), with a line or two of text and one or two
+       buttons. Resolves with the pressed button's value; the ×, Escape and
+       a press that STARTED on the dimmed page resolve null. Only one at a
+       time: asked again while one is up (a game's two refused writes in a
+       row), the second resolves null at once rather than stacking.
+
+       o.title    the titlebar, kept to ~19 characters (144px of Volter; see
+                  nickPromptWords)
+       o.html     the body, ALREADY ESCAPED by the caller
+       o.image    a picture shown above the text at its own size
+       o.wide     a wider window, for text whose lines should not wrap
+       o.actions  [{ label, value, lead }]; without it, one "OK" in the
+                  site's small .view-switch-btn, as the owner chose for
+                  "Nickname Saved" */
+    let noticeShowing = null;
+    let noticeEscapeRegistered = false;
+
+    function notice(o) {
+        if (noticeShowing) return Promise.resolve(null);
+        return new Promise(resolve => {
+            const returnTo = document.activeElement;
+            const actions = Array.isArray(o.actions) && o.actions.length ? o.actions : null;
+            const buttons = actions
+                ? actions.map((a, i) => `<button type="button" class="guess-btn${a.lead ? " guess-btn--lead" : ""}" data-notice="${i}">${escapeHtml(a.label)}</button>`).join("")
+                : `<button type="button" class="view-switch-btn notice-ok" data-notice="ok">OK</button>`;
+            const overlay = document.createElement("div");
+            overlay.className = "modal-overlay open nick-overlay notice-overlay";
+            overlay.innerHTML = `
+                <div class="modal confirm-modal notice-window${o.wide ? " notice-wide" : ""}" role="dialog" aria-modal="true"
+                     aria-labelledby="notice-title" aria-describedby="notice-text" tabindex="-1">
+                    <div class="chrome-titlebar">
+                        <h2 id="notice-title">${escapeHtml(o.title)}</h2>
+                        <button type="button" class="chrome-close" aria-label="Close"><img src="/assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+                    </div>
+                    <div class="chrome-frame">
+                        <div class="modal-body notice-body">
+                            ${o.image ? `<img class="notice-image" src="${escapeHtml(o.image)}" width="26" height="26" alt="" aria-hidden="true">` : ""}
+                            <div class="notice-text" id="notice-text"${o.private ? " data-crumb-private" : ""}>${o.html}</div>
+                            <div class="notice-actions${actions ? " signout-actions" : ""}">${buttons}</div>
+                        </div>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+            document.body.classList.add("modal-open");
+
+            function finish(value) {
+                if (noticeShowing !== overlay) return;
+                noticeShowing = null;
+                overlay.remove();
+                if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
+                if (returnTo && document.body.contains(returnTo) && typeof returnTo.focus === "function") {
+                    returnTo.focus({ preventScroll: true });
+                }
+                resolve(value);
+            }
+            noticeShowing = overlay;
+            overlay.finish = finish;
+
+            overlay.querySelectorAll("[data-notice]").forEach(b => {
+                b.addEventListener("click", () => {
+                    const i = b.dataset.notice;
+                    finish(i === "ok" ? "ok" : (actions[Number(i)] ? actions[Number(i)].value : null));
+                });
+            });
+            overlay.querySelector(".chrome-close").addEventListener("click", () => finish(null));
+            let downOnBackdrop = false;
+            overlay.addEventListener("pointerdown", e => { downOnBackdrop = e.target === overlay; });
+            overlay.addEventListener("click", e => {
+                if (e.target === overlay && downOnBackdrop) finish(null);
+                downOnBackdrop = false;
+            });
+
+            if (!noticeEscapeRegistered && window.EscapeLayers) {
+                noticeEscapeRegistered = true;
+                window.EscapeLayers.register({
+                    elements: () => noticeShowing ? [noticeShowing] : [],
+                    close: el => el.finish(null)
+                });
+            } else if (!window.EscapeLayers) {
+                const onKey = e => {
+                    if (e.key !== "Escape" || noticeShowing !== overlay) return;
+                    document.removeEventListener("keydown", onKey, true);
+                    finish(null);
+                };
+                document.addEventListener("keydown", onKey, true);
+            }
+
+            const first = overlay.querySelector("[data-notice]");
+            if (first) first.focus({ preventScroll: true });
+        });
+    }
+
+    /* "Nickname Saved" — a nickname the server took, but whose word filter
+       caught something in it (player-nick.js answers `flagged: { reason,
+       word }` beside the player). The name stands and the admins look at
+       it in the Warren; this says so without alarming anybody. Worded and
+       laid out by the owner (29 Sept 2026): the red button at its own
+       26×26, three centred lines with only the word in amber, one OK. */
+    function showFlagged(flagged) {
+        const word = flagged && typeof flagged.word === "string" && flagged.word.trim() ? flagged.word.trim() : "";
+        const first = word
+            ? `'<span class="notice-word">${escapeHtml(word)}</span>' tripped a wire that made the rats crazy.`
+            : "Your nickname tripped a wire that made the rats crazy.";
+        return notice({
+            title: "Nickname Saved",
+            image: "/assets/img/red-button.png",
+            private: true,
+            // Wide enough that each of the three lines is one line (see
+            // .notice-wide), where there is the room.
+            wide: true,
+            html: `<p class="notice-lines">${first}<br>If the site Admin doesn't approve of this in your nickname, we'll let you know.<br>For the time being, continue as usual.</p>`
+        });
+    }
+    Account._showFlagged = showFlagged;
+
+    /* ---------- BANS (29 Sept 2026) ----------
+
+       `me` answers `ban: { level, until, reason } | null` beside the player,
+       for signed-out visitors too, since a ban can be on a network rather
+       than an account. For nearly everyone it is null and nothing here
+       runs: no request is added, `me` is asked once a page as it always was.
+
+         "full"  the visitor is sent to the landing page, which shows a
+                 Maintenance page — with a cool-down's time left and reason
+                 in a pop-up (applyBan, and js/welcome.js).
+         "soft"  everything stays readable, but signing in, playing and
+                 sending (Contact, Add Maze Info) each answer with a small
+                 "Can't …" window with the time left and the reason.
+
+       The server is the authority either way: a write it refuses answers
+       403 { error, banned: { level, until } }, and writeRefused below turns
+       that into the same windows for whichever caller got it. `until` is
+       null for a ban without an end; a ban whose end has passed is treated
+       as none, so a page left open past it does not go on refusing. */
+    const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    // "3 Oct 2026, 14:00 UTC". Spelt out rather than toLocaleString, whose
+    // short months differ between browsers ("Sep" / "Sept").
+    function untilText(iso) {
+        const d = new Date(Date.parse(iso));
+        if (isNaN(d.getTime())) return "";
+        const two = n => String(n).padStart(2, "0");
+        return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${two(d.getUTCHours())}:${two(d.getUTCMinutes())} UTC`;
+    }
+    Account.untilText = untilText;
+
+    function readBan(raw) {
+        if (!raw || typeof raw !== "object") return null;
+        const level = raw.level === "full" || raw.level === "soft" ? raw.level : null;
+        if (!level) return null;
+        const until = typeof raw.until === "string" && !isNaN(Date.parse(raw.until)) ? raw.until : null;
+        const reason = typeof raw.reason === "string" ? raw.reason.trim() : "";
+        return { level, until, reason };
+    }
+
+    function activeBan() {
+        const b = Account.ban;
+        if (!b) return null;
+        if (b.until && Date.parse(b.until) <= Date.now()) return null;
+        return b;
+    }
+    Account.activeBan = activeBan;
+
+    /* A WHOLE-SITE BAN (reworked 29 Sept 2026, as the owner asked).
+
+       The visitor is sent to the landing page, and every page sends them
+       back there while it lasts:
+         permanent   the landing page shows "Maintenance, Back Soon!", as a
+                     real maintenance window does. Nothing says it is a ban.
+         cool-down   the same, with a pop-up saying how long is left and
+                     the reason given (js/welcome.js).
+       The browser keeps a note of it under BLOCK_KEY — { until, reason } —
+       so that the landing page, and pages that never ask `me` (js/site.js,
+       home.html's gate), know without a request of their own. The landing
+       page checks `me` again whenever the note is there, so a ban that is
+       lifted clears it at the next visit. The privacy policy and /warren
+       stay reachable. */
+    const BLOCK_KEY = "mazerats_blocked";
+    function rememberBlock() {
+        const b = activeBan();
+        try {
+            if (b && b.level === "full") localStorage.setItem(BLOCK_KEY, JSON.stringify({ until: b.until || null, reason: b.reason || "" }));
+            else localStorage.removeItem(BLOCK_KEY);
+        } catch (e) { /* private mode: every page asks `me` and lands here again */ }
+    }
+    function applyBan() {
+        const b = activeBan();
+        if (!b || b.level !== "full") return;
+        if (/^\/(?:warren|privacy)/.test(location.pathname)) return;
+        rememberBlock();
+        location.replace("/");
+    }
+
+    // "23h 14m", "2d 5h", "12m": what is left of a cool-down.
+    function timeLeft(iso) {
+        const ms = Date.parse(iso) - Date.now();
+        if (!(ms > 0)) return "";
+        const m = Math.ceil(ms / 60000);
+        const d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
+        return d ? `${d}d ${h}h` : h ? `${h}h ${mm}m` : `${mm}m`;
+    }
+
+    /* "Can't Play" / "Can't Send" / "Can't Sign In", for an
+       "everything but reading" ban (a whole-site one sends the visitor to the
+       landing page instead). `what` is which was tried. Laid out as the
+       owner approved for the cool-down pop-up: the red button, then one line
+       each for what happened, the time left and the reason — the last two
+       only when there is one. */
+    const BLOCKED = {
+        play: { title: "Can't Play", head: "You can't play right now." },
+        send: { title: "Can't Send", head: "You can't send this right now." },
+        signin: { title: "Can't Sign In", head: "You can't sign in right now." }
+    };
+    function showBlocked(what, ban) {
+        const b = ban || activeBan() || Account.ban;
+        if (b && b.level === "full") { applyBan(); return Promise.resolve(null); }
+        const w = BLOCKED[what] || BLOCKED.play;
+        const lines = [escapeHtml(w.head)];
+        const left = b && b.until ? timeLeft(b.until) : "";
+        if (left) lines.push(`Time left: <span class="notice-word">${escapeHtml(left)}</span> (until ${escapeHtml(untilText(b.until))}).`);
+        if (b && b.reason) lines.push(`Reason: ${escapeHtml(b.reason)}`);
+        return notice({
+            title: w.title,
+            image: "/assets/img/red-button.png",
+            wide: true,
+            html: `<p class="notice-lines">${lines.join("<br>")}</p>`
+        });
+    }
+    Account.showBlocked = showBlocked;
+
+    /* The Contact and Add Maze Info sends, under a soft ban. Caught on the
+       way down (capture phase) so neither form's own handler — in
+       js/console.js and js/console-info.js — runs at all: the message is
+       kept in its box, and the window says why nothing went. The server
+       refuses the write regardless; this is only the kinder answer. The
+       first check is the cheap one, since Account.ban is null for nearly
+       every visitor and this sees every click on the page. */
+    document.addEventListener("click", e => {
+        if (!Account.ban) return;
+        const send = e.target && e.target.closest ? e.target.closest("#console-contact-send, #ci-send") : null;
+        if (!send || !activeBan()) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        showBlocked("send");
+    }, true);
+
+    /* ---------- GAMES LOCKED (29 Sept 2026) ----------
+
+       A player whose nickname the admins rejected cannot play until they
+       choose another (nickRejected; refusing the forced window changes
+       nothing here). Every Play on the site asks Account.mayPlay() first —
+       Guess the Maze and Odd One Out as their windows open, the Profile's
+       Play, Fallin' Furni's title Play and "Play again" — and a game write
+       the server refuses (403 nickRequired, or 403 banned) comes through
+       writeRefused, so a page that did not know yet still answers well.
+
+       "Set a New Nickname" offers the rename window, dismissible this time
+       (kind "rename"), and "Not now". */
+    function showNickRequired() {
+        return notice({
+            title: "Set a New Nickname",
+            html: `<p class="notice-head">Set a new nickname to play.</p><p>The site's admins asked you to change it.</p>`,
+            actions: [
+                { label: "Choose a nickname", value: "choose", lead: true },
+                { label: "Not now", value: null }
+            ]
+        }).then(v => {
+            if (v !== "choose") return;
+            const me = Account.current;
+            if (!me) return;
+            if (!Account.canNick() || me.nickLocked) { Account.editNickname(); return; }
+            openNickPrompt("rename");
+        });
+    }
+    Account.showNickRequired = showNickRequired;
+
+    /* Whether Play may go ahead. True, and nothing else happens, for anyone
+       signed out and unbanned or signed in in good standing — which is
+       everyone but a handful. Otherwise the right window is shown and it
+       answers false, and the caller does nothing more. */
+    Account.mayPlay = () => {
+        if (activeBan()) { showBlocked("play"); return false; }
+        const me = Account.current;
+        if (me && me.nickRejected === true) { showNickRequired(); return false; }
+        return true;
+    };
+
+    /* For any write the server refused: pass its status and parsed body,
+       and `what` was being done ("play" or "send"). Answers true when it
+       was a ban or the nickname lock, and the right window has been shown,
+       so the caller can skip its own error; false for anything else. */
+    Account.writeRefused = (status, body, what) => {
+        if (status !== 403 || !body || typeof body !== "object") return false;
+        if (body.banned && typeof body.banned === "object") {
+            const was = Account.ban;
+            const now = readBan(Object.assign({ reason: was ? was.reason : "" }, body.banned));
+            if (now) Account.ban = now;
+            showBlocked(what === "send" ? "send" : "play", now || was);
+            return true;
+        }
+        if (body.nickRequired) {
+            const me = Account.current;
+            if (me && me.nickRejected !== true) {
+                /* The page had not heard. Held now, so the next Play asks
+                   first; and the forced window is marked shown, since the
+                   window below already offers the same thing. */
+                renamePromptDone = true;
+                Account.current = Object.assign({}, me, { nickRejected: true });
+                announce();
+            }
+            showNickRequired();
+            return true;
+        }
+        return false;
+    };
 
     /* What came back from a sign-in attempt, if anything. discord-auth
        redirects here with ?signin=<why> when it did not work, and the
@@ -322,7 +1328,9 @@
         const said = {
             cancelled: "Sign-in cancelled.",
             expired: "That sign-in took too long — try again.",
-            failed: "Discord sign-in did not work. Try again in a moment."
+            failed: "Discord sign-in did not work. Try again in a moment.",
+            // discord-auth refused a banned account or network (29 Sept 2026).
+            banned: "This account or network has been blocked from signing in."
         }[why] || "Discord sign-in did not work.";
 
         const note = document.createElement("p");
@@ -332,7 +1340,8 @@
         const host = document.getElementById("account-slot");
         if (host) {
             host.appendChild(note);
-            setTimeout(() => note.remove(), 6000);
+            // The longest of them, and not a retry-now: a little longer to read.
+            setTimeout(() => note.remove(), why === "banned" ? 10000 : 6000);
         }
 
         params.delete("signin");
@@ -341,6 +1350,10 @@
     }
 
     Account.onChange(renderButton);
+    // A nickname set anywhere takes every "Set a nickname" line off the
+    // page; a first sign-in queues the one-time question.
+    Account.onChange(dropNickHints);
+    Account.onChange(scheduleNickPrompt);
 
     document.addEventListener("DOMContentLoaded", () => {
         renderButton();          // the signed-out state, immediately

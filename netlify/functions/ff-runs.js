@@ -185,6 +185,8 @@ const COUNTED = { $or: [{ rid: { $exists: false } }, { playerId: null }] };
    written as IPv6 (::ffff:1.2.3.4) is the IPv4 address. Null when Netlify
    gave no address, which the limit skips, as it always did. */
 const { clientNet } = require("./_net");
+// Banned accounts' and networks' runs are not logged (29 Sept 2026; see record()).
+const Bans = require("./_bans");
 
 /* The database prunes the log itself, as track.js has it do for site
    events: a TTL index on `at` rather than a deleteMany on every write, which
@@ -218,12 +220,23 @@ async function ensureIndexes(db) {
 
 /* Every level id there is, and how many are published, for the caps above.
    Unpublished ones count as known: a level can be unpublished in the middle
-   of somebody's run, and that run's entry for it is still a real one. */
+   of somebody's run, and that run's entry for it is still a real one.
+
+   So do DELETED ones that still have a version kept (ff_level_versions, see
+   ff-levels.js). ff-scores judges a run dealt a since-deleted level by that
+   snapshot — but this dropped the level's round from the log, so the log no
+   longer matched the run and every run under way when a level was deleted
+   was refused as "does not match its own run log". The versions last a week
+   after a delete, which is far longer than any run. */
 async function knownLevels(db) {
-    const rows = await db.collection(LEVELS)
-        .find({}, { projection: { _id: 0, id: 1, published: 1 } }).toArray();
+    const [rows, kept] = await Promise.all([
+        db.collection(LEVELS).find({}, { projection: { _id: 0, id: 1, published: 1 } }).toArray(),
+        db.collection("ff_level_versions").distinct("id").catch(() => [])
+    ]);
+    const ids = new Set(rows.map(r => String(r.id)));
+    kept.forEach(id => ids.add(String(id)));
     return {
-        ids: new Set(rows.map(r => String(r.id))),
+        ids,
         published: rows.filter(r => r.published === true).length
     };
 }
@@ -347,6 +360,20 @@ async function record(db, event) {
         return json(400, { error: "Invalid request body" });
     }
     if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
+
+    /* A BANNED ACCOUNT OR NETWORK'S RUNS ARE NOT LOGGED (29 Sept 2026; see
+       _bans.js). Dropped with a bare 204 rather than refused: this is the
+       admins' analytics, the page sends it without waiting on the answer,
+       and the run itself was already refused its token by ff-scores.js. A
+       bans lookup that fails is the 503 any other database failure here is. */
+    try {
+        if (await Bans.lookUp(db, event, (playerFrom(event) || {}).id || null)) {
+            return { statusCode: 204, headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" }, body: "" };
+        }
+    } catch (e) {
+        console.error("ff-runs: could not look up bans", e);
+        return json(503, { recorded: false, reason: "unavailable" });
+    }
 
     let known;
     try { known = await knownLevels(db); }
@@ -877,3 +904,8 @@ async function report(db, event) {
         recent
     });
 }
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("ff-runs", exports.handler);

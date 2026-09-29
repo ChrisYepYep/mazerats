@@ -29,6 +29,7 @@ const { playerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { today } = require("./_daily");
 const { launchCut, afterLaunch } = require("./daily-scores");
+const { writeRefusal } = require("./_bans");
 
 const COLLECTION = "player_state";
 const SCORES = "guess_scores";
@@ -239,6 +240,15 @@ exports.handler = async (event) => {
         if (event.httpMethod !== "GET") return json(503, { error: "Could not save your progress just now" });
     }
 
+    /* A banned player's progress is not written (29 Sept 2026; see _bans.js):
+       every write here — the ticks, the saves, a removal — answers 403
+       { error, banned }, soft or full. Reading their own progress is a read,
+       and goes on. A bans lookup that fails is a 503, as the write would be. */
+    if (event.httpMethod !== "GET") {
+        const refusal = await writeRefusal(db, event, player.id);
+        if (refusal) return refusal;
+    }
+
     if (event.httpMethod === "GET") {
         try {
             const [doc, stats] = await Promise.all([
@@ -252,6 +262,7 @@ exports.handler = async (event) => {
                 stats
             });
         } catch (e) {
+            console.error("player-data: read failed", e);
             return json(500, { error: "Could not read your saved progress" });
         }
     }
@@ -263,6 +274,9 @@ exports.handler = async (event) => {
         } catch (e) {
             return json(400, { error: "Invalid request body" });
         }
+        // "null" is valid JSON and not a body; body.walked on it was a
+        // TypeError and a bare 500 (28 Sept 2026).
+        if (!body || typeof body !== "object") return json(400, { error: "Invalid request body" });
 
         const set = { playerId: player.id, updatedAt: new Date().toISOString() };
         let addWalked = null;
@@ -383,6 +397,7 @@ exports.handler = async (event) => {
                 stats
             });
         } catch (e) {
+            console.error("player-data: save failed", e);
             return json(500, { error: "Could not save your progress" });
         }
     }
@@ -400,9 +415,15 @@ exports.handler = async (event) => {
             await col.updateOne({ playerId: player.id }, { $pull: { [field]: id } });
             return json(200, { removed: id, from: field });
         } catch (e) {
+            console.error("player-data: remove failed", e);
             return json(500, { error: "Could not remove it" });
         }
     }
 
     return { statusCode: 405, body: "" };
 };
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("player-data", exports.handler);

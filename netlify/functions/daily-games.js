@@ -166,6 +166,8 @@ async function route(event, db, scores, resets) {
             // been used is not a record of anything worth keeping.
             let body = {};
             try { body = JSON.parse(event.body || "{}"); } catch (e) { body = {}; }
+            // `null` parses cleanly and then has no .game to read.
+            if (!body || typeof body !== "object") body = {};
             if (!isGame(body.game)) return json(400, { error: "Unknown game" });
             await resets.deleteOne({ playerId: player.id, game: body.game });
             return json(200, { cleared: body.game });
@@ -342,6 +344,7 @@ async function route(event, db, scores, resets) {
 
         let body = {};
         try { body = JSON.parse(event.body || "{}"); } catch (e) { body = {}; }
+        if (!body || typeof body !== "object") body = {};
         const game = String(body.game || "");
         const playerId = String(body.playerId || "");
         if (!isGame(game)) return json(400, { error: "Unknown game" });
@@ -391,14 +394,23 @@ async function route(event, db, scores, resets) {
             clockCleared = await forgetDay(db, meta.key, today(), playerId);
         }
 
-        const player = await scores.findOne({ playerId }, { projection: { name: 1, avatar: 1 } });
+        /* The name on the ticket is the one the boards show: the player's
+           nickname when they have one, from their players row (28 Sept
+           2026; see player-nick.js, which renames tickets on a change too).
+           The Guess the Maze row stays the fallback, for a player with no
+           players row. */
+        const [player, profile] = await Promise.all([
+            scores.findOne({ playerId }, { projection: { name: 1, avatar: 1 } }),
+            db.collection("players").findOne({ id: playerId }, { projection: { _id: 0, name: 1, nick: 1, avatar: 1 } })
+        ]);
+        const ticketName = (profile && (profile.nick || profile.name)) || (player ? player.name : null);
         await resets.updateOne(
             { playerId, game },
             {
                 $set: {
                     playerId, game, by,
-                    name: player ? player.name : null,
-                    avatar: player ? player.avatar : null,
+                    name: ticketName || null,
+                    avatar: player ? player.avatar : (profile ? profile.avatar || null : null),
                     at: new Date().toISOString()
                 }
             },
@@ -420,3 +432,8 @@ async function route(event, db, scores, resets) {
 
     return json(405, { error: "Method not allowed" });
 }
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("daily-games", exports.handler);

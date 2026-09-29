@@ -270,6 +270,15 @@ const Api = {
 
     createEvent(token, ev) { return this._write("/.netlify/functions/events", "POST", token, ev); },
 
+    /* The saved recolour palettes, for the Controls panel's Palette card
+       (28 Sept 2026). The same unfiltered list js/admin-recolour.js reads —
+       the plain GET, which is not edge-cached, so a palette saved a moment
+       ago is in it. The token only adds who saved each one. */
+    async getPalettes(token) {
+        const data = await this._write("/.netlify/functions/palettes", "GET", token);
+        return (data && Array.isArray(data.palettes)) ? data.palettes : [];
+    },
+
     /* Reads a Habbo Origins article and hands back the parts of it an event
        shows. Nothing is stored by this call: the admin form holds the
        result and it is saved with the event, like every other field. */
@@ -624,10 +633,59 @@ const Api = {
         if (!res.ok) {
             const err = new Error(data.error || `Request failed: ${res.status}`);
             err.status = res.status;
+            err.data = data;
             throw err;
         }
         return data;
     },
+
+    /* ---------- the player's nickname (28 Sept 2026) ----------
+
+       See netlify/functions/player-nick.js. The player's own session
+       cookie, never an admin token, so not through _write. Both resolve to
+       the player as `me` gives it — { id, name, nick, displayName,
+       nickAsked, ... } — and the answer re-issues the session cookie, so
+       the caller should put it straight into Account.current. Both reject
+       with an Error carrying .status and .data (the whole answer): 400 has
+       data.field "nick" and a reason fit to show, 409 is "taken", 403 with
+       data.locked the admins have locked it (29 Sept 2026), 429 the day's
+       changes used up, 401 signed out. setNickname("") or (null) clears
+       it.
+
+       FLAGGED (29 Sept 2026). A name the word filter caught is still saved,
+       and the answer carries `flagged: { reason, word }` beside the player.
+       It is hung on the returned player as a NON-enumerable `flagged`, so
+       a caller can read it (js/account.js shows "Nickname Saved") while
+       the Object.assign that folds the player into Account.current never
+       copies it: it describes this save, not the player.
+
+       refuseNickname() answers the forced "Pick a new nickname" window's
+       Refuse: the server marks nickRefused and the window stops opening,
+       while the games stay locked until a new name is chosen. */
+    async _nick(body) {
+        const res = await this._timedFetch("/.netlify/functions/player-nick", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(body)
+        }, this._TIMEOUT_WRITE);
+        const data = await this._body(res, {});
+        if (!res.ok || !data || !data.player) {
+            const err = new Error((data && data.error) || `Request failed: ${res.status}`);
+            err.status = res.status;
+            err.data = data;
+            throw err;
+        }
+        const player = Object.assign({}, data.player);
+        if (data.flagged && typeof data.flagged === "object") {
+            Object.defineProperty(player, "flagged", { value: data.flagged, enumerable: false });
+        }
+        return player;
+    },
+    setNickname(nick) { return this._nick({ nick: nick == null ? null : String(nick) }); },
+    markNickAsked() { return this._nick({ asked: true }); },
+    refuseNickname() { return this._nick({ refuse: true }); },
+
     getContactMessages(token) { return this._write("/.netlify/functions/contact", "GET", token); },
     deleteContactMessage(token, id) { return this._write(`/.netlify/functions/contact?id=${encodeURIComponent(id)}`, "DELETE", token); },
 
@@ -647,6 +705,36 @@ const Api = {
     getFallinFurniRuns(token, range) {
         const q = range ? "?range=" + encodeURIComponent(range) : "";
         return this._write("/.netlify/functions/ff-runs" + q, "GET", token);
+    },
+
+    /* The errors visitors hit, grouped (28 Sept 2026). Any admin role reads;
+       an owner or admin triages; only an owner deletes. The whole contract
+       is at the top of netlify/functions/site-errors.js.
+
+       params for the list: { status, kind, q, sort, limit }, each optional;
+       empty values are left off rather than sent as "". */
+    getSiteErrors(token, params) {
+        const q = new URLSearchParams();
+        Object.keys(params || {}).forEach(k => {
+            const v = params[k];
+            if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+        });
+        const qs = q.toString();
+        return this._write("/.netlify/functions/site-errors" + (qs ? "?" + qs : ""), "GET", token);
+    },
+    // One group in full, samples and every breakdown included.
+    getSiteError(token, id) {
+        return this._write(`/.netlify/functions/site-errors?id=${encodeURIComponent(id)}`, "GET", token);
+    },
+    // { id, status?, note? } for one, or { ids: [...], status } for several.
+    updateSiteError(token, body) {
+        return this._write("/.netlify/functions/site-errors", "PUT", token, body);
+    },
+    // { id } for one group, or { status: "resolved" } to clear every resolved one.
+    deleteSiteErrors(token, params) {
+        const p = params || {};
+        const q = p.id ? "id=" + encodeURIComponent(p.id) : "status=" + encodeURIComponent(p.status || "");
+        return this._write("/.netlify/functions/site-errors?" + q, "DELETE", token);
     },
 
     /* ---------- the atlas at /wizard ----------
@@ -733,9 +821,72 @@ const Api = {
         return this._write("/.netlify/functions/daily-games", "POST", token, { playerId, game, action: "cancel" });
     },
 
+    /* ---------- forgetting a player (28 Sept 2026) ----------
+
+       Owner only; see netlify/functions/player-forget.js. The preview is a
+       dry run by Discord id, name or @username, answering
+       { player, matches, counts } — `matches` when a name fits several, in
+       which case the owner picks one and previews again by its id. The
+       forget itself only ever takes an id, and says `confirm: true` in so
+       many words, so it cannot be sent by accident from anything that
+       happens to post an id. Both reject like every other admin call here:
+       err.status 404 for nobody by that id or name, 403 for an account that
+       is not the owner. */
+    forgetPlayerPreview(token, q) {
+        return this._write(`/.netlify/functions/player-forget?q=${encodeURIComponent(q || "")}`, "GET", token);
+    },
+
+    forgetPlayer(token, id) {
+        return this._write("/.netlify/functions/player-forget", "POST", token, { id, confirm: true });
+    },
+
+    /* ---------- the Players panel (29 Sept 2026) ----------
+
+       Everybody who has signed in, and their nicknames; see
+       netlify/functions/players-admin.js for the whole contract. Owners,
+       admins and view-only accounts read (a viewer gets a stand-in `ref`
+       for each player in place of the Discord id, and asks for the detail
+       by that); owners and admins write.
+
+       params for the list: { q, filter, sort, limit, skip }, each optional;
+       empty values are left off. updatePlayer's body is
+       { id, nick?, locked?, resetPrompt? } — nick "" or null clears it.
+       Or, on its own, { id, review: "allow" | "reject", seen? } — the word
+       filter's review (29 Sept 2026); `seen` is the nickname the admin was
+       looking at, and a 409 means the player has renamed since. */
+    getPlayers(token, params) {
+        const q = new URLSearchParams();
+        Object.keys(params || {}).forEach(k => {
+            const v = params[k];
+            if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+        });
+        const qs = q.toString();
+        return this._write("/.netlify/functions/players-admin" + (qs ? "?" + qs : ""), "GET", token);
+    },
+    getPlayer(token, id) {
+        return this._write(`/.netlify/functions/players-admin?id=${encodeURIComponent(id)}`, "GET", token);
+    },
+    updatePlayer(token, body) {
+        return this._write("/.netlify/functions/players-admin", "PUT", token, body);
+    },
+
     getBans(token) { return this._write("/.netlify/functions/bans", "GET", token); },
-    createBan(token, ip, reason) { return this._write("/.netlify/functions/bans", "POST", token, { ip, reason }); },
+    /* Two shapes (29 Sept 2026). The old one, createBan(token, ip, reason),
+       is what the Messages and Missing Pieces "Ban" buttons send: a soft,
+       permanent ban on that address's network. The new one,
+       createBan(token, { kind, value?, playerId?, level, duration?, until?,
+       reason? }), is the Bans panel's and the Players panel's — see the
+       header of netlify/functions/bans.js for every field. Told apart by
+       whether the second argument is an object. */
+    createBan(token, ipOrBody, reason) {
+        const body = ipOrBody && typeof ipOrBody === "object" ? ipOrBody : { ip: ipOrBody, reason };
+        return this._write("/.netlify/functions/bans", "POST", token, body);
+    },
+    // { id, level?, until? (ISO, or null for permanent), duration?, reason? }
+    updateBan(token, body) { return this._write("/.netlify/functions/bans", "PUT", token, body); },
     deleteBan(token, id) { return this._write(`/.netlify/functions/bans?id=${encodeURIComponent(id)}`, "DELETE", token); },
+    // The same as deleteBan, under the name the moderation panels use.
+    liftBan(token, id) { return this.deleteBan(token, id); },
     // Unban straight from a contact message, where the ban's own id
     // isn't to hand but the address is.
     deleteBanByIp(token, ip) { return this._write(`/.netlify/functions/bans?ip=${encodeURIComponent(ip)}`, "DELETE", token); },

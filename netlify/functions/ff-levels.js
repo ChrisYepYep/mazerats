@@ -293,6 +293,8 @@ async function handle(event) {
     let body = {};
     try { body = JSON.parse(event.body || "{}"); }
     catch { return json(400, { error: "Body is not JSON" }); }
+    // `null` parses cleanly and then has nothing to read a field off.
+    if (!body || typeof body !== "object") return json(400, { error: "Body is not JSON" });
 
     /* isOwnerWrite on the three writes below, rather than isOwner: these
        never pass through canWrite, so without it the level editor's saves
@@ -353,14 +355,47 @@ async function handle(event) {
             await recordVersion(versions, before, 0, stampOf(before));
         }
 
+        /* ONLY OVER THE VERSION THE EDITOR OPENED (28 Sept 2026). A PUT
+           replaces the whole level, and the editor restores its own local
+           draft when it opens — so a draft days old on a second device, or a
+           second tab, saved straight over a newer clock, a newer order, or an
+           unpublish, and put a pulled level back into every player's run.
+           The editor now sends the rev it opened (`baseRev`); a level that has
+           moved on since is refused with a 409 and nothing is written. Rev 0
+           is also a level from before versions, which has no rev at all. A
+           body with no baseRev (a page loaded before this) is let through as
+           it always was. */
+        const base = Number.isInteger(body.baseRev) ? body.baseRev : null;
+        if (base !== null) {
+            const current = Number.isInteger(before.rev) ? before.rev : 0;
+            if (current !== base) {
+                return json(409, {
+                    error: "This level has been changed somewhere else since you opened it. Load it again from the server, then make your change.",
+                    changed: true,
+                    rev: current
+                });
+            }
+        }
+        const revFilter = base === null ? {}
+            : base === 0 ? { $or: [{ rev: 0 }, { rev: { $exists: false } }] }
+            : { rev: base };
+
         /* `$inc` rather than before.rev + 1, so two saves racing get two
            numbers and never share one. cleanLevel never passes `rev`
-           through, so the body cannot set it either. */
+           through, so the body cannot set it either. The rev filter makes
+           the check above hold at the moment of writing too: of two saves
+           from the same opened version, only the first lands. */
         const result = await levels.findOneAndUpdate(
-            { id: update.id },
+            { id: update.id, ...revFilter },
             { $set: update, $inc: { rev: 1 } },
             { returnDocument: "after", projection: { _id: 0 } }
         );
+        if (!result && base !== null) {
+            return json(409, {
+                error: "This level has been changed somewhere else since you opened it. Load it again from the server, then make your change.",
+                changed: true
+            });
+        }
         if (!result) return json(404, { error: "Level not found" });
         await recordVersion(versions, result, revOf(result), new Date(update.updatedAt));
         return json(200, result);
@@ -371,8 +406,15 @@ async function handle(event) {
         if (!(await isOwnerWrite(event))) return NOT_OWNER;
         const id = (event.queryStringParameters || {}).id;
         if (!id) return json(400, { error: "Missing level id" });
-        const result = await levels.deleteOne({ id });
-        if (result.deletedCount === 0) return json(404, { error: "Level not found" });
+        /* Read as it is deleted: a level from before versions has no snapshot
+           yet, and without one a run under way on it could not be judged at
+           all once it is gone (the same version-0 snapshot PUT takes). */
+        const gone = await levels.findOneAndDelete({ id }, { projection: { _id: 0 } });
+        if (!gone) return json(404, { error: "Level not found" });
+        if (!Number.isInteger(gone.rev)) {
+            try { await recordVersion(versions, gone, 0, stampOf(gone)); }
+            catch (e) { /* judged against nothing, as before; the delete has happened */ }
+        }
         /* Its versions are left to expire rather than deleted with it: a run
            dealt this level before it went is still judged by its snapshot for
            the week the others last. The current one is retired too, or it
@@ -385,3 +427,8 @@ async function handle(event) {
 
     return json(405, { error: "Method not allowed" });
 }
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("ff-levels", exports.handler);

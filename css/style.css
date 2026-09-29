@@ -29,7 +29,13 @@
        as text.)
 
        --danger itself stays as it is for the borders and fills, where it is
-       a colour to be seen rather than read. */
+       a colour to be seen rather than read.
+
+       Every TEXT use of --unknown now takes --unknown-text (28 Sept 2026).
+       Only the status badges had been switched; some twenty small labels —
+       the results cards' STREAK / BEST DAY, the board ranks, What's New's
+       counts, the furni stats — were still set in --unknown at about 3:1.
+       --unknown itself is left for borders and fills. */
     --danger-text: #d67a60;
     --unknown-text: #a0937c;
     /* THE AMBER, AS TEXT.
@@ -1127,8 +1133,13 @@ main { display: block; flex: 1 0 auto; }
     width: 92%;
     max-width: 538px;
     margin: 0 auto;
-    /* Bottom padding matches the gap the archive window wants above it. */
-    padding: 48px 0 14px;
+    /* Bottom padding matches the gap the archive window wants above it.
+       18px, not 14px (29 Sept 2026): beside the title, the peeking rat's
+       ears (.window-peek-rat) reach 37px above the window and landed a
+       pixel into the descenders of the tagline's second-to-last line at
+       every width from 641px up. 4px more clears them; stacked, below
+       640px, the paragraph needs far more room and gets it there. */
+    padding: 48px 0 18px;
     display: flex;
     align-items: center;
     gap: 24px;
@@ -1144,6 +1155,18 @@ main { display: block; flex: 1 0 auto; }
         flex-direction: column;
         align-items: flex-start;
         gap: 12px;
+        /* Room for the peeking rat (29 Sept 2026). .window-peek-rat sits
+           51px above the window's padding edge, which is 37px above the
+           window's outer edge once the 14px frame border is taken off — so
+           with the old 14px gap here its ears reached 23px up into the
+           tagline. Beside the title (above 640px) the paragraph's last line
+           is short and ends well left of the rat, so the overlap only ever
+           landed on empty space; stacked, the paragraph runs the full width
+           and the rat sat on "…gone but not forgotten" at 320–414px.
+           40px = the rat's 37px of reach plus the few pixels of leading
+           under the last line, so the text clears it with the rat still
+           peeking over the frame exactly as designed. */
+        padding-bottom: 40px;
     }
 }
 
@@ -8687,14 +8710,17 @@ body[data-page="admin"] .search-box input {
     white-space: nowrap;
 }
 
-/* Tiled horizontally the same way the border edges above are — a proper
-   repeating dotted rule rather than a CSS border-style: dotted, so it
-   matches the sprite sheet's own pixel weight. */
+/* The rule between sections on every console page (the contributors list,
+   Missing Pieces, Profile). A plain 1px dashed line (28 Sept 2026), in the
+   faded white the screen's other rules already use (.console-info-item,
+   .console-profile-sub), so it reads as part of the screen's one-colour
+   display. It was cnsl-dotline.png tiled across — three olive pixels and a
+   grey one, which on the grey screen came out as a smudged, almost solid
+   line rather than a separator. No height: the border is the line. The
+   sprite and its themed copies are still on disk, now used by nothing. */
 .console-dotline {
-    height: 1px;
-    background-image: url('../assets/img/console/cnsl-dotline.png');
-    background-repeat: repeat-x;
-    image-rendering: pixelated;
+    height: 0;
+    border-top: 1px dashed rgba(238, 238, 238, 0.35);
 }
 
 /* ---- bottom tab group ---- */
@@ -9330,6 +9356,21 @@ body[data-page="admin"] .container {
 
 .admin-panel-head > div { min-width: 0; }
 .admin-panel-head .admin-hint { margin: 4px 0 0; max-width: 68ch; }
+
+/* ROOM FOR THE WORDS FIRST (29 Sept 2026). The controls on the right never
+   shrink (.admin-activity-controls is flex: 0 0 auto), so on a phone a
+   panel with several of them — Players' "updated", Export CSV and Refresh;
+   Activity's and Errors' the same — left the heading and its explanation a
+   sliver, one word to a line. The text now asks for a real width before it
+   shares the row, and when the row cannot give it that the controls drop
+   onto a line of their own beneath it (and wrap among themselves). On a
+   wide screen nothing moves: there is room for both. */
+.admin-panel-head { flex-wrap: wrap; }
+.admin-panel-head > div:first-child { flex: 1 1 18rem; }
+/* Allowed to shrink to the line's width once it has one of its own, or
+   flex: 0 0 auto keeps it at its full one-line width and the wrap never
+   happens — Refresh hung off the right edge of a phone. */
+.admin-panel-head > .admin-activity-controls { flex-wrap: wrap; flex-shrink: 1; min-width: 0; max-width: 100%; }
 
 .admin-panel-head .admin-action-pill {
     flex: 0 0 auto;
@@ -10717,7 +10758,7 @@ body[data-page="admin"] #activity-sessions {
 
 .archive-fact > em {
     font-style: normal;
-    color: var(--unknown);
+    color: var(--unknown-text);
 }
 
 /* What the timeline cannot show, said under the summary rather than left
@@ -10727,7 +10768,7 @@ body[data-page="admin"] #activity-sessions {
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     line-height: 1.6;
-    color: var(--unknown);
+    color: var(--unknown-text);
 }
 
 @media (max-width: 700px) {
@@ -10779,7 +10820,7 @@ body[data-page="admin"] #activity-sessions {
 }
 
 .furni-band-count {
-    color: var(--unknown);
+    color: var(--unknown-text);
     font-variant-numeric: tabular-nums;
 }
 
@@ -10874,7 +10915,7 @@ body[data-page="admin"] #activity-sessions {
 .furni-tile-meta {
     font-size: 0.55rem;
     line-height: 1.3;
-    color: var(--unknown);
+    color: var(--unknown-text);
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -11879,7 +11920,7 @@ body[data-page="admin"] #activity-sessions {
     font-weight: 400;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--unknown);
+    color: var(--unknown-text);
     margin: 0;
 }
 
@@ -12089,7 +12130,7 @@ body[data-page="admin"] #activity-sessions {
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     font-weight: 400;
-    color: var(--unknown);
+    color: var(--unknown-text);
 }
 
 .guess-pip.is-current { border-color: var(--amber); color: var(--amber-bright); }
@@ -12198,7 +12239,7 @@ body[data-page="admin"] #activity-sessions {
 .guess-option.is-wrong {
     background: rgba(0, 0, 0, 0.28);
     border-color: var(--danger);
-    color: var(--unknown);
+    color: var(--unknown-text);
     text-decoration: line-through;
     cursor: default;
 }
@@ -12221,7 +12262,7 @@ body[data-page="admin"] #activity-sessions {
    still reads as the five it was asked from. */
 .guess-option.is-idle {
     background: rgba(0, 0, 0, 0.22);
-    color: var(--unknown);
+    color: var(--unknown-text);
     cursor: default;
 }
 
@@ -12370,7 +12411,7 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.6rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--unknown);
+    color: var(--unknown-text);
 }
 
 .guess-stats dd {
@@ -12681,7 +12722,7 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: var(--unknown);
+    color: var(--unknown-text);
 }
 
 /* Demoted from the headline it used to be, now that the score is above it. */
@@ -12765,7 +12806,7 @@ body[data-page="admin"] #activity-sessions {
     color: var(--amber-text);
 }
 
-.guess-board-games span { color: var(--unknown); }
+.guess-board-games span { color: var(--unknown-text); }
 
 .guess-board {
     display: flex;
@@ -12781,7 +12822,7 @@ body[data-page="admin"] #activity-sessions {
     font-weight: 400;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--unknown);
+    color: var(--unknown-text);
 }
 
 .guess-board-list {
@@ -12814,7 +12855,7 @@ body[data-page="admin"] #activity-sessions {
 }
 
 .guess-board-rank {
-    color: var(--unknown);
+    color: var(--unknown-text);
     font-variant-numeric: tabular-nums;
     text-align: right;
 }
@@ -12933,7 +12974,7 @@ body[data-page="admin"] #activity-sessions {
 .guess-board-span {
     margin: 0 0 6px;
     font-size: 0.62rem;
-    color: var(--unknown);
+    color: var(--unknown-text);
 }
 
 /* Someone else's five, beside their name. The row gained a column for it;
@@ -13182,6 +13223,48 @@ body[data-page="admin"] #activity-sessions {
 .saved-note-close:focus-visible {
     outline: 2px solid var(--amber-bright);
     outline-offset: 2px;
+}
+
+/* ---------- a dead link's note (29 Sept 2026) ----------
+
+   "That maze isn't in the archive…", shown once when /maze/<slug> or
+   /event/<slug> named nothing — see tellAddressMissing in js/home.js. It is
+   a .saved-note (same place at the foot of the screen, same wood, same
+   layer above every window) with one sentence and a close × instead of a
+   row of buttons: there is nothing to offer but the archive, which is
+   already on screen behind it. The right padding keeps the sentence clear
+   of the ×. */
+.missing-note {
+    padding-right: 44px;
+}
+
+.missing-note .missing-note-text { margin: 0; }
+
+/* 32×32 in the corner: a real target at every width, drawn as the bare ×
+   the site's other window closes use rather than a boxed button. */
+.missing-note-close {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+    margin-top: -16px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--parchment-dim);
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: var(--cursor-pointer);
+}
+
+.missing-note-close:hover,
+.missing-note-close:focus-visible { color: var(--parchment); }
+
+.missing-note-close:focus-visible {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 0;
 }
 
 /* ---------- guides (js/guides.js) ----------
@@ -13712,75 +13795,52 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment);
 }
 
-.glyphs-intro {
-    margin: 0 0 14px;
-    max-width: 66ch;
-    font-size: 0.84rem;
-    line-height: 1.6;
-    color: var(--parchment);
+/* Simple, and dressed like the rest of the site (28 Sept 2026): a couple
+   of short lines in the pixel face, each group in the same inset panel
+   the Leaderboards window uses, and every tile a button in the archive's
+   own style — the Timeline and Furni switches (.view-switch-btn), grown to
+   hold a glyph. The paragraphs about the font that used to open the window
+   are gone: they were for the person who built the sheet, not for someone
+   picking a star for a room name. */
+.glyphs-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
-.glyphs-intro strong { color: var(--amber-bright); font-weight: 500; }
 
-/* The example is set in the font the window is about, so the thing being
-   described is on screen in the first sentence describing it. A pill,
-   because it stands for a room name, and at Volter's own 9px — the only
-   size it draws cleanly — since the sentence around it is larger. */
-.glyphs-sample {
-    display: inline-block;
-    padding: 1px 6px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: rgba(0, 0, 0, 0.28);
+.glyphs-intro {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
-    line-height: 1.5;
-    color: var(--amber-bright);
-    white-space: nowrap;
-    vertical-align: 1px;
+    font-weight: 400;
+    line-height: 1.8;
+    color: var(--parchment);
+    text-align: center;
 }
+.glyphs-intro p { margin: 0; }
 
-/* The instructions, boxed off from the explanation above them, in the
-   same panel the guides' cards use. Two numbered steps rather than a
-   sentence with "or" in the middle: they are two different actions and
-   one of them has a trap in it (the number row is not the keypad), which
-   wants a line to itself. */
-.glyphs-how {
-    margin: 0 0 22px;
-    padding: 12px 14px;
-    max-width: 66ch;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.22);
-}
-.glyphs-how ol {
-    margin: 0;
-    padding-left: 20px;
-    font-size: 0.8rem;
-    line-height: 1.6;
-    color: var(--parchment-dim);
-}
-.glyphs-how li + li { margin-top: 5px; }
-.glyphs-how strong { color: #efe4cc; font-weight: 500; }
-.glyphs-how-note {
-    margin: 10px 0 0;
-    font-size: 0.72rem;
-    line-height: 1.55;
-    color: var(--parchment-dim);
-}
-.glyphs-how kbd {
-    padding: 1px 5px;
-    border: 1px solid var(--border);
+.glyphs-intro kbd {
+    padding: 0 4px;
+    border: 1px solid var(--chrome-border);
     border-bottom-width: 2px;
     border-radius: 3px;
-    background: rgba(0, 0, 0, 0.28);
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    color: var(--parchment);
+    background: linear-gradient(#3b3022, #2f2618);
+    font: inherit;
+    color: #fff8ec;
 }
 
-/* The headings in the bold cut asked for by its own family name, as Your
-   Progress does (see .progress-head-text h3 for why not weight 700). */
-.glyphs-how-title,
+.glyphs-group {
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-panel);
+}
+
+/* The bold cut asked for by its own family name, as Your Progress does
+   (see .progress-head-text h3 for why not weight 700). */
 .glyphs-group-title {
     margin: 0 0 8px;
     font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
@@ -13791,153 +13851,102 @@ body[data-page="admin"] #activity-sessions {
     color: var(--amber-bright);
     text-shadow: 2px 2px 0 var(--bg-black);
 }
-.glyphs-group { margin: 0 0 24px; }
-.glyphs-group-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
-.glyphs-count {
-    font-family: 'Roboto', sans-serif;
-    font-size: 0.68rem;
-    letter-spacing: 0;
-    text-transform: none;
-    text-shadow: none;
-    color: var(--parchment-dim);
-    font-variant-numeric: tabular-nums;
-}
+
 .glyphs-note {
-    margin: 0 0 12px;
-    max-width: 66ch;
-    font-size: 0.76rem;
-    line-height: 1.5;
+    margin: -4px 0 8px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
     color: var(--parchment-dim);
 }
-.glyphs-note code,
-.glyphs-foot code {
-    padding: 1px 5px;
-    border-radius: 3px;
-    background: rgba(0, 0, 0, 0.35);
-    font-size: 0.85em;
-    color: var(--amber-bright);
-}
 
+/* Every tile the same square, in every group, with room between them:
+   fixed-size columns rather than stretching ones, so a short last row
+   keeps its squares square instead of widening them to fill the line. */
 .glyphs-grid {
+    --glyph-tile: 52px;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fill, var(--glyph-tile));
+    grid-auto-rows: var(--glyph-tile);
+    gap: 10px;
+    /* The leftover width shared either side, not left as a gap on the
+       right of the panel. */
+    justify-content: center;
 }
 
-/* A tile is the /warren palette's chip, grown to hold its labels: the
-   chrome row's fill, the fine black edge, the hard offset shadow. The
-   pictures sit on the featured row's lighter fill, so the 24 that are the
-   point of the sheet stand out from the letters below them. */
+/* A tile is a .view-switch-btn: the same gradient, fine edge, lit top
+   line and amber hover — so it reads as a button of this site, which is
+   what it is. */
 .glyphs-cell {
-    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 3px;
+    justify-content: center;
+    gap: 4px;
+    width: var(--glyph-tile);
+    height: var(--glyph-tile);
     min-width: 0;
-    padding: 10px 4px 8px;
-    background: var(--chrome-row);
+    padding: 0;
+    background: linear-gradient(#3b3022, #2f2618);
     border: 1px solid var(--chrome-border);
     border-radius: 4px;
-    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
-    font: inherit;
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
     color: var(--parchment);
+    /* The code under each glyph, in the regular cut. */
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: 1.6;
     cursor: var(--cursor-pointer);
-    transition: background 0.12s, transform 0.12s;
+    transition: background-color 0.12s ease-out, color 0.12s ease-out, border-color 0.12s ease-out;
 }
-.glyphs-cell.is-pic { background: var(--chrome-row-featured); }
-.glyphs-cell:hover { background: var(--wood-mid); transform: translateY(-1px); }
-.glyphs-cell.is-pic:hover { background: #5c3d1f; }
+
+.glyphs-cell:hover,
+.glyphs-cell:focus-visible {
+    background: linear-gradient(#4a3c29, #3a2f1f);
+    border-color: var(--amber);
+    color: #fff8ec;
+}
 .glyphs-cell:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+
+/* Copied: the amber a switch wears when it is on, for a moment. */
+.glyphs-cell.is-copied {
+    background: linear-gradient(#6b5327, #52401d);
+    border-color: var(--amber-bright);
+    color: #fff8ec;
+}
+
 /* Mapped in the font but drawing nothing (js/glyphs.js measures each). */
 .glyphs-cell.is-blank { opacity: 0.42; }
 
-/* 36px, four times Volter's 9px: the font is drawn on a nine-pixel em, so
-   only whole multiples of 9 put every one of its pixels on a whole number
-   of screen pixels. The old page's 34px smeared the edges of every
-   picture, which is the one thing this sheet has to show clearly. */
+/* The glyph itself at Volter's own size, 0.5625rem (9px), in the bold
+   cut. The bold cut lacks some of the upper-range glyphs; for those the
+   browser falls back, character by character, to the regular cut named
+   second, so every tile still draws. */
 .glyphs-glyph {
     display: flex;
     align-items: center;
-    height: 40px;
-    font-family: 'Volter Goldfish', monospace;
-    font-size: 36px;
+    justify-content: center;
+    height: 14px;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     line-height: 1;
     color: #fff8ec;
     white-space: pre;
 }
 
-.glyphs-alt {
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    line-height: 1.4;
-    color: var(--amber-bright);
-}
-/* No Alt code reaches it: a dash, and in Roboto — Volter draws U+2014 as
-   a pair of musical notes. */
-.glyphs-alt.is-none { font-family: 'Roboto', sans-serif; font-size: 0.7rem; line-height: 1.1; }
-.glyphs-uni {
-    font-size: 0.6rem;
-    color: var(--parchment-dim);
-    font-variant-numeric: tabular-nums;
-}
-.glyphs-name {
-    max-width: 100%;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    line-height: 1.4;
-    color: var(--parchment);
-    text-align: center;
-    overflow-wrap: anywhere;
-}
-
-/* "Copied", over the tile's labels for a moment after a press, so the
-   confirmation is where the eye already is. The glyph stays showing
-   above it: it is what was copied. */
-.glyphs-done {
-    position: absolute;
-    left: 3px;
-    right: 3px;
-    bottom: 3px;
-    top: 52px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 3px;
-    background: #4a5f38;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    color: #fff8ec;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.12s;
-}
-.glyphs-cell.is-copied { border-color: var(--ok); }
-.glyphs-cell.is-copied .glyphs-done { opacity: 1; }
-
-.glyphs-foot {
-    margin: 0;
-    padding-top: 14px;
-    max-width: 66ch;
-    border-top: 1px solid var(--border);
-    font-size: 0.72rem;
-    line-height: 1.55;
-    color: var(--parchment-dim);
-}
+.glyphs-alt { color: var(--amber-bright); }
+.glyphs-cell.is-copied .glyphs-alt { color: #fff8ec; }
 
 @media (max-width: 640px) {
     /* dvh second, for the reason given at .guides-body. */
     .glyphs-body { padding: 14px 12px 18px; max-height: calc(100vh - 110px);
                    max-height: calc(100dvh - 110px); }
-    /* Three to a row at 375px: the window's inside is about 300px there,
-       and 96px tiles with their gaps come to 304. */
-    .glyphs-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .glyphs-cell,
-    .glyphs-done { transition: none; }
-    .glyphs-cell:hover { transform: none; }
+    .glyphs-cell { transition: none; }
 }
 
 /* ---------- your progress ----------
@@ -14047,7 +14056,7 @@ body[data-page="admin"] #activity-sessions {
 
 .progress-bignum span {
     font-size: 0.72rem;
-    color: var(--unknown);
+    color: var(--unknown-text);
     text-transform: uppercase;
     letter-spacing: 0.08em;
 }
@@ -14182,7 +14191,7 @@ body[data-page="admin"] #activity-sessions {
 }
 .progress-saved-row:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
-.progress-saved-by { color: var(--unknown); font-size: 0.62rem; white-space: nowrap; }
+.progress-saved-by { color: var(--unknown-text); font-size: 0.62rem; white-space: nowrap; }
 /* A saved maze that has since closed: still listed, so saving it visibly
    worked, but marked, since it can't be completed now. */
 .progress-saved-closed {
@@ -14429,7 +14438,7 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
 }
 
 .updatelog-count {
-    color: var(--unknown);
+    color: var(--unknown-text);
     font-variant-numeric: tabular-nums;
 }
 
@@ -14550,7 +14559,7 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
 
 .updatelog-meta {
     font-size: 0.62rem;
-    color: var(--unknown);
+    color: var(--unknown-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -15363,7 +15372,7 @@ textarea.ctl-input.de-note {
 .furni-stat-l {
     font-size: 0.62rem;
     line-height: 1.3;
-    color: var(--unknown);
+    color: var(--unknown-text);
 }
 
 /* Only while a search is narrowing the list — how much of the above is
@@ -15417,7 +15426,7 @@ textarea.ctl-input.de-note {
 /* How many rooms of that maze hold the piece — the number that makes a
    four-room hit read as one maze rather than as four results. */
 .furni-rooms-n {
-    color: var(--unknown);
+    color: var(--unknown-text);
     font-variant-numeric: tabular-nums;
     text-shadow: none;
 }
@@ -16716,9 +16725,6 @@ textarea.ctl-input.de-note {
 .rc-filters select { font: inherit; font-size: 0.8rem; padding: 5px;
     background: var(--bg-black); color: var(--parchment); border: 1px solid var(--border); border-radius: 3px; }
 
-.rc-group { margin: 0 0 18px; }
-.rc-group > h4 { margin: 0 0 6px; font-size: 0.8rem; letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--amber-text); }
 .rc-count { color: var(--parchment-dim); font-weight: normal; letter-spacing: 0; text-transform: none; }
 
 .rc-row {
@@ -17101,3 +17107,1509 @@ body.is-logging-out * {
 }
 
 .daily-bonus[hidden] { display: none; }
+
+/* "Sign out?" — the window the header's name opens (confirmSignOut in
+   js/account.js). .confirm-modal gives it the small width; this lays out
+   what is inside: the Discord avatar as a round badge above the question,
+   the question centred, and the two buttons side by side under it. The
+   avatar is the same picture as the header's, just big enough to read as
+   "this account". */
+/* Above the Habbo Console (z 200) and the lightbox, which leave the
+   header's name pressable while they are open: at the overlays' usual 100
+   the question opened underneath them, and Escape — which compares these
+   same z-indexes (EscapeLayers.inFront) — closed them first. Still below
+   the furni rain (400) and the "Saved" note (900). */
+.modal-overlay.signout-overlay { z-index: 260; }
+
+.signout-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.signout-face {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    margin: 2px 0 12px;
+    object-fit: cover;
+}
+
+/* Two short lines, set tight: who is signed in, in the plain pixel face,
+   and the question under it in the bold one. Volter Goldfish is drawn for
+   one size, so the emphasis comes from the bold cut, not from scaling. */
+.signout-message p {
+    margin: 0;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.6;
+}
+
+.signout-who {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+}
+
+.signout-ask {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+}
+
+.signout-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+/* Both buttons the same height: the lead one's larger padding is its
+   emphasis, and here it sits beside a plain one on the same line. */
+.signout-actions .guess-btn {
+    min-width: 108px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+/* /warren's Forget a player section lived here until 29 Sept 2026; it is a
+   per-player action in the Players tab now, styled with that tab at the end
+   of this file (.pl-*). */
+
+/* ---- Recolour: "Load existing" and the Editing line (28 Sept 2026) ----
+
+   The loader is the old preset <select>, now listing the built-in themes as
+   well as saved palettes, with a "Load" label in front so it reads as the
+   way in rather than as a status. The line under the bar says what is being
+   edited and whether anything is unsaved; it sits outside the sticky bar so
+   the bar stays one row high while scrolling 300 swatches. */
+.rc-load { display: inline-flex; gap: 6px; align-items: center; }
+.rc-load-label { font-size: 0.78rem; color: var(--parchment-dim); }
+.rc-load .rc-preset { max-width: 260px; }
+.rc-editing { margin: -4px 0 12px; font-size: 0.8rem; line-height: 1.45; color: var(--parchment-dim); }
+.rc-editing strong { color: var(--amber-bright); font-weight: 700; }
+.rc-kind { display: inline-block; padding: 0 5px; font-size: 0.68rem; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--parchment); border: 1px solid var(--border); border-radius: 3px; }
+.rc-unsaved { color: var(--amber-text); }
+.rc-kind-warn { color: var(--danger-text); }
+
+/* The sections the swatches are sorted into (28 Sept 2026). Each header is
+   a real button — Enter and Space fold it, aria-expanded says which way —
+   styled as the uppercase group heading the flat list had, with a caret, a
+   count, and a strip of the section's own colours so a folded section still
+   shows what is in it. */
+.rc-filters { flex-wrap: wrap; }
+.rc-sec { margin: 0 0 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-panel); }
+.rc-sec-head { margin: 0; }
+.rc-sec-toggle {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 8px 10px; background: none; border: 0; cursor: pointer; text-align: left;
+    font: inherit; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--amber-text);
+}
+.rc-sec-toggle:hover .rc-sec-title,
+.rc-sec-toggle:focus-visible .rc-sec-title { color: var(--amber-bright); }
+.rc-sec-toggle:focus-visible { outline: 1px solid var(--amber); outline-offset: -2px; }
+.rc-sec-caret { flex: none; width: 0; height: 0; border-style: solid; border-width: 4px 0 4px 6px;
+    border-color: transparent transparent transparent currentColor; transition: transform 0.12s; }
+.rc-sec.is-open .rc-sec-caret { transform: rotate(90deg); }
+.rc-sec-changed { font-size: 0.7rem; letter-spacing: 0; text-transform: none; color: var(--amber-bright); }
+.rc-sec-strip { margin-left: auto; display: inline-flex; gap: 2px; flex: none; }
+.rc-sec-strip i { display: block; width: 12px; height: 12px; border: 1px solid var(--chrome-border); border-radius: 2px; }
+.rc-sec-blurb { margin: -4px 10px 8px 24px; font-size: 0.74rem; line-height: 1.4; color: var(--parchment-dim); }
+.rc-sec-body { padding: 0 4px 6px; }
+.rc-tech { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.66rem; }
+.rc-also { color: var(--amber-text); }
+@media (max-width: 600px) {
+    .rc-sec-strip i:nth-child(n+5) { display: none; }
+    .rc-sec-blurb { margin-left: 10px; }
+    .rc-load .rc-preset { max-width: 100%; }
+    /* The plain names are the point on a phone; wrap them rather than
+       cutting "Page background — gradient 3/14" down to "Page backgr…". */
+    .rc-name { white-space: normal; line-height: 1.3; }
+}
+
+/* ---------- /warren: Errors (28 Sept 2026) ----------
+   The error-reporting panel (warren.html, data-panel="errors"; drawn by
+   js/admin-errors.js). Built from Warren's own parts — the Activity
+   panel's stat strip and bars, the Missing Pieces chips, the run log's
+   tables, the control strip's segmented tracks — so only what is new is
+   here: the one-line rows, the sparkline, the detail under a row, and the
+   monospace blocks a stack needs. Everything is prefixed se- (site
+   errors) so none of it can reach another panel. */
+
+.se-updated { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.se-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+    margin: 0 0 12px;
+}
+.se-search-row { flex: 1 1 280px; min-width: 0; }
+
+/* The kinds are seven words, too many for one track at half a window, so
+   this track wraps and its buttons keep their own width rather than
+   sharing it out (flex: 1 1 0 in .ctl-seg would squeeze "Load failure"). */
+.se-kind-tabs { flex-wrap: wrap; height: auto; min-height: 30px; }
+.se-kind-tabs .btn-enter-mini { flex: 0 0 auto; min-height: 24px; }
+.se-status-tabs .btn-enter-mini { flex: 0 0 auto; }
+
+/* The status and kind tracks only filter what is read, so they stay live
+   for a view-only account. The blanket viewer rule greys every
+   .btn-enter-mini on the page (it is aimed at the maze forms' toggles),
+   which would leave a view-only reader unable to switch to Resolved. */
+body.is-viewer .admin-panel[data-panel="errors"] .ctl-seg .btn-enter-mini {
+    opacity: 1;
+    cursor: var(--cursor-pointer);
+    pointer-events: auto;
+}
+
+/* The writes. js/admin-errors.js does not draw them for a view-only
+   account; this is the backstop should one be drawn before the role is
+   known. The server refuses them regardless. */
+body.is-viewer .admin-panel[data-panel="errors"] .se-write { display: none !important; }
+
+.se-bulk {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 0 0 6px;
+}
+.se-bulk:empty { display: none; }
+.se-bulk .admin-hint { margin: 0; }
+.se-check-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    color: var(--parchment-dim);
+    cursor: var(--cursor-pointer);
+}
+.se-clear-resolved { margin-left: auto; }
+.se-flash:empty { display: none; }
+.se-flash { margin: 0 0 8px; font-size: 0.72rem; }
+
+/* ---- a row: one line of message, one of where, one of when. */
+.se-row { align-items: center; cursor: var(--cursor-pointer); }
+.se-row:hover { border-color: var(--chrome-highlight); }
+.se-row.is-open {
+    border-color: var(--amber);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+.se-check-wrap {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    padding: 0 2px;
+    cursor: var(--cursor-pointer);
+}
+.se-row-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.se-row-head .de-chip { flex: 0 0 auto; }
+.chrome-list-row h3.se-msg {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.se-mono {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    word-break: break-all;
+}
+.chrome-list-row .row-creator.se-where { margin: 2px 0 0; }
+.chrome-list-row .row-info p.se-when {
+    margin: 2px 0 0;
+    font-size: 0.66rem;
+    color: var(--parchment-dim);
+}
+.se-sep { color: var(--parchment-dim); opacity: 0.7; }
+.se-utc { opacity: 0.75; font-variant-numeric: tabular-nums; }
+.se-when time { color: var(--parchment); }
+
+.se-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+    flex-shrink: 0;
+}
+.se-side strong { color: var(--amber-bright); font-weight: 700; }
+
+/* The 24-hour sparkline: a bar an hour, the newest on the right. */
+.se-spark { display: block; line-height: 0; }
+.se-spark-svg {
+    display: block;
+    width: 72px;
+    height: 16px;
+    color: var(--amber-bright);
+    border-bottom: 1px solid var(--chrome-border);
+}
+.se-bar { fill: currentColor; }
+.se-bar-empty { fill: currentColor; opacity: 0.25; }
+
+/* The kinds, told apart by the pill's edge: the two that mean our code
+   is broken (a page error, a function crash) in the danger colour, the
+   ones that are often somebody's network in amber, the rest plain. */
+.de-chip.se-kind-error,
+.de-chip.se-kind-function { border-color: var(--danger); color: var(--danger-text, var(--danger)); }
+.de-chip.se-kind-rejection { border-color: var(--danger); border-style: dashed; color: var(--danger-text, var(--danger)); }
+.de-chip.se-kind-fetch,
+.de-chip.se-kind-resource { border-color: var(--amber); color: var(--amber-bright); }
+.de-chip.se-regressed { background: var(--danger); border-color: var(--danger); color: #fff; }
+.de-chip.se-status-resolved { border-color: var(--ok, #7fb069); color: var(--ok, #7fb069); }
+.de-chip.se-status-ignored { border-style: dashed; }
+.de-chip.se-note-flag { border-color: var(--amber-bright); color: var(--amber-bright); }
+
+/* ---- the detail, hung under its row. */
+.se-detail {
+    margin-top: -10px;
+    padding: 14px 16px 16px;
+    min-width: 0;
+    border: 1px solid var(--amber);
+    border-top: 1px dashed var(--chrome-border);
+    border-radius: 0 0 8px 8px;
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--parchment);
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+}
+.se-full-msg {
+    margin: 0 0 6px;
+    max-height: 12em;
+    overflow: auto;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--amber-bright);
+}
+.se-source { margin: 0 0 8px; color: var(--parchment-dim); }
+
+.se-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 14px;
+    margin: 10px 0;
+}
+.se-actions .ctl-actions,
+.se-note .ctl-actions { flex-wrap: wrap; }
+.se-actions .ctl-status { font-size: 0.68rem; }
+
+.se-note { margin: 0 0 6px; }
+.se-note-saved {
+    margin: 0 0 6px;
+    white-space: pre-wrap;
+    line-height: 1.45;
+}
+.se-note-saved .ctl-label { margin-right: 6px; }
+.se-note .se-note-box {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 52px;
+    margin: 0 0 6px;
+    padding: 6px 10px;
+    line-height: 1.4;
+    resize: vertical;
+}
+
+.admin-subheading.se-sub { margin: 18px 0 8px; }
+.admin-subheading.se-sub .admin-hint { margin-left: 6px; font-size: 0.68rem; }
+.se-timeline-sum { margin-bottom: 12px; padding-bottom: 10px; }
+
+.se-charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px 24px;
+}
+.se-chart .admin-visitor-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; }
+.se-chart-total { font-family: inherit; color: var(--parchment-dim); font-size: 0.62rem; }
+.se-chart-svg {
+    display: block;
+    width: 100%;
+    height: 70px;
+    color: var(--amber-bright);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+}
+.se-axis {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 3px;
+    font-size: 0.6rem;
+    color: var(--parchment-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.se-breaks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px 20px;
+}
+.se-break .admin-hint { margin: 4px 0 0; }
+.se-table td { padding: 4px 8px; }
+.se-table .se-break-label {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---- the occurrences: one <details> each, the summary a single line. */
+.se-sample { border-top: 1px solid rgba(0, 0, 0, 0.35); }
+.se-sample:last-child { border-bottom: 1px solid rgba(0, 0, 0, 0.35); }
+.se-sample > summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+    padding: 6px 2px;
+    cursor: var(--cursor-pointer);
+    list-style: none;
+}
+.se-sample > summary::-webkit-details-marker { display: none; }
+/* Drawn with borders: the pixel face has no ▸, and drew a dot instead. */
+.se-sample > summary::before {
+    content: "";
+    flex: 0 0 auto;
+    align-self: center;
+    width: 0;
+    height: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 6px solid var(--parchment-dim);
+    transition: transform 0.15s;
+}
+.se-sample[open] > summary::before { transform: rotate(90deg); }
+.se-sample > summary .admin-hint { margin: 0; }
+.se-sample-when { color: var(--parchment); font-variant-numeric: tabular-nums; }
+.se-sample-page { color: var(--amber-bright); }
+.se-sample-body { padding: 4px 2px 14px 14px; min-width: 0; }
+
+/* Label and value in pairs, as many pairs across as fit. */
+.se-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 120px) minmax(180px, 1fr));
+    gap: 3px 12px;
+    margin: 4px 0 10px;
+    font-size: 0.72rem;
+}
+.se-grid dt { color: var(--parchment-dim); }
+.se-grid dd { margin: 0; min-width: 0; color: var(--parchment); word-break: break-word; }
+.se-grid-tight { margin-top: 6px; }
+
+.se-stack-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 6px 0 4px;
+}
+.se-stack-head .ctl-btn { height: 24px; }
+.se-stack {
+    margin: 0 0 12px;
+    max-height: 22em;
+    overflow: auto;
+    padding: 8px 10px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--parchment);
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    line-height: 1.5;
+    white-space: pre;
+}
+
+/* The trail up to the error: offset, what kind of step, what it was. */
+.se-crumbs {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    font-size: 0.7rem;
+}
+.se-crumbs li {
+    display: grid;
+    grid-template-columns: 64px auto 1fr;
+    align-items: baseline;
+    gap: 8px;
+    padding: 2px 0;
+    border-left: 2px solid var(--chrome-border);
+    padding-left: 8px;
+}
+.se-crumb-t {
+    text-align: right;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--parchment-dim);
+}
+.se-crumbs .de-chip { height: 16px; padding: 0 6px; font-size: 0.55rem; }
+.se-crumb-text { min-width: 0; word-break: break-word; }
+.se-crumbs li.se-crumb-now { border-left-color: var(--danger); }
+.se-crumbs li.se-crumb-now .se-crumb-text { color: var(--danger-text, var(--danger)); }
+
+/* A phone. The row's right-hand column drops under the text as one line
+   (sparkline, count, visitors), the message may take two lines, and the
+   detail's pairs go one to a line. The detail scrolls with the page, as
+   every panel does below 860px (see "narrow windows"). */
+@media (max-width: 700px) {
+    .se-row { flex-wrap: wrap; align-items: flex-start; }
+    .se-row .row-info { flex: 1 1 calc(100% - 40px); }
+    .se-side {
+        flex: 1 1 100%;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 12px;
+    }
+    .se-row-head { flex-wrap: wrap; }
+    .chrome-list-row h3.se-msg {
+        flex-basis: 100%;
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+    .se-utc { display: none; }
+    .se-detail { padding: 12px 10px 14px; }
+    .se-sample-body { padding-left: 4px; }
+    .se-grid { grid-template-columns: minmax(84px, 34%) 1fr; }
+    .se-crumbs li { grid-template-columns: 52px 1fr; }
+    .se-crumbs li .se-crumb-text { grid-column: 1 / -1; padding-left: 4px; }
+    .se-clear-resolved { margin-left: 0; }
+    .se-table .se-break-label { max-width: 140px; }
+}
+
+/* ==========================================================================
+   NICKNAMES, AND PICKING A GAME ON THE PROFILE (28 Sept 2026)
+
+   A signed-in player can choose the name the scoreboards show instead of
+   their Discord one. Four places carry it, each dressed in what is already
+   around it rather than in a style of its own:
+
+   - the console's Profile page (js/console-profile.js): the console's own
+     white-on-grey inputs, 1px white buttons and 9px Volter;
+   - the one-time "Choose a nickname?" window (js/account.js): the "Sign
+     out?" window's frame and buttons, with a field like the archive's search;
+   - the line under a filed daily score ("On the board as ... Set a
+     nickname"): a quiet .guess-board-note with a small .guess-btn;
+   - Fallin' Furni's title line, which needed nothing new (.ff-linkish).
+
+   And the Profile's two daily games can be picked, which draws a 1px border
+   round the game in the console frame's own yellow (#ffcb00, the same value
+   .console-frame is painted; tools/themes.js recolours both together) and
+   brings up Play in the screen's bottom-right corner.
+
+   Only this block's own classes, plus .console-form-status.is-ok and the
+   console buttons' disabled state, which nothing set before. It restates
+   nothing, so it cannot fight the narrow-layout block.
+   ========================================================================== */
+
+/* ---- the Profile's nickname section ---- */
+.console-nick { margin: 0; }
+.console-nick > .console-profile-head:first-child { margin-top: 0; }
+.console-nick .console-profile-line { margin-bottom: 4px; }
+.console-nick-none { margin: 0 0 2px; }
+.console-nick-input { margin: 0 0 6px; }
+.console-nick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.console-nick-actions .console-btn { padding: 4px 10px; }
+/* Remove is the destructive one, so it is the quiet link at the far end
+   rather than a third button of the same weight as Save. */
+.console-nick-remove { margin-left: auto; font-size: 0.5625rem; }
+.console-nick-status { line-height: 1.4; overflow-wrap: anywhere; }
+.console-nick-status[hidden] { display: none; }
+.console-nick-note { margin-top: 6px; }
+/* A success on this one-colour screen is said in full white, a failure in
+   the red .is-error already uses. */
+.console-form-status.is-ok { color: #ffffff; }
+
+.console-btn:disabled,
+.console-link-btn:disabled { opacity: 0.5; cursor: default; }
+.console-btn:disabled:hover { background: transparent; }
+
+/* 16px on a touch screen: below that, iOS zooms the whole page in when the
+   field takes focus, and leaves it zoomed after. */
+@media (pointer: coarse) {
+    .console-nick-input,
+    .nick-prompt-input { font-size: 16px; }
+}
+
+/* ---- picking a game on the Profile ---- */
+.console-profile-game {
+    padding: 2px 4px 3px 6px;
+    border-radius: 1px;
+    cursor: var(--cursor-pointer);
+}
+.console-profile-game:hover { background: rgba(238, 238, 238, 0.06); }
+/* The border is a box-shadow, so picking moves nothing on the page; the
+   dotted rule down the left side gives way to it rather than doubling it.
+   In the screen's own text colour (29 Sept 2026) — the console's gold
+   belongs to its frame, and on the screen it read as a warning. */
+.console-profile-game.is-picked {
+    border-left-color: transparent;
+    box-shadow: 0 0 0 1px #eeeeee;
+}
+.console-profile-game:focus { outline: none; }
+.console-profile-game:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+.console-pick-note { margin: 4px 0 0; }
+
+/* Play: inside the console's screen, in its bottom-right corner, left of
+   the screen's own scrollbar (7px in from the edge, 15px wide) and above
+   its inset shadow. Solid, so the lines scrolling under it cannot show
+   through; the page gains room at its foot while it shows, so the last
+   lines can still be scrolled clear of it.
+
+   Dressed as the screen's other buttons (.console-btn: the white hairline,
+   white text, the faint white wash on hover) rather than in the frame's
+   gold (29 Sept 2026). Its fill is the screen's own scanline tile, so it
+   reads as part of the screen rather than a patch laid over it. */
+.console-play-btn {
+    position: absolute;
+    right: 28px;
+    bottom: 9px;
+    z-index: 4;
+    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
+    image-rendering: pixelated;
+}
+.console-play-btn:hover {
+    background: linear-gradient(rgba(238, 238, 238, 0.15), rgba(238, 238, 238, 0.15)),
+                url('../assets/img/console/cnsl-bg-tile.png') repeat;
+}
+.console-play-btn[hidden] { display: none; }
+#console-page-profile.has-play { padding-bottom: 36px; }
+
+/* ---- "On the board as ... Set a nickname", under a filed daily score ---- */
+.nick-hint {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 6px 8px;
+    padding: 8px 10px;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+.nick-hint-btn { padding: 4px 10px; }
+
+/* ---- "Choose a nickname?", the one-time window after a first sign-in ---- */
+/* Over the console (200), as "Sign out?" is, and for the same reasons. */
+.modal-overlay.nick-overlay { z-index: 260; }
+
+.nick-prompt-body {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.nick-prompt-text {
+    margin: 0 0 14px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    text-align: center;
+}
+
+/* Volter Goldfish draws U+2014 as a musical note (PICTURE_GLYPHS in
+   js/site.js), so the one dash in the sentence is set in Roboto, as
+   .console-dash does in the console. */
+.nick-dash { font-family: 'Roboto', sans-serif; }
+
+.nick-prompt-label {
+    margin: 0 0 4px;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+}
+
+/* The archive's search field (.search-box input), as the one other place
+   the site asks someone to type into its own chrome. */
+.nick-prompt-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--parchment);
+    border: 1.5px solid var(--chrome-border);
+    color: #3a2812;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.85rem;
+    padding: 7px 11px;
+    border-radius: 5px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.nick-prompt-input::placeholder { color: #6b5638; }
+.nick-prompt-input:focus { outline: none; border-color: var(--amber); }
+.nick-prompt-input:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
+
+.nick-prompt-msg {
+    min-height: 1.4em;
+    margin: 6px 0 10px;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    color: var(--parchment-dim);
+    text-align: center;
+}
+.nick-prompt-msg.is-error { color: var(--danger-text); }
+
+.nick-prompt-actions { justify-content: center; }
+
+/* ---- The Palette card's saved palettes (28 Sept 2026) ----
+   A second row under the five themes, one button per palette saved in
+   Recolour (renderSavedPalettes in js/admin.js). The same track as the
+   themes, but it WRAPS: there can be any number of palettes and a single
+   30px line would push the later ones off the side of the card. So the
+   track grows by rows instead, and each button keeps the 23px a button has
+   inside the fixed-height track above (30px less the track's padding and
+   border), so the two rows still look like one control. */
+.ctl-sublabel { margin-top: 4px; }
+.ctl-seg-palettes { flex-wrap: wrap; height: auto; min-height: 30px; }
+.ctl-seg-palettes .btn-enter-mini { min-height: 23px; }
+
+/* ==========================================================================
+   /warren: THE PLAYERS TAB (29 Sept 2026)
+
+   Everybody who has signed in with Discord and their nicknames
+   (warren.html data-panel="players"; js/admin-players.js). Built on the
+   Errors tab's pieces — .se-row for the clickable row and its open state,
+   .se-detail for what hangs under it, .se-grid for label/value pairs,
+   .se-filters for the filter strip — so the two read as one family, and
+   only what is new is here: the player's picture, the chips, the nickname
+   editor, the history, the pager and the owner's forget.
+   ========================================================================== */
+
+/* The nav badge counts players, which is news to nobody: the quiet pill,
+   outlined, where the Missing Pieces and Errors ones are filled amber
+   because each of those is something waiting to be dealt with. */
+.admin-nav-count.admin-nav-count-quiet {
+    background: transparent;
+    border: 1px solid var(--chrome-highlight);
+    color: var(--parchment-dim);
+    line-height: 14px;
+}
+
+/* The Discord picture, round as it is everywhere else on the site. A
+   player with none gets the same circle, empty, so the rows line up. */
+.pl-face {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--chrome-border);
+    background: var(--frame-bg);
+    object-fit: cover;
+}
+.pl-face-big { width: 48px; height: 48px; }
+
+.chrome-list-row h3.pl-shown {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.chrome-list-row .row-creator.pl-who { margin: 2px 0 0; }
+.pl-who strong { color: var(--amber-bright); font-weight: 700; }
+.pl-id { color: var(--parchment-dim); }
+
+/* "Copy" beside an id: a word, not a button-shaped box, so a row of ids
+   does not turn into a row of buttons. Still a real <button>. */
+.pl-copy {
+    padding: 0 2px;
+    border: 0;
+    background: none;
+    color: var(--amber-bright);
+    font: inherit;
+    font-size: 0.64rem;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: var(--cursor-pointer);
+}
+.pl-copy:hover { color: var(--parchment); }
+.pl-copy:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
+
+/* The Allow / Reject buttons for a nickname waiting on review, in a
+   player's detail (reviewHtml in js/admin-players.js). They sat flush on
+   the NICKNAME label beneath them, which read as the label captioning the
+   buttons rather than the field under it (29 Sept 2026). */
+.pl-review { margin-bottom: 10px; }
+
+.de-chip.pl-chip-locked { border-color: var(--danger); color: var(--danger-text, var(--danger)); }
+.de-chip.pl-chip-unasked { border-style: dashed; color: var(--parchment-dim); }
+.se-row.pl-row.is-locked { border-left: 3px solid var(--danger); }
+
+.pl-side .admin-activity-meta { white-space: nowrap; }
+
+/* The filter track: five choices, sized to their words and wrapping onto
+   a second row on a phone, as the Errors tab's kind track does. */
+.ctl-seg.pl-filter-tabs { flex-wrap: wrap; height: auto; min-height: 30px; }
+.ctl-seg.pl-filter-tabs .btn-enter-mini { flex: 0 0 auto; min-height: 24px; }
+/* The filters only choose what is read, so they stay live for a view-only
+   account, which the blanket viewer rule would otherwise grey (see the same
+   exception for the Errors tab above). */
+body.is-viewer .admin-panel[data-panel="players"] .ctl-seg .btn-enter-mini {
+    opacity: 1;
+    cursor: var(--cursor-pointer);
+    pointer-events: auto;
+}
+/* And the writes, which js/admin-players.js does not draw for a view-only
+   account: the backstop should one be drawn before the role is known. */
+body.is-viewer .admin-panel[data-panel="players"] .pl-write,
+body.is-viewer .admin-panel[data-panel="players"] .pl-owner { display: none !important; }
+
+.pl-flash:empty { display: none; }
+.pl-flash { margin: 0 0 8px; font-size: 0.72rem; }
+
+/* ---- the detail */
+.pl-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 10px;
+}
+.pl-detail-head .admin-hint { margin: 2px 0 0; }
+.pl-detail-name {
+    margin: 0;
+    color: var(--amber-bright);
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+/* The facts and the editor on the left, what they have played and their
+   history on the right; one column on anything narrower than a laptop. */
+.pl-detail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 4px 28px;
+}
+.pl-detail-grid .admin-subheading.se-sub:first-child { margin-top: 4px; }
+.se-grid.pl-facts { grid-template-columns: minmax(110px, 38%) 1fr; }
+
+.pl-edit {
+    margin: 12px 0 0;
+    padding: 12px 0 0;
+    border-top: 1px dashed var(--chrome-border);
+}
+.pl-edit .ctl-row { flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }
+.pl-edit .pl-nick-input { flex: 1 1 180px; min-width: 0; }
+.pl-edit .ctl-actions { flex-wrap: wrap; margin-top: 8px; }
+.pl-edit .admin-hint { margin: 0; font-size: 0.66rem; }
+.pl-status { margin: 8px 0 0; font-size: 0.7rem; }
+.pl-status:empty { display: none; }
+
+/* Label, number, detail: three columns that wrap rather than scroll, so
+   the table fits the detail's half-width column at any size. */
+.pl-activity { width: 100%; table-layout: auto; }
+.pl-activity th {
+    padding: 4px 8px 4px 0;
+    text-align: left;
+    white-space: normal;
+}
+.pl-activity td { white-space: normal; color: var(--parchment); }
+.pl-activity td.ff-num { white-space: nowrap; }
+
+.pl-history {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 0.72rem;
+}
+.pl-history li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+    padding: 3px 0 3px 8px;
+    border-left: 2px solid var(--chrome-border);
+}
+.pl-history li:first-child { border-left-color: var(--amber); }
+.pl-history .admin-hint { margin: 0; font-size: 0.66rem; }
+.pl-history-nick { color: var(--parchment); font-weight: 700; }
+.pl-history-nick em { font-weight: 400; color: var(--parchment-dim); }
+
+/* What a forget would remove (or did): player-forget.js's counts. */
+.pl-counts {
+    list-style: none;
+    margin: 4px 0 8px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.72rem;
+    color: var(--parchment-dim);
+}
+.pl-counts strong { color: var(--amber-bright); }
+
+/* ---- the pager, under the list */
+.pl-pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px 10px;
+    margin: 8px 0 0;
+}
+.pl-pager:empty { display: none; }
+.pl-pager .admin-hint { margin: 0 auto 0 0; }
+
+/* ---- the owner's look-up, under the pager. Its form is always open and
+   sits straight under the subheading, whose rule already divides it from
+   the list, so the .admin-form's own rule and gap come off. */
+.pl-forget-form.admin-form { margin-top: 10px; padding-top: 0; border-top: 0; }
+.pl-forget-result:empty { display: none; }
+.pl-forget-result { margin-top: 12px; padding-left: 0; padding-right: 0; }
+.pl-forget-player .admin-hint { margin-top: 6px; }
+
+@media (max-width: 900px) {
+    .pl-detail-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+    .pl-row .pl-face { width: 28px; height: 28px; }
+    .chrome-list-row h3.pl-shown { white-space: normal; }
+    .se-grid.pl-facts { grid-template-columns: minmax(84px, 38%) 1fr; }
+    .pl-pager { justify-content: flex-start; }
+    .pl-pager .admin-hint { flex-basis: 100%; }
+}
+
+/* ==========================================================================
+   PRE-LAUNCH LAYOUT FIXES (29 Sept 2026)
+   Found by measuring every page and Warren tab at 320–1440px wide. Each of
+   these puts a thing back where it was meant to be; none changes a design.
+   ========================================================================== */
+
+/* Warren's segmented tracks. The admin page's general button rule
+   (body[data-page="admin"] .btn-enter-mini: 9px 18px padding, a 1.5px
+   border) outranks the track's own `padding: 0 10px; border: none`, so
+   inside a track that grows by rows each button came out ~34px tall rather
+   than the 23-24px the fixed tracks give them — the saved-palette row stood
+   half as tall again as the theme row above it. Put the track's own sizing
+   back for the buttons in every track. */
+body[data-page="admin"] .ctl-seg .btn-enter-mini {
+    padding-top: 0;
+    padding-bottom: 0;
+    border: none;
+    min-height: 23px;
+}
+
+/* On a phone the five theme buttons, each sized to its label and never
+   wrapping (.ctl-seg-themes .btn-enter-mini: flex 0 0 auto), overran the
+   card: "Pumpkin" ran into "Witching Hour" and Crimson was cut off by the
+   panel's clip. The track wraps into rows instead, as the saved-palette
+   row beneath it already does; the Errors status tabs had the same fault. */
+@media (max-width: 720px) {
+    .ctl-seg-themes,
+    .ctl-seg.se-status-tabs { flex-wrap: wrap; height: auto; min-height: 30px; }
+}
+/* ...and the buttons really are sized to their labels, as the rule at
+   .ctl-seg-themes .btn-enter-mini intends: it ties on specificity with the
+   later `.ctl-seg .btn-enter-mini { flex: 1 1 0; min-width: 0 }` and loses on
+   source order, so the five were squeezed into equal slots with their labels
+   overrunning one another. One more class, and it holds. */
+.ctl-seg.ctl-seg-themes .btn-enter-mini { flex: 0 0 auto; }
+
+/* Grids whose columns asked for more than a 320px phone has inside a
+   Warren panel (about 240px): the right edge of the error timeline charts
+   and of the forms' fields was clipped by the window frame. Same columns,
+   never wider than the panel. */
+.se-charts { grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); }
+.admin-stage .admin-form.is-open { grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); }
+
+/* Alt Codes, Guides and Your Progress on a landscape phone: their bodies had
+   a 380px minimum height, so on a 390px-tall screen the window came out
+   taller than the screen and its title bar and close button scrolled away.
+   Never more than the screen minus the window's own chrome. */
+.glyphs-body,
+.guides-body { max-height: min(clamp(380px, 76vh, 760px), calc(100dvh - 110px)); }
+.progress-body { max-height: min(clamp(380px, 70vh, 620px), calc(100dvh - 110px)); }
+.guides-preview .guides-body { max-height: none; }
+
+/* iOS zooms the whole page in on a field whose text is under 16px, and
+   leaves it zoomed. Warren's small fields — the Errors search and note, the
+   Players nickname and look-up, Recolour's search and names — were all
+   below it. On touch screens only; the desktop look is unchanged. Date and
+   time fields are left out: they open the phone's picker rather than a
+   keyboard, so they do not zoom, and at 16px the launch date no longer fit
+   its field ("03/10/2026 08:" and the rest cut off). */
+@media (pointer: coarse) {
+    body[data-page="admin"] .ctl-input:not([type="datetime-local"]):not([type="date"]):not([type="time"]),
+    body[data-page="admin"] .rc-preset,
+    body[data-page="admin"] .rc-nameinput,
+    body[data-page="admin"] .rc-search,
+    body[data-page="admin"] .search-box input,
+    body[data-page="admin"] textarea { font-size: 16px; }
+}
+
+/* "Resolved" on the Errors tab measured 4.4:1 against its row, just under
+   the 4.5:1 small text needs. The same green, lifted towards the page's
+   text colour for the words only; the chip's border stays --ok. */
+.de-chip.se-status-resolved { color: color-mix(in srgb, var(--ok, #7fb069), var(--parchment) 25%); }
+
+/* Two new transitions the reduced-motion preference did not reach. */
+@media (prefers-reduced-motion: reduce) {
+    .rc-sec-caret,
+    .se-sample > summary::before { transition: none; }
+}
+
+/* On a phone Warren's Save bar is fixed to the bottom at the same z-index
+   as the Nav / Control drop-down panels and later in the page, so it drew
+   over the bottom of an open panel while a form was open. One below. */
+@media (max-width: 860px) {
+    .admin-floating-actions { z-index: 29; }
+}
+
+/* ---------- small controls gain a reach on touch screens (29 Sept 2026) ----------
+
+   The same trick as the header pills (see "controls that keep their size
+   and gain a reach" in the Touch targets block): the visible box is left
+   exactly as drawn and an invisible ::after is stretched over it, so a
+   thumb gets 32px or more and the eye still gets a 14px pill. Measured
+   first, on a 375px phone and in the modal / console / Warren as they
+   actually lay out:
+
+     maze window tags ...... 14px   Hotel link ......... 19px
+     Pause pill ............ 17px   Leaderboards pills .. 18px
+     console buttons ....... 20px   Missing Pieces names  10px
+     Warren's Copy ......... 18px   error-row checkbox .. 17px wide
+
+   THE RULE FOR NEIGHBOURS. A reach that laps over the next control's
+   VISIBLE box is worse than no reach: whichever comes later in the page
+   wins the overlap and starts taking presses aimed at its neighbour. So:
+
+     - reaches grow up and down, never sideways, wherever controls sit in
+       a row (the tags, the board pills, a console button pair);
+     - where pills wrap into rows closer than the reach (the maze window's
+       tags wrap at a 19px pitch; a 32px reach would cover 4px of the row
+       below), the reaches go UNDER every pill: z-index -1 inside a row
+       that is its own stacking context. A press on a pill is always that
+       pill; only the empty gap between rows is shared, which is the one
+       place nobody can say which they meant anyway;
+     - where the gaps are measured and fixed (Missing Pieces: name, "Needs"
+       line, I can help, 13px, next name), the reaches are cut to meet
+       exactly and not overlap.
+
+   position: relative only on the controls that are static today. The
+   Pause pill and the console's Play button are position: absolute (pinned
+   in a corner) and already contain their ::after — making them relative
+   would drop them out of their corners, which is exactly what happened to
+   the console's close button once (see .console-close-btn::after). */
+@media (pointer: coarse) {
+
+    /* --- the maze window's filter tags (list-row tags are plain spans in
+       a row that is itself the button, so they need nothing) --- */
+    .room-tags {
+        position: relative;
+        z-index: 0;
+    }
+    button.tag.tag-filter { position: relative; }
+    button.tag.tag-filter::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 34px;
+        transform: translateY(-50%);
+        z-index: -1;
+        background: transparent;
+    }
+
+    /* --- Hotel: COM. One word inline in a sentence, nothing pressable on
+       its line, so it can reach a little sideways as well. --- */
+    .meta-filter { position: relative; }
+    .meta-filter::after {
+        content: "";
+        position: absolute;
+        left: -6px;
+        right: -6px;
+        top: 50%;
+        height: 34px;
+        transform: translateY(-50%);
+        background: transparent;
+    }
+
+    /* --- the gallery's Pause pill: pinned 4px from the picture's top-left
+       corner, so upward there is nothing to reach into. Down and out
+       instead; 3px up stops short of the older-versions pill, which sits
+       6.7px above it when it is showing (.has-old-versions).
+       overflow: visible, or the reach is cropped to the pill: it inherits
+       overflow: hidden from the picture pills' ellipsis, which never fires
+       on this one — its max-width is none and its label is two words. --- */
+    .gallery-pause { overflow: visible; }
+    .gallery-pause::after {
+        content: "";
+        position: absolute;
+        top: -3px;
+        bottom: -15px;
+        left: -4px;
+        right: -4px;
+        background: transparent;
+    }
+
+    /* --- Leaderboards' game and period pills: two wrapping rows at a 29px
+       pitch, 4px apart side to side. Under the pills, as the tags are. --- */
+    .guess-board-ranges {
+        position: relative;
+        z-index: 0;
+    }
+    .guess-board-range { position: relative; }
+    .guess-board-range::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 32px;
+        transform: translateY(-50%);
+        z-index: -1;
+        background: transparent;
+    }
+
+    /* --- the Console's buttons and link-buttons. Pairs sit side by side
+       (Cancel / Send, Save / Remove), so up and down only. --- */
+    .console-btn:not(.console-play-btn),
+    .console-link-btn,
+    .console-missing-name { position: relative; }
+    .console-btn::after,
+    .console-link-btn::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: max(100%, 32px);
+        transform: translateY(-50%);
+        background: transparent;
+    }
+
+    /* Missing Pieces, entry by entry: the name (10px), its "Needs" line
+       3px under it, "I can help" 6px under that, then 13px to the next
+       entry's name. The name reaches down over its own "Needs" line (which
+       is only ever about that name) and 7px up; the button reaches 6px up,
+       to meet the name's reach, and 6px down to meet the next name's.
+       Measured at 33px and 31px, touching and never overlapping. */
+    .console-missing-name::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: -7px;
+        bottom: -15px;
+        background: transparent;
+    }
+    .console-missing-help::after {
+        top: -6px;
+        bottom: -6px;
+        height: auto;
+        transform: none;
+    }
+
+    /* --- Warren. Copy wraps onto its own line inside a player row that is
+       itself a button, so it reaches 32px tall and only 4px sideways: the
+       rest of the row still opens the row. --- */
+    .pl-copy { position: relative; }
+    .pl-copy::after {
+        content: "";
+        position: absolute;
+        left: -4px;
+        right: -4px;
+        top: 50%;
+        height: 32px;
+        transform: translateY(-50%);
+        background: transparent;
+    }
+
+    /* The error row's tick box: a 13px checkbox in a label as tall as the
+       row but only 24px wide. Out to the row's left edge and 6px into the
+       12px gap before the message (40px across, measured) — the rest of the
+       row still opens the row. */
+    .se-check-wrap { position: relative; }
+    .se-check-wrap::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: -10px;
+        right: -6px;
+        background: transparent;
+    }
+
+    /* "Select all" above the list: 16px of label, alone on its line. */
+    .se-check-all { position: relative; }
+    .se-check-all::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 32px;
+        transform: translateY(-50%);
+        background: transparent;
+    }
+}
+
+/* ---------- a phone on its side (29 Sept 2026) ----------
+
+   844x390 and 740x360: wide enough for every desktop layout, and about a
+   third of the height any of them were measured at. Keyed to the shape —
+   short AND landscape — rather than to a device, so a desktop browser
+   dragged down to a letterbox gets the same help, and a portrait phone
+   (whose height is its long side) never matches.
+
+   WHAT WAS WRONG, measured at 844x390:
+
+     - the maze window: a 300px picture under a 30px titlebar, so the
+       builder card, the tags and everything else started below the fold
+       of a 390px screen. The overlay scrolled the card (it has done so
+       under 720px since the fit-to-window rules came in, see
+       max-height: 719px above), which works, but the first screen was
+       nothing but picture;
+     - the daily games: .guess-deck is clamp(430px, …) and .odd-deck
+       clamp(460px, …), floors that never give, inside a window with 93px
+       of chrome and padding round it — 523px of window on a 390px screen,
+       so a timed round had to be scrolled to see its own answers. Below
+       760px wide (740x360) it was worse: the phone layout stacks the
+       picture over the names, which on a 360px-tall screen left the
+       picture a sliver.
+
+   So: less padding round every window, the maze picture capped at a share
+   of the screen, and the decks sized FROM the screen with the side-by-side
+   layout kept at every landscape width. */
+@media (max-height: 500px) and (orientation: landscape) {
+
+    /* 8px round every window rather than 24: on a 390px screen the
+       difference is 32px of window, and nothing here needs air round it.
+       The decks below read this variable, so it is set once. */
+    .modal-overlay { --overlay-pad: 8px; }
+
+    /* The maze / event window. 55% of the screen for the picture (214px at
+       390, 198px at 360) puts the builder card and the tags on the first
+       screen with the picture still the largest thing in it. object-fit:
+       contain on the image means a shorter panel shows the same screenshot
+       smaller, never cropped. The overlay still scrolls the rest of the
+       card, and the titlebar and its close button are the first thing on
+       that scroll, 8px from the top. */
+    .modal-thumb-full.has-gallery .modal-thumb-frame {
+        height: min(300px, 55dvh);
+    }
+
+    /* The daily games' decks, from the screen down: its height, less the
+       overlay's padding top and bottom, less the 45px of titlebar, frame
+       borders and window border the deck sits inside (measured), less 5px
+       to spare. 329px at 390, 299px at 360. The floor is only for the
+       absurd case; the ceiling is the desktop's own 545px. */
+    .guess-deck,
+    .odd-deck {
+        --deck-h: clamp(260px, calc(100dvh - 2 * var(--overlay-pad) - 50px), 545px);
+        /* No tabs, as on a phone: at this height five 15px tabs were 75px
+           of a 300px sheet. The round counter in the sheet's own head
+           already says how far through the day you are. */
+        --tuck: 0px;
+    }
+    .guess-sheet-tab { display: none; }
+    .guess-sheet-inner { padding: 12px 14px calc(12px + var(--tucked) * var(--tuck)); }
+
+    /* Guess the Maze: the picture BESIDE the names at every landscape
+       width, restating the desktop rules that the max-width: 760px block
+       replaces with a stack. Stacked, on a 360px-tall screen the picture
+       came out a few pixels tall. Side by side it is a 270px square with
+       the five names in a column next to it, all on screen at once. */
+    .guess-body {
+        flex: 1;
+        grid-template-columns: minmax(0, 1fr) minmax(200px, 290px);
+        grid-template-rows: minmax(0, 1fr);
+        gap: 14px;
+    }
+    .guess-picture {
+        width: min(100%, calc(var(--deck-h) - 24px - var(--tucked) * var(--tuck)));
+    }
+    .guess-panel { overflow-y: auto; }
+    .guess-options { flex: 1; gap: 5px; }
+    .guess-option { flex: 1 1 auto; min-height: 34px; }
+
+    /* Odd One Out: four across rather than two by two. Two by two, sized
+       against a 300px sheet, left each picture about 80px — too small to
+       see the building the round turns on. In a row they are sized by the
+       same height budget (the deck less the head, question and note, see
+       .odd-grid) and come out twice that, the width a landscape screen has
+       to give. */
+    .odd-grid {
+        grid-template-columns: repeat(4, 1fr);
+        aspect-ratio: auto;
+        width: min(100%, calc(4 * (var(--deck-h) - 150px - var(--tucked) * var(--tuck)) + 30px));
+    }
+}
+
+/* ==========================================================================
+   MODERATION, AS THE PLAYER SEES IT (29 Sept 2026)
+
+   js/account.js's small windows — "Nickname Saved", "Can't Play", "Set a
+   New Nickname", "Can't Sign In" — and the banned screen. All of them wear
+   the frame "Sign out?" wears (.modal-overlay / .modal / chrome titlebar),
+   so only what is inside is styled here. Kept at the end of the file on
+   purpose: nothing earlier in it, the narrow-layout block included, says
+   anything about these classes, so there is nothing for them to lose to.
+   ========================================================================== */
+
+/* The body: a picture (when there is one) over centred lines over the
+   buttons, as .signout-body lays out "Sign out?". */
+.notice-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+/* "Nickname Saved" is three lines, each meant to be a line: the longest
+   ("If the site Admin doesn't approve…") measures 409px of Volter, and the
+   usual 340px window leaves 272px for text, so it broke in two. 490px
+   leaves 422px. A phone narrower than that gets the usual wrapping, since
+   .modal is held inside the overlay's padding anyway. */
+.confirm-modal.notice-wide { max-width: 490px; }
+
+/* The owner's red button in "Nickname Saved": its own 26×26, never
+   scaled, so every pixel of the sprite stays one pixel. */
+.notice-image {
+    display: block;
+    width: 26px;
+    height: 26px;
+    margin: 0 auto 12px;
+    image-rendering: pixelated;
+}
+
+.notice-text,
+.ban-text {
+    margin: 0 0 16px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+.notice-text p,
+.ban-text p { margin: 0; }
+.notice-text p + p,
+.ban-text p + p { margin-top: 6px; }
+
+/* The one line that says what happened, in the bold cut, as .signout-ask
+   is: Volter Goldfish is drawn for one size, so emphasis is the cut. */
+.notice-head {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+}
+
+/* The word the filter caught, and only the word, in amber. */
+.notice-word { color: var(--amber-bright); }
+
+.notice-actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+}
+
+/* "OK": the site's small button (.view-switch-btn, the Timeline / Furni
+   switch) with a little more to press on each side, as the owner chose. */
+.notice-actions .notice-ok {
+    padding: 6px 22px;
+    justify-content: center;
+}
+
+/* ---- The banned screen: the page replaced ----
+   Over everything the pages put up, the loading screen, the console and
+   Fallin' Furni's rotate cover (9000) included, on the darkest colour the
+   site has rather than the usual see-through dim: there is nothing behind
+   it to see. */
+.modal-overlay.ban-screen {
+    z-index: 10000;
+    background: var(--bg-black);
+}
+body.is-banned { overflow: hidden; }
+
+.ban-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.ban-foot {
+    margin: 0;
+    font-size: 0.72rem;
+}
+.ban-foot a { color: var(--amber-bright); }
+
+/* ==========================================================================
+   Warren: bans and cool-downs (29 Sept 2026)
+   The Moderation block in a player's detail (js/admin-players.js) and the
+   rebuilt Bans tab (js/admin.js), which share one form — AdminBanKit's
+   .bn-form: a label over each choice, the choices as .ctl-seg tracks, the
+   way every other choice in the Warren is made. Prefixed bn- and pl-ban so
+   none of it meets the visitor's banned screen (.ban-screen, .ban-body)
+   just above.
+   ========================================================================== */
+
+/* ---- the form: label, then control, a little air between each */
+.bn-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 8px 0;
+}
+.bn-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+}
+/* The tracks size to their words and wrap on a phone, as the Players
+   filter track does — "This account's network" beside "Both" in equal
+   slots would squeeze the one and waste the other. */
+.ctl-seg.bn-seg,
+.ctl-seg.bn-filter-tabs { flex-wrap: wrap; height: auto; min-height: 30px; align-self: flex-start; max-width: 100%; }
+.ctl-seg.bn-seg .btn-enter-mini,
+.ctl-seg.bn-filter-tabs .btn-enter-mini { flex: 0 0 auto; min-height: 24px; }
+.ctl-seg.bn-seg .btn-enter-mini:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.bn-form .ctl-input { max-width: 420px; width: 100%; }
+.bn-form .admin-hint.bn-note,
+.bn-add .admin-hint.bn-note { margin: 0; font-size: 0.66rem; max-width: 60ch; }
+.bn-optional { font-family: inherit; font-weight: 400; letter-spacing: 0; text-transform: none; opacity: 0.75; }
+.bn-custom { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.bn-custom[hidden] { display: none; }
+/* The date and time picker's own popup and icon follow the page into the
+   dark, rather than a white calendar the owner would have to squint past. */
+.bn-custom input[type="datetime-local"] { color-scheme: dark; max-width: 240px; }
+
+/* The Ban buttons: the one press here that stops somebody, in the danger
+   colour, as Delete is elsewhere. Under body[data-page="admin"]: the
+   Warren's general button rule sets .ctl-btn's colour from there and
+   outranked a bare .ctl-btn.pl-ban-go. */
+body[data-page="admin"] .ctl-btn.pl-ban-go,
+body[data-page="admin"] .ctl-btn.bn-go,
+body[data-page="admin"] .ctl-btn.pl-ban-lift { border-color: var(--danger); color: var(--danger-text); }
+body[data-page="admin"] .ctl-btn.pl-ban-go:hover,
+body[data-page="admin"] .ctl-btn.bn-go:hover,
+body[data-page="admin"] .ctl-btn.pl-ban-lift:hover { border-color: var(--danger-text); color: var(--parchment); }
+.pl-mod .ctl-btn:disabled,
+.bn-add .ctl-btn:disabled,
+.bn-row .ctl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---- the Players tab */
+.de-chip.pl-chip-banned { background: var(--danger); border-color: var(--danger); color: var(--parchment); }
+.de-chip.pl-chip-banned.is-cooling { background: transparent; border-style: dashed; color: var(--danger-text); }
+.se-row.pl-row.is-banned { border-left: 3px solid var(--danger); }
+
+.pl-mod { display: flex; flex-direction: column; gap: 8px; }
+.pl-mod .ctl-actions { flex-wrap: wrap; }
+.pl-mod-status:empty { display: none; }
+.pl-ban {
+    padding: 8px 10px;
+    border: 1.5px solid var(--danger);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.2);
+}
+.pl-ban.is-cooling { border-style: dashed; }
+.pl-ban p { margin: 0 0 3px; }
+.pl-ban .admin-hint { font-size: 0.66rem; }
+.pl-ban-level { font-size: 0.72rem; }
+.pl-ban-reason { font-size: 0.7rem; color: var(--parchment); overflow-wrap: anywhere; }
+.pl-ban .ctl-actions { margin-top: 6px; }
+
+/* ---- the Bans tab */
+.bn-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.bn-filters .ctl-status { flex: 1 1 100%; }
+.bn-filters .ctl-status:empty { display: none; }
+/* The filters only choose what is read, so a view-only account keeps
+   them: the blanket viewer rule greys every .btn-enter-mini (see the same
+   exception for the Players and Errors tabs). */
+body.is-viewer .admin-panel[data-panel="bans"] .bn-filter-tabs .btn-enter-mini {
+    opacity: 1;
+    cursor: var(--cursor-pointer);
+    pointer-events: auto;
+}
+/* Backstop for the writes, which admin.js does not draw for a viewer. */
+body.is-viewer .admin-panel[data-panel="bans"] .bn-write,
+body.is-viewer #bans-add-btn,
+body.is-viewer #bans-add { display: none !important; }
+
+.bn-add {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1.5px solid var(--chrome-highlight);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.18);
+}
+.bn-add[hidden] { display: none; }
+.bn-add > .bn-field { margin-bottom: 10px; }
+.bn-add .admin-subheading { margin-top: 0; }
+.bn-find-row { flex-wrap: wrap; max-width: 520px; }
+.bn-find-row .ctl-input { flex: 1 1 200px; }
+.bn-results { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; max-width: 620px; }
+.bn-result {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    font-size: 0.7rem;
+    min-width: 0;
+}
+.bn-result > span { min-width: 0; overflow-wrap: anywhere; }
+.bn-picked { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 0.72rem; }
+.bn-picked .se-mono { overflow-wrap: anywhere; }
+
+.bn-row .se-row-head { flex-wrap: wrap; }
+.bn-row h3.bn-target { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.bn-row .bn-id { color: var(--parchment-dim); }
+.bn-row .bn-reason { overflow-wrap: anywhere; }
+.bn-row.is-ended { opacity: 0.7; }
+.bn-row .bn-edit-actions { margin-top: 4px; flex-wrap: wrap; }
+.de-chip.bn-chip-level.bn-level-full { background: var(--danger); border-color: var(--danger); color: var(--parchment); }
+.de-chip.bn-chip-level.bn-level-soft { border-color: var(--danger); color: var(--danger-text); }
+.de-chip.bn-chip-cooling { border-style: dashed; color: var(--amber-bright); border-color: var(--amber); }
+.de-chip.bn-chip-perm { color: var(--parchment); }
+.de-chip.bn-chip-ended { color: var(--parchment-dim); border-style: dotted; }
+
+/* ---- Ban IP on a contact message: the three choices inside the
+   Are You Sure? (banIp in js/admin.js), one under another. */
+.bn-quick { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 8px; text-align: left; }
+.bn-quick label { display: flex; flex-direction: column; gap: 4px; }
+.bn-quick select,
+.bn-quick input {
+    height: 30px;
+    box-sizing: border-box;
+    padding: 0 8px;
+    border: 1.5px solid var(--chrome-highlight);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--parchment);
+    font-family: inherit;
+    font-size: 0.7rem;
+    color-scheme: dark;
+}
+.bn-quick-note { display: block; font-size: 0.64rem; text-align: left; }
+
+/* On a phone a ban row's Change and Lift took half the width beside it,
+   leaving an IPv6 /64 to break every few characters: the buttons go
+   underneath instead. */
+@media (max-width: 560px) {
+    .chrome-list-row.bn-row { flex-wrap: wrap; }
+    .chrome-list-row.bn-row .row-info { flex: 1 1 100%; }
+    .chrome-list-row.bn-row .admin-row-actions { flex: 1 1 100%; justify-content: flex-start; margin-top: 6px; }
+}

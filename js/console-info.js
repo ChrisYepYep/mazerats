@@ -228,7 +228,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function identityNote() {
         const p = signedIn();
-        return `Optional, so we can credit you.${p ? ` We've noted your Discord username (${esc(p.name)}) too.` : ""}`;
+        // "Discord name", not "username" (28 Sept 2026): p.name is the
+        // display name, which is often not the username at all.
+        return `Optional, so we can credit you.${p ? ` We've noted your Discord name (${esc(p.name)}) too.` : ""}`;
     }
 
     // Only more than one row can lose one: the first is the form.
@@ -400,7 +402,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (res.ok) throw new Error("That didn't send. Try again in a minute.");
             out = {};
         }
-        if (!res.ok) throw new Error((out && out.error) || "That didn't send. Try again in a minute.");
+        if (!res.ok) {
+            const err = new Error((out && out.error) || "That didn't send. Try again in a minute.");
+            // Status and body ride along, so a ban refusal (403 { banned })
+            // can be shown as the site's own "Can't Send" (29 Sept 2026).
+            err.status = res.status;
+            err.data = out;
+            throw err;
+        }
         return out;
     }
 
@@ -514,12 +523,25 @@ document.addEventListener("DOMContentLoaded", () => {
             if (type !== "new" && data()) data().noteLead(rtype, body.id);
             target = null;
             renderInfo();
-            Console.showThanks("A person reads every submission, anything that fills a gap will be added to the archive and credit given to you. Thank you!");
+            /* Credit only promised when there is a name to credit (28 Sept
+               2026): a Habbo name typed in, or the Discord name a signed-in
+               sender is noted under — the same two names dead-end-leads.js
+               falls back through when a lead is credited. It promised credit
+               to everybody, anonymous senders included, which the policy
+               does not, and ran two sentences together with a comma. */
+            const named = !!body.habboName || !!signedIn();
+            Console.showThanks("A person reads every submission. Anything that fills a gap will be added to the archive"
+                + (named ? ", with credit to you." : ".") + " Thank you!");
         } catch (err) {
             // Changed while this was on its way: that change is not in what
             // was sent, so the retry is a new submission (editedSubmission).
             if (editedWhileSending) clientRef = null;
-            say(err.message, true);
+            // A blocked sender gets the site's own notice, not the raw words.
+            if (window.Account && Account.writeRefused && Account.writeRefused(err.status, err.data, "send")) {
+                say("", false);
+            } else {
+                say(err.message, true);
+            }
         } finally {
             sending = false;
             editedWhileSending = false;

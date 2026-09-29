@@ -6,7 +6,9 @@ const crypto = require("crypto");
 const { getDb } = require("./_db");
 const { hasAccount, canWrite, refuseWrite, roleOf, WRITE_SCOPES, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { playerFrom } = require("./_player");
-const { clientIp, clientNet, claimNotifySlot, isBanned, forgetOldAddresses } = require("./_net");
+const { clientIp, clientNet, claimNotifySlot, forgetOldAddresses } = require("./_net");
+// The ban check (29 Sept 2026) — see the POST.
+const { writeRefusal } = require("./_bans");
 const { SECURITY_HEADERS } = require("./_headers");
 
 const json = (statusCode, data) => ({
@@ -185,37 +187,8 @@ exports.handler = async (event) => {
         if (discord.length > DISCORD_MAX) return json(400, { error: `Discord username is too long — keep it under ${DISCORD_MAX} characters` });
 
         const ip = clientIp(event);
-        // What the caps count, and what the ban below matches besides the
-        // address itself.
+        // What the caps count.
         const net = clientNet(event);
-        if (ip) {
-            /* Both reads in a try, like the insert below. A database that
-               answered the connect and then failed here threw straight out
-               of the handler — Netlify's bare 502, with nothing the form
-               knows how to show. */
-            try {
-                // A banned address gets the same silent, normal-looking success the
-                // honeypot returns above, for the same reason: an explicit "you are
-                // banned" (or even a 429, which the rate limit below does send) tells
-                // whoever it is that they've been noticed and is an invitation to come
-                // back from a different address. Nothing is written and no email goes
-                // out. Bans are managed in bans.js; isBanned (_net.js) matches the
-                // address or its whole network, so an IPv6 sender cannot step to
-                // the next address in their /64.
-                if (await isBanned(db, event)) {
-                    return json(201, { id: crypto.randomUUID(), username: "", discord: "", message: "", createdAt: new Date().toISOString() });
-                }
-
-                // A cheap early refusal for the caller already well over the cap.
-                // Not the real check — see after the insert below for that.
-                if (await countRecent(messages, net) >= RATE_LIMIT_COUNT) {
-                    return json(429, { error: "Too many messages sent — please wait a bit before trying again." });
-                }
-            } catch (e) {
-                console.error("contact: could not check the sender", e);
-                return json(503, { error: "Your message could not be saved just now. Please try again in a minute." });
-            }
-        }
 
         /* Who sent it, if they were signed in — taken from the session
            cookie rather than from the request body, which is the whole
@@ -227,6 +200,37 @@ exports.handler = async (event) => {
            and the contact form is no exception; an anonymous message lands
            exactly as it always has. */
         const player = playerFrom(event);
+
+        /* BANNED: 403, said plainly (29 Sept 2026). A banned address used to
+           get the honeypot's silent, normal-looking success, so as not to
+           tell whoever it was that they had been noticed. That secret is
+           out now by design: a banned visitor is shown a banned screen (the
+           page reads `me.ban`, discord-auth.js), so a fake "sent!" here would
+           only contradict it. writeRefusal (_bans.js) matches the account,
+           the address, its /64 and its network code, soft or full, ignores
+           an ended cool-down, and answers 503 itself if the bans cannot be
+           read — the message could not have been saved then either. */
+        const refusal = await writeRefusal(db, event, player ? player.id : null);
+        if (refusal) return refusal;
+
+        if (ip) {
+            /* The read in a try, like the insert below. A database that
+               answered the connect and then failed here threw straight out
+               of the handler — Netlify's bare 502, with nothing the form
+               knows how to show. */
+            try {
+                // A cheap early refusal for the caller already well over the cap.
+                // Not the real check — see after the insert below for that.
+                if (await countRecent(messages, net) >= RATE_LIMIT_COUNT) {
+                    return json(429, { error: "Too many messages sent — please wait a bit before trying again." });
+                }
+            } catch (e) {
+                console.error("contact: could not check the sender", e);
+                return json(503, { error: "Your message could not be saved just now. Please try again in a minute." });
+            }
+        }
+
+        // `player` is read above, before the ban check.
         const from = player
             ? { id: player.id, name: player.name, username: player.username || null, verified: true }
             : null;
@@ -326,3 +330,8 @@ async function manage(event, messages) {
 
     return json(405, { error: "Method not allowed" });
 }
+
+/* Failures reported to /warren's Errors tab (28 Sept 2026): see
+   withErrorReporting in _errors.js. Last, so it wraps the handler as finally
+   defined above; what the handler answers is unchanged. */
+exports.handler = require("./_errors").withErrorReporting("contact", exports.handler);

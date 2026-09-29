@@ -22,6 +22,10 @@
          Every other page on this site sits at the root, where a relative
          path already resolves correctly, so none of them needs this. -->
     <base href="/">
+    <!-- Error reporting, first, and the build it was deployed as: see the
+         note on these two lines in home.html's <head> (28 Sept 2026). -->
+    <meta name="mazerats:build" content="dev">
+    <script src="/js/error-report.js?v=2"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Caveat on top of the site's usual three. It is the closest thing on
@@ -47,8 +51,12 @@
     <meta name="theme-color" content="#120c07">
     <!-- Unlisted while the map is still being filled in — half its rooms
          have no picture and no description yet, and a search result
-         pointing at that is worse than none. Said again in robots.txt so a
-         crawler does not have to fetch the page to find out. Lift both
+         pointing at that is worse than none. Said again as an X-Robots-Tag
+         header on /wizard, /wizard/* and /wizard.html in netlify.toml, so
+         every spelling of the address carries it. robots.txt deliberately
+         does NOT disallow the Atlas: a crawler can only obey a noindex on a
+         page it is allowed to fetch (28 Sept 2026 — this said robots.txt
+         repeated it, which stopped being true). Lift the tag and the headers
          together. -->
     <meta name="robots" content="noindex, nofollow">
     <title>The Sorcerer's Atlas — Maze Rats</title>
@@ -95,7 +103,7 @@
          link carries a private token there. The search (?q=) is kept on
          purpose: the privacy policy says searches are recorded, and why.
          js/track.js, the site's own record, honours both signals too. -->
-    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");document.head.appendChild(s);}catch(e){}})();</script>
+    <script>(function(){try{if(navigator.globalPrivacyControl===true)return;var s=document.createElement("script");s.defer=true;s.src="https://cloud.umami.is/script.js";s.setAttribute("data-website-id","8dee5429-29ff-4efb-bec1-c124c8d6fb18");s.setAttribute("data-do-not-track","true");s.setAttribute("data-exclude-hash","true");s.setAttribute("data-domains","mazerats.net");document.head.appendChild(s);}catch(e){}})();</script>
 </head>
 <body data-page="wizard" class="wiz-page">
 
