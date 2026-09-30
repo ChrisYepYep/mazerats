@@ -135,8 +135,11 @@
                  "whose admin page is this" and that comes before anything you
                  might do on it. -->
             <div class="admin-tab admin-tab-user" data-menu="user">
+                <!-- data-crumb (30 Sept 2026): this button's text is the
+                     signed-in admin's username, and js/error-report.js's
+                     click breadcrumb would otherwise carry it into a report. -->
                 <button type="button" class="admin-tab-btn" id="admin-session-user"
-                        aria-haspopup="true" aria-expanded="false">&nbsp;</button>
+                        aria-haspopup="true" aria-expanded="false" data-crumb="Your account">&nbsp;</button>
                 <div class="admin-drop admin-drop-user">
                     <span class="ctl-label">Your account</span>
                     <div class="ctl-actions">

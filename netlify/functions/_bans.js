@@ -57,11 +57,15 @@
    else's benefit, not a lock.
 
    CHEAP ON PURPOSE. Every game move asks this, so the answer is memoised per
-   warm instance for MEMO_MS per (player, address) pair, and bans.js empties
-   the memo whenever it changes a ban in the same instance. Another instance
-   may keep a lifted or new ban for up to MEMO_MS — thirty seconds of a ban
-   landing late is the price of not reading the bans collection on every
-   pick of every round.
+   warm instance for MEMO_MS per (player, address) pair. Corrected 30 Sept
+   2026: this used to say bans.js "empties the memo" when it changes a ban,
+   but Netlify bundles each function separately, so every function that
+   requires this file has its OWN copy of the memo, and invalidate() in
+   bans.js only ever cleared the bans function's own — never the one in
+   guess-scores, daily-scores, ff-scores, player-nick or discord-auth, which
+   are the ones that enforce. So MEMO_MS is the whole story: a new or lifted
+   ban reaches every function within five seconds, and that is still enough
+   to spare the bans collection a read on every pick of a round.
 
    FAILING. banFor, for READS (`me`, the sign-in), fails OPEN: a database
    blip must not show everybody on the site a banned screen or refuse every
@@ -75,7 +79,8 @@ const { SECURITY_HEADERS } = require("./_headers");
 const COLLECTION = "bans";
 const KINDS = ["player", "ip", "net", "nethash"];
 const LEVELS = ["soft", "full"];
-const MEMO_MS = 30 * 1000;
+// Five seconds, not thirty (30 Sept 2026): see CHEAP ON PURPOSE.
+const MEMO_MS = 5 * 1000;
 // A warm instance meets at most a few thousand visitors between cold
 // starts; past this the memo is simply emptied rather than managed.
 const MEMO_MAX = 5000;
@@ -109,7 +114,42 @@ function netHashOf(net) {
 // The request's own network code, or null with no address to go on.
 function netHashFor(event) {
     const ip = clientIp(event);
-    return ip ? netHashOf(subscriberOf(ip)) : null;
+    /* Through canonicalIp first (30 Sept 2026), as keysOf below reads the
+       request: the code STORED on a players row (discord-auth.js) and the
+       code a "nethash" ban is MATCHED against must come from the same
+       spelling of the address, or an IPv4-mapped address in hex
+       ("::ffff:0102:0304") stored the /64 "0:0:0:0::/64" and was checked
+       as "1.2.3.4" — a network ban made from that row matched nobody. */
+    return ip ? netHashOf(subscriberOf(canonicalIp(ip))) : null;
+}
+
+/* ---- ONE SPELLING PER ADDRESS (30 Sept 2026).
+
+   An IPv6 address can be written many ways — "2001:0db8:0:0::1" and
+   "2001:db8::1" are the same machine — and an "ip" ban was compared as
+   text, so a ban typed the long way never matched the short form Netlify
+   hands us. This is the one spelling both sides are put into before they
+   are compared, and the one bans.js stores: IPv6 in the WHATWG URL
+   parser's canonical form (lower case, no leading zeros, the longest run
+   of zero groups as "::"), with any zone id dropped; an IPv4 address dressed
+   as IPv6 (::ffff:1.2.3.4) as the IPv4 underneath, which is how
+   subscriberOf reads it too; IPv4 as it is. Anything that is not an
+   address comes back trimmed and lower-cased, never thrown on. */
+function canonicalIp(raw) {
+    const s = String(raw == null ? "" : raw).trim().toLowerCase().replace(/%.*$/, "");
+    if (!s.includes(":")) return s;
+    let host;
+    try {
+        host = new URL("http://[" + s + "]").hostname.replace(/^\[|\]$/g, "");
+    } catch (e) {
+        return s;
+    }
+    const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host);
+    if (mapped) {
+        const hi = parseInt(mapped[1], 16), lo = parseInt(mapped[2], 16);
+        return [hi >> 8, hi & 255, lo >> 8, lo & 255].join(".");
+    }
+    return host;
 }
 
 /* ---- reading one ban document ---- */
@@ -175,17 +215,20 @@ function summary(doc) {
 function banMatches(doc, keys) {
     switch (doc && doc.kind) {
         case "player": return !!keys.playerId && doc.value === keys.playerId;
-        case "ip": return !!keys.ip && doc.value === keys.ip;
+        // Both sides canonical (see ONE SPELLING PER ADDRESS), so a row
+        // stored the long way before that existed still matches.
+        case "ip": return !!keys.ip && typeof doc.value === "string" && canonicalIp(doc.value) === keys.ip;
         case "net": return !!keys.net && doc.value === keys.net;
         case "nethash": return !!keys.hash && doc.value === keys.hash;
         default:
             if (doc && doc.kind !== undefined && doc.kind !== null) return false;   // a kind we do not know bans nothing
-            return (!!keys.ip && doc.ip === keys.ip) || (!!keys.net && doc.net === keys.net);
+            return (!!keys.ip && typeof doc.ip === "string" && canonicalIp(doc.ip) === keys.ip) || (!!keys.net && doc.net === keys.net);
     }
 }
 
 function keysOf(event, playerId) {
-    const ip = clientIp(event);
+    const raw = clientIp(event);
+    const ip = raw ? canonicalIp(raw) : null;
     const net = ip ? subscriberOf(ip) : null;
     return {
         playerId: playerId === undefined || playerId === null || playerId === "" ? null : String(playerId),
@@ -197,10 +240,11 @@ function keysOf(event, playerId) {
 /* ---- the memo (see CHEAP ON PURPOSE) ----
 
    Holds the matching documents, not the verdict, so a cool-down that ends
-   inside the thirty seconds is let go on time: the verdict is worked out
+   inside the five seconds is let go on time: the verdict is worked out
    from them afresh, against the clock, on every read. */
 const memo = new Map();
 
+// This instance's memo only — see CHEAP ON PURPOSE for why that is all.
 function invalidate() {
     memo.clear();
 }
@@ -210,7 +254,11 @@ function invalidate() {
 async function matchingBans(db, keys) {
     const or = [];
     if (keys.playerId) or.push({ kind: "player", value: keys.playerId });
-    if (keys.ip) or.push({ ip: keys.ip }, { kind: "ip", value: keys.ip });
+    /* And every "ip" ban written with a colon, whatever this request's own
+       address: one stored before ONE SPELLING PER ADDRESS may be spelt
+       differently from keys.ip ("2001:0db8::1", "::ffff:1.2.3.4"), and only
+       banMatches, comparing canonical forms, can tell. A handful of rows. */
+    if (keys.ip) or.push({ ip: keys.ip }, { kind: "ip", value: keys.ip }, { kind: "ip", value: { $regex: ":" } });
     if (keys.net) or.push({ net: keys.net }, { kind: "net", value: keys.net });
     if (keys.hash) or.push({ kind: "nethash", value: keys.hash });
     if (!or.length) return [];
@@ -374,7 +422,7 @@ function banOfPlayer(snapshot, row) {
 
 module.exports = {
     COLLECTION, KINDS, LEVELS, MEMO_MS,
-    netHashOf, netHashFor,
+    netHashOf, netHashFor, canonicalIp,
     levelOf, untilOf, isActive, kindOf, severer, mostSevere, summary, banMatches,
     banFor, lookUp, invalidate,
     writeRefusal, bannedReply, NICK_REQUIRED_MESSAGE,

@@ -358,7 +358,25 @@ async function recordOddPick(db, ensureUniqueIndex, day, playerId, round, tile, 
     return { error: "out-of-order" };
 }
 
-const normalise = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+/* Loose matching for a name the page sends back, which is only ever used to
+   FIND the option meant — never to judge it (30 Sept 2026). Judging went
+   through this too, and two things follow from its throwing away everything
+   but a-z and 0-9: a maze named in nothing but the font's picture glyphs
+   ("¥ ª ¥") normalised to "" and could never be guessed at all (every guess
+   at it was a bad move), and two names that differ only in punctuation or
+   glyphs ("Maze-1", "Maze ¥1") read as one, so the decoy was judged right.
+   The empty case now falls back to the name lower-cased; the judging is on
+   the option itself (recordGuess, and guess-scores.js), which is exactly the
+   answer's name when it is right, since both come from the stored deal. */
+const normalise = s => {
+    const plain = String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    return plain || String(s || "").trim().toLowerCase();
+};
+
+// The option a sent name means: itself if it is one, else the first that
+// matches loosely, else undefined.
+const optionFor = (options, name) => (options || []).find(o => o === name) ||
+    (options || []).find(o => normalise(o) && normalise(o) === normalise(name));
 
 /* Records one Guess the Maze guess: judged against the stored deal now and
    appended to the round's guesses, which the SERVER counts — `tries` used
@@ -384,7 +402,7 @@ async function recordGuess(db, ensureUniqueIndex, day, playerId, round, name, de
     const game = "guess";
     const col = db.collection(COLLECTION);
     if (!dealRound || typeof name !== "string") return { error: "bad-move" };
-    const offered = dealRound.options.find(o => normalise(o) === normalise(name) && normalise(o));
+    const offered = optionFor(dealRound.options, name);
     if (!offered) return { error: "bad-move" };
     const key = markKey(round);
     const view = (m, flag) => Object.assign({ [flag]: true }, {
@@ -396,13 +414,15 @@ async function recordGuess(db, ensureUniqueIndex, day, playerId, round, name, de
         if (!row) return { error: "no-start" };
         const cur = (row.moves && row.moves[key]) || null;
         if (cur && cur.done) return view(cur, "already");
-        if (cur && cur.guesses.some(g => normalise(g) === normalise(offered))) return view(cur, "repeat");
+        // Stored guesses are always the option itself (`offered`), so
+        // compared as they are — see normalise.
+        if (cur && cur.guesses.some(g => g === offered)) return view(cur, "repeat");
         if (!cur) {
             const gate = gateFor(row, round, now);
             if (gate) return gate;
         }
 
-        const won = normalise(offered) === normalise(dealRound.name);
+        const won = offered === dealRound.name;
         const guesses = (cur ? cur.guesses : []).concat(offered);
         const done = won || guesses.length >= tries;
         const at = new Date(now);
@@ -558,5 +578,5 @@ module.exports = {
     COLLECTION, ROUND_BONUS_SECONDS, NO_TIME, TOTAL, MAX_START_BODY, MIN_MOVE_MS,
     ANON_COLLECTION, ANON_MULTIPLE, ANON_SLACK,
     totalOf, roundBonusFor, markRound, recordStart, progressFor, clockOf, clockFor, movesOf, lastMarkAt,
-    recordOddPick, recordGuess, forgetDay, dayBonus, normalise, anonMoveLimit, claimAnonMove
+    recordOddPick, recordGuess, forgetDay, dayBonus, normalise, optionFor, anonMoveLimit, claimAnonMove
 };

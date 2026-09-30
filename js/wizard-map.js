@@ -57,6 +57,7 @@ window.WizardMap = function WizardMap(options) {
     let rooms = [];
     let paths = [];
     let layers = [];
+    let reveals = [];
 
     // Every drawn thing that carries a zoom band, paired with its element,
     // so applyBands has one flat list to walk rather than three.
@@ -397,7 +398,24 @@ window.WizardMap = function WizardMap(options) {
             /* Faded out is not just invisible, it is not there: without this
                a room name at zero opacity still swallows the hover and the
                click meant for the painting drawn over it. */
-            entry.el.classList.toggle("is-gone", opacity <= 0.02);
+            const gone = opacity <= 0.02;
+            entry.el.classList.toggle("is-gone", gone);
+            /* And out of the keyboard's way (30 Sept 2026). pointer-events
+               only stops the mouse: a name faded out by its band was still a
+               button in the Tab order, so tabbing across the map at low zoom
+               stopped on dozens of invisible rooms, each read out by name.
+               Taken out of the order and the accessibility tree while gone,
+               and put back the moment it returns. Rooms only — nothing else
+               banded is focusable. */
+            if (entry.el.dataset.kind === "room") {
+                if (gone) {
+                    entry.el.tabIndex = -1;
+                    entry.el.setAttribute("aria-hidden", "true");
+                } else if (entry.el.hasAttribute("aria-hidden")) {
+                    entry.el.removeAttribute("tabindex");
+                    entry.el.removeAttribute("aria-hidden");
+                }
+            }
         }
     }
 
@@ -1369,6 +1387,9 @@ window.WizardMap = function WizardMap(options) {
     const pointers = new Map();
     let pinchStart = 0;
     let pinchZoom = 1;
+    // Where the pinch's midpoint was on the last move — see pointermove.
+    let pinchMidX = 0;
+    let pinchMidY = 0;
 
     function pinchSpread() {
         const [a, b] = [...pointers.values()];
@@ -1407,6 +1428,7 @@ window.WizardMap = function WizardMap(options) {
         if (pointers.size === 2) {
             pinchStart = pinchSpread();
             pinchZoom = wantZoom;
+            [pinchMidX, pinchMidY] = pinchMiddle();
             dragging = false;
             /* A pinch is a gesture, not a press, so the click it ends with
                is not a click on whatever happened to be under a finger.
@@ -1435,9 +1457,29 @@ window.WizardMap = function WizardMap(options) {
 
         if (pointers.size === 2 && pinchStart) {
             const [mx, my] = pinchMiddle();
+            /* The pinch moves the map as well as zooming it (30 Sept 2026).
+               Zooming about the midpoint alone kept whatever was under the
+               fingers under the fingers' CURRENT middle — so two fingers
+               sliding across the screen zoomed in place and the map stayed
+               put, which is not what a map under two fingers does anywhere
+               else. The midpoint's travel since the last move is applied as
+               a pan first, then the zoom is taken about where the midpoint
+               is now: the spot you pinched follows your fingers and grows
+               under them. Settled in between, because zoomTo works from the
+               view's target and the pan has just moved the view. */
+            panX += mx - pinchMidX;
+            panY += my - pinchMidY;
+            pinchMidX = mx;
+            pinchMidY = my;
+            settle();
+            const zoomWas = zoom;
             // Fingers, like a drag: the map tracks the pinch itself rather
             // than easing after it.
             zoomTo(pinchZoom * (pinchSpread() / pinchStart), mx, my, { smooth: false });
+            // zoomTo does nothing when the zoom has not changed — held at a
+            // limit, or fingers moving in parallel — and the pan still has
+            // to be drawn.
+            if (zoom === zoomWas) applyTransform();
             return;
         }
         if (!dragging) return;
@@ -1618,6 +1660,10 @@ window.WizardMap = function WizardMap(options) {
             rooms = payload.rooms || [];
             paths = payload.paths || [];
             layers = payload.layers || [];
+            /* Kept, never drawn: only the editor's ?fresh=1 copy has any,
+               and the one thing that asks is the GIF maker, which must leave
+               out what a visitor's map does not have (30 Sept 2026). */
+            reveals = payload.reveals || [];
         },
 
         /* Rooms and trails added to a map that is already on screen — which
@@ -1746,6 +1792,7 @@ window.WizardMap = function WizardMap(options) {
         getRooms: () => rooms,
         getPaths: () => paths,
         getLayers: () => layers,
+        getReveals: () => reveals,
         elementFor(kind, id) {
             const store = kind === "room" ? roomEls : kind === "path" ? pathEls : layerEls;
             return store.get(id) || null;

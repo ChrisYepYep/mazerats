@@ -26,9 +26,10 @@
    Edits are applied by hand from "beforeinput" rather than read back off
    the field afterwards: once the field is showing mask characters, its
    value is no longer the password, so a typed character has to be routed
-   into the real string ourselves. Anything that sets the value without a
-   beforeinput to intercept — a password manager filling the form — is
-   caught by the "input" listener at the end as a plain adoption.
+   into the real string ourselves. Anything that changes the value without
+   a beforeinput we can cancel — a password manager filling the form, an
+   IME or Android keyboard composing — is caught afterwards by reconcile(),
+   which diffs the field against what it last drew.
    =========================================================== */
 
 (function () {
@@ -137,16 +138,42 @@
             toggle.setAttribute("aria-pressed", String(revealed));
         }
 
+        /* IME and Android keyboards (30 Sept 2026). A composition — every
+           word typed on most Android keyboards, and any IME input — can't be
+           cancelled from beforeinput: the browser writes it into the field
+           regardless. Routing it by hand as well is what doubled the text,
+           and the old input listener then adopted the whole field, bullets
+           and all, as the password. So compositions are left to the browser
+           and reconciled afterwards: while one is open the field is not
+           redrawn (that would break the IME), and once it closes the edit is
+           worked out by diffing what the field shows against what it was
+           last drawn as — see reconcile() below. */
+        let composing = false;
+
+        input.addEventListener("compositionstart", () => { composing = true; });
+        input.addEventListener("compositionend", () => {
+            composing = false;
+            reconcile();
+        });
+
         input.addEventListener("beforeinput", e => {
+            const type = e.inputType || "";
+            if (e.isComposing || composing ||
+                type === "insertCompositionText" ||
+                type === "deleteCompositionText" ||
+                type === "insertFromComposition") return;
+            // Some keyboards send ordinary-looking edits that still can't be
+            // cancelled; those are picked up by reconcile() on "input".
+            if (e.cancelable === false) return;
+
             const selStart = input.selectionStart;
             const selEnd = input.selectionEnd;
             let from = selStart;
             let to = selEnd;
             let inserted = "";
 
-            switch (e.inputType) {
+            switch (type) {
                 case "insertText":
-                case "insertCompositionText":
                     inserted = e.data || "";
                     break;
                 case "insertFromPaste":
@@ -183,7 +210,6 @@
                    name starts with, so an input type this switch has never
                    heard of is still handled as the kind of thing it is. */
                 default: {
-                    const type = e.inputType || "";
                     if (type.startsWith("insert")) { inserted = e.data || ""; break; }
                     if (type.startsWith("delete")) {
                         if (selStart === selEnd) from = Math.max(0, selStart - 1);
@@ -215,14 +241,56 @@
             render(from + inserted.length);
         });
 
-        input.addEventListener("input", () => {
-            // Only reached when something changed the value without a
-            // beforeinput to intercept — in practice, a password manager
-            // filling the field. Whatever it put there is the real value.
+        /* Works out an edit the browser made on its own — a composition, an
+           uncancellable keyboard edit, a password manager filling the field —
+           and applies it to the real value.
+
+           Adopting the whole field (the old way) is only right when the field
+           was empty or revealed; with a mask showing it made the bullets part
+           of the password. Instead the shown value is diffed against what was
+           last drawn: the unchanged text either side is kept from the real
+           value, and only what's new in the middle is taken from the field.
+           The caret marks where the new text ends, which settles the cases a
+           plain diff can't — deleting one bullet from a row of bullets looks
+           the same wherever it happened. */
+        function reconcile() {
             const expected = revealed ? real : MASK_CHAR.repeat(real.length);
-            if (input.value === expected) return;
-            real = input.value;
-            render(real.length);
+            const shown = input.value;
+            if (shown === expected) return;
+
+            // Unchanged tail: everything after the caret, if it matches;
+            // otherwise the longest common suffix.
+            let tail = -1;
+            const caret = input.selectionStart;
+            if (caret != null && caret <= shown.length) {
+                const after = shown.length - caret;
+                if (after <= expected.length &&
+                    shown.slice(caret) === expected.slice(expected.length - after)) {
+                    tail = after;
+                }
+            }
+            if (tail < 0) {
+                tail = 0;
+                const max = Math.min(shown.length, expected.length);
+                while (tail < max &&
+                       shown[shown.length - 1 - tail] === expected[expected.length - 1 - tail]) tail++;
+            }
+
+            // Unchanged head, within what the tail leaves.
+            const headMax = Math.min(shown.length - tail, expected.length - tail);
+            let head = 0;
+            while (head < headMax && shown[head] === expected[head]) head++;
+
+            const inserted = shown.slice(head, shown.length - tail);
+            real = real.slice(0, head) + inserted + real.slice(real.length - tail);
+            render(head + inserted.length);
+        }
+
+        input.addEventListener("input", e => {
+            // Mid-composition the field is the IME's; it's squared up on
+            // compositionend.
+            if (composing || (e && e.isComposing)) return;
+            reconcile();
         });
 
         toggle.addEventListener("click", () => {

@@ -144,7 +144,26 @@
         return withPic ? withPic.image : "";
     }
 
-    const GuideText = { render, plain, esc, thumbOf };
+    /* Whether a guide was edited on a later day than it was published —
+       "Updated" rather than "Added" (30 Sept 2026). The day is the
+       READER'S, which is how What's New groups its log (localDayKey in
+       js/home.js, the same rule): the Guides window compared UTC days, so
+       an edit late one evening could be "Updated" in the window and
+       "Added" in the log, or the other way round. One rule, used by both. */
+    function localDay(value) {
+        const s = String(value || "");
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+        const d = new Date(s);
+        if (isNaN(d)) return s.slice(0, 10);
+        const pad = x => String(x).padStart(2, "0");
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+    function wasUpdated(guide) {
+        if (!guide || !guide.publishedAt || !guide.updatedAt) return false;
+        return localDay(guide.updatedAt) > localDay(guide.publishedAt);
+    }
+
+    const GuideText = { render, plain, esc, thumbOf, wasUpdated };
     if (typeof module !== "undefined" && module.exports) module.exports = GuideText;
     else root.GuideText = GuideText;
 })(typeof window !== "undefined" ? window : this);

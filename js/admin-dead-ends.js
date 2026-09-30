@@ -87,6 +87,25 @@
         return true;
     }
 
+    /* The page's own boxes, not the browser's (30 Sept 2026): admin.js
+       lends its Are You Sure?, its one-button box and its text-box one as
+       window.AdminConfirm / AdminAlert / AdminPrompt. All three take markup,
+       so anything a visitor wrote is escaped before it goes in. Without
+       admin.js (a page that failed to load it) a question answers No and a
+       problem is said in the flash line, rather than falling back to the
+       browser's own pop-ups. */
+    function ask(html, opts) {
+        return typeof window.AdminConfirm === "function" ? window.AdminConfirm(html, opts) : Promise.resolve(false);
+    }
+    function askText(html, opts) {
+        return typeof window.AdminPrompt === "function" ? window.AdminPrompt(html, opts) : Promise.resolve(null);
+    }
+    function tell(text) {
+        if (typeof window.AdminAlert === "function") return window.AdminAlert(escapeHtml(text));
+        flash(text);
+        return Promise.resolve();
+    }
+
     function keyOf(type, id) { return `${type}:${id}`; }
 
     function when(iso) {
@@ -156,7 +175,7 @@
             renderLeadTabs();
             renderLeads();
         } catch (err) {
-            if (!sessionGone(err)) alert(`Could not load the leads: ${err.message}`);
+            if (!sessionGone(err)) tell(`Could not load the leads: ${err.message}`);
         }
     }
 
@@ -343,7 +362,7 @@
         if (lead.status !== "accepted") actions.appendChild(button("Accept…", () => toggleAccept(row, lead), "", "de-write"));
         if (lead.status === "new") actions.appendChild(button("Reject", () => reject(lead), "", "de-write"));
         if (lead.status !== "new") actions.appendChild(button("Reopen", () => review(lead, { status: "new" }), "", "de-write"));
-        if (lead.ip) actions.appendChild(button("Ban IP", () => ban(lead.ip), lead.ip, "de-write"));
+        if (lead.ip) actions.appendChild(button("Ban IP", () => ban(lead.ip), lead.ip, "admin-delete-btn de-write"));
         actions.appendChild(button("Delete", () => remove(lead), "", "admin-delete-btn de-write"));
 
         row.appendChild(info);
@@ -510,7 +529,7 @@
         try {
             out = await call(LEADS_URL, "PATCH", { id: lead.id, ...body });
         } catch (err) {
-            if (!sessionGone(err)) alert(`Could not save that: ${err.message}`);
+            if (!sessionGone(err)) await tell(`Could not save that: ${err.message}`);
             return false;
         }
         // Saved. Nothing from here on can make it not have been.
@@ -537,34 +556,43 @@
         return true;
     }
 
-    function reject(lead) {
+    async function reject(lead) {
         const hasShots = lead.images && lead.images.length;
-        const note = prompt(`Reject this lead?${hasShots ? " Its screenshots will be deleted." : ""}\n\nNote (optional, admins only):`, "");
+        // Red when it deletes the screenshots: that part cannot be undone.
+        const note = await askText(`Reject this lead?${hasShots ? " Its screenshots will be deleted." : ""}`,
+            { label: "Note (optional, admins only)", maxlength: 500, danger: !!hasShots });
         if (note === null) return;
-        review(lead, { status: "rejected", note });
+        review(lead, { status: "rejected", note: note.trim() });
     }
 
     async function remove(lead) {
-        if (!confirm("Delete this lead and any screenshots with it? This cannot be undone.")) return;
+        if (!await ask("Delete this lead and any screenshots with it? This cannot be undone.", { danger: true })) return;
         try {
             await call(`${LEADS_URL}?id=${encodeURIComponent(lead.id)}`, "DELETE");
         } catch (err) {
-            if (!sessionGone(err)) alert(`Could not delete it: ${err.message}`);
+            if (!sessionGone(err)) await tell(`Could not delete it: ${err.message}`);
             return;
         }
         // Deleted; a failed re-read is said as that, not as a failed delete.
         await refreshAfterWrite();
     }
 
+    /* Ban IP (30 Sept 2026). This was a prompt() that said it banned the
+       address "from the contact form and from sending leads" and posted
+       the old { ip, reason } — which bans.js has made, since 29 Sept, a
+       PERMANENT everything-but-reading ban on the address's whole network:
+       no signing in, no games, no boards. What the admin was told and what
+       happened had come apart. It borrows the contact messages' Ban IP from
+       admin.js now (window.AdminBanIp), so the admin picks the level and
+       the length in the same box, reads what each means, and it posts the
+       new { kind, value, level, ... } shape. */
     async function ban(ip) {
-        const reason = prompt(`Ban ${ip} from the contact form and from sending leads?\n\nReason (optional):`, "Missing Pieces spam");
-        if (reason === null) return;
-        try {
-            await call("/.netlify/functions/bans", "POST", { ip, reason });
-            flash(`Banned ${ip}. It is listed under Bans.`);
-        } catch (err) {
-            if (!sessionGone(err)) alert(`Could not ban it: ${err.message}`);
+        if (typeof window.AdminBanIp !== "function") {
+            flash("This copy of the page is out of date. Reload it to ban.");
+            return;
         }
+        const done = await window.AdminBanIp(ip, { reason: "Missing Pieces spam" });
+        if (done) flash(`Banned ${ip}. It is listed under Bans.`);
     }
 
     let flashTimer = null;
@@ -755,11 +783,11 @@
     }
 
     async function clearFlag(rec) {
-        if (!confirm(`Take "${rec.name}" off the Missing Pieces list? It will show as complete everywhere on the site.`)) return;
+        if (!await ask(`Take "${escapeHtml(rec.name)}" off the Missing Pieces list? It will show as complete everywhere on the site.`, { danger: true })) return;
         try {
             await call(`${FLAGS_URL}?type=${rec.type}&id=${encodeURIComponent(rec.id)}`, "DELETE");
         } catch (err) {
-            if (!sessionGone(err)) alert(`Could not clear it: ${err.message}`);
+            if (!sessionGone(err)) await tell(`Could not clear it: ${err.message}`);
             return;
         }
         await refreshAfterWrite();

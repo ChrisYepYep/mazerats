@@ -566,6 +566,12 @@
         const solved = state.results.filter(r => r.won).length;
         const scored = dayPoints();
         const count = s => {
+            /* Never a day older than the last one banked, as bankDay in
+               js/oddoneout.js has it (30 Sept 2026): a day begun before
+               midnight and finished in the grace, after the new day was
+               already played in another tab, moved lastDay backwards and
+               restarted the streak at 1. ISO days compare as strings. */
+            if (s.lastDay && s.lastDay >= state.day) return;
             s.streak = s.lastDay === yesterdayOf(state.day) ? s.streak + 1 : 1;
             s.best = Math.max(s.best, s.streak);
             s.days += 1;
@@ -616,7 +622,14 @@
         if (i == null || i < 0 || i >= ROUNDS) return;
         if (rounds[i] || preparing[i]) return;
         const pick = picks()[i];
-        if (!pick) return;
+        /* Not handed out yet (ONE ROUND AT A TIME in js/daily.js): asked
+           for only once the room is the one on screen, never from the
+           splash — for room 1 the asking is the start, and the clock must
+           not start before Play is pressed. */
+        if (!pick) {
+            if (view === "round" && state && i === state.round && deal && i < deal.rounds.length) fetchRound(i);
+            return;
+        }
         const tried = attempt || 0;
 
         preparing[i] = true;
@@ -689,6 +702,85 @@
         if (sheet) sheet.el.classList.toggle("is-busy", on);
     }
 
+    /* The rooms handed out so far, kept beside the day under a key of their
+       own (30 Sept 2026). A deal reply no longer carries every room — see
+       ONE ROUND AT A TIME in js/daily.js — and signed out it carries none,
+       so a reload part-way through plays on from these. Not in STATE_KEY,
+       because the state is mirrored to the account (saveState) and this is
+       nothing the account needs. */
+    const DEALT_KEY = "mazerats_guess_dealt";
+    function keepDealt() {
+        if (!deal) return;
+        /* The kept copy merged in first, so a tab that is behind (another
+           tab has been handed later rooms since) never writes its shorter
+           list over the longer one (30 Sept 2026). */
+        mergeKeptDealt();
+        try { localStorage.setItem(DEALT_KEY, JSON.stringify({ day: deal.day, rounds: deal.rounds })); } catch (e) { /* private mode */ }
+    }
+    function mergeKeptDealt() {
+        if (!deal) return;
+        let kept = null;
+        try { kept = JSON.parse(localStorage.getItem(DEALT_KEY) || "null"); } catch (e) { kept = null; }
+        if (kept && kept.day === deal.day) Daily.mergeRounds(deal.rounds, kept.rounds);
+    }
+
+    /* A room whose picture and names this page does not have: room 1
+       before the start's reply has brought it, or a later one whose `next`
+       was lost (a reply that fell over, a reload with nothing kept). Room 1
+       is asked for through Daily.opening. A later one is in a deal asked
+       for again when signed in, since the server's record says it has been
+       reached; signed out the server keeps no record, so the guess that
+       ended the room before is sent again, unrecorded and `final` as it
+       was, and its answer hands this room out as it did the first time. */
+    let fetchingRound = -1;
+    async function fetchRound(i) {
+        if (fetchingRound === i || !deal || !state) return;
+        fetchingRound = i;
+        const gen = dealGen;
+        const forDay = state.day;
+        const list = picks();
+        setBusy(i, true);
+        if (i === 0) {
+            Daily.takeRound(list, await Daily.opening("guess", forDay, BOARDS_URL));
+        } else {
+            const reply = await Daily.deal("guess", forDay, BOARDS_URL);
+            if (reply && reply.day === forDay) Daily.mergeRounds(list, reply.rounds);
+            /* A day begun signed out and now signed in, with the rooms it was
+               handed not on this device — the account's mirror brought the
+               day here from another one (adoptAccountDay). The server has no
+               record to hand them out from, and the signed-out way below is
+               closed to a signed-in request, so this used to end in "could
+               not be dealt" and a Try again that could never work. Recording
+               the day's guesses (as the next guess would anyway) hands each
+               room after them out again (30 Sept 2026). */
+            if (!list[i] && state && state.mode === "anon" && signedIn() && state.day === forDay) {
+                await adoptRecorded(roundSheet(i));
+            }
+            const before = state && state.results[i - 1];
+            const last = before && before.done && before.guesses[before.guesses.length - 1];
+            if (!list[i] && state && state.mode === "anon" && last && !signedIn()) {
+                const again = await Daily.move("guess", forDay, i - 1, { guess: last.name, final: true }, { anon: true, url: BOARDS_URL });
+                Daily.takeRound(list, again.body && again.body.next);
+            }
+        }
+        fetchingRound = -1;
+        if (gen !== dealGen || !state || state.day !== forDay || picks() !== list) return;
+        setBusy(i, false);
+        if (list[i]) {
+            keepDealt();
+            renderRound(i);
+            prepareRound(i);
+            return;
+        }
+        const sheet = roundSheet(i);
+        if (sheet && state.round === i) {
+            statusWithAction(sheet, "This room could not be dealt just now.", "Try again", () => {
+                sheet.refs.status.hidden = true;
+                fetchRound(i);
+            });
+        }
+    }
+
     /* The status line of a room whose picture has failed for good, with a
        button to try it once more. Written as elements, so the handler is
        bound to exactly this button; the status line is role="status", so
@@ -715,10 +807,6 @@
     }
 
     // ---------- guessing ----------
-
-    function normalise(s) {
-        return String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    }
 
     function currentResult() {
         return state.results[state.round];
@@ -917,6 +1005,13 @@
             result.done = result.won || result.guesses.length >= TRIES;
         }
         if (body.answer) result.answer = body.answer;
+        /* The next room comes with the answer that ends this one, and only
+           then (ONE ROUND AT A TIME in js/daily.js); its picture is fetched
+           while this room's reveal is up, as it always was. */
+        if (Daily.takeRound(picks(), body.next)) {
+            keepDealt();
+            prepareRound(index + 1);
+        }
 
         if (result.done && state.round === ROUNDS - 1) {
             state.done = true;
@@ -961,6 +1056,7 @@
         if (!state || state.day !== forDay) return false;
         replies.forEach((r, k) => {
             const b = r.body || {};
+            if (r.status === 200 && Daily.takeRound(picks(), b.next)) keepDealt();
             const result = state.results[list[k].round];
             if (r.status !== 200 || !b.recorded || !Array.isArray(b.guesses) || !result) return;
             result.guesses = b.guesses.map(g => ({ name: g.name, correct: Boolean(g.correct) }));
@@ -1121,14 +1217,17 @@
         const pick = picks()[sheet.roundIndex];
         if (!pick) { box.innerHTML = ""; return; }
 
-        const spent = new Set((result.guesses || []).map(g => normalise(g.name)));
-        const answer = result.answer ? normalise(result.answer.name) : null;
+        /* Compared as the names themselves, not normalised (30 Sept 2026):
+           a guess is always one of these five strings, and so is the
+           answer, since the server deals both — and two names that
+           normalise alike ("Maze-1", "Maze 1") both wore the tick. */
+        const spent = new Set((result.guesses || []).map(g => g.name));
+        const answer = result.answer ? result.answer.name : null;
         const over = result.done;
 
         box.innerHTML = optionsRound(sheet.roundIndex).map(name => {
-            const key = normalise(name);
-            const isAnswer = key === answer;
-            const wasTried = spent.has(key);
+            const isAnswer = name === answer;
+            const wasTried = spent.has(name);
             // is-idle is a name that was never tried and was not the answer.
             // Only reachable once the round is over — while it is live an
             // untouched name is simply a name you can still press.
@@ -1211,7 +1310,12 @@
             submitIfOwed();
             loadBoards();
         }
-        if (next === "round") startClock();
+        if (next === "round") {
+            startClock();
+            // The room in hand, now it is on screen: asked for here if it
+            // has not been handed out yet (see prepareRound).
+            prepareRound(state.round);
+        }
         if (!el.overlay.classList.contains("open")) return;
 
         const live = sheets[liveIndex()];
@@ -1969,32 +2073,32 @@
         countdownTimer = setInterval(update, 30000);
     }
 
+    /* The pasted result, in the one format both games share (Daily.shareText
+       in js/daily.js). The points are the total the boards rank by — the
+       server's filed figure with its speed bonus once it has answered, the
+       base points until then. */
+    function shareText() {
+        const s = served && served.day === state.day ? served : null;
+        return Daily.shareText({
+            game: "Guess the Maze",
+            day: state.day,
+            right: state.results.filter(r => r.won).length,
+            of: ROUNDS,
+            points: Daily.dayTotal(s, dayPoints()),
+            grid: state.results.map(squareFor).join(""),
+            path: "guess"
+        });
+    }
+
     async function copyResult(btn) {
-        const solved = state.results.filter(r => r.won).length;
-        const when = new Date(state.day + "T00:00:00Z")
-            .toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-        const text = `Maze Rats · Guess the Maze\n${when} — ${solved}/${ROUNDS} · ${dayPoints()} pts\n${state.results.map(squareFor).join("")}\n${location.origin}/guess`;
+        const text = shareText();
         try {
             await navigator.clipboard.writeText(text);
             btn.textContent = "Copied";
         } catch (e) {
-            // The clipboard needs a secure context and permission, and has
-            // neither guaranteed. A selectable box beats a button that
-            // silently does nothing.
-            //
-            // The same box every time. Each failed press used to insert a
-            // new one, so a player pressing again (as anybody would when
-            // nothing seemed to happen) grew a column of identical boxes.
-            const holder = btn.parentElement || btn;
-            let box = holder.querySelector(".guess-share-fallback");
-            if (!box) {
-                box = document.createElement("textarea");
-                box.className = "guess-share-fallback";
-                box.readOnly = true;
-                btn.insertAdjacentElement("afterend", box);
-            }
-            box.value = text;
-            box.select();
+            // Refused: a selectable box to copy it from by hand (see
+            // Daily.shareFallback).
+            Daily.shareFallback(btn, text);
             btn.textContent = "Copy this";
         }
         setTimeout(() => { btn.textContent = "Copy result"; }, 2200);
@@ -2049,6 +2153,7 @@
             });
         }
 
+        const previous = deal;
         if (!deal || deal.day !== reply.day) {
             dealGen += 1;
             rounds = [];
@@ -2056,6 +2161,12 @@
             unloadable = {};
         }
         deal = { day: reply.day, rounds: reply.rounds };
+        /* The rooms already handed out for this day — in memory, and kept
+           on this device — laid into the slots the reply left empty (ONE
+           ROUND AT A TIME in js/daily.js; signed out, it leaves them all). */
+        if (previous && previous.day === reply.day) Daily.mergeRounds(deal.rounds, previous.rounds);
+        mergeKeptDealt();
+        keepDealt();
         // A day already filed brings its own figures, bonus included, so a
         // results card reopened later says what the board says.
         if (reply.score && Number.isFinite(reply.score.points)) {
@@ -2250,6 +2361,9 @@
         }
         el.overlay.classList.add("open");
         document.body.classList.add("modal-open");
+        // The tab names the game while it is open, as the Alt Codes and the
+        // Guides do (PageMeta in js/site.js; 30 Sept 2026).
+        if (window.PageMeta) window.PageMeta.set("guess", "Guess the Maze — Maze Rats", "https://mazerats.net/guess");
         view = "intro";
         el.window.focus();
         claimAdminReset()
@@ -2364,6 +2478,7 @@
     function close() {
         el.overlay.classList.remove("open");
         document.body.classList.remove("modal-open");
+        if (window.PageMeta) window.PageMeta.restore("guess");
         clearInterval(countdownTimer);
         /* Back to whatever opened the window, as js/oddoneout.js does. This
            always went to the side menu's spine, which was right only when
@@ -2520,6 +2635,8 @@
             if (!other || other.day !== state.day || progressOf(other) <= progressOf(state)) return;
             const wasDone = state.done;
             state = other;
+            // The rooms the other tab was handed, kept before it saved.
+            if (deal && deal.day === state.day) mergeKeptDealt();
             if (state.done && !wasDone) bankDay();
             if (started) {
                 renderAll();

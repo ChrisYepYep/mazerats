@@ -40,6 +40,13 @@
     const listeners = [];
     let ready = null;
 
+    // A failed "who am I" is asked again — see refresh's catch.
+    const ME_RETRY_MS = 4000;
+    let meRetried = false;
+    window.addEventListener("online", () => {
+        if (Account.unsure) Account.refresh();
+    });
+
     const Account = {
         // The signed-in player, or null. Synchronous, so a render can read
         // it without awaiting — null until `ready` resolves, which is the
@@ -83,6 +90,17 @@
                 // takes the account's ticks off the browser on "nobody",
                 // and should not do that because the network blinked.
                 Account.unsure = true;
+                /* ...and asked again (30 Sept 2026). One failed `me` used to
+                   leave a signed-in player shown signed out for the rest of
+                   the visit — a cold function or a tunnel was enough. So a
+                   failure is retried once, four seconds on, and again
+                   whenever the browser says it is back online (below). The
+                   retry is an ordinary refresh, so when it lands, the real
+                   answer is announced to every listener like the first. */
+                if (!meRetried) {
+                    meRetried = true;
+                    setTimeout(() => { if (Account.unsure) Account.refresh(); }, ME_RETRY_MS);
+                }
             }
             // The first answer is in, one way or the other: Account.mayPlay
             // now means something (see the games' open()).
@@ -109,20 +127,39 @@
             location.href = `/auth/discord/start?to=${encodeURIComponent(to)}`;
         },
 
+        /* Resolves true once signed out, false if the server could not be
+           reached (30 Sept 2026). The cookie is HttpOnly, so only the
+           server's answer clears it: showing "Sign in" after a failed
+           request left the session alive behind a header that said
+           otherwise, and the next page load signed them straight back in.
+           So a failure keeps the signed-in state and says so. A POST, which
+           discord-auth.js now insists on. */
         async signOut() {
             // Whatever is still queued for this account goes first, while
             // the session cookie is still good; after, it would be dropped.
             try { await flushState(); } catch (e) { /* nothing to undo */ }
             try {
                 // Leashed: the header button is disabled until this returns.
-                await timedFetch(`${ENDPOINT}?action=signout`, { credentials: "same-origin" });
-            } catch (e) { /* the cookie is the server's to clear; nothing local to undo */ }
+                const res = await timedFetch(`${ENDPOINT}?action=signout`, {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: { Accept: "application/json" }
+                });
+                if (!res.ok) throw new Error(String(res.status));
+            } catch (e) {
+                notice({
+                    title: "Couldn't Sign Out",
+                    html: `<p class="notice-lines">Couldn't sign you out — check your connection and try again.</p>`
+                });
+                return false;
+            }
             Account.current = null;
             Account.unsure = false;
             /* The account's own ticks are taken back off this browser by
                home.js's dropAccountTicks, on the announce below; that is
                what stops the next person to sign in here uploading them. */
             announce();
+            return true;
         },
 
         onChange(fn) {
@@ -582,7 +619,9 @@
                top of the page. */
             btn.focus({ preventScroll: true });
             btn.disabled = true;
-            await Account.signOut();
+            // Still signed in (the request failed, and a window says so):
+            // the name goes back to being pressable.
+            if (!(await Account.signOut())) { btn.disabled = false; return; }
             const again = document.getElementById("account-signin");
             if (again && (!document.activeElement || document.activeElement === document.body || !btn.isConnected)) {
                 again.focus({ preventScroll: true });
@@ -925,11 +964,13 @@
             if (busy) return;
             const problem = Account.checkNickname(input.value);
             if (problem) { say(problem, true); input.focus(); return; }
-            /* The same name again would be saved as "no change", and the
-               ask would stand — so say so here rather than close the window
-               on a save that answered nothing. Compared as the server
-               compares for "taken" would be too clever: a re-punctuated
-               name IS a different nickname, and the admins can look again. */
+            /* The same name again is refused, so say so here without a
+               round trip. Only the exact name: the server also refuses the
+               rejected name re-cased or re-punctuated ("H1tlerFan" as
+               "h1tlerfan", compared as "taken" compares — 30 Sept 2026; it
+               used to let that through and unlock the games), and that
+               comes back as a 400 whose sentence the catch below shows,
+               with the field kept for another try. */
             if (rejected && Account.tidyNickname(input.value) === (me.nick || "")) {
                 say("That's the nickname they asked you to change. Choose a different one.", true);
                 input.focus();

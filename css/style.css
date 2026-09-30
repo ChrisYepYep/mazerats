@@ -10640,6 +10640,31 @@ body[data-page="admin"] #activity-sessions {
     pointer-events: none;
 }
 
+/* On a phone the meta row is too narrow for the strip to sit in spare
+   space: at 320-375px an event's date range ran on under the collapsed
+   stack and "UTC" disappeared beneath the icons (30 Sept 2026). So in the
+   narrow layout the row keeps the collapsed strip's own width free on its
+   right, and the date wraps inside what is left instead of passing behind.
+
+   The strip is absolutely placed at right: 0, which is measured from the
+   row's padding box, so the padding moves the text and not the strip.
+   Its width is counted from the icons it holds: the 8px gutter above, 14px
+   for the first icon and 10px for each one after (14px less the 4px tuck),
+   five at most while folded, and the "+N" and its 4px gap on top of that
+   (22px, which is a two-digit count exactly: "+24" measured). Expanded it still reaches left
+   over the text and fades it out, as it does everywhere else; folded it
+   no longer covers anything, so the fade is dropped rather than dimming
+   the end of a date that is in plain sight. */
+@media (max-width: 999px) {
+    .modal-meta-items:has(> .gallery-photos) { padding-right: 22px; }
+    .modal-meta-items:has(> .gallery-photos > .gallery-photo-btn:nth-child(2)) { padding-right: 32px; }
+    .modal-meta-items:has(> .gallery-photos > .gallery-photo-btn:nth-child(3)) { padding-right: 42px; }
+    .modal-meta-items:has(> .gallery-photos > .gallery-photo-btn:nth-child(4)) { padding-right: 52px; }
+    .modal-meta-items:has(> .gallery-photos > .gallery-photo-btn:nth-child(5)) { padding-right: 62px; }
+    .modal-meta-items:has(> .gallery-photos.has-overflow > .gallery-photo-btn) { padding-right: 84px; }
+    .gallery-photos:not(.is-open):not(.is-closing)::before { content: none; }
+}
+
 /* ---------- keyboard focus ----------
 
    The site already had 25 :focus-visible rules; they covered the view
@@ -13330,6 +13355,9 @@ body[data-page="admin"] #activity-sessions {
 }
 .guides-cat:hover,
 .guides-cat:focus-visible { border-color: var(--amber); color: var(--parchment); outline: none; }
+/* The same ring as the text buttons above: a border tint alone is too
+   faint to find the focused category by (30 Sept 2026). */
+.guides-cat:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
 .guides-cat.is-on {
     background: linear-gradient(#6b5327, #52401d);
     border-color: var(--amber-bright);
@@ -14340,9 +14368,11 @@ body[data-page="admin"] #activity-sessions {
         line-height: 1.3;
     }
     /* The photo-frame button hangs down the row's right edge, absolutely
-       placed (.gallery-photos), so the strip stops short of it when it is
-       there: its 22px and an 8px gap. */
-    .modal-meta-items:has(> .gallery-photos) > .incomplete-strip { margin-right: 30px; }
+       placed (.gallery-photos), so the strip has to stop short of it when
+       it is there. The row's own padding-right now keeps that room (the
+       narrow rule just after .gallery-photos::before, 30 Sept 2026), sized
+       to the stack and its 8px gutter, so it needs no margin of its own. */
+    .modal-meta-items:has(> .gallery-photos) > .incomplete-strip { margin-right: 0; }
     .incomplete-strip-label {
         flex: 0 0 auto;
         font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
@@ -14884,7 +14914,7 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
    them by it. Everything it paints — the btn_inactive sprite underneath, the
    flex: 1 stretch, Silkscreen at 0.55rem, the embossed shadow — is undone
    here, so what is left is exactly the admin pill (see ADMIN BUTTONS, ONE
-   SHAPE near the end of this file, which gives .ctl-btn its border, radius
+   STYLE near the end of this file, which gives .ctl-btn its border, radius
    and colours, and its filled .active). */
 /* Written with the body[data-page] prefix so it outranks that shared pill
    rule, which is more specific than a bare class pair and would otherwise
@@ -14893,8 +14923,9 @@ body[data-page="admin"] .admin-nav-grid .chrome-nav-btn {
     flex: none;
     width: 100%;
     min-width: 132px;
-    height: 32px;
-    padding: 0 16px;
+    height: auto;
+    min-height: 26px;
+    padding: 4px 10px;
     justify-content: space-between;
     gap: 10px;
     text-shadow: none;
@@ -16791,58 +16822,139 @@ textarea.ctl-input.de-note {
    full selector list would wreck the grid. */
 .rc-sprite .rc-where { white-space: normal; overflow: visible; line-height: 1.35; }
 
-/* ------------------------------------------------- ADMIN BUTTONS, ONE SHAPE
+/* ------------------------------------------------- ADMIN BUTTONS, ONE STYLE
 
-   The panel had four button looks in it. .admin-action-pill was the one it
-   had settled on — uppercase, letter-spaced, rounded, amber on hover — and
-   it was used for "Add a maze" while the maze rows used .ctl-btn, the map
-   editor used .btn-enter-mini, and the recolour editor arrived using .btn,
-   the site's big public call-to-action, which is twice the size of anything
-   else on this page.
+   Rewritten 30 Sept 2026. The Warren had grown six button looks — the
+   rounded uppercase pill (.admin-action-pill), a smaller Arial version of it
+   (.admin-pill-btn), .ctl-btn, the pixel-framed .btn-enter-mini, .btn and
+   the tag chips — at three sizes and in three typefaces, all in capitals.
+   A row of Edit / Scan / Delete read as shouting, and the 9.6px Arial pills
+   on every furni and room image were the hardest text on the page to read.
 
-   So this is not a new style. It is .admin-action-pill's own values, given to
-   the other three inside the admin stage, matched to the tabs in the top bar
-   that the whole page hangs from. Written as one block rather than by editing
-   four rules so the shared look has ONE place to change, and scoped to
-   body[data-page="admin"] so .btn keeps its public appearance everywhere else
-   on the site — it is the Enter button on the front page.
+   Now every one of them is the archive's own small button: the Timeline /
+   Furni switch on the homepage (.view-switch-btn), value for value — the
+   raised gradient, the fine dark edge with its lit top, Volter in mixed
+   case, amber on hover, the amber fill for "on". The owner asked for exactly
+   that button, for exactly this reason: it is the one on the site that reads
+   well at a small size.
 
-   .chrome-nav-btn is deliberately NOT included. Those are the panel switcher
-   and they are painted with the btn_active/btn_inactive sprites; giving them
-   a border and a radius would draw a rounded rectangle around a picture of a
-   button. */
+   Four roles, told apart by colour rather than by shape:
+     - plain              everything
+     - on                 .active / .selected / aria-pressed: the choice that
+                          is showing, the tab that is open
+     - primary            .admin-pill-solid / .btn-solid: Save, Add — the
+                          same amber as "on", because it is the one to press
+     - destructive        .admin-pill-danger / .admin-delete-btn: red text,
+                          red edge on hover
+
+   Scoped to body[data-page="admin"], so .btn keeps its public look (the
+   Enter button on the front page) everywhere else. The theme stylesheets are
+   generated from this file by tools/themes.js — re-run it after changing any
+   colour here. Written without :is() because that tool splits selector lists
+   on their commas. */
 body[data-page="admin"] .btn,
 body[data-page="admin"] .ctl-btn,
 body[data-page="admin"] .btn-enter-mini,
-body[data-page="admin"] .admin-wiz-zoom-btn {
+body[data-page="admin"] .admin-wiz-zoom-btn,
+body[data-page="admin"] .admin-action-pill,
+body[data-page="admin"] .admin-pill-btn,
+body[data-page="admin"] .admin-wiz-modes button,
+body[data-page="admin"] .tag-chip,
+body[data-page="admin"] .header-state-link {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-family: inherit;
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
+    gap: 5px;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    padding: 4px 10px;
+    background: linear-gradient(#3b3022, #2f2618);
+    border: 1px solid var(--chrome-border);
+    border-image: none;
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
+    color: var(--parchment);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-weight: 400;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    text-shadow: none;
     text-decoration: none;
-    padding: 9px 18px;
-    border: 1.5px solid var(--chrome-highlight);
-    border-radius: 16px;
-    background: rgba(0, 0, 0, 0.2);
-    color: var(--parchment-dim);
-    box-shadow: none;
+    text-align: center;
+    white-space: nowrap;
+    image-rendering: auto;
     cursor: var(--cursor-pointer);
-    transition: color 0.15s, border-color 0.15s, background-color 0.15s, box-shadow 0.2s;
+    transform: none;
+    transition: background-color 0.12s ease-out, color 0.12s ease-out, border-color 0.12s ease-out;
 }
 
 body[data-page="admin"] .btn:hover:not([disabled]),
 body[data-page="admin"] .ctl-btn:hover:not([disabled]),
 body[data-page="admin"] .btn-enter-mini:hover:not([disabled]),
-body[data-page="admin"] .admin-wiz-zoom-btn:hover:not([disabled]) {
+body[data-page="admin"] .admin-wiz-zoom-btn:hover:not([disabled]),
+body[data-page="admin"] .admin-action-pill:hover:not([disabled]),
+body[data-page="admin"] .admin-pill-btn:hover:not([disabled]),
+body[data-page="admin"] .admin-wiz-modes button:hover:not([disabled]),
+body[data-page="admin"] .tag-chip:hover:not([disabled]),
+body[data-page="admin"] .header-state-link:hover,
+body[data-page="admin"] .header-state-link:focus-visible,
+body[data-page="admin"] .btn:focus-visible,
+body[data-page="admin"] .ctl-btn:focus-visible,
+body[data-page="admin"] .btn-enter-mini:focus-visible,
+body[data-page="admin"] .admin-wiz-zoom-btn:focus-visible,
+body[data-page="admin"] .admin-action-pill:focus-visible,
+body[data-page="admin"] .admin-pill-btn:focus-visible,
+body[data-page="admin"] .admin-wiz-modes button:focus-visible,
+body[data-page="admin"] .tag-chip:focus-visible {
+    background: linear-gradient(#4a3c29, #3a2f1f);
+    border-color: var(--amber);
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
+    color: #fff8ec;
+    transform: none;
+}
+
+/* On, and primary: the amber the archive uses for whatever is selected. */
+body[data-page="admin"] .ctl-btn.active,
+body[data-page="admin"] .btn-enter-mini.active,
+body[data-page="admin"] .admin-pill-btn.active,
+body[data-page="admin"] .admin-wiz-modes button.active,
+body[data-page="admin"] .admin-wiz-modes button[aria-pressed="true"],
+body[data-page="admin"] .tag-chip.selected,
+body[data-page="admin"] .admin-action-pill.admin-pill-solid,
+body[data-page="admin"] .btn.btn-solid {
+    background: linear-gradient(#6b5327, #52401d);
     border-color: var(--amber-bright);
     color: #fff8ec;
-    background: rgba(0, 0, 0, 0.2);
-    box-shadow: 0 0 8px rgba(255, 248, 236, 0.65);
-    transform: none;
+}
+
+body[data-page="admin"] .admin-action-pill.admin-pill-solid:hover:not([disabled]),
+body[data-page="admin"] .btn.btn-solid:hover:not([disabled]),
+body[data-page="admin"] .admin-action-pill.admin-pill-solid:focus-visible,
+body[data-page="admin"] .btn.btn-solid:focus-visible {
+    background: linear-gradient(#7a5f2d, #5e4921);
+    border-color: #fff8ec;
+    color: #ffffff;
+}
+
+/* Destructive: red words at rest, so Delete never looks like Edit beside
+   it, and a red edge when it is about to be pressed. */
+body[data-page="admin"] .admin-pill-btn.admin-pill-danger,
+body[data-page="admin"] .admin-action-pill.admin-pill-danger,
+body[data-page="admin"] .admin-delete-btn {
+    color: var(--danger-text);
+}
+
+body[data-page="admin"] .admin-pill-btn.admin-pill-danger:hover:not([disabled]),
+body[data-page="admin"] .admin-action-pill.admin-pill-danger:hover:not([disabled]),
+body[data-page="admin"] .admin-delete-btn:hover:not([disabled]),
+body[data-page="admin"] .admin-pill-btn.admin-pill-danger:focus-visible,
+body[data-page="admin"] .admin-action-pill.admin-pill-danger:focus-visible,
+body[data-page="admin"] .admin-delete-btn:focus-visible {
+    border-color: var(--danger);
+    color: #fff0ec;
 }
 
 /* Disabled has to read as disabled at a glance, because several of these are
@@ -16851,28 +16963,54 @@ body[data-page="admin"] .admin-wiz-zoom-btn:hover:not([disabled]) {
 body[data-page="admin"] .btn[disabled],
 body[data-page="admin"] .ctl-btn[disabled],
 body[data-page="admin"] .btn-enter-mini[disabled],
-body[data-page="admin"] .admin-wiz-zoom-btn[disabled] {
+body[data-page="admin"] .admin-wiz-zoom-btn[disabled],
+body[data-page="admin"] .admin-action-pill[disabled],
+body[data-page="admin"] .admin-pill-btn[disabled],
+body[data-page="admin"] .admin-wiz-modes button[disabled],
+body[data-page="admin"] .tag-chip[disabled] {
     opacity: 0.4;
     cursor: default;
-    box-shadow: none;
 }
 
-/* The row actions are small and there are three per maze, so they keep a
-   tighter padding — the shape is the same, the scale is not. */
-body[data-page="admin"] .chrome-list-row .ctl-btn,
-body[data-page="admin"] .ff-run .ctl-btn,
-body[data-page="admin"] .rc-bar .btn {
-    padding: 5px 12px;
-    font-size: 0.64rem;
+/* The site switches keep the glow that says which way the site is set: green
+   for open, orange for the two closed states. It is the one place on the page
+   where "which is on" is a warning, so it is worth more than the amber. */
+body[data-page="admin"] .btn-enter-mini[data-state].active,
+body[data-page="admin"] .btn-enter-mini[data-ff-state].active {
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 0 8px 1px rgba(111, 143, 79, 0.8);
+}
+body[data-page="admin"] .btn-enter-mini[data-state="coming-soon"].active,
+body[data-page="admin"] .btn-enter-mini[data-state="maintenance"].active,
+body[data-page="admin"] .btn-enter-mini[data-ff-state="coming-soon"].active,
+body[data-page="admin"] .btn-enter-mini[data-ff-state="maintenance"].active {
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 0 8px 1px rgba(184, 72, 31, 0.8);
 }
 
-/* An active state that matches the tab in the top bar when it is open: the
-   same fill, so "this one is on" looks the same everywhere on the page. */
-body[data-page="admin"] .ctl-btn.active,
-body[data-page="admin"] .btn-enter-mini.active {
-    background: var(--chrome-fill);
-    border-color: var(--amber);
-    color: var(--parchment);
+/* A choice used to be one track with the answer filled in. With every button
+   now raised on its own, a track around them is a box around boxes, so the
+   group is just a row — the Timeline / Furni pair's 5px gap — and "which one"
+   is the amber. Rows with a date field in them keep the buttons as tall as
+   the field. */
+/* The section showing, on the NAV tab — see showPanel in js/admin.js. */
+.admin-tab-where {
+    color: var(--amber-bright);
+}
+/* Not on a phone: the four tabs only just fit one row there, and the panel's
+   heading is on screen right under them anyway. */
+@media (max-width: 720px) {
+    .admin-tab-where { display: none; }
+}
+
+body[data-page="admin"] .ctl-seg,
+body[data-page="admin"] .admin-wiz-modes {
+    display: flex;
+    align-items: stretch;
+    gap: 5px;
+    height: auto;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
 }
 
 /* Logging out. While js/admin.js discards the drafts and waits on the
@@ -17044,6 +17182,32 @@ body.is-logging-out * {
     #search-wrap .view-switch-btn {
         padding-left: 7px;
         padding-right: 7px;
+    }
+}
+
+/* ONE LINE FOR A WINDOW TITLE AT 320px (30 Sept 2026).
+
+   A touch screen lets a window's title take two lines (see "A room's name
+   gets the width the window can spare"), and at 320px the bar's two
+   reservations leave the name about 100px: "Guess the Maze" came out as
+   "Guess the / Maze", and a long name as two lines of which the second was
+   cut short anyway. Below 360px the title goes back to one line and loses
+   its 0.5px of letter-spacing instead, which is what "Guess the Maze" was
+   short by (103px spaced, 96px not). The size stays at the face's native
+   9px, the size its pixels were drawn for. A name that still doesn't fit
+   ellipsises on its one line, as it does on a wide screen. */
+@media (max-width: 360px) {
+    .chrome-titlebar h1,
+    .chrome-titlebar h2,
+    .chrome-titlebar .chrome-title-text,
+    .modal .chrome-titlebar h2 {
+        display: block;
+        -webkit-line-clamp: unset;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: var(--titlebar-grip-rows);
+        letter-spacing: 0;
     }
 }
 
@@ -17998,10 +18162,11 @@ body.is-viewer .admin-panel[data-panel="players"] .pl-owner { display: none !imp
    than the 23-24px the fixed tracks give them — the saved-palette row stood
    half as tall again as the theme row above it. Put the track's own sizing
    back for the buttons in every track. */
+/* (30 Sept 2026) The tracks are gone — see ADMIN BUTTONS, ONE STYLE — and
+   each button in a group is the standard raised button now, border and all.
+   What is kept from this fix is the floor on its height, so a group that
+   grows by rows still has rows of one height. */
 body[data-page="admin"] .ctl-seg .btn-enter-mini {
-    padding-top: 0;
-    padding-bottom: 0;
-    border: none;
     min-height: 23px;
 }
 

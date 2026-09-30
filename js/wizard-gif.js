@@ -266,10 +266,49 @@ window.WizardGif = (function () {
        for one a visitor would never see at all. Without a view attached
        nothing is filtered and the page's own opacity stands, which is what
        the public map's DOM already means. */
+    /* WHAT A VISITOR'S MAP DOES NOT HAVE AT ALL (30 Sept 2026).
+
+       `hidden` was the only test, and it is not the public map's. The public
+       GET (netlify/functions/wizard.js) also leaves out every room and trail
+       an enabled secret is holding back, and every trail with a room at
+       either end that is not on the map — so a GIF made in the editor drew
+       the secret passages in full, footprints and names, into the one thing
+       made to be shared. The same subtraction, from the same records: the
+       editor's copy carries the reveals, and the view keeps them. Worked out
+       once per frame in renderStill, not per element. */
+    let offMap = null;
+
+    function visitorOffMap() {
+        if (!attached) return null;
+        const rooms = new Set();
+        const paths = new Set();
+        const reveals = attached.getReveals ? attached.getReveals() : [];
+        for (const reveal of reveals || []) {
+            if (!reveal || reveal.enabled === false) continue;
+            for (const id of reveal.rooms || []) rooms.add(String(id));
+            for (const id of reveal.paths || []) paths.add(String(id));
+        }
+        const known = new Set();
+        for (const room of attached.getRooms()) {
+            known.add(room.id);
+            if (room.hidden) rooms.add(room.id);
+        }
+        const gone = id => !!id && (rooms.has(id) || !known.has(id));
+        for (const path of attached.getPaths()) {
+            if (path.hidden || gone(path.from) || gone(path.to)) paths.add(path.id);
+        }
+        return { rooms, paths };
+    }
+
     function publicAlpha(el, atZoom) {
         const record = recordFor(el);
         if (!record) return Number(getComputedStyle(el).opacity) || 1;
         if (record.hidden) return 0;
+        if (offMap) {
+            const kind = el.dataset.kind;
+            if (kind === "room" && offMap.rooms.has(record.id)) return 0;
+            if (kind === "path" && offMap.paths.has(record.id)) return 0;
+        }
         const band = attached.bandOpacityAt ? attached.bandOpacityAt(record, atZoom) : 1;
         const own = record.opacity == null ? 1 : Number(record.opacity);
         return band * own;
@@ -359,6 +398,17 @@ window.WizardGif = (function () {
            question worth being able to ask of a real frame rather than of
            the code that draws one. */
         const drew = { rooms: 0, trails: 0, layers: 0, skippedHidden: 0, skippedBand: 0, skippedOffscreen: 0 };
+        offMap = visitorOffMap();
+        // Counted as hidden in `drew`: from a visitor's side, that is what
+        // they are.
+        const offMapRecord = el => {
+            const record = recordFor(el);
+            if (!record) return false;
+            if (record.hidden) return true;
+            const kind = el.dataset.kind;
+            return !!offMap && ((kind === "room" && offMap.rooms.has(record.id))
+                || (kind === "path" && offMap.paths.has(record.id)));
+        };
 
         const inShot = (x, y, w, h) =>
             x + w >= clip.x0 && x <= clip.x1 && y + h >= clip.y0 && y <= clip.y1;
@@ -374,7 +424,7 @@ window.WizardGif = (function () {
         // The pictures, each with its own turn, flip and fading.
         for (const layer of canvasEl.querySelectorAll("img.wiz-layer")) {
             const alpha = publicAlpha(layer, atZoom);
-            if (alpha < 0.02) { if (recordFor(layer) && recordFor(layer).hidden) drew.skippedHidden++; else drew.skippedBand++; }
+            if (alpha < 0.02) { if (offMapRecord(layer)) drew.skippedHidden++; else drew.skippedBand++; }
             if (alpha < 0.02) continue;
             if (!inShot(layer.offsetLeft - layer.offsetWidth, layer.offsetTop - layer.offsetHeight,
                 layer.offsetWidth * 2, layer.offsetHeight * 2)) continue;
@@ -400,7 +450,7 @@ window.WizardGif = (function () {
            them, so a stroke that should sit under a name still does. */
         for (const trail of canvasEl.querySelectorAll(".wiz-trail")) {
             const alpha = publicAlpha(trail, atZoom);
-            if (alpha < 0.02) { if (recordFor(trail) && recordFor(trail).hidden) drew.skippedHidden++; else drew.skippedBand++; }
+            if (alpha < 0.02) { if (offMapRecord(trail)) drew.skippedHidden++; else drew.skippedBand++; }
             if (alpha < 0.02) continue;
             enterElement(ctx, trail, alpha);
             drew.trails++;
@@ -475,7 +525,7 @@ window.WizardGif = (function () {
         for (const room of canvasEl.querySelectorAll(".wiz-room")) {
             const name = infoFor(room);
             const alpha = publicAlpha(room, atZoom);
-            if (alpha < 0.02) { if (recordFor(room) && recordFor(room).hidden) drew.skippedHidden++; else drew.skippedBand++; }
+            if (alpha < 0.02) { if (offMapRecord(room)) drew.skippedHidden++; else drew.skippedBand++; }
             if (alpha < 0.02) continue;
             // Names are scaled about their middle, so allow for the biggest
             // of them reaching well past its own box.

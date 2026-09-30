@@ -110,6 +110,22 @@ function normaliseCode(value) {
     return String(value == null ? "" : value).trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/* What a code is COMPARED by: letters and digits only (30 Sept 2026).
+
+   normaliseCode above is still how a code is stored and shown, but matching
+   went on the stored string, and the admin's Code field takes anything
+   while the map's keyboard only takes letters, digits, spaces and
+   apostrophes (the keydown handler in js/wizard.js). So a code saved as
+   "wingardium-leviosa" could not be typed on a desktop at all. Comparing
+   both sides with everything but [a-z0-9] taken out means the hyphen, the
+   space and the apostrophe stop mattering — "wingardium-leviosa",
+   "wingardium leviosa" and "wingardiumleviosa" are one code — and a stored
+   code is keyed at comparison time, so nothing already saved needs
+   rewriting. The page keys its buffer the same way (codeKey there). */
+function codeKey(value) {
+    return normaliseCode(value).replace(/[^a-z0-9]+/g, "");
+}
+
 /* Every room and trail id that some enabled secret is holding back.
 
    This is the set the public GET subtracts, and it is the reason the feature
@@ -147,7 +163,10 @@ function heldBack(reveals) {
    list still gets one word per request, and somebody enumerating every
    three-letter code still needs every three-letter request. */
 function opens(buffer, code) {
-    return !!code && (buffer === code || buffer.endsWith(code));
+    // `buffer` arrives keyed already (see the unlock); the stored code is
+    // keyed here.
+    const key = codeKey(code);
+    return !!key && (buffer === key || buffer.endsWith(key));
 }
 
 /* What a visitor may call a secret by.
@@ -170,6 +189,71 @@ function publicSecretId(reveal) {
     return "s" + crypto.createHmac("sha256", process.env.SESSION_SECRET || "mazerats-wizard")
         .update("wizard-reveal:" + String(reveal.id))
         .digest("hex").slice(0, 16);
+}
+
+/* What a visitor may call a room, a trail or a picture by (30 Sept 2026).
+
+   The stored ids are the connection sheet's row numbers — r001, r039, c065
+   — and they went out as they were. So the public list ran r061, r064, and
+   the two missing between them said, as plainly as a signpost, that two
+   rooms were being kept back and roughly where in the sheet they sat. Every
+   id a visitor is sent is now a keyed hash of the real one instead, the
+   same way publicSecretId does it: stable across instances, cold starts and
+   the edge cache, so a room in the cached GET and the same room in a live
+   unlock answer carry the same id and join up on the page; and not
+   reversible without the key. The kind is in what is hashed, so a room and
+   a trail that happen to share an id do not share a public one.
+
+   Everything that names a record is mapped — a room's own id and its
+   exits, a trail's id and both its ends, a picture's id, a secret's running
+   order and landing — by the helpers below and nowhere else. The editor's
+   ?fresh=1 copy keeps the real ids: it writes them back. The page never
+   read anything into an id's shape (addresses are name slugs; see
+   buildSlugs in js/wizard.js). */
+const PUBLIC_PREFIX = { room: "r", path: "t", layer: "l" };
+
+function publicRecordId(kind, id) {
+    if (id === null || id === undefined || id === "") return id;
+    return PUBLIC_PREFIX[kind] + crypto.createHmac("sha256", process.env.SESSION_SECRET || "mazerats-wizard")
+        .update(`wizard-${kind}:${String(id)}`)
+        .digest("hex").slice(0, 12);
+}
+
+const publicRoomId = id => publicRecordId("room", id);
+
+function publicRoom(room) {
+    const out = { ...room, id: publicRoomId(room.id) };
+    if (Array.isArray(room.exits)) {
+        out.exits = room.exits.map(e => (e && typeof e === "object"
+            ? { ...e, to: publicRoomId(e.to) } : publicRoomId(e)));
+    }
+    return out;
+}
+
+const publicPath = p => ({ ...p, id: publicRecordId("path", p.id), from: publicRoomId(p.from), to: publicRoomId(p.to) });
+const publicLayer = l => ({ ...l, id: publicRecordId("layer", l.id) });
+
+/* A running-order entry is "room:<id>" or "path:<id>"; the id half is
+   mapped and the kind half kept, so revealOrder in js/wizard.js reads it
+   exactly as before. */
+function publicSequenceEntry(entry) {
+    const [kind, id] = String(entry).split(/:(.+)/);
+    return kind === "room" || kind === "path" ? `${kind}:${publicRecordId(kind, id)}` : entry;
+}
+
+/* The editor's own fields, taken off every record a visitor is sent (30 Sept
+   2026). `notes` on a trail is the connection sheet's free-text column —
+   written for whoever is building the map, not for a reader, and on a map
+   of secret passages the one column most likely to say where one goes —
+   and `locked` and the two timestamps are bookkeeping. The page reads none
+   of them (js/wizard.js, js/wizard-map.js); the editor's ?fresh=1 copy
+   still has all four. */
+const EDITOR_ONLY = ["notes", "locked", "createdAt", "updatedAt"];
+
+function forVisitor(record) {
+    const out = { ...record };
+    for (const field of EDITOR_ONLY) delete out[field];
+    return out;
 }
 
 function slugify(text) {
@@ -497,10 +581,11 @@ async function route(event, wizard) {
             ? { ...r, exits: r.exits.filter(e => onMap.has(e && typeof e === "object" ? e.to : e)) }
             : r);
         const payload = {
-            map: { ...MAP_DEFAULTS, ...(all.find(d => d.kind === "map") || {}) },
-            layers: of("layer").filter(l => !l.hidden).sort((a, b) => (a.z || 0) - (b.z || 0)),
-            rooms,
-            paths,
+            map: forVisitor({ ...MAP_DEFAULTS, ...(all.find(d => d.kind === "map") || {}) }),
+            // Real ids out, opaque ones in: see publicRecordId.
+            layers: of("layer").filter(l => !l.hidden).sort((a, b) => (a.z || 0) - (b.z || 0)).map(forVisitor).map(publicLayer),
+            rooms: rooms.map(forVisitor).map(publicRoom),
+            paths: paths.map(forVisitor).map(publicPath),
             /* What a visitor is told about the secrets they have not found:
                that they exist, how many, and whatever hint each carries. Not
                the name — "The One-Eyed Witch Passage" answers most of the
@@ -547,7 +632,7 @@ async function route(event, wizard) {
            so batching buys a round trip and not a larger allowance. */
         const asked = Array.isArray(body.codes) ? body.codes
             : body.code === undefined ? [] : [body.code];
-        const codes = [...new Set(asked.map(normaliseCode))]
+        const codes = [...new Set(asked.map(codeKey))]
             // An empty box is not a guess, and a code long enough to be an
             // attack is not one either.
             .filter(code => code && code.length <= 120)
@@ -644,13 +729,20 @@ async function route(event, wizard) {
            the page cannot catch it, because trailHidden in js/wizard-map.js
            only drops a trail whose room it can find and see is hidden. */
         const revealedSet = new Set(revealedRoomIds);
-        const hiddenRooms = revealedRoomIds.length
+        // Needed for a secret that names only trails, too: their ends are
+        // checked against it below.
+        const hiddenRooms = (revealedRoomIds.length || pathIds.length)
             ? new Set((await wizard.find(
                 { kind: "room", hidden: true },
                 { projection: { _id: 0, id: 1 } }
             ).toArray()).map(r => r.id).filter(id => !revealedSet.has(id)))
             : new Set();
-        const offMap = id => !!id && (stillHeld.rooms.has(id) || hiddenRooms.has(id));
+        /* Minus what this answer reveals (30 Sept 2026). stillHeld is built
+           from the OTHER secrets, so a room shared by two of them was "still
+           held" even with one of the two opened here, and every trail joining
+           it to the map was dropped as if it led nowhere. */
+        const offMap = id => !!id && !revealedSet.has(id) &&
+            (stillHeld.rooms.has(id) || hiddenRooms.has(id));
 
         /* AND NOT A TRAIL THAT IS HIDDEN ITSELF. The ends were checked and
            the trail's own `hidden` flag was not: a trail an admin had hidden
@@ -694,7 +786,21 @@ async function route(event, wizard) {
            is for it to be seen. The stored record is untouched — switch the
            secret off and the room goes back to being hidden exactly as it
            was. */
-        const shown = record => ({ ...record, hidden: false });
+        const shown = record => ({ ...forVisitor(record), hidden: false });
+
+        /* The same two subtractions the public GET makes, applied to what
+           comes back here (30 Sept 2026). A revealed room's hand-written
+           exits went out whole, so opening one secret handed over the ids —
+           slugs of the names — of rooms a different, unopened secret is
+           holding. And a trail the secret names itself was never checked at
+           its ends, so one running on into another secret's rooms drew
+           footprints into blank parchment. Exits to an off-map room come off;
+           a named trail with an off-map end is left out. */
+        const exitTo = e => (e && typeof e === "object" ? e.to : e);
+        const withExits = room => Array.isArray(room.exits)
+            ? { ...room, exits: room.exits.filter(e => !offMap(exitTo(e))) }
+            : room;
+        const endsOnMap = p => !offMap(p.from) && !offMap(p.to);
 
         const found = reveals.map(reveal => ({
             secret: {
@@ -712,23 +818,40 @@ async function route(event, wizard) {
                    arrays happen to be in. Absent for a reveal made before
                    this existed, and markFound falls back to the old
                    behaviour — every trail, then every name. */
-                sequence: reveal.sequence || null,
+                /* Only entries naming what this secret itself holds (30 Sept
+                   2026). pick() tidies the list's shape, not its membership,
+                   so a room taken out of the secret after the order was set
+                   stayed in it, and went out here by id — the slug of its
+                   name — even once another secret held it or it was hidden.
+                   The page drops entries it was not sent anyway (revealOrder
+                   in js/wizard.js), so nothing it plays changes. */
+                // Filtered on the real ids, then mapped to the public ones
+                // the records below carry (see publicRecordId).
+                sequence: Array.isArray(reveal.sequence)
+                    ? reveal.sequence.filter(entry => {
+                        const [kind, id] = String(entry).split(/:(.+)/);
+                        return kind === "room" ? (reveal.rooms || []).includes(id)
+                            : kind === "path" && (reveal.paths || []).includes(id);
+                    }).map(publicSequenceEntry)
+                    : null,
                 // Where the camera stops following. Null means "the last room
                 // in the order", which is the sensible reading of an unset one.
-                landing: reveal.landing || null,
+                // One of its own rooms or nothing, for the same reason.
+                landing: reveal.landing && (reveal.rooms || []).includes(reveal.landing)
+                    ? publicRoomId(reveal.landing) : null,
                 // How close it follows, and how long each footfall holds.
                 // Null for either means the page's default.
                 followZoom: reveal.followZoom ?? null,
                 stepMs: reveal.stepMs ?? null
             },
-            rooms: (reveal.rooms || []).map(id => roomById.get(id)).filter(Boolean).map(shown),
+            rooms: (reveal.rooms || []).map(id => roomById.get(id)).filter(Boolean).map(withExits).map(shown).map(publicRoom),
             /* The trails it names, then the ones that join it to the map,
                deduplicated by id — a trail running between two of this
                secret's own rooms is in both lists. */
             paths: [...new Map(
-                (reveal.paths || []).map(id => pathById.get(id)).filter(Boolean)
+                (reveal.paths || []).map(id => pathById.get(id)).filter(Boolean).filter(endsOnMap)
                     .concat(linksFor(reveal))
-                    .map(p => [p.id, shown(p)])
+                    .map(p => [p.id, publicPath(shown(p))])
             ).values()]
         }));
 
@@ -925,3 +1048,6 @@ exports.handler = async (event) => {
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally
    defined above; what the handler answers is unchanged. */
 exports.handler = require("./_errors").withErrorReporting("wizard", exports.handler);
+
+// For tools/test-wizard-secrets.js, which checks the page's records against it.
+exports.publicRecordId = publicRecordId;

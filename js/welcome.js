@@ -29,7 +29,8 @@
    anything, and nobody has to sit refreshing on launch morning.
 
    The poll is every 20–40 seconds near and after zero, and every few
-   minutes before that (see FAR_POLL_MS).
+   minutes before that, or while Coming Soon has no date at all (see
+   FAR_POLL_MS and watchForOpening).
 
    ---- AND IT IS JITTERED, WHICH IS THE WHOLE POINT OF THE NUMBERS BELOW.
 
@@ -87,10 +88,17 @@ const POLL_TIMEOUT_MS = 10000;
 
 const isGatedState = s => s === "coming-soon" || s === "maintenance";
 
-/* The landing state, straight from the function (or a ten-second-old edge
-   copy at worst). null for anything that is not a clear answer — a failed,
-   timed-out or malformed read is "ask again later", never "open". */
-async function freshLandingState() {
+/* The settings, straight from the function (or a ten-second-old edge copy at
+   worst). null for anything that is not a clear answer — a failed, timed-out
+   or malformed read is "ask again later", never "open".
+
+   The whole answer, not just landingState (30 Sept 2026): the poll takes
+   launchAt from it too. A page whose first read failed got the stand-in,
+   which has no date, and so never showed the clock however many real
+   answers the poll heard after — and, with no date to go on, polled at the
+   20–40s launch-morning pace for days. A date the admins set or moved while
+   the page was open was missed the same way. */
+async function freshSettings() {
     const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), POLL_TIMEOUT_MS) : null;
     try {
@@ -102,7 +110,7 @@ async function freshLandingState() {
         });
         if (!res.ok) return null;
         const body = await res.json();
-        return body && typeof body.landingState === "string" && body.landingState ? body.landingState : null;
+        return body && typeof body.landingState === "string" && body.landingState ? body : null;
     } catch (e) {
         return null;
     } finally {
@@ -172,22 +180,42 @@ window.addEventListener("pageshow", e => {
 /* Asks, jittered, until the site opens — then goes in. Runs for as long as
    this page is gated, from load, whether launchAt is ahead, behind or unset.
 
-   target is the launch Date, or null. It only sets the cadence (see
+   getTarget() is the launch Date, or null, asked afresh each time (the poll
+   itself can change it — see freshSettings). It only sets the cadence (see
    FAR_POLL_MS); it never decides anything, because zero on the clock does
    not open the site — only the admin's switch does.
 
-   onStillGated(state) hears each gated answer, so a site that moves from
-   Coming Soon to Maintenance (or back) relabels the button without a
-   reload. */
-function watchForOpening(target, onStillGated) {
-    const far = () => !!target && target.getTime() - Date.now() > FAR_THRESHOLD_MS;
+   onStillGated(state, settings) hears each gated answer, so a site that
+   moves from Coming Soon to Maintenance (or back) relabels the button
+   without a reload.
+
+   COMING SOON WITH NO DATE IS FAR (30 Sept 2026). No date used to mean the
+   fast 20–40s cadence, on the reasoning that a missing date might be a
+   launch about to happen. But Coming Soon with no date set is the page
+   before anybody has picked one, and it can sit like that for weeks with
+   every open tab asking three times a minute. So it takes the far cadence:
+   an admin opening the site early is still heard within a few minutes, and
+   a date set in the meantime is picked up by the next answer and moves the
+   pace on from there. Maintenance stays fast whatever the date says — the
+   date is the launch's, not the end of the work, and a Maintenance window
+   is short and ends at the switch. lastState is the last gated state heard,
+   seeded with initialState, the one the page loaded with. */
+function watchForOpening(getTarget, onStillGated, initialState) {
+    let lastState = initialState || null;
+    const far = () => {
+        if (lastState === "maintenance") return false;
+        const target = getTarget();
+        if (!target) return lastState === "coming-soon";
+        return target.getTime() - Date.now() > FAR_THRESHOLD_MS;
+    };
     const nextDelay = () => far()
         ? FAR_POLL_MS + Math.floor(Math.random() * FAR_POLL_JITTER_MS)
         : COUNTDOWN_POLL_MS + Math.floor(Math.random() * COUNTDOWN_POLL_JITTER_MS);
 
     let leaving = false;
     async function poll() {
-        const state = await freshLandingState();
+        const settings = await freshSettings();
+        const state = settings ? settings.landingState : null;
         if (state && !isGatedState(state)) {
             if (leaving) return;
             leaving = true;
@@ -195,7 +223,8 @@ function watchForOpening(target, onStillGated) {
             return;
         }
         if (state) {
-            try { onStillGated(state); } catch (e) { /* the poll outlives a bad label */ }
+            lastState = state;
+            try { onStillGated(state, settings); } catch (e) { /* the poll outlives a bad label */ }
         }
         setTimeout(poll, nextDelay());
     }
@@ -515,13 +544,14 @@ document.addEventListener("DOMContentLoaded", async () => {
        exactly as the block above left it. */
     const gated = isGatedState(landingState);
     if (!gated) return;
-    let target = null;
-    if (launchAt) {
-        const parsed = new Date(launchAt);
-        // Past as well as future: startCountdown shows the "any moment"
-        // state for a date already gone rather than nothing at all.
-        if (!isNaN(parsed.getTime())) target = parsed;
-    }
+    // Past as well as future: startCountdown shows the "any moment" state
+    // for a date already gone rather than nothing at all.
+    const launchDate = v => {
+        if (!v || typeof v !== "string") return null;
+        const parsed = new Date(v);
+        return isNaN(parsed.getTime()) ? null : parsed;
+    };
+    let target = launchDate(launchAt);
     /* COMING SOON ONLY, not every gated state (28 Sept 2026).
 
        launchAt is the date the archive OPENS, and it is not cleared once it
@@ -550,10 +580,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     // Always, while gated — see the note on watchForOpening. The answer
     // above may itself have been a stale edge copy, and this is what
     // corrects it.
-    watchForOpening(target, state => {
+    watchForOpening(() => target, (state, settings) => {
         labelGated(state);
+        // A real answer's date replaces the one this page started with —
+        // arrived late, moved, or cleared — and the clock is redrawn for it.
+        const fresh = launchDate(settings && settings.launchAt);
+        if ((fresh ? fresh.getTime() : null) !== (target ? target.getTime() : null)) {
+            target = fresh;
+            if (countdown) { countdown.stop(); countdown = null; }
+        }
         showCountdownFor(state);
-    });
+    }, landingState);
 });
 
 // Upcoming Events widget on this page (see js/site.js) opens the event

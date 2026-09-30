@@ -222,6 +222,26 @@ const Api = {
             if (e && e.name === "AbortError") throw this._timeoutError();
             throw e;
         };
+        /* No answer at all (30 Sept 2026). fetch() rejects with a bare
+           TypeError when the request never reached us — offline, DNS, a
+           dropped connection — and its words ("Failed to fetch", "Load
+           failed", "NetworkError when attempting to fetch resource.") went
+           straight onto the contact form. Now the same sentence Add Maze
+           Info's postJson (js/console-info.js) says, or its read-shaped
+           twin for a GET. err.network marks it; no caller tested for the
+           TypeError itself. Only the request is mapped: a body read that
+           fails after the headers is left as it was. */
+        const mapNetwork = e => {
+            if (e && e.name === "TypeError") {
+                const method = String((opts && opts.method) || "GET").toUpperCase();
+                const err = new Error(method === "GET"
+                    ? "That couldn't be reached. Check your connection and try again."
+                    : "That didn't send. Check your connection and try again.");
+                err.network = true;
+                throw err;
+            }
+            return mapAbort(e);
+        };
         return fetch(url, { ...(opts || {}), signal: controller.signal }).then(res => {
             // See INCLUDING A TIMEOUT WHILE THE BODY IS READ, above.
             ["json", "text", "blob", "arrayBuffer"].forEach(name => {
@@ -230,7 +250,7 @@ const Api = {
                 try { res[name] = () => read.call(res).catch(mapAbort); } catch (e) { /* frozen: left raw */ }
             });
             return res;
-        }, mapAbort);
+        }, mapNetwork);
     },
 
     /* A body read with a fallback for one that is not JSON (an HTML error

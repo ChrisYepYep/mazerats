@@ -130,6 +130,8 @@
             }
             var path = u.pathname;
             try { path = decodeURI(path); } catch (e) { /* keep it encoded */ }
+            // As the server does: "%00" and friends decode to control characters.
+            path = path.replace(/[\u0000-\u001f\u007f]/g, "");
             var out = (u.host === location.host ? "" : "//" + u.host) + path + (kept.length ? "?" + kept.join("&") : "");
             return out.slice(0, max || 300);
         }
@@ -170,11 +172,15 @@
         }
 
         /* An element, briefly: tag#id.class.class — enough to find it in the
-           page's markup, and nothing it holds. */
-        function describe(el) {
+           page's markup, and nothing it holds. `bare` leaves the id out, for
+           anything inside data-crumb-private (30 Sept 2026): ids there were
+           built from Discord IDs, which then sat in breadcrumbs for 90 days.
+           And a long run of digits in any id is taken out, in case one
+           somewhere else still is. */
+        function describe(el, bare) {
             if (!el || !el.tagName) return "";
             var s = el.tagName.toLowerCase();
-            if (el.id) s += "#" + String(el.id).slice(0, 30);
+            if (el.id && !bare) s += "#" + String(el.id).replace(/\d{6,}/g, "#").slice(0, 30);
             var cls = typeof el.className === "string" ? el.className.replace(/^\s+|\s+$/g, "").split(/\s+/) : [];
             for (var i = 0; i < cls.length && i < 2; i++) if (cls[i]) s += "." + cls[i].slice(0, 30);
             return s.slice(0, 80);
@@ -458,7 +464,10 @@
                     if (!Object.prototype.hasOwnProperty.call(seen, fp)) continue;
                     var s = seen[fp];
                     if (s.sent && s.extra > 0 && reports.indexOf(s.rep) < 0) {
-                        reports.push({ kind: s.rep.kind, message: s.rep.message, source: s.rep.source, line: s.rep.line, page: s.rep.page, count: s.extra, repeat: true });
+                        /* Everything the server fingerprints — fn included
+                           (30 Sept 2026): without it a failed call's repeats
+                           made a second, empty group of their own. */
+                        reports.push({ kind: s.rep.kind, message: s.rep.message, source: s.rep.source, line: s.rep.line, fn: s.rep.fn, page: s.rep.page, count: s.extra, repeat: true });
                         s.extra = 0;
                     }
                 }
@@ -519,7 +528,6 @@
                 }
                 var clickable = !!hit;
                 if (!hit) hit = el;
-                var c = { type: "click", el: describe(hit) };
                 var tag = hit.tagName;
                 /* A player's name must never ride along (29 Sept 2026): the
                    privacy policy promises reports carry no names, and the
@@ -529,6 +537,8 @@
                    marked data-crumb-private gives only what the thing is —
                    its role, or its tag ("button"). The nearest mark wins. */
                 var mark = el.closest ? el.closest("[data-crumb], [data-crumb-private]") : null;
+                var hush = !!(el.closest && el.closest("[data-crumb-private]"));
+                var c = { type: "click", el: describe(hit, hush) };
                 if (tag === "INPUT") {
                     c.el = (c.el + "[type=" + String(hit.type || "text").slice(0, 12) + "]").slice(0, 80);
                 } else if (mark && mark.hasAttribute("data-crumb") && !mark.hasAttribute("data-crumb-private")) {

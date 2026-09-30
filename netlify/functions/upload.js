@@ -22,6 +22,16 @@ const EXT_BY_MIME = {
     "image/webp": "webp"
 };
 
+/* Each type's opening bytes — the same signatures dead-end-leads.js sniffs
+   its visitors' screenshots by. */
+const SIGNATURES = {
+    "image/png": b => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47,
+    "image/jpeg": b => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+    "image/gif": b => b.length > 6 && b.toString("ascii", 0, 4) === "GIF8",
+    "image/webp": b => b.length > 12 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP"
+};
+const sniffImage = buffer => Object.keys(SIGNATURES).find(type => SIGNATURES[type](buffer)) || null;
+
 function slugify(text) {
     return (text || "").toLowerCase().trim()
         .replace(/[^a-z0-9]+/g, "-")
@@ -179,12 +189,22 @@ async function handle(event) {
 
         const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
         if (!match) return json(400, { error: "Expected a base64 image data URL" });
-        const [, mimeType, base64] = match;
-        const ext = EXT_BY_MIME[mimeType];
-        if (!ext) return json(400, { error: "Unsupported image type — use PNG, JPG, GIF, or WebP" });
+        const [, claimed, base64] = match;
+        if (!EXT_BY_MIME[claimed]) return json(400, { error: "Unsupported image type — use PNG, JPG, GIF, or WebP" });
 
         const buffer = Buffer.from(base64, "base64");
         if (buffer.length > MAX_BYTES) return json(400, { error: "Image too large — keep uploads under 4MB" });
+        /* The bytes decide what the file is, not the label (30 Sept 2026).
+           The type above is only the caller's word — the browser's guess
+           from the file's extension — so any file at all could be stored
+           and served from the site's own origin under an image address, as
+           long as it was called image/png. dead-end-leads.js has always
+           sniffed its uploads this way. A real picture with the wrong
+           extension (a JPEG saved as .png) is stored as what it really is
+           rather than refused. */
+        const mimeType = sniffImage(buffer);
+        if (!mimeType) return json(400, { error: "That file isn't a PNG, JPG, GIF or WebP image." });
+        const ext = EXT_BY_MIME[mimeType];
 
         const key = `${folder}/${slugify(prefix)}/${Date.now()}-${slugify(filename || "image")}.${ext}`;
         await store.set(key, buffer, { metadata: { contentType: mimeType } });

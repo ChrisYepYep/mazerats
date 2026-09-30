@@ -79,7 +79,8 @@ const GLOBAL_PER_HOUR = 5000;
    thousands of occurrences to a group and take over its count, its
    histograms and the tab's "count" sort. So a network's occurrences are
    budgeted too: past this many in an hour, its reports are dropped and
-   counted as dropped. A genuine error loop has said all it has to say long
+   counted as dropped (one report straddling the line keeps the part that
+   fits — 30 Sept 2026). A genuine error loop has said all it has to say long
    before five thousand. */
 const NET_OCC_PER_HOUR = 5000;
 const META_KEEP_S = 8 * 24 * 60 * 60;
@@ -202,7 +203,10 @@ function cleanUrl(raw, max = 300) {
         if (k === "q") kept.push(/^<\d{1,5} chars>$/.test(v) ? `q=${v}` : `q=<${v.length} chars>`);
         else if (SAFE_KEYS.has(k)) kept.push(SAFE_VALUE.test(v) ? (v ? `${k}=${v}` : k) : k);
     }
-    const path = decodeSafe(u.pathname);
+    /* Control characters out of the decoded path (30 Sept 2026): "%00"
+       decodes to a NUL, and a page's path becomes a key in the group's
+       `pages` map — a key BSON refuses, so the whole batch failed to record. */
+    const path = decodeSafe(u.pathname).replace(/[\u0000-\u001f\u007f]/g, "");
     return ((own ? "" : "//" + u.host) + path + (kept.length ? "?" + kept.join("&") : "")).slice(0, max);
 }
 
@@ -538,6 +542,29 @@ async function bumpHourly(db, id, n, cap) {
     return Boolean(doc) && doc.n > cap;
 }
 
+/* How many of `n` still fit under this hour's `cap` (30 Sept 2026): 0 to n.
+   One $inc, so two at once each see where their own bump started and cannot
+   both be given the same room. What does not fit is not handed back — past
+   the cap everything is refused anyway. No row back means no answer, and the
+   whole of n is let through, as bumpHourly lets it. */
+async function takeHourly(db, id, n, cap) {
+    const hour = hourStart(Date.now());
+    const bump = () => db.collection(LIMITS).findOneAndUpdate(
+        { _id: `${id}:${hour.toISOString()}` },
+        { $inc: { n }, $setOnInsert: { hourAt: hour } },
+        { upsert: true, returnDocument: "after" }
+    );
+    let doc;
+    try {
+        doc = rowOf(await bump());
+    } catch (e) {
+        if (!e || e.code !== 11000) throw e;
+        doc = rowOf(await bump());
+    }
+    if (!doc || typeof doc.n !== "number") return n;
+    return Math.max(0, Math.min(n, cap - (doc.n - n)));
+}
+
 /* `source` "client" is the browsers' shared hour, under the id it has always
    had; "function" is withErrorReporting's own (see FUNCTIONS HAVE THEIR OWN
    BUDGET, above). */
@@ -583,7 +610,8 @@ async function metaSince(db, type, since) {
 // when the API hands the maps out (see readKey).
 const DOT = "․";
 function mapKey(v) {
-    const s = String(v == null || v === "" ? "unknown" : v).slice(0, 60).replace(/\./g, DOT).replace(/^\$/, "_");
+    // No control characters either: a NUL in a key is refused by BSON outright.
+    const s = String(v == null || v === "" ? "unknown" : v).slice(0, 60).replace(/[\u0000-\u001f\u007f]/g, "").replace(/\./g, DOT).replace(/^\$/, "_");
     return s || "unknown";
 }
 const readKey = (k) => String(k).split(DOT).join(".");
@@ -666,6 +694,14 @@ async function upsertGroup(col, fp, rep, n, meta, now, admit) {
     const projection = { samples: 0, sessions: 0 };
     let doc = rowOf(await col.findOneAndUpdate({ _id: fp }, update, { returnDocument: "after", projection }));
     if (!doc) {
+        /* A REPEAT NEVER STARTS A GROUP (30 Sept 2026). A repeat-only report
+           is "N more of one you already have": a count, with no sample. With
+           no group on file there is nothing for it to be more of — the first
+           report was dropped, or aged out — and a group made from it would
+           have a count and no occurrence to explain it. So it is dropped, and
+           counted as one dropped report, without spending the new-group
+           budget. */
+        if (!sample) return false;
         if (admit && !(await admit())) return false;
         const opts = { upsert: true, returnDocument: "after", projection };
         try {
@@ -808,16 +844,25 @@ async function recordReports(db, reports, meta = {}) {
         country: typeof meta.country === "string" ? meta.country.slice(0, 2).toUpperCase() : "",
     };
     const net = typeof meta.net === "string" && meta.net ? meta.net : null;
+    /* "dropped" counts REPORTS, one each, as the tab's label says (30 Sept
+       2026) — it used to add the repeat count, so one refused report of
+       "10,000 more" read as ten thousand dropped. And a report that only
+       partly fits the network's occurrence budget is kept for the part that
+       fits, rather than dropped whole. */
     let written = 0, dropped = 0;
-    for (const [fp, { rep, n }] of groups) {
+    for (const [fp, { rep, n: asked }] of groups) {
+        let n = asked;
         const source = rep.kind === "function" ? "function" : "client";
         const admit = () => newGroupAllowed(db, source, source === "function" ? null : net);
-        if (source === "client" && net && await bumpHourly(db, `occ:net:${net}`, n, NET_OCC_PER_HOUR)) {
-            dropped += n;
-            continue;
+        if (source === "client" && net) {
+            n = await takeHourly(db, `occ:net:${net}`, n, NET_OCC_PER_HOUR);
+            if (n <= 0) {
+                dropped++;
+                continue;
+            }
         }
         if (await upsertGroup(col, fp, rep, n, m, now, admit)) written++;
-        else dropped += n;
+        else dropped++;
     }
     if (dropped) await countMeta(db, "dropped", dropped);
     return written;

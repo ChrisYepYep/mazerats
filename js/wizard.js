@@ -91,7 +91,15 @@ document.addEventListener("DOMContentLoaded", () => {
        end rather than silently pointing at whichever one was built first.
        Both forms resolve, and the id form always will: links made before
        this existed keep working, and so does anything an admin copied out of
-       the editor. */
+       the editor.
+
+       EXCEPT THAT THE ID IS NO LONGER r039 (30 Sept 2026). The public map
+       is sent opaque ids now (publicRecordId in netlify/functions/wizard.js)
+       so gaps in the numbering stop pointing at hidden rooms, and the id on
+       the end of a shared name is that opaque one. A bare /wizard/r039 link
+       names no room any more and gets the "no room by that name" line; a
+       long-form "grand-staircase-r001" still lands, on the name alone, when
+       the name has since become unique — see roomIdFromPath. */
     let slugToId = new Map();
     let idToSlug = new Map();
 
@@ -103,18 +111,36 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/^-+|-+$/g, "");
     }
 
+    /* A room on the map as it LOADED keeps the address it had then (30 Sept
+       2026). Collisions used to be counted over every room on the page, so
+       opening a secret whose room shares a name with a public one — a third
+       Grand Staircase — renamed the public one to "grand-staircase-r001" as
+       well. A link copied after that opened nothing for anybody who had not
+       opened the same secret, and its suffix said there was a second room of
+       that name somewhere. So the public rooms' addresses are counted among
+       the public rooms alone and never move; a revealed room takes its id
+       on the end if its name is taken by anything. `publicIds` is filled by
+       the first build, which load() runs before any unlock can land. */
+    let publicIds = null;
+
     function buildSlugs() {
         slugToId = new Map();
         idToSlug = new Map();
-        const counts = new Map();
         const rooms = view.getRooms();
+        if (!publicIds) publicIds = new Set(rooms.map(r => r.id));
+        const publicCounts = new Map();
+        const allCounts = new Map();
         for (const r of rooms) {
             const base = slugify(r.name) || r.id;
-            counts.set(base, (counts.get(base) || 0) + 1);
+            allCounts.set(base, (allCounts.get(base) || 0) + 1);
+            if (publicIds.has(r.id)) publicCounts.set(base, (publicCounts.get(base) || 0) + 1);
         }
         for (const r of rooms) {
             const base = slugify(r.name) || r.id;
-            const slug = counts.get(base) > 1 ? `${base}-${r.id}` : base;
+            const shared = publicIds.has(r.id)
+                ? publicCounts.get(base) > 1
+                : publicCounts.has(base) || allCounts.get(base) > 1;
+            const slug = shared ? `${base}-${r.id}` : base;
             idToSlug.set(r.id, slug);
             slugToId.set(slug, r.id);
         }
@@ -372,7 +398,20 @@ document.addEventListener("DOMContentLoaded", () => {
         // Slug first, then the raw id — so /wizard/library and /wizard/r039
         // both open the Library, and neither form can be broken by renaming
         // the other.
-        const id = slugToId.get(raw.toLowerCase()) || (roomById(raw) ? raw : null);
+        const lower = raw.toLowerCase();
+        /* Last, the long form — name and id — for a room whose own address
+           is now the short one: a link copied while its name was shared
+           (see buildSlugs) still opens it. Matched whole, never as a bare
+           suffix, so it cannot land on the wrong room. */
+        /* And an old long form — a name with a spreadsheet id on the end,
+           "grand-staircase-r001" — from before the ids went opaque: the
+           suffix names nothing now, so it is dropped and the name tried on
+           its own. slugToId only holds a bare name that is unique, so this
+           can only land on the one room of that name. */
+        const legacy = /^(.+)-r\d{3,}$/.exec(lower);
+        const id = slugToId.get(lower) || (roomById(raw) ? raw : null)
+            || ((view.getRooms().find(r => `${slugify(r.name) || r.id}-${r.id}` === lower) || {}).id || null)
+            || (legacy && slugToId.get(legacy[1])) || null;
         /* NOT A HIDDEN ONE. Rooms a secret is holding back never reach this
            page at all (see heldBack in netlify/functions/wizard.js), but a
            room an admin simply marked hidden does - with `hidden: true` on it
@@ -929,6 +968,14 @@ document.addEventListener("DOMContentLoaded", () => {
         for (const kind of ["pointerdown", "wheel"]) {
             stage.addEventListener(kind, stopFollowing, { passive: true });
         }
+        /* And the keys that move the map (30 Sept 2026) — the arrows and
+           +/-, handled by js/wizard-map.js. The follow sets the view every
+           frame, so a key press was undone on the next one and the keyboard
+           could not get out of a reveal at all. Letters are left alone: a
+           second word typed during a reveal is not the reader steering. */
+        stage.addEventListener("keydown", e => {
+            if (/^Arrow/.test(e.key) || (e.key.length === 1 && "+=-_".includes(e.key))) stopFollowing();
+        });
     }
 
     function followReveal(found, walk, target) {
@@ -1523,6 +1570,22 @@ document.addEventListener("DOMContentLoaded", () => {
     let asking = false;
     let waiting = null;          // { codes, options, resolve } asked next
 
+    /* ONE REVEAL AT A TIME, TOO (30 Sept 2026). Applying an answer re-renders
+       the map, and a render rebuilds every trail and name — so a second
+       code typed while the first passage was still walking wiped the first
+       one's staggered delays and the rest of it popped in all at once. An
+       answer with anything in it now waits for the reveal on screen to
+       finish (revealUntil, set where markFound hands back its timing) and
+       then plays in full. Queued rather than cut short: the first passage
+       is the thing the reader has just earned, and finishing it instantly
+       would be the same pop-in by another route. `asking` stays set through
+       the wait, so a guess typed meanwhile queues behind it as usual. */
+    let revealUntil = 0;
+    const revealSettled = () => {
+        const left = revealUntil - Date.now();
+        return left > 0 ? new Promise(resolve => setTimeout(resolve, left)) : null;
+    };
+
     function tryCodes(codes, options = {}) {
         if (asking) {
             if (waiting) waiting.resolve({ ok: false, found: [], superseded: true });
@@ -1549,46 +1612,61 @@ document.addEventListener("DOMContentLoaded", () => {
             askWaiting();
             return { ok: false, found: [], failed: true };
         }
-        asking = false;
         answer = answer || {};
+        // Behind a reveal still playing — see revealUntil.
+        const settling = (answer.found || []).length && revealSettled();
+        if (settling) await settling;
+        asking = false;
 
+        /* In a finally (30 Sept 2026): a throw anywhere in applying the
+           answer — addRecords, render, markFound — skipped the askWaiting
+           at the bottom, and a guess queued behind this one never settled,
+           so the keyboard path waited on it for as long as the page was
+           open. */
         const fresh = [];
-        for (const found of answer.found || []) {
-            const added = view.addRecords(found);
-            if (found.secret.code) keepCode(found.secret.code);
-            const isNew = !foundIds.has(found.secret.id);
-            foundIds.add(found.secret.id);
-            if (added > 0 || isNew) fresh.push(found);
-        }
-
-        if (fresh.length) {
-            /* Rebuilt in the same order load() does it, and for the same
-               reason: a revealed room is a room somebody can now search for
-               and link to, and its address is derived from its name. */
-            buildSlugs();
-            view.render();
-            if (!quiet) {
-                const first = fresh[0];
-                /* The order matters. markFound hides the new prints and
-                   names behind their own delays before the browser has
-                   painted once — it runs in the same tick as the render
-                   above, so nothing flashes into view and then starts
-                   walking. */
-                const { nameAt, walk } = markFound(first);
-                followReveal(first, walk, revealTarget(first));
-                // The banner arrives with the name, not before it. Saying
-                // what has opened while the footprints are still crossing
-                // the parchment gives away the ending. It is handed the
-                // revealed rooms because it stays up until the reader leaves
-                // them — see announce.
-                if (nameAt > 0) setTimeout(() => announce(first.secret, first.rooms), nameAt);
-                else announce(first.secret, first.rooms);
+        try {
+            for (const found of answer.found || []) {
+                const added = view.addRecords(found);
+                if (found.secret.code) keepCode(found.secret.code);
+                const isNew = !foundIds.has(found.secret.id);
+                foundIds.add(found.secret.id);
+                if (added > 0 || isNew) fresh.push(found);
             }
+
+            if (fresh.length) {
+                /* Rebuilt in the same order load() does it, and for the same
+                   reason: a revealed room is a room somebody can now search for
+                   and link to, and its address is derived from its name. */
+                buildSlugs();
+                view.render();
+                if (!quiet) {
+                    const first = fresh[0];
+                    /* The order matters. markFound hides the new prints and
+                       names behind their own delays before the browser has
+                       painted once — it runs in the same tick as the render
+                       above, so nothing flashes into view and then starts
+                       walking. */
+                    const { nameAt, walk } = markFound(first);
+                    // The same moment markFound clears its own classes: the
+                    // passage is fully drawn and a render can no longer
+                    // cut it short.
+                    revealUntil = nameAt > 0 ? Date.now() + nameAt + 1400 : 0;
+                    followReveal(first, walk, revealTarget(first));
+                    // The banner arrives with the name, not before it. Saying
+                    // what has opened while the footprints are still crossing
+                    // the parchment gives away the ending. It is handed the
+                    // revealed rooms because it stays up until the reader leaves
+                    // them — see announce.
+                    if (nameAt > 0) setTimeout(() => announce(first.secret, first.rooms), nameAt);
+                    else announce(first.secret, first.rooms);
+                }
+            }
+            drawSecretCount();
+        } finally {
+            // After this answer is fully applied, so the next one is judged
+            // against the passages this one has just opened.
+            askWaiting();
         }
-        drawSecretCount();
-        // After this answer is fully applied, so the next one is judged
-        // against the passages this one has just opened.
-        askWaiting();
         return { ...answer, fresh };
     }
 
@@ -1620,6 +1698,14 @@ document.addEventListener("DOMContentLoaded", () => {
        and what they type next is a fresh attempt — which also keeps the
        whisper from dragging last minute's letters along in front of it. */
     const BUFFER_FORGET_MS = 4000;
+
+    /* The alphabet a code is matched in: letters and digits, nothing else
+       (30 Sept 2026). The same rule as codeKey in
+       netlify/functions/wizard.js, which is what actually decides — this
+       copy is only so the page judges "long enough to ask" by the letters
+       that count. A code the admin saved with a hyphen in it opens to the
+       words typed with a space, or with nothing, between them. */
+    const codeKey = value => String(value == null ? "" : value).toLowerCase().replace(/[^a-z0-9]+/g, "");
     let buffer = "";
     let bufferTimer = 0;
     let forgetTimer = 0;
@@ -1670,7 +1756,15 @@ document.addEventListener("DOMContentLoaded", () => {
             whisper(buffer);
             return;
         }
-        if (e.key.length !== 1 || !/[a-z0-9 ']/i.test(e.key)) return;
+        // Hyphens too, so a reader who types the one in a code sees it in
+        // the whisper; the server ignores it either way.
+        if (e.key.length !== 1 || !/[a-z0-9 '\-]/i.test(e.key)) return;
+        /* A space in the middle of a code is part of the code, not a page
+           scroll (30 Sept 2026): typing a two-word code jumped the page down
+           a screen at the gap. Only once something has been typed — a space
+           on its own, with nothing in the buffer, still scrolls as it
+           always did. */
+        if (e.key === " " && buffer.trim()) e.preventDefault();
         buffer = (buffer + e.key).slice(-60);
         whisper(buffer);
 
@@ -1679,7 +1773,7 @@ document.addEventListener("DOMContentLoaded", () => {
         clearTimeout(bufferTimer);
         bufferTimer = setTimeout(async () => {
             const guess = buffer.trim();
-            if (guess.length < 3) return;
+            if (codeKey(guess).length < 3) return;
             const answer = await tryCodes(guess);
             if (answer.fresh && answer.fresh.length) {
                 buffer = "";
@@ -1772,6 +1866,17 @@ document.addEventListener("DOMContentLoaded", () => {
            map is a lurch before the reader has looked at anything. */
         const wanted = roomIdFromPath();
         const room = wanted && roomById(wanted);
+        /* An address that names no room (30 Sept 2026) — a typo, a room
+           since renamed or hidden, an old /wizard/r039 from before the ids
+           went opaque — used to open the ordinary view with the bad path
+           still in the bar, so a refresh or a copied link carried it on and
+           nothing said why the room never opened. It is put back to plain
+           /wizard, and the whisper says so, held long enough to read. */
+        const strayPath = !room && /^\/wizard\/.+/.test(location.pathname);
+        if (strayPath) {
+            history.replaceState({}, "", "/wizard");
+            whisper("There's no room by that name on the map.", 4500);
+        }
         if (room) {
             view.flyTo(room.x, room.y, 2.6, { smooth: false });
             openRoom(room.id, { push: false });

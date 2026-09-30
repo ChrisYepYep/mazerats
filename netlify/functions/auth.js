@@ -35,9 +35,13 @@ const { SECURITY_HEADERS } = require("./_headers");
 // The cookie reader the player session already uses; see isKnownDevice.
 const { parseCookies } = require("./_player");
 
+/* No-store on every answer (30 Sept 2026), not only the sign-in's (see
+   withDevice): the account list, `verify` and a password change's fresh
+   token are each one account's business, and nothing between here and the
+   browser should be left to decide whether to keep a copy. */
 const json = (statusCode, data) => ({
     statusCode,
-    headers: SECURITY_HEADERS,
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
     body: JSON.stringify(data)
 });
 
@@ -102,6 +106,8 @@ const LOGIN_MAX_PER_IP = 10;
 const LOGIN_MAX_PER_USER_IP = 15;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGGED_NAME_MAX = 60;
+// The largest request body taken at all — see the handler.
+const MAX_BODY = 8192;
 
 /* ---- THE USERNAME LOCK, and why it cannot lock the owner out.
 
@@ -745,7 +751,15 @@ async function handlePost(event, body, db, admins) {
         if (!username || !validPassword(password)) {
             return json(400, { error: "Username and an 8+ character password are required" });
         }
-        if (role === "owner") {
+        /* The role the account will actually HAVE, not only the one asked
+           for (30 Sept 2026): resolveRole makes a row named PERMANENT_OWNER
+           an owner whatever its `role` says, so "admin" named ChrisYepYep
+           was an owner created by anybody who could create an account.
+           Any casing of that name too — it is the one name that must never
+           be passed off, and there is no rename route to slip it in later
+           (PUT only resets passwords). */
+        const ownerByName = username.toLowerCase() === PERMANENT_OWNER.toLowerCase();
+        if (resolveRole({ username, role }) === "owner" || ownerByName) {
             const requester = await admins.findOne({ username: usernameFromToken(event) });
             if (resolveRole(requester) !== "owner") {
                 return json(403, { error: "Only an owner can grant owner privileges" });
@@ -781,6 +795,15 @@ exports.handler = async (event) => {
         return json(500, { error: "Database connection failed" });
     }
     const admins = db.collection("admins");
+
+    /* Every body this function takes is a few short fields — a name, a
+       password or two, an action — so anything past MAX_BODY is not one of
+       them (30 Sept 2026). The login is reachable by anybody signed in or
+       not, and without this it would parse whatever the platform let
+       through, megabytes of it, before the throttle had looked at anything. */
+    if ((event.httpMethod === "POST" || event.httpMethod === "PUT") && String(event.body || "").length > MAX_BODY) {
+        return json(413, { error: "Too large" });
+    }
 
     if (event.httpMethod === "POST") {
         let body;

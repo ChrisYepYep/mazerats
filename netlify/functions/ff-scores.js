@@ -47,6 +47,13 @@ const { writeRefusal, withoutBanned } = require("./_bans");
 const COLLECTION = "ff_scores";
 const LEVELS = "ff_levels";
 const TOP = 25;
+/* READ PAST THE CUT, THEN CUT (30 Sept 2026). Both boards used to take their
+   25 rows and THEN drop the banned ones, so a banned player in the top 25
+   left the board a row short. They now read this many more, drop the banned,
+   and keep 25. A row per account on the all-time board, and one per account
+   per tournament, so it takes 25 banned players above the 50th place to come
+   up short — and then it is only short, never wrong. */
+const BOARD_READ = TOP * 2;
 
 /* ---------------------------------------------------------------- IS IT OPEN
 
@@ -989,11 +996,11 @@ exports.handler = async (event) => {
             gate = await readGate(db);
             /* A banned account's row left off the board (29 Sept 2026;
                withoutBanned in _bans.js) — one read for the list. */
-            const [top] = await withoutBanned(db, [await scores
+            const top = (await withoutBanned(db, [await scores
                 .find(sinceLaunch(gate), { projection: { _id: 0 } })
                 .sort({ points: -1, ms: 1, at: 1 })
-                .limit(TOP)
-                .toArray()], r => r && r.playerId);
+                .limit(BOARD_READ)
+                .toArray()], r => r && r.playerId))[0].slice(0, TOP);
 
             // One nickname read for the board — see clean() above.
             const nicked = await nickedAmong(db, top.map(r => r.playerId));
@@ -1033,11 +1040,11 @@ exports.handler = async (event) => {
                 const meetCol = db.collection(TOURNAMENT_COLLECTION);
                 await ensureIndex(meetCol, { tid: 1, points: -1, ms: 1, at: 1 });
                 // Banned accounts off this board too (29 Sept 2026).
-                const [rows] = await withoutBanned(db, [await meetCol
+                const rows = (await withoutBanned(db, [await meetCol
                     .find({ tid: meet.id, ...sinceLaunch(gate) }, { projection: { _id: 0 } })
                     .sort({ points: -1, ms: 1, at: 1 })
-                    .limit(TOP)
-                    .toArray()], r => r && r.playerId);
+                    .limit(BOARD_READ)
+                    .toArray()], r => r && r.playerId))[0].slice(0, TOP);
                 const meetNicked = await nickedAmong(db, rows.map(r => r.playerId));
                 out.tournament = { ...meet, top: rows.map(r => clean(r, meetNicked)) };
                 if (player) {
@@ -1274,11 +1281,12 @@ exports.handler = async (event) => {
        bad afternoon the player's real score has already been recorded and
        the response below is still the truth about it. */
     const meet = tournamentFor(gate, claims.t);
+    let meetBetter = false;
     if (meet) {
         try {
             const meetRows = db.collection(TOURNAMENT_COLLECTION);
             await ensureUniqueIndex(meetRows, ["tid", "playerId"]);
-            await keepBest(meetRows, { tid: meet.id, playerId: player.id }, { ...row, tid: meet.id }, gate.launchAt);
+            meetBetter = await keepBest(meetRows, { tid: meet.id, playerId: player.id }, { ...row, tid: meet.id }, gate.launchAt);
         } catch (e) { /* the run is on the real board either way */ }
     }
 
@@ -1286,9 +1294,15 @@ exports.handler = async (event) => {
     if (!better) {
         best = await scores.findOne({ playerId: player.id }).catch(() => null) || row;
     }
+    /* `tournamentRecorded` (30 Sept 2026): the week's board took this run.
+       Without it a run that fell short of the all-time best but beat the
+       week's came back "not-your-best", and the page said "Your best still
+       stands" about a run that had just moved its owner up the Launch Week
+       board — and did not redraw that board to show it. */
     return json(200, {
         recorded: better,
         reason: better ? null : "not-your-best",
+        tournamentRecorded: meetBetter,
         best: clean(best)
     });
 };

@@ -342,21 +342,72 @@ function imageSigMatches(game, day, round, tile, image, sig) {
    Each picture goes out as its deal-image address (see above), never as
    the stored reference. `day` is required for that, and a call without
    one THROWS rather than quietly falling back to the raw references — a
-   caller that forgot the day would otherwise be the leak this closes. */
-function publicRounds(game, rounds, day) {
+   caller that forgot the day would otherwise be the leak this closes.
+
+   ONE ROUND AT A TIME (30 Sept 2026). This used to send every round's
+   pictures in the deal reply, before the day's clock had started — so a
+   player could open all five rounds' pictures from the network tab, work
+   each one out at leisure, then press start and answer every round at the
+   one-second floor for nearly the whole speed bonus. Now `upTo` says how
+   many rounds are handed out (the rest go as null, so the page still knows
+   how many rounds the day has), and the callers hand out round r+1 only in
+   the reply that ends round r — round 0 in the reply to the start — and in
+   a deal reply only the rounds the server's record says this player has
+   reached (reachedOf, below). publicRound is one round, for those replies.
+
+   WHAT THIS DOES NOT STOP is a player who plays the day through signed
+   out first (every verdict is answered, capped per network — see the POST
+   in daily-scores.js) and then plays it again signed in. That was already
+   the open route to the answers; this only takes away the free one. */
+function needDay(day) {
     if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
         throw new Error("publicRounds needs the day, to sign the picture addresses");
     }
+}
+
+function publicRound(game, rounds, i, day) {
+    needDay(day);
+    const r = (rounds || [])[i];
+    if (!r) return null;
     if (game === "odd") {
-        return (rounds || []).map((r, i) => ({
-            tiles: (r.tiles || []).map((t, j) => ({ image: imageAddress("odd", day, i, j, t.image) }))
-        }));
+        return { tiles: (r.tiles || []).map((t, j) => ({ image: imageAddress("odd", day, i, j, t.image) })) };
     }
-    return (rounds || []).map((r, i) => ({
-        image: imageAddress("guess", day, i, 0, r.image),
-        options: r.options.slice(),
-        crop: r.crop
-    }));
+    return { image: imageAddress("guess", day, i, 0, r.image), options: r.options.slice(), crop: r.crop };
+}
+
+function publicRounds(game, rounds, day, upTo) {
+    needDay(day);
+    const list = rounds || [];
+    const n = upTo == null ? list.length : Math.max(0, Math.min(list.length, upTo));
+    return list.map((r, i) => (i < n ? publicRound(game, list, i, day) : null));
+}
+
+/* How many rounds a signed-in player's deal reply hands out, from their
+   row in daily_starts (progressFor in _speed.js) and whether the day is
+   filed. No row — the day not started — is none: round 0 comes with the
+   start. Otherwise the rounds already over and the one in hand. A filed
+   day, all of them (a day filed from a signed-out claim has no row). Pure.
+   A round is over when it has a move (Odd One Out, one pick a round) or a
+   finished one (Guess the Maze, up to three guesses). */
+function reachedOf(game, row, count, filed) {
+    if (filed) return count;
+    if (!row) return 0;
+    const moves = (row && row.moves) || {};
+    let over = 0;
+    while (over < count) {
+        const m = moves["r" + over];
+        if (!m || (game === "guess" && !m.done)) break;
+        over++;
+    }
+    return Math.min(count, over + 1);
+}
+
+/* The round after `round`, as the reply that ended `round` hands it out,
+   with its number on it — or null when `round` was the last. */
+function nextRound(game, rounds, round, day) {
+    const i = round + 1;
+    if (!(i < (rounds || []).length)) return null;
+    return Object.assign({ round: i }, publicRound(game, rounds, i, day));
 }
 
 /* ---------------------------------------------------- the snapshot */
@@ -459,7 +510,7 @@ async function storedDeal(db, game, day) {
 
 module.exports = {
     COLLECTION, ROUNDS, ROOM_PROJECTION, MEMO_TTL_MS, IMAGE_FUNCTION,
-    secretSeed, dealOdd, dealGuess, publicRounds, dealFor, storedDeal,
+    secretSeed, dealOdd, dealGuess, publicRounds, publicRound, nextRound, reachedOf, dealFor, storedDeal,
     imageSig, imageAddress, imageRefAt, imageSigMatches,
     _forgetMemo: () => memo.clear()      // for the tests only
 };

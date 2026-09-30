@@ -193,8 +193,29 @@ function playRound(level, meta, seed) {
     let noticedAt = -1;           // when the player may act on the current seat
     let lastWant = null;
 
+    /* A STEP ARRIVES WHEN IT ENDS, as it does on the page (30 Sept 2026).
+
+       This used to sit the player the instant a step BEGAN — `pos` is the
+       tile being walked into, as it is on the page, and arrivedAt was called
+       straight after setting it. The page scores the seat when the figure
+       gets there, WALK_MS later (see advanceWalk in js/fallinfurni.js). So
+       every seat here counted half a second early, and the next seat was
+       "noticed" from that early moment: any --react under WALK_MS was hidden
+       inside the step still in flight and cost nothing at all, which made
+       the default 300ms player a 0ms one and every `used` time it reported
+       short. `arriving` holds the step until its end; the arrival is settled
+       before the tick, which is the page's order too. */
+    let arriving = false;
+
     const LIMIT = (level.rules.seconds + 30) * 1000;
     while (game.state === "running" && now < LIMIT) {
+        if (arriving && now >= stepAt) {
+            arriving = false;
+            const what = game.arrivedAt(pos, stepAt);
+            if (what === "wrong" || what === "decoy") wrongSeats++;
+            if (what === "poi") break;
+            if (game.state !== "running") break;
+        }
         game.tick(now, pos);
         if (game.state !== "running") break;
 
@@ -222,13 +243,11 @@ function playRound(level, meta, seed) {
             }
         }
 
-        if (route.length && now >= stepAt) {
+        if (route.length && now >= stepAt && !arriving) {
             const step = route.shift();
             pos = { x: step.x, y: step.y };
             stepAt = now + WALK_MS;
-            const what = game.arrivedAt(pos, now);
-            if (what === "wrong" || what === "decoy") wrongSeats++;
-            if (what === "poi") break;
+            arriving = true;            // settled when the step ends, above
         }
         now += TICK_MS;
     }

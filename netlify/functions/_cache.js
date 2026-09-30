@@ -45,7 +45,15 @@ const MIN_COMPRESS_BYTES = 1024;
 function acceptsGzip(event) {
     const headers = event.headers || {};
     const accept = headers["accept-encoding"] || headers["Accept-Encoding"] || "";
-    return /\bgzip\b/i.test(accept);
+    /* Named with a weight above zero (30 Sept 2026): "gzip;q=0" is the one
+       way a client says it will NOT take gzip, and a bare word test read it
+       as yes. */
+    return String(accept).split(",").some(part => {
+        const [coding, ...params] = part.trim().split(";");
+        if (coding.trim().toLowerCase() !== "gzip") return false;
+        const q = params.map(p => /^\s*q\s*=\s*([\d.]+)\s*$/i.exec(p)).find(Boolean);
+        return !q || Number(q[1]) > 0;
+    });
 }
 
 /* A shorter policy, for the one read that decides whether the site is open.

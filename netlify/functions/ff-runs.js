@@ -169,11 +169,18 @@ const PLAYER_RATE_LIMIT_COUNT = 60;
 const PLAYER_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const PLAYER_PER_DAY = 600;
 /* The rows the address and global ceilings count: everything EXCEPT a log
-   that was exempt from them. Written as the complement of "a token AND an
-   account" because that is exactly the test the exemption applies below —
-   a row with a signed-out token has an rid and no playerId, and still
-   counts. */
-const COUNTED = { $or: [{ rid: { $exists: false } }, { playerId: null }] };
+   that was exempt from them.
+
+   MARKED, NOT INFERRED (30 Sept 2026). This used to be the complement of
+   "a token AND an account", which is not the test the exemption applies:
+   that also needs the token to be bound to THIS account. A signed-in player
+   holding signed-out tokens (free to mint) wrote rows with an rid and a
+   playerId that were held to the address ceilings but never counted by
+   them — so they could fill the collection without end. The exempt rows
+   now carry `vouched: true`, written by the very test that exempts them,
+   and everything else counts. A row from before the field has no flag and
+   counts, which is the safe side. */
+const COUNTED = { vouched: { $ne: true } };
 
 /* THE ADDRESS AS A SUBSCRIBER, for the per-address limit: clientNet from
    _net.js, the helper every limiter on the site now counts with.
@@ -473,6 +480,8 @@ async function record(db, event) {
        and a session to be bound to — an unbound token is anybody's. */
     const vouched = Boolean(claims && player && claims.sub
         && String(claims.sub) === String(player.id));
+    // What COUNTED reads — set only here, only by the exemption's own test.
+    if (vouched) doc.vouched = true;
 
     try {
         const ttl = await ensureIndexes(db);
@@ -856,7 +865,7 @@ async function report(db, event) {
     const recent = rows.slice(0, RECENT).map(r => {
         // `net` is the address again, only coarser, so it goes where `ip`
         // goes: nowhere, for this panel. It is not shown to anybody.
-        const { rid, ip, net, playerId, ...rest } = r;
+        const { rid, ip, net, playerId, vouched, ...rest } = r;
         const out = { ...rest, levels: (r.levels || []).slice(0, keepLevels) };
         if (personal) { out.ip = ip === undefined ? null : ip; out.playerId = playerId === undefined ? null : playerId; }
         return out;
@@ -889,7 +898,9 @@ async function report(db, event) {
                account. Both exclude the no-address bucket, which is not an
                address and would otherwise read as one. */
             addresses: [...addresses.keys()].filter(Boolean).length,
-            sharedAddresses: byIp.filter(a => a.ip && a.shared).length,
+            /* Over every address, not byIp — which is cut to 200 rows, so
+               past that this undercounted the shared ones (30 Sept 2026). */
+            sharedAddresses: [...addresses.values()].filter(e => e.ip && e.players.size > 1).length,
             noAddress: rows.filter(r => !r.ip).length
         },
         byDay,

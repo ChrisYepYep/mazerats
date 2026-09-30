@@ -176,6 +176,62 @@ async function saveWithFurni(rooms, id, base, previous, update, patch, retired) 
     }
 }
 
+/* A deleted record's Missing Pieces flag goes with it (30 Sept 2026). The
+   flag lives in dead_ends, keyed "<type>:<id>", and nothing took it off:
+   the public list kept asking visitors for pieces of a maze that was no
+   longer in the archive, and the Warren panel — which lists records from
+   the archive — could no longer show it to be cleared. After the delete,
+   and best-effort: the record is gone either way, and a flag left behind
+   is the old behaviour, not a new fault. events.js has the same step. */
+async function clearDeadEndFlag(db, type, id) {
+    try {
+        await db.collection("dead_ends").deleteOne({ key: `${type}:${id}` });
+    } catch (e) {
+        console.error(`rooms: could not clear the dead-end flag for ${type}:${id}`, e);
+    }
+}
+
+/* A deleted record takes its credits with it (30 Sept 2026, Chris's call).
+   A contributor's mazes[] and events[] are record ids, and their stored
+   `count` is those two lists plus `extra` (js/admin.js, contributorCounts)
+   — so a deleted maze stayed in the lists and in the number on the public
+   console for good, crediting work on something that is no longer there.
+   After the delete, and best-effort like clearDeadEndFlag: the id is taken
+   out of every contributor who lists it and their count worked out again.
+
+   Each row is written only if it is as it was read (the updatedAt check
+   contributors.js and a credited lead make), and read again if it moved;
+   updatedAt is stamped, so a contributor form opened before this is
+   refused on Save rather than writing the id back. A row saved before
+   `extra` existed has its hand-typed remainder kept as `extra`, the way
+   dead-end-leads.js reads it. events.js has the same step for events[]. */
+async function uncreditRecord(db, field, id) {
+    try {
+        const contributors = db.collection("contributors");
+        const holders = await contributors.find({ [field]: id }, { projection: { _id: 0, id: 1 } }).toArray();
+        for (const { id: cid } of holders) {
+            for (let attempt = 0; attempt < 5; attempt++) {
+                const row = await contributors.findOne({ id: cid }, { projection: { _id: 0 } });
+                if (!row || !Array.isArray(row[field]) || !row[field].includes(id)) break;
+                const mazes = Array.isArray(row.mazes) ? row.mazes : [];
+                const events = Array.isArray(row.events) ? row.events : [];
+                const extra = Number.isInteger(row.extra) ? row.extra
+                    : Math.max(0, (Number(row.count) || 0) - mazes.length - events.length);
+                const list = row[field].filter(x => x !== id);
+                const count = (field === "mazes" ? list.length : mazes.length) + (field === "events" ? list.length : events.length) + extra;
+                const was = row.updatedAt == null ? null : row.updatedAt;
+                const res = await contributors.updateOne(
+                    { id: cid, updatedAt: was },
+                    { $set: { [field]: list, extra, count, updatedAt: new Date().toISOString() } }
+                );
+                if (res.matchedCount) break;
+            }
+        }
+    } catch (e) {
+        console.error(`rooms: could not take ${field}:${id} off the contributors`, e);
+    }
+}
+
 async function handle(event) {
     let db;
     try {
@@ -395,6 +451,14 @@ async function handle(event) {
            below as a query — {"id":{"$ne":""}} would match whichever room
            Mongo found first and overwrite it. */
         if (!body.id || typeof body.id !== "string") return json(400, { error: "Missing room id" });
+        /* A name, when the body carries one, is held to what a create is
+           (30 Sept 2026). Only the POST checked it, so an edit could blank a
+           maze's name or send one as a number — the row heading, the share
+           title and the address all read it. Absent is left alone, as $set
+           leaves it. */
+        if (Object.prototype.hasOwnProperty.call(body, "name") && (typeof body.name !== "string" || !body.name)) {
+            return json(400, { error: "A room needs at least a name" });
+        }
         // createdAt is written once, on insert, and never by an edit — see
         // the POST above for what reads it.
         const { _id, createdAt: _ignored, ...update } = body;
@@ -561,6 +625,8 @@ async function handle(event) {
         await retireAddresses(db, "maze", doomed, assignSlugs(all, "maze", retired).get(id));
         const result = await rooms.deleteOne({ id });
         if (result.deletedCount === 0) return json(404, { error: "Room not found" });
+        await clearDeadEndFlag(db, "maze", id);
+        await uncreditRecord(db, "mazes", id);
         return json(200, { deleted: id });
     }
 

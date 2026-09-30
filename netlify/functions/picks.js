@@ -28,7 +28,7 @@
                         canWrite. Creates or replaces that week's pick.
      DELETE ?weekOf=    canWrite. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
+const { hasAccount, canWrite, refuseWrite, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson } = require("./_cache");
 
@@ -92,9 +92,9 @@ exports.handler = async (event) => {
             return cachedJson(event, { thisWeek, current, past });
         }
 
-        if (!(await canWrite(event))) {
-            return (await hasAccount(event)) ? READ_ONLY : UNAUTHORIZED;
-        }
+        // refuseWrite: 401 for no account, and the right 403 for the rest
+        // — see the same line in dead-ends.js (30 Sept 2026).
+        if (!(await canWrite(event))) return await refuseWrite(event);
 
         if (event.httpMethod === "PUT") {
             let body;

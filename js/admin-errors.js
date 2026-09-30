@@ -65,7 +65,7 @@
     const refreshBtn = panel.querySelector("#errors-refresh-btn");
     const navCount = document.getElementById("errors-nav-count");
 
-    /* The capture script's six kinds, in the words the owner uses rather
+    /* The capture script's kinds (and the server's "function"), in the words the owner uses rather
        than the browser's. The long form is the pill's tooltip. */
     const KINDS = {
         error: { label: "Page", long: "A script on the page threw an error" },
@@ -73,9 +73,10 @@
         resource: { label: "Load failure", long: "A picture, script or stylesheet failed to load" },
         fetch: { label: "Server call", long: "A call to our server failed, or answered 5xx" },
         console: { label: "Console", long: "Something wrote console.error" },
+        handled: { label: "Caught", long: "Code caught an error and reported it" },
         function: { label: "Function", long: "A server function crashed or answered 5xx" }
     };
-    const KIND_ORDER = ["error", "rejection", "resource", "fetch", "console", "function"];
+    const KIND_ORDER = ["error", "rejection", "resource", "fetch", "console", "handled", "function"];
     const STATUSES = [["open", "Open"], ["resolved", "Resolved"], ["ignored", "Ignored"], ["all", "All"]];
     const SORTS = [["last", "Most recent"], ["count", "Most frequent"], ["visitors", "Most visitors"], ["first", "Newest"]];
 
@@ -104,6 +105,7 @@
     const noteDrafts = new Map();   // id -> unsaved note text
     const selected = new Set();     // ids ticked for a bulk action
     let busy = false;               // a write is in flight
+    let sessionNo = 0;              // moved on by reset(), so old answers are dropped
 
     let panelTimer = null;
     let badgeTimer = null;
@@ -416,7 +418,7 @@
             stat(t.ignored, "ignored", "ignored") +
             stat(t.last24h, "report in the last 24h", "reports in the last 24h") +
             stat(t.last7d, "report in the last 7 days", "reports in the last 7 days") +
-            (d24 > 0 ? `<span class="admin-activity-stat is-warn" title="Reports the server refused because one visitor was sending too many. The groups above are still counted; these are extra copies that were not kept."><strong>${escapeHtml(num(d24))}</strong> ${d24 === 1 ? "report" : "reports"} dropped by the rate limit in 24h</span>` : "");
+            (d24 > 0 ? `<span class="admin-activity-stat is-warn" title="Reports the server refused because too many were arriving — from one network, or across the site. One each, however many repeats a report carried."><strong>${escapeHtml(num(d24))}</strong> ${d24 === 1 ? "report" : "reports"} dropped by the rate limit in 24h</span>` : "");
     }
 
     function renderUpdated() {
@@ -684,7 +686,8 @@
             ["Method", g.method || latest.method],
             ["Path", g.path || latest.path],
             ["Status", g.statusCode || latest.status],
-            ["Deploy", g.deploy || latest.deploy]
+            // The server stores it as deployId; `deploy` is the old name (30 Sept 2026).
+            ["Deploy", g.deployId || latest.deployId || g.deploy || latest.deploy]
         ] : [];
 
         const breakdownKeys = [
@@ -850,6 +853,15 @@
         return local.toLocaleString("en-GB", { timeZone: "UTC", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) + " " + tzWords(o);
     }
 
+    /* How many times this occurrence happened on its page before it was
+       sent. Stored as the report's `count` (cleanReport in
+       netlify/functions/_errors.js); `repeats` was this panel's guess, so
+       the field and the "repeated N×" were never shown (30 Sept 2026). */
+    function repeatsOf(s) {
+        const n = Number(pick(s, "repeats", "count"));
+        return Number.isFinite(n) ? n : 0;
+    }
+
     function sampleFields(g, s) {
         const ua = uaOf(s);
         const received = ms(s.receivedAt);
@@ -889,7 +901,7 @@
             ["Context", fmtContext(s.context)],
             ["Country", s.country],
             ["Session", s.session],
-            ["Repeats", has(s.repeats) ? s.repeats : ""]
+            ["Repeats", repeatsOf(s) > 1 ? repeatsOf(s) : ""]
         ];
         if ((s.kind || g.kind) === "function" || has(s.requestId) || has(s.method)) {
             f.push(
@@ -903,6 +915,17 @@
                 ["Commit", s.commit]
             );
         }
+        /* Two things the store sends that the panel never showed (30 Sept
+           2026): which element a failed load was (cleanReport keeps `tag`
+           for resource reports — img, script, link…), and `trimmed`, which
+           fitSample sets when a sample was cut to fit its size cap, so a
+           short crumb list is not read as the whole story. Both only when
+           present, and reportText picks them up from here. */
+        if ((s.kind || g.kind) === "resource" || has(s.tag)) {
+            const at = f.findIndex(([k]) => k === "Source");
+            f.splice(at + 1, 0, ["Tag", s.tag]);
+        }
+        if (s.trimmed === true) f.push(["Trimmed", "Some breadcrumbs or stack frames were cut to fit"]);
         return f;
     }
 
@@ -977,7 +1000,7 @@
                     <span class="se-sample-when" title="${escapeHtml(timeTitle(when))}">${escapeHtml(fmtUtcFull(when))}</span>
                     <span class="admin-hint">${escapeHtml(ago(when))}</span>
                     <span class="se-mono se-sample-page">${escapeHtml(dash(s.page))}</span>
-                    <span class="admin-hint">${escapeHtml(who)}${has(s.country) ? " · " + escapeHtml(s.country) : ""}${Number(s.repeats) > 1 ? ` · repeated ${escapeHtml(num(s.repeats))}×` : ""}</span>
+                    <span class="admin-hint">${escapeHtml(who)}${has(s.country) ? " · " + escapeHtml(s.country) : ""}${repeatsOf(s) > 1 ? ` · repeated ${escapeHtml(num(repeatsOf(s)))}×` : ""}</span>
                 </summary>
                 <div class="se-sample-body">
                     ${has(s.message) && s.message !== g.message ? `<pre class="se-full-msg">${escapeHtml(s.message)}</pre>` : ""}
@@ -1089,8 +1112,16 @@
             dropped = (data && data.dropped) || {};
             loadedAt = Date.now();
             loadError = null;
-            // The same question the badge asks, answered for free.
-            if (status === "open" && kind === "all" && !query) setBadge(countRecent(groups));
+            /* The same question the badge asks, answered for free — but only
+               when the list came back whole (30 Sept 2026). At LIST_LIMIT
+               rows it may have been cut short, and a badge counted from it
+               would undercount what badge()'s own BADGE_LIMIT read sees; so
+               then the badge asks for itself, and keeps its last answer
+               until that comes back. */
+            if (listIsBadgeList()) {
+                if (listComplete()) setBadge(countRecent(groups));
+                else badge();
+            }
             // An open detail whose group moved on is read again.
             if (openId) {
                 const g = groups.find(x => x.id === openId);
@@ -1144,14 +1175,18 @@
             if (openId === id) render();
             return;
         }
+        // An answer for the account signed in before a reset() is dropped (30 Sept 2026).
+        const mine = sessionNo;
         try {
             const data = await Api.getSiteError(token(), id);
+            if (mine !== sessionNo) return;
             const g = data && (data.group || (data.id != null ? data : null));
             if (!g) throw new Error("the server sent nothing for it");
             g.id = String(g.id != null ? g.id : id);
             details.set(id, g);
             detailErrors.delete(id);
         } catch (err) {
+            if (mine !== sessionNo) return;
             if (sessionGone(err)) return;
             if (quiet && details.has(id)) return;
             if (err && err.status === 404) {
@@ -1302,13 +1337,22 @@
 
     /* The nav badge: open errors seen in the last day, for every account
        that can read the panel. Read on its own when Warren opens and every
-       minute after, unless the panel is showing the same list anyway. */
+       minute after, unless the panel is showing the same list anyway, and
+       showing all of it (a list cut off at LIST_LIMIT is not — see load()). */
+    function listIsBadgeList() {
+        return status === "open" && kind === "all" && !query;
+    }
+    function listComplete() {
+        return groups.length < LIST_LIMIT;
+    }
     async function badge() {
         if (!token() || !navCount) return;
         if (!apiReady()) { setBadge(0); return; }
-        if (!panel.hidden && status === "open" && kind === "all" && !query) return;
+        if (!panel.hidden && listIsBadgeList() && loadedAt && !loadError && listComplete()) return;
+        const mine = sessionNo;
         try {
             const data = await Api.getSiteErrors(token(), { status: "open", sort: "last", limit: BADGE_LIMIT });
+            if (mine !== sessionNo) return;
             takeClock(data);
             const list = Array.isArray(data && data.groups) ? data.groups : [];
             setBadge(countRecent(list));
@@ -1348,6 +1392,7 @@
        whoever sits down next. */
     function reset() {
         loadGen++;
+        sessionNo++;
         stopPanelTimer();
         status = "open";
         kind = "all";

@@ -79,6 +79,25 @@ function cleanContributor(body) {
     return { fields: out };
 }
 
+/* ONE CONTRIBUTOR PER NAME (30 Sept 2026). Nothing stopped a second
+   "Markeh" being added beside "markeh", and the console then listed the
+   same person twice with their credits split between the two — while a
+   credited Missing Pieces lead (dead-end-leads.js) finds its contributor by
+   name case-insensitively and only ever adds to the first it meets. So a
+   new contributor, or a rename, is refused when another row already has
+   that name, ignoring case and spaces at either end — the same rule the
+   credit uses. `duplicate: true` lets the form tell this 409 from the
+   stale-row one. Checked, not indexed: two admins adding the same name in
+   the same second could still both land, which is rare enough to leave. */
+const DUPLICATE = "There is already a contributor called that.";
+
+async function nameTaken(contributors, name, exceptId) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const q = { username: { $regex: `^\\s*${escaped}\\s*$`, $options: "i" } };
+    if (exceptId) q.id = { $ne: exceptId };
+    return !!(await contributors.findOne(q, { projection: { _id: 1 } }));
+}
+
 exports.handler = async (event) => {
     let db;
     try {
@@ -149,6 +168,7 @@ async function write(event, contributors) {
 
     if (event.httpMethod === "POST") {
         if (!fields.username) return json(400, { error: "A contributor needs at least a username" });
+        if (await nameTaken(contributors, fields.username)) return json(409, { error: DUPLICATE, duplicate: true });
 
         await ensureUniqueIndex(contributors, "id");
 
@@ -177,6 +197,18 @@ async function write(event, contributors) {
     if (event.httpMethod === "PUT") {
         if (typeof body.id !== "string" || !body.id) return json(400, { error: "Missing contributor id" });
         if (!Object.keys(fields).length) return json(400, { error: "Nothing to save" });
+        /* A rename onto somebody else's name. Only a real rename is
+           checked: a save that keeps the row's own name (in any case) goes
+           through, so a pair of same-named rows from before this rule can
+           still be edited — and one of them renamed — rather than both
+           being locked. */
+        if (fields.username) {
+            const current = await contributors.findOne({ id: body.id }, { projection: { _id: 0, username: 1 } });
+            const same = current && String(current.username || "").trim().toLowerCase() === fields.username.toLowerCase();
+            if (!same && await nameTaken(contributors, fields.username, body.id)) {
+                return json(409, { error: DUPLICATE, duplicate: true });
+            }
+        }
 
         /* SOMEBODY ELSE SAVED IT FIRST — the same check rooms.js makes,
            and here for the same reason: this was last-save-wins, and it is

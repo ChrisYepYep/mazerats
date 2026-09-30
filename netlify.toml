@@ -625,31 +625,47 @@
     # exactly, so neither of the other two covers it, and pictures served
     # from it were blocked. Mirrored in netlify/functions/share.js, which
     # tools/check-share-headers.js holds to this line.
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    #
+    # api.furniindex.com for the same exact-match reason (30 Sept 2026): the
+    # furni catalogue hands back icon addresses on that host, so every icon
+    # a maze's furni list or the furni picker drew from it was blocked.
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://cloud.umami.is; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://www.habbo.com https://images.habbo.com https://origins.habbo.com https://furniindex.com https://api.furniindex.com https://cdn.discordapp.com; connect-src 'self' https://cloud.umami.is https://gateway.umami.is; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 
-# The pixel art, the fonts and the sprite sheets never change without their
-# filename changing, so there is no reason for a returning visitor to ask
-# about them again. The HTML and the data endpoints are deliberately left
-# alone — those are what carry new mazes.
+# How long a returning visitor's browser may keep the pixel art, the fonts
+# and the sprite sheets without asking again. The HTML and the data
+# endpoints are deliberately left alone — those are what carry new mazes.
 #
-# ONE RULE PER FOLDER, NOT /assets/*. Two folders under /assets break the
-# "never changes without a new filename" promise, and a more specific rule
-# cannot safely be laid over a general one here: when two [[headers]] rules
-# match a path and set the same header, production Netlify can send BOTH
-# values joined with a comma — "max-age=31536000, immutable, max-age=0,
-# must-revalidate", which a browser is free to read as the year — while
-# `netlify dev` lets the later rule win, so a local check would not show
-# it. Rather than depend on which, the year is granted
-# folder by folder, and anything not listed (a folder added later, a file
-# at the top of /assets) falls back to Netlify's default of revalidating,
-# which is the safe way to be wrong.
+# A DAY, NOT A YEAR, FOR ANYTHING FETCHED BY A FIXED NAME (30 Sept 2026).
+# These folders used to get a year and "immutable" on the promise that a
+# file never changes without its filename changing. That promise has not
+# held: sprites, room art and furni in them have been redrawn and saved over
+# in place, and a browser holding a year-long immutable copy would never have
+# seen the new one. So /assets/img, /assets/furni, /assets/room,
+# /assets/rooms and /assets/avatar now get a day, with a week of
+# stale-while-revalidate so a visitor past the day is still served at once
+# from their own cache while the fresh copy is fetched behind it.
 #
-#   · /assets/img/<theme>/ is rewritten in place by tools/themes.js on every
-#     build. It stays in the year because the theme stylesheets now ask for
-#     each of those files as ?v=<its content hash> — a changed file is a new
-#     address — rather than because the files themselves never change.
+# The year stays only where the address itself changes with the file:
+#   · /assets/fonts/ — the two Volter files, which never change.
+#   · The theme images under /assets/img/<theme>/ ARE versioned (the theme
+#     stylesheets ask for each as ?v=<its content hash>), but they share
+#     /assets/img with the unversioned top-level art and a rule of their own
+#     would overlap it (see below), so they take the folder's day. They
+#     still update the moment their hash changes; they are just asked about
+#     once a day in between.
+#
+# ONE RULE PER FOLDER, NOT /assets/*. A more specific rule cannot safely be
+# laid over a general one here: when two [[headers]] rules match a path and
+# set the same header, production Netlify can send BOTH values joined with a
+# comma — "max-age=31536000, immutable, max-age=0, must-revalidate", which a
+# browser is free to read as the year — while `netlify dev` lets the later
+# rule win, so a local check would not show it. Rather than depend on which,
+# every folder is listed on its own, and anything not listed (a folder added
+# later, a file at the top of /assets) falls back to Netlify's default of
+# revalidating, which is the safe way to be wrong.
+#
 #   · /assets/furni-icons/ carries index.json, the catalogue the room editor
-#     reads, which changes whenever an icon is added. A day, not a year.
+#     reads, which changes whenever an icon is added. A day.
 #   · /assets/icons/ is the favicon and the home-screen icon, which are
 #     fetched by fixed name from every page's <head>. A day, so a redrawn
 #     icon reaches people this week rather than next year.
@@ -662,7 +678,7 @@
 [[headers]]
   for = "/assets/img/*"
   [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+    Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"
 
 [[headers]]
   for = "/assets/fonts/*"
@@ -672,22 +688,22 @@
 [[headers]]
   for = "/assets/furni/:file"
   [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+    Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"
 
 [[headers]]
   for = "/assets/avatar/*"
   [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+    Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"
 
 [[headers]]
   for = "/assets/room/:file"
   [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+    Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"
 
 [[headers]]
   for = "/assets/rooms/*"
   [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
+    Cache-Control = "public, max-age=86400, stale-while-revalidate=604800"
 
 [[headers]]
   for = "/assets/furni-icons/*"

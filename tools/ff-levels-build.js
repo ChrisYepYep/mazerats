@@ -297,8 +297,15 @@ const CLOCK_FLOOR_S = 10;
    under VALIDATION below. The last time round that was 150 rounds of every
    level at three reaction speeds up to 1100ms, and every level stayed
    winnable with 11 to 22 seconds spare, against 28 to 46 before. */
-const WALK_PER_SEAT_S = 2.5;
-const LAST_WALK_S = 2.5;
+/* 2.8, not 2.5 (30 Sept 2026). tools/ff-sim.js used to count a seat as sat
+   on the moment its walk began, half a second before the page does, which
+   made every player in it about 0.3s a seat quicker than a real one; the
+   2.5 here was fitted against that. Measured again with the sim put right,
+   a slow player (--react 1100) was down to 88% on level 37 and two to five
+   seconds spare on a dozen others, against the eleven to twenty-two this
+   note promises below. */
+const WALK_PER_SEAT_S = 2.8;
+const LAST_WALK_S = 2.8;
 const PER_OBSTACLE_S = 0.35;
 
 function demandFor(zones, rates, meta) {
@@ -795,6 +802,11 @@ function buildLevel(design, n, meta) {
 
     require("./_env.js").loadEnv(["MONGODB_URI"]);
     const { getDb } = require("../netlify/functions/_db.js");
+    /* Through writeLevel, not a bare updateOne (30 Sept 2026): every write
+       bumps the level's `rev` and records the version, as the editor's
+       saves do, so a retune does not change the rules under a version the
+       players' pages already hold. See writeLevel in ff-levels.js. */
+    const { writeLevel } = require("../netlify/functions/ff-levels.js");
     const db = await getDb();
     const col = db.collection("ff_levels");
     const now = new Date().toISOString();
@@ -810,17 +822,15 @@ function buildLevel(design, n, meta) {
            it can be diffed, but it is never written. */
         if (level.order <= LOCKED) { skipped++; console.log(`  skipped ${level.id} — hand-built, not mine to write`); continue; }
         const existing = await col.findOne({ id: level.id });
-        await col.updateOne(
-            { id: level.id },
-            { $set: { ...level, updatedAt: now }, $setOnInsert: { createdAt: now } },
-            { upsert: true });
+        await writeLevel(db, level.id, { ...level, updatedAt: now },
+            { upsert: true, setOnInsert: { createdAt: now } });
         wrote++;
         console.log(`  ${existing ? "updated" : "created"} ${level.id}`);
     }
     for (const r of retuned) {
         const set = { rules: r.rules, updatedAt: now };
         if (r.zones) set.zones = r.zones;       // an empty zone put back — see REFILL
-        await col.updateOne({ id: r.id }, { $set: set });
+        await writeLevel(db, r.id, set);
         console.log(`  retuned ${r.id}${r.zones ? " and refilled its zone" : ""}`);
     }
     console.log(`${wrote} levels written` +

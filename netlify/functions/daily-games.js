@@ -173,8 +173,21 @@ async function route(event, db, scores, resets) {
             return json(200, { cleared: body.game });
         }
 
+        /* WHICH DAY A TICKET GIVES BACK (30 Sept 2026). A reset gives back
+           today's day and no other (the POST below), but its ticket had no
+           day on it and never expired — so a player who did not open the
+           game for a week claimed it a week later, and the claim wiped the
+           day they were in the middle of, which nobody had reset. Each
+           ticket now carries its `day` (a ticket from before this, its `at`
+           date, which is the same thing), and `games` lists only today's;
+           the page checks the day again as it claims, and a stale ticket is
+           spent without touching anything (claimReset in js/daily.js). */
         const pending = await resets.find({ playerId: player.id }).toArray();
-        return json(200, { games: pending.map(r => r.game) });
+        const tickets = pending.map(r => ({ game: r.game, day: r.day || String(r.at || "").slice(0, 10) || null }));
+        return json(200, {
+            games: tickets.filter(t => t.day === today()).map(t => t.game),
+            tickets
+        });
     }
 
     // ---------- everything below is the admin's half ----------
@@ -201,9 +214,54 @@ async function route(event, db, scores, resets) {
            Both aggregations are sorted before they are grouped, so `$last`
            is the player's newest name rather than whichever row Mongo's
            natural order happened to put last. */
+        /* Who may see (and search by) Discord ids — see DISCORD IDS ONLY
+           FOR THOSE WHO CAN ACT ON THEM, below. Read first now, because the
+           search is part of the aggregations. */
+        const seesIds = (WRITE_SCOPES[await roleOf(event)] || []).includes("site");
+        const q = String(params.q || "").trim().toLowerCase();
+
+        /* THE SEARCH GOES IN BEFORE THE LIMIT (30 Sept 2026). It used to be
+           applied to the list afterwards, and the list is the 200 players
+           seen most recently — so anybody further down could not be found
+           by name at all, however exactly it was typed. Now `q` is a $match
+           after the grouping and ahead of the $limit, on the name the rows
+           carry and, joined from `players`, the player's current nickname
+           and Discord name (a nickname changed since their last day is not
+           on their rows yet). And on the id, for a role that sees ids.
+
+           The search finds the matching players first, in each collection,
+           and the two aggregations below are then run over exactly those
+           players — rather than searching each list on its own, which would
+           give a player whose Guess rows matched and whose Odd One Out rows
+           carried an older name only half their days and points. */
+        const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const liveDaily = GAMES.filter(g => g.collection === "daily_scores").map(g => g.filter.game);
+        let only = [];
+        if (q) {
+            const like = { $regex: escaped, $options: "i" };
+            const searchIn = (col, first) => col.aggregate(first.concat([
+                { $sort: { day: 1, at: 1 } },
+                { $group: { _id: "$playerId", name: { $last: "$name" }, lastDay: { $max: "$day" } } },
+                { $lookup: { from: "players", localField: "_id", foreignField: "id", as: "profile" } },
+                {
+                    $match: {
+                        $or: [{ name: like }, { "profile.nick": like }, { "profile.name": like }]
+                            .concat(seesIds ? [{ _id: { $regex: escaped } }] : [])
+                    }
+                },
+                { $sort: { lastDay: -1, _id: 1 } },
+                { $limit: 200 },
+                { $project: { _id: 1 } }
+            ])).toArray();
+            const [a, b] = await Promise.all([
+                searchIn(scores, []),
+                searchIn(db.collection("daily_scores"), [{ $match: { game: { $in: liveDaily } } }])
+            ]);
+            only = [{ $match: { playerId: { $in: [...new Set(a.concat(b).map(r => r._id))] } } }];
+        }
         const knownDaily = await db.collection("daily_scores").aggregate([
             { $match: { game: { $in: liveDaily } } },
+            ...only,
             { $sort: { day: 1, at: 1 } },
             { $group: { _id: "$playerId", name: { $last: "$name" }, avatar: { $last: "$avatar" }, days: { $sum: 1 }, points: { $sum: TOTAL }, lastDay: { $max: "$day" } } },
             { $sort: { lastDay: -1, _id: 1 } },
@@ -211,6 +269,7 @@ async function route(event, db, scores, resets) {
         ]).toArray();
 
         const known = await scores.aggregate([
+            ...only,
             { $sort: { day: 1, at: 1 } },
             {
                 $group: {
@@ -225,6 +284,8 @@ async function route(event, db, scores, resets) {
             { $sort: { lastDay: -1, _id: 1 } },
             { $limit: 200 }
         ]).toArray();
+        // Every row the aggregations sent back has already passed the search.
+        const matched = new Set(known.concat(knownDaily).map(r => r._id));
 
         const pending = await resets.find({}).toArray();
         const byPlayer = new Map();
@@ -272,21 +333,35 @@ async function route(event, db, scores, resets) {
            still selects a player and asks for their detail with it (it
            treats the id as opaque), and the detail is looked up by mapping
            it back here. Search is by name only for them. */
-        const seesIds = (WRITE_SCOPES[await roleOf(event)] || []).includes("site");
         const players = [...byPlayer.values()];
-        const q = String(params.q || "").trim().toLowerCase();
+        // The scored players were searched above; a player with only a
+        // ticket waiting is matched on the ticket's name here.
         const filtered = q
-            ? players.filter(p => p.name.toLowerCase().includes(q) || (seesIds && p.id.includes(q)))
+            ? players.filter(p => matched.has(p.id) || p.name.toLowerCase().includes(q) || (seesIds && p.id.includes(q)))
             : players;
 
         /* A player's standing in each game, so the admin is deciding with
            the facts in front of them rather than pressing a button and
            hoping. Only asked for one player at a time — the day's row for
            every player in every game is a report, not a control. */
+        /* BY ID, NOT FROM THE LIST (30 Sept 2026). A stand-in used to be
+           mapped back by looking through `players` — the same 200, searched
+           — so a player past them, or not matching the search box, had no
+           detail. A role that sees ids asks by the id itself; a stand-in is
+           mapped back over every player id the games and the tickets hold
+           (distinct, one HMAC each — a few thousand at most). */
         let detail = null;
-        const asked = params.playerId
-            ? (seesIds ? String(params.playerId) : (players.find(p => standIn(p.id) === String(params.playerId)) || {}).id)
-            : null;
+        let asked = null;
+        if (params.playerId && seesIds) {
+            asked = String(params.playerId);
+        } else if (params.playerId) {
+            const want = String(params.playerId);
+            const [a, b] = await Promise.all([
+                scores.distinct("playerId"),
+                db.collection("daily_scores").distinct("playerId", { game: { $in: liveDaily } })
+            ]);
+            asked = a.concat(b, pending.map(t => t.playerId)).find(id => id && standIn(id) === want) || null;
+        }
         if (asked) {
             const id = asked;
             const waiting = pending.filter(t => t.playerId === id).map(t => t.game);
@@ -409,6 +484,9 @@ async function route(event, db, scores, resets) {
             {
                 $set: {
                     playerId, game, by,
+                    // The day given back — the only day the claim may clear
+                    // (see the player's half above).
+                    day: today(),
                     name: ticketName || null,
                     avatar: player ? player.avatar : (profile ? profile.avatar || null : null),
                     at: new Date().toISOString()

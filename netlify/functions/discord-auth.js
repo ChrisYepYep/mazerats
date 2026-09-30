@@ -8,7 +8,8 @@
    across devices, submissions, favourites) can be built on without
    revisiting the login itself.
 
-   Three actions, all GET, because two of them are browser navigations:
+   Four actions, all GET but the sign-out, because two of them are browser
+   navigations:
 
      start     the visitor is sent to Discord to approve
      callback  Discord sends them back here with a code
@@ -16,7 +17,7 @@
                since 29 Sept 2026 whether the visitor is banned:
                { player: {... nickRefused }, ban: { level, until, reason } | null }
                for signed-in and signed-out visitors alike (see meReply)
-     signout   clears the cookie
+     signout   clears the cookie — POST, from this site only (30 Sept 2026)
 
    The OAuth scopes asked for are "identify" and nothing else: an id, a
    display name and an avatar. Not email, not guilds, not anything that
@@ -91,6 +92,21 @@ function siteOrigin(event) {
    actionFrom). */
 const redirectUri = (event) => `${siteOrigin(event)}/auth/discord/callback`;
 
+/* The same check as player-nick.js's sameOrigin (30 Sept 2026), for the
+   sign-out: a browser always sends Origin on a POST, and one naming another
+   site is refused. No Origin at all is allowed through, as it is there. */
+function sameOrigin(event) {
+    const h = event.headers || {};
+    const origin = h.origin || h.Origin;
+    if (!origin) return true;
+    const host = h["x-forwarded-host"] || h.host || h.Host || "";
+    try {
+        return new URL(origin).host === host;
+    } catch (e) {
+        return false;
+    }
+}
+
 /* Explicit ?action wins; otherwise the path says. Anything unrecognised is
    "me", which is the harmless read-only one. */
 function actionFrom(event) {
@@ -109,6 +125,13 @@ function actionFrom(event) {
 function safeReturn(to) {
     const raw = typeof to === "string" ? to : "";
     if (!raw.startsWith("/") || raw.startsWith("//")) return "/home";
+    /* And nothing a Location header cannot carry (30 Sept 2026): a CR, LF
+       or other control character in `to` made the redirect's header
+       invalid, and the sign-in ended on the platform's error page instead
+       of back on the site. A backslash too — browsers read "/\evil" as
+       "//evil"; the origin in front of it makes that harmless today, but
+       nothing about a return path needs one. */
+    if (/[\u0000-\u001f\u007f\\]/.test(raw)) return "/home";
     return raw;
 }
 
@@ -229,7 +252,15 @@ exports.handler = async (event) => {
         return meReply(event);
     }
 
+    /* POST only, and only from this site (30 Sept 2026). As a GET, any page
+       anywhere could sign a visitor out with an <img src> pointing here —
+       harmless to their data, but a nuisance a stranger should not be able
+       to cause. Nothing on the site navigates here: every Sign out is a
+       button that goes through Account.signOut in js/account.js, which
+       POSTs. The Origin check is player-nick.js's. */
     if (action === "signout") {
+        if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" }, { Allow: "POST" });
+        if (!sameOrigin(event)) return json(403, { error: "Not from this site" });
         return json(200, { player: null }, { "Set-Cookie": clearCookie() });
     }
 

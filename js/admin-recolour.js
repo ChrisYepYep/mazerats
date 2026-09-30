@@ -81,6 +81,18 @@ window.AdminRecolour = (function () {
     const esc = (s) => String(s).replace(/[&<>"']/g, c =>
         ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+    /* The page's own Are You Sure? and its text-box twin, lent by admin.js
+       as window.AdminConfirm / AdminPrompt (30 Sept 2026), in place of the
+       browser's confirm() and prompt(). Looked up when asked, not at load:
+       this file loads before admin.js. Both take markup, so names are
+       escaped going in. Without admin.js a question answers No. */
+    function ask(html, opts) {
+        return typeof window.AdminConfirm === "function" ? window.AdminConfirm(html, opts) : Promise.resolve(false);
+    }
+    function askText(html, opts) {
+        return typeof window.AdminPrompt === "function" ? window.AdminPrompt(html, opts) : Promise.resolve(null);
+    }
+
     /* ---------------------------------------------------------- the model */
 
     const keyOf = (item) => item.kind === "var" ? item.name : item.key;
@@ -723,7 +735,7 @@ window.AdminRecolour = (function () {
                    stays "duplicate" so the view-only greying in style.css
                    still covers it. (28 Sept 2026) */
                 '<button type="button" class="btn" data-role="duplicate" title="Save these colours as a new palette, leaving whatever was loaded as it was"' + (writing ? " disabled" : "") + '>Save as new</button>' +
-                '<button type="button" class="btn" data-role="delete"' + (state.current && !writing ? "" : " disabled") + '>Delete</button>' +
+                '<button type="button" class="btn admin-delete-btn" data-role="delete"' + (state.current && !writing ? "" : " disabled") + '>Delete</button>' +
                 '<span class="rc-sep"></span>' +
                 '<label class="rc-toggle"><input type="checkbox" data-role="live"' + (state.live ? " checked" : "") + '> Live preview</label>' +
                 '<button type="button" class="btn" data-role="site">Preview on the site</button>' +
@@ -872,8 +884,8 @@ window.AdminRecolour = (function () {
         on("duplicate", "click", () => oneAtATime(duplicate));
         on("delete", "click", () => oneAtATime(remove));
         on("undo", "click", undo);
-        on("reset", "click", () => {
-            if (!confirm("Put every colour back to the site's own? This does not touch anything already saved.")) return;
+        on("reset", "click", async () => {
+            if (!await ask("Put every colour back to the site's own? This does not touch anything already saved.", { danger: true })) return;
             state.palette = EMPTY(); state.history = []; state.dirty = true;
             Recolour.clear(); if (state.live) applyLive(); render();
             say("Back to the site's own colours.", "good");
@@ -1008,9 +1020,11 @@ window.AdminRecolour = (function () {
        just moved updatedAt on. While a request is out the three buttons are
        disabled (render() draws them so too, since it redraws the bar mid-
        request), a press that gets through anyway is dropped, and `finally`
-       gives them back whatever the answer was. The prompt and confirm the
-       handlers open are synchronous, so nothing can be pressed while they
-       are up either. `writing` is declared at the top of the file. */
+       gives them back whatever the answer was. The question the handlers
+       ask is asked inside the guard, and the page's own box (30 Sept 2026,
+       once the browser's prompt and confirm) makes the rest of the page
+       inert while it is up, so nothing can be pressed then either.
+       `writing` is declared at the top of the file. */
     function syncWriteButtons() {
         if (!root) return;
         ["save", "duplicate", "delete"].forEach(r => {
@@ -1052,7 +1066,7 @@ window.AdminRecolour = (function () {
     async function duplicate() {
         const o = state.origin;
         const suggest = o && o.kind === "saved" ? (state.name.trim() || "Palette") + " copy" : state.name.trim();
-        const name = prompt("Name for the new palette", suggest);
+        const name = await askText("Name for the new palette", { title: "Save As New", label: "Name", value: suggest, maxlength: 60 });
         if (!name || !name.trim()) return;
         return create(name.trim(), "Saved a new palette,");
     }
@@ -1060,7 +1074,7 @@ window.AdminRecolour = (function () {
     async function remove() {
         const p = state.saved.find(x => x.id === state.current);
         if (!p) return;
-        if (!confirm('Delete "' + p.name + '"? This cannot be undone, and anybody wearing it goes back to the classic palette.')) return;
+        if (!await ask('Delete "' + esc(p.name) + '"? This cannot be undone, and anybody wearing it goes back to the classic palette.', { danger: true })) return;
         try {
             const gone = await api("DELETE", null, "?id=" + encodeURIComponent(p.id));
             state.current = null; state.name = ""; state.palette = EMPTY();
@@ -1348,7 +1362,7 @@ window.AdminRecolour = (function () {
 
     // The loader's value: "", "theme:<id>" or "saved:<id>".
     async function loadChoice(value) {
-        if (state.dirty && !confirm("You have unsaved changes to " + describe() + ". Load another anyway? Your changes will be lost.")) { render(); return; }
+        if (state.dirty && !await ask("You have unsaved changes to " + esc(describe()) + ". Load another anyway? Your changes will be lost.", { danger: true })) { render(); return; }
         const seq = ++state.loading;
         const cut = String(value || "").indexOf(":");
         const kind = cut > 0 ? value.slice(0, cut) : "";
@@ -1553,6 +1567,58 @@ window.AdminRecolour = (function () {
         setTimeout(() => URL.revokeObjectURL(a.href), 10000);
     }
 
+    /* AN IMPORTED FILE IS CHECKED BEFORE IT IS WORN (30 Sept 2026). It
+       went straight into state.palette and on to the live preview, and
+       buildCss writes every key and value into a stylesheet as it finds
+       them — so a hand-edited or hostile file could put any CSS at all on
+       this page ("#fff; } body { display: none"), and the save would only
+       have dropped it afterwards. Each entry now has to pass what
+       palettes.js will keep anyway: a key of the right shape (a --variable,
+       a scanned "property|colour", or one of the sprite groups
+       Recolour.SPRITES paints) and a value Recolour.parse reads as a colour
+       and the server's COLOUR pattern accepts. The rest are skipped, and
+       counted, so the admin is told. Keys are checked by shape rather than
+       against this page's catalogue: a palette made over another theme
+       names colours this scan may not have, and those are kept, as a save
+       would keep them. */
+    const IMPORT_COLOUR = /^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(,\s*[\d.]+\s*)?\))$/;
+    const IMPORT_VAR = /^--[a-z0-9-]{1,60}$/i;
+    const IMPORT_DECL = /^[a-z-]{1,40}\|[#a-z0-9(),.%\s-]{1,80}$/i;
+    const IMPORT_MAX = 1200;       // palettes.js's MAX_ENTRIES
+    const isColour = v => typeof v === "string" && IMPORT_COLOUR.test(v.trim()) && !!Recolour.parse(v.trim());
+
+    function checkedImport(p) {
+        let skipped = 0;
+        const map = (raw, keyOk) => {
+            const out = {};
+            if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+                if (raw != null) skipped++;
+                return out;
+            }
+            let n = 0;
+            for (const k of Object.keys(raw)) {
+                if (n >= IMPORT_MAX || !keyOk(k) || !isColour(raw[k])) { skipped++; continue; }
+                out[k] = raw[k].trim();
+                n++;
+            }
+            return out;
+        };
+        const groups = new Set((Recolour.SPRITES || []).map(s => s.group));
+        const sprites = {};
+        const rawSprites = p.sprites;
+        if (rawSprites && typeof rawSprites === "object" && !Array.isArray(rawSprites)) {
+            for (const g of Object.keys(rawSprites)) {
+                const v = rawSprites[g];
+                if (!groups.has(g) || !v || !isColour(v.dark) || !isColour(v.light)) { skipped++; continue; }
+                sprites[g] = { dark: v.dark.trim(), light: v.light.trim() };
+            }
+        } else if (rawSprites != null) skipped++;
+        return {
+            palette: { vars: map(p.vars, k => IMPORT_VAR.test(k)), decls: map(p.decls, k => IMPORT_DECL.test(k)), sprites },
+            skipped
+        };
+    }
+
     function importJson() {
         const inp = document.createElement("input");
         inp.type = "file";
@@ -1564,11 +1630,20 @@ window.AdminRecolour = (function () {
             rd.onload = () => {
                 try {
                     const d = JSON.parse(rd.result);
-                    const p = d.palette || d;
-                    state.palette = {
-                        vars: p.vars || {}, decls: p.decls || {}, sprites: p.sprites || {}
-                    };
-                    state.name = d.name || state.name;
+                    const p = (d && d.palette) || d;
+                    if (!p || typeof p !== "object" || Array.isArray(p) || !("vars" in p || "decls" in p || "sprites" in p)) throw new Error("not a palette");
+                    const { palette, skipped } = checkedImport(p);
+                    const kept = Object.keys(palette.vars).length + Object.keys(palette.decls).length + Object.keys(palette.sprites).length;
+                    // Nothing usable at all: the palette on screen stays as it
+                    // was. (An empty palette file with nothing skipped is
+                    // still a palette — the site's own colours — and loads.)
+                    if (!kept && skipped) {
+                        say("Nothing in that file could be used: " + skipped + " entr" + (skipped === 1 ? "y was" : "ies were") + " not a colour the editor can wear.", "bad");
+                        return;
+                    }
+                    state.palette = palette;
+                    const name = d && typeof d.name === "string" ? d.name.trim().slice(0, 60) : "";
+                    state.name = name || state.name;
                     state.current = null;
                     // An import is a new palette, whatever was loaded before it.
                     state.origin = null;
@@ -1576,7 +1651,8 @@ window.AdminRecolour = (function () {
                     state.dirty = true;
                     if (state.live) applyLive();
                     render();
-                    say("Loaded. Save it to keep it.", "good");
+                    if (skipped) say("Loaded, but " + skipped + " entr" + (skipped === 1 ? "y was" : "ies were") + " skipped: not a colour the editor can wear. Save it to keep the rest.", "bad");
+                    else say("Loaded. Save it to keep it.", "good");
                 } catch (e) { say("That file is not a palette.", "bad"); }
             };
             rd.readAsText(f);

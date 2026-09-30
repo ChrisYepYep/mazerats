@@ -53,9 +53,8 @@ const refuse = (statusCode, body) => ({
 });
 
 exports.handler = async (event) => {
-    if (event.httpMethod !== "GET") {
-        return { statusCode: 405, body: "Method not allowed" };
-    }
+    // Through refuse, so this answer carries the security headers too.
+    if (event.httpMethod !== "GET") return refuse(405, "Method not allowed");
 
     const key = (event.queryStringParameters || {}).key;
     if (!key) return refuse(400, "Missing key");

@@ -449,6 +449,7 @@ async function combinedBoards(db, event, params) {
             allTime: bAll
         }, { cdn: BOARD_CDN_CACHE });
     } catch (e) {
+        console.error("daily-scores: combined board read failed", e);
         return json(500, { error: "Could not read the scores" });
     }
 }
@@ -663,7 +664,10 @@ exports.handler = async (event) => {
                 const allowed = await speed.claimAnonMove(db, game, day, clientNet(event),
                     speed.anonMoveLimit(deal.rounds.length, 1));
                 if (!allowed) return privateJson(429, { reason: "anon-limit", error: "Too many picks from this network today" });
-                return privateJson(200, { recorded: false, tile, right: Boolean(dealt.tiles[tile].odd) });
+                // `next`: the round after this one, handed out now that this
+                // one is over — see ONE ROUND AT A TIME in _deal.js.
+                return privateJson(200, { recorded: false, tile, right: Boolean(dealt.tiles[tile].odd),
+                    next: deals.nextRound(game, deal.rounds, round, day) });
             }
             /* `replay: true` is a pick made signed out and sent again now
                the day is recorded (Daily.replay in js/daily.js). Recording
@@ -682,7 +686,8 @@ exports.handler = async (event) => {
             if (outcome.error === "too-fast") return privateJson(429, { reason: "too-fast", retryInMs: outcome.retryInMs });
             if (outcome.error === "bad-move") return privateJson(400, { error: "Bad move" });
             if (outcome.error) return privateJson(409, { reason: outcome.error });
-            return privateJson(200, { recorded: true, already: Boolean(outcome.already), tile: outcome.tile, right: outcome.right });
+            return privateJson(200, { recorded: true, already: Boolean(outcome.already), tile: outcome.tile, right: outcome.right,
+                next: deals.nextRound(game, deal.rounds, round, day) });
         }
 
         // Anything else with an action is not a request this endpoint takes —
@@ -690,9 +695,32 @@ exports.handler = async (event) => {
         // one at a time still sends, and which now means nothing.
         if (body.action !== undefined && body.action !== "start") return json(400, { error: "Unknown action" });
 
+        /* The start's reply carries round 0's pictures (`next`), which the
+           deal reply no longer does before the day has started — see ONE
+           ROUND AT A TIME in _deal.js (30 Sept 2026). Signed out too: the
+           page asks the same way to be shown the first round, nothing is
+           recorded, and the round is what the deal reply used to hand
+           anybody. A deal that cannot be read is no `next`, and the page
+           asks for the deal again. */
+        const openingRound = async () => {
+            try {
+                const deal = await deals.dealFor(db, ensureUniqueIndex, game, day);
+                return deals.nextRound(game, deal.rounds, -1, day);
+            } catch (e) {
+                console.error("daily-scores: could not read the day's deal for its first round", e);
+                return null;
+            }
+        };
+        if (!player && body.action === "start") {
+            if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
+            return privateJson(200, { started: false, recorded: false, reason: "signed-out", next: await openingRound() });
+        }
+
         // Signed out is not an error: the game posts unconditionally and
-        // there is simply no name to put on a row.
-        if (!player) return json(200, { recorded: false, reason: "signed-out" });
+        // there is simply no name to put on a row. privateJson: json()
+        // marks every 200 "public, max-age=30", which is for the boards and
+        // has no business on the answer to a POST (30 Sept 2026).
+        if (!player) return privateJson(200, { recorded: false, reason: "signed-out" });
 
         /* ---------- the day's clock starting ----------
 
@@ -709,7 +737,8 @@ exports.handler = async (event) => {
                 console.error("daily-scores: could not record a start", e);
                 return json(503, { started: false });
             }
-            return json(200, { started: true });
+            // Only once the start is on file: round 0 is timed from it.
+            return privateJson(200, { started: true, next: await openingRound() });
         }
 
         /* ---------- the finished day ----------
@@ -866,6 +895,10 @@ async function dealReply(db, event, game, params) {
     }
     const player = playerFrom(event);
     let progress = null, filed = false, score = null;
+    // How many rounds' pictures go out: none before the day has started,
+    // then only the rounds this player has reached (ONE ROUND AT A TIME in
+    // _deal.js). Signed out, none — the page keeps the rounds it was handed.
+    let reached = 0;
     if (player) {
         try {
             const row = await speed.progressFor(db, game, day, player.id);
@@ -874,6 +907,7 @@ async function dealReply(db, event, game, params) {
                 { projection: { _id: 1, points: 1, bonus: 1, solved: 1 } });
             filed = Boolean(onFile);
             score = filedScore(onFile);
+            reached = deals.reachedOf(game, row, deal.rounds.length, filed);
         } catch (e) {
             // The deal is still worth sending; the page plays on from its
             // own copy of the day.
@@ -883,7 +917,7 @@ async function dealReply(db, event, game, params) {
     return privateJson(200, {
         game, day, today: today(), now: Date.now(),
         // Picture addresses, never the stored references — see _deal.js.
-        rounds: deals.publicRounds(game, deal.rounds, day),
+        rounds: deals.publicRounds(game, deal.rounds, day, reached),
         progress, filed, score
     });
 }

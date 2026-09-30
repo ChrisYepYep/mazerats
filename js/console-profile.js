@@ -673,8 +673,14 @@ document.addEventListener("DOMContentLoaded", () => {
             host.innerHTML = '<p class="console-blurb">Loading...</p>';
             await Account.ready();
         }
-        render();
+        /* load() before render() (30 Sept 2026). load() clears `failed`
+           synchronously as it starts a read, so drawing first showed the
+           LAST read's "could not be read just now" for the whole of the
+           retry that was already on its way. Called first, the page draws
+           "Loading..." while it is out; load() still draws again when it
+           settles. */
         load();
+        render();
     }
 
     document.addEventListener("console:page", e => {

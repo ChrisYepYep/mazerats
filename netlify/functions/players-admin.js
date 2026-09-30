@@ -69,7 +69,9 @@
           409 { changed: true } and nothing is written, so an Allow meant
           for "Mod Squad" can never wave through whatever replaced it.
           Both write a history entry { nick, at, by, action: "allowed" |
-          "rejected" } and an audit row.
+          "rejected" } and an audit row. Reject also puts the name on the
+          row's nickTurnedDown and Allow takes it off, as setting or
+          locking a name does (30 Sept 2026; TURNED DOWN in player-nick.js).
 
    Refusals: 401 no session, 403 a role that may not (below), 400 a bad
    request or a nickname the rules refuse ({ error, field: "nick" }), 404
@@ -428,7 +430,10 @@ async function activityFor(db, ids, full) {
     }
     (got.ff || []).forEach(r => {
         const a = out.get(r.playerId);
-        if (a) a.ffBest = { points: Number(r.points) || 0, levels: Number(r.levels) || 0, ms: Number(r.ms) || null, at: r.at ? new Date(r.at).toISOString() : null };
+        // isoOf, not new Date(r.at).toISOString(): an `at` that does not
+        // parse threw a RangeError there and took the whole list down with
+        // it (30 Sept 2026) — a bad row should cost its own date, not the panel.
+        if (a) a.ffBest = { points: Number(r.points) || 0, levels: Number(r.levels) || 0, ms: Number(r.ms) || null, at: isoOf(r.at) || null };
     });
     (got.leads || []).forEach(r => {
         const a = r._id && out.get(r._id.p);
@@ -583,6 +588,13 @@ async function update(event, db, role) {
         Object.assign($unset, { nickFlag: "", nickRejected: "", nickRefused: "" });
         $push = nickRules.historyPush(nick || null, now, "admin:" + who);
     }
+    /* A name the admins set or lock is theirs now, so it comes off the
+       turned-down list (30 Sept 2026; see TURNED DOWN in player-nick.js):
+       the player may keep it, or come back to it, once it is unlocked. */
+    const settled = nickChanges ? key : (body.locked === true && had ? nameKey(had) : null);
+    if (settled && Array.isArray(row.nickTurnedDown) && row.nickTurnedDown.includes(settled)) {
+        $set.nickTurnedDown = nickRules.turnedDownWithout(row.nickTurnedDown, settled);
+    }
     if (body.locked === true && row.nickLocked !== true) {
         Object.assign($set, { nickLocked: true, nickLockedBy: who, nickLockedAt: now });
         /* The other way round from Reject unlocking: a name the admins lock
@@ -662,13 +674,20 @@ async function review(event, db, body) {
            written or logged for it, as a no-op nickname save isn't. */
         if (!flag && !rejected) return json(200, { player: detailShape(row, true, null, await bansOr(db)), changed: [] });
         upd = { $unset: { nickFlag: "", nickRejected: "", nickRefused: "" }, $push: nickRules.historyPush(had, now, "admin:" + who, "allowed") };
+        // Allowed is no longer turned down (see TURNED DOWN in player-nick.js).
+        if (had && Array.isArray(row.nickTurnedDown) && row.nickTurnedDown.includes(nameKey(had))) {
+            upd.$set = { nickTurnedDown: nickRules.turnedDownWithout(row.nickTurnedDown, nameKey(had)) };
+        }
         did = "nickname allowed";
     } else {
         if (!had) return json(400, { error: "They have no nickname to reject — the boards show their Discord name." });
         // Already asked, and nothing new flagged since: asking twice adds nothing.
         if (rejected && !flag) return json(200, { player: detailShape(row, true, null, await bansOr(db)), changed: [] });
         upd = {
-            $set: { nickRejected: { at: now, by: who } },
+            /* And the name stays turned down after it is gone, so clearing
+               it and setting it again later is refused too (30 Sept 2026;
+               see TURNED DOWN in player-nick.js). */
+            $set: { nickRejected: { at: now, by: who }, nickTurnedDown: nickRules.turnedDownWith(row.nickTurnedDown, nameKey(had)) },
             // A fresh rejection asks afresh: an earlier Refuse is forgotten.
             // And it unlocks the nickname: a locked name the player is told
             // to change is a name they cannot change, and every game stays

@@ -115,7 +115,18 @@ window.Daily = (function () {
         try {
             const { res, body } = await fetchWithTimeout("/.netlify/functions/daily-games?mine=1", { credentials: "same-origin" }, true);
             if (!res.ok) return false;
-            if (!body || !Array.isArray(body.games) || !body.games.includes(game)) return false;
+            /* Only a ticket for TODAY clears anything (30 Sept 2026). A
+               reset gives back the day it was made on, and a ticket claimed
+               days later used to wipe whatever day this page was in the
+               middle of, which nobody had reset. A ticket for another day
+               is spent and nothing else happens. The server says each
+               ticket's day (`tickets`; a server from before says only
+               `games`, which are today's). */
+            const tickets = body && Array.isArray(body.tickets) ? body.tickets
+                : (body && Array.isArray(body.games) ? body.games.map(g => ({ game: g, day: today() })) : []);
+            const ticket = tickets.find(t => t && t.game === game);
+            if (!ticket) return false;
+            const current = ticket.day === today();
             // Spend it BEFORE clearing, so a failure here cannot leave a
             // ticket that wipes the player's day again on every open.
             const { res: spent } = await fetchWithTimeout("/.netlify/functions/daily-games?mine=1", {
@@ -124,6 +135,7 @@ window.Daily = (function () {
                 credentials: "same-origin",
                 body: JSON.stringify({ game })
             }, false);
+            if (!current) return false;
             // fetch only throws on a network failure; a 4xx/5xx came back
             // as "spent" all the same, so the day was cleared while the
             // ticket stayed, to clear it again on the next open.
@@ -378,6 +390,72 @@ window.Daily = (function () {
         return `Right answers score ${each}, plus a speed bonus of up to ${SPEED_BONUS_MAX} for ${verb} quickly when you're signed in.`;
     }
 
+    /* ---------- the result as it is pasted ----------
+
+       One share text for both games (30 Sept 2026). The two used to be
+       written separately and had drifted: Guess the Maze said how many
+       rooms were found and its points, Odd One Out gave its points over
+       fifty and no name for the site — so two results pasted one under the
+       other from the same menu read like two different sites' output. Now
+       both are built here, in the same four lines:
+
+         Maze Rats · Odd One Out
+         30 Sept 2026 — 4/5 · 187 pts
+         🟩🟩🟥🟩🟩
+         https://mazerats.net/odd
+
+       `right`/`of` is what the game counts a day in (rooms found, imposters
+       spotted); `points` is the total the boards rank by, speed bonus
+       included, which only the server knows — so a game passes
+       dayTotal(served, base), which falls back to the base points when no
+       filed figure has come back (signed out, or not answered yet), rather
+       than a figure the page does not have. The address is the site's own,
+       not location.origin, so a result copied on a preview or from
+       localhost still points somewhere a friend can open. Pure, so the
+       parity check and node can run it. */
+    const SHARE_SITE = "https://mazerats.net";
+
+    function shareDate(day) {
+        return new Date(day + "T00:00:00Z")
+            .toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    }
+
+    function dayTotal(served, base) {
+        if (served && Number.isFinite(Number(served.points))) {
+            return (Number(served.points) || 0) + (Number(served.bonus) || 0);
+        }
+        return base;
+    }
+
+    function shareText(o) {
+        return `Maze Rats · ${o.game}\n` +
+            `${shareDate(o.day)} — ${o.right}/${o.of} · ${o.points} pts\n` +
+            `${o.grid}\n` +
+            `${SHARE_SITE}/${o.path}`;
+    }
+
+    /* When the clipboard says no — it needs a secure context and
+       permission, and has neither guaranteed — the text goes in a
+       selectable box after the button, to be copied by hand. A box beats a
+       button that silently does nothing. The same box every time: each
+       failed press used to insert a new one, so a player pressing again
+       (as anybody would when nothing seemed to happen) grew a column of
+       identical boxes. Styled by .guess-share-fallback in css/style.css. */
+    function shareFallback(btn, text) {
+        const holder = btn.parentElement || btn;
+        let box = holder.querySelector(".guess-share-fallback");
+        if (!box) {
+            box = document.createElement("textarea");
+            box.className = "guess-share-fallback";
+            box.readOnly = true;
+            box.setAttribute("aria-label", "Your result, to copy");
+            btn.insertAdjacentElement("afterend", box);
+        }
+        box.value = text;
+        box.select();
+        return box;
+    }
+
     /* Posts a finished day. Silent by design — whether a score reached a
        board is not something to interrupt somebody's result with, and the
        board underneath is the confirmation. Signed out it still posts and
@@ -468,6 +546,9 @@ window.Daily = (function () {
     // The starts the server has said it has (a 200), which move() reads to
     // know whether round 0 is going out with a clock behind it.
     const startConfirmed = new Set();
+    // Round 0 as each start's reply handed it out, per "game:day" (see
+    // opening below).
+    const openings = new Map();
     function start(game, day, url) {
         const key = game + ":" + day;
         if (startSent.has(key) || !window.Account) return startsInFlight.get(key) || Promise.resolve();
@@ -475,8 +556,9 @@ window.Daily = (function () {
         const job = (async () => {
             try { await Account.ready(); } catch (e) { startSent.delete(key); return; }
             if (!Account.current) { startSent.delete(key); return; }
-            const { status } = await post(url || SCORES_URL, { game, day, action: "start" });
+            const { status, body } = await post(url || SCORES_URL, { game, day, action: "start" });
             if (status === 200) startConfirmed.add(key);
+            if (status === 200 && body && body.next) openings.set(key, body.next);
             // A refusal (a closed day, say) will be refused again; only a
             // server that could not answer is worth another go.
             if (status === 0 || status >= 500) startSent.delete(key);
@@ -486,12 +568,60 @@ window.Daily = (function () {
         return job;
     }
 
+    /* ONE ROUND AT A TIME (30 Sept 2026). The deal reply no longer hands
+       out every round's pictures before the day has started — that let a
+       player study all five and then answer each at the one-second floor
+       for nearly the whole speed bonus. A round's pictures now arrive in
+       the reply that ends the round before it (`next` on a move's answer),
+       round 0's in the start's, and a deal reply carries only the rounds
+       the server's record says this player has reached (null for the rest,
+       signed out all null) — see ONE ROUND AT A TIME in
+       netlify/functions/_deal.js. Each game keeps the rounds it has been
+       handed with its saved day, so a reload signed out still has them.
+
+       opening() is round 0: from the start's reply when a signed-in start
+       is sent (start above), otherwise by asking the same endpoint plainly,
+       which for a signed-out player records nothing and answers the round.
+       Answers the round ({ round: 0, ... }) or null. */
+    async function opening(game, day, url) {
+        const key = game + ":" + day;
+        if (!openings.has(key)) await start(game, day, url);
+        if (openings.has(key)) return openings.get(key);
+        const { status, body } = await post(url || SCORES_URL, { game, day, action: "start" });
+        if (status === 200 && body && body.next) {
+            openings.set(key, body.next);
+            if (body.started) startConfirmed.add(key);
+        }
+        return openings.get(key) || null;
+    }
+
+    /* A round handed out (`next`), put into the game's list of rounds if
+       that slot is still empty. Answers whether it was. */
+    function takeRound(rounds, next) {
+        if (!Array.isArray(rounds) || !next || !Number.isInteger(next.round)) return false;
+        if (next.round < 0 || next.round >= rounds.length || rounds[next.round]) return false;
+        const copy = Object.assign({}, next);
+        delete copy.round;
+        rounds[next.round] = copy;
+        return true;
+    }
+
+    /* Fills the empty slots of `into` from `from` (a saved copy of the same
+       day's rounds), in place. */
+    function mergeRounds(into, from) {
+        if (!Array.isArray(into) || !Array.isArray(from)) return;
+        for (let i = 0; i < into.length && i < from.length; i++) {
+            if (!into[i] && from[i] && typeof from[i] === "object") into[i] = from[i];
+        }
+    }
+
     /* Forgets every start this page remembers for one game, on any day —
        for claimReset, after an admin reset has deleted the clock on the
        server. The keys are "game:day", so the prefix is the game and the
        colon (28 Sept 2026). */
     function forgetStarts(game) {
         const prefix = game + ":";
+        for (const key of Array.from(openings.keys())) if (key.startsWith(prefix)) openings.delete(key);
         for (const key of Array.from(startSent)) if (key.startsWith(prefix)) startSent.delete(key);
         for (const key of Array.from(startConfirmed)) if (key.startsWith(prefix)) startConfirmed.delete(key);
         for (const key of Array.from(startsInFlight.keys())) if (key.startsWith(prefix)) startsInFlight.delete(key);
@@ -722,7 +852,9 @@ window.Daily = (function () {
 
     return {
         today, now, setServerNow, seededRandom, dayBefore, request,
-        claimReset, deal, move, replay, refusedAsSignedIn, submit, filed, fileable, start, clock, scoreCell, boards, ranks, isMine,
-        SPEED_BONUS_MAX, bonusLine, bonusRule
+        claimReset, deal, move, replay, refusedAsSignedIn, submit, filed, fileable, start, opening, takeRound, mergeRounds,
+        clock, scoreCell, boards, ranks, isMine,
+        SPEED_BONUS_MAX, bonusLine, bonusRule,
+        shareDate, dayTotal, shareText, shareFallback
     };
 })();

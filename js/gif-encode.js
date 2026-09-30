@@ -215,6 +215,13 @@ window.GifEncode = (function () {
             run = k;
         }
         emit(run);
+        /* The same widening the loop does after every emit (30 Sept 2026).
+           A decoder adds a dictionary entry on reading that last code just
+           as it would on any other, and widens if that fills the current
+           size, so it reads the end code one bit wider than this wrote it —
+           which, landing exactly on a power of two, left a strict decoder
+           short of data (31 to 34 pixels of two alternating colours did it). */
+        if (next === (1 << codeSize) && codeSize < 12) codeSize++;
         emit(endCode);
         if (bitCount > 0) out.push(bitBuffer & 0xff);
         return out;

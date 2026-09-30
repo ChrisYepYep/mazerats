@@ -275,7 +275,13 @@ function carriedOver(before) {
     const stored = Array.isArray(before.changes) ? before.changes : [];
     if (!stored.length) return [];
 
-    const last = String(before.updatedAt || "").slice(0, 10);
+    /* A Date read as its instant (30 Sept 2026): rooms.js and events.js
+       write an ISO string, but their stamp() accepts a Date from any other
+       tool, and String(date) begins "Wed Sep 30", which is no day at all —
+       so such a record's list never carried over. */
+    const at = before.updatedAt instanceof Date && !isNaN(before.updatedAt.getTime())
+        ? before.updatedAt.toISOString() : before.updatedAt;
+    const last = String(at || "").slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
     // A stamp that is not a date at all is treated as another day: the
     // cautious answer is a fresh list, not a list that never empties.

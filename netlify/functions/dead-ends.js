@@ -27,7 +27,7 @@
                          answer.
      DELETE ?type=&id=   canWrite. The record is no longer a dead end. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { hasAccount, canWrite, usernameFromToken, UNAUTHORIZED, READ_ONLY, isAuthUnavailable, AUTH_UNAVAILABLE } = require("./_auth");
+const { hasAccount, canWrite, refuseWrite, usernameFromToken, UNAUTHORIZED, isAuthUnavailable, AUTH_UNAVAILABLE } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson } = require("./_cache");
 const DeadEnds = require("../../js/dead-ends.js");
@@ -106,9 +106,10 @@ exports.handler = async (event) => {
             return cachedJson(event, data, { cache: !full });
         }
 
-        if (!(await canWrite(event))) {
-            return (await hasAccount(event)) ? READ_ONLY : UNAUTHORIZED;
-        }
+        /* refuseWrite (30 Sept 2026): the same 401 for no account this
+           worked out by hand, and an Albus account told it is atlas-only
+           rather than that it is view-only. */
+        if (!(await canWrite(event))) return await refuseWrite(event);
 
         if (event.httpMethod === "PUT") {
             let body;

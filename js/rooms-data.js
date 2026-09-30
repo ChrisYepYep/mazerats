@@ -69,7 +69,7 @@ const LITTLE_MAZE_FILES = [
     "Room 011.png", "Room 012.png", "Room 013.png", "Room 014.png", "Room 015.png",
     "Room 016.png", "Room 017.png", "Room 018.png", "Room 019.png", "Room 020.png",
     "Room 021.png", "Room 022.png", "Room 023.png", "Room 024.png", "Room 025.png",
-    "Room 026.0.png", "Room 026.1.png", "Room 027.png", "Room 028.png", "Room 029.png",
+    "Room 026.0.png", "Room 027.png", "Room 028.png", "Room 029.png",
     "Room 030.png", "Room 031.png", "Room 032.png", "Room 033.png", "Room 034.png",
     "Room 035.png", "Room 036.png", "Room 037.png", "Room 038.png", "Room 039.png",
     "Room 040.png", "Room 041.png", "Room 042.png", "Room 043.png", "Room 044.png",

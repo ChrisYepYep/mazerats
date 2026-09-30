@@ -535,7 +535,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const seen = new Set();
             for (const key of Object.keys(furni)) {
                 const record = furni[key];
-                const items = Array.isArray(record) ? record : (record && record.items) || [];
+                // asList, as warmFurniIcons and the strip read it: an `items`
+                // that was a number made for...of throw, and this runs for
+                // every record on every keystroke.
+                const items = Array.isArray(record) ? record : asList(record && record.items);
                 for (const piece of items) {
                     if (!piece || piece.hidden) continue;
                     const label = piece.name;
@@ -578,19 +581,38 @@ document.addEventListener("DOMContentLoaded", () => {
         year: "year"
     };
 
+    /* One token of the box: an optional "-", an optional key, then a
+       quoted value or a bare word. Inside quotes \" is a quote and \\ a
+       backslash (30 Sept 2026): a chip for a tag or builder with a quote
+       in its name wrote tag:"say "hi"", which parsed as tag "say " and a
+       stray word, so the chip found nothing. filterToken escapes, and
+       searchValue undoes it. A lone backslash is kept as typed. Shared by
+       parseSearch and withFilter, which must split the box identically;
+       each copies it, as a /g pattern carries its position with it. */
+    const SEARCH_TOKEN = /(-?)(?:([a-z]+):)?(?:"((?:\\.|[^"\\]|\\)*)"?|(\S+))/gi;
+    const searchValue = quoted => quoted.replace(/\\(["\\])/g, "$1");
+
     let parsedFor = null;
     let parsedSearch = null;
 
     function parseSearch(raw) {
         if (raw === parsedFor) return parsedSearch;
         const out = { words: [], not: [], keys: [], notKeys: [] };
-        const re = /(-?)(?:([a-z]+):)?(?:"([^"]*)"?|(\S+))/gi;
+        const re = new RegExp(SEARCH_TOKEN);
         let m;
         while ((m = re.exec(raw)) !== null) {
             if (!m[0]) { re.lastIndex++; continue; }
+            /* A filter still being typed narrows nothing (30 Sept 2026). With
+               nothing after the colon the pattern cannot take "by:" as a key,
+               so it fell back to reading it as the WORD "by:" — which no
+               record contains — and the list emptied the moment the colon
+               went in, until a name followed. A lone "-" did the same. The
+               `!value` skip below was meant to cover this and never saw it. */
+            const bare = /^-?([a-z]+):$/i.exec(m[0]);
+            if (m[0] === "-" || (bare && SEARCH_KEYS[bare[1].toLowerCase()])) continue;
             const neg = m[1] === "-";
             const rawKey = m[2] ? m[2].toLowerCase() : "";
-            const value = (m[3] !== undefined ? m[3] : m[4] || "").trim().toLowerCase();
+            const value = (m[3] !== undefined ? searchValue(m[3]) : m[4] || "").trim().toLowerCase();
             const key = SEARCH_KEYS[rawKey];
             if (rawKey && !key) {
                 // "foo:bar" with a key nobody knows is just a word with a
@@ -626,7 +648,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (furni) {
             for (const key of Object.keys(furni)) {
                 const record = furni[key];
-                const items = Array.isArray(record) ? record : (record && record.items) || [];
+                // asList: see staticHaystack.
+                const items = Array.isArray(record) ? record : asList(record && record.items);
                 for (const piece of items) {
                     if (piece && !piece.hidden && piece.name) names.push(String(piece.name).toLowerCase());
                 }
@@ -648,7 +671,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 return String(n.owner || "").toLowerCase().split(",")
                     .some(b => exact ? b.trim() === value : b.trim().includes(value));
             case "tag":
-                return asTags(n.tags).some(t => t.toLowerCase().includes(value));
+                // Quoted is whole here too, as for "by": the "Maze" chip
+                // listed every "Amazement" and "Furni Maze" as well.
+                return asTags(n.tags).some(t => exact ? t.toLowerCase().trim() === value : t.toLowerCase().includes(value));
             case "hotel":
                 return String(n.hotel || "").toLowerCase() === value;
             case "diff":
@@ -681,10 +706,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
        A builder is ALWAYS quoted, because quoting is what makes "by" match
        the name exactly rather than any name containing it — see keyMatches.
-       Only chips come through here, so only a chip's builder is exact. */
+       Only chips come through here, so only a chip's builder is exact. A
+       tag is always quoted for the same reason (30 Sept 2026). A quote or
+       backslash inside is escaped (see SEARCH_TOKEN), and a value with a
+       quote in it is quoted whatever its key, so it reads back whole. */
     function filterToken(key, value) {
         const v = String(value || "").trim();
-        return (/\s/.test(v) || key === "by") ? `${key}:"${v}"` : `${key}:${v}`;
+        return (/[\s"]/.test(v) || key === "by" || key === "tag")
+            ? `${key}:"${v.replace(/["\\]/g, "\\$&")}"` : `${key}:${v}`;
     }
 
     /* The box's text with one filter set: any earlier filter of the SAME kind
@@ -692,7 +721,7 @@ document.addEventListener("DOMContentLoaded", () => {
        means "show me hard ones now", not "show me mazes that are both". */
     function withFilter(text, key, value) {
         const kept = [];
-        const re = /(-?)(?:([a-z]+):)?(?:"([^"]*)"?|(\S+))/gi;
+        const re = new RegExp(SEARCH_TOKEN);
         let m;
         while ((m = re.exec(text)) !== null) {
             if (!m[0]) { re.lastIndex++; continue; }
@@ -1422,7 +1451,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // combinedGallery from — so these are the exact URLs it will ask for.
         const images = [
             ...(n.entrance && n.entrance.image ? [n.entrance.image] : []),
-            ...((n.gallery || []).map(g => g && g.image).filter(Boolean)),
+            // A plain path string is a room too — the older seeded shape
+            // normalizeGalleryItem accepts — and was skipped here, so those
+            // mazes were never warmed at all.
+            ...((n.gallery || []).map(g => (typeof g === "string" ? g : g && g.image)).filter(s => typeof s === "string" && s)),
             ...(n.finish && n.finish.image ? [n.finish.image] : [])
         ];
         if (!images.length) return;
@@ -1821,7 +1853,15 @@ document.addEventListener("DOMContentLoaded", () => {
            hand since the request left is the visitor's newer word on it,
            and is skipped below in all three directions. */
         const askedAt = tickEditSeq;
+        /* And who asked. An answer that lands after signing out (or after
+           someone else has signed in) is the previous player's account, and
+           applying it put their ticks back on a browser that had just taken
+           them off (30 Sept 2026). It is dropped whole; syncedFor is left
+           alone, since it already belongs to whoever is signed in now, and
+           their own announcement has asked for their own answer. */
+        const askedFor = currentPlayerId();
         Account.fetchState().then(state => {
+            if (currentPlayerId() !== askedFor) return;
             // A failed read is tried again at the next announcement.
             if (!state) { syncedFor = null; return; }
             let anyChange = false;
@@ -1920,12 +1960,45 @@ document.addEventListener("DOMContentLoaded", () => {
             persistTickSet(list);
             anyChange = true;
         });
+        // And the ones a player ticked that their account never confirmed.
+        if (fitPendingToPlayer(null)) anyChange = true;
         if (anyChange) {
             renderInPlace();
             repaintToggles();
             updateWalkedCount();
             refreshProgressIfOpen();
         }
+    }
+
+    /* A PLAYER'S UNCONFIRMED TICKS ARE THEIRS TO SEE (30 Sept 2026). A tick
+       made signed in whose save never landed (offline, a timeout, the tab
+       shut first) waits in the pending book tagged with its player — and
+       stayed in the list on screen too, where neither sign-out nor the
+       next player's sign-in took it off: the only book either of those
+       reads is the account one, and a tick the account never confirmed is
+       not in it. So the next person on this browser, signed in or not, saw
+       the last player's mazes ticked as their own, and un-ticking one threw
+       the other player's pending tick away.
+
+       Now the list shows only pending ticks that belong to whoever is here:
+       the signed-out visitor's own (untagged) and, signed in, the player's
+       own. Another player's stay in the book, off the list, and come back
+       on it when they sign in here again — and go up to their account then,
+       as they always did (pushablePending). `me` is the signed-in player's
+       id, or null. Returns whether the list changed. */
+    function fitPendingToPlayer(me) {
+        let anyChange = false;
+        TICK_LISTS.forEach(list => {
+            const local = tickSet(list);
+            let changed = false;
+            pendingTicks[list].forEach(id => {
+                const who = pendingOwner[list].get(id) || null;
+                if (who && who !== me && local.has(id)) { local.delete(id); changed = true; }
+                else if (who && who === me && !local.has(id)) { local.add(id); changed = true; }
+            });
+            if (changed) { persistTickSet(list); anyChange = true; }
+        });
+        return anyChange;
     }
 
     /* ANOTHER TAB'S TICKS. Each tab held the lists in memory from its own
@@ -1972,6 +2045,14 @@ document.addEventListener("DOMContentLoaded", () => {
         if (me) {
             if (me.id === syncedFor) return;
             syncedFor = me.id;
+            // Before the account answers, so the list is this player's at
+            // once — see fitPendingToPlayer.
+            if (fitPendingToPlayer(me.id != null ? String(me.id) : null)) {
+                renderInPlace();
+                repaintToggles();
+                updateWalkedCount();
+                refreshProgressIfOpen();
+            }
             syncWalked();
         } else {
             syncedFor = null;
@@ -2481,7 +2562,11 @@ document.addEventListener("DOMContentLoaded", () => {
                under a day it did not group by. */
             const published = String(g.publishedAt);
             const edited = g.updatedAt ? String(g.updatedAt) : "";
-            const updated = !!(edited && localDayKey(edited) > localDayKey(published));
+            // The Guides window's rule too (GuideText.wasUpdated), so the
+            // two never disagree on "Updated" and "Added".
+            const updated = typeof GuideText !== "undefined"
+                ? GuideText.wasUpdated({ publishedAt: published, updatedAt: edited })
+                : !!(edited && localDayKey(edited) > localDayKey(published));
             const n = {
                 isGuide: true,
                 id: g.id,
@@ -2599,16 +2684,30 @@ document.addEventListener("DOMContentLoaded", () => {
        has it changed since — which is not worth a line of every row in the
        ordinary listings, where it would just be a third date competing with
        the maze's own opening. */
+    /* Printed on the reader's own day, the one the log is grouped by (see
+       localDayKey) — formatMazeDate is UTC, so late-evening work west of
+       Greenwich was filed under one day and dated the next (30 Sept 2026).
+       A bare YYYY-MM-DD stays the calendar day it names. */
+    function whatsNewDate(value) {
+        // A month with no day is formatMazeDate's to say ("May 2024").
+        if (/^\d{4}-\d{2}$/.test(String(value || ""))) return formatMazeDate(value);
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDayKey(value));
+        if (!m) return formatMazeDate(value);
+        // Local noon, as logDayLabel does, so no offset tips it over.
+        return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12)
+            .toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    }
+
     function whatsNewDatesHtml(n) {
         if (!showWhatsNew || !n.archivedAt) return "";
         const parts = [
-            `<span class="row-when-item">Archived: ${escapeHtml(formatMazeDate(n.archivedAt))}</span>`
+            `<span class="row-when-item">Archived: ${escapeHtml(whatsNewDate(n.archivedAt))}</span>`
         ];
         // Only when it is genuinely later than the day it arrived: an edit
         // made an hour after cataloguing is part of cataloguing it.
         // Local days, as the caption decides it — see whatsNewItems.
         if (n.updatedAt && localDayKey(n.updatedAt) > localDayKey(n.archivedAt)) {
-            parts.push(`<span class="row-when-item">Edited: ${escapeHtml(formatMazeDate(n.updatedAt))}</span>`);
+            parts.push(`<span class="row-when-item">Edited: ${escapeHtml(whatsNewDate(n.updatedAt))}</span>`);
         }
         // No separator glyph between them: a bullet or a dash would have to
         // borrow another face to render at all (Volter Goldfish draws both
@@ -2788,7 +2887,11 @@ document.addEventListener("DOMContentLoaded", () => {
                                     <button type="button" class="updatelog-entry" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}" data-focus-key="${escapeHtml(recordKey(n))}">
                                         <span class="updatelog-verb is-${n.activity}">${n.activity === "updated" ? "Updated" : "Added"}</span>
                                         ${n.thumb
-                                            ? `<img class="updatelog-thumb" src="${escapeHtml(rowThumbUrl(n.thumb))}" alt="" loading="lazy" decoding="async">`
+                                            /* A guide's picture as it was uploaded (30 Sept 2026):
+                                               small pixel-art, never resampled by the image
+                                               service — as in the Guides window. The 160px crop
+                                               is for maze screenshots; .updatelog-thumb sizes both. */
+                                            ? `<img class="updatelog-thumb" src="${escapeHtml(n.isGuide ? n.thumb : rowThumbUrl(n.thumb))}" alt="" loading="lazy" decoding="async">`
                                             : `<span class="updatelog-thumb is-blank" aria-hidden="true"></span>`}
                                         <span class="updatelog-what">
                                             <span class="updatelog-name">${escapeHtml(n.name || "")}</span>
@@ -5176,13 +5279,17 @@ document.addEventListener("DOMContentLoaded", () => {
         ROOMS.forEach(room => {
             if (room.entrance && room.entrance.image) roomImages++;
             if (room.finish && room.finish.image) roomImages++;
-            roomImages += (room.gallery || []).length;
+            // Only rooms that have their picture: an "Awaiting Room Image"
+            // entry is a room with no photograph yet.
+            asList(room.gallery).forEach(g => { if (g && normalizeGalleryItem(g).image) roomImages++; });
         });
 
+        // Each name in a shared credit ("A, B") is a person of their own,
+        // not one more person called "A, B".
         const builders = new Set();
-        ROOMS.forEach(r => { if (r.creator) builders.add(r.creator.trim().toLowerCase()); });
+        ROOMS.forEach(r => creatorNames(r.creator).forEach(name => builders.add(name.toLowerCase())));
         const hosts = new Set();
-        EVENTS.forEach(e => { if (e.host) hosts.add(e.host.trim().toLowerCase()); });
+        EVENTS.forEach(e => creatorNames(e.host).forEach(name => hosts.add(name.toLowerCase())));
 
         /* The furni league table. One entry per piece, counting the number
            of DIFFERENT mazes it appears in — a chair placed forty times in
@@ -5436,8 +5543,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${stat(soloCount, soloCount === 1 ? "used by one maze" : "used by one maze only")}
                     ${widest ? stat(widest.mazes, "mazes at its widest") : ""}
                 </div>
-                ${query
-                    ? `<p class="furni-head-filter">${entries.length} ${entries.length === 1 ? "piece matches" : "pieces match"} “${escapeHtml(query)}”.</p>`
+                ${q
+                    ? `<p class="furni-head-filter">${entries.length} ${entries.length === 1 ? "piece matches" : "pieces match"} “${escapeHtml(query.trim())}”.</p>`
                     : ""}
             </section>`;
 
@@ -5568,7 +5675,11 @@ document.addEventListener("DOMContentLoaded", () => {
             showFeatured = false;
             showWhatsNew = false;
             showTimeline = false;
-           
+            // And the search goes, as the furni browser's tiles clear it:
+            // left in, it narrowed "every maze with this in it" to the ones
+            // that also matched a search typed for something else.
+            searchInput.value = "";
+            query = "";
             render();
             const results = document.querySelector(".home-results");
             if (results) results.scrollTop = 0;
@@ -7794,6 +7905,15 @@ document.addEventListener("DOMContentLoaded", () => {
        pendingBack covers that gap: the push waits for the popstate, and the
        popstate knows not to close anything while a reopen is waiting. */
     const MODAL_STATE = "mazeratsModal";
+    /* The marker is this document's own token, not just `true` (30 Sept
+       2026). history.state outlives the document that wrote it — a reload,
+       or a Back that misses the bfcache, hands the new page an entry still
+       marked from the old one — and a plain `true` made that entry look
+       like ours: closing then called history.back() onto an entry of a
+       document that no longer exists, which reloaded the whole archive and
+       lost the filter that had just been chosen. */
+    const PAGE_TOKEN = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const modalMark = () => ({ [MODAL_STATE]: PAGE_TOKEN });
     let pendingBack = false;
     let pendingPush = null;
 
@@ -7838,7 +7958,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function ownsModalEntry() {
-        return !!(history.state && history.state[MODAL_STATE]);
+        return !!(history.state && history.state[MODAL_STATE] === PAGE_TOKEN);
+    }
+
+    // history.state with any modal marker taken off (an earlier document's,
+    // on the entry this page loaded on — see PAGE_TOKEN).
+    function unmarkedState() {
+        const s = history.state;
+        if (!s || typeof s !== "object" || !(MODAL_STATE in s)) return s;
+        const rest = Object.assign({}, s);
+        delete rest[MODAL_STATE];
+        return Object.keys(rest).length ? rest : null;
     }
 
     // The address of whatever the window is showing, so a history step that
@@ -7856,6 +7986,12 @@ document.addEventListener("DOMContentLoaded", () => {
          marked as ours and given the clean address.
        - fromAddress "history": Back or Forward onto an entry that already
          names it. Nothing to add.
+       - fromAddress "guides": a maze or an event named in the Guides window
+         (js/guides.js), which has closed without touching the history. Its
+         own pushed entry (state.guides) is REPLACED by the window's address,
+         marked as ours, so the stack is exactly what a click from the
+         archive would have left and one Back (or the X) leaves it. An entry
+         Guides did not push is handled as a click.
        - otherwise, a click: pushed, or REPLACED when a window is already
          showing (a furni card's "also in"), so Back closes the window rather
          than walking through every maze viewed in it. */
@@ -7872,16 +8008,21 @@ document.addEventListener("DOMContentLoaded", () => {
             if (fromAddress === "history") {
                 if (location.pathname !== url) history.replaceState(history.state, "", target);
             } else if (fromAddress === "hashchange") {
-                history.replaceState(ownsModalEntry() ? history.state : { [MODAL_STATE]: true }, "", target);
+                history.replaceState(ownsModalEntry() ? history.state : modalMark(), "", target);
             } else if (fromAddress === "load") {
-                if (here !== target || location.hash) history.replaceState(history.state, "", target);
+                // Also when only an inherited marker needs clearing: this
+                // entry is the visitor's way in, never ours.
+                const inherited = !!(history.state && typeof history.state === "object" && MODAL_STATE in history.state);
+                if (here !== target || location.hash || inherited) history.replaceState(unmarkedState(), "", target);
+            } else if (fromAddress === "guides" && history.state && history.state.guides) {
+                history.replaceState(modalMark(), "", target);
             } else if (location.pathname === url) {
                 // Already at this address: Forward back onto an entry we
                 // pushed earlier. Nothing to add.
             } else if (wasOpen && (ownsModalEntry() || onModalAddress())) {
                 history.replaceState(history.state, "", target);
             } else {
-                history.pushState({ [MODAL_STATE]: true }, "", target);
+                history.pushState(modalMark(), "", target);
             }
         } catch (e) { /* a sandboxed frame can refuse history writes; the modal still works */ }
     }
@@ -7918,6 +8059,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 history.back();
                 return;
             }
+            /* Or on the entry a shared link came in on, still naming its
+               maze — a maze opened from a guide over that link's window
+               (see "guides" in syncModalHistory) stacks ours on top of it.
+               The window is closed, so it goes back to the archive's
+               address, as closing it directly would have done. */
+            if (!reopened && onModalAddress()) {
+                try { history.replaceState(unmarkedState(), "", archiveAddress()); } catch (e) { /* fine */ }
+            }
             pendingBack = false;
             /* The entry stepped back onto is the one from BEFORE the window
                opened, so it carries whatever search was in the address then.
@@ -7929,7 +8078,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // A modal reopened while the step back was in flight gets the
             // entry it asked for now that the old one is gone.
             if (reopened) {
-                history.pushState({ [MODAL_STATE]: true }, "", pendingPush);
+                history.pushState(modalMark(), "", pendingPush);
             }
             pendingPush = null;
             return;
@@ -8328,7 +8477,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function loadDeadEnds() {
         if (deadEndsReq) return deadEndsReq;
-        deadEndsReq = fetch(DEAD_ENDS_URL, { headers: { Accept: "application/json" } })
+        /* On a 10s leash, as the public reads in js/api.js are (30 Sept
+           2026). A request that merely hung never settled, so deadEndsReq
+           stayed set and Missing Pieces said "Loading…" for as long as the
+           tab was open; the abort lands in the catch below like any other
+           failure, and the next ask starts afresh. */
+        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const leash = controller ? setTimeout(() => controller.abort(), 10000) : null;
+        deadEndsReq = fetch(DEAD_ENDS_URL, { headers: { Accept: "application/json" }, signal: controller ? controller.signal : undefined })
             .then(res => { if (!res.ok) throw new Error(String(res.status)); return res.json(); })
             .then(data => {
                 deadEnds.flags = new Map((data.flags || []).map(f => [`${f.type}:${f.id}`, f]));
@@ -8337,7 +8493,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (modalItem && modalOverlay.classList.contains("open")) renderModalDeadEnd(modalItem);
                 deadEndsListeners.forEach(fn => { try { fn(); } catch (e) { /* a listener's own problem */ } });
             })
-            .catch(() => { deadEndsReq = null; });
+            .catch(() => { deadEndsReq = null; })
+            .finally(() => clearTimeout(leash));
         return deadEndsReq;
     }
 
@@ -9449,6 +9606,12 @@ document.addEventListener("DOMContentLoaded", () => {
                for the rest of the visit (and be saved as the page's own by
                the next window that borrows them). */
             if (how === "load" && !asked.legacy) {
+                /* With the search the link carried, which the list below
+                   is already filtered by (30 Sept 2026). archiveSearch is
+                   only filled in when a window opens, so a dead
+                   /maze/x?q=… came out as a bare /home over a filtered
+                   list, and a reload lost the filter. */
+                archiveSearch = location.search;
                 try { history.replaceState(history.state, "", archiveAddress()); } catch (e) { /* fine */ }
                 if (window.PageMeta) {
                     window.PageMeta.set("unknown-address", null, null);
@@ -9500,11 +9663,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // For the other windows on this page (js/guides.js) that name a maze or
     // an event and want it opened the way a click opens one.
+    // opts.fromGuides: the Guides window has closed and left its own
+    // history entry for this window to take over (see syncModalHistory).
     window.ArchiveRecords = {
-        open(kind, key) {
+        open(kind, key, opts) {
             const match = dataLoaded && findRecord(kind, key);
             if (!match) return false;
-            openRecord(kind, match, {});
+            openRecord(kind, match, opts && opts.fromGuides ? { fromAddress: "guides" } : {});
             return true;
         }
     };

@@ -67,10 +67,11 @@ if (!FILE) {
         /* `_id` is Mongo's and `updatedAt` is this write's; neither belongs in
            a $set taken from a file. Restoring an _id is an error rather than
            a no-op, so it is dropped rather than left to be refused. */
-        const { _id, updatedAt, ...doc } = l;
+        // `rev` too: it is the version counter, which writeLevel moves on.
+        const { _id, updatedAt, rev, ...doc } = l;
         const set = RULES_ONLY ? { rules: doc.rules } : doc;
         const differs = JSON.stringify(set) !== JSON.stringify(
-            RULES_ONLY ? { rules: now.rules } : (({ _id: x, updatedAt: y, ...rest }) => rest)(now));
+            RULES_ONLY ? { rules: now.rules } : (({ _id: x, updatedAt: y, rev: z, ...rest }) => rest)(now));
         if (!differs) { same++; continue; }
         const was = now.rules || {}, back = doc.rules || {};
         console.log(`  ${String(l.order).padStart(2)}. ${String(l.name || l.id).padEnd(24)}` +
@@ -85,8 +86,13 @@ if (!FILE) {
         (missing ? `, ${missing} not in the database` : ""));
     if (!WRITE) { console.log("nothing written — pass --write to commit"); process.exit(0); }
 
+    /* Versioned like an editor save (30 Sept 2026): the rev is bumped and
+       the restored numbers recorded, so runs dealt the version before are
+       still judged by it. A backup's own `rev` is dropped by writeLevel —
+       the version counter only ever goes forward. */
+    const { writeLevel } = require("../netlify/functions/ff-levels.js");
     const at = new Date().toISOString();
-    for (const p of plan) await col.updateOne({ id: p.id }, { $set: { ...p.set, updatedAt: at } });
+    for (const p of plan) await writeLevel(db, p.id, { ...p.set, updatedAt: at });
     console.log(`${plan.length} levels restored`);
     process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });

@@ -35,6 +35,10 @@
    separately, as the policy says.
 
    NOT HERE, on purpose:
+     - bans (30 Sept 2026, the owner's decision): a forgotten player stays
+       banned. A ban on their account is kept whole, since its value is the
+       Discord id; a network ban only loses the link to them (the last
+       PLACE). The answer's `kept.bans` says how many account bans stayed.
      - daily_anon_moves: keyed by a hashed network, not a player, and gone
        after two days anyway (see _speed.js).
      - site_events: carries a per-tab session id and never an account.
@@ -142,8 +146,24 @@ const PLACES = [
     // contact.js: `from` as a lead's, and `discord`, which for a signed-in
     // sender IS their Discord display name (never the typed field).
     { label: "contact_messages.from", collection: "contact_messages", filter: id => ({ "from.id": id }),
-        unlink: { $set: { from: null, discord: null } } }
+        unlink: { $set: { from: null, discord: null } } },
+    /* bans.js: a network ban made FROM a player ("nethash" with playerId, so
+       the Warren could say whose network it was). BANS OUTLAST A FORGET, as
+       the owner decided (30 Sept 2026): the ban goes on working — it is on
+       the network code, not the person — but it stops naming them. Only the
+       link is stored; the name the Warren shows is looked up live from the
+       players row, which the forget deletes. A "player" ban is left exactly
+       as it is: its value IS the Discord id, and the id is the ban, so a
+       forgotten player stays banned. It is reported apart, as `kept`, and
+       never counted here (see keptBans). */
+    { label: "bans.playerId", collection: "bans", filter: id => ({ kind: { $ne: "player" }, playerId: id }),
+        unlink: { $unset: { playerId: "" } } }
 ];
+
+/* The player's own account bans, which a forget keeps (see the last PLACE
+   above). Counted so the Warren can say so, and kept out of `counts`, which
+   is what gets deleted or unlinked. */
+const keptBans = (db, id) => db.collection("bans").countDocuments({ kind: "player", value: id });
 
 async function countAll(db, id) {
     const counts = {};
@@ -182,7 +202,7 @@ async function preview(db, q) {
         const row = await players.findOne({ id: q });
         const counts = await countAll(db, q);
         if (row || total(counts)) {
-            return json(200, { player: row ? shapePlayer(row) : await playerFromRows(db, q), matches: [], counts });
+            return json(200, { player: row ? shapePlayer(row) : await playerFromRows(db, q), matches: [], counts, kept: { bans: await keptBans(db, q) } });
         }
         // Digits that are nobody's id may still be somebody's name.
     }
@@ -207,7 +227,7 @@ async function preview(db, q) {
         return json(200, { player: null, matches: rows.map(r => { const p = shapePlayer(r); return { id: p.id, name: p.name, username: p.username, nick: p.nick }; }), counts: {} });
     }
     const player = shapePlayer(rows[0]);
-    return json(200, { player, matches: [], counts: await countAll(db, player.id) });
+    return json(200, { player, matches: [], counts: await countAll(db, player.id), kept: { bans: await keptBans(db, player.id) } });
 }
 
 async function forget(db, id) {
@@ -287,7 +307,7 @@ exports.handler = async (event) => {
         });
         const counts = await forget(db, body.id);
         if (!total(counts)) return json(404, { error: "Nothing is stored for that player." });
-        return json(200, { forgotten: body.id, counts });
+        return json(200, { forgotten: body.id, counts, kept: { bans: await keptBans(db, body.id) } });
     } catch (e) {
         console.error("player-forget: request failed", e);
         // Only a database fault is an outage; anything else is a bug, and

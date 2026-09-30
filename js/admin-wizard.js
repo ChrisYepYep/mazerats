@@ -291,9 +291,24 @@ window.AdminWizard = (function () {
         if (!m) return;
         const key = decodeURIComponent(m[1]);
         if (JSON.stringify(data || {}).includes(JSON.stringify(url).slice(1, -1))) return;
-        ctx.api.deleteImage(ctx.token(), key).catch(err => {
-            if (err.status === 401) ctx.lockOut();
-        });
+        if (!ctx.token()) return;
+        /* Never a lockOut (30 Sept 2026), as deleteImageSafe in js/admin.js
+           decided for itself: this is background clean-up nobody is waiting
+           on, and a 401 from one sent after a sign-out, or with a token a
+           password change had just retired, threw the sign-in box up over a
+           good session. A 409 is upload.js keeping a picture something else
+           still uses, and a 503 it keeping one it could not check — both are
+           the right outcome. The next real request finds a dead session. */
+        ctx.api.deleteImage(ctx.token(), key).catch(() => { /* kept: see above */ });
+    }
+
+    /* Every picture a map record points at, for clearing up after it: a
+       room's picture and hover thumbnail (and the label image the public
+       page can draw), a layer's image, the map's three sheets. The same
+       fields upload.js's in-use check reads for the atlas. */
+    const PICTURE_KEYS = ["image", "thumb", "labelImage", "background", "backgroundDetail", "footprint"];
+    function picturesOf(record) {
+        return PICTURE_KEYS.map(k => record && record[k]).filter(v => typeof v === "string" && v);
     }
 
     let sayTimer = null;
@@ -1930,10 +1945,11 @@ window.AdminWizard = (function () {
        an inspector the deletion has just re-rendered, say. */
     let dialogOpen = false;
 
-    async function askFirst(message) {
+    // opts reaches showConfirmDialog: { danger } reddens the Yes of a delete.
+    async function askFirst(message, opts) {
         dialogOpen = true;
         try {
-            return await ctx.confirm(message);
+            return await ctx.confirm(message, opts);
         } finally {
             dialogOpen = false;
             // Back to the map, so the arrow keys carry on where they were —
@@ -1992,6 +2008,13 @@ window.AdminWizard = (function () {
         } else {
             drop(data.layers, id);
         }
+
+        /* Its pictures out of storage (30 Sept 2026). A deleted room or
+           picture left every file it had uploaded behind for good. Now that
+           the record is out of `data`, dropUpload spares any the map still
+           draws elsewhere — a duplicated layer shares its file — and the
+           server refuses any another record still uses. */
+        picturesOf(record).forEach(dropUpload);
 
         selected = null;
         picked = [];
@@ -2089,9 +2112,10 @@ window.AdminWizard = (function () {
        the room names underneath appearing as it goes. */
     async function addLayer(file) {
         if (!file) return;
+        let uploaded = null;
         try {
             say("Uploading…", "");
-            const uploaded = await ctx.uploadImage("layer", file);
+            uploaded = await ctx.uploadImage("layer", file);
             // Dropped in the middle of whatever is on screen, at a size that
             // is visible without covering everything, and behind the names.
             const box = els.stage.getBoundingClientRect();
@@ -2114,6 +2138,11 @@ window.AdminWizard = (function () {
                 : "Picture added. Drag it about, drag its corner to resize, and set a zoom band below.",
                 "good");
         } catch (err) {
+            /* The picture landed but the layer was refused outright: nothing
+               will ever draw it, so it goes (30 Sept 2026). A create that may
+               have landed after all (a timeout, a 5xx) keeps it, as
+               submitRoomForm does. */
+            if (uploaded && err.status >= 400 && err.status < 500 && err.status !== 401) dropUpload(uploaded.url);
             if (err.status === 401) return ctx.lockOut();
             say("Could not add that picture — " + (err.message || "try again."), "bad");
         }
@@ -2354,6 +2383,7 @@ window.AdminWizard = (function () {
         form.innerHTML = `
             ${field("Name", `<input type="text" name="name" value="${esc(secret.name || "")}" placeholder="The One-Eyed Witch Passage">`)}
             ${field("Code", `<input type="text" name="code" value="${esc(secret.code || "")}" placeholder="dissendium" autocomplete="off" spellcheck="false">`)}
+            <p class="admin-hint admin-wiz-code-hint" hidden></p>
             ${field("Clue — public", `<input type="text" name="hint" value="${esc(secret.hint || "")}" placeholder="A statue on the third floor is not as solid as she looks.">`)}
             ${field("Says on opening", `<input type="text" name="message" value="${esc(secret.message || "")}" placeholder="The statue's hump slides aside.">`)}
 
@@ -2412,7 +2442,7 @@ window.AdminWizard = (function () {
                 ${holdPickerHtml(secret)}
                 <button type="button" class="btn" data-act="take">Add map selection</button>
                 ${(secret.rooms || []).length + (secret.paths || []).length
-                    ? `<button type="button" class="btn" data-act="clear">Clear all</button>` : ""}
+                    ? `<button type="button" class="btn admin-delete-btn" data-act="clear">Clear all</button>` : ""}
             `;
             /* The landing picker offers this secret's own rooms, so it has to
                be redrawn whenever they change — and a landing room that has
@@ -2624,7 +2654,8 @@ window.AdminWizard = (function () {
                 return;
             }
             if (act === "clear") {
-                if (!confirm("Take everything out of this secret?")) return;
+                // The page's own box, not confirm() (30 Sept 2026).
+                if (!await askFirst("Take everything out of this secret?", { danger: true })) return;
                 setSecretSequence(secret, []);
                 paintHolds();
                 if (await saveSecret(secret)) say("Cleared.", "");
@@ -2655,7 +2686,7 @@ window.AdminWizard = (function () {
                 return;
             }
             if (act === "delete") {
-                if (!confirm(`Delete "${secret.name || secret.id}"? Its rooms go back on the public map.`)) return;
+                if (!await askFirst(`Delete "${esc(secret.name || secret.id)}"? Its rooms go back on the public map.`, { danger: true })) return;
                 try {
                     await ctx.api.deleteWizardItem(ctx.token(), "reveal", secret.id);
                 } catch (err) {
@@ -2673,15 +2704,49 @@ window.AdminWizard = (function () {
             renderSecretList();
         });
 
+        /* What the map will actually match (30 Sept 2026). Codes are
+           compared by their letters and digits only — codeKey in
+           netlify/functions/wizard.js — because the map's keyboard takes
+           nothing else worth matching. So say so under the field whenever
+           the code has anything else in it: "wingardium-leviosa" opens to
+           "wingardiumleviosa" or "wingardium leviosa", and "–––" opens to
+           nothing at all. */
+        const codeKey = value => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+        const codeInput = form.querySelector('[name="code"]');
+        const codeHint = form.querySelector(".admin-wiz-code-hint");
+        const showCodeHint = () => {
+            const raw = codeInput.value.trim().toLowerCase().replace(/\s+/g, " ");
+            const key = codeKey(raw);
+            let text = "";
+            if (raw && !key) text = "This has no letters or digits in it, so nothing typed can open it.";
+            else if (key && key.length < 3) text = `Typed on the map it is "${key}" — the map ignores guesses shorter than three letters.`;
+            else if (key && key !== raw.replace(/ /g, "")) text = `Only letters and digits count: this opens to "${key}" typed with or without spaces.`;
+            codeHint.textContent = text;
+            codeHint.hidden = !text;
+        };
+        codeInput.addEventListener("input", showCodeHint);
+        showCodeHint();
+
         form.addEventListener("submit", async e => {
             e.preventDefault();
             const read = name => form.querySelector(`[name="${name}"]`);
-            secret.name = read("name").value.trim();
-            secret.code = read("code").value.trim();
-            secret.hint = read("hint").value.trim();
-            secret.message = read("message").value.trim();
-            secret.enabled = read("enabled").checked;
-            if (!secret.code) return say("It needs a code.", "bad");
+            /* Checked BEFORE any of it touches `secret` (30 Sept 2026). The
+               fields used to be written into the record first and checked
+               after, so a refused Save left the bad code (or a blank one) in
+               it — and the next auto-save from this form (a reorder, the
+               landing room, Use this view) sent it to the server without
+               anyone pressing Save. Now the values are read into a copy,
+               and only a copy that passes is put into the record. */
+            const next = {
+                name: read("name").value.trim(),
+                code: read("code").value.trim(),
+                hint: read("hint").value.trim(),
+                message: read("message").value.trim(),
+                enabled: read("enabled").checked
+            };
+            if (next.code && !codeKey(next.code)) return say("The code needs at least one letter or digit.", "bad");
+            if (!next.code) return say("It needs a code.", "bad");
+            Object.assign(secret, next);
             if (await saveSecret(secret)) {
                 say("Saved.", "good");
                 // The heading, not the whole list: rebuilding it here would
@@ -2755,7 +2820,7 @@ window.AdminWizard = (function () {
                 <div class="admin-wiz-preview">${safeSrc(current) ? `<img src="${esc(safeSrc(current))}" alt="">` : ""}</div>
                 <input type="hidden" name="${name}" value="${esc(current || "")}">
                 <input type="file" name="${name}File" accept="image/*">
-                ${current ? `<button type="button" class="admin-action-pill" data-clear>Remove</button>` : ""}
+                ${current ? `<button type="button" class="admin-action-pill admin-pill-danger" data-clear>Remove</button>` : ""}
             </div>
         `;
     }
@@ -2841,18 +2906,28 @@ window.AdminWizard = (function () {
         submitBtn.textContent = "Saving…";
         errorEl.style.display = "none";
 
+        /* This save's uploads, and whether the write was sent (30 Sept
+           2026) — see the catch. */
+        const fresh = [];
+        let sent = false;
+        const id = form.dataset.id;
+        // Only the two picture fields this form writes.
+        const room = find("room", id) || {};
+        const before = [room.image, room.thumb].filter(v => typeof v === "string" && v);
         try {
             // Uploads first: a record saved with a picture that failed to
             // upload is a record that quietly lost its picture.
             const images = {};
             for (const key of ["image", "thumb"]) {
                 const file = fd.get(key + "File");
-                images[key] = file && file.size
-                    ? (await ctx.uploadImage(name, file)).url
-                    : (fd.get(key) || "").toString();
+                if (file && file.size) {
+                    images[key] = (await ctx.uploadImage(name, file)).url;
+                    fresh.push(images[key]);
+                } else {
+                    images[key] = (fd.get(key) || "").toString();
+                }
             }
             const numOrNull = v => (v === "" || v == null ? null : Number(v));
-            const id = form.dataset.id;
             const existing = find("room", id) || {};
             const changes = {
                 name,
@@ -2868,6 +2943,7 @@ window.AdminWizard = (function () {
                 hidden: fd.get("hidden") === "on",
                 ...images
             };
+            sent = true;
             await ctx.api.updateWizardItem(ctx.token(), "room", { ...existing, id, ...changes });
             /* Written onto the loaded record as well. load() below carries
                unsaved moves across the reload from the record the pile
@@ -2877,8 +2953,20 @@ window.AdminWizard = (function () {
             if (find("room", id)) Object.assign(existing, changes);
             openRoomId = null;
             await load();
+            /* The pictures this save replaced or removed, out of storage
+               (30 Sept 2026) — they used to stay for good. After the reload,
+               so dropUpload judges "still drawn" by the map as saved. */
+            before.filter(url => url !== changes.image && url !== changes.thumb).forEach(dropUpload);
             say("Saved.", "good");
         } catch (err) {
+            /* A picture uploaded for a save that certainly did not happen
+               belongs to nothing: an upload that failed part-way through, or
+               a write the server refused outright. A write that was sent and
+               then timed out, failed at the server or lost its answer may
+               well have landed, so its pictures are kept — as the picture
+               replace in onInspectorInput decides. A 401 keeps them too. */
+            const refused = !sent || (err.status >= 400 && err.status < 500 && err.status !== 401);
+            if (refused) fresh.forEach(dropUpload);
             if (err.status === 401) return ctx.lockOut();
             errorEl.textContent = err.message || "Could not save that room.";
             errorEl.style.display = "block";
@@ -3006,14 +3094,24 @@ window.AdminWizard = (function () {
         const submitBtn = els.mapForm.querySelector("button[type=submit]");
         submitBtn.disabled = true;
         submitBtn.textContent = "Saving…";
+        // The same upload bookkeeping as submitRoomForm (30 Sept 2026).
+        const SHEETS = ["background", "backgroundDetail", "footprint"];
+        const was = view.getMap() || {};
+        const before = SHEETS.map(k => was[k]).filter(v => typeof v === "string" && v);
+        const fresh = [];
+        let sent = false;
         try {
             const images = {};
-            for (const key of ["background", "backgroundDetail", "footprint"]) {
+            for (const key of SHEETS) {
                 const file = fd.get(key + "File");
-                images[key] = file && file.size
-                    ? (await ctx.uploadImage("map", file)).url
-                    : (fd.get(key) || "").toString();
+                if (file && file.size) {
+                    images[key] = (await ctx.uploadImage("map", file)).url;
+                    fresh.push(images[key]);
+                } else {
+                    images[key] = (fd.get(key) || "").toString();
+                }
             }
+            sent = true;
             await ctx.api.updateWizardItem(ctx.token(), "map", {
                 title: (fd.get("title") || "").toString(),
                 intro: (fd.get("intro") || "").toString(),
@@ -3033,8 +3131,11 @@ window.AdminWizard = (function () {
             });
             pendingStart = null;
             await load();
+            // Sheets replaced or removed by this save — see submitRoomForm.
+            before.filter(url => !Object.values(images).includes(url)).forEach(dropUpload);
             say("Map settings saved.", "good");
         } catch (err) {
+            if (!sent || (err.status >= 400 && err.status < 500 && err.status !== 401)) fresh.forEach(dropUpload);
             if (err.status === 401) return ctx.lockOut();
             say("Could not save the map — " + (err.message || "try again."), "bad");
         } finally {

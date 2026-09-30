@@ -137,9 +137,16 @@
        settle anyway (the first recorded pick per round wins); this keeps
        the page's copy from contradicting them. */
     function saveState() {
+        /* The rounds handed out so far go with the day (`dealt`), because a
+           deal reply no longer carries them all — see ONE ROUND AT A TIME
+           in js/daily.js — and signed out it carries none, so a reload
+           mid-day plays on from these (30 Sept 2026). */
+        if (state && deal && deal.day === state.day) state.dealt = deal.rounds;
         const stored = readSaved();
         if (stored && state && stored.day === state.day && progressOf(stored) > progressOf(state)) {
+            if (deal && deal.day === stored.day) window.Daily.mergeRounds(deal.rounds, stored.dealt);
             state = Object.assign(stored, { posted: Boolean(stored.posted || state.posted) });
+            if (deal && deal.day === state.day) state.dealt = deal.rounds;
             return;
         }
         try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
@@ -351,6 +358,9 @@
         const pick = body.already && Number.isInteger(body.tile)
             ? { tile: body.tile, right: body.right }
             : { tile: tileIndex, right: body.right };
+        // The next round's four pictures come with this verdict, and only
+        // now (ONE ROUND AT A TIME in js/daily.js).
+        window.Daily.takeRound(dealt(), body.next);
         state.picks.push(pick);
         if (state.picks.length >= dealt().length) state.done = true;
         saveState();
@@ -381,6 +391,7 @@
         if (!state || state.day !== forDay) return false;
         replies.forEach((r, i) => {
             const b = r.body || {};
+            if (r.status === 200) window.Daily.takeRound(dealt(), b.next);
             if (r.status === 200 && b.recorded && typeof b.right === "boolean" && state.picks[i]) {
                 state.picks[i] = { tile: Number.isInteger(b.tile) ? b.tile : state.picks[i].tile, right: b.right };
             }
@@ -713,11 +724,56 @@
         if (!state.picks.length && state.mode !== "anon" && window.Daily.start) window.Daily.start("odd", day());
         view = "round";
         const sheet = roundSheets[roundNow()];
-        if (sheet) {
+        if (sheet && rounds[roundNow()]) {
             sheet.inner.innerHTML = roundHtml(rounds[roundNow()]);
             watchTiles(sheet);
+        } else if (sheet) {
+            // Not handed out yet (ONE ROUND AT A TIME in js/daily.js).
+            sheet.inner.innerHTML = `<p class="daily-note">Dealing the round…</p>`;
+            fetchRound(roundNow());
         }
         layout();
+    }
+
+    /* A round whose pictures this page does not have: round 0 before the
+       start's reply has brought it, or a later one whose `next` was lost —
+       a reply that fell over, a reload with nothing saved. Round 0 is asked
+       for through Daily.opening. A later one is in a deal asked for again
+       when signed in, since the server's record says it has been reached;
+       signed out the server keeps no record, so the pick that ended the
+       round before is sent again (unrecorded, as it was) and its answer
+       hands this round out as it did the first time (30 Sept 2026). */
+    let fetchingRound = -1;
+    async function fetchRound(index) {
+        if (fetchingRound === index) return;
+        fetchingRound = index;
+        const forDay = day();
+        const rounds = dealt();
+        if (index === 0) {
+            window.Daily.takeRound(rounds, await window.Daily.opening("odd", forDay));
+        } else {
+            const reply = await window.Daily.deal("odd", forDay);
+            if (reply && reply.day === forDay) window.Daily.mergeRounds(rounds, reply.rounds);
+            const before = state && state.picks[index - 1];
+            if (!rounds[index] && state && state.mode === "anon" && before && !signedIn()) {
+                const again = await window.Daily.move("odd", forDay, index - 1, { tile: before.tile }, { anon: true });
+                window.Daily.takeRound(rounds, again.body && again.body.next);
+            }
+        }
+        fetchingRound = -1;
+        if (!state || state.day !== forDay || dealt() !== rounds || roundNow() !== index || finished()) return;
+        const sheet = roundSheets[index];
+        if (rounds[index]) {
+            saveState();
+            render();
+            settleFocus();
+        } else if (sheet) {
+            sheet.inner.innerHTML = `
+                <p class="daily-note">This round's pictures could not be had just now.</p>
+                <button type="button" class="guess-btn" data-odd-refetch>Try again</button>`;
+            const retry = sheet.inner.querySelector("[data-odd-refetch]");
+            if (retry) retry.addEventListener("click", () => { retry.disabled = true; fetchRound(index); });
+        }
     }
 
     /* A picture that will not load, and what the round does about it.
@@ -908,24 +964,36 @@
        What somebody wants at the end of a run is to be told how it went, in
        the tone of a friend watching over their shoulder: short, and about
        the run rather than about the game. */
+    /* Out of the rounds actually dealt, not a fixed five (30 Sept 2026): a
+       day the server dealt short of five would otherwise be told "4 of 5"
+       for four out of four, and never "All five". ROUNDS only stands in
+       before a deal has arrived. */
+    const NUMBER_WORDS = ["none", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
     function verdictFor(right) {
-        if (right === ROUNDS) return "All five. Nothing got past you.";
-        if (right === ROUNDS - 1) return "One slipped through.";
+        const of = dealt().length || ROUNDS;
+        if (right === of) return `All ${NUMBER_WORDS[of] || of}. Nothing got past you.`;
         if (right === 0) return "Not a single one. Brutal.";
-        return right + " of " + ROUNDS + " — those builders know what they are doing.";
+        if (right === of - 1) return "One slipped through.";
+        return right + " of " + of + " — those builders know what they are doing.";
     }
 
     const shareGrid = () => state.picks.map(p => (p.right ? "🟩" : "🟥")).join("");
 
-    /* The date written the way Guess the Maze writes it on its own share
-       card — "24 Sept 2026" — rather than as the ISO key. Two cards pasted
-       into the same channel from the same menu should not disagree about
-       how to write the day, and "2026-09-24" is a database's way of saying
-       it, not a person's. Same options as copyResult in js/guess.js. */
+    /* The pasted result, in the one format both games share (Daily.shareText
+       in js/daily.js): spotted out of the rounds dealt, and the total the
+       boards rank by — the server's filed figure with its speed bonus once
+       it has answered, the base points until then. */
     function shareText() {
-        const when = new Date(day() + "T00:00:00Z")
-            .toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-        return `Odd One Out ${when} — ${score()}/${dealt().length * POINTS_EACH}\n${shareGrid()}\n${location.origin}/odd`;
+        const s = served && served.day === day() ? served : null;
+        return window.Daily.shareText({
+            game: "Odd One Out",
+            day: day(),
+            right: state.picks.filter(p => p.right).length,
+            of: dealt().length || ROUNDS,
+            points: window.Daily.dayTotal(s, score()),
+            grid: shareGrid(),
+            path: "odd"
+        });
     }
 
     /* "Show me the first four". If the day has turned since the window was
@@ -1026,11 +1094,17 @@
         if (share) {
             share.addEventListener("click", async () => {
                 const foot = document.getElementById("odd-foot");
+                const text = shareText();
                 try {
-                    await navigator.clipboard.writeText(shareText());
+                    await navigator.clipboard.writeText(text);
                     if (foot) foot.textContent = "Copied — paste it wherever you like.";
                 } catch (e) {
-                    if (foot) foot.textContent = "Could not copy it — your browser said no.";
+                    /* Refused: the same selectable box Guess the Maze
+                       offers, so the result can still be copied by hand
+                       rather than only being told it could not be (30 Sept
+                       2026; see Daily.shareFallback). */
+                    window.Daily.shareFallback(share, text);
+                    if (foot) foot.textContent = "Your browser would not copy it — select the text above and copy it yourself.";
                 }
             });
         }
@@ -1068,6 +1142,10 @@
         }
         el.overlay.classList.add("open");
         document.body.classList.add("modal-open");
+        /* The tab's title and canonical name the game while it is open, as
+           the Alt Codes and the Guides do (PageMeta in js/site.js): /odd
+           used to keep the archive's title (30 Sept 2026). */
+        if (window.PageMeta) window.PageMeta.set("odd", "Odd One Out — Maze Rats", "https://mazerats.net/odd");
         if (!retrying && el.window) el.window.focus();
         if (!deal || deal.day !== day()) settled(() => introMessage(`<p class="daily-note">Dealing…</p>`));
         // Whether somebody is signed in decides what a pick does, so it is
@@ -1139,12 +1217,20 @@
            recorded in time (LATE FILING in netlify/functions/daily-scores.js;
            Daily.fileable says how long). Not awaited for its answer beyond
            this: whatever it says, that day is over on this device. */
+        const previous = deal;
         const owed = [state, saved].find(s => s && s.day !== reply.day && s.done && !s.posted);
         if (owed && signedIn() && window.Daily.fileable && window.Daily.fileable(owed.day)) {
             await window.Daily.submit("odd", owed.day, owed.picks.map(p => ({ tile: p.tile })));
         }
 
         deal = { day: reply.day, rounds: reply.rounds };
+        /* The rounds this device was handed for the day already, laid into
+           the slots the reply left empty (ONE ROUND AT A TIME in
+           js/daily.js): signed out, the reply has none at all. The deal in
+           memory first, while it is still the same day's. */
+        [previous, state, saved].forEach(s => {
+            if (s && s.day === reply.day) window.Daily.mergeRounds(deal.rounds, s.rounds || s.dealt);
+        });
         // A day already filed brings its own figures, bonus included, so a
         // results card reopened later says what the board says.
         if (reply.score && Number.isFinite(reply.score.points)) {
@@ -1219,6 +1305,7 @@
         if (!el.overlay) return;
         el.overlay.classList.remove("open");
         document.body.classList.remove("modal-open");
+        if (window.PageMeta) window.PageMeta.restore("odd");
         /* Back to whatever opened the window, as guess.js's close() does —
            closing used to leave focus on a button that had just been hidden,
            dropping a keyboard user at the top of the page. The opener may
@@ -1285,6 +1372,9 @@
             if (picking) return;           // this tab's own pick settles it
             const wasDone = state.done;
             state = other;
+            // The rounds the other tab was handed, which this one may not
+            // have been (ONE ROUND AT A TIME in js/daily.js).
+            if (deal && deal.day === state.day) window.Daily.mergeRounds(deal.rounds, state.dealt);
             // Re-read first: the other tab has probably banked the day
             // already, and bankDay's guard only sees it in fresh stats.
             if (state.done && !wasDone) { loadStats(); bankDay(); }

@@ -93,6 +93,20 @@
         return true;
     }
 
+    /* The page's own boxes, not the browser's confirm() and alert() (30
+       Sept 2026): window.AdminConfirm and AdminAlert, lent by admin.js.
+       Both take markup, so titles and headings are escaped going in.
+       Without admin.js a question answers No — nothing is deleted or
+       thrown away unasked — and a problem is written into the list. */
+    function ask(html, opts) {
+        return typeof window.AdminConfirm === "function" ? window.AdminConfirm(html, opts) : Promise.resolve(false);
+    }
+    function tell(text) {
+        if (typeof window.AdminAlert === "function") return window.AdminAlert(esc(text));
+        listEl.insertAdjacentHTML("afterbegin", `<p class="admin-empty admin-form-error">${esc(text)}</p>`);
+        return Promise.resolve();
+    }
+
     const keyOf = src => (typeof src === "string" && src.startsWith(IMAGE_PREFIX + "guides/")) ? src.slice(IMAGE_PREFIX.length) : null;
 
     // Every uploaded picture a guide points at.
@@ -196,7 +210,7 @@
         } catch (err) {
             if (sessionGone(err)) return;
             starterEl.querySelectorAll("button").forEach(x => { x.disabled = false; });
-            alert(`Could not add the starter guide: ${err.message}`);
+            tell(`Could not add the starter guide: ${err.message}`);
         }
     });
 
@@ -219,7 +233,7 @@
                 <div class="admin-row-actions">
                     <button type="button" class="btn" data-g-edit>Edit</button>
                     ${g.status === "published" ? `<a class="btn" href="/guides/${esc(encodeURIComponent(g.slug || g.id))}?fresh=1" target="_blank" rel="noopener">View</a>` : ""}
-                    <button type="button" class="btn" data-g-delete>Delete</button>
+                    <button type="button" class="btn admin-delete-btn" data-g-delete>Delete</button>
                 </div>
             </div>`).join("");
     }
@@ -234,7 +248,7 @@
     });
 
     async function removeGuide(g) {
-        if (!confirm(`Delete the guide "${g.title}"? It comes off the site at once, and its uploaded pictures are deleted. This can't be undone.`)) return;
+        if (!await ask(`Delete the guide "${esc(g.title)}"? It comes off the site at once, and its uploaded pictures are deleted. This can't be undone.`, { danger: true })) return;
         try {
             await call(`${URL_}?id=${encodeURIComponent(g.id)}`, "DELETE");
             /* The server deletes only the record; its pictures are cleared
@@ -256,7 +270,7 @@
             forget(doomed);
             await load();
         } catch (err) {
-            if (!sessionGone(err)) alert(`Could not delete it: ${err.message}`);
+            if (!sessionGone(err)) tell(`Could not delete it: ${err.message}`);
         }
     }
 
@@ -298,9 +312,12 @@
     const dirty = () => !!editing && (JSON.stringify(editing) !== snapshot || addressMoved()
         || addressPayload() !== addressSnapshot);
 
-    function openEditor(g) {
+    async function openEditor(g) {
         if (saving) return;
-        if (editing && dirty() && !confirm("You have unsaved changes to this guide. Discard them?")) return;
+        if (editing && dirty() && !await ask("You have unsaved changes to this guide. Discard them?", { danger: true })) return;
+        // The box waits; a save begun meanwhile (it can't be clicked, but
+        // Enter in a field could have queued one) keeps the form.
+        if (saving) return;
         // Every way out of an edit clears `uploaded` only after deleting what
         // it holds (or after a save has kept it), so it is empty here.
         if (editing) discardUploads();
@@ -365,7 +382,7 @@
                     <label class="admin-action-pill guides-pic-upload">${src ? "Replace" : "Upload picture"}
                         <input type="file" class="admin-gallery-thumb-file" accept="image/png,image/jpeg,image/gif,image/webp" data-upload="${which}">
                     </label>
-                    ${src ? `<button type="button" class="admin-action-pill" data-unpic="${which}">Remove</button>` : ""}
+                    ${src ? `<button type="button" class="admin-action-pill admin-pill-danger" data-unpic="${which}">Remove</button>` : ""}
                     <span class="guides-pic-status" data-pic-status="${which}"></span>
                 </div>
             </div>`;
@@ -381,7 +398,7 @@
                     <span class="guides-edit-section-tools">
                         <button type="button" class="btn" data-move="-1" ${i === 0 ? "disabled" : ""} aria-label="Move section up">&#9650; Up</button>
                         <button type="button" class="btn" data-move="1" ${i === n - 1 ? "disabled" : ""} aria-label="Move section down">&#9660; Down</button>
-                        <button type="button" class="btn" data-remove-section>Remove</button>
+                        <button type="button" class="btn admin-delete-btn" data-remove-section>Remove</button>
                     </span>
                 </div>
                 <label class="admin-field"><span>Heading</span>
@@ -546,7 +563,7 @@
         window.scrollTo(0, y);
     }
 
-    formEl.addEventListener("click", e => {
+    formEl.addEventListener("click", async e => {
         if (!editing) return;
         const t = e.target;
         const sec = t.closest("[data-section]");
@@ -564,7 +581,10 @@
             redrawKeepingScroll();
         } else if (t.closest("[data-remove-section]") && i >= 0) {
             const s = editing.sections[i];
-            if ((s.heading || s.body || s.image) && !confirm(`Remove section ${i + 1}${s.heading ? ` ("${s.heading}")` : ""}? Its picture is deleted when you save.`)) return;
+            const ed = editing;
+            if ((s.heading || s.body || s.image) && !await ask(`Remove section ${i + 1}${s.heading ? ` ("${esc(s.heading)}")` : ""}? Its picture is deleted when you save.`, { danger: true })) return;
+            // Answered after a wait: still this edit, and still that section.
+            if (editing !== ed || editing.sections[i] !== s) return;
             editing.sections.splice(i, 1);
             if (!editing.sections.length) editing.sections.push(blankSection());
             redrawKeepingScroll();
@@ -575,7 +595,8 @@
             preview();
         } else if (t.closest(".admin-cancel-btn")) {
             if (saving) return;
-            if (dirty() && !confirm("Discard your changes to this guide?")) return;
+            if (dirty() && !await ask("Discard your changes to this guide?", { danger: true })) return;
+            if (saving || !editing) return;
             closeEditor();
         }
     });

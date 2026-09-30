@@ -26,6 +26,7 @@ const { playerFrom, playerView } = require("./_player");
 const { today } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { totalOf } = require("./_speed");
+const { accountBans } = require("./_bans");
 
 const ROUNDS = 5;
 // The live games daily_scores serves; a row from a dropped game is history,
@@ -155,12 +156,43 @@ const ahead = (p, mine) => p.solved > mine.solved || (p.solved === mine.solved &
 /* Where `id` stands in a Map of everybody's totals, given their own `mine`
    (null if they have no rows, and so no place). Their entry in the map is
    ignored in favour of `mine`, which is fresh where the map may not be. */
-function placeIn(map, id, mine) {
+/* `banned` is the Set of banned account ids (see bannedIds below): they are
+   off every board, so they are off the count here too — ahead of nobody,
+   and not among the `of`. The player's own entry is never dropped. */
+function placeIn(map, id, mine, banned = new Set()) {
     if (mine == null) return null;
-    let above = 0;
-    map.forEach((p, k) => { if (k !== id && ahead(p, mine)) above++; });
-    return { rank: above + 1, of: map.size + (map.has(id) ? 0 : 1), points: mine.points };
+    let above = 0, size = 0;
+    map.forEach((p, k) => {
+        if (k !== id && banned.has(String(k))) return;
+        size++;
+        if (k !== id && ahead(p, mine)) above++;
+    });
+    return { rank: above + 1, of: size + (map.has(id) ? 0 : 1), points: mine.points };
 }
+
+/* BANNED ACCOUNTS OFF THE RANKS (30 Sept 2026). The boards leave a banned
+   account's rows out (withoutBanned in _bans.js); the Profile counted them,
+   so a player sat a place lower here than on the board they were told to go
+   and look at. Every active account ban — the ban list is a handful of rows,
+   and one read covers the dailies and Fallin' Furni alike. Fails OPEN, as
+   the boards do: an unreadable bans collection gives the old count rather
+   than no Profile. */
+async function bannedIds(db) {
+    try {
+        return new Set([...(await accountBans(db)).byPlayer.keys()].map(String));
+    } catch (e) {
+        console.error("player-profile: could not read account bans; ranking unfiltered", e);
+        return new Set();
+    }
+}
+
+/* An `at` as an ISO string, whether it was stored as one or as a Date — the
+   same as isoOf in players-admin.js. String(aDate) is "Sun Sep 20 2026…",
+   which sorts after every "2026-…" and so passed any launch cut. */
+const isoOf = v => {
+    const t = v instanceof Date ? v.getTime() : Date.parse(v);
+    return Number.isFinite(t) ? new Date(t).toISOString() : "";
+};
 
 exports.handler = async (event) => {
     if (event.httpMethod !== "GET") return json(405, { error: "Method not allowed" });
@@ -218,7 +250,7 @@ exports.handler = async (event) => {
         // `rounds` for Odd One Out rows that record it, and `bonus` for the
         // total — see gameStats.
         const rowShape = { projection: { _id: 0, day: 1, points: 1, bonus: 1, solved: 1, rounds: 1 } };
-        const [profile, guessRows, oddRows, board, ffMine, leadCounts] = await Promise.all([
+        const [profile, guessRows, oddRows, board, ffMine, leadCounts, banned] = await Promise.all([
             // With the nickname fields, for the Profile's name (see below).
             // nickLocked too (29 Sept 2026): playerView reads it off this
             // row, and a projection that left it out made every Profile
@@ -231,7 +263,8 @@ exports.handler = async (event) => {
             db.collection("dead_end_leads").aggregate([
                 { $match: { "from.id": id } },
                 { $group: { _id: "$status", n: { $sum: 1 } } }
-            ]).toArray()
+            ]).toArray(),
+            bannedIds(db)
         ]);
 
         // Their own totals, fresh from their own rows; null means no place.
@@ -240,14 +273,46 @@ exports.handler = async (event) => {
         const myCombined = myGuess == null && myOdd == null ? null : addUp(myGuess, myOdd);
 
         // Fallin' Furni from its launch instant — see `since` above.
-        const ffCounts = ffMine && (!since.at || String(ffMine.at || "") >= since.at.$gte);
+        // Compared as instants (isoOf above), not as text.
+        const ffCounts = ffMine && (!since.at || isoOf(ffMine.at) >= since.at.$gte);
 
         let ff = null;
         if (ffCounts) {
             const points = Number(ffMine.points) || 0;
+            /* The launch cut for the count, for an `at` of EITHER type (30
+               Sept 2026). A string $gte skips every Date-typed row, and a
+               Date one every string, so both are asked. And the banned
+               accounts off it, as off the board (see bannedIds) — never the
+               player's own row. */
+            const cut = since.at ? { $or: [{ at: { $gte: since.at.$gte } }, { at: { $gte: new Date(since.at.$gte) } }] } : {};
+            const off = [...banned].filter(b => b !== String(id));
+            const scope = off.length ? { ...cut, playerId: { $nin: off } } : cut;
+            /* Ahead of them is everyone the board would list first (30 Sept
+               2026): ff-scores.js sorts { points: -1, ms: 1, at: 1 }, and
+               counting only higher points put a player level on points
+               with somebody faster at that somebody's place, not their own.
+               So a draw on points goes to the quicker clock, and a draw on
+               both to whoever got there first — with `at` compared the way
+               the database's sort does it across the two types it is stored
+               as: nothing (null) first, then every string, then every Date.
+               A row from before points existed (null) sorts below every
+               number, as it does on the board. */
+            const myPts = typeof ffMine.points === "number" ? ffMine.points : null;
+            const myMs = ffMine.ms;
+            const myAt = ffMine.at;
+            const samePts = myPts == null ? { points: null } : { points: myPts };
+            const atAhead = myAt instanceof Date ? [{ at: { $lt: myAt } }, { at: { $type: "string" } }, { at: null }]
+                : typeof myAt === "string" ? [{ at: { $lt: myAt } }, { at: null }]
+                : [];
+            const ahead = [
+                myPts == null ? { points: { $ne: null } } : { points: { $gt: myPts } },
+                // (A missing clock sorts first on an ascending key.)
+                ...(myMs == null ? [] : [{ ...samePts, ms: { $lt: myMs } }, { ...samePts, ms: null }]),
+                ...atAhead.map(a => ({ ...samePts, ms: myMs == null ? null : myMs, ...a }))
+            ];
             const [above, of] = await Promise.all([
-                ffCol.countDocuments({ ...since, points: { $gt: points } }),
-                ffCol.countDocuments(since)
+                ffCol.countDocuments({ $and: [scope, { $or: ahead }] }),
+                ffCol.countDocuments(scope)
             ]);
             ff = { points, levels: ffMine.levels || 0, ms: ffMine.ms || 0, rank: above + 1, of };
         }
@@ -272,10 +337,10 @@ exports.handler = async (event) => {
                 avatar: who.avatar, joinedAt: (profile && profile.joinedAt) || null
             },
             games: {
-                guess: { ...gameStats(guessRows, day), place: placeIn(board.guess, id, myGuess) },
-                odd: { ...gameStats(oddRows, day), place: placeIn(board.odd, id, myOdd) }
+                guess: { ...gameStats(guessRows, day), place: placeIn(board.guess, id, myGuess, banned) },
+                odd: { ...gameStats(oddRows, day), place: placeIn(board.odd, id, myOdd, banned) }
             },
-            combined: placeIn(board.combined, id, myCombined),
+            combined: placeIn(board.combined, id, myCombined, banned),
             ff,
             leads
         });

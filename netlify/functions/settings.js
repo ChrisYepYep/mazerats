@@ -113,7 +113,9 @@ exports.handler = async (event) => {
         db = await getDb();
     } catch (e) {
         console.error("settings: database connection failed", e);
-        return json(500, { error: "Database connection failed" });
+        // 503, as every other endpoint answers an unreachable database: it
+        // is an outage to retry, not a fault (30 Sept 2026).
+        return json(503, { error: "Database connection failed" });
     }
     const settings = db.collection("settings");
 
@@ -273,7 +275,12 @@ async function write(event, settings, db) {
             theme: (doc && doc.theme) || DEFAULT_THEME,
             // Answered alongside the theme, now that the Controls panel
             // sets them together and lights one of the two from the reply.
-            palette: (doc && doc.palette) || null
+            palette: (doc && doc.palette) || null,
+            // The two launch dates too (30 Sept 2026), so the answer to a
+            // save is the whole document as the GET would give it rather
+            // than all of it but the two fields the date pickers write.
+            launchAt: (doc && doc.launchAt) || "",
+            ffLaunchAt: (doc && doc.ffLaunchAt) || ""
         });
     }
 

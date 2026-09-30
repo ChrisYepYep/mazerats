@@ -59,8 +59,20 @@ const VAR_NAME = /^--[a-z0-9-]{1,60}$/i;
    property name in generated CSS. */
 const DECL_KEY = /^[a-z-]{1,40}\|[#a-z0-9(),.%\s-]{1,80}$/i;
 
+/* Trimmed AFTER the cut (30 Sept 2026). It used to trim and then cut, so a
+   long name whose 40th character fell on a gap — "Halloween Pumpkin Patch at
+   the Maze Rat Warren" — was stored as "...-maze-rat-", and every later
+   lookup slugged the incoming id again and lost the hyphen: a 404 for every
+   visitor wearing it, a 409 on save, a delete that removed nothing. */
 const slug = (s) => String(s || "").toLowerCase().trim()
-    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, 40).replace(/-+$/, "");
+/* An id that ARRIVES is looked up as it is when it already has the shape of a
+   stored one, and only slugged when it does not. Slugging is for turning a
+   name into an id; running it over an id is what broke the rows above, and
+   a row saved under the old rule has to stay findable and deletable. */
+const STORED_ID = /^[a-z0-9-]{1,40}$/;
+const asId = (s) => STORED_ID.test(String(s || "")) ? String(s) : slug(s);
+const sameName = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
 
 function cleanMap(raw, keyTest) {
     const out = {};
@@ -161,7 +173,7 @@ exports.handler = async (event) => {
     if (event.httpMethod === "GET") {
         try {
             if (params.id) {
-                const one = await col.findOne({ id: slug(params.id) }, { projection: { _id: 0 } });
+                const one = await col.findOne({ id: asId(params.id) },{ projection: { _id: 0 } });
                 /* Through the edge, on the archive's own policy. Every visitor
                    wearing a palette asks for it on every page, and it was the
                    one per-page public read still going to Mongo each time. A
@@ -224,7 +236,9 @@ async function write(event, db, col, params) {
     if (event.httpMethod === "POST" || event.httpMethod === "PUT") {
         const name = String(body.name || "").trim().slice(0, MAX_NAME);
         if (!name) return json(400, { error: "A palette needs a name." });
-        const id = slug(body.id || name);
+        // A PUT names a row that exists, so its id is taken as sent (asId);
+        // a POST's is made from the name.
+        let id = event.httpMethod === "PUT" && body.id ? asId(body.id) : slug(body.id || name);
         if (!id) return json(400, { error: "That name has no letters or numbers in it." });
 
         const palette = {
@@ -250,11 +264,48 @@ async function write(event, db, col, params) {
         try { await ensureUniqueIndex(col, "id"); }
         catch (e) { console.error("palettes: unique index on id could not be built", e); }
 
-        const existing = await col.findOne({ id });
+        let existing = await col.findOne({ id });
+        /* An id sent with a PUT that matches no row is about to be upserted
+           into a new one, and a new row gets an id by today's rule — not a
+           stray "--" or trailing hyphen that asId let through for lookup. */
+        if (event.httpMethod === "PUT" && !existing && id !== slug(id)) {
+            id = slug(id);
+            if (!id) return json(400, { error: "That name has no letters or numbers in it." });
+            existing = await col.findOne({ id });
+        }
         /* A POST to a name already taken is the duplicate button's job, not a
-           silent overwrite — somebody who meant to replace one sends a PUT. */
-        if (event.httpMethod === "POST" && existing) {
-            return json(409, DUPLICATE);
+           silent overwrite — somebody who meant to replace one sends a PUT.
+
+           Taken means a row with that NAME, not that id (30 Sept 2026). A
+           rename keeps its id, so after "Autumn" became "Harvest" the id
+           "autumn" belonged to a palette nobody called Autumn any more, and a
+           new Autumn was refused with "already a palette called that" for
+           ever. Now a name nobody has gets the next free numbered id
+           ("autumn-2") instead; only a name somebody really has is refused.
+           Palettes are a few dozen rows, so the names are read whole. */
+        if (event.httpMethod === "POST") {
+            const rows = await col.find({}, { projection: { _id: 0, id: 1, name: 1 } }).toArray();
+            if (rows.some(r => sameName(r.name, name))) return json(409, DUPLICATE);
+            if (existing) {
+                const taken = new Set(rows.map(r => r.id));
+                let n = 2, next;
+                do {
+                    const tail = "-" + n++;
+                    next = id.slice(0, 40 - tail.length).replace(/-+$/, "") + tail;
+                } while (taken.has(next));
+                id = next;
+                existing = null;
+            }
+        }
+        /* And a PUT may not RENAME onto a name another palette has (30 Sept
+           2026). Only the POST asked, so Save over "Autumn" with the name
+           box changed to "Harvest" — which another palette was already
+           called — stored two palettes of the same name, and the Controls
+           card and the loader then offered two identical buttons. The
+           palette's own row is not a clash with itself. */
+        if (event.httpMethod === "PUT") {
+            const rows = await col.find({}, { projection: { _id: 0, id: 1, name: 1 } }).toArray();
+            if (rows.some(r => r.id !== id && sameName(r.name, name))) return json(409, DUPLICATE);
         }
         /* THE STALE-WRITE CHECK (28 Sept 2026). The editor can now load any
            saved palette and save it back, which makes two admins editing the
@@ -284,7 +335,7 @@ async function write(event, db, col, params) {
         const now = new Date();
         const doc = {
             id, name, palette,
-            basedOn: body.basedOn ? slug(body.basedOn) : (existing ? existing.basedOn : null),
+            basedOn: body.basedOn ? asId(body.basedOn) :(existing ? existing.basedOn : null),
             // Sent by the editor on every save; an older caller that sends
             // none keeps what the row had (see THE THEME A PALETTE IS WORN
             // OVER, above).
@@ -338,7 +389,7 @@ async function write(event, db, col, params) {
     }
 
     if (event.httpMethod === "DELETE") {
-        const id = slug(params.id || body.id);
+        const id = asId(params.id || body.id);
         if (!id) return json(400, { error: "Which palette?" });
         const r = await col.deleteOne({ id });
         /* And if the site was wearing it, it stops. settings.palette is a

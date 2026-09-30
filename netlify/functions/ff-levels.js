@@ -44,9 +44,13 @@ const { cachedJson } = require("./_cache");
    there matters unless it gets past this. */
 const NOT_OWNER = forbidden("Only an owner account can change Fallin' Furni levels.");
 
+/* no-store (30 Sept 2026): everything through here is either an owner's
+   answer — ?all=1 is every draft, on the same URL path the public list is
+   edge-cached under — or a write's, and none of it is anybody else's to keep.
+   The cacheable public list goes through cachedJson instead. */
 const json = (statusCode, data) => ({
     statusCode,
-    headers: SECURITY_HEADERS,
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
     body: JSON.stringify(data)
 });
 
@@ -226,6 +230,48 @@ async function recordVersion(versions, level, rev, at) {
     } catch (e) {
         console.error("ff-levels: could not record a level version", e);
     }
+}
+
+/* ---- A WRITE FROM OUTSIDE THIS FILE, versioned like one from inside it
+   (30 Sept 2026).
+
+   tools/ff-levels-build.js and tools/ff-levels-restore.js write ff_levels
+   straight through the driver, and did it with a bare $set: no `rev` bump
+   and no snapshot. A retune of the clocks mid-launch-week then changed the
+   numbers under a version the pages already held, and ff-scores judged
+   those pages' runs by rules they never played — the refusal VERSIONS
+   exists to prevent. So they come through here, which does what the PUT
+   does: a level from before versions is snapshotted as version 0 first,
+   the write bumps `rev`, and the new version is recorded. A new id carries
+   on after any versions an old level of that id left, as the POST does.
+
+   `set` must not carry `rev` (it would collide with the $inc) or `_id`;
+   both are dropped. Returns the level as written, or null when `id` is not
+   there and `upsert` was not asked for. */
+async function writeLevel(db, id, set, { upsert = false, setOnInsert = null } = {}) {
+    const levels = db.collection("ff_levels");
+    const versions = db.collection(VERSIONS);
+    const { rev: _rev, _id, ...fields } = set || {};
+    const before = await levels.findOne({ id }, { projection: { _id: 0 } });
+    if (!before && !upsert) return null;
+    let update;
+    if (before) {
+        if (!Number.isInteger(before.rev)) await recordVersion(versions, before, 0, stampOf(before));
+        update = { $set: fields, $inc: { rev: 1 } };
+    } else {
+        let lastRev = -1;
+        try {
+            const last = await versions.find({ id }).sort({ rev: -1 }).limit(1).toArray();
+            if (last[0] && Number.isInteger(last[0].rev)) lastRev = last[0].rev;
+        } catch (e) { /* a fresh id, as far as anyone can tell */ }
+        update = { $set: { ...fields, rev: lastRev + 1 } };
+        if (setOnInsert) update.$setOnInsert = setOnInsert;
+    }
+    const result = await levels.findOneAndUpdate({ id }, update,
+        { upsert: !before && upsert, returnDocument: "after", projection: { _id: 0 } });
+    if (!result) return null;
+    await recordVersion(versions, result, revOf(result), stampOf(result));
+    return result;
 }
 
 /* THE OWNER CHECKS THROW when the accounts cannot be read (see
@@ -427,6 +473,9 @@ async function handle(event) {
 
     return json(405, { error: "Method not allowed" });
 }
+
+// For the tools that write levels directly; see writeLevel.
+module.exports.writeLevel = writeLevel;
 
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally

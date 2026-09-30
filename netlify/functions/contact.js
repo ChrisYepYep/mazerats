@@ -182,7 +182,11 @@ exports.handler = async (event) => {
         const username = text(body.username).trim();
         const discord = text(body.discord).trim();
         if (!message) return json(400, { error: "Message can't be empty" });
-        if (message.length > MESSAGE_MAX) return json(400, { error: `Message is too long — keep it under ${MESSAGE_MAX} characters` });
+        /* Exactly MESSAGE_MAX is allowed (30 Sept 2026): the form's
+           textarea carries maxlength="2000" (home.html), so a message typed
+           right up to that limit has to land, and the old "keep it under
+           2000" told the sender the opposite of what was checked. */
+        if (message.length > MESSAGE_MAX) return json(400, { error: `Your message is too long. Please keep it to ${MESSAGE_MAX} characters or fewer.` });
         if (username.length > USERNAME_MAX) return json(400, { error: `Username is too long — keep it under ${USERNAME_MAX} characters` });
         if (discord.length > DISCORD_MAX) return json(400, { error: `Discord username is too long — keep it under ${DISCORD_MAX} characters` });
 

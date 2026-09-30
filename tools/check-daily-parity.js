@@ -200,6 +200,27 @@ const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     try { deals.publicRounds("odd", odd); } catch (e) { refused = true; }
     check(refused, "publicRounds without a day did not refuse — a caller that forgot it would send the raw paths");
 
+    /* ONE ROUND AT A TIME (30 Sept 2026; see _deal.js). A deal reply hands
+       out only the rounds reached — none before the start — keeping the
+       day's length; the reply ending round r hands out r+1 and no further. */
+    const held = deals.publicRounds("odd", odd, DAY, 0);
+    check(held.length === odd.length && held.every(r => r === null), "a deal reply before the start still hands out pictures");
+    const two = deals.publicRounds("guess", guess, DAY, 2);
+    check(two.length === guess.length && two[1] && two[1].image === sentGuess[1].image && two.slice(2).every(r => r === null),
+        "a deal reply for a player on room 2 hands out more (or other) than rooms 1 and 2");
+    const nx = deals.nextRound("odd", odd, 0, DAY);
+    check(nx && nx.round === 1 && eq(nx.tiles, sentOdd[1].tiles) && deals.nextRound("odd", odd, odd.length - 1, DAY) === null,
+        "the round handed out after round 0 is not round 1 as the full deal addresses it, or the last round hands out another");
+    const opening = deals.nextRound("guess", guess, -1, DAY);
+    check(opening && opening.round === 0 && opening.image === sentGuess[0].image, "the start does not hand out room 1");
+    const row = (moves) => ({ at: new Date(), moves });
+    check(deals.reachedOf("odd", null, 5, false) === 0, "a day with no start hands out a round");
+    check(deals.reachedOf("odd", row({}), 5, false) === 1, "a started day does not hand out round 0 alone");
+    check(deals.reachedOf("odd", row({ r0: { tile: 1 }, r1: { tile: 2 } }), 5, false) === 3, "two picks made should hand out three rounds");
+    check(deals.reachedOf("guess", row({ r0: { guesses: ["x"], done: false } }), 5, false) === 1, "a room still being guessed hands out the next");
+    check(deals.reachedOf("guess", row({ r0: { guesses: ["x"], done: true } }), 5, false) === 2, "a room over does not hand out the next");
+    check(deals.reachedOf("odd", null, 5, true) === 5, "a filed day does not hand out every round");
+
     // The seed.
     check(seedOf("guess") !== daily.daySeed(DAY, "guess"), "with a secret set, the deal is still dealt from the public seed");
     process.env.SESSION_SECRET = "a-different-secret";

@@ -94,7 +94,12 @@ function numbered(base, n) {
     return `${base.slice(0, MAX - 4).replace(/-+$/, "")}-${n}`;
 }
 
-const titleOf = (kind, r) => (kind === "maze" ? r.name : r.title) || "";
+/* Text only (30 Sept 2026): a name that reached the database as something
+   else — an object from a bad import — slugged as "object-object". */
+const titleOf = (kind, r) => {
+    const t = kind === "maze" ? r.name : r.title;
+    return typeof t === "string" ? t : "";
+};
 
 // What a stored slug may look like. Anything else is ignored and the record
 // gets one worked out from its name instead.
@@ -194,7 +199,7 @@ function assignSlugs(records, kind, retired) {
     retiredSet(retired).forEach(s => { if (!owner.has(s)) owner.set(s, NOBODY); });
     list.forEach(r => {
         if (out.has(r.id)) return;
-        const base = slugify(titleOf(kind, r)) || r.id;
+        const base = slugify(titleOf(kind, r)) || String(r.id);
         let s = base;
         for (let n = 2; !free(s, r.id); n++) s = numbered(base, n);
         owner.set(s, r.id);
@@ -216,7 +221,7 @@ function resolveSlug(records, kind, asked, retired) {
     const hit = (record, current) => ({ record, slug: slugs.get(record.id), current });
     let r = list.find(x => slugs.get(x.id) === lower);
     if (r) return hit(r, slugs.get(r.id) === want);
-    r = list.find(x => x.id === want) || list.find(x => x.id.toLowerCase() === lower);
+    r = list.find(x => x.id === want) || list.find(x => String(x.id).toLowerCase() === lower);
     if (r) return hit(r, false);
     r = list.find(x => aliasesOf(x).includes(lower));
     return r ? hit(r, false) : null;

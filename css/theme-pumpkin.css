@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   954 rules, 1548 declarations, hues 18 (surfaces) / 38 (accents).
+   958 rules, 1557 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -3061,6 +3061,10 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     outline: none;
 }
 
+[data-theme="pumpkin"] .guides-cat:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="pumpkin"] .guides-cat.is-on {
     background: linear-gradient(#471b08, #351406);
     border-color: var(--amber-bright);
@@ -4198,35 +4202,86 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] body[data-page="admin"] .btn,
 [data-theme="pumpkin"] body[data-page="admin"] .ctl-btn,
 [data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini,
-[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-zoom-btn {
-    border: 1.5px solid var(--chrome-highlight);
-    background: rgba(0, 0, 0, 0.2);
-    color: var(--parchment-dim);
-    box-shadow: none;
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-zoom-btn,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-action-pill,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-pill-btn,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-modes button,
+[data-theme="pumpkin"] body[data-page="admin"] .tag-chip,
+[data-theme="pumpkin"] body[data-page="admin"] .header-state-link {
+    background: linear-gradient(#23140d, #1c0e08);
+    border: 1px solid var(--chrome-border);
+    border-image: none;
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
+    color: var(--parchment);
+    text-shadow: none;
 }
 
 [data-theme="pumpkin"] body[data-page="admin"] .btn:hover:not([disabled]),
 [data-theme="pumpkin"] body[data-page="admin"] .ctl-btn:hover:not([disabled]),
 [data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini:hover:not([disabled]),
-[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-zoom-btn:hover:not([disabled]) {
-    border-color: var(--amber-bright);
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-zoom-btn:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .admin-action-pill:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .admin-pill-btn:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-modes button:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .tag-chip:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .header-state-link:hover,
+[data-theme="pumpkin"] body[data-page="admin"] .header-state-link:focus-visible,
+[data-theme="pumpkin"] body[data-page="admin"] .btn:focus-visible,
+[data-theme="pumpkin"] body[data-page="admin"] .ctl-btn:focus-visible,
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini:focus-visible,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-zoom-btn:focus-visible,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-action-pill:focus-visible,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-pill-btn:focus-visible,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-modes button:focus-visible,
+[data-theme="pumpkin"] body[data-page="admin"] .tag-chip:focus-visible {
+    background: linear-gradient(#2d1810, #23120b);
+    border-color: var(--amber);
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 1px 0 rgba(0, 0, 0, 0.35);
     color: #ffffff;
-    background: rgba(0, 0, 0, 0.2);
-    box-shadow: 0 0 8px rgba(255, 255, 255, 0.65);
-}
-
-[data-theme="pumpkin"] body[data-page="admin"] .btn[disabled],
-[data-theme="pumpkin"] body[data-page="admin"] .ctl-btn[disabled],
-[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini[disabled],
-[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-zoom-btn[disabled] {
-    box-shadow: none;
 }
 
 [data-theme="pumpkin"] body[data-page="admin"] .ctl-btn.active,
-[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini.active {
-    background: var(--chrome-fill);
-    border-color: var(--amber);
-    color: var(--parchment);
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini.active,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-pill-btn.active,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-modes button.active,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-modes button[aria-pressed="true"],
+[data-theme="pumpkin"] body[data-page="admin"] .tag-chip.selected,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-action-pill.admin-pill-solid,
+[data-theme="pumpkin"] body[data-page="admin"] .btn.btn-solid {
+    background: linear-gradient(#471b08, #351406);
+    border-color: var(--amber-bright);
+    color: #ffffff;
+}
+
+[data-theme="pumpkin"] body[data-page="admin"] .admin-action-pill.admin-pill-solid:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .btn.btn-solid:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .admin-action-pill.admin-pill-solid:focus-visible,
+[data-theme="pumpkin"] body[data-page="admin"] .btn.btn-solid:focus-visible {
+    background: linear-gradient(#53200a, #3e1706);
+    border-color: #ffffff;
+    color: #ffffff;
+}
+
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini[data-state].active,
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini[data-ff-state].active {
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 0 8px 1px rgba(111, 143, 79, 0.8);
+}
+
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini[data-state="coming-soon"].active,
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini[data-state="maintenance"].active,
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini[data-ff-state="coming-soon"].active,
+[data-theme="pumpkin"] body[data-page="admin"] .btn-enter-mini[data-ff-state="maintenance"].active {
+    box-shadow: inset 0 1px 0 var(--chrome-highlight), 0 0 8px 1px rgba(123, 59, 9, 0.8);
+}
+
+[data-theme="pumpkin"] .admin-tab-where {
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] body[data-page="admin"] .ctl-seg,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-wiz-modes {
+    border: none;
+    background: none;
 }
 
 [data-theme="pumpkin"] .daily-bonus {
@@ -4553,10 +4608,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--amber-bright);
 }
 
-[data-theme="pumpkin"] body[data-page="admin"] .ctl-seg .btn-enter-mini {
-    border: none;
-}
-
 [data-theme="pumpkin"] .de-chip.se-status-resolved {
     color: color-mix(in srgb, var(--ok, #7fb069), var(--parchment) 25%);
 }
@@ -4795,6 +4846,22 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     border-color: var(--danger);
     color: #fff0ec;
     box-shadow: 0 0 8px rgba(161, 70, 47, 0.65);
+}
+
+[data-theme="pumpkin"] body[data-page="admin"] .admin-pill-btn.admin-pill-danger,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-action-pill.admin-pill-danger,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-delete-btn {
+    color: var(--danger-text);
+}
+
+[data-theme="pumpkin"] body[data-page="admin"] .admin-pill-btn.admin-pill-danger:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .admin-action-pill.admin-pill-danger:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .admin-delete-btn:hover:not([disabled]),
+[data-theme="pumpkin"] body[data-page="admin"] .admin-pill-btn.admin-pill-danger:focus-visible,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-action-pill.admin-pill-danger:focus-visible,
+[data-theme="pumpkin"] body[data-page="admin"] .admin-delete-btn:focus-visible {
+    border-color: var(--danger);
+    color: #fff0ec;
 }
 
 /* ============================================================ CORRECTIONS */

@@ -420,7 +420,9 @@ exports.handler = async (event) => {
         }
     }
 
-    return { statusCode: 405, body: "" };
+    // Through json() like every other answer here, so it carries the
+    // security headers and no-store too (30 Sept 2026).
+    return json(405, { error: "Method not allowed" });
 };
 
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see

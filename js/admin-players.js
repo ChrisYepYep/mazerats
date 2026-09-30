@@ -475,6 +475,15 @@
     const details = new Map();          // ref -> the full player, from getPlayer
     const detailErrors = new Map();     // ref -> message, when that read failed
     const nickDrafts = new Map();       // ref -> what is typed in the nickname box
+    /* Element ids (for a label's `for`) are numbered, not built from the ref
+       (30 Sept 2026): the ref is a Discord ID, and a click's breadcrumb names
+       the element by its id. One number per ref, kept for the page's life,
+       so a re-render gives the same box the same id. */
+    const domIds = new Map();           // ref -> a small number
+    const domId = ref => {
+        if (!domIds.has(ref)) domIds.set(ref, domIds.size + 1);
+        return domIds.get(ref);
+    };
     const forgets = new Map();          // ref -> { state, data, error } for the owner's forget
     /* Which detail read is the one to believe (29 Sept 2026). Per ref: the
        number of the latest read started, and of the latest write landed.
@@ -485,6 +494,11 @@
     const detailWrites = new Map();     // ref -> number of writes landed
     let busy = false;
     let searchTimer = null;
+    /* Which signed-in account an answer belongs to (30 Sept 2026): reset()
+       moves it on, and a detail read, a write or a forget still out from
+       the account before is then dropped rather than landing in the next
+       one's list — a forget used to take one off the new account's counts. */
+    let sessionNo = 0;
 
     /* Moderation (29 Sept 2026; see MODERATION at the top). The row's
        `ban` says only { level, until, kind } — enough for the chip, not
@@ -945,16 +959,16 @@
         return `
             <div class="pl-edit">
                 ${reviewHtml(p)}
-                <label class="ctl-label" for="pl-nick-${escapeHtml(ref)}">Nickname</label>
+                <label class="ctl-label" for="pl-nick-${domId(ref)}">Nickname</label>
                 <div class="ctl-row">
-                    <input type="text" class="ctl-input pl-nick-input" id="pl-nick-${escapeHtml(ref)}" data-ref="${escapeHtml(ref)}"
+                    <input type="text" class="ctl-input pl-nick-input" id="pl-nick-${domId(ref)}" data-ref="${escapeHtml(ref)}"
                            maxlength="${NICK_MAX}" autocomplete="off" spellcheck="false" autocapitalize="off"
                            placeholder="${escapeHtml(p.name || "Nickname")}" value="${escapeHtml(draft)}"${busy ? " disabled" : ""}>
                     <button type="button" class="ctl-btn pl-write" data-a="save"${busy ? " disabled" : ""}>${p.nick ? "Save nickname" : "Set nickname"}</button>
                 </div>
                 <p class="admin-hint">2–20 letters, numbers, spaces and - _ . ' ! ?, not taken by another player — the rules a player's own is held to. Your choice isn't run past the word filter, and it ends any review. Doesn't count towards their five changes a day, and renames their rows on every board.</p>
                 <div class="ctl-actions">
-                    ${p.nick ? `<button type="button" class="ctl-btn pl-write" data-a="clear"${busy ? " disabled" : ""}>Remove nickname</button>` : ""}
+                    ${p.nick ? `<button type="button" class="ctl-btn admin-delete-btn pl-write" data-a="clear"${busy ? " disabled" : ""}>Remove nickname</button>` : ""}
                     <button type="button" class="ctl-btn pl-write" data-a="lock"${busy ? " disabled" : ""} title="${p.nickLocked ? "Let the player change their nickname again" : "Stop the player changing their nickname themselves; their Profile tells them to ask the admins"}">${p.nickLocked ? "Unlock nickname" : "Lock nickname"}</button>
                     <button type="button" class="ctl-btn pl-write" data-a="prompt"${!p.nickAsked ? " data-off" : ""}${busy || !p.nickAsked ? " disabled" : ""} title="${p.nickAsked ? "Show them the Choose a nickname? window again on their next visit (not while they have a nickname, or while it is locked)" : "They haven't seen it yet"}">Show the nickname prompt again</button>
                 </div>
@@ -1053,7 +1067,7 @@
                     <button type="button" class="ctl-btn pl-write pl-ban-lift" data-a="ban-lift" data-ban-id="${escapeHtml(b.id)}"${busy ? " disabled" : ""}>Lift</button>
                 </div>` : ""}
                 ${editing ? `
-                ${Kit.formHtml(edit.state, { change: true, ended: Kit.endedAt(b, now), now, uid: "pl-banedit-" + ref })}
+                ${Kit.formHtml(edit.state, { change: true, ended: Kit.endedAt(b, now), now, uid: "pl-banedit-" + domId(ref) })}
                 <div class="ctl-actions">
                     <button type="button" class="ctl-btn pl-write" data-a="ban-change-save"${busy ? " disabled" : ""}>Save change</button>
                     <button type="button" class="ctl-btn" data-a="ban-change-cancel">Cancel</button>
@@ -1088,9 +1102,9 @@
                 </div>`;
         } else {
             body = `
-                ${Kit.formHtml(banDraft(ref), { now, targets: { net: !!p.hasNetHash }, uid: "pl-ban-" + ref })}
+                ${Kit.formHtml(banDraft(ref), { now, targets: { net: !!p.hasNetHash }, uid: "pl-ban-" + domId(ref) })}
                 <div class="ctl-actions">
-                    <button type="button" class="ctl-btn pl-write pl-ban-go" data-a="ban-go"${busy ? " disabled" : ""}>Ban…</button>
+                    <button type="button" class="ctl-btn admin-delete-btn pl-write pl-ban-go" data-a="ban-go"${busy ? " disabled" : ""}>Ban…</button>
                 </div>`;
         }
         return `<h4 class="admin-subheading se-sub">Moderation</h4><div class="pl-mod">${body}${line}</div>`;
@@ -1346,7 +1360,8 @@
         if (Number.isFinite(t)) skew = t - Date.now();
     }
 
-    async function load() {
+    /* `stepped` is load's own retry, below — callers pass nothing. */
+    async function load(stepped) {
         if (!apiReady()) { render(); return; }
         if (!token()) return;
         const gen = ++loadGen;
@@ -1360,6 +1375,16 @@
             takeClock(data);
             players = Array.isArray(data && data.players) ? data.players.filter(p => p && refOf(p)) : [];
             total = Number(data && data.total) || players.length;
+            /* A page past the end (30 Sept 2026) — the only player on page
+               two forgotten, or the list shrunk under a filter — came back
+               empty with no pager, so no Previous, and Refresh asked for the
+               same page again. Step back to the last page there is, and ask
+               once more. */
+            if (!players.length && skip > 0 && !stepped) {
+                const last = total > 0 ? Math.floor((total - 1) / PAGE) * PAGE : 0;
+                skip = last < skip ? last : 0;
+                return load(true);
+            }
             counts = (data && data.counts) || {};
             if (has(counts.all)) setBadge(counts);
             loadedAt = Date.now();
@@ -1383,11 +1408,13 @@
         const readNo = (detailReads.get(ref) || 0) + 1;
         detailReads.set(ref, readNo);
         const writesAt = detailWrites.get(ref) || 0;
+        const mine = sessionNo;
         /* A newer read owns the answer, and will draw it. A write since
            this read started means the answer predates it: read again,
            fresh, rather than draw the old state or leave the detail
            without its activity (takeWrite only has the player's fields). */
         const stale = () => {
+            if (mine !== sessionNo) return true;
             if (detailReads.get(ref) !== readNo) return true;
             if ((detailWrites.get(ref) || 0) === writesAt) return false;
             if (openRef === ref) loadDetail(ref);
@@ -1404,6 +1431,7 @@
             const row = players.find(x => refOf(x) === ref);
             if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "name", "username", "avatar", "seenAt", "ban", "hasNetHash"].forEach(k => { row[k] = p[k]; });
         } catch (err) {
+            if (mine !== sessionNo) return;
             if (sessionGone(err)) return;
             if (stale()) return;
             detailErrors.set(ref, err && err.status === 404 ? "they are no longer there (forgotten?)" : errText(err));
@@ -1433,10 +1461,12 @@
         if (busy || !canWrite() || !p.id) return false;
         if (typeof Api.updatePlayer !== "function") { flash("Not available yet — reload the page.", true); return false; }
         const ref = refOf(p);
+        const mine = sessionNo;
         setBusy(true);
         say(ref, "Saving…");
         try {
             const res = await Api.updatePlayer(token(), Object.assign({ id: p.id }, change));
+            if (mine !== sessionNo) return false;
             takeWrite(ref, res && res.player);
             if (Object.prototype.hasOwnProperty.call(change, "nick")) nickDrafts.delete(ref);
             // Counts on the strip may have moved (a nickname, a lock, a flag).
@@ -1453,6 +1483,7 @@
             say(ref, okText);
             return true;
         } catch (err) {
+            if (mine !== sessionNo) return false;
             setBusy(false);
             if (sessionGone(err)) { say(ref, "Not saved: your session had expired. Sign in, then try again.", true); return false; }
             /* A review's 409 (29 Sept 2026) is the player having changed
@@ -1515,7 +1546,8 @@
         "dead_end_leads.from": "Missing Pieces submissions (name removed, kept)",
         "dead_end_leads.sender": "Missing Pieces submissions (sender link removed, kept)",
         "dead_end_uploads.playerId": "Missing Pieces screenshots (uploader removed, kept)",
-        "contact_messages.from": "Contact messages (name removed, kept)"
+        "contact_messages.from": "Contact messages (name removed, kept)",
+        "bans.playerId": "Network bans (player link removed, ban kept)"
     };
     /* player-forget.js reports counts by where they are kept (its PLACES);
        said plainly here. A key this list does not know yet is still shown,
@@ -1534,12 +1566,17 @@
         return `<ul class="pl-counts">${rows.map(([label, n]) =>
             `<li><span>${escapeHtml(label)}</span> <strong>${escapeHtml(n.toLocaleString("en-GB"))}</strong></li>`).join("")}</ul>`;
     }
-    function forgetConfirmHtml(p, c) {
+    /* `kept` (30 Sept 2026): player-forget.js leaves a ban on the account in
+       force — a forgotten troll stays banned — and says how many, apart from
+       the counts, so the list above never claims a ban is deleted. */
+    function forgetConfirmHtml(p, c, kept) {
         const list = Object.entries(c && typeof c === "object" ? c : {})
             .filter(([, n]) => Number(n) > 0)
             .map(([key, n]) => `${escapeHtml(forgetLabel(key))} (${escapeHtml(Number(n).toLocaleString("en-GB"))})`);
+        const bans = Number(kept && kept.bans) || 0;
         return `This permanently deletes everything the site keeps about <strong>${escapeHtml(shownOf(p))}</strong>` +
-            ` (Discord ID ${escapeHtml(p.id)})${list.length ? ": " + list.join(", ") : ""}. It can't be undone.`;
+            ` (Discord ID ${escapeHtml(p.id)})${list.length ? ": " + list.join(", ") : ""}. It can't be undone.` +
+            (bans ? ` Bans on their account stay in force (${escapeHtml(bans.toLocaleString("en-GB"))}).` : "");
     }
     function forgetErrorText(err) {
         const status = err && err.status;
@@ -1570,13 +1607,15 @@
         const ref = refOf(p);
         const f = forgets.get(ref);
         if (!f || f.state !== "shown" || busy || !isOwner()) return;
-        if (!(await ask(forgetConfirmHtml(p, f.data && f.data.counts)))) return;
+        if (!(await ask(forgetConfirmHtml(p, f.data && f.data.counts, f.data && f.data.kept)))) return;
         // Cancelled, cleared or signed out while the dialog was up.
         if (forgets.get(ref) !== f) return;
         if (typeof Api.forgetPlayer !== "function") { flash("Not available yet — reload the page.", true); return; }
+        const mine = sessionNo;
         setBusy(true);
         try {
             const data = await Api.forgetPlayer(token(), p.id);
+            if (mine !== sessionNo) return;
             forgets.delete(ref);
             details.delete(ref);
             nickDrafts.delete(ref);
@@ -1590,9 +1629,12 @@
             openRef = null;
             setBusy(false);
             render();
+            // The last one on a later page: load() steps back a page.
+            if (!players.length && skip > 0) load();
             const n = Object.values((data && data.counts) || {}).reduce((s, v) => s + (Number(v) || 0), 0);
             flash(`Forgotten: ${shownOf(p)} (Discord ID ${p.id}). ${num(n)} ${n === 1 ? "record" : "records"} removed or unlinked.`);
         } catch (err) {
+            if (mine !== sessionNo) return;
             setBusy(false);
             if (sessionGone(err)) return;
             forgets.set(ref, Object.assign({}, f, { error: forgetErrorText(err) }));
@@ -1712,7 +1754,7 @@
         const shown = lookShown;
         if (!shown || busy) return;
         const p = shown.player;
-        if (!(await ask(forgetConfirmHtml({ id: p.id, displayName: p.nick || p.name || p.username }, shown.counts)))) return;
+        if (!(await ask(forgetConfirmHtml({ id: p.id, displayName: p.nick || p.name || p.username }, shown.counts, shown.kept)))) return;
         if (lookShown !== shown) return;
         const gen = ++lookGen;
         const btn = forgetEl.querySelector("[data-look-go]");
@@ -1861,6 +1903,7 @@
        not for whoever sits down next. */
     function reset() {
         loadGen++;
+        sessionNo++;
         filter = "all";
         query = "";
         sort = "seen";

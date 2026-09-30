@@ -84,6 +84,17 @@
    off nickRejected and nickRefused together and the games open again;
    playerView carries both booleans to the page.
 
+   TURNED DOWN (30 Sept 2026). A rejected name used to be free again the
+   moment the rejection came off — clear it, then set it back. So the
+   players row keeps `nickTurnedDown`, the nameKeys of the names the admins
+   have rejected (the Warren's Reject adds one; a player's change or clear
+   away from a rejected name adds it too, for rejections made before this),
+   the last TURNED_DOWN_MAX of them. A set whose nameKey is on it is refused
+   with 400 and TURNED_DOWN_MESSAGE. The admins take a name back off it by
+   choosing it: Allow on it, Lock on it, or setting it for the player
+   (players-admin.js). Forgetting the player deletes the row, list and all.
+   Never sent to the player or the public.
+
    BANNED (29 Sept 2026). A banned player — soft or full, by account or by
    network (see _bans.js) — is refused every mode here with 403 { error,
    banned: { level, until } }.
@@ -138,7 +149,9 @@
 
    FIVE CHANGES A DAY per player (UTC day), counting sets and clears but not
    `asked`. Enough to fix a typo or two; not enough to use the boards as a
-   message board by renaming every minute.
+   message board by renaming every minute. The one change that answers an
+   admin's rejection is free once the five are spent (30 Sept 2026; see
+   PAST THE DAY'S CAP in the handler).
 
    ----------------------------------------------------------------------
    The boards
@@ -172,6 +185,9 @@ const HISTORY_MAX = 10;
 // See LOCKED in the header. The Profile shows the same sentence.
 const LOCKED_MESSAGE = "Your nickname was set by the site's admins. Ask them if you'd like it changed.";
 const TAKEN_MESSAGE = "That nickname is taken.";
+// See TURNED DOWN in the header.
+const TURNED_DOWN_MESSAGE = "That's the nickname the admins turned down. Choose a different one.";
+const TURNED_DOWN_MAX = 10;
 
 /* The letters the boards' font can draw — see the header. As a character
    class body, so it can be used in the three patterns below. */
@@ -324,6 +340,17 @@ function historyPush(nick, at, by, action) {
     const entry = { nick: nick || null, at, by };
     if (action) entry.action = action;
     return { nickHistory: { $each: [entry], $slice: -HISTORY_MAX } };
+}
+
+/* The turned-down list (see TURNED DOWN in the header) with `key` added —
+   once, newest last, the last TURNED_DOWN_MAX kept — or taken off. New
+   arrays; a list that is not one reads as empty. Shared with the Warren. */
+function turnedDownWith(list, key) {
+    const rest = (Array.isArray(list) ? list : []).filter(k => k !== key);
+    return key ? [...rest, key].slice(-TURNED_DOWN_MAX) : rest;
+}
+function turnedDownWithout(list, key) {
+    return (Array.isArray(list) ? list : []).filter(k => k !== key);
 }
 
 /* The request came from this site. The session cookie is SameSite=Lax, so
@@ -507,8 +534,29 @@ async function handler(event) {
             return await reply();
         }
 
-        const current = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, name: 1, nickLocked: 1 } }) || {};
+        const current = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, name: 1, nickLocked: 1, nickRejected: 1, nickTurnedDown: 1 } }) || {};
         const had = (typeof current.nick === "string" && current.nick) || "";
+        const rejected = !!(current.nickRejected && typeof current.nickRejected === "object");
+        const turnedDown = Array.isArray(current.nickTurnedDown) ? current.nickTurnedDown : [];
+
+        /* THE REJECTED NAME, RESPELT (30 Sept 2026). While a rejection
+           stands, the nickname on the row IS the one the admins turned down
+           (a set or a clear takes nickRejected off; so does the Warren's
+           override). "H1tlerFan" saved again as "h1tlerfan" was a change by
+           the test below and not taken (takenBy skips the player's own row),
+           so it went through, took the rejection off and opened the games
+           with no flag. Compared as "taken" compares — nameKey — it is the
+           same name, and is refused as one. 400, so the window keeps the
+           field and says why.
+
+           AND LATER, TOO (30 Sept 2026): clearing the rejected name took
+           the rejection off, and the same name could then simply be set
+           again. So every name the admins reject stays turned down on the
+           row (nickTurnedDown; see TURNED DOWN above), and a set whose
+           nameKey is on it is refused the same way, rejection or not. */
+        if (mode === "set" && ((rejected && had && nameKey(nick) === nameKey(had)) || turnedDown.includes(nameKey(nick)))) {
+            return refuse(TURNED_DOWN_MESSAGE);
+        }
 
         /* Asking for what is already there is not a change and does not
            count against the day — a double-pressed Save, or the prompt's
@@ -553,6 +601,10 @@ async function handler(event) {
             : { $set: { nickAsked: true, nickAt: now }, $unset: { nick: "", nickKey: "", nickRejected: "", nickRefused: "", nickFlag: "" } };
         if (hit) fields.$set.nickFlag = { reason: hit.reason, word: hit.word, at: now };
         else fields.$unset.nickFlag = "";
+        // The name leaving under a rejection stays turned down (see TURNED
+        // DOWN) — the Warren's reject records it too; this is for one
+        // rejected before that existed.
+        if (rejected && had) fields.$set.nickTurnedDown = turnedDownWith(turnedDown, nameKey(had));
         fields.$push = historyPush(mode === "set" ? nick : null, now, "player");
         const unlocked = { nickLocked: { $ne: true } };
         const day = today();
@@ -569,6 +621,22 @@ async function handler(event) {
                     { ...fields, $set: { ...fields.$set, nickDay: day, nickCount: 1 } }
                 );
                 changed = newDay.matchedCount > 0;
+            }
+            /* PAST THE DAY'S CAP, ONCE, FOR A REJECTED NAME (30 Sept 2026). A
+               player who had spent the day's five changes when the admins
+               rejected their nickname got 429 on every save and clear, and
+               every game stayed shut until UTC midnight — the admins'
+               decision, charged to the player. So while nickRejected stands,
+               the change goes through uncounted. Once only: `fields` takes
+               nickRejected off in this same write, and the filter needs it
+               there, so two saves racing get one free change between them
+               and the next one is counted (and refused) as usual. */
+            if (!changed && rejected) {
+                const free = await players.updateOne(
+                    { id: player.id, ...unlocked, nickRejected: { $exists: true } },
+                    fields
+                );
+                changed = free.matchedCount > 0;
             }
         } catch (e) {
             if (e && e.code === 11000) return json(409, { error: TAKEN_MESSAGE });
@@ -614,6 +682,9 @@ exports.CHANGES_PER_DAY = CHANGES_PER_DAY;
 exports.HISTORY_MAX = HISTORY_MAX;
 exports.LOCKED_MESSAGE = LOCKED_MESSAGE;
 exports.TAKEN_MESSAGE = TAKEN_MESSAGE;
+exports.TURNED_DOWN_MESSAGE = TURNED_DOWN_MESSAGE;
+exports.turnedDownWith = turnedDownWith;
+exports.turnedDownWithout = turnedDownWithout;
 exports._resetForTests = () => { nickIndexReady = false; };
 
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see

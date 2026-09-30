@@ -45,9 +45,14 @@
    Add or remove a date, deploy, and look at what the games deal. Change
    the salt to re-roll the same day.
 
-   DO IT BEFORE THE DAY, NOT DURING IT. The salt is part of the seed, so
-   changing it mid-day re-deals the puzzle under anyone already playing and
-   orphans the scores already submitted. */
+   DO IT BEFORE THE DAY, NOT DURING IT. The salt is part of the seed, and
+   the seed is only read when a day is first dealt (30 Sept 2026: the day is
+   now dealt once, on the server, and stored in daily_deals — see
+   netlify/functions/_deal.js; the browser no longer reads this table at
+   all, and much of the note above describes the arrangement before that).
+   So a salt changed once the day has been dealt does NOTHING until that
+   day's two daily_deals documents are deleted, and deleting them mid-day
+   re-deals the puzzle under anyone already playing. */
 (function (root) {
     "use strict";
 

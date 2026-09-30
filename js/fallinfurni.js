@@ -2992,9 +2992,15 @@
        So each call takes a ticket and a late one is dropped on the floor. */
     let lookupSeq = 0;
 
+    /* WHAT THE LOOKUP FOUND, for Play to act on (30 Sept 2026): "found",
+       "missing" (Habbo says there is nobody by that name), "failed" (we could
+       not ask), or "stale" (a newer lookup has taken over). A mistyped name
+       used to go straight on into the round as the default avatar, and the
+       "No Origins habbo by that name" line was hidden with the title before
+       anyone could read it. */
     async function lookup(name) {
         const clean = name.trim();
-        if (!clean) return;
+        if (!clean) return "stale";
         const mine = ++lookupSeq;
         status("Looking up " + clean + "…", "busy");
 
@@ -3009,7 +3015,7 @@
         try {
             const res = await fetch("/.netlify/functions/room-figure?name=" + encodeURIComponent(clean));
             const data = await res.json().catch(() => ({}));
-            if (mine !== lookupSeq) return;         // somebody asked again since
+            if (mine !== lookupSeq) return "stale"; // somebody asked again since
             if (!res.ok || !data.figureString) {
                 /* A REFUSED NAME TAKES THE OLD AVATAR OFF, and that is the
                    other half of the same complaint. The only way to be wearing
@@ -3024,19 +3030,23 @@
                    with no figure in it. A 502 is Habbo being unreachable and a
                    429 is our own rate limit — neither says anything about the
                    player, and neither is a reason to undress them. */
-                if (res.status === 404 || res.status === 400 || res.ok) {
+                const missing = res.status === 404 || res.status === 400 || res.ok;
+                if (missing) {
                     wear(DEFAULT_FIGURE, "");
                     persist();
                 }
-                status(data.error || "No Origins habbo by that name.", "bad");
-                return;
+                status(data.error || (missing ? "No Origins habbo by that name."
+                    : "Could not reach the lookup just now."), "bad");
+                return missing ? "missing" : "failed";
             }
             wear(data.figureString, data.name || clean);
             status("Playing as " + state.name + ".", "good");
             persist();
+            return "found";
         } catch {
-            if (mine !== lookupSeq) return;
+            if (mine !== lookupSeq) return "stale";
             status("Could not reach the lookup just now.", "bad");
+            return "failed";
         }
     }
 
@@ -3430,14 +3440,22 @@
         return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
     };
 
+    /* THE LATEST ASK WINS (30 Sept 2026), as with `lookupSeq`. Several of
+       these can be out at once — the title coming back, and the board being
+       redrawn after a run was recorded — and an older answer landing last
+       drew the board as it stood BEFORE the run it had just said was on it. */
+    let boardSeq = 0;
+
     async function refreshBoard() {
         const box = document.getElementById("ff-board");
         const list = document.getElementById("ff-board-list");
         if (!box || !list) return;
+        const mine = ++boardSeq;
         try {
             const res = await fetch("/.netlify/functions/ff-scores", { credentials: "same-origin" });
             if (!res.ok) throw new Error(String(res.status));
             const data = await res.json();
+            if (mine !== boardSeq) return;          // a newer ask is out
             list.innerHTML = "";
             /* EVERY row the server sends, not the first eight. The list has a
                height and scrolls now, so a board that grows is a longer scroll
@@ -3459,6 +3477,7 @@
             box.hidden = !(data.top || []).length;
             renderMeet(data.tournament);
         } catch {
+            if (mine !== boardSeq) return;
             box.hidden = true;      // no board is better than a broken one
             renderMeet(null);
         }
@@ -4063,6 +4082,15 @@
             } else if (data.reason === "signed-out") {
                 status("Sign in with Discord to save runs to the leaderboard.", "bad");
                 boardSays(`to put this run - ${points.toLocaleString()} points - on the leaderboard.`, true);
+            } else if (data.reason === "not-your-best" && data.tournamentRecorded) {
+                /* Short of the all-time best, but the week's board took it
+                   (30 Sept 2026; tournamentRecorded in ff-scores.js). That
+                   is a run on a board, so it is said as one and the board
+                   redrawn — not "your best still stands". */
+                const line = `${points.toLocaleString()} points - a new best this week. Your all-time best, ${Number((data.best && data.best.points) || 0).toLocaleString()}, still stands.`;
+                status(`New best this week: ${points.toLocaleString()} points.`, "good");
+                boardSays(line, false);
+                refreshBoard();
             } else if (data.reason === "not-your-best" && data.best) {
                 boardSays(`${points.toLocaleString()} points. Your best, ${Number(data.best.points || 0).toLocaleString()}, still stands.`, false);
                 /* A run that did not beat your own said NOTHING, which reads
@@ -4170,9 +4198,13 @@
            run until the button is pressed. Saying "2 left" over a screen that
            still reads 3 would be a lie for as long as the screen is up, so it
            says what is about to happen instead. */
+        /* And on a win that earns one back (30 Sept 2026), the same way
+           round: advance() adds the life, so the count here is still the one
+           before it. cleared() already includes this round - see room-game.js. */
+        const earnsLife = Boolean(run && won && run.cleared() % Game.LIFE_EVERY === 0);
         if (run) {
             rows.push(["Lives", won
-                ? String(run.lives)
+                ? earnsLife ? `${run.lives + 1} - one more for five cleared` : String(run.lives)
                 : run.lives > 1
                     ? `${run.lives} - this costs one`
                     : "your last one"]);
@@ -5111,12 +5143,32 @@
             const play = document.getElementById("ff-title-play");
             if (play) play.disabled = true;
             try {
-                if (nameInput.value.trim()) await lookup(nameInput.value);
+                const found = nameInput.value.trim() ? await lookup(nameInput.value) : "";
+                /* A NAME HABBO DOES NOT KNOW STOPS HERE (30 Sept 2026), with
+                   the title still up so "No Origins habbo by that name" can be
+                   read, and the box focused to fix the typo. Going on meant
+                   playing as the default avatar with the reason hidden.
+                   A lookup that merely FAILED is not the player's fault, so
+                   that one still plays - saying so once the round is up. */
+                if (found === "missing") {
+                    nameInput.focus();
+                    nameInput.select();
+                    return;
+                }
                 await startRound();
+                if (found === "failed" && run) {
+                    tell(state.name
+                        ? `Could not reach the name lookup - playing as ${state.name}.`
+                        : "Could not reach the name lookup - playing as the default habbo.", "bad");
+                }
             } catch (e) {
                 status(`Could not start: ${e.message}`, "bad");
             } finally {
-                if (play) play.disabled = false;
+                /* Only back on over a title that can be played (30 Sept
+                   2026): titleState holds Play down while the levels or furni
+                   are unreachable, and this used to lift it regardless. */
+                const title = document.getElementById("ff-title");
+                if (play && title && title.dataset.state === "ready") play.disabled = false;
             }
         });
 
@@ -5327,8 +5379,16 @@
 
         const loadFlags = () => {
             if (!flagsReq) {
-                flagsReq = fetch("/.netlify/functions/dead-ends", { headers: { Accept: "application/json" } })
+                /* ON A TEN-SECOND LEASH (30 Sept 2026), like _getWithFallback
+                   in api.js. The request is only forgotten when it settles,
+                   so one that hung never did — and every later ask waited on
+                   it for good. Aborting it lands in the catch below, which
+                   forgets it, and the next ask tries again. */
+                const leash = typeof AbortController === "undefined" ? null : new AbortController();
+                const timer = leash ? setTimeout(() => leash.abort(), 10000) : null;
+                flagsReq = fetch("/.netlify/functions/dead-ends", { headers: { Accept: "application/json" }, signal: leash ? leash.signal : undefined })
                     .then(res => { if (!res.ok) throw new Error(String(res.status)); return res.json(); })
+                    .finally(() => { if (timer) clearTimeout(timer); })
                     .then(data => {
                         flags = new Map((data.flags || []).map(f => [`${f.type}:${f.id}`, f]));
                         (data.trail || []).forEach(t => trail.set(`${t.type}:${t.id}`, t.leads));

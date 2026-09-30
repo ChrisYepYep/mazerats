@@ -46,6 +46,7 @@
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { playerFrom, publicName } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
+const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
 /* dayIsOpen and rangeBounds are rules about the clock and the calendar
    rather than about the game, and both games want the same answers. The
    deal itself is _deal.js's. */
@@ -127,8 +128,6 @@ function todayIso() {
    so a picture added at noon changes tomorrow and not the afternoon — the
    split day that cache could only shorten to a few minutes cannot happen. */
 
-const normalise = speed.normalise;
-
 /* A day's outcome, from what the server recorded round by round (movesOf in
    _speed.js). The grid is stored alongside the score so a day's board can
    show everyone's grid beside their name — which is the whole of the
@@ -168,13 +167,15 @@ function scoreClaim(dealRounds, rounds) {
     for (let i = 0; i < dealRounds.length; i++) {
         const sent = rounds[i] && Array.isArray(rounds[i].guesses) ? rounds[i].guesses.slice(0, TRIES) : null;
         if (!sent) return null;
-        const offered = new Set(dealRounds[i].options.map(normalise));
         const guesses = [];
         let won = false;
         for (const g of sent) {
-            if (typeof g !== "string" || !offered.has(normalise(g))) return null;
-            guesses.push(g);
-            if (normalise(g) === normalise(dealRounds[i].name)) { won = true; break; }
+            // The option the page meant, judged as itself — see normalise
+            // in _speed.js for why the loose reading only finds it.
+            const opt = typeof g === "string" ? speed.optionFor(dealRounds[i].options, g) : undefined;
+            if (!opt) return null;
+            guesses.push(opt);
+            if (opt === dealRounds[i].name) { won = true; break; }
         }
         moves.push({ guesses, won, done: won || guesses.length >= TRIES });
     }
@@ -199,7 +200,7 @@ const answerOf = r => ({ id: r.id, name: r.name, slug: r.slug || null, creator: 
    rounds that are. */
 function progressView(dealRounds, moves) {
     return moves.filter(Boolean).map((m, i) => ({
-        guesses: m.guesses.map(name => ({ name, correct: normalise(name) === normalise(dealRounds[i].name) })),
+        guesses: m.guesses.map(name => ({ name, correct: name === dealRounds[i].name })),
         done: Boolean(m.done),
         won: Boolean(m.won),
         answer: m.done ? answerOf(dealRounds[i]) : null
@@ -371,7 +372,14 @@ exports.handler = async (event) => {
 
             // "date" is the day these are FOR; "day" is the board itself.
             // Named for how the page reads them, not for how they are stored.
-            return json(200, {
+            /* Through cachedJson and BOARD_CDN_CACHE, as Odd One Out's board
+               and the combined one are (30 Sept 2026). This was the one
+               board still going out "public, max-age=30", so the BROWSER
+               kept it for half a minute: the Leaderboards window reopened
+               straight after a day was filed showed the board from before
+               it, for Guess the Maze only. The browser now revalidates and
+               the edge holds it fifteen seconds, like the others. */
+            return cachedJson(event, {
                 date: day,
                 weekFrom: week.from,
                 monthFrom: month.from,
@@ -379,8 +387,9 @@ exports.handler = async (event) => {
                 week: bWeek,
                 month: bMonth,
                 allTime: bAll
-            });
+            }, { cdn: BOARD_CDN_CACHE });
         } catch (e) {
+            console.error("guess-scores: board read failed", e);
             return json(500, { error: "Could not read the scoreboard" });
         }
     }
@@ -470,7 +479,7 @@ exports.handler = async (event) => {
             }
             const dealt = deal.rounds[round];
             const guess = typeof body.guess === "string" ? body.guess : "";
-            const offered = dealt && dealt.options.find(o => normalise(o) && normalise(o) === normalise(guess));
+            const offered = dealt && speed.optionFor(dealt.options, guess);
             if (!offered) return privateJson(400, { error: "Bad move" });
 
             if (player && body.anon === true) {
@@ -480,10 +489,14 @@ exports.handler = async (event) => {
                 const allowed = await speed.claimAnonMove(db, "guess", day, clientNet(event),
                     speed.anonMoveLimit(deal.rounds.length, TRIES));
                 if (!allowed) return privateJson(429, { reason: "anon-limit", error: "Too many guesses from this network today" });
-                const correct = normalise(offered) === normalise(dealt.name);
+                const correct = offered === dealt.name;
+                const over = correct || body.final === true;
                 return privateJson(200, {
                     recorded: false, correct,
-                    answer: correct || body.final === true ? answerOf(dealt) : null
+                    answer: over ? answerOf(dealt) : null,
+                    // The next room, once this one is over — see ONE ROUND
+                    // AT A TIME in _deal.js (30 Sept 2026).
+                    next: over ? deals.nextRound("guess", deal.rounds, round, day) : null
                 });
             }
             /* `replay: true` is a guess made signed out and sent again now
@@ -507,16 +520,35 @@ exports.handler = async (event) => {
                 recorded: true,
                 already: Boolean(outcome.already),
                 repeat: Boolean(outcome.repeat),
-                guesses: outcome.guesses.map(name => ({ name, correct: normalise(name) === normalise(dealt.name) })),
+                guesses: outcome.guesses.map(name => ({ name, correct: name === dealt.name })),
                 done: outcome.done,
                 won: outcome.won,
-                answer: outcome.done ? answerOf(dealt) : null
+                answer: outcome.done ? answerOf(dealt) : null,
+                next: outcome.done ? deals.nextRound("guess", deal.rounds, round, day) : null
             });
         }
 
         // "mark" — sent by a page from before guesses were judged one at a
         // time — and anything else unknown is refused rather than ignored.
         if (body.action !== undefined && body.action !== "start") return json(400, { error: "Unknown action" });
+
+        /* The start's reply carries room 1's picture and names (`next`),
+           which the deal reply no longer hands out before the day has
+           started — ONE ROUND AT A TIME in _deal.js (30 Sept 2026). Signed
+           out as well, unrecorded, as in daily-scores.js. */
+        const openingRound = async () => {
+            try {
+                const deal = await deals.dealFor(db, ensureUniqueIndex, "guess", day);
+                return deals.nextRound("guess", deal.rounds, -1, day);
+            } catch (e) {
+                console.error("guess-scores: could not read the day's deal for its first room", e);
+                return null;
+            }
+        };
+        if (!player && body.action === "start") {
+            if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
+            return privateJson(200, { started: false, reason: "signed-out", next: await openingRound() });
+        }
 
         // Not an error worth shouting about: the page submits optimistically
         // and simply is not listed when signed out.
@@ -538,7 +570,7 @@ exports.handler = async (event) => {
                 console.error("guess-scores: could not record a start", e);
                 return json(503, { started: false });
             }
-            return json(200, { started: true });
+            return privateJson(200, { started: true, next: await openingRound() });
         }
 
         /* ---------- the finished day ----------
@@ -638,7 +670,7 @@ exports.handler = async (event) => {
         return privateJson(200, { recorded: true, points, bonus, solved });
     }
 
-    return { statusCode: 405, body: "" };
+    return json(405, { error: "Method not allowed" });
 };
 
 // The answer to a day already on file: the stored row's own figures.
@@ -666,6 +698,9 @@ async function dealReply(db, event, params) {
     }
     const player = playerFrom(event);
     let progress = null, filed = false, score = null;
+    // Only the rooms this player has reached, and none signed out or
+    // before the start — ONE ROUND AT A TIME in _deal.js.
+    let reached = 0;
     if (player) {
         try {
             const row = await speed.progressFor(db, "guess", day, player.id);
@@ -676,6 +711,7 @@ async function dealReply(db, event, params) {
             // The filed day's base, bonus and rounds right, for the results
             // card on a reload — see filedScore in daily-scores.js.
             score = filedScore(onFile);
+            reached = deals.reachedOf("guess", row, deal.rounds.length, filed);
         } catch (e) {
             progress = null;
         }
@@ -683,7 +719,7 @@ async function dealReply(db, event, params) {
     return privateJson(200, {
         day, today: todayIso(), now: Date.now(),
         // Picture addresses, never the stored references — see _deal.js.
-        rounds: deals.publicRounds("guess", deal.rounds, day),
+        rounds: deals.publicRounds("guess", deal.rounds, day, reached),
         progress, filed, score
     });
 }

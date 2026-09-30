@@ -795,7 +795,8 @@ async function handleReview(event, db) {
                 const who = await db.collection("players").findOne({ id: lead.from.id }, { projection: { _id: 0, nick: 1 } }).catch(() => null);
                 if (who && who.nick) senderName = who.nick;
             }
-            const name = (text(body.creditName).trim() || lead.habboName || senderName || "").slice(0, HABBO_NAME_MAX);
+            // Trimmed again after the cut, which can leave a space at the end.
+            const name = (text(body.creditName).trim() || lead.habboName || senderName || "").slice(0, HABBO_NAME_MAX).trim();
             const claim = name ? await leads.updateOne({ id, credited: null }, { $set: { credited: name } }) : null;
             if (claim && !claim.modifiedCount) out.alreadyCredited = true;
             if (claim && claim.modifiedCount) try {

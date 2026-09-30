@@ -274,7 +274,10 @@ async function rowsFor(db, docs, full) {
 /* ---- reading what an admin sent ---- */
 
 /* An address, as net.isIP knows one, or a /64 ("2001:db8:1:2::/64", or any
-   address in it followed by /64). Returns { ip } | { net } | null. */
+   address in it followed by /64). Returns { ip } | { net } | null. The
+   address in its one canonical spelling (30 Sept 2026; canonicalIp in
+   _bans.js): stored as typed, "2001:0db8:0:0::1" never matched the
+   "2001:db8::1" Netlify reports, and "::ffff:1.2.3.4" is the IPv4 address. */
 function targetOf(raw) {
     const s = String(raw || "").trim().toLowerCase();
     if (!s || s.length > 64) return null;
@@ -285,7 +288,7 @@ function targetOf(raw) {
         if (slash[2] !== "64" || netModule.isIP(slash[1]) !== 6) return null;
         return { net: subscriberOf(slash[1]) };
     }
-    return netModule.isIP(s) ? { ip: s } : null;
+    return netModule.isIP(s) ? { ip: Bans.canonicalIp(s) } : null;
 }
 
 /* When a ban ends, from a body: { until: Date|null } or { error }. Absent
@@ -398,9 +401,18 @@ async function handle(event, db, bans) {
            "Unban" on that message has to lift what is actually stopping
            them, or it answers 404 and they stay banned. */
         const net = subscriberOf(ip);
-        const result = id
-            ? await bans.deleteOne({ id })
-            : await bans.deleteMany({ $or: [{ ip }, { net }, { kind: "ip", value: ip }, { kind: "net", value: net }] });
+        /* Both spellings of the address (30 Sept 2026; see targetOf), plus
+           any "ip" ban stored the long way before bans were kept canonical,
+           which only a canonical comparison finds. */
+        const canon = Bans.canonicalIp(ip);
+        let result;
+        if (id) {
+            result = await bans.deleteOne({ id });
+        } else {
+            const spelt = await bans.find({ kind: "ip", value: { $regex: ":" } }, { projection: { _id: 0, id: 1, value: 1 } }).toArray();
+            const ids = spelt.filter(d => d.id && typeof d.value === "string" && Bans.canonicalIp(d.value) === canon).map(d => d.id);
+            result = await bans.deleteMany({ $or: [{ ip }, { ip: canon }, { net }, { kind: "ip", value: ip }, { kind: "ip", value: canon }, { kind: "net", value: net }, { id: { $in: ids } }] });
+        }
         Bans.invalidate();
         if (result.deletedCount === 0) return json(404, { error: "Ban not found" });
         return json(200, { deleted: id || ip });
@@ -411,10 +423,12 @@ async function handle(event, db, bans) {
 
 /* ---- POST { ip, reason }: the old ban, as it always was ---- */
 async function createOld(event, db, bans, body, reason, who) {
-    const ip = text(body.ip).trim();
-    if (!ip) return json(400, { error: "A ban needs an IP address" });
+    const typed = text(body.ip).trim();
+    if (!typed) return json(400, { error: "A ban needs an IP address" });
     // A typo stored here would be a permanent ban that matches nobody.
-    if (!netModule.isIP(ip)) return json(400, { error: "That is not an IP address" });
+    if (!netModule.isIP(typed)) return json(400, { error: "That is not an IP address" });
+    // Kept in the one spelling "Unban" on a message will send (see targetOf).
+    const ip = Bans.canonicalIp(typed);
 
     /* Already covered by its network counts as already banned too: a second
        address from a /64 that is on the list adds nothing, and a second row

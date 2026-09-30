@@ -248,7 +248,12 @@ document.addEventListener("DOMContentLoaded", () => {
         openConsole("privacy");
     }
     window.addEventListener("hashchange", openPrivacyFromHash);
-    openPrivacyFromHash();
+    // The first look is at the END of this handler (30 Sept 2026), not here.
+    // From here, a page loaded at #privacy opened the console before
+    // loadContributors' own consts (contributorsListEl, contributorsAsking)
+    // existed: a ReferenceError inside it (an unhandled rejection, and an
+    // error report) and a People page stuck on its placeholder until the
+    // console was shut and opened again.
 
     // ---------- drag ----------
 
@@ -583,4 +588,8 @@ document.addEventListener("DOMContentLoaded", () => {
 if (typeof renderPrivacySections === "function") {
     renderPrivacySections(document.getElementById("console-privacy-body"));
 }
+
+    // A page loaded straight at #privacy — see the note by the hashchange
+    // listener above for why this waits until everything is set up.
+    openPrivacyFromHash();
 });

@@ -61,9 +61,13 @@ const IN_FUNCTION = !(require.main && /[\\/]tools[\\/][^\\/]+$/.test(require.mai
 const RETRY_AFTER_FAILURE_MS = 60 * 1000;
 let lastFailureAt = 0;
 
+/* no-store (30 Sept 2026): what goes out through here is an owner's
+   ?refresh=1, a ?q= keystroke, or a failure — none of it for keeping. It
+   said nothing at all before, which only worked because nothing in front
+   of it chose to cache an answer that did not say. */
 const json = (statusCode, data) => ({
     statusCode,
-    headers: SECURITY_HEADERS,
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
     body: JSON.stringify(data)
 });
 
@@ -308,7 +312,10 @@ exports.handler = async (event) => {
         if (!q && params.refresh !== "1") {
             return cachedJson(event, data, { cdn: CATALOGUE_CDN_CACHE });
         }
-        return json(200, data);
+        /* Uncached, but still gzipped (30 Sept 2026): a one-letter ?q= with
+           sprites is most of the 930KB catalogue, and went out raw to
+           anybody who asked. cache:false is no-store with no edge header. */
+        return cachedJson(event, data, { cache: false });
     } catch (err) {
         /* The detailed reason stays in the function log. Some of these
            messages are written to diagnose a missing key — its length, and

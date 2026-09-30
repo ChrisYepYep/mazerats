@@ -38,6 +38,35 @@ function versionFilter(id, base) {
 
 const CONFLICT = "Someone else saved this record since you opened it - reload it to see their changes.";
 
+/* A deleted event takes its credits with it (30 Sept 2026) — rooms.js's
+   uncreditRecord, for events[]: the id comes out of every contributor who
+   lists it and their stored count is worked out again, each row written
+   only if it is as it was read. Best-effort, after the delete. */
+async function uncreditRecord(db, id) {
+    try {
+        const contributors = db.collection("contributors");
+        const holders = await contributors.find({ events: id }, { projection: { _id: 0, id: 1 } }).toArray();
+        for (const { id: cid } of holders) {
+            for (let attempt = 0; attempt < 5; attempt++) {
+                const row = await contributors.findOne({ id: cid }, { projection: { _id: 0 } });
+                if (!row || !Array.isArray(row.events) || !row.events.includes(id)) break;
+                const mazes = Array.isArray(row.mazes) ? row.mazes : [];
+                const extra = Number.isInteger(row.extra) ? row.extra
+                    : Math.max(0, (Number(row.count) || 0) - mazes.length - row.events.length);
+                const events = row.events.filter(x => x !== id);
+                const was = row.updatedAt == null ? null : row.updatedAt;
+                const res = await contributors.updateOne(
+                    { id: cid, updatedAt: was },
+                    { $set: { events, extra, count: mazes.length + events.length + extra, updatedAt: new Date().toISOString() } }
+                );
+                if (res.matchedCount) break;
+            }
+        }
+    } catch (e) {
+        console.error(`events: could not take event ${id} off the contributors`, e);
+    }
+}
+
 async function handle(event) {
     let db;
     try {
@@ -124,6 +153,15 @@ async function handle(event) {
            every edit to the launch event from 08:00 on launch day. Stored
            as "upcoming", which is what the dates then override anyway. */
         if (body.status === "live") body.status = "upcoming";
+        /* The title trimmed and, on an edit that carries one, held to what
+           a create is (30 Sept 2026) — rooms.js does both for a maze's
+           name. A pasted trailing space went into the row heading, the
+           sort and the share title; a blank one emptied all three. */
+        if (typeof body.title === "string") body.title = body.title.trim();
+        if (event.httpMethod === "PUT" && Object.prototype.hasOwnProperty.call(body, "title") &&
+            (typeof body.title !== "string" || !body.title)) {
+            return json(400, { error: "An event needs at least a title" });
+        }
         const problem = checkRecord(body, CHOICES);
         if (problem) return json(400, { error: problem });
         /* The stored article is set as innerHTML in every visitor's event
@@ -278,6 +316,15 @@ async function handle(event) {
         await retireAddresses(db, "event", doomed, assignSlugs(all, "event", retired).get(id));
         const result = await events.deleteOne({ id });
         if (result.deletedCount === 0) return json(404, { error: "Event not found" });
+        // Its Missing Pieces flag goes with it — see clearDeadEndFlag in
+        // rooms.js (30 Sept 2026). Best-effort: the event is gone either way.
+        try {
+            await db.collection("dead_ends").deleteOne({ key: `event:${id}` });
+        } catch (e) {
+            console.error(`events: could not clear the dead-end flag for event:${id}`, e);
+        }
+        // And its credits — see uncreditRecord (30 Sept 2026).
+        await uncreditRecord(db, id);
         return json(200, { deleted: id });
     }
 

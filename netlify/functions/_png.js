@@ -7,6 +7,9 @@
    that throws rather than guessing. */
 const zlib = require("zlib");
 
+// Sixteen megapixels: 64MB of RGBA, well past any screenshot or sprite.
+const MAX_PIXELS = 16 * 1024 * 1024;
+
 function decodePng(buf) {
     if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error("not a png");
     let pos = 8, w = 0, h = 0, depth = 0, type = 0, pal = null, trns = null;
@@ -28,8 +31,17 @@ function decodePng(buf) {
     if (depth !== 8) throw new Error("bit depth " + depth + " unsupported");
     const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[type];
     if (!channels) throw new Error("colour type " + type + " unsupported");
-    const raw = zlib.inflateSync(Buffer.concat(idat));
+    /* The header's size is the file's own word, and the buffers below are
+       allocated from it before a byte of pixels is read: a few-hundred-byte
+       file claiming 60000x60000 asked for gigabytes. Nothing the scanner is
+       meant for is near this (a room screenshot is about a megapixel), so
+       anything past it is refused rather than tried (30 Sept 2026). And a
+       palette picture with no palette would read indexes off null. */
+    if (!w || !h || w * h > MAX_PIXELS) throw new Error("png size " + w + "x" + h + " unsupported");
+    if (type === 3 && !pal) throw new Error("palette png without a palette");
     const bpp = channels, stride = w * bpp;
+    // No more than the picture can hold: a filter byte and a row per line.
+    const raw = zlib.inflateSync(Buffer.concat(idat), { maxOutputLength: h * (stride + 1) });
     const out = Buffer.alloc(h * stride);
     let p = 0;
     for (let y = 0; y < h; y++) {

@@ -438,7 +438,8 @@
 
 /* Faded fully out is out of the way as well as out of sight — otherwise a
    name at zero opacity still takes the hover meant for the painting drawn
-   over it. */
+   over it. The keyboard half — out of the Tab order and the accessibility
+   tree — is applyBands in js/wizard-map.js, since CSS cannot do it. */
 .is-gone { pointer-events: none; }
 
 /* A picture placed on the map.

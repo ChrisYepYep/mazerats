@@ -586,6 +586,16 @@ window.Recolour = (function () {
         styleTag(SHEET_ID).textContent = buildCss(preset || {}, cat);
         const gen = ++spriteGen;
         if (preset && preset.sprites && !(opts && opts.skipSprites)) applySprites(preset, opts && opts.base, gen);
+        else if (!(opts && opts.skipSprites)) {
+            /* A preset with no sprites at all (one saved before they existed)
+               wears none (30 Sept 2026). The last palette's art used to stay
+               on — the remembered palette's buttons under the fresh one the
+               settings named. skipSprites alone keeps what is there. */
+            const s = document.getElementById(SPRITE_ID);
+            if (s) s.textContent = "";
+            liveUrls.forEach(u => URL.revokeObjectURL(u));
+            liveUrls = [];
+        }
         return true;
     }
 

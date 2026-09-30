@@ -631,7 +631,17 @@ document.addEventListener("DOMContentLoaded", () => {
        the browser's confirm(), for its deletes. Read-only; neither lets the
        panel change anything here. */
     window.AdminRole = () => currentUserRole;
-    window.AdminConfirm = message => showConfirmDialog(message);
+    window.AdminConfirm = (message, opts) => showConfirmDialog(message, opts);
+    /* And the rest of the page's own boxes (30 Sept 2026), so the panels in
+       files of their own (guides, Missing Pieces, Recolour, the Wizard) stop
+       using the browser's alert() and prompt(): AdminAlert(markup, title)
+       is the one-button box, AdminPrompt(markup, opts) the one with a text
+       box, resolving the text or null. AdminBanIp(ip, opts) is a message's
+       Ban IP — level, length and reason — for a Missing Pieces lead, and
+       resolves true once the ban is saved. */
+    window.AdminAlert = (message, title) => showInfoDialog(message, title || "Something Went Wrong");
+    window.AdminPrompt = (message, opts) => showPromptDialog(message, opts);
+    window.AdminBanIp = (ip, opts) => banIp(ip, opts);
 
     /* Logging out used to close every form on the spot: unsaved work gone
        without a question, and every picture uploaded during the edit left
@@ -2583,6 +2593,9 @@ document.addEventListener("DOMContentLoaded", () => {
            rebuild, so the only place this can live is outside them. */
         let pickerQuery = "";
         let pickerResults = [];
+        // Set by the two buttons that open the picker, so the render they
+        // cause brings it into view — see revealPicker.
+        let revealPickerNext = false;
 
         // Room images in the order they appear on the site, so this reads in
         // the same order as the gallery above rather than by object key.
@@ -2746,6 +2759,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     pickerFor = image;
                     pickerQuery = "";
                     pickerResults = [];
+                    revealPickerNext = true;
                     render();
                 });
             });
@@ -2758,11 +2772,55 @@ document.addEventListener("DOMContentLoaded", () => {
                     // Opening the picker on a collapsed room would put it
                     // somewhere nobody can see.
                     if (pickerFor) openRooms.add(image);
+                    revealPickerNext = !!pickerFor;
                     render();
                 });
             });
 
             if (pickerFor) wirePicker(pickerFor);
+            if (revealPickerNext) {
+                revealPickerNext = false;
+                revealPicker(true);
+            }
+        }
+
+        /* Bring the search into view when it opens (30 Sept 2026).
+
+           The picker opens at the foot of its room's panel, under every furni
+           the room already has — so on the last few rooms of a long maze it
+           opened below the bottom of the stage, behind the floating Save bar,
+           and every search began with scrolling down to find the box. The
+           focus call in wirePicker cannot help: it has to use preventScroll
+           (see there), and the browser's own "scroll into view" would only
+           bring the input to the very edge anyway, with the results that
+           arrive a moment later landing out of sight beneath it.
+
+           So this scrolls the stage by hand, and only as far as it must: far
+           enough that the box AND the room its results will need (the 220px
+           scroller, .admin-furni-results) sit above the Save bar, but never so
+           far that the box itself goes off the top. Called on opening
+           (reserve=true: the results are not there yet, so their room is
+           kept for them) and again whenever results are drawn. Smooth on
+           opening, so the page is seen to move to the box rather than jump. */
+        const RESULTS_ROOM = 260;
+        function revealPicker(reserve) {
+            const picker = listEl.querySelector(".admin-furni-picker");
+            const scroller = wrap.closest(".admin-stage");
+            if (!picker || !scroller) return;
+            const view = scroller.getBoundingClientRect();
+            const bar = document.querySelector(".admin-floating-actions.open");
+            const floor = Math.min(view.bottom, bar ? bar.getBoundingClientRect().top : Infinity) - 12;
+            const ceiling = view.top + 12;
+            const input = picker.querySelector(".admin-furni-search");
+            const box = picker.getBoundingClientRect();
+            const top = (input || picker).getBoundingClientRect().top;
+            const bottom = Math.max(box.bottom, reserve ? top + RESULTS_ROOM : box.bottom);
+            let by = 0;
+            if (bottom > floor) by = bottom - floor;
+            if (top - by < ceiling) by = top - ceiling;
+            if (Math.abs(by) < 1) return;
+            const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            scroller.scrollBy({ top: by, behavior: reserve && !reduce ? "smooth" : "auto" });
         }
 
         /* The search box inside one room's panel. Deliberately does NOT go
@@ -2842,6 +2900,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 status.textContent = items.length + " match" + (items.length === 1 ? "" : "es")
                     + (added ? ` — ${added} added` : "")
                     + " — click to add, and keep clicking for more.";
+                revealPicker(false);
             }
 
             // Redraw whatever the last search found, so the results are
@@ -3370,7 +3429,12 @@ document.addEventListener("DOMContentLoaded", () => {
     // Generic Yes/No pop-up (same modal-overlay treatment as the dialogs
     // above) — resolves true only if "Yes" was actually clicked; closing
     // any other way (the × button, clicking outside, Escape) counts as "No".
-    function showConfirmDialog(message) {
+    /* opts.danger (30 Sept 2026): the Yes of a delete wears the red
+       admin-pill-danger, as the bookend dialog's "Delete it" does. Added
+       when the last native confirm()s in the Warren were brought in here;
+       the message is still markup, so callers escape what they put in it. */
+    function showConfirmDialog(message, opts) {
+        const danger = !!(opts && opts.danger);
         return new Promise(resolve => {
             const overlay = document.createElement("div");
             overlay.className = "modal-overlay open";
@@ -3383,7 +3447,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="modal-body">
                         <p class="room-desc-full confirm-message">${message}</p>
                         <div class="admin-form-actions confirm-actions">
-                            <button type="button" class="admin-action-pill admin-pill-solid" data-choice="yes">Yes</button>
+                            <button type="button" class="admin-action-pill ${danger ? "admin-pill-danger" : "admin-pill-solid"}" data-choice="yes">Yes</button>
                             <button type="button" class="admin-action-pill" data-choice="no">No</button>
                         </div>
                     </div>
@@ -3414,14 +3478,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Plain acknowledgement pop-up — a single OK button, no other choice.
-    function showInfoDialog(message) {
+    /* `title` (30 Sept 2026) so the same box can stand in for alert():
+       the landing page's callers leave it out and keep their old heading.
+       The message is markup, like the confirm's. */
+    function showInfoDialog(message, title) {
         return new Promise(resolve => {
             const overlay = document.createElement("div");
             overlay.className = "modal-overlay open";
             overlay.innerHTML = `
                 <div class="modal confirm-modal">
                     <div class="chrome-titlebar">
-                        <h2>Landing Page Updated</h2>
+                        <h2>${escapeHtml(title || "Landing Page Updated")}</h2>
                         <button type="button" class="chrome-close" aria-label="Close">&times;</button>
                     </div>
                     <div class="modal-body">
@@ -3447,6 +3514,73 @@ document.addEventListener("DOMContentLoaded", () => {
             overlay.querySelector(".chrome-close").addEventListener("click", finish);
             overlay.addEventListener("click", e => {
                 if (e.target === overlay) finish();
+            });
+        });
+    }
+
+    // alert(), the page's way: plain text, escaped here (30 Sept 2026).
+    function sayProblem(text, title) {
+        return showInfoDialog(escapeHtml(text), title || "Something Went Wrong");
+    }
+
+    /* The page's own prompt() (30 Sept 2026): the Are You Sure? with one
+       text box in it. Resolves the text typed (maybe "") on Yes or Enter in
+       the box, and null on No, ×, a click outside or Escape — prompt()'s
+       own answers, so a caller's `if (x === null) return` reads the same.
+       opts: { label, value, placeholder, maxlength, title, danger }. Opens
+       with the box focused, since typing is what it is there for. */
+    function showPromptDialog(message, opts) {
+        const o = opts || {};
+        return new Promise(resolve => {
+            const overlay = document.createElement("div");
+            overlay.className = "modal-overlay open";
+            overlay.innerHTML = `
+                <div class="modal confirm-modal">
+                    <div class="chrome-titlebar">
+                        <h2>${escapeHtml(o.title || "Are You Sure?")}</h2>
+                        <button type="button" class="chrome-close" aria-label="No">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="room-desc-full confirm-message">${message}</p>
+                        <label class="confirm-prompt" style="display:flex; flex-direction:column; gap:4px; margin-top:10px;">
+                            ${o.label ? `<span class="ctl-label">${escapeHtml(o.label)}</span>` : ""}
+                            <input type="text" class="ctl-input" data-prompt-box autocomplete="off"${o.maxlength ? ` maxlength="${Number(o.maxlength) || 200}"` : ""} placeholder="${escapeHtml(o.placeholder || "")}" value="${escapeHtml(o.value || "")}">
+                        </label>
+                        <div class="admin-form-actions confirm-actions">
+                            <button type="button" class="admin-action-pill ${o.danger ? "admin-pill-danger" : "admin-pill-solid"}" data-choice="yes">Yes</button>
+                            <button type="button" class="admin-action-pill" data-choice="no">No</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            if (dialogShowing) { resolve(null); return; }
+            document.body.appendChild(overlay);
+
+            const box = overlay.querySelector("[data-prompt-box]");
+            const release = holdDialog(overlay, box, () => finish("no"));
+            if (!release) { overlay.remove(); resolve(null); return; }
+            box.select();
+
+            let done = false;
+            function finish(choice) {
+                // Once: an Enter held down repeats, and must not tear down
+                // a second time whatever dialog opens next.
+                if (done) return;
+                done = true;
+                const text = box.value;
+                release();
+                resolve(choice === "yes" ? text : null);
+            }
+
+            box.addEventListener("keydown", e => {
+                if (e.key === "Enter") { e.preventDefault(); finish("yes"); }
+            });
+            overlay.querySelectorAll("[data-choice]").forEach(btn => {
+                btn.addEventListener("click", () => finish(btn.dataset.choice));
+            });
+            overlay.querySelector(".chrome-close").addEventListener("click", () => finish("no"));
+            overlay.addEventListener("click", e => {
+                if (e.target === overlay) finish("no");
             });
         });
     }
@@ -5442,10 +5576,12 @@ document.addEventListener("DOMContentLoaded", () => {
            pictures. Closing it first is one click, and it is the admin who
            decides whether what they had typed there is worth keeping. */
         if (cfg.formEl.classList.contains("is-open") && cfg.formEl.dataset.editId === id) {
-            alert(`"${title}" is open for editing. Save or cancel that first, then delete it.`);
+            await sayProblem(`"${title}" is open for editing. Save or cancel that first, then delete it.`, "Still Open");
             return;
         }
-        if (!confirm(`Delete "${title}"? This is permanent and affects the live site immediately.`)) return;
+        // The page's own box, not confirm() (30 Sept 2026). It blocks the
+        // page as confirm() did, so nothing can open the form meanwhile.
+        if (!await showConfirmDialog(`Delete "${escapeHtml(title)}"? This is permanent and affects the live site immediately.`, { danger: true })) return;
         try {
             await cfg.remove(item.id);
             // Re-found rather than reusing an index from before this await —
@@ -5458,7 +5594,7 @@ document.addEventListener("DOMContentLoaded", () => {
             cleanupItemImages(item);
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
-            alert(err.message || "Couldn't delete that — try again.");
+            await sayProblem(err.message || "Couldn't delete that — try again.");
         }
     }
 
@@ -5680,13 +5816,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     async function deleteAdmin(username) {
-        if (!confirm(`Delete admin account "${username}"? They'll no longer be able to log in.`)) return;
+        if (!await showConfirmDialog(`Delete admin account "${escapeHtml(username)}"? They'll no longer be able to log in.`, { danger: true })) return;
         try {
             await Api.deleteAdmin(adminToken, username);
             await loadAdmins();
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
-            alert(err.message || "Couldn't delete that account.");
+            await sayProblem(err.message || "Couldn't delete that account.");
         }
     }
 
@@ -5792,11 +5928,19 @@ document.addEventListener("DOMContentLoaded", () => {
            load, both pickers are empty, and saving sent mazes: [] and
            events: [] — wiping every attribution this person had. Whatever
            was chosen and is not on offer is carried through the save
-           untouched instead (see contributorCounts). With the archive
-           loaded, an id missing from it belongs to a record that has since
-           been deleted, and is let go as before. */
-        contributorsFormEl._keptMazes = archiveLoadedOk ? [] : chosenMazes.filter(id => !workingRooms.some(r => r.id === id));
-        contributorsFormEl._keptEvents = archiveLoadedOk ? [] : chosenEvents.filter(id => !workingEvents.some(e => e.id === id));
+           untouched instead (see contributorCounts).
+
+           And when it DID load, too (30 Sept 2026). The pickers are the
+           archive as it was read at sign-in, so a maze added since — by
+           another admin, or by a Missing Pieces lead accepted with credit —
+           is missing from them without having been deleted, and used to be
+           dropped from this person's credits on the next save with no word
+           said. An id is only let go now when it is KNOWN to be deleted:
+           on the retired list, which carries every deleted record's id
+           (retireAddresses on the server, retireLocally here). */
+        const knownDeleted = (key, id) => (retiredAddresses[key] || []).includes(id);
+        contributorsFormEl._keptMazes = chosenMazes.filter(id => !workingRooms.some(r => r.id === id) && !knownDeleted("rooms", id));
+        contributorsFormEl._keptEvents = chosenEvents.filter(id => !workingEvents.some(e => e.id === id) && !knownDeleted("events", id));
 
         const typesHtml = CONTRIBUTION_TYPES.map(type => `
             <label class="admin-checkbox-option">
@@ -5825,7 +5969,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${recordPickerHtml("events", events, chosenEvents, e => e.title || e.id)}
             </div>
             ${contributorsFormEl._keptMazes.length || contributorsFormEl._keptEvents.length
-                ? `<p class="admin-field-note">The archive didn't load, so ${contributorsFormEl._keptMazes.length + contributorsFormEl._keptEvents.length} earlier credit(s) can't be shown here. They are kept as they are when you save.</p>`
+                ? `<p class="admin-field-note">${archiveLoadedOk ? "This page's copy of the archive is older than" : "The archive didn't load, so"} ${contributorsFormEl._keptMazes.length + contributorsFormEl._keptEvents.length} earlier credit(s)${archiveLoadedOk ? ", so they" : ""} can't be shown here. They are kept as they are when you save.</p>`
                 : ""}
             ${fieldRow("Other contributions", `<input type="number" name="extra" min="0" step="1" value="${escapeHtml(contributor.extra != null ? contributor.extra : legacyExtra(contributor))}">`)}
             <p class="admin-field-note">Anything not tied to a maze or an event — site work, research, and so on. Added to the ticks above.</p>
@@ -5940,6 +6084,15 @@ document.addEventListener("DOMContentLoaded", () => {
             submitBtn.disabled = false;
             submitBtn.textContent = "Save";
             if (err.status === 401) { lockOut(); return; }
+            /* A name already taken (30 Sept 2026): contributors.js refuses
+               a username that matches another contributor's, ignoring case
+               and spaces at the ends, with its own 409. That is not the
+               stale-row 409 below, so its own words are shown instead. */
+            if (err.status === 409 && err.data && err.data.duplicate) {
+                errorEl.textContent = err.message || "There is already a contributor called that.";
+                errorEl.style.display = "block";
+                return;
+            }
             if (err.status === 409) {
                 /* The list is re-read so the next Edit starts from the row
                    as it now is — otherwise it would open the same stale
@@ -5956,13 +6109,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     async function deleteContributor(id) {
-        if (!confirm("Delete this contributor?")) return;
+        if (!await showConfirmDialog("Delete this contributor?", { danger: true })) return;
         try {
             await Api.deleteContributor(adminToken, id);
             await loadContributors();
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
-            alert(err.message || "Couldn't delete that — try again.");
+            await sayProblem(err.message || "Couldn't delete that — try again.");
         }
     }
 
@@ -6074,13 +6227,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     async function deleteContactMessage(id) {
-        if (!confirm("Delete this message?")) return;
+        if (!await showConfirmDialog("Delete this message?", { danger: true })) return;
         try {
             await Api.deleteContactMessage(adminToken, id);
             await loadContactMessages();
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
-            alert(err.message || "Couldn't delete that — try again.");
+            await sayProblem(err.message || "Couldn't delete that — try again.");
         }
     }
 
@@ -6312,10 +6465,36 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 60000);
     }
 
+    /* The switches are lit from a read PAST the edge (30 Sept 2026).
+       Api.getSiteSettings goes through the plain /settings address, which
+       the CDN holds for twenty seconds (GATE_CDN_CACHE in _cache.js), so a
+       reload straight after throwing a switch could light the state it had
+       just left. This asks the way js/welcome.js's poll does — a ?fresh=
+       the function ignores and the CDN keys on, and cache: "no-store" for
+       the browser's own copy — with the time to the millisecond rather
+       than a ten-second bucket: there are only ever a few admins, and a
+       ten-second-old answer is the very thing being avoided. A read that
+       fails falls back to getSiteSettings, stand-in and all, as before. */
+    async function freshSiteSettings() {
+        try {
+            const res = await fetch(`/.netlify/functions/settings?fresh=${Date.now()}`, { cache: "no-store" });
+            if (res.ok) {
+                const body = await res.json();
+                if (body && typeof body.landingState === "string" && body.landingState) {
+                    // What getSiteSettings would have done with a real answer.
+                    if (typeof Api.rememberLandingState === "function") Api.rememberLandingState(body.landingState);
+                    if (body.theme && typeof Api.applyTheme === "function") Api.applyTheme(body.theme);
+                    return body;
+                }
+            }
+        } catch (e) { /* falls back below */ }
+        return Api.getSiteSettings();
+    }
+
     async function loadLandingState() {
         try {
             // One read, every switch: they all live in the same settings document.
-            const { landingState, fallinFurniState, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await Api.getSiteSettings();
+            const { landingState, fallinFurniState, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
             /* The stand-in getSiteSettings answers with during an outage
                (fromCache, see js/api.js) has a GUESSED landing state and no
                Fallin' Furni state or palette at all. Lighting buttons from it
@@ -7091,6 +7270,23 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.classList.toggle("active", on);
             btn.setAttribute("aria-selected", on ? "true" : "false");
         });
+        /* Where you are, on the tab itself (30 Sept 2026). The sections
+           live in a drop-down, so with it closed nothing on the page said
+           which one was showing except the panel's own heading, which
+           scrolls away. The NAV tab now reads "Nav · Mazes". */
+        const navTab = document.querySelector('.admin-tab[data-menu="nav"] > .admin-tab-btn');
+        const picked = adminNavEl.querySelector(".chrome-nav-btn.active .chrome-nav-btn-label");
+        if (navTab) {
+            const where = picked ? picked.textContent.trim() : "";
+            navTab.textContent = "Nav";
+            if (where) {
+                const span = document.createElement("span");
+                span.className = "admin-tab-where";
+                span.textContent = " · " + where;
+                navTab.appendChild(span);
+            }
+            navTab.setAttribute("aria-label", where ? `Sections, showing ${where}` : "Sections");
+        }
         /* The map has to be measured to be drawn, and a hidden element
            measures zero — so the atlas panel's first view is only
            correct once it is actually on screen. Every other panel here is
@@ -7373,7 +7569,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         dailyNote = "Reset called off — they keep today as it stands.";
                     } catch (err) {
                         if (err.status === 401) { lockOut(); return; }
-                        alert(err.message || "Could not call that off — try again.");
+                        await sayProblem(err.message || "Could not call that off — try again.");
                     }
                     loadDaily(dailyDetail.id);
                 });
@@ -7397,18 +7593,23 @@ document.addEventListener("DOMContentLoaded", () => {
                     const what = game.scored
                         ? "Their scored row for today is deleted, and their saved day is cleared the next time they open the game."
                         : "Their saved day is cleared the next time they open the game.";
-                    if (!confirm("Give " + who + " today's " + game.name + " back?\n\n" + what)) return;
+                    /* The page's own box (30 Sept 2026). The player is
+                       held here, not read from dailyDetail after the answer:
+                       the box waits, and the reset is for the player it
+                       named. */
+                    const playerId = dailyDetail.id;
+                    if (!await showConfirmDialog(escapeHtml("Give " + who + " today's " + game.name + " back?") + "<br><br>" + escapeHtml(what), { danger: true })) return;
                     reset.disabled = true;
                     try {
-                        const out = await Api.resetDailyGame(adminToken, dailyDetail.id, game.key);
+                        const out = await Api.resetDailyGame(adminToken, playerId, game.key);
                         dailyNote = out.scoreRowsDeleted
                             ? "Scored row for today deleted. Their saved day clears the next time they open the game."
                             : "Waiting: their saved day clears the next time they open the game.";
                     } catch (err) {
                         if (err.status === 401) { lockOut(); return; }
-                        alert(err.message || "Could not reset that — try again.");
+                        await sayProblem(err.message || "Could not reset that — try again.");
                     }
-                    loadDaily(dailyDetail.id);
+                    loadDaily(playerId);
                 });
                 actions.appendChild(reset);
             }
@@ -7790,7 +7991,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ${targetPart}
             ${ready ? kit.formHtml(s.choice, { now, targets: s.type === "player" ? { net: !!(s.pick && s.pick.hasNetHash) } : null, uid: "bans-add" }) : ""}
             <div class="ctl-actions">
-                ${ready ? `<button type="button" class="ctl-btn bn-write bn-go" data-add-act="go"${bansBusy ? " disabled" : ""}>Ban…</button>` : ""}
+                ${ready ? `<button type="button" class="ctl-btn admin-delete-btn bn-write bn-go" data-add-act="go"${bansBusy ? " disabled" : ""}>Ban…</button>` : ""}
                 <button type="button" class="ctl-btn" data-add-act="close">Cancel</button>
             </div>
             <p class="ctl-status${bansAddMsg && bansAddMsg.bad ? " is-bad" : ""}" data-add-status role="status">${bansAddMsg ? escapeHtml(bansAddMsg.text) : ""}</p>`;
@@ -7964,32 +8165,47 @@ document.addEventListener("DOMContentLoaded", () => {
         if (f && quickBan) quickBan[f.dataset.quickBan] = f.value;
     });
 
-    async function banIp(ip) {
+    /* Also a Missing Pieces lead's Ban IP (30 Sept 2026, through
+       window.AdminBanIp). That one was a prompt() promising a ban on "the
+       contact form and sending leads" while it posted the old { ip,
+       reason }, which bans.js turns into a permanent everything-but-reading
+       ban on the whole network — so it borrows this instead, and the admin
+       sees and picks what really happens. opts.reason fills the reason box.
+       Resolves true once the ban is saved, false otherwise.
+
+       The question names the /64 only for IPv6: an IPv4 ban is on that one
+       address (bans.js createNew), and "and its network" promised more. */
+    async function banIp(ip, opts) {
         const kit = banKit();
-        if (!kit || !banApiReady()) { alert("This copy of the page is out of date. Reload it to ban."); return; }
-        const mine = { level: "soft", length: "perm", reason: "" };
+        if (!kit || !banApiReady()) { await sayProblem("This copy of the page is out of date. Reload it to ban."); return false; }
+        const mine = { level: "soft", length: "perm", reason: String((opts && opts.reason) || "").slice(0, kit.REASON_MAX) };
         quickBan = mine;
         const lengths = kit.LENGTHS.filter(([v]) => v !== "custom");
+        const v6 = ip.includes(":");
         const ok = await showConfirmDialog(
-            `Ban <strong>${escapeHtml(ip)}</strong> (and its network)?` +
+            `Ban <strong>${escapeHtml(ip)}</strong>${v6 ? " (and the rest of its /64 network)" : ""}?` +
             `<span class="bn-quick">` +
             `<label><span class="ctl-label">Level</span><select data-quick-ban="level">${kit.LEVELS.map(([v, l]) => `<option value="${v}"${v === mine.level ? " selected" : ""}>${escapeHtml(l)}</option>`).join("")}</select></label>` +
             `<label><span class="ctl-label">Length</span><select data-quick-ban="length">${lengths.map(([v, l]) => `<option value="${v}"${v === mine.length ? " selected" : ""}>${escapeHtml(l)}</option>`).join("")}</select></label>` +
-            `<label><span class="ctl-label">Reason (optional)</span><input type="text" data-quick-ban="reason" maxlength="${kit.REASON_MAX}" autocomplete="off"></label>` +
+            `<label><span class="ctl-label">Reason (optional)</span><input type="text" data-quick-ban="reason" maxlength="${kit.REASON_MAX}" autocomplete="off" value="${escapeHtml(mine.reason)}"></label>` +
             `</span>` +
-            `<span class="admin-hint bn-quick-note">Everything but reading: they can read the site but not sign in, play or send anything. Whole site: a banned screen on every page but the privacy policy. For a date and time, use Add a ban on the Bans tab.</span>`);
+            `<span class="admin-hint bn-quick-note">Everything but reading: they can read the site but not sign in, play or send anything. Whole site: a banned screen on every page but the privacy policy. For a date and time, use Add a ban on the Bans tab.</span>`,
+            { danger: true });
         quickBan = null;
-        if (!ok) return;
+        if (!ok) return false;
         const choice = kit.read({ level: mine.level, length: mine.length, reason: mine.reason }, Date.now());
-        if (choice.error) { alert(choice.error); return; }
+        if (choice.error) { await sayProblem(choice.error); return false; }
         try {
             // "net" for IPv6: its /64, as this button always banned.
-            await Api.createBan(adminToken, Object.assign({ kind: ip.includes(":") ? "net" : "ip", value: ip }, kit.postBody(choice)));
-            await bansWritten();
+            await Api.createBan(adminToken, Object.assign({ kind: v6 ? "net" : "ip", value: ip }, kit.postBody(choice)));
         } catch (err) {
-            if (err.status === 401) { lockOut(); return; }
-            alert(err.message || "Could not ban that address — try again.");
+            if (err.status === 401) { lockOut(); return false; }
+            await sayProblem(err.message || "Could not ban that address — try again.");
+            return false;
         }
+        // Saved; a list that fails to re-read is not a failed ban.
+        try { await bansWritten(); } catch (e) { /* the Bans tab says its own */ }
+        return true;
     }
 
     // A different account signing in on this tab does not inherit these.
@@ -8027,7 +8243,7 @@ document.addEventListener("DOMContentLoaded", () => {
             await bansWritten();
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
-            alert(err.message || "Could not unban that address — try again.");
+            await sayProblem(err.message || "Could not unban that address — try again.");
         } finally {
             bansBusy = false;
         }

@@ -193,7 +193,14 @@ document.addEventListener("DOMContentLoaded", () => {
         let dragStartPointer = 0;
         let dragStartScroll = 0;
 
+        /* Left button only, on the thumb, the track and the arrows (30 Sept
+           2026). A right-click started a drag or a repeat too, and on macOS
+           and Linux the context menu eats the mouseup — so nothing stopped
+           it, and a pane could page or scroll by itself for good. Each
+           mousedown also clears a repeat already running before starting
+           its own, and a blur or a context menu stops them all. */
         thumb.addEventListener("mousedown", (e) => {
+            if (e.button !== 0) return;
             dragging = true;
             thumb.classList.add("is-dragging");
             dragStartPointer = e[A.pointer];
@@ -216,12 +223,15 @@ document.addEventListener("DOMContentLoaded", () => {
             refresh();
         });
 
-        window.addEventListener("mouseup", () => {
+        function stopDrag() {
             if (!dragging) return;
             dragging = false;
             thumb.classList.remove("is-dragging");
             document.body.style.userSelect = "";
-        });
+        }
+        window.addEventListener("mouseup", stopDrag);
+        window.addEventListener("blur", stopDrag);
+        window.addEventListener("contextmenu", stopDrag);
 
         // Click/hold on one of the two track segments (not the thumb) —
         // page toward the click, then keep paging while the button stays
@@ -238,10 +248,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         track.addEventListener("mousedown", (e) => {
+            if (e.button !== 0) return;
             const segment = e.target === segUpper ? segUpper : e.target === segLower ? segLower : null;
             if (!segment) return;
             const direction = segment === segUpper ? -1 : 1;
 
+            if (trackIntervalId) clearInterval(trackIntervalId);
+            if (activeSegment) activeSegment.classList.remove("is-active");
             paging = true;
             activeSegment = segment;
             segment.classList.add("is-active");
@@ -266,6 +279,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
         window.addEventListener("mouseup", stopTrackPaging);
+        window.addEventListener("blur", stopTrackPaging);
+        window.addEventListener("contextmenu", stopTrackPaging);
         track.addEventListener("mouseleave", stopTrackPaging);
 
         // Arrow buttons — a single nudge on click, repeating while held.
@@ -273,7 +288,9 @@ document.addEventListener("DOMContentLoaded", () => {
             let intervalId = null;
             function step() { el[A.scrollPos] += direction * ARROW_STEP; refresh(); }
             btn.addEventListener("mousedown", (e) => {
+                if (e.button !== 0) return;
                 e.preventDefault();
+                stop();
                 step();
                 intervalId = setInterval(step, 80);
             });
@@ -284,6 +301,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             }
             window.addEventListener("mouseup", stop);
+            window.addEventListener("blur", stop);
+            window.addEventListener("contextmenu", stop);
             btn.addEventListener("mouseleave", stop);
         }
         wireArrow(arrowUp, -1);
