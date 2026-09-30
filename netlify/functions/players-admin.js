@@ -73,6 +73,13 @@
           row's nickTurnedDown and Allow takes it off, as setting or
           locking a name does (30 Sept 2026; TURNED DOWN in player-nick.js).
 
+     PUT  { id, unTurnDown: "<name key>" }                 (30 Sept 2026)
+          Takes one name off the row's nickTurnedDown, so the player may
+          choose it again — for a player who has moved off a turned-down
+          name and the admins have changed their minds about it. The key is
+          exactly as the detail's `nickTurnedDown` lists it (the stored
+          nameKey). On its own, like a review. Audited; answers { player }.
+
    Refusals: 401 no session, 403 a role that may not (below), 400 a bad
    request or a nickname the rules refuse ({ error, field: "nick" }), 404
    nobody by that id, 409 the nickname is somebody else's, 413 too large,
@@ -93,7 +100,9 @@
    by whom); the word filter's flag and the admins' rejection, when there
    is one; whether the prompt has been answered; first and last sign-in;
    the activity counts; and, in the detail only, the last ten nickname
-   changes. Not the name keys, not the day's change counter as stored, and
+   changes and the turned-down names (nickTurnedDown, as stored, since
+   30 Sept 2026 — so they can be taken off; unTurnDown). Not the other name
+   keys, not the session version, not the day's change counter as stored, and
    nothing from any other collection but counts. The forget is not here:
    it stays player-forget.js's, owner only, and the panel calls that.
 
@@ -248,6 +257,12 @@ function detailShape(row, seesIds, act, bans) {
     out.nickHistory = history(row);
     out.changesToday = row.nickDay === today() ? Math.max(0, Number(row.nickCount) || 0) : 0;
     out.changesPerDay = nickRules.CHANGES_PER_DAY;
+    /* The names the admins have turned down (30 Sept 2026; TURNED DOWN in
+       player-nick.js), oldest first, as the row stores them — boiled-down
+       nameKeys, not the names as written — so the panel can offer to take
+       one off (unTurnDown, below). */
+    out.nickTurnedDown = (Array.isArray(row.nickTurnedDown) ? row.nickTurnedDown : [])
+        .filter(k => typeof k === "string" && k);
     return out;
 }
 
@@ -530,6 +545,15 @@ async function update(event, db, role) {
     if (typeof body.id !== "string" || !ID_SHAPE.test(body.id)) return json(400, { error: "Which player? Send their Discord id." });
 
     const hasNick = Object.prototype.hasOwnProperty.call(body, "nick");
+    if (body.unTurnDown !== undefined) {
+        if (typeof body.unTurnDown !== "string" || !body.unTurnDown || body.unTurnDown.length > 64) {
+            return json(400, { error: "unTurnDown is one of their turned-down names, as the list has it." });
+        }
+        if (hasNick || body.locked !== undefined || body.resetPrompt !== undefined || body.review !== undefined) {
+            return json(400, { error: "Taking a name off the turned-down list goes on its own." });
+        }
+        return await unTurnDown(event, db, body);
+    }
     if (body.review !== undefined) {
         if (!REVIEWS.includes(body.review)) return json(400, { error: "review is allow or reject." });
         if (hasNick || body.locked !== undefined || body.resetPrompt !== undefined) return json(400, { error: "A review goes on its own." });
@@ -720,6 +744,40 @@ async function review(event, db, body) {
     }
     const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
     return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: [did] });
+}
+
+/* UN-TURNING-DOWN a name (30 Sept 2026; see the header's third PUT, and
+   TURNED DOWN in player-nick.js). update() has already checked the role
+   and the body's shape. The list holds nameKeys, so `unTurnDown` is one of
+   those exactly as stored, and it is matched as it comes rather than
+   boiled down again. A key that is not on the list changes nothing and is
+   not an error — two admins pressing it at once — as Allow on nothing isn't.
+
+   A rejection standing on their CURRENT nickname is left as it is: that is
+   Allow's to lift, and while it stands player-nick.js still refuses the
+   same name respelt, list or no list. */
+async function unTurnDown(event, db, body) {
+    const players = db.collection("players");
+    const row = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    if (!row) return json(404, { error: "No player by that id." });
+    const list = Array.isArray(row.nickTurnedDown) ? row.nickTurnedDown : [];
+    if (!list.includes(body.unTurnDown)) {
+        return json(200, { player: detailShape(row, true, null, await bansOr(db)), changed: [] });
+    }
+    const who = usernameFromToken(event) || "unknown";
+    // Logged before it happens, as update() logs: by id, never by name.
+    await record(event, "write", {
+        username: who,
+        session: sessionOf(event),
+        method: "PUT",
+        endpoint: "players-admin",
+        target: `${body.id}: turned-down name removed`.slice(0, 200)
+    });
+    // $pull rather than writing the list back, so a name turned down by a
+    // Reject landing at the same moment is not lost.
+    await players.updateOne({ id: body.id }, { $pull: { nickTurnedDown: body.unTurnDown } });
+    const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: ["turned-down name removed"] });
 }
 
 exports.handler = async (event) => {

@@ -4,8 +4,25 @@ A Habbo Hotel: Origins maze room archive — the site at
 [mazerats.net](https://mazerats.net), plus the tools that keep it fed.
 
 The site itself is plain HTML, CSS and JavaScript served by Netlify, with
-Netlify Functions in front of MongoDB. There is no build step: what is in
-this repo is what gets served.
+Netlify Functions in front of MongoDB. There is no build step to run
+locally: what is in this repo is what `netlify dev` serves, unchanged.
+
+Deploys do run a short build (the `command` in `netlify.toml`), and it
+changes nothing about how the code is written:
+
+1. `npm install`
+2. `tools/check-daily-parity.js`, `tools/check-changes.js` and
+   `tools/check-share-headers.js` — tests; any failure stops the deploy.
+3. `tools/themes.js` — regenerates the palette stylesheets from
+   `css/style.css`, so a committed copy cannot go stale.
+4. `tools/build-minify.js` — strips comments from `css/` and `js/` and
+   stamps each page's `mazerats:build` meta with the commit. It refuses to
+   run outside Netlify (it rewrites files in place); run by hand it only
+   reports what it would do, and still fails on a file that will not parse.
+5. The unfinished dungeon bench (`dungeon.html`, `js/dungeon.js`) is
+   deleted from the build's copy so it is not published.
+
+Pushing to `main` does not publish anything; deploys are started by hand.
 
 ---
 
@@ -33,11 +50,25 @@ git clone <this repo> && cd MazeRatsWebsite && npm install
 
 Copy `.env.example` to `.env` and fill it in. The values are live
 credentials for the real site, so they are not in this repo — ask whoever
-runs it. Nothing works without `MONGODB_URI`.
+runs it. Nothing works without `MONGODB_URI`, and nobody can sign in to the
+admin panel without `SESSION_SECRET`. `.env.example` says what each of the
+others is for; all of them are optional.
 
 ```bash
 cp .env.example .env
 ```
+
+> **Local dev talks to the live database.** `MONGODB_URI` is the production
+> cluster, so anything saved through `localhost:8888` — a maze edit, a daily
+> game score, a contact message — is saved for real. Browsing is harmless;
+> test writes against a fake database in node instead.
+
+Two variables are used by tools rather than the site, and are not in
+`.env.example`: `HABBO_CLIENT` (the Habbo client folder the extractors and
+client patchers read — `tools/*-extract.js`, `tools/lingo-*.js`,
+`tools/fix-*.js`, `tools/cct-verify.js`) and
+`ERRORS_IN_DEV=1` (lets `netlify dev` record browser error reports, which
+it otherwise drops).
 
 ### 4. Put the console on the Desktop
 
@@ -62,7 +93,7 @@ real window — four tabs across the bottom:
 
 | Tab | What it does |
 | --- | --- |
-| **SERVER** | Starts and stops the local dev server, and opens the admin page. Closing the console stops a server it started. |
+| **SERVER** | Starts and stops the local dev server (`netlify dev`, at `http://localhost:8888`), and opens the admin panel. Closing the console stops a server it started. |
 | **MESSAGES** | The most recent messages people have sent through the console on the live site. |
 | **FURNI** | Runs the furni scans. Full rescan, find-new-only, or unscanned-only, over the whole archive or just the mazes you pick — and stops one that is already running, including one this window did not start. |
 | **OPTIONS** | How sure a match has to be, and which furni a scan must never record. |
@@ -170,12 +201,28 @@ Other tools worth knowing about:
 ## Layout
 
 ```
-admin.html, home.html, index.html    the site
-css/, js/, assets/                   its stylesheet, scripts, art and fonts
-netlify/functions/                   the API, and the furni matcher
-tools/                               the dev console and its scan tools
+index.html                           the landing page (/)
+home.html                            the archive (/home), and every window
+                                       on it: /maze/<slug>, /event/<slug>,
+                                       /guides, /guess, /odd, /glyphs
+fallinfurni.html, wizard.html,       Fallin' Furni, the Sorcerer's Atlas,
+privacy.html, 404.html                 the privacy policy, the 404 page
+warren.html                          the admin panel (/warren)
+css/, js/, assets/                   stylesheets, scripts, art and fonts
+netlify/functions/                   the API, the share previews, the
+                                       sitemap, and the furni matcher
+netlify.toml                         the build, the addresses (redirects),
+                                       and the security and cache headers
+tools/                               the dev console, the scan tools, the
+                                       deploy checks, and the extractors
 tools/.cache/                        sprite cache, furni names, local prefs
                                        (git-ignored, rebuilt on demand)
+```
+
+Run the deploy's checks by hand before pushing with:
+
+```bash
+npm run check    # daily-parity, changes, share-headers: the three the build runs
 ```
 
 `tools/.cache/` is disposable. Deleting it costs one slow first scan while

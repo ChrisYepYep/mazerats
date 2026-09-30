@@ -2,46 +2,32 @@
    Maze Rats — password fields
 
    Upgrades every <input type="password"> on the admin page into a field
-   that masks with a bullet and carries an eye button on the right to
-   show/hide what's typed.
-
-   Why this is more than a CSS rule: the mask has to be able to turn OFF.
-   A real type="password" draws its own mask and nothing in CSS can lift it
-   (-webkit-text-security only swaps one shape for another), so a field
-   whose contents can be revealed has to be a type="text" that never
-   actually holds the password — each one is rewired as:
+   that carries an eye button on the right to show/hide what's typed.
 
        .password-field
-           input  (type=text, shows "••••" or the real value, no name)
+           input  (type=password while hidden, type=text while shown)
            button (the eye)
-       input (type=hidden, carries the real value under the original name)
 
-   The real value lives in this module and is mirrored into the hidden
-   input, so FormData still returns the password under the same name it
-   always did and nothing that reads these forms had to change. Keeping
-   the name on a hidden partner rather than writing the value back into
-   the visible field on submit also means it can't matter which submit
-   handler happens to run first.
-
-   Edits are applied by hand from "beforeinput" rather than read back off
-   the field afterwards: once the field is showing mask characters, its
-   value is no longer the password, so a typed character has to be routed
-   into the real string ourselves. Anything that changes the value without
-   a beforeinput we can cancel — a password manager filling the form, an
-   IME or Android keyboard composing — is caught afterwards by reconcile(),
-   which diffs the field against what it last drew.
+   A real password field, and only a password field while hidden
+   (30 Sept 2026). This used to be a type="text" field drawing "••••" over
+   a value the module kept to itself, with a hidden partner input carrying
+   the real value under the field's name and every keystroke routed by
+   hand. Browsers and password managers decide what a password is by the
+   field's type, so Chrome offered to save the visible field — the row of
+   bullets — as the password, and IMEs and Android keyboards had to be
+   reconciled after the fact. Now the field stays type="password" whenever
+   it is masked, so the browser draws the mask, holds the real value and
+   treats it as a password in every way; the eye just swaps it to
+   type="text" while you look, and back. The name stays on the field
+   itself, so FormData (the Warren's login and reset forms) reads it as it
+   always did.
    =========================================================== */
 
 (function () {
     "use strict";
 
-    // U+2022 BULLET — the ordinary password dot. Deliberately a character
-    // every font on the fallback stack actually has: this is drawn in
-    // whatever face the field is set in, and the login fields are Arial
-    // (see #login-form in css/style.css), where the pixel font's old
-    // Alt+0213 "Õ" would have rendered as a row of capital O-tildes rather
-    // than as a mask.
-    const MASK_CHAR = "•";
+    // Set on each enhanced field as data-password-field, which
+    // js/glyph-palette.js reads to keep glyphs out of passwords.
     const ENHANCED_FLAG = "passwordField";
 
     const EYE_SHOW = `
@@ -61,27 +47,12 @@
             <line x1="2.6" y1="13.4" x2="13.4" y2="2.6" stroke="currentColor" stroke-width="1.4"/>
         </svg>`;
 
-    // Start of the word before `pos`, for the word-delete shortcuts. Always
-    // computed against the real value, so it means the same thing whether
-    // the field is currently showing that value or a row of mask glyphs.
-    function wordStart(text, pos) {
-        let i = pos;
-        while (i > 0 && /\s/.test(text[i - 1])) i--;
-        while (i > 0 && !/\s/.test(text[i - 1])) i--;
-        return i;
-    }
+    const LINE_BREAKS = /[\r\n]+/g;
 
-    /* Each enhanced field's own read and clear, keyed by the visible input.
-
-       FormData never needed these — it reads the hidden partner by name —
-       but a field read directly was reading the MASK. The self-service
-       password box in the account tab is not in a form, admin.js read its
-       .value, and "••••••••" is what got saved as the new password: eight
-       bullets, which then locked the account out of its own password. Set
-       the value to "" from outside, likewise, and only the drawing was
-       cleared; the real string stayed in here and came back on the next
-       keystroke. So both go through the module, which is the only thing
-       that knows the real value. */
+    /* Each enhanced field's clear, keyed by the input. The field's own
+       .value is now the real password, so reading it needs nothing from
+       here; PasswordField.value stays for the callers that already use it.
+       Clearing does need the module, to put the mask back as well. */
     const controllers = new WeakMap();
 
     function enhance(input) {
@@ -91,21 +62,10 @@
         const parent = input.parentNode;
         if (!parent) return;
 
-        let real = input.value || "";
         let revealed = false;
 
-        // The password moves to a hidden partner under the original name;
-        // the visible field keeps required/minlength (a mask is the same
-        // length as what it stands for, so both still validate correctly)
-        // but stops being the thing that gets submitted.
-        const hidden = document.createElement("input");
-        hidden.type = "hidden";
-        if (input.name) hidden.name = input.name;
-        input.removeAttribute("name");
-
-        input.type = "text";
-        // A masked field's contents are meaningless to a spellchecker or an
-        // autocapitaliser, and correcting them would corrupt the mask.
+        // Only matters while revealed, when the field is plain text: a
+        // spellchecker or autocapitaliser has no business in a password.
         input.setAttribute("spellcheck", "false");
         input.setAttribute("autocapitalize", "off");
         input.setAttribute("autocorrect", "off");
@@ -114,23 +74,25 @@
         wrap.className = "password-field";
         parent.insertBefore(wrap, input);
         wrap.appendChild(input);
-        wrap.appendChild(hidden);
 
         const toggle = document.createElement("button");
         toggle.type = "button";
         toggle.className = "password-toggle";
         wrap.appendChild(toggle);
 
-        function render(caret) {
-            input.value = revealed ? real : MASK_CHAR.repeat(real.length);
-            hidden.value = real;
+        function render() {
+            // Swapping the type keeps the value; the selection is kept by
+            // hand, since some browsers reset it when the type changes.
+            const focused = document.activeElement === input;
+            const start = input.selectionStart;
+            const end = input.selectionEnd;
+            input.type = revealed ? "text" : "password";
+            // Kept for the stylesheet's letter-spacing on the mask.
             input.dataset.masked = revealed ? "false" : "true";
-            if (caret != null && document.activeElement === input) {
-                input.setSelectionRange(caret, caret);
+            if (focused && start != null) {
+                try { input.setSelectionRange(start, end); } catch (e) { /* not selectable */ }
             }
-        }
 
-        function renderToggle() {
             toggle.innerHTML = revealed ? EYE_HIDE : EYE_SHOW;
             const label = revealed ? "Hide password" : "Show password";
             toggle.setAttribute("aria-label", label);
@@ -138,202 +100,72 @@
             toggle.setAttribute("aria-pressed", String(revealed));
         }
 
-        /* IME and Android keyboards (30 Sept 2026). A composition — every
-           word typed on most Android keyboards, and any IME input — can't be
-           cancelled from beforeinput: the browser writes it into the field
-           regardless. Routing it by hand as well is what doubled the text,
-           and the old input listener then adopted the whole field, bullets
-           and all, as the password. So compositions are left to the browser
-           and reconciled afterwards: while one is open the field is not
-           redrawn (that would break the IME), and once it closes the edit is
-           worked out by diffing what the field shows against what it was
-           last drawn as — see reconcile() below. */
-        let composing = false;
-
-        input.addEventListener("compositionstart", () => { composing = true; });
-        input.addEventListener("compositionend", () => {
-            composing = false;
-            reconcile();
-        });
-
-        input.addEventListener("beforeinput", e => {
-            const type = e.inputType || "";
-            if (e.isComposing || composing ||
-                type === "insertCompositionText" ||
-                type === "deleteCompositionText" ||
-                type === "insertFromComposition") return;
-            // Some keyboards send ordinary-looking edits that still can't be
-            // cancelled; those are picked up by reconcile() on "input".
-            if (e.cancelable === false) return;
-
-            const selStart = input.selectionStart;
-            const selEnd = input.selectionEnd;
-            let from = selStart;
-            let to = selEnd;
-            let inserted = "";
-
-            switch (type) {
-                case "insertText":
-                    inserted = e.data || "";
-                    break;
-                case "insertFromPaste":
-                case "insertFromDrop":
-                case "insertReplacementText":
-                    inserted = (e.dataTransfer && e.dataTransfer.getData("text")) || e.data || "";
-                    break;
-                /* Enter. These two are named like insertions but there is
-                   nothing to insert: a single-line field has nowhere to put
-                   a line break, so the browser's only response is to submit
-                   the form. Letting it through untouched is the point —
-                   cancelling it is what stopped the login form submitting. */
-                case "insertLineBreak":
-                case "insertParagraph":
-                    return;
-                case "deleteWordBackward":
-                    if (selStart === selEnd) from = wordStart(real, selStart);
-                    break;
-                case "deleteSoftLineBackward":
-                case "deleteHardLineBackward":
-                    if (selStart === selEnd) from = 0;
-                    break;
-                case "deleteWordForward":
-                case "deleteSoftLineForward":
-                case "deleteHardLineForward":
-                    if (selStart === selEnd) to = real.length;
-                    break;
-                case "deleteContentForward":
-                    if (selStart === selEnd) to = Math.min(real.length, selEnd + 1);
-                    break;
-                /* deleteContentBackward, deleteByCut and deleteByDrag land
-                   here and mean: remove the selection, or one character back
-                   when there isn't one. Everything else is sorted by what its
-                   name starts with, so an input type this switch has never
-                   heard of is still handled as the kind of thing it is. */
-                default: {
-                    if (type.startsWith("insert")) { inserted = e.data || ""; break; }
-                    if (type.startsWith("delete")) {
-                        if (selStart === selEnd) from = Math.max(0, selStart - 1);
-                        break;
-                    }
-
-                    /* Anything else is not an edit to the text, and the old
-                       default — assume a deletion — is what made Enter behave
-                       as Backspace: "insertLineBreak" matched no case, took a
-                       character off the password on its way past, and was
-                       cancelled, so the form never submitted either.
-
-                       So an unrecognised type now changes nothing and is
-                       handed to the browser. Undo and redo are the exception:
-                       replaying a native edit would write mask characters
-                       into the field and leave the real value stranded behind
-                       them. Nothing native ever edits this field, so there is
-                       nothing there to replay. */
-                    if (type.startsWith("history")) e.preventDefault();
-                    return;
-                }
-            }
-
-            // The browser's own edit would write mask characters into the
-            // value, so it never runs — this applies the same edit to the
-            // real string and redraws instead.
+        /* No line breaks (30 Sept 2026). A password copied with its line
+           ending — a triple-click in a document, a line from a terminal —
+           has to arrive without it, or it is refused as wrong. Browsers
+           differ on what a one-line field does with a pasted "\n" (drop it,
+           or turn it into a space), so a paste or drop carrying one is
+           applied here with the breaks taken out. */
+        function insertStripped(e, text) {
+            if (!text || !/[\r\n]/.test(text)) return;
             e.preventDefault();
-            real = real.slice(0, from) + inserted + real.slice(to);
-            render(from + inserted.length);
-        });
-
-        /* Works out an edit the browser made on its own — a composition, an
-           uncancellable keyboard edit, a password manager filling the field —
-           and applies it to the real value.
-
-           Adopting the whole field (the old way) is only right when the field
-           was empty or revealed; with a mask showing it made the bullets part
-           of the password. Instead the shown value is diffed against what was
-           last drawn: the unchanged text either side is kept from the real
-           value, and only what's new in the middle is taken from the field.
-           The caret marks where the new text ends, which settles the cases a
-           plain diff can't — deleting one bullet from a row of bullets looks
-           the same wherever it happened. */
-        function reconcile() {
-            const expected = revealed ? real : MASK_CHAR.repeat(real.length);
-            const shown = input.value;
-            if (shown === expected) return;
-
-            // Unchanged tail: everything after the caret, if it matches;
-            // otherwise the longest common suffix.
-            let tail = -1;
-            const caret = input.selectionStart;
-            if (caret != null && caret <= shown.length) {
-                const after = shown.length - caret;
-                if (after <= expected.length &&
-                    shown.slice(caret) === expected.slice(expected.length - after)) {
-                    tail = after;
-                }
-            }
-            if (tail < 0) {
-                tail = 0;
-                const max = Math.min(shown.length, expected.length);
-                while (tail < max &&
-                       shown[shown.length - 1 - tail] === expected[expected.length - 1 - tail]) tail++;
-            }
-
-            // Unchanged head, within what the tail leaves.
-            const headMax = Math.min(shown.length - tail, expected.length - tail);
-            let head = 0;
-            while (head < headMax && shown[head] === expected[head]) head++;
-
-            const inserted = shown.slice(head, shown.length - tail);
-            real = real.slice(0, head) + inserted + real.slice(real.length - tail);
-            render(head + inserted.length);
+            const clean = text.replace(LINE_BREAKS, "");
+            const start = input.selectionStart != null ? input.selectionStart : input.value.length;
+            const end = input.selectionEnd != null ? input.selectionEnd : start;
+            input.value = input.value.slice(0, start) + clean + input.value.slice(end);
+            const caret = start + clean.length;
+            try { input.setSelectionRange(caret, caret); } catch (err) { /* not selectable */ }
+            input.dispatchEvent(new Event("input", { bubbles: true }));
         }
 
-        input.addEventListener("input", e => {
-            // Mid-composition the field is the IME's; it's squared up on
-            // compositionend.
-            if (composing || (e && e.isComposing)) return;
-            reconcile();
+        input.addEventListener("paste", e => {
+            const data = e.clipboardData || window.clipboardData;
+            insertStripped(e, data ? data.getData("text") : "");
+        });
+        input.addEventListener("beforeinput", e => {
+            if (e.inputType !== "insertFromDrop" || e.cancelable === false) return;
+            insertStripped(e, e.data || (e.dataTransfer && e.dataTransfer.getData("text")) || "");
         });
 
         toggle.addEventListener("click", () => {
             revealed = !revealed;
-            renderToggle();
-            // Focus goes back to the field (the click took it) at the end of
-            // whatever was typed, so revealing to check a password doesn't
-            // cost you your place in it.
+            // Focus goes back to the field (the click took it), so revealing
+            // to check a password doesn't cost you your place in it.
             input.focus();
-            render(real.length);
+            render();
         });
 
-        // Back to empty and masked: the real value, the drawing, the hidden
-        // partner and the eye all at once.
+        // Back to empty and masked.
         function clear() {
-            real = "";
+            input.value = "";
             revealed = false;
-            renderToggle();
-            render(0);
+            render();
         }
 
         const form = input.closest("form");
         if (form) {
-            // A form reset blanks the visible field but would otherwise
-            // leave the real value sitting behind it.
-            form.addEventListener("reset", clear);
+            // A form reset empties the field itself; this puts the mask back.
+            form.addEventListener("reset", () => { revealed = false; render(); });
+            /* Masked again on the way out, so a password submitted while
+               showing is still a password field when the browser looks at
+               the form to offer saving it. Capture phase, so it happens
+               before any submit handler replaces or empties the form. */
+            form.addEventListener("submit", () => {
+                if (revealed) { revealed = false; render(); }
+            }, true);
         }
 
-        controllers.set(input, { value: () => real, clear });
+        controllers.set(input, { clear });
 
-        renderToggle();
-        render(null);
+        render();
     }
 
-    /* The public half — see `controllers` above. Both accept a field that was
-       never enhanced (password-field.js failed to load, or the field is a
-       plain one) and fall back to its own value, so a caller never has to ask
-       which kind it has. */
+    /* The public half. Both accept a field that was never enhanced
+       (password-field.js failed to load, or the field is a plain one), so a
+       caller never has to ask which kind it has. */
     window.PasswordField = {
         value(input) {
-            if (!input) return "";
-            const c = controllers.get(input);
-            return c ? c.value() : (input.value || "");
+            return input ? (input.value || "") : "";
         },
         clear(input) {
             if (!input) return;

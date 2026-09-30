@@ -80,6 +80,16 @@ exports.handler = async (event) => {
            entry asking to be ignored, and home.html names /home — see the
            note beside its <link rel="canonical">. */
         url(`${origin}/home`, "", "0.9"),
+        /* The two daily games (30 Sept 2026). Each is a public page at its
+           own address — robots.txt allows /guess on purpose — and each
+           names that address as its canonical while it is open (PageMeta in
+           js/guess.js and js/oddoneout.js), so neither is the /home entry
+           again. Listed always, as /home is: neither has a switch of its
+           own, and the site's Coming Soon gate covers them exactly as it
+           covers the archive. No lastmod: the page is the same every day;
+           only the deal changes, and that is never in it. */
+        url(`${origin}/guess`, "", "0.6"),
+        url(`${origin}/odd`, "", "0.6"),
         /* The privacy policy, last and lowest, because nobody searches for
            it — but it belongs here.
 

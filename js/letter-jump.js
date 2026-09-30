@@ -11,7 +11,9 @@
    means the first one in view, not necessarily alphabetically first if the
    list isn't sorted by name. */
 document.addEventListener("keydown", e => {
-    if (e.key.length !== 1 || !/[a-z]/i.test(e.key)) return;
+    // No `key` at all (30 Sept 2026): Chrome's autofill fires a keydown with
+    // none when it fills the sign-in box, and reading .length threw.
+    if (typeof e.key !== "string" || e.key.length !== 1 || !/[a-z]/i.test(e.key)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const active = document.activeElement;
     // contenteditable too: typing into an editable region is typing, even

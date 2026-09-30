@@ -231,6 +231,13 @@ window.Daily = (function () {
             headers: { Accept: "application/json" }
         });
         if (body && Number.isFinite(body.now)) setServerNow(body.now);
+        /* A practice run from before launch that the server has set aside
+           (PRACTICE BEFORE LAUNCH in netlify/functions/_speed.js; 30 Sept
+           2026): the start this page remembers was the practice run's, so
+           it is forgotten, and the real day's start is sent when it begins
+           — without that, round 0 would go out with no clock behind it and
+           the real day would be untimed. */
+        if (status === 200 && body && body.practiceOver) forgetStarts(game);
         return status === 200 && body && Array.isArray(body.rounds) ? body : null;
     }
 
@@ -282,6 +289,11 @@ window.Daily = (function () {
             if (reply.status === 0 && attempt === 0) continue;
             break;
         }
+        /* The move landed on a practice run the launch cut has passed, and
+           the server has set the run aside (409 "practice-over"). Its start
+           goes from this page's memory too, as in deal() above; the game
+           reads the day again on any 409 and starts it fresh. */
+        if (reply.status === 409 && reply.body && reply.body.reason === "practice-over") forgetStarts(game);
         return reply;
     }
 
@@ -369,9 +381,12 @@ window.Daily = (function () {
          signed in, not filed yet nothing, until the submission answers
          signed out               "Sign in before you play to earn a speed
                                    bonus as well." — a signed-out day earns
-                                   none, so it never shows one. */
+                                   none, so it never shows one.
+         a practice run           practiceLine below, whatever else is
+                                  known (`practice`, 30 Sept 2026) */
     function bonusLine(opts) {
         const o = opts || {};
+        if (o.practice) return practiceLine(o.practice, o.day, o.now);
         const s = o.score;
         if (s && Number.isFinite(Number(s.points))) {
             const points = Number(s.points) || 0;
@@ -381,6 +396,36 @@ window.Daily = (function () {
         }
         if (!o.signedIn) return "Sign in before you play to earn a speed bonus as well.";
         return "";
+    }
+
+    /* A PRACTICE RUN (30 Sept 2026): a day played before the site opened
+       (PRACTICE BEFORE LAUNCH in netlify/functions/_speed.js). It is not on
+       the boards, and on launch day itself the real rounds start fresh at
+       the cut — so the card says which, in place of the bonus line.
+       `until` is the cut as an ISO string (the deal's `practiceUntil`, kept
+       with the day), `day` the day played, `at` the time to read it at
+       (the server's now by default). Pure given `at`, for the parity check.
+
+         before the cut, launch day   "A practice run — nothing counts until
+                                       the site opens at 08:00 UTC, when
+                                       today's rounds start fresh."
+         before the cut, earlier day  "A practice run — nothing counts until
+                                       the site opens, so this one isn't on
+                                       the boards."
+         after the cut                "A practice run from before the site
+                                       opened, so it isn't on the boards.
+                                       Reopen the game to play today's
+                                       rounds for real." */
+    function practiceLine(until, day, at) {
+        const cut = typeof until === "string" ? Date.parse(until) : NaN;
+        const when = Number.isFinite(at) ? at : now();
+        if (Number.isFinite(cut) && when >= cut) {
+            return "A practice run from before the site opened, so it isn't on the boards. Reopen the game to play today's rounds for real.";
+        }
+        if (Number.isFinite(cut) && day === new Date(cut).toISOString().slice(0, 10)) {
+            return `A practice run — nothing counts until the site opens at ${new Date(cut).toISOString().slice(11, 16)} UTC, when today's rounds start fresh.`;
+        }
+        return "A practice run — nothing counts until the site opens, so this one isn't on the boards.";
     }
 
     /* The rule both splashes add, in the site's plain words, from the real
@@ -400,16 +445,17 @@ window.Daily = (function () {
        both are built here, in the same four lines:
 
          Maze Rats · Odd One Out
-         30 Sept 2026 — 4/5 · 187 pts
+         30 Sept 2026 — 4/5 · 187 pts incl. speed
          🟩🟩🟥🟩🟩
          https://mazerats.net/odd
 
        `right`/`of` is what the game counts a day in (rooms found, imposters
        spotted); `points` is the total the boards rank by, speed bonus
        included, which only the server knows — so a game passes
-       dayTotal(served, base), which falls back to the base points when no
-       filed figure has come back (signed out, or not answered yet), rather
-       than a figure the page does not have. The address is the site's own,
+       shareScore(served, base), which falls back to the base points, and
+       no label, when no filed figure has come back (signed out, not
+       answered yet, a practice run), rather than a figure the page does not
+       have. `speed` adds the label — see shareScore. The address is the site's own,
        not location.origin, so a result copied on a preview or from
        localhost still points somewhere a friend can open. Pure, so the
        parity check and node can run it. */
@@ -420,16 +466,31 @@ window.Daily = (function () {
             .toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     }
 
+    /* A practice run's `served` (the server answering with the figures of
+       a day it did not file) is not a filed day, so it counts as nothing
+       here: the base points, unlabelled. */
+    const isFiled = served => Boolean(served && !served.practice && Number.isFinite(Number(served.points)));
+
     function dayTotal(served, base) {
-        if (served && Number.isFinite(Number(served.points))) {
-            return (Number(served.points) || 0) + (Number(served.bonus) || 0);
-        }
+        if (isFiled(served)) return (Number(served.points) || 0) + (Number(served.bonus) || 0);
         return base;
+    }
+
+    /* THE LABEL (30 Sept 2026, Chris's call). A pasted total with the speed
+       bonus in it read as a bigger base score than the game can give — 187
+       from five rounds worth 10 each — so it says so: "187 pts incl. speed".
+       Only once the day is filed with a bonus on it; before then no bonus
+       is known, and a filed day that earned none is its base points
+       anyway, so both are plain "40 pts". shareScore works out which, from
+       the same two things dayTotal reads. */
+    function shareScore(served, base) {
+        const speed = isFiled(served) && (Number(served.bonus) || 0) > 0;
+        return { points: dayTotal(served, base), speed };
     }
 
     function shareText(o) {
         return `Maze Rats · ${o.game}\n` +
-            `${shareDate(o.day)} — ${o.right}/${o.of} · ${o.points} pts\n` +
+            `${shareDate(o.day)} — ${o.right}/${o.of} · ${o.points} pts${o.speed ? " incl. speed" : ""}\n` +
             `${o.grid}\n` +
             `${SHARE_SITE}/${o.path}`;
     }
@@ -505,15 +566,30 @@ window.Daily = (function () {
            server from before LATE FILING, or a clock a moment out; the
            next open tries again, until fileable() says no more.
        Any other refusal (a bad request, a day with nothing to deal) will
-       be refused again and is final. */
+       be refused again and is final.
+
+       AND TWO 403s THAT LIFT (30 Sept 2026): a nickname the admins turned
+       down (`nickRequired`, gone once a new one is chosen) and a ban with a
+       cool-down (`banned.until`). Both refuse the finishing POST, and both
+       were final, so a day finished before the refusal and filed after it
+       was marked posted and never sent again, though the server would take
+       it the moment the refusal lifted. A permanent ban is still final. The
+       game's own gate (Account.mayPlay) keeps the window shut meanwhile, so
+       the retry is simply the next open after it lifts. */
     function filed(status, body, day) {
         const b = body || {};
         const ok = Boolean(status === 200 && (b.recorded || b.reason === "already"));
         if (ok) return { ok, retry: false, final: true };
+        // A practice run, answered and deliberately not filed (30 Sept
+        // 2026): settled, and never worth sending again.
+        if (status === 200 && b.practice) return { ok: false, retry: false, final: true, practice: true };
         const retry = status === 0 || status >= 500 || status === 429;
+        const lifts = status === 403 && (Boolean(b.nickRequired) ||
+            Boolean(b.banned && typeof b.banned === "object" && b.banned.until));
         const later = retry ||
             (status === 200 && b.reason === "signed-out") ||
             status === 401 ||
+            (lifts && fileable(day)) ||
             (status === 409 && b.reason === "unfinished") ||
             (status === 400 && /not open/i.test(String(b.error || "")) && fileable(day));
         return { ok, retry, final: !later };
@@ -803,7 +879,10 @@ window.Daily = (function () {
                takes it away again once a nickname is set. Not for a day
                the game says was played unlisted (opts.listed === false),
                which went up under no name at all. */
-            const invite = me() ? (o.listed !== false && window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "") : `
+            /* Nothing at all for a practice run (30 Sept 2026): it goes on
+               no board signed in or out, so neither the nickname line nor
+               "Sign in to be listed" has anything to offer it. */
+            const invite = o.practice ? "" : me() ? (o.listed !== false && window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "") : `
                 <p class="guess-board-note guess-board-invite">
                     Your ${o.points || 0} points are saved on this device.
                     <button type="button" class="guess-btn" data-daily-signin>Sign in with Discord to be listed</button>
@@ -845,6 +924,20 @@ window.Daily = (function () {
         });
     }
 
+    /* Counted for the site's own usage numbers (js/track.js; 30 Sept 2026):
+       a daily game opened, finished, or its result copied. `what` is
+       "open", "finish" or "share", sent as the event "daily-<what>" with
+       the game ("odd", "guess") as its label — nothing about the player,
+       their day or their score. The names are on the endpoint's list
+       (EVENT_NAMES in netlify/functions/track.js), which drops any other.
+       Nothing happens when Track is not there: opted out (Do Not Track,
+       Global Privacy Control) or not loaded. Never throws. */
+    function track(what, game) {
+        try {
+            if (window.Track && typeof Track.event === "function") Track.event("daily-" + what, game);
+        } catch (e) { /* usage numbers never get in the way of a game */ }
+    }
+
     /* isHallway lived here too, for the games to keep hallways out of the
        day they dealt. The server deals now, and its copy (isHallway in
        netlify/functions/_daily.js) is the one that decides; js/home.js keeps
@@ -853,8 +946,9 @@ window.Daily = (function () {
     return {
         today, now, setServerNow, seededRandom, dayBefore, request,
         claimReset, deal, move, replay, refusedAsSignedIn, submit, filed, fileable, start, opening, takeRound, mergeRounds,
+        forgetStarts, track,
         clock, scoreCell, boards, ranks, isMine,
-        SPEED_BONUS_MAX, bonusLine, bonusRule,
-        shareDate, dayTotal, shareText, shareFallback
+        SPEED_BONUS_MAX, bonusLine, practiceLine, bonusRule,
+        shareDate, dayTotal, shareScore, shareText, shareFallback
     };
 })();

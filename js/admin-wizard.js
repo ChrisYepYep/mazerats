@@ -1966,7 +1966,7 @@ window.AdminWizard = (function () {
             : selected.kind === "path" ? `the trail ${trailTitle(record)}`
                 : `the picture "${record.name || "untitled"}"`;
         const extra = selected.kind === "room" ? " Every trail that runs to it goes too." : "";
-        if (!await askFirst(`Delete ${esc(what)}?${extra} This cannot be undone.`)) return;
+        if (!await askFirst(`Delete ${esc(what)}?${extra} This cannot be undone.`, { danger: true })) return;
         const kind = selected.kind, id = selected.id;
         try {
             await ctx.api.deleteWizardItem(ctx.token(), kind, id);
@@ -2711,16 +2711,25 @@ window.AdminWizard = (function () {
            the code has anything else in it: "wingardium-leviosa" opens to
            "wingardiumleviosa" or "wingardium leviosa", and "–––" opens to
            nothing at all. */
-        const codeKey = value => String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+        /* Accents folded first, exactly as the server's codeKey does, so
+           "Lumos Máxima" is shown opening to "lumosmaxima" rather than
+           "lumosmxima". And letters from outside a–z — Cyrillic, Greek and
+           the like — have no key on the map at all and are dropped, so a
+           code written only in them can never be opened: said as such,
+           rather than as "no letters" when it plainly has some. */
+        const codeKey = value => String(value || "").toLowerCase()
+            .normalize("NFD").replace(/[̀-ͯ]/g, "")
+            .replace(/[^a-z0-9]+/g, "");
         const codeInput = form.querySelector('[name="code"]');
         const codeHint = form.querySelector(".admin-wiz-code-hint");
         const showCodeHint = () => {
             const raw = codeInput.value.trim().toLowerCase().replace(/\s+/g, " ");
             const key = codeKey(raw);
             let text = "";
-            if (raw && !key) text = "This has no letters or digits in it, so nothing typed can open it.";
+            if (raw && !key && /[\p{L}\p{N}]/u.test(raw)) text = "The map's keyboard only has the letters a–z and the digits 0–9, and this has none of them, so nothing typed can open it.";
+            else if (raw && !key) text = "This has no letters or digits in it, so nothing typed can open it.";
             else if (key && key.length < 3) text = `Typed on the map it is "${key}" — the map ignores guesses shorter than three letters.`;
-            else if (key && key !== raw.replace(/ /g, "")) text = `Only letters and digits count: this opens to "${key}" typed with or without spaces.`;
+            else if (key && key !== raw.replace(/ /g, "")) text = `Only the letters a–z and the digits count: this opens to "${key}" typed with or without spaces.`;
             codeHint.textContent = text;
             codeHint.hidden = !text;
         };
@@ -2744,7 +2753,7 @@ window.AdminWizard = (function () {
                 message: read("message").value.trim(),
                 enabled: read("enabled").checked
             };
-            if (next.code && !codeKey(next.code)) return say("The code needs at least one letter or digit.", "bad");
+            if (next.code && !codeKey(next.code)) return say("The code needs at least one letter a–z or digit.", "bad");
             if (!next.code) return say("It needs a code.", "bad");
             Object.assign(secret, next);
             if (await saveSecret(secret)) {

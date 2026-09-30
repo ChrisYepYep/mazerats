@@ -122,8 +122,13 @@ function normaliseCode(value) {
    "wingardium leviosa" and "wingardiumleviosa" are one code — and a stored
    code is keyed at comparison time, so nothing already saved needs
    rewriting. The page keys its buffer the same way (codeKey there). */
+/* Accents folded first (30 Sept 2026), so an accented letter counts as its
+   plain one rather than vanishing: a code saved as "Lumos Máxima" keyed to
+   "lumosmxima", and the map's keyboard, which takes no "á", could only ever
+   send "lumosmaxima". The page's codeKey folds the same way. */
 function codeKey(value) {
-    return normaliseCode(value).replace(/[^a-z0-9]+/g, "");
+    return normaliseCode(value).normalize("NFD").replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9]+/g, "");
 }
 
 /* Every room and trail id that some enabled secret is holding back.
@@ -916,6 +921,19 @@ async function route(event, wizard) {
     const kind = body.kind || (event.queryStringParameters || {}).kind;
     if (!KINDS.includes(kind)) {
         return json(400, { error: "kind must be one of: " + KINDS.join(", ") });
+    }
+    /* A code nobody could ever type (30 Sept 2026). The editor refuses one
+       with no plain letter or digit left once folded — Cyrillic, Greek, bare
+       punctuation — and so does this, for a save that didn't come from it.
+       Only when the code is actually changing: a legacy secret stored with
+       such a code still has to take its reorders and camera saves. */
+    if (kind === "reveal" && body.code !== undefined && !codeKey(body.code)) {
+        const stored = event.httpMethod === "PUT" && typeof body.id === "string" && body.id
+            ? await wizard.findOne({ id: body.id, kind: "reveal" }, { projection: { _id: 0, code: 1 } })
+            : null;
+        if (!stored || String(stored.code || "") !== String(body.code)) {
+            return json(400, { error: "A code needs at least one plain letter or number (a-z, 0-9)." });
+        }
     }
 
     if (event.httpMethod === "POST") {

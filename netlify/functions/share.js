@@ -285,6 +285,68 @@ function guideThumb(guide) {
     return withPic ? textOf(withPic.image) : "";
 }
 
+/* A description with its formatting taken off (30 Sept 2026). They are
+   written in the guides' text format now — **bold**, *italic*,
+   [words](address), "- " lists — and a link preview is plain text, where
+   the stars and brackets would only be noise. The same steps as
+   GuideText.plain in js/guide-text.js, kept here rather than required so
+   this function carries nothing new into its bundle. */
+function plainText(text) {
+    const BOLD = /\*\*([^*\n]+)\*\*/g;
+    // Headings, dividers, underline and strikethrough too, since the fuller
+    // /warren toolbar (30 Sept 2026) — the same order GuideText.plain uses,
+    // and like it line by line, with the heading's closing #s taken off by
+    // a loop: see plainLine and headingText there for the eight-second
+    // patterns this replaced.
+    const line = l => {
+        if (/^\s*-{3,}\s*$/.test(l)) return "";
+        const h = /^\s*(#{2,3})\s+(\S[^\n]*)$/.exec(l);
+        if (!h) return l.replace(/^\s*(?:[-*]\s+|\d+[.)]\s+|>\s?)/, "");
+        let s = h[2].trimEnd(), j = s.length;
+        while (j > 0 && s[j - 1] === "#") j--;
+        if (j < s.length && j > 0 && /\s/.test(s[j - 1])) s = s.slice(0, j).trimEnd();
+        return s;
+    };
+    // A link's words for the link: replaceLinks in GuideText, the same scan
+    // with the same matches as /\[([^\]\n]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)/g
+    // but trying only the first "[" before each "]" (see there).
+    const ADDR = /\(((?:[^()\s]|\([^()\s]*\))+)\)/y;
+    const unlink = str => {
+        let out = "", from = 0, i = 0;
+        for (;;) {
+            const p = str.indexOf("[", i);
+            if (p < 0) break;
+            let q = p + 1;
+            while (q < str.length && str[q] !== "]" && str[q] !== "\n") q++;
+            if (q >= str.length) break;
+            if (str[q] === "]" && q > p + 1) {
+                ADDR.lastIndex = q + 1;
+                if (ADDR.exec(str)) {
+                    out += str.slice(from, p) + str.slice(p + 1, q);
+                    from = i = ADDR.lastIndex;
+                    continue;
+                }
+            }
+            i = q + 1;
+        }
+        return out + str.slice(from);
+    };
+    return unlink(String(text || "").replace(/\r\n?/g, "\n"))
+        .split("\n").map(line).join("\n")
+        // Only marks that hug their words, with nothing wordy or another
+        // mark touching them outside (30 Sept 2026): GuideText's UNDER and
+        // STRIKE, so "~~ Welcome ~~" and "a__b__c" keep their marks. The
+        // \u0001 stands in for the page's <u> tags until the end, as there.
+        .replace(/(^|[^\w_])__([^\s_](?:[^_\n]*[^\s_])?)__(?![\w_])/g, "$1\u0001$2\u0001")
+        .replace(/(^|[^\w~])~~([^\s~](?:[^~\n]*[^\s~])?)~~(?![\w~])/g, "$1$2")
+        .replace(BOLD, "$1")
+        .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1$2")
+        .replace(BOLD, "$1")
+        .replace(/\u0001/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
 // Long enough to say something, short enough that no client truncates it
 // mid-word in a way that changes the meaning.
 function clip(text) {
@@ -301,7 +363,7 @@ function describe(record, isEvent) {
     const who = isEvent
         ? (host ? `Hosted by ${host}.` : "")
         : (creator ? `Built by ${creator}.` : "");
-    const what = (textOf(record.description) || textOf(record.details)).trim();
+    const what = plainText(textOf(record.description) || textOf(record.details));
     const tail = isEvent
         ? "An event in the Maze Rats archive of Habbo Origins."
         : "A maze in the Maze Rats archive of Habbo Origins.";
@@ -314,7 +376,11 @@ function tagsFor(kind, record, origin, slug) {
     if (kind === "guide") {
         return {
             title: textOf(record.title) || "Guides",
-            description: clip(textOf(record.summary)) || "A guide in the Maze Rats archive of Habbo Origins.",
+            // With its format taken off (30 Sept 2026), as the Guides
+            // list's cards show it: a summary is written in the same
+            // format as a guide's sections, and its stars and [words](...)
+            // went into the preview as typed.
+            description: clip(plainText(textOf(record.summary))) || "A guide in the Maze Rats archive of Habbo Origins.",
             image: guideImage(origin, guideThumb(record)),
             sized: false,
             canonical,
@@ -325,11 +391,13 @@ function tagsFor(kind, record, origin, slug) {
     // The same fallback chain the site's own cards use (see normalize in
     // js/home.js): the thumbnail, then the entrance shot, then the first
     // room in the gallery. Each through textOf, so an odd stored value is
-    // skipped rather than sent to the image CDN as "[object Object]".
+    // skipped rather than sent to the image CDN as "[object Object]". A
+    // gallery room stored as a bare path string counts too (30 Sept 2026):
+    // reading .image off it skipped it.
     const first = Array.isArray(record.gallery) ? record.gallery[0] : null;
     const thumb = textOf(record.thumb)
         || textOf(record.entrance && record.entrance.image)
-        || textOf(first && first.image)
+        || textOf(typeof first === "string" ? first : first && first.image)
         || "";
     return {
         title: textOf(isEvent ? record.title : record.name) || "Maze Rats",

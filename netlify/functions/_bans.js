@@ -344,7 +344,17 @@ async function writeRefusal(db, event, playerId, { game = false } = {}) {
     if (ban) return bannedReply(ban);
     if (game && playerId) {
         try {
-            const row = await db.collection("players").findOne({ id: String(playerId) }, { projection: { _id: 0, nickRejected: 1 } });
+            const row = await db.collection("players").findOne({ id: String(playerId) }, { projection: { _id: 0, nickRejected: 1, sv: 1 } });
+            /* A revoked session (30 Sept 2026): the same read tells whether
+               this cookie's session version is still the row's — a forgotten
+               player's row is gone, so an old cookie cannot keep filing
+               scores. See SESSION VERSIONS in _player.js. `findOne` gives
+               null for a real "no row", which is what sessionRevoked needs. */
+            const { playerFrom, sessionRevoked } = require("./_player");
+            const who = playerFrom(event);
+            if (who && String(who.id) === String(playerId) && sessionRevoked(who, row)) {
+                return reply(401, { error: "Not signed in" });
+            }
             if (row && row.nickRejected && typeof row.nickRejected === "object") return nickRequiredReply();
         } catch (e) {
             console.error("bans: could not read the players row for a game write", e);

@@ -212,12 +212,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const selfPasswordBtn = document.getElementById("self-password-btn");
     const selfPasswordStatus = document.getElementById("self-password-status");
 
-    /* A password field's REAL value. js/password-field.js turns every
-       password input into a text field that draws "••••" and keeps the real
-       string to itself, so reading .value gives back the mask — and the mask
-       is exactly what this page used to save as the new password. Only the
-       inputs read directly need this: FormData reads the hidden partner that
-       module keeps under the field's name, which already holds the real one. */
+    /* A password field's REAL value. js/password-field.js used to turn every
+       password input into a text field that drew "••••" and kept the real
+       string to itself, so .value gave back the mask. Since 30 Sept 2026 the
+       field stays a real password input and .value is the password; these
+       two stay so a clear also puts the mask back. */
     function passwordValue(input) {
         return window.PasswordField ? window.PasswordField.value(input) : (input ? input.value : "");
     }
@@ -516,8 +515,8 @@ document.addEventListener("DOMContentLoaded", () => {
                password, so the next "Session expired" box — twelve hours
                later, on a screen that may have been left unattended — opened
                already filled in, one press of Unlock from signed in. The
-               module's reset listener clears its hidden partner too (see
-               js/password-field.js), not just the bullets. */
+               reset empties the field, and js/password-field.js's reset
+               listener puts its mask back. */
             loginForm.reset();
             if (switched) resetAccountPanels();
             await enterAdmin();
@@ -547,6 +546,11 @@ document.addEventListener("DOMContentLoaded", () => {
            re-opening a modal the admin was part-way through typing into.
            applyRoleVisibility starts it again on the next sign-in. */
         stopFurniPolling();
+        /* Any Are You Sure? still up is answered No and taken down first
+           (30 Sept 2026): while it was open everything else on the page was
+           inert, the sign-in box included, so the admin could neither see
+           nor type into it. Its caller then does nothing, as for any No. */
+        if (cancelOpenDialog) cancelOpenDialog();
         writeToken("");
         adminToken = "";
         currentUsername = "";
@@ -583,9 +587,14 @@ document.addEventListener("DOMContentLoaded", () => {
         // the same reason as the run log (28 Sept 2026). In the Players tab
         // since 29 Sept 2026 (js/admin-players.js).
         if (window.AdminPlayers) window.AdminPlayers.clearPrivate();
+        const wasOpen = loginModal.classList.contains("open");
         loginModal.classList.add("open");
         loginError.textContent = "Session expired — log in again.";
         loginError.style.display = "block";
+        // Straight into the username box — but only as the box goes up, so
+        // a second 401 does not pull focus out of the password mid-typing.
+        const userBox = loginForm.querySelector('input[name="username"]');
+        if (!wasOpen && userBox) userBox.focus();
     }
 
     /* Who was signed in on this tab last, kept through a lockOut (which
@@ -613,6 +622,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.AdminGuides) window.AdminGuides.reset();
         if (window.AdminErrors) window.AdminErrors.reset();
         if (window.AdminPlayers) window.AdminPlayers.reset();
+        // The Event Entries panel (js/admin-entries.js, 30 Sept 2026).
+        if (window.AdminEntries) window.AdminEntries.reset();
         // The Bans tab's Add a ban and open Change forms (29 Sept 2026).
         resetBanForms();
     }
@@ -642,6 +653,13 @@ document.addEventListener("DOMContentLoaded", () => {
     window.AdminAlert = (message, title) => showInfoDialog(message, title || "Something Went Wrong");
     window.AdminPrompt = (message, opts) => showPromptDialog(message, opts);
     window.AdminBanIp = (ip, opts) => banIp(ip, opts);
+    /* And the other half (30 Sept 2026): a lead's button said Ban IP even
+       for an address already banned. AdminIsBanned(ip) is the very check a
+       contact message's button uses, and AdminUnbanIp(ip) its Unban IP,
+       resolving true once the bans are lifted. "mazerats:bans-changed" is
+       sent whenever the ban list is re-read, so the label can follow. */
+    window.AdminIsBanned = ip => isBanned(ip);
+    window.AdminUnbanIp = ip => unbanIp(ip);
 
     /* Logging out used to close every form on the spot: unsaved work gone
        without a question, and every picture uploaded during the edit left
@@ -687,7 +705,12 @@ document.addEventListener("DOMContentLoaded", () => {
            and event forms (window.AdminGuides). */
         const guides = window.AdminGuides || null;
         const refused = () => keys.some(refuseWhileSaving) || !!(guides && guides.refuseWhileSaving());
-        const dirty = () => keys.some(isFormDirty) || !!(guides && guides.isDirty());
+        /* The contributor form too, and a Missing Pieces record editor
+           (30 Sept 2026) — see isContributorFormDirty and isEditorDirty in
+           js/admin-dead-ends.js. */
+        const deadEnds = window.AdminDeadEnds && typeof window.AdminDeadEnds.isDirty === "function" ? window.AdminDeadEnds : null;
+        const dirty = () => keys.some(isFormDirty) || isContributorFormDirty() ||
+            !!(deadEnds && deadEnds.isDirty()) || !!(guides && guides.isDirty());
         const saving = () => keys.some(key => COLLECTIONS[key].formEl._saving) || !!(guides && guides.isSaving());
         let loggedOut = false;
         try {
@@ -711,6 +734,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 // thrown away and spare every one of them.
                 const discards = keys.map(key => discardFormUploads(key));
                 keys.forEach(key => closeForm(key));
+                // Closed here, not only below: left open, dirty() would
+                // still be true after the awaits and this would go round
+                // for ever. It has no uploads to discard.
+                closeContributorsForm();
+                if (deadEnds) deadEnds.dropEditor();
                 // Its deletes go out at once, with the token still valid.
                 if (guides) guides.close();
                 // A refused save's parked pictures, and its rescued furni.
@@ -756,6 +784,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.AdminGuides) window.AdminGuides.reset();
         if (window.AdminErrors) window.AdminErrors.reset();
         if (window.AdminPlayers) window.AdminPlayers.reset();
+        if (window.AdminEntries) window.AdminEntries.reset();
         loginModal.classList.add("open");
         loginError.style.display = "none";
         loginForm.reset();
@@ -1098,13 +1127,17 @@ document.addEventListener("DOMContentLoaded", () => {
            account, a habbo name somebody typed about themselves, and the rest.
            "said in the game" is doing real work — it is the difference between
            a name the site established and a name it was handed. */
+        /* The Origins hotel, when it isn't the English one (30 Sept 2026):
+           the same name on two hotels is two players, and without this they
+           showed as two identical lines. */
+        const hotelOf = (h) => (h && h !== "COM" ? " (" + escapeHtml(h) + ")" : "");
         const whoCell = (p) => {
             if (p.kind === "player") {
                 return escapeHtml(p.name) +
-                    (p.habbo ? ' <span class="admin-hint">as ' + escapeHtml(p.habbo) + ' in the game</span>' : "");
+                    (p.habbo ? ' <span class="admin-hint">as ' + escapeHtml(p.habbo) + hotelOf(p.hotel) + ' in the game</span>' : "");
             }
             if (p.kind === "habbo") {
-                return escapeHtml(p.habbo) +
+                return escapeHtml(p.habbo) + hotelOf(p.hotel) +
                     ' <span class="admin-hint">said in the game, not signed in</span>';
             }
             return 'Anonymous <span class="admin-hint">(no name given)</span>';
@@ -1210,7 +1243,7 @@ document.addEventListener("DOMContentLoaded", () => {
                        "Anonymous" any more unless nothing was given at all. */
                     '<span class="ff-run-who">' +
                         (r.player ? escapeHtml(r.player)
-                            : r.habbo ? escapeHtml(r.habbo) + '<span class="admin-hint" title="Typed into the game, not signed in">?</span>'
+                            : r.habbo ? escapeHtml(r.habbo) + (r.hotel && r.hotel !== "COM" ? " (" + escapeHtml(r.hotel) + ")" : "") + '<span class="admin-hint" title="Typed into the game, not signed in">?</span>'
                             : "Anonymous") +
                     '</span>' +
                     '<span class="ff-run-tag ff-' + escapeHtml(r.outcome) + '">' + escapeHtml(ffOutcome(r.outcome)) + '</span>' +
@@ -2805,9 +2838,22 @@ document.addEventListener("DOMContentLoaded", () => {
         const RESULTS_ROOM = 260;
         function revealPicker(reserve) {
             const picker = listEl.querySelector(".admin-furni-picker");
-            const scroller = wrap.closest(".admin-stage");
-            if (!picker || !scroller) return;
-            const view = scroller.getBoundingClientRect();
+            const stage = wrap.closest(".admin-stage");
+            if (!picker || !stage) return;
+            /* Under 860px the stage is overflow: visible and the PAGE scrolls
+               (see the narrow block in css/style.css), so scrolling the stage
+               did nothing there and the box opened out of sight as before.
+               The window is scrolled instead, measured against the viewport
+               less whatever stays pinned at its top (30 Sept 2026). */
+            const ownScroll = /auto|scroll/.test(getComputedStyle(stage).overflowY);
+            const scroller = ownScroll ? stage : window;
+            let pinned = 0;
+            if (!ownScroll) {
+                const head = document.querySelector(".site-header");
+                const pos = head ? getComputedStyle(head).position : "";
+                if (pos === "sticky" || pos === "fixed") pinned = Math.max(0, head.getBoundingClientRect().bottom);
+            }
+            const view = ownScroll ? stage.getBoundingClientRect() : { top: pinned, bottom: window.innerHeight };
             const bar = document.querySelector(".admin-floating-actions.open");
             const floor = Math.min(view.bottom, bar ? bar.getBoundingClientRect().top : Infinity) - 12;
             const ceiling = view.top + 12;
@@ -3335,11 +3381,41 @@ document.addEventListener("DOMContentLoaded", () => {
        Returns null when a dialog is already showing; otherwise a function
        that tears this one down. */
     let dialogShowing = false;
+    /* How the dialog that is up right now is answered "No" from outside it
+       (30 Sept 2026): lockOut calls this, so a session that runs out with
+       an Are You Sure? open closes it as declined and the page is given
+       back before the sign-in box goes up — it used to stay on top, with
+       the sign-in box inert underneath it. */
+    let cancelOpenDialog = null;
+    let dialogIds = 0;
 
     function holdDialog(overlay, initialFocus, onEscape) {
         if (dialogShowing) return null;
         dialogShowing = true;
+        cancelOpenDialog = onEscape;
         const returnTo = document.activeElement;
+        /* Said as a dialog to a screen reader (30 Sept 2026): every box
+           built here is a .modal with its heading in the titlebar, so the
+           roles are set once, here, rather than in each builder. */
+        const box = overlay.querySelector(".modal");
+        const heading = overlay.querySelector(".chrome-titlebar h2");
+        if (box) {
+            box.setAttribute("role", "dialog");
+            box.setAttribute("aria-modal", "true");
+            if (heading) {
+                if (!heading.id) heading.id = "admin-dialog-title-" + (++dialogIds);
+                box.setAttribute("aria-labelledby", heading.id);
+            }
+        }
+        /* A double-click on a button that opens a dialog: the second click
+           landed on the fresh overlay, which counts as No, and the dialog
+           shut before it was seen (30 Sept 2026). Clicks on the overlay
+           itself are ignored for its first 300ms. Registered before the
+           builders' own listeners, so stopImmediatePropagation beats them. */
+        const openedAt = Date.now();
+        overlay.addEventListener("click", e => {
+            if (e.target === overlay && Date.now() - openedAt < 300) e.stopImmediatePropagation();
+        }, true);
         // Only what this made inert is given back — anything already inert
         // for its own reasons stays so.
         const madeInert = Array.from(document.body.children).filter(el => el !== overlay && !el.inert);
@@ -3370,6 +3446,7 @@ document.addEventListener("DOMContentLoaded", () => {
             madeInert.forEach(el => { el.inert = false; });
             overlay.remove();
             dialogShowing = false;
+            cancelOpenDialog = null;
             if (returnTo && typeof returnTo.focus === "function" && document.body.contains(returnTo)) {
                 returnTo.focus({ preventScroll: true });
             }
@@ -3573,7 +3650,9 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             box.addEventListener("keydown", e => {
-                if (e.key === "Enter") { e.preventDefault(); finish("yes"); }
+                // Not the Enter that ends an IME composition — the same
+                // guard as the forms' own Enter handling in this file.
+                if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); finish("yes"); }
             });
             overlay.querySelectorAll("[data-choice]").forEach(btn => {
                 btn.addEventListener("click", () => finish(btn.dataset.choice));
@@ -4184,7 +4263,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="row-info">
                     ${ecTitleHtml(item, title)}
                     <p class="row-creator">${subtitle ? "by " + escapeHtml(subtitle) : ""}</p>
-                    <p class="row-desc">${escapeHtml(item.description || "")}</p>
+                    <p class="row-desc">${escapeHtml(window.GuideText && GuideText.plain ? GuideText.plain(item.description || "") : (item.description || ""))}</p>
                 </div>
                 <div class="row-side">
                     <span class="status-badge status-${escapeHtml(item.status || "")}">${escapeHtml(item.status || "")}</span>
@@ -4242,6 +4321,168 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function fieldRow(labelText, inputHtml) {
         return `<label class="admin-field"><span>${labelText}</span>${inputHtml}</label>`;
+    }
+
+    /* ---------- formatting buttons on the descriptions (30 Sept 2026) ----------
+
+       Bold, Italic, Link and the two lists over a maze's or an event's
+       short description and full details. They write the guides' own text
+       format (js/guide-text.js — **bold**, *italic*, [words](https://…),
+       "- " and "1. " lists), which the room window and the front page's
+       event window render and the cards show with the format taken off, so
+       the site keeps one way of writing these and no HTML is ever stored.
+       What each button does to the text is GuideText.format; this is only
+       the wiring. Ctrl+B, Ctrl+I and Ctrl+K (Cmd on a Mac) do the same.
+
+       A <div>, not fieldRow's <label>: a label's control is the first
+       button or field inside it, so clicking the words "Full details" would
+       have pressed Bold. The preview underneath uses the same renderer the
+       site does, and shows only once the text holds some formatting — for
+       plain words it would just say them twice. */
+    /* The full set (30 Sept 2026, the owner's: "full formatting tools").
+       Bold is weight alone now — the text keeps its own colour — and the
+       Heading and Subheading buttons are what make a line stand out as a
+       title: bold and a shade lighter (see .fmt-heading in css/style.css).
+       "|" in a field's list is a gap between groups: how the text looks,
+       what kind of block a line is, links and lists, then Clear. */
+    const FORMAT_BUTTONS = {
+        bold: ['<strong>B</strong>', "Bold (Ctrl+B)"],
+        italic: ['<em>I</em>', "Italic (Ctrl+I)"],
+        underline: ['<u>U</u>', "Underline (Ctrl+U)"],
+        strike: ['<s>S</s>', "Strikethrough"],
+        heading: ["Heading", "Heading: bold and lighter, on a line of its own"],
+        subheading: ["Subheading", "Subheading: a smaller heading, on a line of its own"],
+        quote: ["Tip", "Tip: sets the line apart in a box"],
+        // Words, not symbols: the buttons are set in Volter, whose em dash
+        // and bullet are Habbo picture glyphs (a music note and a flower).
+        divider: ["Divider", "Divider: a line across, under the current line"],
+        link: ["Link", "Link (Ctrl+K): https:// addresses, maze:, event: and guide: followed by an id, or console:entry for the Event Submission form"],
+        bullets: ["Bullets", "Bulleted list"],
+        numbers: ["Numbers", "Numbered list"],
+        clear: ["Clear", "Clear formatting from the selection, or from the current line"]
+    };
+    const FULL_FORMATTING = ["bold", "italic", "underline", "strike", "|", "heading", "subheading", "quote", "divider",
+        "|", "link", "bullets", "numbers", "|", "clear"];
+    function formattedFieldRow(labelText, name, value, rows, kinds, hint) {
+        return `<div class="admin-field admin-fmt-field">
+                <span>${labelText}</span>
+                <div class="admin-fmt-bar" role="toolbar" aria-label="Formatting for ${escapeHtml(labelText.replace(/&amp;/g, "&"))}">${kinds.map((k, i) => k === "|"
+                    ? `<span class="admin-fmt-gap" aria-hidden="true"></span>`
+                    : `<button type="button" class="admin-pill-btn admin-fmt-btn" data-fmt="${k}" tabindex="${i === kinds.findIndex(x => x !== "|") ? 0 : -1}" title="${FORMAT_BUTTONS[k][1]}" aria-label="${FORMAT_BUTTONS[k][1]}">${FORMAT_BUTTONS[k][0]}</button>`).join("")}</div>
+                <textarea name="${name}" rows="${rows}" aria-label="${escapeHtml(labelText.replace(/&amp;/g, "&"))}">${escapeHtml(value || "")}</textarea>
+                ${hint ? `<p class="admin-hint">${hint}</p>` : ""}
+                <div class="admin-fmt-preview-wrap" hidden>
+                    <span class="admin-fmt-preview-label">Preview</span>
+                    <div class="admin-fmt-preview room-desc-full"></div>
+                </div>
+            </div>`;
+    }
+
+    function applyFormat(ta, kind) {
+        if (!ta || ta.readOnly || ta.disabled || typeof GuideText === "undefined" || !GuideText.format) return;
+        const before = ta.value;
+        const r = GuideText.format(before, ta.selectionStart, ta.selectionEnd, kind);
+        ta.focus();
+        if (r.text !== before) {
+            /* Only the stretch that changed is replaced, and through
+               insertText where the browser still has it, so Ctrl+Z takes a
+               button press back the way it takes back typing. Setting
+               .value instead wipes the textarea's undo history. */
+            let a = 0;
+            while (a < before.length && a < r.text.length && before[a] === r.text[a]) a++;
+            let b = 0;
+            while (b < before.length - a && b < r.text.length - a
+                && before[before.length - 1 - b] === r.text[r.text.length - 1 - b]) b++;
+            ta.setSelectionRange(a, before.length - b);
+            let done = false;
+            try { done = document.execCommand("insertText", false, r.text.slice(a, r.text.length - b)); } catch (e) { /* fall through */ }
+            if (!done || ta.value !== r.text) {
+                ta.value = r.text;
+                ta.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+        }
+        ta.setSelectionRange(r.start, r.end);
+    }
+
+    const IS_MAC = /Mac/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
+    function wireFormatting(formEl) {
+        formEl.querySelectorAll(".admin-fmt-field").forEach(field => {
+            const ta = field.querySelector("textarea");
+            const wrap = field.querySelector(".admin-fmt-preview-wrap");
+            const preview = field.querySelector(".admin-fmt-preview");
+            if (!ta) return;
+            const refresh = () => {
+                if (!wrap || !preview || typeof GuideText === "undefined") return;
+                const text = ta.value.trim();
+                const html = text ? GuideText.render(text) : "";
+                /* Plain words come out as paragraphs of themselves. The old
+                   test compared against one <p> of the text with its "\n"s
+                   kept, but render() writes a line break as <br> and a blank
+                   line as a new paragraph, so any plain text of two lines
+                   or more was "formatted" and got said twice (30 Sept 2026).
+                   Now: plain means render() wrote nothing but paragraphs,
+                   line breaks and blank-line spacers, and the words inside
+                   are the text's own, escaped, whitespace aside. A link that
+                   does not take (say an http:// one) loses its brackets, so
+                   it still shows the preview, which is the point. */
+                const bare = html.replace(/<p class="fmt-blank" aria-hidden="true"><\/p>|<\/?p>|<br>/g, "");
+                const plain = !bare.includes("<")
+                    && bare.replace(/\s+/g, "") === GuideText.esc(text).replace(/\s+/g, "");
+                wrap.hidden = !text || plain;
+                preview.innerHTML = wrap.hidden ? "" : html;
+            };
+            // The preview's links are for looking at: a click on one would
+            // leave the form, and whatever was typed into it, behind.
+            if (preview) {
+                preview.addEventListener("click", e => {
+                    if (e.target.closest && e.target.closest("a")) e.preventDefault();
+                });
+            }
+            /* One Tab stop for the whole toolbar (30 Sept 2026): fifteen
+               buttons between one field and the next was fifteen presses of
+               Tab. The roving-tabindex pattern — the arrows move along the
+               bar and wrap round, Home and End go to its ends, and the
+               button last focused is the one Tab comes back to. */
+            const fmtBtns = Array.from(field.querySelectorAll(".admin-fmt-btn"));
+            const rove = (btn) => fmtBtns.forEach(b => { b.tabIndex = b === btn ? 0 : -1; });
+            fmtBtns.forEach((btn, i) => {
+                // Pressing a button would take the focus, and the caret with it.
+                btn.addEventListener("mousedown", e => e.preventDefault());
+                btn.addEventListener("click", () => { rove(btn); applyFormat(ta, btn.dataset.fmt); });
+                btn.addEventListener("focus", () => rove(btn));
+                btn.addEventListener("keydown", e => {
+                    let to = -1;
+                    if (e.key === "ArrowRight") to = (i + 1) % fmtBtns.length;
+                    else if (e.key === "ArrowLeft") to = (i - 1 + fmtBtns.length) % fmtBtns.length;
+                    else if (e.key === "Home") to = 0;
+                    else if (e.key === "End") to = fmtBtns.length - 1;
+                    if (to < 0) return;
+                    e.preventDefault();
+                    rove(fmtBtns[to]);
+                    fmtBtns[to].focus();
+                });
+            });
+            ta.addEventListener("keydown", e => {
+                /* Cmd on a Mac, Ctrl elsewhere; Alt is still refused, as
+                   AltGr arrives as Ctrl+Alt and types letters on many
+                   layouts. The letter is the key's own where it is a Latin
+                   one, and otherwise the physical key's (e.code), so B, I,
+                   U and K still work on a Cyrillic or Greek layout
+                   (30 Sept 2026). */
+                const mod = IS_MAC ? e.metaKey : e.ctrlKey;
+                if (!mod || e.altKey || e.shiftKey) return;
+                if (e.getModifierState && e.getModifierState("AltGraph")) return;
+                const key = String(e.key).toLowerCase();
+                const letter = /^[a-z]$/.test(key) ? key
+                    : (/^Key[A-Z]$/.test(e.code || "") ? e.code.slice(3).toLowerCase() : "");
+                const kind = { b: "bold", i: "italic", u: "underline", k: "link" }[letter];
+                if (!kind || !field.querySelector(`.admin-fmt-btn[data-fmt="${kind}"]`)) return;
+                e.preventDefault();
+                applyFormat(ta, kind);
+            });
+            ta.addEventListener("input", refresh);
+            refresh();
+        });
     }
 
     // Keeps the events form's read-only Status in step with whatever is
@@ -4615,6 +4856,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${fieldRow("Event end time (UTC, 24-hour)", `<input type="time" name="endTime" value="${end.time}">`)}
                 <p class="admin-hint">All four fields are UTC. The site shows this as-is — it does not convert to a visitor's local timezone.</p>
                 <p class="admin-hint">Leave them blank for an event that has no date set yet. It counts as upcoming and shows on the site with its date reading "TBC", so it can be announced before it is scheduled.</p>
+                ${spotlightFieldsHtml(item, splitIso)}
               `
             : `
                 <div class="admin-field admin-date-field">
@@ -4793,9 +5035,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span class="admin-thumb-status"></span>
                 </div>
             `)}
-            ${fieldRow("Short description (shown on the card)", `<textarea name="description" rows="2">${escapeHtml(item.description || "")}</textarea>`)}
+            ${formattedFieldRow("Short description (shown on the card)", "description", item.description, 2, FULL_FORMATTING,
+                "Cards show this as plain text. Its formatting shows in the popup when there are no full details.")}
             ${articleFieldHtml}
-            ${fieldRow("Full details (shown in the popup, optional)", `<textarea name="details" rows="4">${escapeHtml(item.details || "")}</textarea>`)}
+            ${formattedFieldRow("Full details (shown in the popup, optional)", "details", item.details, 6, FULL_FORMATTING,
+                "A blank line starts a new paragraph. Links go to https:// addresses, or inside the site as maze:maze-id, event:event-id or guide:guide-id — and console:entry opens the Event Submission form.")}
             ${fieldRow("Links &amp; References (optional, shown directly beneath the description)", `<textarea name="linksReferences" rows="3">${escapeHtml(item.linksReferences || "")}</textarea>`)}
             ${fieldRow("Habbo link (optional)", `<input type="text" name="habboLink" value="${escapeHtml(item.habboLink || "")}" placeholder="https://...">`)}
             ${entranceSectionHtml}
@@ -4842,6 +5086,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const uploadPrefix = item.id || `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
         wireThumbUpload(cfg.formEl, uploadPrefix);
+        wireFormatting(cfg.formEl);
         if (isEvents) wireDerivedStatus(cfg.formEl);
         // The stored copy travels on the form, not in the field — the field
         // only holds the link it came from.
@@ -5152,6 +5397,46 @@ document.addEventListener("DOMContentLoaded", () => {
        prints an event's date prints a time beside it, so a missing one would
        have to be invented — and "00:00 UTC" shown as though it were the real
        start is a worse answer than asking. */
+    /* ---------- the landing page spotlight (30 Sept 2026, the owner's) ----------
+
+       An event can be put in the landing page's spotlight: its thumbnail
+       under the Enter button, captioned, opening the event when pressed.
+       Off unless ticked. The start and end are optional and each is a date
+       AND a time, in UTC like the event's own: no start means straight
+       away, no end means until it is unticked. Several events live at once
+       take turns. See showSpotlight in js/welcome.js for the page's side
+       and SPOTLIGHT in netlify/functions/events.js for what is accepted. */
+    // The caption's colour when none is stored: .welcome-promo-cta's own
+    // in css/style.css. The form shows it, and saves "" while it is left.
+    const SPOTLIGHT_DEFAULT_COLOUR = "#ebe8ff";
+    function spotlightFieldsHtml(item, splitIso) {
+        const from = splitIso(item.spotlightFrom), until = splitIso(item.spotlightUntil);
+        const colour = /^#[0-9a-f]{6}$/i.test(item.spotlightColour || "") ? item.spotlightColour.toLowerCase() : SPOTLIGHT_DEFAULT_COLOUR;
+        return `
+            <div class="admin-spotlight">
+                <h4 class="admin-subheading">Landing page spotlight</h4>
+                <label class="admin-check"><input type="checkbox" name="spotlight" value="1" ${item.spotlight ? "checked" : ""}> Show this event in the spotlight on the landing page</label>
+                <p class="admin-hint">Its thumbnail goes under the Enter button, with the caption below across its foot, and opens the event when pressed. Several spotlighted events at once take turns.</p>
+                ${fieldRow("Spotlight from (UTC, optional)", `<input type="date" name="spotlightFromDate" value="${from.date}">`)}
+                ${fieldRow("Spotlight from time (UTC, 24-hour)", `<input type="time" name="spotlightFromTime" value="${from.time}">`)}
+                ${fieldRow("Spotlight until (UTC, optional)", `<input type="date" name="spotlightUntilDate" value="${until.date}">`)}
+                ${fieldRow("Spotlight until time (UTC, 24-hour)", `<input type="time" name="spotlightUntilTime" value="${until.time}">`)}
+                <p class="admin-hint">Leave both blank to spotlight it from now until you untick it. It comes off the landing page by itself the moment the end passes.</p>
+                ${fieldRow("Spotlight caption (optional)", `<input type="text" name="spotlightCaption" maxlength="80" placeholder="Click for more details." value="${escapeHtml(item.spotlightCaption || "")}">`)}
+                ${fieldRow("Caption colour", `<input type="color" name="spotlightColour" value="${colour}">`)}
+                <p class="admin-hint">Blank caption reads "Click for more details." Pick a colour that matches the lettering in the event's thumbnail.</p>
+            </div>`;
+    }
+
+    function spotlightFault(d) {
+        const pairs = [["from", d.spotlightFromDate, d.spotlightFromTime], ["until", d.spotlightUntilDate, d.spotlightUntilTime]];
+        for (const [which, date, time] of pairs) {
+            if (date && !time) return `The spotlight ${which} date needs a time as well.`;
+            if (time && !date) return `The spotlight ${which} time needs a date as well.`;
+        }
+        return "";
+    }
+
     function dateFault(startDate, startTime, endDate, endTime) {
         if (startDate && !startTime) return "The event's start date needs a start time as well — the site always shows both.";
         if (startTime && !startDate) return "The event's start time needs a start date as well.";
@@ -5253,7 +5538,22 @@ document.addEventListener("DOMContentLoaded", () => {
             const endTime = (data.endTime || "").trim();
             payload.date = startDate && startTime ? `${startDate}T${startTime}:00Z` : "";
             payload.endDate = endDate && endTime ? `${endDate}T${endTime}:00Z` : "";
-            payload._dateFault = dateFault(startDate, startTime, endDate, endTime);
+            payload._dateFault = dateFault(startDate, startTime, endDate, endTime) || spotlightFault(data);
+            // The spotlight — see spotlightFieldsHtml. Every field written,
+            // so unticking or clearing one actually clears it.
+            const pairIso = (d, t) => (d || "").trim() && (t || "").trim() ? `${d.trim()}T${t.trim()}:00Z` : "";
+            payload.spotlight = data.spotlight === "1";
+            payload.spotlightFrom = pairIso(data.spotlightFromDate, data.spotlightFromTime);
+            payload.spotlightUntil = pairIso(data.spotlightUntilDate, data.spotlightUntilTime);
+            payload.spotlightCaption = (data.spotlightCaption || "").trim().slice(0, 80);
+            /* A colour box always holds a colour, so one never chosen shows
+               the landing page's own default (SPOTLIGHT_DEFAULT_COLOUR) — and
+               saved as it stood, every old event gained "#ebe8ff" on its next
+               save, pinned there if the page's default ever moves (30 Sept
+               2026). Left on that default with nothing stored, it stays "". */
+            const hexOf = v => (/^#[0-9a-f]{6}$/i.test(v || "") ? v.toLowerCase() : "");
+            const pickedColour = hexOf(data.spotlightColour);
+            payload.spotlightColour = !hexOf(existing.spotlightColour) && pickedColour === SPOTLIGHT_DEFAULT_COLOUR ? "" : pickedColour;
             /* "live" is never sent. The status box works it out from the
                dates and can say LIVE (see wireDerivedStatus), but it is not
                a status the events endpoint stores — a live event is an
@@ -5421,6 +5721,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (key === "events" && payload.date && payload.endDate && payload.endDate <= payload.date) {
             refuse("The event's end must be after its start.");
+            return;
+        }
+        if (key === "events" && payload.spotlightFrom && payload.spotlightUntil && payload.spotlightUntil <= payload.spotlightFrom) {
+            refuse("The spotlight's end must be after its start.");
+            return;
+        }
+        if (key === "events" && payload.spotlight && !payload.thumb) {
+            refuse("The spotlight shows the event's thumbnail, so it needs one — add a thumbnail, or untick the spotlight.");
             return;
         }
 
@@ -5592,6 +5900,15 @@ document.addEventListener("DOMContentLoaded", () => {
             retireLocally(key, item);
             renderList(key);
             cleanupItemImages(item);
+            /* The server has just taken this record off every contributor
+               who was credited with it (uncreditRecord in rooms.js and
+               events.js, 30 Sept 2026), stamping their updatedAt as it did.
+               The Console panel's copy was the old one: its counts were
+               wrong, and Edit then Save on any of those people was refused
+               as "someone else changed this contributor". Re-read the way a
+               credited lead has it re-read — skipped while that form is
+               open (see the listener in "console: contributors"). */
+            document.dispatchEvent(new CustomEvent("mazerats:contributors-changed"));
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
             await sayProblem(err.message || "Couldn't delete that — try again.");
@@ -5766,8 +6083,6 @@ document.addEventListener("DOMContentLoaded", () => {
             if (adminsFormEl.dataset.mode === "create") {
                 await Api.createAdmin(adminToken, data.username.trim(), data.password, data.role);
             } else {
-                // Read through FormData, which gets the real values from
-                // js/password-field.js's hidden partners, not the masks.
                 /* The fourth argument is YOUR password in both cases — on
                    your own row the current one (currentPassword), on
                    somebody else's the one that proves it is you asking
@@ -5796,15 +6111,12 @@ document.addEventListener("DOMContentLoaded", () => {
                it was given — yours, missing or wrong (auth.js). Said here,
                in the form, with the field emptied and focused for another
                go; it is not a signed-out session, so never a lockOut. */
-            // The named input is password-field.js's hidden partner once
-            // enhanced; the one to clear and focus is the visible field
-            // beside it.
+            // The named input is the field itself (js/password-field.js no
+            // longer keeps a hidden partner, 30 Sept 2026).
             const own = adminsFormEl.querySelector('[name="requesterPassword"], [name="currentPassword"]');
             if (err.status === 403 && adminsFormEl.dataset.mode === "reset" && own) {
-                const wrap = own.closest(".password-field");
-                const visible = wrap ? wrap.querySelector("input:not([type=hidden])") : own;
-                clearPassword(visible);
-                if (visible) visible.focus();
+                clearPassword(own);
+                own.focus();
             }
             // Password attempts are rate-limited (auth.js): 429 is that,
             // said plainly rather than as the server's status line.
@@ -5843,6 +6155,13 @@ document.addEventListener("DOMContentLoaded", () => {
     async function loadContributors() {
         try {
             workingContributors = await Api.getContributors();
+            /* Api.getContributors never throws (30 Sept 2026): after its
+               retries it answers [] and marks the read as degraded, so the
+               catch below never ran and a failed read drew "No contributors
+               added yet." Asked of the mark instead. */
+            if (Api._degraded && Api._degraded.has("contributor data")) {
+                throw new Error("Couldn't load the contributors. Reload the page to try again.");
+            }
         } catch (err) {
             showLoadFailure(contributorsListEl, err.message || "Couldn't load the contributors.");
             return;
@@ -5888,7 +6207,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // By id rather than list position: the list is re-read whenever
             // the panel is shown (see showPanel), and an index taken from
             // the old copy could point at somebody else in the new one.
-            row.querySelector(".admin-edit-btn").addEventListener("click", () => openContributorForm(contributor.id));
+            row.querySelector(".admin-edit-btn").addEventListener("click", () => requestOpenContributorForm(contributor.id));
             row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteContributor(contributor.id));
             contributorsListEl.appendChild(row);
         });
@@ -5995,6 +6314,36 @@ document.addEventListener("DOMContentLoaded", () => {
         paintContributorTotal();
 
         openContributorsForm();
+        // What it opened with, for the unsaved-changes question — see
+        // isContributorFormDirty.
+        contributorsFormEl._openSnapshot = formSnapshot(contributorsFormEl);
+    }
+
+    /* Unsaved ticks in the contributor form (30 Sept 2026). Cancel, Edit on
+       another row, logging out and closing the tab all threw them away
+       without a word; the maze form has asked since it was written. The
+       same snapshot is compared (formSnapshot), taken once the form is
+       drawn. */
+    function isContributorFormDirty() {
+        if (!contributorsFormEl.classList.contains("is-open")) return false;
+        if (contributorsFormEl._openSnapshot == null) return false;
+        return formSnapshot(contributorsFormEl) !== contributorsFormEl._openSnapshot;
+    }
+
+    // Resolves true when the open form may go: nothing changed, or Yes.
+    async function mayDropContributorForm() {
+        if (!isContributorFormDirty()) return true;
+        return showConfirmDialog("Discard your unsaved changes to this contributor? Anything you have ticked or edited since opening the form will be lost.");
+    }
+
+    async function requestOpenContributorForm(editId) {
+        if (!(await mayDropContributorForm())) return;
+        openContributorForm(editId);
+    }
+
+    async function requestCloseContributorsForm() {
+        if (!(await mayDropContributorForm())) return;
+        closeContributorsForm();
     }
 
     /* The total, kept live as the boxes are ticked, so the number the
@@ -6040,11 +6389,12 @@ document.addEventListener("DOMContentLoaded", () => {
     function openContributorsForm() {
         contributorsFormEl.classList.add("is-open");
         contributorsAddBtn.style.display = "none";
-        contributorsFormEl.querySelector(".admin-cancel-btn").addEventListener("click", closeContributorsForm);
+        contributorsFormEl.querySelector(".admin-cancel-btn").addEventListener("click", requestCloseContributorsForm);
         contributorsFormEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
     function closeContributorsForm() {
+        contributorsFormEl._openSnapshot = null;
         contributorsFormEl.classList.remove("is-open");
         contributorsFormEl.innerHTML = "";
         contributorsFormEl._keptMazes = [];
@@ -6109,7 +6459,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     async function deleteContributor(id) {
-        if (!await showConfirmDialog("Delete this contributor?", { danger: true })) return;
+        // Named, so the Yes is to someone in particular (30 Sept 2026).
+        const who = workingContributors.find(c => c.id === id);
+        const name = who && who.username ? `<strong>${escapeHtml(who.username)}</strong>` : "this contributor";
+        if (!await showConfirmDialog(`Delete ${name} from the contributors?`, { danger: true })) return;
         try {
             await Api.deleteContributor(adminToken, id);
             await loadContributors();
@@ -6119,7 +6472,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    contributorsAddBtn.addEventListener("click", () => openContributorForm());
+    contributorsAddBtn.addEventListener("click", () => requestOpenContributorForm());
 
     /* js/admin-dead-ends.js announces a lead review that credited somebody,
        so the list here is re-read at once rather than at the next visit to
@@ -6475,9 +6828,18 @@ document.addEventListener("DOMContentLoaded", () => {
        than a ten-second bucket: there are only ever a few admins, and a
        ten-second-old answer is the very thing being avoided. A read that
        fails falls back to getSiteSettings, stand-in and all, as before. */
+    /* Bounded (30 Sept 2026): a bare fetch has no time limit of its own,
+       and one that hung (a cold function stuck behind a slow database)
+       left the switches unlit and the launch fields unsavable with nothing
+       said, where Api's own reads give up and fall back. Aborted, it falls
+       back to getSiteSettings below like any other failure. */
+    const FRESH_SETTINGS_TIMEOUT_MS = 8000;
     async function freshSiteSettings() {
+        const controller = typeof AbortController === "function" ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), FRESH_SETTINGS_TIMEOUT_MS) : null;
         try {
-            const res = await fetch(`/.netlify/functions/settings?fresh=${Date.now()}`, { cache: "no-store" });
+            const res = await fetch(`/.netlify/functions/settings?fresh=${Date.now()}`,
+                controller ? { cache: "no-store", signal: controller.signal } : { cache: "no-store" });
             if (res.ok) {
                 const body = await res.json();
                 if (body && typeof body.landingState === "string" && body.landingState) {
@@ -6487,7 +6849,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     return body;
                 }
             }
-        } catch (e) { /* falls back below */ }
+        } catch (e) { /* falls back below */ } finally {
+            if (timer) clearTimeout(timer);
+        }
         return Api.getSiteSettings();
     }
 
@@ -6850,7 +7214,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (!ok) return;
             }
             const ok = await setFallinFurniState(state, btn);
-            if (ok && messages) await showInfoDialog(messages.done);
+            // Its own heading: showInfoDialog's default is the landing page's.
+            if (ok && messages) await showInfoDialog(messages.done, "Fallin' Furni Updated");
         });
     });
 
@@ -7240,7 +7605,8 @@ document.addEventListener("DOMContentLoaded", () => {
        the older ones that still require it. Neither lets us choose the
        wording — the browser shows its own. */
     window.addEventListener("beforeunload", e => {
-        if (!Object.keys(COLLECTIONS).some(isFormDirty)) return;
+        // The contributor form as well (30 Sept 2026).
+        if (!Object.keys(COLLECTIONS).some(isFormDirty) && !isContributorFormDirty()) return;
         e.preventDefault();
         e.returnValue = "";
     });
@@ -7706,6 +8072,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // Each message row shows Ban or Unban depending on whether its own
         // address is on this list, so those have to be redrawn too.
         renderContactMessagesList();
+        // And a Missing Pieces lead's (js/admin-dead-ends.js).
+        document.dispatchEvent(new CustomEvent("mazerats:bans-changed"));
     }
     // For the Players tab, after it bans or lifts (js/admin-players.js).
     window.AdminBansReload = () => (adminToken ? loadBans() : null);
@@ -8222,8 +8590,10 @@ document.addEventListener("DOMContentLoaded", () => {
        network — a whole-site ban or a cool-down made from the Bans tab
        included — so it names what it will lift and asks first (29 Sept
        2026). */
+    /* Resolves true once the bans are lifted (30 Sept 2026, for a
+       Missing Pieces lead's Unban IP — see window.AdminUnbanIp). */
     async function unbanIp(ip) {
-        if (bansBusy) return;
+        if (bansBusy) return false;
         const kit = banKit();
         const now = Date.now();
         const caught = kit ? normalisedBans().filter(n => kit.catchesIp(n, ip, now)) : [];
@@ -8236,17 +8606,20 @@ document.addEventListener("DOMContentLoaded", () => {
         const message = caught.length
             ? `This lifts ${caught.length === 1 ? "this ban" : `all ${caught.length} of these bans`} on <b>${escapeHtml(ip)}</b> and its network:${caught.map(describe).join("")}`
             : `Lift every ban on <b>${escapeHtml(ip)}</b> and its network?`;
-        if (!(await showConfirmDialog(message))) return;
+        if (!(await showConfirmDialog(message))) return false;
         bansBusy = true;
+        let lifted = false;
         try {
             await Api.deleteBanByIp(adminToken, ip);
+            lifted = true;
             await bansWritten();
         } catch (err) {
-            if (err.status === 401) { lockOut(); return; }
+            if (err.status === 401) { lockOut(); return lifted; }
             await sayProblem(err.message || "Could not unban that address — try again.");
         } finally {
             bansBusy = false;
         }
+        return lifted;
     }
 
     if (adminToken) {

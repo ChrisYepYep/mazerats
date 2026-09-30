@@ -143,7 +143,10 @@
            mid-day plays on from these (30 Sept 2026). */
         if (state && deal && deal.day === state.day) state.dealt = deal.rounds;
         const stored = readSaved();
-        if (stored && state && stored.day === state.day && progressOf(stored) > progressOf(state)) {
+        // Never a practice run's copy over the real day that replaced it
+        // (see PRACTICE in refreshDay).
+        if (stored && state && stored.day === state.day && progressOf(stored) > progressOf(state) &&
+                !(stored.practice && !state.practice)) {
             if (deal && deal.day === stored.day) window.Daily.mergeRounds(deal.rounds, stored.dealt);
             state = Object.assign(stored, { posted: Boolean(stored.posted || state.posted) });
             if (deal && deal.day === state.day) state.dealt = deal.rounds;
@@ -193,6 +196,9 @@
            lastDay backwards and restart the streak. ISO days compare as
            strings. */
         if (stats.lastDay && stats.lastDay >= day()) return;
+        // A practice run is not a day played: the real one, after the
+        // launch cut, is the one the streak and totals count.
+        if (state && state.practice) return;
         stats.streak = stats.lastDay === window.Daily.dayBefore(day()) ? stats.streak + 1 : 1;
         stats.days += 1;
         stats.bestDay = Math.max(stats.bestDay || 0, score());
@@ -362,9 +368,10 @@
         // now (ONE ROUND AT A TIME in js/daily.js).
         window.Daily.takeRound(dealt(), body.next);
         state.picks.push(pick);
+        practiceEnded = false;         // said once, on the fresh day's splash
         if (state.picks.length >= dealt().length) state.done = true;
         saveState();
-        if (state.done) bankDay();
+        if (state.done) { bankDay(); window.Daily.track("finish", "odd"); }
         render();
         settleFocus();
     }
@@ -882,7 +889,9 @@
                 <button type="button" class="guess-btn guess-btn--lead" id="odd-start">
                     ${started ? "Back to the rooms" : "Show me the first four"} &rsaquo;
                 </button>
-                <p class="guess-splash-foot">${liveStreak() > 1 ? escapeHtml(liveStreak() + " day streak.") : ""}</p>`;
+                <p class="guess-splash-foot">${practiceEnded && !started
+                    ? escapeHtml("The site's open, so your practice run is put away. These five count.")
+                    : liveStreak() > 1 ? escapeHtml(liveStreak() + " day streak.") : ""}</p>`;
     }
 
     function roundHtml(round) {
@@ -910,12 +919,24 @@
        open brings it back with the deal. */
     let served = null;
 
+    /* PRACTICE (30 Sept 2026). `practiceUntil` is the launch cut while the
+       last deal said the day is still in practice time (its
+       `practiceUntil`; PRACTICE BEFORE LAUNCH in
+       netlify/functions/_speed.js), and null otherwise. A day begun then is
+       kept with `practice` set to the cut, and is set aside for a fresh one
+       once the cut has passed — see refreshDay. `practiceEnded` is that
+       having just happened, for the splash to say so once. */
+    let practiceUntil = null;
+    let practiceEnded = false;
+
     /* The line under the day's points: the bonus and the total the boards
-       show, or why there is none. Worded once, for both games, by
-       Daily.bonusLine (js/daily.js), which has the cases. */
+       show, or why there is none — or that it was a practice run. Worded
+       once, for both games, by Daily.bonusLine (js/daily.js), which has the
+       cases. */
     function bonusText() {
         const s = served && served.day === day() ? served : null;
-        return window.Daily.bonusLine({ score: s, signedIn: signedIn(), mode: state.mode });
+        return window.Daily.bonusLine({ score: s, signedIn: signedIn(), mode: state.mode,
+            practice: state.practice || null, day: day() });
     }
 
     function drawBonus() {
@@ -982,18 +1003,18 @@
     /* The pasted result, in the one format both games share (Daily.shareText
        in js/daily.js): spotted out of the rounds dealt, and the total the
        boards rank by — the server's filed figure with its speed bonus once
-       it has answered, the base points until then. */
+       it has answered, labelled "incl. speed", and the base points until
+       then (Daily.shareScore). */
     function shareText() {
         const s = served && served.day === day() ? served : null;
-        return window.Daily.shareText({
+        return window.Daily.shareText(Object.assign({
             game: "Odd One Out",
             day: day(),
             right: state.picks.filter(p => p.right).length,
             of: dealt().length || ROUNDS,
-            points: window.Daily.dayTotal(s, score()),
             grid: shareGrid(),
             path: "odd"
-        });
+        }, window.Daily.shareScore(s, score())));
     }
 
     /* "Show me the first four". If the day has turned since the window was
@@ -1053,6 +1074,15 @@
                             served = { day: forDay, points: b.points, bonus: b.bonus || 0 };
                             if (state && state.day === forDay) drawBonus();
                         }
+                        /* A practice run, answered and not filed: the day
+                           is marked one, if this page had not already
+                           (begun before the cut, finished after it), and
+                           the card says so. */
+                        if (res.practice && b && state && state.day === forDay) {
+                            if (!state.practice) state.practice = typeof b.practice === "string" ? b.practice : true;
+                            served = null;
+                            drawBonus();
+                        }
                         /* `final`, not "not worth retrying now": a lapsed
                            session, a server record that is behind, and a
                            day still inside late filing all used to be
@@ -1083,11 +1113,13 @@
                         const still = document.getElementById("odd-boards");
                         // listed: whether the day went up under the
                         // player's name, for the nickname line (28 Sept 2026).
-                        window.Daily.boards(still, "odd", { points: score(), day: forDay, fresh: res.ok, listed: !!(state && state.mode === "account") });
+                        window.Daily.boards(still, "odd", { points: score(), day: forDay, fresh: res.ok,
+                            listed: !!(state && state.mode === "account"), practice: !!(state && state.practice) });
                     });
             }
         } else {
-            window.Daily.boards(host, "odd", { points: score(), day: forDay, listed: !!(state && state.mode === "account") });
+            window.Daily.boards(host, "odd", { points: score(), day: forDay,
+                listed: !!(state && state.mode === "account"), practice: !!state.practice });
         }
 
         const share = document.getElementById("odd-share");
@@ -1095,6 +1127,7 @@
             share.addEventListener("click", async () => {
                 const foot = document.getElementById("odd-foot");
                 const text = shareText();
+                window.Daily.track("share", "odd");
                 try {
                     await navigator.clipboard.writeText(text);
                     if (foot) foot.textContent = "Copied — paste it wherever you like.";
@@ -1142,6 +1175,9 @@
         }
         el.overlay.classList.add("open");
         document.body.classList.add("modal-open");
+        // Counted once per real open, never for a Retry inside it
+        // (Daily.track; 30 Sept 2026).
+        if (!retrying) window.Daily.track("open", "odd");
         /* The tab's title and canonical name the game while it is open, as
            the Alt Codes and the Guides do (PageMeta in js/site.js): /odd
            used to keep the archive's title (30 Sept 2026). */
@@ -1250,6 +1286,27 @@
             .sort((a, b) => progressOf(b) - progressOf(a))[0];
         state = mine || blankDay(reply.day);
         if (!("posted" in state)) state.posted = false;
+
+        /* PRACTICE (30 Sept 2026; PRACTICE BEFORE LAUNCH in
+           netlify/functions/_speed.js). While the server says the day is
+           still in practice time, the day is marked a practice run — all of
+           it, whenever it was begun, since nothing before the cut counts.
+           Once it says not, a day marked so is put away and today starts
+           fresh: signed out as much as signed in, because a signed-out
+           practice run filed after signing in would otherwise land on the
+           boards as the real day. The server has set aside its own copy
+           (practiceOver, or the 409 a pick on it gets), and the start this
+           page remembers goes with it (Daily.forgetStarts), so the real
+           day's round 0 goes out timed. */
+        practiceUntil = typeof reply.practiceUntil === "string" ? reply.practiceUntil : null;
+        if (state.practice && !practiceUntil) {
+            state = blankDay(reply.day);
+            served = null;
+            practiceEnded = true;
+            showSplash = true;
+            window.Daily.forgetStarts("odd");
+        }
+        if (practiceUntil) state.practice = practiceUntil;
         const wasDone = state.done;
 
         /* The server's record, laid over this device's copy.
@@ -1369,6 +1426,7 @@
             if (e.key !== STATE_KEY || !state) return;
             const other = readSaved();
             if (!other || other.day !== state.day || progressOf(other) <= progressOf(state)) return;
+            if (other.practice && !state.practice) return;   // a practice run put away here
             if (picking) return;           // this tab's own pick settles it
             const wasDone = state.done;
             state = other;
@@ -1387,7 +1445,11 @@
     window.OddOneOutStatus = function () {
         let saved = null;
         try { saved = JSON.parse(localStorage.getItem(STATE_KEY) || "null"); } catch (e) { saved = null; }
-        if (!saved || saved.day !== window.Daily.today() || !Array.isArray(saved.picks)) {
+        /* A practice run the launch cut has since passed is not today's
+           play: the menu shows the day as untouched until the game puts
+           the run away (30 Sept 2026). */
+        const practiceOver = saved && typeof saved.practice === "string" && Date.parse(saved.practice) <= window.Daily.now();
+        if (!saved || saved.day !== window.Daily.today() || !Array.isArray(saved.picks) || practiceOver) {
             return { started: false, done: 0, total: ROUNDS, finished: false, points: 0 };
         }
         return {

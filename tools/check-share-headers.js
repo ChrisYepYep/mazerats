@@ -40,6 +40,14 @@ const problems = [];
 Object.keys(site).forEach(k => {
     if (_test.PAGE_HEADERS[k] !== site[k]) problems.push(`  ${k}\n    netlify.toml: ${site[k]}\n    share.js:     ${_test.PAGE_HEADERS[k] || "(missing)"}`);
 });
+/* And the other direction (30 Sept 2026). A header dropped from netlify.toml
+   — or renamed there — used to pass, because only the toml's own keys were
+   compared: share.js went on sending the old one and the two pages differed
+   exactly as this file exists to prevent. Content-Type is share.js's own. */
+Object.keys(_test.PAGE_HEADERS).forEach(k => {
+    if (k === "Content-Type" || k in site) return;
+    problems.push(`  ${k}\n    netlify.toml: (missing)\n    share.js:     ${_test.PAGE_HEADERS[k]}`);
+});
 if (problems.length) {
     console.error("check-share-headers: netlify/functions/share.js serves home.html with headers that differ from netlify.toml's:\n" + problems.join("\n"));
     console.error("Copy netlify.toml's values into PAGE_HEADERS in share.js.");

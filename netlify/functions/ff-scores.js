@@ -952,6 +952,13 @@ function logDisagrees(log, rounds, points) {
    (_publicid.js) read for the rows being answered, or null when it could
    not be read (every avatar hidden). Left out — the caller's OWN row, sent
    only to them and never cached — the stored avatar goes back as it was. */
+// The three Origins hotels room-figure.js can ask; anything else is null.
+const SCORE_HOTELS = ["COM", "ES", "BR"];
+const scoreHotel = (v) => {
+    const s = typeof v === "string" ? v.trim().toUpperCase() : "";
+    return SCORE_HOTELS.includes(s) ? s : null;
+};
+
 const clean = (row, nicked) => ({
     name: row.name,
     avatar: nicked === undefined ? (row.avatar || null) : publicAvatar(row.avatar, row.playerId, nicked),
@@ -1224,6 +1231,12 @@ exports.handler = async (event) => {
         name: await publicName(db, player),
         avatar: player.avatar || null,
         points, levels, ms,
+        /* THE ORIGINS HOTEL the player's habbo is on (30 Sept 2026): COM,
+           ES or BR, or null when no habbo name was worn. One of three fixed
+           codes and nothing else, so it cannot carry markup the way the old
+           `habbo` field could (see clean() above) - which is also why the
+           name itself is still not stored here, and not answered either. */
+        hotel: scoreHotel(body.hotel),
         at: new Date().toISOString()
     };
 

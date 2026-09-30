@@ -850,8 +850,13 @@
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             // Changed elsewhere since this draft was opened: nothing written.
+            /* Marked, so the page can offer the way out that keeps this
+               draft (see mergeOntoServer) rather than only "load it again",
+               which throws the draft away (30 Sept 2026). */
             if (res.status === 409 && err.changed) {
-                throw new Error(err.error || "This level has been changed somewhere else. Load it again from the server first.");
+                const e = new Error(err.error || "This level has been changed somewhere else. Load it again from the server first.");
+                e.changed = true;
+                throw e;
             }
             if (res.status === 409) {
                 throw new Error(`A level called “${level.name}” already exists - give this one a different name.`);
@@ -862,6 +867,46 @@
         setLevel(saved);
         save();
         return saved;
+    }
+
+    /* THIS DRAFT'S ROOM, ON THE SERVER'S NEWER LEVEL (30 Sept 2026).
+
+       A save refused with "changed somewhere else" used to leave one way on:
+       load the server copy, which replaces the draft. Every draft opened
+       before the 30 Sept retune is at rev 0 and every retuned level is past
+       it, so each of those drafts could only be saved by being thrown away.
+
+       This keeps both halves. The server's copy supplies what the retune
+       changed - the rules, the order, whether it is published, and the rev
+       the next save must name - and the draft supplies what a builder edits
+       in the room: its name, layout, floor, walls, start, facing, decor and
+       drop zones. Then it saves as normal, over the rev it has just read, so
+       a level that moves on again in between is refused again rather than
+       overwritten. `publish` is the button that was pressed, as for
+       saveServer. */
+    const DRAFT_FIELDS = ["name", "model", "floor", "wall", "start", "startDir", "decor", "zones"];
+
+    async function mergeOntoServer(publish) {
+        commit();
+        const draft = state.level;
+        if (!draft.id) throw new Error("This level has never been saved, so there is nothing to merge with.");
+        const all = await listServer(true);
+        const server = all.find(l => l.id === draft.id);
+        if (!server) throw new Error("That level is no longer on the server - Save again to put it back.");
+        const merged = { ...server };
+        for (const k of DRAFT_FIELDS) {
+            if (draft[k] !== undefined) merged[k] = JSON.parse(JSON.stringify(draft[k]));
+        }
+        setLevel(merged);
+        save();
+        return saveServer(publish);
+    }
+
+    // The draft as it stands, for keeping somewhere safe before anything
+    // replaces it.
+    function draftJson() {
+        commit();
+        return JSON.stringify(state.level, null, 2);
     }
 
     async function deleteServer(id) {
@@ -1037,6 +1082,7 @@
         addItem, removeItem, setRoom, save, restore, discardDraft,
         drawOverlay, drawDragArea, spriteUrl, spriteFor, rotationCount, metaFor, playable,
         listServer, saveServer, loadServer, deleteServer, authToken,
+        mergeOntoServer, draftJson,
         onChange(cb) { onChange = cb || (() => { }); }
     };
 })();

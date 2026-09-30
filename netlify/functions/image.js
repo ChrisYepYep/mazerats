@@ -12,7 +12,10 @@ const { isSafeKey } = require("./_keys");
    site's own domain. So these need an admin token, and are never cached by
    anyone — not the browser, and above all not the CDN, which would
    otherwise hand the copy it made for the admin to the next person to ask. */
-const PRIVATE_PREFIX = "tips/";
+/* entries/ is the same kind of thing (30 Sept 2026): the pictures sent with
+   the console's Event Submission (netlify/functions/event-entries.js), read
+   only by the admins judging them. */
+const PRIVATE_PREFIXES = ["tips/", "entries/"];
 const PRIVATE_HEADERS = { "Cache-Control": "private, no-store" };
 
 /* How long a public image lives in caches — and why the edge is told less
@@ -65,7 +68,7 @@ exports.handler = async (event) => {
        read unreviewed uploads. isSafeKey is a strict whitelist; see _keys.js. */
     if (!isSafeKey(key)) return refuse(400, "Invalid key");
 
-    const isPrivate = key.startsWith(PRIVATE_PREFIX);
+    const isPrivate = PRIVATE_PREFIXES.some(p => key.startsWith(p));
     /* hasAccount rather than isAuthorized: a token outliving its account
        (deleted, or its password reset) must not keep reading unreviewed
        uploads. It costs one indexed lookup, paid only on tips/ keys — which

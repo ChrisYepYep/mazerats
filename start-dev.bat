@@ -19,7 +19,7 @@ echo.
 
 REM Give Netlify a head start before the browser opens, so the first page
 REM load doesn't land on a server that isn't listening yet.
-start "" /b cmd /c "timeout /t 12 /nobreak >nul && start http://localhost:8888/admin.html"
+start "" /b cmd /c "timeout /t 12 /nobreak >nul && start http://localhost:8888/warren"
 
 call netlify dev
 

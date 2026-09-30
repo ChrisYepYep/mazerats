@@ -152,7 +152,11 @@ async function backfillOld(bans) {
             { projection: { _id: 1, ip: 1, net: 1, id: 1 } }).toArray();
         for (const b of old) {
             const $set = {};
-            if (b.net === undefined && typeof b.ip === "string" && b.ip.trim()) $set.net = subscriberOf(b.ip);
+            /* From the canonical spelling (30 Sept 2026), as every request
+               is read (keysOf in _bans.js): subscriberOf on a hex-mapped
+               "::ffff:0102:0304" is the /64 "0:0:0:0::/64", which no
+               request ever has, where the address is 1.2.3.4. */
+            if (b.net === undefined && typeof b.ip === "string" && b.ip.trim()) $set.net = subscriberOf(Bans.canonicalIp(b.ip));
             if (b.id === undefined) $set.id = crypto.randomUUID();
             if (Object.keys($set).length) await bans.updateOne({ _id: b._id }, { $set });
         }
@@ -206,6 +210,10 @@ exports.handler = async (event) => {
         /* Only the tagged lookup failure is an outage to retry; anything
            else is a fault, and answering it as "unavailable" hid it. */
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        /* ...and so is the database dropping mid-request (30 Sept 2026), as
+           players-admin.js and site-errors.js tell it apart: a driver error
+           is the same outage the lookup would have met, not a fault here. */
+        if (e && /^Mongo/.test(e.name || "")) return AUTH_UNAVAILABLE;
         return json(500, { error: "Something went wrong with that request." });
     }
 };
@@ -373,7 +381,7 @@ async function handle(event, db, bans) {
         const body = parsed.body;
         const reason = text(body.reason).trim();
         if (reason.length > REASON_MAX) {
-            return json(400, { error: `Reason is too long — keep it under ${REASON_MAX} characters` });
+            return json(400, { error: `Reason is too long. Please keep it to ${REASON_MAX} characters or fewer.` });
         }
         await ensureBanIndexes(bans);
         return body.kind === undefined ? await createOld(event, db, bans, body, reason, who) : await createNew(event, db, bans, body, reason, who);
@@ -400,11 +408,14 @@ async function handle(event, db, bans) {
            be banned by a row for a different address in the same /64, and
            "Unban" on that message has to lift what is actually stopping
            them, or it answers 404 and they stay banned. */
-        const net = subscriberOf(ip);
         /* Both spellings of the address (30 Sept 2026; see targetOf), plus
            any "ip" ban stored the long way before bans were kept canonical,
-           which only a canonical comparison finds. */
+           which only a canonical comparison finds. The network from the
+           canonical one too, as createOld and keysOf in _bans.js work it
+           out — from the address as sent, a hex-mapped IPv4 was the
+           network "0:0:0:0::/64" and its real network ban stayed on. */
         const canon = Bans.canonicalIp(ip);
+        const net = subscriberOf(canon);
         let result;
         if (id) {
             result = await bans.deleteOne({ id });
@@ -586,7 +597,7 @@ async function edit(event, db, bans, body, who) {
     if (body.reason !== undefined) {
         if (typeof body.reason !== "string") return json(400, { error: "reason is text." });
         const reason = body.reason.trim();
-        if (reason.length > REASON_MAX) return json(400, { error: `Reason is too long — keep it under ${REASON_MAX} characters` });
+        if (reason.length > REASON_MAX) return json(400, { error: `Reason is too long. Please keep it to ${REASON_MAX} characters or fewer.` });
         $set.reason = reason;
     }
     if (!Object.keys($set).length) return json(400, { error: "Nothing to change." });

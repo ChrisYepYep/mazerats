@@ -287,12 +287,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Some codepoints are mapped but draw nothing. Measured rather than
     // assumed, so the palette stays honest if the font is ever swapped.
-    if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(() => {
+    /* Measured once the font has LOADED, asked for by name as js/glyphs.js
+       does (30 Sept 2026). This waited on document.fonts.ready, which only
+       waits for loads already under way — at DOMContentLoaded the font may
+       not have been asked for yet, so the canvas drew the monospace
+       fallback, every slot had ink, and no blank was ever flagged. */
+    if (document.fonts && document.fonts.load) {
+        document.fonts.load('30px "Volter Goldfish"').then(() => {
             const cv = document.createElement("canvas");
             cv.width = 48;
             cv.height = 48;
             const ctx = cv.getContext("2d", { willReadFrequently: true });
+            if (!ctx) return;
             buttons.forEach((btn) => {
                 ctx.clearRect(0, 0, 48, 48);
                 ctx.fillStyle = "#fff";
@@ -309,6 +315,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     btn.title = btn.title + " — draws nothing";
                 }
             });
-        });
+        }, () => { /* no font, no flags: the buttons still insert */ });
     }
 });

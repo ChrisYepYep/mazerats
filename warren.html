@@ -223,6 +223,7 @@
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="daily" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Daily</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="ffdata" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Fallin&#39; Furni</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="wizard" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Atlas</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="entries" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Event Entries</span><span class="admin-nav-count" id="entries-nav-count" title="Entries nobody has looked at yet" hidden></span></button>
                                 </div>
                             </div>
                             <div class="ctl-card">
@@ -488,7 +489,7 @@
                             </div>
 
                             <!-- ---------- Mazes ---------- -->
-                            <section class="admin-panel" data-panel="rooms">
+                            <section class="admin-panel admin-panel-fill" data-panel="rooms">
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Mazes</h3>
@@ -509,12 +510,12 @@
                                         </select>
                                     </div>
                                 </div>
-                                <div class="chrome-list" id="rooms-list"></div>
+                                <div class="chrome-list admin-list-fill" id="rooms-list"></div>
                                 <form class="admin-form" id="rooms-form"></form>
                             </section>
 
                             <!-- ---------- Events ---------- -->
-                            <section class="admin-panel" data-panel="events" hidden>
+                            <section class="admin-panel admin-panel-fill" data-panel="events" hidden>
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Events</h3>
@@ -531,12 +532,12 @@
                                         </select>
                                     </div>
                                 </div>
-                                <div class="chrome-list" id="events-list"></div>
+                                <div class="chrome-list admin-list-fill" id="events-list"></div>
                                 <form class="admin-form" id="events-form"></form>
                             </section>
 
                             <!-- ---------- Console: Contributors ---------- -->
-                            <section class="admin-panel" data-panel="console" hidden>
+                            <section class="admin-panel admin-panel-fill" data-panel="console" hidden>
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Console</h3>
@@ -544,7 +545,7 @@
                                     </div>
                                 </header>
 
-                                <div class="admin-section">
+                                <div class="admin-section admin-panel-fill">
                                     <header class="admin-panel-head admin-panel-head-sub">
                                         <div>
                                             <h3 class="admin-subheading">Contributors</h3>
@@ -552,20 +553,20 @@
                                         </div>
                                         <button class="admin-action-pill admin-pill-solid admin-add-btn" id="contributors-add-btn" type="button">+ Add a Contributor</button>
                                     </header>
-                                    <div class="chrome-list" id="contributors-list"></div>
+                                    <div class="chrome-list admin-list-fill" id="contributors-list"></div>
                                     <form class="admin-form" id="contributors-form"></form>
                                 </div>
                             </section>
 
                             <!-- ---------- Console: Contact Messages ---------- -->
-                            <section class="admin-panel" data-panel="messages" hidden>
+                            <section class="admin-panel admin-panel-fill" data-panel="messages" hidden>
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Messages</h3>
                                         <p class="admin-hint">Submitted from the homepage console's Contact Us page. "Ban IP" blocks that address (or its whole home network) &mdash; from everything but reading, or from the whole site, for a set time or for good &mdash; see the Bans tab.</p>
                                     </div>
                                 </header>
-                                <div class="chrome-list" id="contact-messages-list"></div>
+                                <div class="chrome-list admin-list-fill" id="contact-messages-list"></div>
                             </section>
 
                             <!-- ---------- Errors (28 Sept 2026) ----------
@@ -942,7 +943,7 @@
                                 <div id="recolour-editor" class="rc-editor"><p class="admin-hint">Loading the palette&hellip;</p></div>
                             </section>
 
-                            <section class="admin-panel" data-panel="bans" hidden>
+                            <section class="admin-panel admin-panel-fill" data-panel="bans" hidden>
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Bans</h3>
@@ -957,7 +958,7 @@
                                 </header>
                                 <div class="bn-add" id="bans-add" data-crumb-private hidden></div>
                                 <div class="se-filters bn-filters" id="bans-filters"></div>
-                                <div class="chrome-list" id="bans-list"></div>
+                                <div class="chrome-list admin-list-fill" id="bans-list"></div>
                             </section>
 
                             <!-- ---------- Activity (owner only) ----------
@@ -1100,7 +1101,7 @@
                             </section>
 
                             <!-- ---------- Admins ---------- -->
-                            <section class="admin-panel" data-panel="admins" hidden>
+                            <section class="admin-panel admin-panel-fill" data-panel="admins" hidden>
                                 <header class="admin-panel-head">
                                     <div>
                                         <h3 class="admin-panel-title">Admins</h3>
@@ -1108,7 +1109,7 @@
                                     </div>
                                     <button class="admin-action-pill admin-pill-solid admin-add-btn" id="admins-add-btn" type="button">+ Add an Admin</button>
                                 </header>
-                                <div class="chrome-list" id="admins-list"></div>
+                                <div class="chrome-list admin-list-fill" id="admins-list"></div>
                                 <form class="admin-form" id="admins-form"></form>
                                 <!-- Forget a player moved to the Players tab
                                      on 29 Sept 2026, as an action on each
@@ -1150,6 +1151,29 @@
                                      session lived on. player-forget.js finds
                                      them by their board rows. -->
                                 <div class="pl-forget" id="players-forget" hidden></div>
+                            </section>
+
+                            <!-- ---------- Event Entries (30 Sept 2026) ----------
+                                 What visitors send through the console's
+                                 Event Submission: a Habbo name and a picture.
+                                 Drawn by js/admin-entries.js; the store is
+                                 netlify/functions/event-entries.js, and the
+                                 pictures are private (image.js's entries/). -->
+                            <section class="admin-panel admin-panel-fill" data-panel="entries" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">Event Entries</h3>
+                                        <p class="admin-hint">Entries sent through Event Submission on the console's Contact page, newest first: the Habbo Origins username they entered under, their picture, and their Discord account if they were signed in. Press a picture to open it full size. Nothing here is public. "Entries go to" decides which event a new entry is filed under; on Automatic it is the one event running right now, and none while there are several or none at all.</p>
+                                    </div>
+                                    <div class="admin-activity-controls">
+                                        <span class="admin-hint se-updated" id="entries-updated"></span>
+                                        <button class="admin-action-pill" id="entries-refresh-btn" type="button">Refresh</button>
+                                    </div>
+                                </header>
+                                <div class="ctl-row ee-open" id="entries-open"></div>
+                                <div class="se-filters" id="entries-filters"></div>
+                                <div class="chrome-list admin-list-fill" id="entries-list"></div>
+                                <div class="pl-pager" id="entries-pager"></div>
                             </section>
 
                         </div>
@@ -1232,7 +1256,8 @@
     <script src="js/admin-guides.js?v=2"></script>
     <script src="js/admin-errors.js?v=1"></script>
     <script src="js/admin-players.js?v=1"></script>
-    <script src="js/password-field.js?v=2"></script>
+    <script src="js/admin-entries.js?v=1"></script>
+    <script src="js/password-field.js?v=3"></script>
     <script src="js/glyph-palette.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>
     <script src="js/letter-jump.js?v=2"></script>

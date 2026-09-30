@@ -159,6 +159,7 @@
                home.js's dropAccountTicks, on the announce below; that is
                what stops the next person to sign in here uploading them. */
             announce();
+            tellOtherTabs();
             return true;
         },
 
@@ -224,6 +225,38 @@
         onStored(fn) { if (typeof fn === "function") storedListeners.push(fn); }
     };
     const storedListeners = [];
+
+    /* Signed out in every tab (30 Sept 2026). The cookie is shared, so a
+       sign-out in one tab ends the session in all of them — but the others
+       went on showing the player signed in, and kept queueing saves that
+       the server then refused, until they were reloaded. So a sign-out is
+       said to the other tabs, which ask the server again (Account.refresh)
+       rather than taking the message's word for it. BroadcastChannel where
+       there is one; otherwise a localStorage write, whose "storage" event
+       fires in every other tab of the site. */
+    const SIGNOUT_CHANNEL = "mazerats-account";
+    const SIGNOUT_KEY = "mazerats_signed_out";
+    let signOutChannel = null;
+    try {
+        if (typeof BroadcastChannel === "function") {
+            signOutChannel = new BroadcastChannel(SIGNOUT_CHANNEL);
+            signOutChannel.onmessage = e => {
+                if (e && e.data && e.data.type === "signout") Account.refresh();
+            };
+        }
+    } catch (e) { signOutChannel = null; }
+    if (!signOutChannel) {
+        window.addEventListener("storage", e => {
+            if (e.key === SIGNOUT_KEY && e.newValue) Account.refresh();
+        });
+    }
+    function tellOtherTabs() {
+        try {
+            if (signOutChannel) signOutChannel.postMessage({ type: "signout" });
+            // A fresh value every time, or a second sign-out fires no event.
+            else localStorage.setItem(SIGNOUT_KEY, String(Date.now()));
+        } catch (e) { /* storage blocked: the other tabs catch up on reload */ }
+    }
 
     const STATE_ENDPOINT = "/.netlify/functions/player-data";
     let pendingPatch = {};
@@ -1280,7 +1313,7 @@
        every visitor and this sees every click on the page. */
     document.addEventListener("click", e => {
         if (!Account.ban) return;
-        const send = e.target && e.target.closest ? e.target.closest("#console-contact-send, #ci-send") : null;
+        const send = e.target && e.target.closest ? e.target.closest("#console-contact-send, #ci-send, #console-entry-send") : null;
         if (!send || !activeBan()) return;
         e.preventDefault();
         e.stopImmediatePropagation();

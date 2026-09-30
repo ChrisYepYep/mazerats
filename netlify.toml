@@ -781,9 +781,10 @@
 # must-revalidate costs a conditional request per file per visit and
 # almost always gets a 304 back — headers, no body — which is a small
 # price for never again shipping a page assembled out of two different
-# versions of itself. The /assets folders keep their year (see the rules
-# above for the two that do not): pictures and fonts change by getting a
-# new address, so they genuinely are immutable.
+# versions of itself. The /assets folders are on their own rules above: a
+# day for everything fetched by a fixed name, and a year only for the fonts,
+# which never change. (This used to say every /assets folder kept a year;
+# that stopped being true on 30 Sept 2026 — see the note above those rules.)
 #
 # The proper fix is hashed filenames, which needs a build step this site
 # deliberately does not have.

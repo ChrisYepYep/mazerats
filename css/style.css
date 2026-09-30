@@ -275,7 +275,15 @@ html:has(> body[data-page="fallinfurni"]) {
     .old-version-layer,
     #featured-frame-list,
     .featured-frame-list-outgoing,
-    #search-wrap {
+    #search-wrap,
+    /* Three more of the same kind, found 30 Sept 2026: the results panel
+       sliding down out of the way when Featured Mazes opens, the Featured
+       panel growing open over it, and the maze window's Incomplete tab —
+       whose own transition is declared after, and so beat, the
+       .modal-actions-drawer opt-out it shares a class with. */
+    #browse-window .chrome-frame,
+    .featured-frame-body,
+    .modal-incomplete-drawer {
         transition-duration: 1ms !important;
     }
 
@@ -931,8 +939,17 @@ a.header-badge:hover {
    longer or shorter event title. Three tight lines (label, title, when)
    sized to fit inside the same header height the brand's two lines
    (brand-text + tagline) already use, so adding this doesn't grow the bar. */
+/* A fixed width now, not only a cap (30 Sept 2026). With max-width alone
+   the box was as wide as whichever title was showing, and while it rotated
+   the outgoing title is lifted out of the flow, so the box snapped to the
+   incoming one's width mid-slide and squeezed the old title as it left.
+   200px is the cap the longest titles already met, so nothing gets
+   narrower; the short ones simply sit right-aligned in the same space.
+   Under 640px it is the full width of its own row (see the responsive
+   block). */
 .header-events {
     display: none;
+    width: 200px;
     max-width: 200px;
     text-align: right;
 }
@@ -1081,14 +1098,23 @@ main { display: block; flex: 1 0 auto; }
     text-shadow: 0 0 6px rgba(255, 248, 236, 0.65);
 }
 
+/* The dot LEADS its name now rather than trailing it (30 Sept 2026). It
+   comes after the link in the markup (js/site.js), and trailing it meant
+   that on a phone, where the row wraps to three or four lines, every line
+   ended on a dangling "•" pointing at nothing. order: -1 draws it in front
+   of its own name instead, so a separator always sits with the link it
+   introduces, and the gap and the dot's margin swap sides so the spacing
+   is exactly what it was. */
 .fellow-fansites-dot {
-    margin-left: 6px;
+    order: -1;
+    margin-right: 6px;
     color: var(--parchment-dim);
 }
 
-/* Trailing separator on the final name is removed here rather than
-   skipped when building the list, so the markup stays uniform. */
-.fellow-fansites-item:last-child .fellow-fansites-dot {
+/* The first name has nothing before it to be separated from. Removed here
+   rather than skipped when building the list, so the markup stays
+   uniform. */
+.fellow-fansites-item:first-child .fellow-fansites-dot {
     display: none;
 }
 
@@ -1341,6 +1367,192 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-wrap: balance;
 }
 
+/* ---------- THE SPOTLIGHT (30 Sept 2026) ----------
+
+   Under the button in every state of the landing page — see showSpotlight
+   in js/welcome.js and the markup in index.html. As wide as the title and the
+   button above it, and no wider: `width: 0; min-width: 100%` lets it fill
+   the stack's one column without its 957px picture widening that column,
+   which is sized to the title (see .welcome-stack above). Framed exactly
+   as the maze window's .gallery-viewport is — the fine black edge, 8px
+   corners, the hard offset shadow and the faint cream lit edge drawn over
+   the picture by ::after — and amber on hover like every other link here.
+
+   The caption is the owner's spec: Volter at the site's small-button size,
+   in the colour set on the event in the Warren (#ebe8ff by default, the
+   lavender-white of Vermin's Vault's own lettering), on a dark fade so it
+   reads over any part of the art.
+
+   One frame, the slides stacked in it: each event's thumbnail is fitted to
+   the frame (cover), so events whose pictures differ in shape still take
+   turns in a frame that does not change size under the title. */
+.welcome-promo {
+    position: relative;
+    display: grid;
+    width: 0;
+    min-width: 100%;
+    aspect-ratio: 957 / 487;
+    margin-top: 22px;
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    background: #120c07;
+    line-height: 0;
+    transition: border-color 0.12s ease-out;
+}
+.welcome-promo-slide {
+    grid-area: 1 / 1;
+    position: relative;
+    display: block;
+    text-decoration: none;
+    cursor: var(--cursor-pointer);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.6s ease-out, visibility 0s linear 0.6s;
+}
+.welcome-promo-slide.is-shown {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.6s ease-out, visibility 0s;
+}
+.welcome-promo-slide:focus-visible { outline: none; }
+.welcome-promo:has(.welcome-promo-slide:focus-visible) {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
+}
+/* Which turn it is, when there is more than one: small dots at the top
+   right, over the picture, out of the caption's way. */
+/* BUTTONS NOW (30 Sept 2026, the owner's): each dot shows its slide. The
+   button is a 14x18 target, clear, with the 6px dot drawn in its middle by
+   ::before, so it looks the size it did; the row is placed so the dots sit
+   where they were (7px down, 8px in) and a little further apart. The row
+   itself lets clicks through to the slide under it; only a button takes
+   one. The keyboard ring is drawn round the dot, not the whole target. */
+.welcome-promo-dots {
+    position: absolute;
+    top: 1px;
+    right: 4px;
+    z-index: 6;
+    display: flex;
+    line-height: 0;
+    pointer-events: none;
+}
+.welcome-promo-dot {
+    position: relative;
+    width: 14px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: var(--cursor-pointer);
+    pointer-events: auto;
+    -webkit-appearance: none;
+    appearance: none;
+}
+.welcome-promo-dot::before {
+    content: "";
+    position: absolute;
+    top: 6px;
+    left: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 248, 236, 0.35);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+.welcome-promo-dot.is-on::before { background: #fff8ec; }
+.welcome-promo-dot:focus { outline: none; }
+.welcome-promo-dot:focus-visible::before {
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 0 3px var(--amber-bright);
+}
+@media (prefers-reduced-motion: reduce) {
+    .welcome-promo-slide,
+    .welcome-promo-slide.is-shown { transition: none; }
+}
+.welcome-promo[hidden] { display: none; }
+.welcome-promo::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    border-radius: inherit;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 248, 236, 0.22),
+        inset 1px 0 0 rgba(255, 248, 236, 0.22);
+}
+.welcome-promo:hover,
+.welcome-promo:has(.welcome-promo-slide:focus-visible) {
+    border-color: var(--amber);
+}
+.welcome-promo-img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* THE WORDMARK STAYS WHERE IT WAS (30 Sept 2026, the owner's).
+
+   .welcome-screen centres everything in the stack, so the advert under the
+   button pushed the title and button up by half its own height. So, as the
+   countdown is above the title, the advert is lifted out of the flow below
+   the button: hung off the stack's bottom edge, into the space the page
+   already leaves between the button and Fellow Fansites. The title and the
+   button sit exactly where they do without it.
+
+   That space is half of whatever the window has to spare, so on a shorter
+   window the advert shrinks to fit it rather than running into the
+   fansites: at most the button's width, and no taller than half the window
+   less the header, the footer's first band and the stack's own lower half
+   (284px, measured with the title at its full size, which is the worst
+   case — a smaller title leaves more room, never less). 1.965 is the
+   picture's own 957:487.
+
+   Below 860px tall, or on a narrow screen where the countdown is back in
+   the flow, it stays in the flow at its full size instead. 860 is where
+   the fitted width reaches about 280px, the narrowest at which the caption
+   still fits on one line — below that it wrapped across the picture's own
+   lettering, which is worse than the page scrolling a little. */
+@media (min-width: 700px) and (min-height: 860px) {
+    .welcome-promo {
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(100%, calc((50vh - 284px) * 1.965));
+        width: min(100%, calc((50dvh - 284px) * 1.965));
+        min-width: 0;
+        margin-top: 18px;
+    }
+}
+.welcome-promo-cta {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 18px 10px 7px;
+    background: linear-gradient(rgba(6, 6, 20, 0), rgba(6, 6, 20, 0.7));
+    color: #ebe8ff;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    text-align: center;
+    white-space: nowrap;
+    /* A caption too long for the frame ends in "…" (30 Sept 2026) rather
+       than running off both sides: a block held between left and right,
+       its padding inside that width, clips its one line. */
+    display: block;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
 /* ---------- THE LAUNCH COUNTDOWN ----------
 
    Under the Enter button while the site is gated and a date is set. See
@@ -1580,11 +1792,22 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* Sits perched on the button's top-left corner. No separate :hover rule is
    needed to make him move — he's a normal child of .btn-enter, so he rides
    along with its own transform: translateY(-2px) on hover for free. */
+/* Sized off the TITLE, not in px (30 Sept 2026). He was a fixed 63px while
+   the title above him shrinks with the screen, and the gap between them
+   (the title's 30px margin) does not, so on a phone he stood taller than
+   the whole of RATS and covered the R from top to foot. --title is the
+   title's own clamp, repeated because he lives in the button rather than
+   inside the title and cannot inherit its em; the three ratios are the old
+   px values against the 120px (7.5rem) title they were drawn for, so a
+   desktop is unchanged to the pixel and a tablet keeps the same pose. At
+   the title's smallest, 3.4rem, he is 29px wide and his ears come up to the
+   foot of the R instead of over it. */
 .btn-sit-rat {
+    --title: clamp(3.4rem, 14vw, 7.5rem);
     position: absolute;
-    top: -90.6px;
-    left: 13.4px;
-    width: 63px;
+    top: calc(var(--title) * -0.755);
+    left: calc(var(--title) * 0.112);
+    width: calc(var(--title) * 0.525);
     height: auto;
     pointer-events: none;
     z-index: 2;
@@ -3508,6 +3731,17 @@ body[data-page="home"] .hero { padding-top: 18px; }
     /* Same bar colours as every other native scroll region on the site. */
     scrollbar-color: var(--wood-dark) var(--frame-bg);
     transition: max-height 0.4s ease;
+}
+
+/* Shut, it clips instead (30 Sept 2026). Folded to max-height 0 it still
+   held 28px of content, so it was still a scroll container with somewhere
+   to scroll — and Chrome puts a scroller with no focusable child of its own
+   in the Tab order. Keyboard users landed on a 0px-tall box between the
+   Featured Mazes button and the first maze, with nothing to see. Clipping
+   stops it being a scroller at all; opening sets .is-open before the height
+   grows, so the scroll the open panel needs is back in time. */
+.featured-frame:not(.is-open) > .featured-frame-body {
+    overflow-y: hidden;
 }
 
 /* Wraps the outgoing clone created by refreshFeaturedList, clipping it to
@@ -6388,6 +6622,19 @@ body[data-page="home"] .hero { padding-top: 18px; }
     max-height: min(34vh, 380px);
 }
 
+/* Every EVENT gets the same taller window (30 Sept 2026, the owner's): an
+   event's full details are its whole announcement — how to take part, the
+   prize, the dates — and 160px left Vermin's Vault's reading like a
+   letterbox. Both copies of the event window, the archive's (.is-event, set
+   by js/home.js) and the landing page's (#event-modal), so an event opened
+   from the ticker on either page is the same window. Still capped, and the
+   card still shrinks to fit a short screen (see "Fitting the card to the
+   window" above). */
+.modal-thumb-full.is-event .room-desc-box,
+#event-modal .room-desc-box {
+    max-height: min(34vh, 380px);
+}
+
 /* The description panel: the scrolling text, then the thumbnail strip
    beneath it, both inside one frame. Bled out to the modal's edges and
    carrying the same hard top shadow as .modal-meta above it, so the two
@@ -6410,6 +6657,147 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: var(--parchment-dim);
     font-size: 0.92rem;
     line-height: 1.6;
+}
+/* The two windows' description is a <div> now (30 Sept 2026): it holds
+   paragraphs, lists and headings, which a <p> cannot contain. This is the
+   margin the <p> had from the browser, so the box looks as it did. */
+#modal-desc,
+#event-modal-desc { margin: 1em 0; }
+
+/* ---------- formatted descriptions (30 Sept 2026) ----------
+   A maze's or an event's description and full details are written in the
+   guides' text format now (js/guide-text.js), with buttons for it in
+   /warren, so the room window, the front page's event window and the
+   /warren preview below get paragraphs, lists and bold. No gap above the
+   first paragraph, and about a line's worth between blocks, so a plain
+   description sits in its box just as it did. */
+/* A BLANK LINE LOOKS LIKE ONE (30 Sept 2026, the owner's). The gap between
+   two blocks is a whole line (the text's own 1.6 line-height), which is what
+   a blank line typed in /warren means, and each blank line beyond the first
+   adds another (.fmt-blank, from js/guide-text.js). The margins were zeroed
+   by ".room-desc-full p", which outranked the gap rule below it, so there
+   was no gap at all; both are one class and a child now, and the gap is
+   written second so it wins. */
+.room-desc-full > * { margin: 0; }
+.room-desc-full > * + * { margin-top: 1.6em; }
+.room-desc-full > .fmt-blank { margin: 0; height: 1.6em; }
+.room-desc-full ul,
+.room-desc-full ol { padding-left: 22px; }
+.room-desc-full li + li { margin-top: 2px; }
+/* Bold is weight alone (30 Sept 2026, the owner's): it keeps the colour of
+   the text around it. Standing out as a title is the Heading button's job. */
+.room-desc-full strong { color: inherit; font-weight: 700; }
+.room-desc-full .guide-tip { margin-bottom: 0; }
+.room-desc-full u { text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.room-desc-full s { opacity: 0.8; }
+/* Headings: bold and a shade lighter than the description's own
+   parchment-dim, a little larger for a heading than a subheading. */
+.room-desc-full .fmt-heading,
+.room-desc-full .fmt-subheading {
+    margin: 0;
+    color: var(--parchment);
+    font-family: inherit;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+    text-shadow: none;
+    line-height: 1.35;
+}
+.room-desc-full .fmt-heading { font-size: 1.06em; }
+.room-desc-full .fmt-subheading { font-size: 0.98em; }
+/* A heading sits close to what it heads; above it, the same line's worth as
+   between any two blocks. */
+.room-desc-full > * + .fmt-heading,
+.room-desc-full > * + .fmt-subheading { margin-top: 1.6em; }
+.room-desc-full > .fmt-blank + .fmt-heading,
+.room-desc-full > .fmt-blank + .fmt-subheading { margin-top: 1.6em; }
+.room-desc-full > .fmt-heading + *,
+.room-desc-full > .fmt-subheading + * { margin-top: 0.35em; }
+.room-desc-full .fmt-rule {
+    height: 0;
+    border: none;
+    border-top: 1px solid var(--chrome-border);
+    box-shadow: 0 1px 0 rgba(255, 248, 236, 0.08);
+}
+
+/* The /warren side: the row of buttons over each field, and the preview
+   under it, drawn on the room window's own panel colour. */
+.admin-fmt-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+/* The event form's landing page spotlight section (30 Sept 2026) — see
+   spotlightFieldsHtml in js/admin.js. A ruled-off group of its own, since
+   it is about the landing page rather than the event. */
+.admin-spotlight {
+    margin: 6px 0 4px;
+    padding-top: 12px;
+    border-top: 1px solid var(--chrome-border);
+}
+.admin-spotlight .admin-subheading { margin: 0 0 6px; }
+/* Across the whole form, with its own columns: squeezed into one cell of
+   the form's grid its eight parts stacked into a tower. 1 / -1 for the same
+   reason as .admin-address-field. */
+.admin-stage .admin-form > .admin-spotlight {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+    gap: 12px 20px;
+    align-items: start;
+}
+.admin-stage .admin-spotlight > .admin-subheading,
+.admin-stage .admin-spotlight > .admin-check,
+.admin-stage .admin-spotlight > .admin-hint { grid-column: 1 / -1; }
+.admin-stage .admin-spotlight > .admin-subheading,
+.admin-stage .admin-spotlight > .admin-check { margin: 0; }
+.admin-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 4px;
+    color: var(--parchment);
+    font-size: 0.85rem;
+    cursor: var(--cursor-pointer);
+}
+.admin-check input { margin: 0; accent-color: var(--amber); }
+.admin-spotlight input[type="color"] {
+    width: 64px;
+    height: 30px;
+    padding: 2px;
+    cursor: var(--cursor-pointer);
+}
+
+/* Between the button groups: text style, block kind, links and lists, clear. */
+.admin-fmt-gap {
+    width: 1px;
+    height: 16px;
+    margin: 0 4px;
+    background: var(--chrome-border);
+    box-shadow: 1px 0 0 rgba(255, 248, 236, 0.08);
+}
+.admin-field.is-disabled .admin-fmt-btn { pointer-events: none; }
+.admin-fmt-preview-wrap {
+    padding: 8px 12px 10px;
+    background: #554736;
+    border: 1px solid var(--chrome-border);
+    border-radius: 4px;
+}
+.admin-fmt-preview-wrap[hidden] { display: none; }
+.admin-fmt-preview-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.68rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    opacity: 0.75;
+}
+.admin-fmt-preview {
+    color: var(--parchment-dim);
+    font-size: 0.92rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
 }
 
 /* Reads as a continuation of the description rather than a separate card —
@@ -9414,6 +9802,52 @@ body[data-page="admin"] #contributors-list {
     max-height: calc(100dvh - 330px);
 }
 
+/* ONE SCROLL, NOT TWO (30 Sept 2026). The 330px above was a guess at what
+   sits over a list, and it was short: the header, the notice, the panel's
+   own head and its search row come to 408px on Mazes and up to 718px
+   elsewhere, so the window ran past the screen and the page scrolled as
+   well as the list inside it — two scrollbars for one list.
+
+   So on a desktop the list takes whatever height is left instead of a
+   height worked out in advance. Every box from the window down to the list
+   is a column that grows, and the list (or the custom scrollbar's wrapper
+   round it, which is the box in that column) takes the remainder. Its
+   flex-basis is 0, so it never pushes the window taller than the screen;
+   its floor of 240px is for when a form opens under it, and then the page
+   scrolls to the form as it did before.
+
+   The panels and lists that do this are marked .admin-panel-fill and
+   .admin-list-fill in warren.html; the ids are here as well so it holds
+   either way. Scoped to the panel that is showing, because a hidden
+   panel's [hidden] is only a display: none that a display: flex here would
+   otherwise beat. Not under 860px, where the page scrolls and the lists
+   flow with it (see the narrow block below). */
+@media (min-width: 861px) {
+    .admin-window:has(.admin-panel:not([hidden]) :is(.admin-list-fill, #rooms-list, #events-list, #contributors-list, #contact-messages-list, #bans-list, #admins-list)) > .chrome-frame {
+        display: flex;
+        flex-direction: column;
+    }
+    .chrome-frame > .chrome-body:has(> .admin-panel:not([hidden]) :is(.admin-list-fill, #rooms-list, #events-list, #contributors-list, #contact-messages-list, #bans-list, #admins-list)) {
+        flex: 1 0 auto;
+        display: flex;
+        flex-direction: column;
+    }
+    .admin-panel:not([hidden]):is(.admin-panel-fill, :has(:is(.admin-list-fill, #rooms-list, #events-list, #contributors-list, #contact-messages-list, #bans-list, #admins-list))),
+    .admin-panel:not([hidden]) .admin-section:has(:is(.admin-list-fill, #rooms-list, #events-list, #contributors-list, #contact-messages-list, #bans-list, #admins-list)) {
+        flex: 1 0 auto;
+        display: flex;
+        flex-direction: column;
+    }
+    .admin-panel .custom-scrollbar-wrap:has(> :is(.admin-list-fill, #rooms-list, #events-list, #contributors-list, #contact-messages-list, #bans-list, #admins-list)),
+    .admin-panel :not(.custom-scrollbar-wrap) > :is(.admin-list-fill, #rooms-list, #events-list, #contributors-list, #contact-messages-list, #bans-list, #admins-list) {
+        flex: 1 1 0;
+        min-height: 240px;
+    }
+    body[data-page="admin"] :is(.admin-list-fill, #rooms-list, #events-list, #contributors-list, #contact-messages-list, #bans-list, #admins-list) {
+        max-height: none;
+    }
+}
+
 /* ---------- forms ---------- */
 
 /* At this width a single column of full-bleed inputs would be absurd — a
@@ -9575,6 +10009,52 @@ body[data-page="admin"] .site-footer p {
         bottom: 0;
         margin: 0;
     }
+
+    /* The lists flow with the page here (30 Sept 2026), as the note above
+       the first narrow block for them says they should. That block's
+       max-height: none is one id deep and the desktop cap further up is
+       body[data-page="admin"] plus the id, so the cap won on phones too:
+       measured at 375px, #rooms-list was held to 482px with overflow-y
+       visible, which cannot scroll at all. Thirty-six of the thirty-nine
+       mazes sat clipped under the window with no way to reach them bar the
+       search box. Restated at the cap's own specificity, later, so it
+       wins. */
+    body[data-page="admin"] #rooms-list,
+    body[data-page="admin"] #events-list,
+    body[data-page="admin"] #admins-list,
+    body[data-page="admin"] #contact-messages-list,
+    body[data-page="admin"] #bans-list,
+    body[data-page="admin"] #contributors-list {
+        max-height: none;
+    }
+}
+
+/* ---------- the top bar on the smallest phones (30 Sept 2026) ----------
+
+   At 360px and under the sticky bar was 103px of a 640px screen for a
+   visitor and 123px for an admin — a fifth of the page held down for good.
+   Nothing is taken out of it; it is packed tighter. The padding comes in
+   (24px a side was sized for a desktop), the wrapped rows sit 2px apart
+   instead of 4, and the "Upcoming events" label moves from its own line to
+   the left of the title it labels, set in two short lines. A float rather
+   than a flex row, because js/site.js shows the widget by writing
+   display: block onto it; the viewport beside it is already overflow:
+   hidden, so it makes room for the float by itself. 88px and 106px. */
+@media (max-width: 360px) {
+    .site-header { padding: 4px 12px; row-gap: 2px; }
+    .brand-group { row-gap: 2px; }
+    .header-events-label {
+        float: left;
+        width: min-content;
+        margin: 0 8px 0 0;
+        line-height: 1.15;
+    }
+}
+
+/* On a touch screen the title carries 7px of reach above it (see the
+   touch-targets block), so the label comes down to meet its first line. */
+@media (max-width: 360px) and (pointer: coarse) {
+    .header-events-label { margin-top: 7px; }
 }
 
 /* ---------- telling the reader the photo frame can be handled ----------
@@ -10069,6 +10549,35 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment);
 }
 
+/* ---------- the three drawn views' own ground ----------
+
+   The Timeline, the furni browser and What's New draw straight into the
+   list panel rather than as rows, so their text sat on the window frame
+   itself (--frame-bg), which is a mid brown: the dim parchment measured
+   3.3:1 on it, the grey counts 3.0:1, the notes 2.2:1 and the amber titles
+   3.9:1. Every other line of small text on the site sits on a row's dark
+   ground, and was chosen for it — What's New's own comment below says as
+   much. So these three get that ground: one panel in the row's colour and
+   edge, inset like a row. On it the same inks measure 5.4:1 and up, with
+   no colour changed but the note's (30 Sept 2026).
+
+   :has() rather than a class, because home.js builds these views and
+   this sheet can key off what each one draws first. One :has() per view
+   rather than one with a list inside it: tools/themes.js splits selectors
+   on their commas, and a comma inside the brackets came out as a broken
+   rule in every palette. */
+.chrome-list:has(> .timeline),
+.chrome-list:has(> .furni-head),
+.chrome-list:has(> .furni-rooms),
+.chrome-list:has(> .updatelog) {
+    margin: 10px 10px 6px;
+    padding: 14px 14px 16px;
+    background: var(--chrome-row);
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
 /* ---------- the timeline ---------- */
 
 /* timeline.html — the archive as a history. Deliberately quieter than the
@@ -10243,7 +10752,10 @@ body[data-page="admin"] #activity-sessions {
 }
 
 .timeline-entry-note {
-    color: #8a7d68;
+    /* Was #8a7d68, which was 2.2:1 on the frame and still 4.0:1 on the dark
+       ground above. The grey the site's other quiet lines use (5.4:1), one
+       step under the builder line's parchment so the two still read apart. */
+    color: var(--unknown-text);
     /* Two lines is a summary; four is the archive entry, which is one click
        away and better placed to hold it. */
     display: -webkit-box;
@@ -11029,6 +11541,40 @@ body[data-page="admin"] #activity-sessions {
     transform: translateX(var(--menu-w));
 }
 
+/* Shut, the archive's panel is hidden, not just tucked (30 Sept 2026).
+
+   "Behind the window" only holds while the panel is shorter than the
+   window. Open both folds and it is not: measured at 1280x800 the panel ran
+   from y 251 to 795 against a window ending at 719, so once the menu was
+   shut again its last row (Alt Codes) hung out under the frame, over the
+   fansite links, and stayed there. The drawer's own box is as tall as the
+   panel, so it also sat on top of Leet.show and Liminal Labyrinth and ate
+   every click on them.
+
+   So the panel goes invisible once it has slid home (the same held
+   visibility .modal-actions-panel uses, so closing still reads as a slide),
+   and the drawer takes no pointer at all: only the spine, and the panel
+   while it is out, can be pressed. js/home.js already makes the shut panel
+   inert, so nothing about the keyboard changes. */
+.side-drawer {
+    pointer-events: none;
+}
+
+.side-drawer .side-spine,
+.side-drawer.is-open .side-menu {
+    pointer-events: auto;
+}
+
+.side-drawer .side-menu {
+    visibility: hidden;
+    transition: visibility 0s linear 0.34s;
+}
+
+.side-drawer.is-open .side-menu {
+    visibility: visible;
+    transition-delay: 0s;
+}
+
 .side-spine {
     flex: 0 0 auto;
     width: var(--spine-w);
@@ -11221,7 +11767,9 @@ body[data-page="admin"] #activity-sessions {
     font-size: 0.55rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: #8a6a3d;
+    /* Was #8a6a3d, 2.3:1 on the card. The badge's ink, 5.5:1 (30 Sept
+       2026) — still quieter than the rows' near-black names. */
+    color: #4a3312;
 }
 
 .side-menu-heading:first-child { margin-top: 0; }
@@ -11429,13 +11977,21 @@ body[data-page="admin"] #activity-sessions {
     vertical-align: 1px;
 }
 
+/* #4a3312, and it was #8a5f1c: 2.6:1 on the card (30 Sept 2026). The
+   tag's own #5a3f17 was the first choice, but measured it is only 4.5:1 on
+   the plain card and 3.3:1 on the lit row, and a count is the one thing
+   here someone reads at a glance. #4a3312 is 5.5:1 on the card; the lit
+   row's wash darkens the ground under it, so there it goes a step darker
+   again (5.2:1). */
 .side-menu-badge {
     font-family: 'Montserrat', sans-serif;
     font-weight: 800;
     font-size: 0.62rem;
-    color: #8a5f1c;
+    color: #4a3312;
     font-variant-numeric: tabular-nums;
 }
+
+.side-menu-item.is-on .side-menu-badge { color: #32220d; }
 
 /* --- the same tab, on the room modal ------------------------------------
 
@@ -11629,6 +12185,8 @@ body[data-page="admin"] #activity-sessions {
     .modal-actions-drawer,
     .side-spine,
     .side-spine-arrow { transition: none; }
+    /* No slide to wait for, so no held visibility either. */
+    .side-drawer .side-menu { transition: none; }
 }
 
 /* --- below 900px: a pop-out instead ------------------------------------
@@ -13649,11 +14207,53 @@ body[data-page="admin"] #activity-sessions {
     color: var(--parchment);
 }
 .guide-body p { margin: 0 0 12px; }
+/* Each blank line beyond the first, since 30 Sept 2026 (see render in
+   js/guide-text.js): one more paragraph gap's worth. */
+.guide-body .fmt-blank { height: 0; margin: 0 0 12px; }
 .guide-body ul,
 .guide-body ol { margin: 0 0 12px; padding-left: 22px; }
 .guide-body li { margin-bottom: 4px; }
 .guide-body strong,
 .guide-summary strong { color: #efe4cc; }
+/* The rest of the toolbar's marks (30 Sept 2026), as .room-desc-full
+   draws them: underline and strikethrough, a heading and a subheading a
+   little larger than the text and in the bold's lighter colour (still
+   below the amber section title), and a divider. The guide's own spacing:
+   each block keeps its 12px below, and a heading has a wider gap above it
+   and sits close to what it heads. */
+.guide-body u,
+.guide-summary u { text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.guide-body s,
+.guide-summary s { opacity: 0.8; }
+.guide-body .fmt-heading,
+.guide-body .fmt-subheading,
+.guide-summary .fmt-heading,
+.guide-summary .fmt-subheading {
+    margin: 18px 0 4px;
+    color: #efe4cc;
+    font-family: inherit;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+    text-shadow: none;
+    line-height: 1.35;
+}
+.guide-body .fmt-heading,
+.guide-summary .fmt-heading { font-size: 1.06em; }
+.guide-body .fmt-subheading,
+.guide-summary .fmt-subheading { font-size: 0.98em; }
+.guide-body > .fmt-heading:first-child,
+.guide-body > .fmt-subheading:first-child,
+.guide-summary > .fmt-heading:first-child,
+.guide-summary > .fmt-subheading:first-child { margin-top: 0; }
+.guide-body .fmt-rule,
+.guide-summary .fmt-rule {
+    height: 0;
+    margin: 0 0 12px;
+    border: none;
+    border-top: 1px solid var(--chrome-border);
+    box-shadow: 0 1px 0 rgba(255, 248, 236, 0.08);
+}
 
 .guide-link { color: var(--amber-bright); text-underline-offset: 2px; }
 .guide-link:hover,
@@ -14808,6 +15408,12 @@ main:has(> .admin-tabs) > .admin-shell { flex: 1 1 auto; min-height: 0; }
     font-size: 0.65rem;
 }
 .ctl-input:focus { outline: none; border-color: var(--amber); }
+/* The date pickers' own icon and pop-up calendar follow the page's colour
+   scheme, which is light by default: a black calendar glyph on this dark
+   field, and a white calendar opening out of it (30 Sept 2026). */
+.ctl-input[type="datetime-local"],
+.ctl-input[type="date"],
+.ctl-input[type="time"] { color-scheme: dark; }
 
 /* The palette swatches. A dot of the hue each button switches to —
    "Witching Hour" says nothing about what the site is about to look like, and
@@ -15109,17 +15715,41 @@ textarea.ctl-input.de-note {
    of the control, and made the old rail look like a form with captions
    printed inside its fields. */
 .ctl-card {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 5px;
     min-width: 0;
-    /* Separated by a rule rather than by more space — at this size gaps
-       alone stopped reading as groups. */
-    padding-right: 10px;
-    border-right: 1px solid rgba(0, 0, 0, 0.35);
 }
-.ctl-card:last-child { padding-right: 0; border-right: none; }
-.ctl-card-wide { flex: 1 1 100%; padding-right: 0; border-right: none; }
+.ctl-card-wide { flex: 1 1 100%; }
+
+/* Separated by a rule rather than by more space — at this size gaps alone
+   stopped reading as groups.
+
+   THE RULE LIVES IN THE GAP (30 Sept 2026). It was each card's right
+   border, which hung off the end of every row the cards wrapped on — the
+   last card on a line has no neighbour, and :last-child only knows about
+   the last card of all (and not even that when the last one is hidden).
+   Now each card draws the rule on its LEFT, in the middle of the gap, and
+   the grid clips its own left edge: the first card on every line has its
+   rule outside the grid, where it is cut off, and every other rule sits
+   between two cards. The column gap is the old 10px padding, the rule and
+   the 12px gap added up, so nothing moves. The clip leaves 4px for the
+   focus rings and reaches far out on the other three sides. */
+.ctl-grid {
+    column-gap: 23px;
+    clip-path: inset(-100vmax -100vmax -100vmax -4px);
+}
+.ctl-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -12px;
+    width: 1px;
+    background: rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+}
 
 .ctl-label {
     font-family: 'Silkscreen', monospace;
@@ -18777,4 +19407,56 @@ body.is-viewer #bans-add { display: none !important; }
     .chrome-list-row.bn-row { flex-wrap: wrap; }
     .chrome-list-row.bn-row .row-info { flex: 1 1 100%; }
     .chrome-list-row.bn-row .admin-row-actions { flex: 1 1 100%; justify-content: flex-start; margin-top: 6px; }
+}
+
+/* ==========================================================================
+   EVENT SUBMISSION (30 Sept 2026)
+   The console's Event Submission page (home.html, js/console.js) and the
+   Warren's Event Entries panel (js/admin-entries.js). Self-contained: the
+   form wears the console's own controls and the panel the Warren's
+   (.ctl-btn, .de-chip, .de-shot), so only what those do not say is here.
+   ========================================================================== */
+
+/* "Entering: Vermin's Vault" — which event the entry goes to, said once
+   above the form in the console's brighter white. */
+.console-entry-event {
+    margin: 0 0 4px;
+    font-weight: 700;
+    color: #ffffff;
+}
+.console-entry-event[hidden] { display: none; }
+#console-page-entry .console-signed-as[hidden] { display: none; }
+
+/* The panel's "Entries go to" line, above the filters. */
+.ee-open {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 0 0 10px;
+}
+.ee-open:empty { display: none; }
+.ee-open .ctl-label { margin: 0; }
+.ee-open-now { margin: 0; }
+
+/* A row leads with its picture: the thing being judged. */
+.chrome-list-row.ee-row { align-items: flex-start; gap: 12px; }
+.ee-row .ee-shot { flex: 0 0 auto; width: 132px; height: 88px; cursor: var(--cursor-pointer); }
+.ee-row .ee-shot img { image-rendering: auto; }
+.ee-row .row-info { flex: 1 1 auto; min-width: 0; }
+
+.de-chip.ee-status-new { border-color: var(--amber-bright); color: var(--amber-bright); }
+.de-chip.ee-status-reviewed { color: var(--parchment); }
+.de-chip.ee-status-winner { background: var(--amber); border-color: var(--amber); color: #1a0f04; }
+.de-chip.ee-status-rejected { border-color: var(--danger); color: var(--danger-text, var(--danger)); }
+
+.ee-flash:empty { display: none; }
+.ee-flash { margin: 0 0 8px; color: var(--amber-bright); }
+.ee-flash.is-bad { color: var(--danger-text); }
+
+/* On a phone the picture sits over the words and the buttons go under,
+   as a ban row's do. */
+@media (max-width: 560px) {
+    .chrome-list-row.ee-row { flex-wrap: wrap; }
+    .chrome-list-row.ee-row .row-info { flex: 1 1 100%; }
+    .chrome-list-row.ee-row .admin-row-actions { flex: 1 1 100%; justify-content: flex-start; margin-top: 6px; }
 }

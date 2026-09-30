@@ -47,7 +47,8 @@
          credit   add the sender to the Contributors list for this record.
        Rejecting deletes the screenshots.
    DELETE ?id=                                 canWrite
-       Gone entirely, screenshots and all. */
+       Gone entirely, screenshots and all. Answers { deleted, promotedKeys }:
+       the copies an accept made, for the page to delete through upload.js. */
 const crypto = require("crypto");
 const { getDb, ensureUniqueIndex, ensureIndex } = require("./_db");
 const { hasAccount, canWrite, refuseWrite, roleOf, WRITE_SCOPES, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
@@ -116,6 +117,8 @@ const EMAIL_TIMEOUT_MS = 5000;
 // later accept may take it over — see "PROMOTE" in handleReview. Longer
 // than any function may run, so a live copy is never trampled.
 const PROMOTE_CLAIM_MS = 2 * 60 * 1000;
+// How each promoted copy is stored on the lead — see "PROMOTE".
+const PROMOTED_PREFIX = "/.netlify/functions/image?key=";
 
 /* The file types a screenshot can be, recognised by their first bytes
    rather than by what the data URL claims. The claim is the uploader's; the
@@ -687,6 +690,24 @@ async function handleReview(event, db) {
             lead = before;
         }
 
+        /* A lead about a maze or event that has since been DELETED (30 Sept
+           2026). Its screenshots were copied into rooms/<the deleted id>/,
+           where nothing would ever show them, and the credit listed the dead
+           id against the sender — an id the contributor form drops on its
+           next save (it is on the retired list), taking the credit with it.
+           So the copy is skipped and the credit counts as one of their
+           "other" contributions, as for a maze not in the archive yet, and
+           the response says so (recordGone) for the page to tell the admin.
+           A lookup that fails is not taken to mean "gone". */
+        let recordGone = false;
+        if (lead.type !== "new" && COLLECTION_OF[lead.type] && lead.recordId) {
+            const still = await db.collection(COLLECTION_OF[lead.type])
+                .findOne({ id: lead.recordId }, { projection: { _id: 0, id: 1 } })
+                .catch(() => ({ id: lead.recordId }));
+            recordGone = !still;
+        }
+        if (recordGone) out.recordGone = true;
+
         /* PROMOTE: copy the screenshots out of quarantine into the record's
            own folder, where image.js serves them to everybody. Copied, not
            moved — the lead keeps its originals until it is deleted, so the
@@ -697,6 +718,9 @@ async function handleReview(event, db) {
            copies it already has instead of making a second set. */
         if (body.promote && Array.isArray(lead.promoted) && lead.promoted.length) {
             out.promoted = lead.promoted;
+        } else if (body.promote && recordGone && lead.images && lead.images.length) {
+            // Nowhere to put them — see recordGone above.
+            out.promoteSkipped = true;
         } else if (body.promote && lead.images && lead.images.length) {
             /* Claimed first, like `credited` below, now that a second press
                of Accept runs this too (see alreadyAccepted above): two
@@ -804,7 +828,8 @@ async function handleReview(event, db) {
                 /* A maze not in the archive yet has no id to list the credit
                    against, so it counts as one of their "other" contributions
                    (the admin form's `extra`) instead. */
-                const isNew = lead.type === "new";
+                // And a record deleted since the lead came in (recordGone).
+                const isNew = lead.type === "new" || recordGone;
                 const listField = lead.type === "event" ? "events" : "mazes";
                 const typeLabel = lead.images && lead.images.length
                     ? (lead.type === "event" ? "Event Images" : "Room Images")
@@ -820,9 +845,15 @@ async function handleReview(event, db) {
                    always right. updatedAt is stamped too, so a contributor
                    form opened before this accept is refused on Save instead
                    of quietly writing the credit away. */
+                /* Matched as contributors.js's nameTaken matches (30 Sept
+                   2026): case AND spaces at either end ignored. Stored rows
+                   from before names were trimmed can carry a trailing space,
+                   and "Markeh " missed "Markeh" here — so a credit made a
+                   second contributor of the same person, the very split the
+                   one-name rule there exists to stop. */
                 let existing = null;
                 for (let attempt = 0; attempt < 5; attempt++) {
-                    existing = await contributors.findOne({ username: { $regex: `^${escaped}$`, $options: "i" } });
+                    existing = await contributors.findOne({ username: { $regex: `^\\s*${escaped}\\s*$`, $options: "i" } });
                     if (!existing) break;
                     const list = Array.isArray(existing[listField]) ? existing[listField] : [];
                     if (!isNew && list.indexOf(lead.recordId) === -1) list.push(lead.recordId);
@@ -971,7 +1002,16 @@ exports.handler = async (event) => {
             if (!lead) return json(404, { error: "No such lead" });
             await deleteImages(db, (lead.images || []).map(i => i.key));
             await db.collection("dead_end_leads").deleteOne({ id });
-            return json(200, { deleted: id });
+            /* The copies an accept made under rooms/ (30 Sept 2026) were
+               left behind for good once the lead that lists them was gone.
+               They are handed back for the page to delete through upload.js
+               now that this lead no longer counts as using them: its DELETE
+               makes the in-use check (isInUse there) and refuses, with a
+               409, any copy a maze, event or anything else still shows. */
+            const promotedKeys = (Array.isArray(lead.promoted) ? lead.promoted : [])
+                .map(u => (typeof u === "string" && u.startsWith(PROMOTED_PREFIX) ? u.slice(PROMOTED_PREFIX.length) : ""))
+                .filter(Boolean);
+            return json(200, { deleted: id, promotedKeys });
         }
 
         return json(405, { error: "Method not allowed" });

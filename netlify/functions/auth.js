@@ -45,6 +45,13 @@ const json = (statusCode, data) => ({
     body: JSON.stringify(data)
 });
 
+// The sign-in's own outage answer — see the handler. A minute, as it says.
+const SIGN_IN_UNAVAILABLE = () => ({
+    statusCode: 503,
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store", "Retry-After": "60" },
+    body: JSON.stringify({ error: "Sign-in is unavailable just now. Please try again in a minute." })
+});
+
 // Minted in _auth.js, beside the verifier that has to agree with it about
 // the audience — see ADMIN_AUDIENCE there.
 const signToken = signAdminToken;
@@ -787,12 +794,19 @@ exports.handler = async (event) => {
         return json(500, { error: "SESSION_SECRET environment variable is not set" });
     }
 
+    /* A database that can't be reached is an outage to wait out, not a fault
+       (30 Sept 2026). It was a bare 500 "Database connection failed", which
+       is what the sign-in box then showed. Now 503 with Retry-After: for the
+       POST (the sign-in) in the words the rest of the POST uses when it
+       fails, and for everything else as AUTH_UNAVAILABLE, the answer the
+       admin page already waits out and retries. */
     let db;
     try {
         db = await getDb();
     } catch (e) {
         console.error("auth: database connection failed", e);
-        return json(500, { error: "Database connection failed" });
+        if (event.httpMethod === "POST") return SIGN_IN_UNAVAILABLE();
+        return AUTH_UNAVAILABLE;
     }
     const admins = db.collection("admins");
 
@@ -829,7 +843,7 @@ exports.handler = async (event) => {
             // "create" goes through canWrite; its failure is worded for
             // what it is rather than as a failed sign-in.
             if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
-            return json(503, { error: "Sign-in is unavailable just now. Please try again in a minute." });
+            return SIGN_IN_UNAVAILABLE();
         }
     }
 
@@ -848,6 +862,9 @@ exports.handler = async (event) => {
            Every exception used to be answered that way, so a plain bug read
            as an outage to retry, forever, and hid itself doing it. */
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        /* ...and so is the database dropping mid-request (30 Sept 2026), as
+           players-admin.js and site-errors.js tell it apart. */
+        if (e && /^Mongo/.test(e.name || "")) return AUTH_UNAVAILABLE;
         return json(500, { error: "Something went wrong with that request." });
     }
 };

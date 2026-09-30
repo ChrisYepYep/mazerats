@@ -946,12 +946,38 @@
                         <div class="console-hashline" aria-hidden="true"></div>
                         <!-- Three reasons: to say something, to add what you know
                              about a maze (one we have or one we don't), or to
-                             see which ones we most need help with. -->
+                             see which ones we most need help with — and, since
+                             30 Sept 2026, to enter an event. -->
                         <div class="console-choice">
                             <button type="button" class="console-btn console-choice-btn" id="console-choice-contact">Contact</button>
                             <button type="button" class="console-btn console-choice-btn" id="console-choice-info">Add Maze Info</button>
                             <button type="button" class="console-btn console-choice-btn" id="console-choice-missing">Missing Pieces</button>
+                            <!-- And a fourth (30 Sept 2026): a go at an event. -->
+                            <button type="button" class="console-btn console-choice-btn" id="console-choice-entry">Event Submission</button>
                         </div>
+                    </div>
+                    <!-- Event Submission: a Habbo Origins username and one
+                         picture, and nothing else. js/console.js wires it and
+                         posts to netlify/functions/event-entries.js, which
+                         decides which event the entry is for; the "Entering:"
+                         line only says so, and stays hidden when no event is
+                         open. The picture is private to the admins. -->
+                    <div class="console-page" id="console-page-entry" style="display:none;">
+                        <h3 class="console-page-title">Event Submission</h3>
+                        <div class="console-hashline" aria-hidden="true"></div>
+                        <p class="console-blurb console-entry-event" id="console-entry-event" hidden></p>
+                        <label class="console-field-label console-info-label" for="console-entry-username">HABBO ORIGINS USERNAME</label>
+                        <input type="text" class="console-input console-input-line" id="console-entry-username" maxlength="60" autocomplete="nickname" required>
+                        <label class="console-field-label console-info-label" for="console-entry-image">YOUR ENTRY</label>
+                        <input type="file" class="console-input console-file" id="console-entry-image" accept="image/png,image/jpeg,.png,.jpg,.jpeg" required>
+                        <p class="console-note">PNG or JPG, up to 4MB.</p>
+                        <p class="console-note console-signed-as" id="console-entry-signed-as" hidden></p>
+                        <input type="text" class="console-hp-field" id="console-entry-hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+                        <div class="console-contact-actions">
+                            <button type="button" class="console-btn console-btn-cancel" id="console-entry-cancel">Back</button>
+                            <button type="button" class="console-btn console-btn-send" id="console-entry-send">Send</button>
+                        </div>
+                        <p class="console-form-status" id="console-entry-status" role="status" aria-live="polite" style="display:none;"></p>
                     </div>
                     <!-- The message form itself, reached from the choice above.
                          Not tab-reachable on its own; the CONTACT tab stays lit
@@ -966,14 +992,14 @@
                         <label class="visually-hidden" for="console-contact-message">Your message</label>
                         <textarea class="console-input console-input-message" id="console-contact-message" maxlength="2000" placeholder="Just leaving some feedback…"></textarea>
                         <label class="console-field-label" for="console-contact-username">Your Origins username:</label>
-                        <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="L1C">
+                        <input type="text" class="console-input console-input-username" id="console-contact-username" placeholder="L1C" maxlength="60">
                         <!-- Two states, one of which js/console.js hides.
                              Signed in, there is nothing to type: the name is
                              already known and, unlike a typed one, it is
                              Discord's own answer rather than a claim. -->
                         <div id="console-contact-discord-field">
                             <label class="console-field-label" for="console-contact-discord">Your Discord username:</label>
-                            <input type="text" class="console-input console-input-discord" id="console-contact-discord" placeholder="Optional">
+                            <input type="text" class="console-input console-input-discord" id="console-contact-discord" placeholder="Optional" maxlength="60">
                         </div>
                         <p class="console-blurb console-signed-as" id="console-contact-signed-as" hidden></p>
                         <!-- Honeypot — invisible to real visitors (see .console-hp-field),
@@ -1481,7 +1507,7 @@
                                          could not sit inside it while staying out of the scroll. -->
                                     <div class="room-desc-panel">
                                         <div class="room-desc-box" id="room-desc-box">
-                                            <p class="room-desc-full" id="modal-desc"></p>
+                                            <div class="room-desc-full" id="modal-desc"></div>
                                             <!-- A Habbo Origins article, read once by an admin and stored on the
                                                  event (see netlify/functions/article.js). It stands where the
                                                  event's full details would be — the two are mutually exclusive in
@@ -1531,6 +1557,10 @@
     <!-- What a record can be missing — shared with /warren and the
          Dead Ends functions, so it loads before home.js asks it. -->
     <script src="js/dead-ends.js?v=2"></script>
+    <!-- The site's one formatting language, before home.js: it draws maze
+         and event descriptions with it from the first render (30 Sept 2026),
+         and guides.js below renders the Guides window with it too. -->
+    <script src="js/guide-text.js?v=2"></script>
     <script src="js/home.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>
     <script src="js/letter-jump.js?v=2"></script>
@@ -1539,8 +1569,7 @@
          console.js, whose page switching it uses (window.MazeConsole). -->
     <script src="js/console-info.js?v=2"></script>
     <script src="js/console-profile.js?v=2"></script>
-    <!-- The Guides window. guide-text.js first: guides.js renders with it. -->
-    <script src="js/guide-text.js?v=2"></script>
+    <!-- The Guides window. guide-text.js is loaded above, before home.js. -->
     <script src="js/guides.js?v=2"></script>
     <!-- The Alt Codes window. Needs nothing but site.js's EscapeLayers. -->
     <script src="js/glyphs.js?v=2"></script>
@@ -1563,8 +1592,8 @@
          asserted by tools/check-daily-parity.js so a page cannot quietly
          load one without the other. -->
     <script src="js/featured-days.js?v=2"></script>
-    <script src="js/daily.js?v=3"></script>
-    <script src="js/daily-loader.js?v=2"></script>
+    <script src="js/daily.js?v=4"></script>
+    <script src="js/daily-loader.js?v=3"></script>
     <!-- After daily.js: the window draws its rows with Daily.ranks and the
          same row markup the games' own boards use. -->
     <script src="js/leaderboards.js?v=2"></script>

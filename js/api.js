@@ -659,6 +659,66 @@ const Api = {
         return data;
     },
 
+    /* ---------- Event Submission (30 Sept 2026) ----------
+
+       See netlify/functions/event-entries.js. The public half is the
+       console's (js/console.js): which event an entry made now would go to,
+       { id, title } or null, and the entry itself — the visitor's session
+       cookie rides along, never an admin token. The rest is the Warren's
+       Event Entries panel (js/admin-entries.js). */
+    async getEventEntryOpen() {
+        const res = await this._timedFetch("/.netlify/functions/event-entries?action=open", {
+            headers: { Accept: "application/json" },
+            credentials: "same-origin"
+        }, this._TIMEOUT_READ);
+        const data = await this._body(res, {});
+        if (!res.ok) throw new Error(data.error || `Request failed: ${res.status}`);
+        return data && data.event && typeof data.event === "object" ? data.event : null;
+    },
+    // { habboName, dataUrl, website, clientRef }. Rejects with .status and
+    // .data, like submitContactMessage, so a ban can be shown as one.
+    async submitEventEntry(body) {
+        const payload = JSON.stringify(body || {});
+        const res = await this._timedFetch("/.netlify/functions/event-entries", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            credentials: "same-origin",
+            body: payload
+        }, this.uploadTimeout(payload.length));
+        const data = await this._body(res, {});
+        if (!res.ok) {
+            const err = new Error(data.error || (res.status === 413
+                ? "That picture is too big. Keep it under 4MB."
+                : "That didn't send. Try again in a minute."));
+            err.status = res.status;
+            err.data = data;
+            throw err;
+        }
+        return data;
+    },
+    // params: { status, event, page }, each optional.
+    getEventEntries(token, params) {
+        const q = new URLSearchParams();
+        Object.keys(params || {}).forEach(k => {
+            const v = params[k];
+            if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+        });
+        const qs = q.toString();
+        return this._write("/.netlify/functions/event-entries" + (qs ? "?" + qs : ""), "GET", token);
+    },
+    // { status?, note? } for one entry.
+    updateEventEntry(token, id, body) {
+        return this._write(`/.netlify/functions/event-entries?id=${encodeURIComponent(id)}`, "PUT", token, body);
+    },
+    deleteEventEntry(token, id) {
+        return this._write(`/.netlify/functions/event-entries?id=${encodeURIComponent(id)}`, "DELETE", token);
+    },
+    // { mode: "auto" | "none" | "event" | "closed", eventId } — which event
+    // entries go to, or none taken at all.
+    setEventEntryOpen(token, body) {
+        return this._write("/.netlify/functions/event-entries?action=open", "PUT", token, body);
+    },
+
     /* ---------- the player's nickname (28 Sept 2026) ----------
 
        See netlify/functions/player-nick.js. The player's own session
@@ -873,7 +933,9 @@ const Api = {
        { id, nick?, locked?, resetPrompt? } — nick "" or null clears it.
        Or, on its own, { id, review: "allow" | "reject", seen? } — the word
        filter's review (29 Sept 2026); `seen` is the nickname the admin was
-       looking at, and a 409 means the player has renamed since. */
+       looking at, and a 409 means the player has renamed since. Or, on its
+       own, { id, unTurnDown: "<name key>" } (30 Sept 2026), which takes one
+       name off their turned-down list as the detail's nickTurnedDown has it. */
     getPlayers(token, params) {
         const q = new URLSearchParams();
         Object.keys(params || {}).forEach(k => {

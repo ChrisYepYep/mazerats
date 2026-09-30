@@ -124,12 +124,24 @@ async function fetchUser(host, name) {
 exports.handler = async (event) => {
     const params = event.queryStringParameters || {};
     const name = (params.name || "").trim();
-    const hotel = ORIGINS_HOSTS[(params.hotel || "COM").toUpperCase()] || ORIGINS_HOSTS.COM;
+    const asked = String(params.hotel || "COM").toUpperCase();
+    const code = ORIGINS_HOSTS[asked] ? asked : "COM";
+    const hotel = ORIGINS_HOSTS[code];
+    /* WHICH HOTEL SAID NO (30 Sept 2026): the game now has a picker for
+       COM, ES and BR, and "no habbo by that name" is only true of the one
+       that was asked. */
+    const noSuch = `No habbo by that name on Origins ${code}.`;
 
     if (!name) return json(400, { error: "Tell me a habbo name to look up." });
     // Habbo names are short and use a known alphabet; anything else is not a
     // name and should not become a request to somebody else's API.
-    if (!/^[A-Za-z0-9_\-.:]{1,32}$/.test(name)) {
+    /* THE CLIENT'S WHOLE ALPHABET (30 Sept 2026): letters, digits and
+       -=?!@:., as the 2005 registration screen lists them. This allowed only
+       - . and : of those, so "=Dan=" or "Bob!" was told "That is not a habbo
+       name" — and Play now stops on that answer rather than playing on. Still
+       nothing that can be markup: no <, >, &, quote or space. ff-runs.js
+       keeps the identical rule (HABBO_NAME). */
+    if (!/^[A-Za-z0-9_\-=?!@:.,]{1,32}$/.test(name)) {
         return json(400, { error: "That is not a habbo name." });
     }
 
@@ -151,14 +163,14 @@ exports.handler = async (event) => {
     if (cached && Date.now() - cached.at < (cached.value ? CACHE_TTL_MS : MISS_TTL_MS)) {
         return cached.value
             ? json(200, cached.value)
-            : json(404, { error: "No Origins habbo by that name." });
+            : json(404, { error: noSuch });
     }
 
     try {
         const user = await fetchUser(hotel, name);
         if (!user || !user.figureString) {
             remember(key, { at: Date.now(), value: null });
-            return json(404, { error: "No Origins habbo by that name." });
+            return json(404, { error: noSuch });
         }
         // Only what the room needs to draw somebody.
         const value = {

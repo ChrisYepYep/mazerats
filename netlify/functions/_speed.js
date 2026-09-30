@@ -574,9 +574,49 @@ async function claimAnonMove(db, game, day, net, limit) {
     }
 }
 
+/* ----------------------------------------------------------------------
+   PRACTICE BEFORE LAUNCH (30 Sept 2026)
+
+   The site opens at 08:00 UTC on launch day (settings.launchAt; launchCut
+   in daily-scores.js), but the games run on UTC days, so launch day's
+   puzzle is playable from midnight. Anything played before the cut is a
+   PRACTICE RUN, and it must not stand in the way of playing the same day
+   properly once the doors open — a start row or a filed day from 07:30
+   would otherwise make the 08:05 play "already" played, or untimed.
+
+   So a day's row here counts as practice when it BEGAN before the cut (its
+   `at` — the start, or the untimed first move). A practice row keeps
+   working for as long as it is practice: moves made before the cut are
+   recorded and judged as ever, and its finish is answered and not filed.
+   Once the cut has passed, it is set aside the first time it is met — the
+   next start, or a move on it — and the day starts fresh from nothing. The
+   boards never saw any of it: they cut on the same instant.
+
+   `cut` is a launchCut ({ day, at }) or null; no cut, no practice. */
+const cutMsOf = cut => (cut && cut.at ? Date.parse(cut.at) : NaN);
+
+// Whether a moment (ms) falls before the cut.
+function beforeCut(cut, ms) {
+    const c = cutMsOf(cut);
+    return Number.isFinite(c) && Number.isFinite(ms) && ms < c;
+}
+
+// Whether a row — a daily_starts row, or a filed day — began before the cut.
+const isPractice = (row, cut) => Boolean(row) && beforeCut(cut, timeOf(row.at));
+
+/* A practice row set aside, now the cut has passed. Deleted by its own
+   `at` as read, so a fresh start another device wrote a moment ago (a
+   different `at`) can never be the one taken away. */
+async function dropPractice(db, game, day, playerId, row) {
+    if (!row || row.at == null) return 0;
+    const res = await db.collection(COLLECTION).deleteMany({ game, day, playerId, at: row.at });
+    return (res && res.deletedCount) || 0;
+}
+
 module.exports = {
     COLLECTION, ROUND_BONUS_SECONDS, NO_TIME, TOTAL, MAX_START_BODY, MIN_MOVE_MS,
     ANON_COLLECTION, ANON_MULTIPLE, ANON_SLACK,
     totalOf, roundBonusFor, markRound, recordStart, progressFor, clockOf, clockFor, movesOf, lastMarkAt,
-    recordOddPick, recordGuess, forgetDay, dayBonus, normalise, optionFor, anonMoveLimit, claimAnonMove
+    recordOddPick, recordGuess, forgetDay, dayBonus, normalise, optionFor, anonMoveLimit, claimAnonMove,
+    beforeCut, isPractice, dropPractice
 };

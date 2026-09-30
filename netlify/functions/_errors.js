@@ -226,6 +226,13 @@ function scrub(text, max) {
     s = s.replace(/mongodb(\+srv)?:\/\/[^\s"'`)]+/gi, "<mongodb-uri>");
     s = s.replace(/eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*/g, "<jwt>");
     s = s.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "<email>");
+    /* And an account (30 Sept 2026), which the policy says a report never
+       carries: a Discord id is a snowflake of seventeen to twenty digits —
+       longer than any millisecond clock or line number — and a duplicate-key
+       error quotes the value it collided on, which on the players collection
+       is a Discord id or a player's nickname. */
+    s = s.replace(/\bdup key: \{[^}]*\}/g, "dup key: { <value> }");
+    s = s.replace(/(^|[^0-9A-Za-z])\d{17,20}(?![0-9A-Za-z])/g, "$1<id>");
     s = s.replace(/\b(https?:\/\/[^\s"'`)<>]+?)((?::\d+){1,2})?(?=[\s"'`)<>]|$)/g, (m, url, pos) => cleanUrl(url, 300) + (pos || ""));
     return str(s, max);
 }

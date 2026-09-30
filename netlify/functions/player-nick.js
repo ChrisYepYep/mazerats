@@ -171,7 +171,7 @@
    before the change. player-profile.js keeps everybody's totals warm for
    five minutes, but that is numbers for ranking, never names. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { playerFrom, playerView, signPlayer, setCookie, nameKey } = require("./_player");
+const { playerFrom, playerView, signPlayer, setCookie, clearCookie, nameKey, sessionRevoked, svFor, newSv } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 // See BANNED in the header.
 const { writeRefusal } = require("./_bans");
@@ -495,26 +495,45 @@ async function handler(event) {
            the same way the sign-in builds it, and as a player who has now
            been asked. */
         const now = new Date().toISOString();
+        let made = false;
         try {
-            await players.updateOne(
+            const res = await players.updateOne(
                 { id: player.id },
                 { $setOnInsert: {
                     id: player.id, name: player.name, username: player.username || null, avatar: player.avatar || null,
-                    nameKey: nameKey(player.name), usernameKey: nameKey(player.username), joinedAt: now, seenAt: now
+                    nameKey: nameKey(player.name), usernameKey: nameKey(player.username), joinedAt: now, seenAt: now,
+                    sv: newSv()
                 } },
                 { upsert: true }
             );
+            made = !!(res && res.upsertedCount);
         } catch (e) {
             // Two first requests racing: the other one made it. Anything
             // else is a real failure.
             if (!(e && e.code === 11000)) throw e;
         }
 
+        /* A REVOKED SESSION (30 Sept 2026; see SESSION VERSIONS in
+           _player.js). A session carrying a session version whose row had to
+           be made just now is one whose row was deleted — a forgotten
+           player — so the row it made is taken away again and the session
+           is refused. A row that is there but has moved on to another
+           version is caught where the row is read: below, before a nickname
+           is written, and in reply(). 401 with the cookie cleared, which the
+           page (js/account.js) answers by asking `me` and showing the player
+           signed out. */
+        const revoked = () => json(401, { error: "Not signed in" }, { "Set-Cookie": clearCookie() });
+        if (made && sessionRevoked(player, null)) {
+            await players.deleteOne({ id: player.id }).catch(e => console.error("player-nick: could not remove a revoked session's row", e));
+            return revoked();
+        }
+
         /* `extra` rides beside `player` in the answer — `flagged`, below. */
         const reply = async (extra) => {
             const row = await players.findOne({ id: player.id }, { projection: { _id: 0 } });
+            if (sessionRevoked(player, row)) return revoked();
             const view = playerView(player, row);
-            return json(200, { player: view, ...(extra || {}) }, { "Set-Cookie": setCookie(signPlayer(view)) });
+            return json(200, { player: view, ...(extra || {}) }, { "Set-Cookie": setCookie(signPlayer({ ...view, sv: svFor(player, row) })) });
         };
 
         if (mode === "asked") {
@@ -534,7 +553,9 @@ async function handler(event) {
             return await reply();
         }
 
-        const current = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, name: 1, nickLocked: 1, nickRejected: 1, nickTurnedDown: 1 } }) || {};
+        const found = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, name: 1, nickLocked: 1, nickRejected: 1, nickTurnedDown: 1, sv: 1 } });
+        if (sessionRevoked(player, found)) return revoked();
+        const current = found || {};
         const had = (typeof current.nick === "string" && current.nick) || "";
         const rejected = !!(current.nickRejected && typeof current.nickRejected === "object");
         const turnedDown = Array.isArray(current.nickTurnedDown) ? current.nickTurnedDown : [];

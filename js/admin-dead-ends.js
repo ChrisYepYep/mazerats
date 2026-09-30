@@ -49,6 +49,7 @@
     let records = [];               // [{ type, id, name, raw }]
     let openEditor = null;          // "type:id" of the record being edited
     let editorDraft = null;         // its unsaved ticks and note — see editor()
+    let editorBase = null;          // what that editor opened with — see isEditorDirty
     const imageUrls = new Map();    // quarantined key -> promise of an object URL
 
     function token() {
@@ -362,7 +363,12 @@
         if (lead.status !== "accepted") actions.appendChild(button("Accept…", () => toggleAccept(row, lead), "", "de-write"));
         if (lead.status === "new") actions.appendChild(button("Reject", () => reject(lead), "", "de-write"));
         if (lead.status !== "new") actions.appendChild(button("Reopen", () => review(lead, { status: "new" }), "", "de-write"));
-        if (lead.ip) actions.appendChild(button("Ban IP", () => ban(lead.ip), lead.ip, "admin-delete-btn de-write"));
+        if (lead.ip) {
+            const banBtn = button("Ban IP", () => (isBanned(lead.ip) ? unban(lead.ip) : ban(lead.ip)), lead.ip, "admin-delete-btn de-write de-ban-btn");
+            banBtn.dataset.ip = lead.ip;
+            paintBanButton(banBtn);
+            actions.appendChild(banBtn);
+        }
         actions.appendChild(button("Delete", () => remove(lead), "", "admin-delete-btn de-write"));
 
         row.appendChild(info);
@@ -553,6 +559,18 @@
         if (out && out.promoteBusy) {
             flash("Accepted. Its screenshots are still being copied — press Refresh in a moment to see them.");
         }
+        /* The maze or event this lead is about has been deleted since (30
+           Sept 2026; recordGone in dead-end-leads.js): no screenshots were
+           copied, and a credit went on as an "other" contribution. Said in
+           a box rather than the flash line, because it is not what the
+           admin asked for. */
+        if (out && out.recordGone) {
+            const kind = lead.type === "event" ? "event" : "maze";
+            const bits = [`Accepted, but this lead's ${kind} is no longer in the archive.`];
+            if (out.promoteSkipped) bits.push("Its screenshots were not copied — there is nowhere to show them.");
+            if (out.credited) bits.push(`${out.credited} is credited with one "other" contribution instead of the ${kind}.`);
+            await tell(bits.join(" "));
+        }
         return true;
     }
 
@@ -567,11 +585,20 @@
 
     async function remove(lead) {
         if (!await ask("Delete this lead and any screenshots with it? This cannot be undone.", { danger: true })) return;
+        let out;
         try {
-            await call(`${LEADS_URL}?id=${encodeURIComponent(lead.id)}`, "DELETE");
+            out = await call(`${LEADS_URL}?id=${encodeURIComponent(lead.id)}`, "DELETE");
         } catch (err) {
             if (!sessionGone(err)) await tell(`Could not delete it: ${err.message}`);
             return;
+        }
+        /* The copies an accept made (30 Sept 2026), which nothing used to
+           delete. Background clean-up, as the maze form's is: upload.js
+           keeps any copy a record still shows (a 409) and any it could not
+           check (a 503), and either failure simply leaves the file. */
+        const copies = (out && Array.isArray(out.promotedKeys)) ? out.promotedKeys : [];
+        if (copies.length && typeof Api.deleteImage === "function") {
+            copies.forEach(k => Api.deleteImage(token(), k).catch(() => { /* kept: see above */ }));
         }
         // Deleted; a failed re-read is said as that, not as a failed delete.
         await refreshAfterWrite();
@@ -593,6 +620,33 @@
         }
         const done = await window.AdminBanIp(ip, { reason: "Missing Pieces spam" });
         if (done) flash(`Banned ${ip}. It is listed under Bans.`);
+    }
+
+    /* Ban IP or Unban IP, as the contact messages' button is (30 Sept
+       2026). It always said Ban IP, so an address banned already offered
+       to be banned again, and a 409 said so after the whole dialog. The
+       check is admin.js's own (window.AdminIsBanned — an active ban on the
+       address or its /64), asked again on every click rather than kept, and
+       the labels are repainted in place whenever the ban list is re-read,
+       so an open accept form in the row is left alone. */
+    function isBanned(ip) {
+        return typeof window.AdminIsBanned === "function" && !!window.AdminIsBanned(ip);
+    }
+    function paintBanButton(b) {
+        const banned = isBanned(b.dataset.ip);
+        b.textContent = banned ? "Unban IP" : "Ban IP";
+        b.title = banned ? `${b.dataset.ip} is banned` : b.dataset.ip;
+    }
+    document.addEventListener("mazerats:bans-changed", () => {
+        leadsEl.querySelectorAll(".de-ban-btn").forEach(paintBanButton);
+    });
+
+    async function unban(ip) {
+        if (typeof window.AdminUnbanIp !== "function") {
+            flash("This copy of the page is out of date. Reload it to unban.");
+            return;
+        }
+        if (await window.AdminUnbanIp(ip)) flash(`Unbanned ${ip}.`);
     }
 
     let flashTimer = null;
@@ -672,9 +726,11 @@
         actions.className = "admin-row-actions";
         // Both lead only to a write (the editor's Save, or the clear), so
         // both are greyed for a view-only account — see de-write above.
-        actions.appendChild(button(flag ? "Edit" : "Mark…", () => {
+        actions.appendChild(button(flag ? "Edit" : "Mark…", async () => {
+            // Asked first if this closes an editor with unsaved ticks.
+            if (!(await mayDropEditor())) return;
             openEditor = openEditor === k ? null : k;
-            editorDraft = null;
+            editorDraft = editorBase = null;
             renderRecords();
         }, "", "de-write"));
         if (flag) actions.appendChild(button("Clear", () => clearFlag(rec), "", "admin-delete-btn de-write"));
@@ -706,6 +762,8 @@
         const draft = editorDraft && editorDraft.key === k ? editorDraft : null;
         const ticked = new Set(draft ? draft.pieces : flag ? flag.pieces : DeadEnds.suggested(rec.raw, rec.type));
         const noteText = draft ? draft.note : flag ? flag.note : "";
+        // What it opened with, for isEditorDirty. Kept across rebuilds.
+        if (!editorBase || editorBase.key !== k) editorBase = { key: k, pieces: [...ticked].sort(), note: noteText || "" };
         const form = document.createElement("div");
         form.className = "de-editor";
         form.innerHTML = `
@@ -732,7 +790,12 @@
         form.addEventListener("change", remember);
         form.addEventListener("input", remember);
 
-        form.querySelector('[data-f="cancel"]').addEventListener("click", () => { openEditor = null; editorDraft = null; renderRecords(); });
+        form.querySelector('[data-f="cancel"]').addEventListener("click", async () => {
+            if (!(await mayDropEditor())) return;
+            openEditor = null;
+            editorDraft = editorBase = null;
+            renderRecords();
+        });
         form.querySelector('[data-f="save"]').addEventListener("click", async () => {
             const status = form.querySelector('[data-f="status"]');
             const body = {
@@ -769,7 +832,7 @@
             // Saved. The re-read is separate, so its failure cannot be
             // reported as this save failing — see refreshAfterWrite.
             openEditor = null;
-            editorDraft = null;
+            editorDraft = editorBase = null;
             try {
                 await reloadFlags();
             } catch (err) {
@@ -781,6 +844,25 @@
         });
         return form;
     }
+
+    /* Unsaved ticks or note in the open editor (30 Sept 2026). They were
+       dropped without a word by Edit on another record, Cancel, and closing
+       the tab. Compared with what the editor opened with (editorBase), so
+       ticking a box and unticking it again is not a change. */
+    function isEditorDirty() {
+        if (!openEditor || !editorDraft || !editorBase || editorDraft.key !== openEditor || editorBase.key !== openEditor) return false;
+        const now = editorDraft.pieces.slice().sort();
+        return now.join(",") !== editorBase.pieces.join(",") || (editorDraft.note || "") !== editorBase.note;
+    }
+    async function mayDropEditor() {
+        if (!isEditorDirty()) return true;
+        return ask("Discard your unsaved changes to this record's missing pieces? What you have ticked and written since opening it will be lost.");
+    }
+    window.addEventListener("beforeunload", e => {
+        if (!isEditorDirty()) return;
+        e.preventDefault();
+        e.returnValue = "";
+    });
 
     async function clearFlag(rec) {
         if (!await ask(`Take "${escapeHtml(rec.name)}" off the Missing Pieces list? It will show as complete everywhere on the site.`, { danger: true })) return;
@@ -829,7 +911,7 @@
         trail = new Map();
         records = [];
         openEditor = null;
-        editorDraft = null;
+        editorDraft = editorBase = null;
         const urls = Array.from(imageUrls.values());
         imageUrls.clear();
         urls.forEach(p => p.then(u => URL.revokeObjectURL(u)).catch(() => {}));
@@ -841,7 +923,10 @@
         maybeMount();
         badge();
     }
-    window.AdminDeadEnds = { reset };
+    // isDirty for admin.js's log out, which asks before it drops the editor,
+    // and dropEditor for once it has been told Yes.
+    const dropEditor = () => { openEditor = null; editorDraft = editorBase = null; };
+    window.AdminDeadEnds = { reset, isDirty: isEditorDirty, dropEditor };
 
     /* The nav badge wants the number of new leads before anybody opens the
        panel, so that is fetched on its own, once the page has signed in. It

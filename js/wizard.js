@@ -974,7 +974,7 @@ document.addEventListener("DOMContentLoaded", () => {
            could not get out of a reveal at all. Letters are left alone: a
            second word typed during a reveal is not the reader steering. */
         stage.addEventListener("keydown", e => {
-            if (/^Arrow/.test(e.key) || (e.key.length === 1 && "+=-_".includes(e.key))) stopFollowing();
+            if (/^Arrow/.test(e.key) || (typeof e.key === "string" && e.key.length === 1 && "+=-_".includes(e.key))) stopFollowing();
         });
     }
 
@@ -1384,6 +1384,30 @@ document.addEventListener("DOMContentLoaded", () => {
        Returns when the name lands, in ms from now — the caller uses it to
        hold the announcement back to the same moment. Zero for a reader who
        has asked for reduced motion, who gets all of it at once. */
+    /* A revealed room is not there for the keyboard until it is there for
+       the eye (30 Sept 2026). Its name waits out its --step-delay at opacity
+       0, but it was already a button: Tab landed on it and a screen reader
+       read the room out seconds before the walk reached it, giving the
+       ending away. Out of the Tab order and the accessibility tree until its
+       delay is up. `arriving` tells applyBands (js/wizard-map.js) to leave it
+       alone meanwhile; and if a band has faded it out by the time it lands,
+       the band keeps it hidden, as it would any other room. */
+    function keepBackUntilLanded(els, ms) {
+        for (const el of els) {
+            el.dataset.arriving = "1";
+            el.tabIndex = -1;
+            el.setAttribute("aria-hidden", "true");
+        }
+        setTimeout(() => {
+            for (const el of els) {
+                delete el.dataset.arriving;
+                if (el.classList.contains("is-gone")) continue;
+                el.removeAttribute("tabindex");
+                el.removeAttribute("aria-hidden");
+            }
+        }, Math.max(0, Math.round(ms)));
+    }
+
     function markFound(found) {
         if (calmly()) return { nameAt: 0, walk: [] };
 
@@ -1520,7 +1544,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     walk.push({ at: at + within, x: place.x, y: place.y, roomId: null });
                 });
             }
-            if (beat.name) lastNameAt = at;
+            if (beat.name) {
+                lastNameAt = at;
+                keepBackUntilLanded(beat.els, at);
+            }
             at += beat.span * gap;
         }
 
@@ -1586,6 +1613,30 @@ document.addEventListener("DOMContentLoaded", () => {
         return left > 0 ? new Promise(resolve => setTimeout(resolve, left)) : null;
     };
 
+    /* EVERY CODE THAT HAS OPENED SOMETHING, SENT AGAIN WITH EACH GUESS (30
+       Sept 2026). The unlock holds a linking trail back while the room at
+       its far end belongs to a secret still shut — and it only knows which
+       are open from the codes in the request. So a trail between two
+       secrets' rooms came back when both codes were sent together and never
+       when they were found one after the other: opening the first dropped
+       it (the second was shut), opening the second dropped it too (the
+       first, as far as that request knew, was shut). Codes that open are
+       not charged by the limiter, so re-sending them costs a guess nothing.
+       Held in memory only, like everything else here while REMEMBER_SECRETS
+       is off. */
+    const openedCodes = new Set();
+
+    // Whether an answer has anything the map does not already hold: a secret
+    // not yet found, or a record not yet drawn. The re-sent codes above come
+    // back on every answer, and one that only repeats them is not a reveal.
+    function bringsAnything(found) {
+        if (!foundIds.has(found.secret.id)) return true;
+        const rooms = new Set(view.getRooms().map(r => r.id));
+        const paths = new Set(view.getPaths().map(p => p.id));
+        return (found.rooms || []).some(r => r && !rooms.has(r.id))
+            || (found.paths || []).some(p => p && !paths.has(p.id));
+    }
+
     function tryCodes(codes, options = {}) {
         if (asking) {
             if (waiting) waiting.resolve({ ok: false, found: [], superseded: true });
@@ -1605,16 +1656,21 @@ document.addEventListener("DOMContentLoaded", () => {
     async function askNow(codes, { quiet = false } = {}) {
         asking = true;
         let answer;
+        // The guess first, so the endpoint's cap of forty never drops it.
+        const asked = openedCodes.size
+            ? [...new Set((Array.isArray(codes) ? codes : [codes]).concat([...openedCodes]))]
+            : codes;
         try {
-            answer = await Api.unlockWizardSecret(codes);
+            answer = await Api.unlockWizardSecret(asked);
         } catch (err) {
             asking = false;
             askWaiting();
             return { ok: false, found: [], failed: true };
         }
         answer = answer || {};
-        // Behind a reveal still playing — see revealUntil.
-        const settling = (answer.found || []).length && revealSettled();
+        // Behind a reveal still playing — see revealUntil. Only for an answer
+        // that will change the map: every answer now repeats what is open.
+        const settling = (answer.found || []).some(bringsAnything) && revealSettled();
         if (settling) await settling;
         asking = false;
 
@@ -1624,22 +1680,30 @@ document.addEventListener("DOMContentLoaded", () => {
            so the keyboard path waited on it for as long as the page was
            open. */
         const fresh = [];
+        let grew = false;
         try {
             for (const found of answer.found || []) {
                 const added = view.addRecords(found);
-                if (found.secret.code) keepCode(found.secret.code);
+                if (found.secret.code) {
+                    keepCode(found.secret.code);
+                    openedCodes.add(found.secret.code);
+                }
                 const isNew = !foundIds.has(found.secret.id);
                 foundIds.add(found.secret.id);
-                if (added > 0 || isNew) fresh.push(found);
+                /* Only a secret found just now is performed and reported as
+                   found. One already open that brought a trail back with it
+                   (see openedCodes) is drawn, not replayed. */
+                if (isNew) fresh.push(found);
+                else if (added > 0) grew = true;
             }
 
-            if (fresh.length) {
+            if (fresh.length || grew) {
                 /* Rebuilt in the same order load() does it, and for the same
                    reason: a revealed room is a room somebody can now search for
                    and link to, and its address is derived from its name. */
                 buildSlugs();
                 view.render();
-                if (!quiet) {
+                if (!quiet && fresh.length) {
                     const first = fresh[0];
                     /* The order matters. markFound hides the new prints and
                        names behind their own delays before the browser has
@@ -1705,7 +1769,9 @@ document.addEventListener("DOMContentLoaded", () => {
        copy is only so the page judges "long enough to ask" by the letters
        that count. A code the admin saved with a hyphen in it opens to the
        words typed with a space, or with nothing, between them. */
-    const codeKey = value => String(value == null ? "" : value).toLowerCase().replace(/[^a-z0-9]+/g, "");
+    // Accents folded as the server folds them, so "máxima" counts as six.
+    const codeKey = value => String(value == null ? "" : value).toLowerCase()
+        .normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "");
     let buffer = "";
     let bufferTimer = 0;
     let forgetTimer = 0;
@@ -1720,6 +1786,25 @@ document.addEventListener("DOMContentLoaded", () => {
         whisperTimer = setTimeout(() => { whisperEl.hidden = true; }, holdMs);
     }
 
+    /* A reply, rather than an echo (30 Sept 2026): shown in the whisper as
+       before, and also put in #wiz-whisper-said, the polite live region
+       beside it, since the whisper itself is aria-hidden. Emptied first and
+       filled a moment later so the same reply twice running is read twice,
+       and emptied again once the whisper goes, so a screen reader browsing
+       the page does not come across a stale one. */
+    const saidEl = document.getElementById("wiz-whisper-said");
+    let saidTimer = 0;
+    function sayAloud(text, holdMs = 4500) {
+        whisper(text, holdMs);
+        if (!saidEl) return;
+        clearTimeout(saidTimer);
+        saidEl.textContent = "";
+        saidTimer = setTimeout(() => {
+            saidEl.textContent = text;
+            saidTimer = setTimeout(() => { saidEl.textContent = ""; }, holdMs + 1000);
+        }, 50);
+    }
+
     /* The two answers that are NOT a miss (28 Sept 2026). A miss says
        nothing — that is the puzzle — but a 429 from the rate limiter
        (Api.unlockWizardSecret turns it into { tooMany: true }) and a request
@@ -1732,11 +1817,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function sayTrouble(answer) {
         if (!answer) return false;
         if (answer.tooMany) {
-            whisper("Too many tries just now — wait a minute and try again.", 4500);
+            sayAloud("Too many tries just now — wait a minute and try again.");
             return true;
         }
         if (answer.failed) {
-            whisper("Couldn't check that — try again.", 4500);
+            sayAloud("Couldn't check that — try again.");
             return true;
         }
         return false;
@@ -1758,13 +1843,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         // Hyphens too, so a reader who types the one in a code sees it in
         // the whisper; the server ignores it either way.
-        if (e.key.length !== 1 || !/[a-z0-9 '\-]/i.test(e.key)) return;
+        // A keydown with no `key` (Chrome's autofill sends them) is not typing.
+        if (typeof e.key !== "string" || e.key.length !== 1 || !/[a-z0-9 '\-]/i.test(e.key)) return;
         /* A space in the middle of a code is part of the code, not a page
            scroll (30 Sept 2026): typing a two-word code jumped the page down
            a screen at the gap. Only once something has been typed — a space
            on its own, with nothing in the buffer, still scrolls as it
            always did. */
-        if (e.key === " " && buffer.trim()) e.preventDefault();
+        /* Except on a button (30 Sept 2026): Space on a focused room is how
+           the keyboard opens it, and swallowing it here left the room
+           unopenable for four seconds after any letter had been typed. */
+        const onButton = e.target.closest && e.target.closest("button, [role='button']");
+        if (e.key === " " && buffer.trim() && !onButton) e.preventDefault();
         buffer = (buffer + e.key).slice(-60);
         whisper(buffer);
 
@@ -1875,7 +1965,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const strayPath = !room && /^\/wizard\/.+/.test(location.pathname);
         if (strayPath) {
             history.replaceState({}, "", "/wizard");
-            whisper("There's no room by that name on the map.", 4500);
+            sayAloud("There's no room by that name on the map.");
         }
         if (room) {
             view.flyTo(room.x, room.y, 2.6, { smooth: false });

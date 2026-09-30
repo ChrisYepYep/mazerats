@@ -4,7 +4,7 @@ const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED } = requir
 const { packRecords } = require("./_furni-payload");
 const { cachedJson } = require("./_cache");
 const { SECURITY_HEADERS } = require("./_headers");
-const { describe: describeChanges, changedFields } = require("./_changes");
+const { describe: describeChanges, changedFields, canon } = require("./_changes");
 const { checkRecord } = require("./_url");
 const { cleanArticle } = require("./article");
 const { assignSlugs, settleSlug, idFor, recheckSlug, loadRetired, retireAddresses, PROJECTION: SLUG_FIELDS } = require("./_slugs");
@@ -22,6 +22,50 @@ const CHOICES = {
     hotel: ["", "COM", "ES", "BR"],
     ecSeason: ["", "s1", "s2"]
 };
+
+/* SPOTLIGHT (30 Sept 2026, the owner's): an event on the landing page's
+   spotlight — see spotlightFieldsHtml in js/admin.js and showSpotlight in
+   js/welcome.js. Five fields, each checked and put in its one shape here,
+   in place on the body, so what is stored is always something the page can
+   read: `spotlight` a boolean, `spotlightFrom` / `spotlightUntil` a UTC
+   instant or "", the end after the start, `spotlightCaption` plain text of
+   80 characters at most, `spotlightColour` "#rrggbb" or "". A body that
+   leaves them out (an older editor, the bulk tools) leaves them alone. */
+const SPOTLIGHT_CAPTION_MAX = 80;
+const SPOTLIGHT_FIELDS = ["spotlight", "spotlightFrom", "spotlightUntil", "spotlightCaption", "spotlightColour"];
+/* An instant, spelled as one (30 Sept 2026): a date, a time, and a zone.
+   Date.parse alone took "2026", "Oct 3" and a zoneless "2026-10-03T08:00",
+   and read the last two in the SERVER's own zone — UTC on Netlify, but an
+   hour out under `netlify dev` on a machine in BST. The form always sends
+   "…T08:00:00Z" (pairIso in js/admin.js), which this passes. */
+const SPOTLIGHT_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+function checkSpotlight(body) {
+    const has = k => Object.prototype.hasOwnProperty.call(body, k);
+    if (has("spotlight")) body.spotlight = body.spotlight === true || body.spotlight === "1" || body.spotlight === 1;
+    for (const k of ["spotlightFrom", "spotlightUntil"]) {
+        if (!has(k)) continue;
+        const v = body[k];
+        if (v === null || v === "") { body[k] = ""; continue; }
+        if (typeof v !== "string" || !SPOTLIGHT_INSTANT.test(v.trim()) || isNaN(Date.parse(v.trim()))) {
+            return "A spotlight date isn't a date the site can read.";
+        }
+        body[k] = new Date(v.trim()).toISOString();
+    }
+    if (body.spotlightFrom && body.spotlightUntil && body.spotlightUntil <= body.spotlightFrom) {
+        return "The spotlight's end must be after its start.";
+    }
+    if (has("spotlightCaption")) {
+        const c = typeof body.spotlightCaption === "string" ? body.spotlightCaption.replace(/\s+/g, " ").trim() : "";
+        if (c.length > SPOTLIGHT_CAPTION_MAX) return `The spotlight caption is too long. Please keep it to ${SPOTLIGHT_CAPTION_MAX} characters or fewer.`;
+        body.spotlightCaption = c;
+    }
+    if (has("spotlightColour")) {
+        const c = typeof body.spotlightColour === "string" ? body.spotlightColour.trim().toLowerCase() : "";
+        if (c && !/^#[0-9a-f]{6}$/.test(c)) return "The spotlight caption colour should be a colour like #ebe8ff.";
+        body.spotlightColour = c;
+    }
+    return "";
+}
 
 // The edit-conflict check, as in rooms.js — see the notes there.
 function stamp(v) {
@@ -118,7 +162,8 @@ async function handle(event) {
             if (params.retired === "1") return cachedJson(event, { records: all, retired }, { cache: false });
             return cachedJson(event, all, { cache: false });
         }
-        all.forEach(r => { delete r.slugAliases; delete r.slugManual; });
+        // spotlightAt too: the editor's version stamp (see PUT), nothing a page reads.
+        all.forEach(r => { delete r.slugAliases; delete r.slugManual; delete r.spotlightAt; });
         return cachedJson(event, await packRecords(all));
     }
 
@@ -164,6 +209,8 @@ async function handle(event) {
         }
         const problem = checkRecord(body, CHOICES);
         if (problem) return json(400, { error: problem });
+        const spotProblem = checkSpotlight(body);
+        if (spotProblem) return json(400, { error: spotProblem });
         /* The stored article is set as innerHTML in every visitor's event
            modal, so it is sanitised HERE, on the way in, and not only where
            article.js fetched it — see cleanArticle for why that was not
@@ -184,6 +231,8 @@ async function handle(event) {
         delete body.changes;
         delete body.updatedAt;
         delete body._baseUpdatedAt;
+        // The server's, as on an edit (see spotlightAt under PUT).
+        delete body.spotlightAt;
         // The id is the server's to choose; one sent with the body skipped
         // the address clash check for that record. See rooms.js.
         delete body.id;
@@ -262,6 +311,46 @@ async function handle(event) {
         // than written over. See the same check in rooms.js.
         if (base !== null && previous && stamp(previous.updatedAt) !== base) {
             return json(409, { error: CONFLICT, conflict: true });
+        }
+
+        /* The spotlight's end after its start as it will be STORED (30 Sept
+           2026): checkSpotlight can only compare the two when a body sends
+           both, and a body sending one met the stored other unchecked. */
+        if (previous) {
+            const has = k => Object.prototype.hasOwnProperty.call(update, k);
+            const from = has("spotlightFrom") ? update.spotlightFrom : previous.spotlightFrom;
+            const until = has("spotlightUntil") ? update.spotlightUntil : previous.spotlightUntil;
+            if ((has("spotlightFrom") || has("spotlightUntil")) && typeof from === "string" && typeof until === "string" &&
+                from && until && until <= from) {
+                return json(400, { error: "The spotlight's end must be after its start." });
+            }
+        }
+
+        /* The spotlight's own version (30 Sept 2026). A save that moves
+           only the spotlight leaves updatedAt alone — _changes.js ignores
+           the five fields so What's New does not call it an edit — and so
+           the check above could not see it: an editor opened before someone
+           unticked the spotlight saved its stale tick straight back over
+           it. spotlightAt is stamped whenever a spotlight field actually
+           changes, reaches the /warren form in the record (submitForm sends
+           it back through `...existing`), and an editor's save carrying
+           spotlight values that differ from the stored ones is refused when
+           its copy of the stamp is not the stored one. Server-owned: a
+           client never sets it. */
+        const sentSpotlightAt = stamp(update.spotlightAt);
+        delete update.spotlightAt;
+        if (previous) {
+            // An unset tick is an untick: an event from before the spotlight
+            // is not "changed" by its first save writing spotlight: false.
+            const norm = (k, v) => k === "spotlight" ? String(v === true) : canon(v);
+            const spotMoved = SPOTLIGHT_FIELDS.some(k => Object.prototype.hasOwnProperty.call(update, k) &&
+                norm(k, previous[k]) !== norm(k, update[k]));
+            if (spotMoved) {
+                if (base !== null && stamp(previous.spotlightAt) !== sentSpotlightAt) {
+                    return json(409, { error: CONFLICT, conflict: true });
+                }
+                update.spotlightAt = new Date().toISOString();
+            }
         }
 
         // Its address — see the same step in rooms.js.

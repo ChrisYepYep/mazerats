@@ -358,7 +358,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const gallery = asList(item.gallery);
         const entrance = asImageRef(item.entrance);
         const finish = asImageRef(item.finish);
-        const firstImage = (entrance && entrance.image) || (gallery[0] && gallery[0].image) || "";
+        // A gallery room can be stored as a bare path string rather than
+        // { image } (30 Sept 2026); reading .image off it skipped it, so a
+        // record whose first room was stored that way got no thumbnail.
+        const g0 = gallery[0];
+        const firstImage = (entrance && entrance.image) || (typeof g0 === "string" ? g0 : g0 && g0.image) || "";
         if (isEvents) {
             return {
                 isEvent: true,
@@ -512,8 +516,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const parts = [
             n.name,
             n.subtitle,
-            n.description,
-            n.details,
+            descPlain(n.description),
+            descPlain(n.details),
             ...(n.tags || []),
             n.difficulty
         ];
@@ -784,6 +788,27 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (e) {
             return "";
         }
+    }
+
+    /* A description in the guides' text format (30 Sept 2026): /warren now
+       has Bold, Italic, Link and list buttons over a maze's or an event's
+       descriptions, and js/guide-text.js is what reads them, escaping
+       everything first, so nothing typed there reaches the page as markup
+       it did not make itself. The room window shows it formatted; a card,
+       a timeline note and the search read it with the format taken off, so
+       a card stays one plain line.
+
+       GuideText is loaded by home.html after this file, so both fall back
+       to the text as it was typed — shown as plain text, never as markup —
+       for anything drawn before it arrives. */
+    function descPlain(text) {
+        const s = String(text == null ? "" : text);
+        return typeof GuideText !== "undefined" ? GuideText.plain(s) : s;
+    }
+    function showDesc(el, text) {
+        const s = String(text == null ? "" : text);
+        if (typeof GuideText !== "undefined") el.innerHTML = GuideText.render(s);
+        else el.textContent = s;
     }
 
     // Turns any bare URL in the Links & References text into a real,
@@ -2421,6 +2446,10 @@ document.addEventListener("DOMContentLoaded", () => {
     function rowThumbUrl(thumb) {
         return imgCdn(thumb, 160, 160, 65);
     }
+    // A guide's What's New thumbnail (see the log's render below).
+    function guideLogThumb(thumb) {
+        return typeof GuideText !== "undefined" && GuideText.thumbSrc ? GuideText.thumbSrc(thumb, 60) : thumb;
+    }
 
     /* What the thumbnail is a picture OF, in words.
 
@@ -2463,7 +2492,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${whatsNewDatesHtml(n)}
                     ${ecTitleHtml(n)}
                     <p class="row-creator">${escapeHtml(n.subtitle || "")}${showDate ? rowDateHtml(n) : ""}</p>
-                    ${isOpenView ? "" : `<p class="row-desc">${escapeHtml(n.description || "")}</p>`}
+                    ${isOpenView ? "" : `<p class="row-desc">${escapeHtml(descPlain(n.description))}</p>`}
                     <div class="row-tags">${tagsHtml(n)}</div>
                 </div>
                 <div class="row-side">
@@ -2887,11 +2916,15 @@ document.addEventListener("DOMContentLoaded", () => {
                                     <button type="button" class="updatelog-entry" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}" data-focus-key="${escapeHtml(recordKey(n))}">
                                         <span class="updatelog-verb is-${n.activity}">${n.activity === "updated" ? "Updated" : "Added"}</span>
                                         ${n.thumb
-                                            /* A guide's picture as it was uploaded (30 Sept 2026):
-                                               small pixel-art, never resampled by the image
-                                               service — as in the Guides window. The 160px crop
-                                               is for maze screenshots; .updatelog-thumb sizes both. */
-                                            ? `<img class="updatelog-thumb" src="${escapeHtml(n.isGuide ? n.thumb : rowThumbUrl(n.thumb))}" alt="" loading="lazy" decoding="async">`
+                                            /* A guide's picture is pixel art, so it is never put
+                                               through the 160px crop maze screenshots get. It
+                                               was the full upload (450KB for a 34px square); now
+                                               it is a whole-number PNG scale-down, as on the
+                                               Guides window's cards (GuideText.thumbSrc, 30 Sept
+                                               2026). 60px wide covers the 34x24 box for pictures
+                                               up to 2.5 times wider than tall. .updatelog-thumb
+                                               sizes both. */
+                                            ? `<img class="updatelog-thumb" src="${escapeHtml(n.isGuide ? guideLogThumb(n.thumb) : rowThumbUrl(n.thumb))}" alt="" loading="lazy" decoding="async">`
                                             : `<span class="updatelog-thumb is-blank" aria-hidden="true"></span>`}
                                         <span class="updatelog-what">
                                             <span class="updatelog-name">${escapeHtml(n.name || "")}</span>
@@ -2997,7 +3030,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 by: room.creator || "",
                 statusKey: room.status || "unknown",
                 statusLabel: TIMELINE_STATUS_LABELS[room.status] || "Unknown",
-                note: room.description || "",
+                note: descPlain(room.description),
                 ecSeason: ""
             });
         });
@@ -3011,7 +3044,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 by: ev.host || "",
                 statusKey: eventStatus(ev),
                 statusLabel: EventStatus.labelFor(ev),
-                note: ev.description || "",
+                note: descPlain(ev.description),
                 ecSeason: ["s1", "s2"].includes(ev.ecSeason) ? ev.ecSeason : ""
             });
         });
@@ -6583,7 +6616,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         openPhotoFrames.push(frame);
         syncPhotoStripToFrames();
-        frame.querySelector(".photo-frame-close").focus();
+        // Without scrolling, as the maze window (see openModal).
+        frame.querySelector(".photo-frame-close").focus({ preventScroll: true });
     }
 
     // One shared drag, tracking whichever frame is currently held, rather
@@ -7479,7 +7513,7 @@ document.addEventListener("DOMContentLoaded", () => {
            phone's action bar from matching :empty, so the bar showed as a
            bare band along the foot of the window with nothing in it. */
         if (!actions.children.length) actions.remove();
-        modalDesc.textContent = n.details || n.description || "";
+        showDesc(modalDesc, n.details || n.description || "");
 
         /* The stored Habbo article, if this event has one.
         
@@ -7775,7 +7809,11 @@ document.addEventListener("DOMContentLoaded", () => {
         // tabindex="-1" in home.html — focusable via script, not Tab) so a
         // keyboard user's very next Tab press starts cycling the modal's
         // own contents instead of whatever's still behind the overlay.
-        modalCard.focus();
+        // Without scrolling (30 Sept 2026): on a landscape phone (740x360)
+        // the card is taller than the screen, and a plain focus() scrolled
+        // the overlay to bring it "into view", so the window opened part
+        // way down instead of at its title.
+        modalCard.focus({ preventScroll: true });
         // The address follows the window — see "the modal and the Back
         // button" below.
         syncModalHistory(n, wasOpen, opts.fromAddress || null);
@@ -8371,7 +8409,8 @@ document.addEventListener("DOMContentLoaded", () => {
         renderProgress();
         overlay.classList.add("open");
         document.body.classList.add("modal-open");
-        document.getElementById("progress-window").focus();
+        // Without scrolling, as the maze window (see openModal).
+        document.getElementById("progress-window").focus({ preventScroll: true });
     }
 
     /* The window, drawn again if it is showing. It was drawn once on open
@@ -9659,6 +9698,35 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!match) return;
         e.preventDefault();
         openRecord(p.kind, match, {});
+    });
+
+    /* Links written into a description (30 Sept 2026, the owner's): the
+       maze:, event: and guide: links GuideText makes, by the data-guide-*
+       it gives them. A maze or an event opens in this same window, in
+       place. A guide opens in the Guides window — which sits UNDER the room
+       window, so the room window shuts first, without stepping back: its
+       entry stays, the guide's goes on top, and Back (or closing the guide)
+       lands on the maze's address and opens it again. Anything this page
+       cannot show — a record not in the list, the guides not loaded — and
+       a new tab are left to the browser, which loads the address. */
+    modalDesc.addEventListener("click", e => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        const a = e.target.closest && e.target.closest("[data-guide-maze], [data-guide-event], [data-guide-guide]");
+        if (!a) return;
+        const guideId = a.dataset.guideGuide;
+        if (guideId) {
+            const G = window.Guides;
+            if (!G || !G.loaded() || !G.list().some(g => window.RecordAddress.matches(g, guideId))) return;
+            e.preventDefault();
+            closeModal({ fromHistory: true, keepFocus: true });
+            G.open(guideId);
+            return;
+        }
+        const kind = a.dataset.guideMaze ? "maze" : "event";
+        const match = dataLoaded && findRecord(kind, a.dataset.guideMaze || a.dataset.guideEvent);
+        if (!match) return;
+        e.preventDefault();
+        openRecord(kind, match, {});
     });
 
     // For the other windows on this page (js/guides.js) that name a maze or

@@ -437,7 +437,10 @@
        server's to settle anyway (the first recorded move per round wins). */
     function saveState() {
         const stored = readSaved();
-        if (stored && state && stored.day === state.day && progressOf(stored) > progressOf(state)) {
+        // Never a practice run's copy over the real day that replaced it
+        // (see PRACTICE in refreshDay).
+        if (stored && state && stored.day === state.day && progressOf(stored) > progressOf(state) &&
+                !(stored.practice && !state.practice)) {
             state = Object.assign(stored, { posted: Boolean(stored.posted || state.posted) });
             return;
         }
@@ -465,13 +468,16 @@
         if (!saved || saved.v !== STATE_VERSION || !state || saved.day !== state.day) return false;
         if (!Array.isArray(saved.results) || saved.results.length !== ROUNDS) return false;
         if (progressOf(saved) <= progressOf(state)) return false;
+        // A practice run mirrored before the launch cut, once the cut has
+        // passed: put away, not adopted (see PRACTICE in refreshDay).
+        if (saved.practice && !practiceUntil) return false;
         state = Object.assign(blankDay(saved.day), {
             round: saved.round || 0,
             results: saved.results,
             done: Boolean(saved.done),
             mode: saved.mode || null,
             posted: Boolean(saved.posted)
-        });
+        }, practiceUntil ? { practice: practiceUntil } : {});
         try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { /* private mode */ }
         return true;
     }
@@ -547,7 +553,9 @@
         // Fresh from storage first: another tab may have banked this day
         // already, and the guard below only sees that in a fresh copy.
         localStats = loadStats();
-        if (localStats.lastDay !== state.day) countDay();
+        // A practice run is not a day played: the real one after the launch
+        // cut is what the streak and totals count (30 Sept 2026).
+        if (localStats.lastDay !== state.day && !state.practice) countDay();
         submitDay();
     }
 
@@ -940,6 +948,9 @@
                 await refreshDay();
                 renderAll();
                 prepareRound(state.round);
+                // A practice run put away (409 "practice-over"): back to the
+                // splash, which says so, for the fresh day.
+                if (practiceEnded) goTo("intro");
                 return;
             }
             /* The day has closed under a round in progress. It used to fall
@@ -1013,9 +1024,11 @@
             prepareRound(index + 1);
         }
 
+        practiceEnded = false;         // said once, on the fresh day's splash
         if (result.done && state.round === ROUNDS - 1) {
             state.done = true;
             bankDay();
+            Daily.track("finish", "guess");
         }
         saveState();
         const pressedAt = optionsRound(state.round).findIndex(n => n === name);
@@ -1538,7 +1551,12 @@
            the results it is already in the table. Nothing is shown at all
            until there is something to show — a counter reading zero is a
            worse greeting than no counter. */
-        if (stats.days) {
+        /* Except once, straight after a practice run from before launch
+           has been put away (30 Sept 2026; see PRACTICE in refreshDay). */
+        if (practiceEnded && !played) {
+            el.splashFoot.textContent = "The site's open, so your practice run is put away. These five count.";
+            el.splashFoot.hidden = false;
+        } else if (stats.days) {
             const pct = stats.rounds ? Math.round((stats.solved / stats.rounds) * 100) : 0;
             el.splashFoot.innerHTML = `Streak <strong>${liveStreak()}</strong>
                 &nbsp;·&nbsp; Best <strong>${stats.best}</strong>
@@ -1621,9 +1639,18 @@
        with the deal. As `served` in js/oddoneout.js. */
     let served = null;
 
+    /* PRACTICE (30 Sept 2026), as in js/oddoneout.js: `practiceUntil` is
+       the launch cut while the last deal said the day is still in practice
+       time, else null; a day begun then carries `practice` (the cut) and is
+       put away for a fresh one once the cut has passed (refreshDay).
+       `practiceEnded` is that having just happened, for the splash. */
+    let practiceUntil = null;
+    let practiceEnded = false;
+
     function bonusText() {
         const s = served && state && served.day === state.day ? served : null;
-        return Daily.bonusLine({ score: s, signedIn: signedIn(), mode: state ? state.mode : null });
+        return Daily.bonusLine({ score: s, signedIn: signedIn(), mode: state ? state.mode : null,
+            practice: (state && state.practice) || null, day: state ? state.day : null });
     }
 
     function drawBonus() {
@@ -1810,6 +1837,14 @@
             served = { day: forDay, points: body.points, bonus: body.bonus || 0 };
             if (state && state.day === forDay) drawBonus();
         }
+        /* A practice run, answered and not filed: marked one if this page
+           had not already (begun before the cut, finished after it), and
+           the card says so (30 Sept 2026). */
+        if (outcome.practice && body && state && state.day === forDay) {
+            if (!state.practice) state.practice = typeof body.practice === "string" ? body.practice : true;
+            served = null;
+            drawBonus();
+        }
         if (state && state.day === forDay && outcome.final) {
             state.posted = true;
             saveState();
@@ -1987,7 +2022,8 @@
            for a day played signed in (mode "account"): a day carried on
            unlisted went up under no name at all. */
         const listed = !!(state && state.mode === "account");
-        const invite = me ? (listed && window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "") : `
+        // Nothing for a practice run, which goes on no board (30 Sept 2026).
+        const invite = state && state.practice ? "" : me ? (listed && window.Account && Account.nickHintHtml ? Account.nickHintHtml() : "") : `
             <p class="guess-board-note guess-board-invite">
                 Your ${dayPoints()} points are saved on this device.
                 <button type="button" class="guess-btn" id="guess-board-signin">Sign in with Discord to be listed</button>
@@ -2075,23 +2111,24 @@
 
     /* The pasted result, in the one format both games share (Daily.shareText
        in js/daily.js). The points are the total the boards rank by — the
-       server's filed figure with its speed bonus once it has answered, the
-       base points until then. */
+       server's filed figure with its speed bonus once it has answered,
+       labelled "incl. speed", and the base points until then
+       (Daily.shareScore). */
     function shareText() {
         const s = served && served.day === state.day ? served : null;
-        return Daily.shareText({
+        return Daily.shareText(Object.assign({
             game: "Guess the Maze",
             day: state.day,
             right: state.results.filter(r => r.won).length,
             of: ROUNDS,
-            points: Daily.dayTotal(s, dayPoints()),
             grid: state.results.map(squareFor).join(""),
             path: "guess"
-        });
+        }, Daily.shareScore(s, dayPoints())));
     }
 
     async function copyResult(btn) {
         const text = shareText();
+        Daily.track("share", "guess");
         try {
             await navigator.clipboard.writeText(text);
             btn.textContent = "Copied";
@@ -2184,6 +2221,25 @@
         const mine = [state, saved].filter(s => s && s.v === STATE_VERSION && s.day === reply.day)
             .sort((a, b) => progressOf(b) - progressOf(a))[0];
         state = mine || blankDay(reply.day);
+
+        /* PRACTICE (30 Sept 2026; PRACTICE BEFORE LAUNCH in
+           netlify/functions/_speed.js). While the server says the day is in
+           practice time, the day is a practice run; once it says not, a day
+           marked so is put away and today starts fresh, signed in or out —
+           see the same step in js/oddoneout.js for why. The server's copy
+           is set aside on its side (practiceOver, or a guess's 409), and
+           the start this page remembers goes too (Daily.forgetStarts), so
+           the real day's first room is timed. */
+        practiceUntil = typeof reply.practiceUntil === "string" ? reply.practiceUntil : null;
+        if (state.practice && !practiceUntil) {
+            state = blankDay(reply.day);
+            served = null;
+            practiceEnded = true;
+            boards = null;
+            boardsState = "idle";
+            Daily.forgetStarts("guess");
+        }
+        if (practiceUntil) state.practice = practiceUntil;
         recorded = Array.isArray(reply.progress) ? reply.progress : null;
         recordedFiled = Boolean(reply.filed);
         if (applyRecorded() === "reset") await Daily.claimReset("guess");
@@ -2366,9 +2422,34 @@
         if (window.PageMeta) window.PageMeta.set("guess", "Guess the Maze — Maze Rats", "https://mazerats.net/guess");
         view = "intro";
         el.window.focus();
+        // Counted once per open (Daily.track; 30 Sept 2026).
+        Daily.track("open", "guess");
+        let reopened = false;
         claimAdminReset()
-            .then(() => { if (dayHasTurned()) forgetDeal(); })
+            .then(() => { if (dayHasTurned()) forgetDeal(); reopened = started; })
             .then(() => start())
+            .then(async () => {
+                /* REOPENED IN THE SAME VISIT (30 Sept 2026). start() runs
+                   once per page load, so a window closed and opened again
+                   showed the day as this page last had it, and never asked
+                   the server — rooms played since on another device, a day
+                   filed there, or an administrator's reset all waited for a
+                   reload. Odd One Out reads the day again on every open;
+                   this now does too, for a signed-in player on today's day
+                   (the server keeps no record of anybody else), and for a
+                   practice run, which the launch cut may have put away since
+                   (see PRACTICE in refreshDay). refreshDay lays the server's
+                   record over this page's copy (applyRecorded). */
+                if (!reopened || !state) return;
+                if (!((signedIn() && state.day === today()) || state.practice)) return;
+                if (await refreshDay()) {
+                    renderAll();
+                    prepareRound(state.round);
+                }
+            })
+            // A throw above must not skip the splash: the window would open
+            // on no view at all.
+            .catch(() => {})
             .then(() => {
                 if (!state) return;
                 goTo("intro");
@@ -2633,6 +2714,7 @@
             if (e.key !== STATE_KEY || !state || guessing) return;
             const other = readSaved();
             if (!other || other.day !== state.day || progressOf(other) <= progressOf(state)) return;
+            if (other.practice && !state.practice) return;   // a practice run put away here
             const wasDone = state.done;
             state = other;
             // The rooms the other tab was handed, kept before it saved.
@@ -2670,7 +2752,11 @@
     window.GuessStatus = function () {
         let saved = null;
         try { saved = JSON.parse(localStorage.getItem(STATE_KEY) || "null"); } catch (e) { saved = null; }
-        if (!saved || saved.day !== today() || !Array.isArray(saved.results)) {
+        // A practice run the launch cut has passed is not today's play (as
+        // OddOneOutStatus; 30 Sept 2026).
+        const now = window.Daily && Daily.now ? Daily.now() : Date.now();
+        const practiceOver = saved && typeof saved.practice === "string" && Date.parse(saved.practice) <= now;
+        if (!saved || saved.day !== today() || !Array.isArray(saved.results) || practiceOver) {
             return { started: false, done: 0, total: ROUNDS, finished: false, points: 0 };
         }
         const done = saved.results.filter(r => r && r.done).length;

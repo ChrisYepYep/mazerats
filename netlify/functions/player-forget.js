@@ -39,6 +39,10 @@
        banned. A ban on their account is kept whole, since its value is the
        Discord id; a network ban only loses the link to them (the last
        PLACE). The answer's `kept.bans` says how many account bans stayed.
+     - dead_end_leads.credited (30 Sept 2026, the owner's decision): the
+       name a lead is publicly credited to is public attribution the admins
+       manage, not account data, so it stays. The Warren's confirmation
+       says so (forgetConfirmHtml in js/admin-players.js).
      - daily_anon_moves: keyed by a hashed network, not a player, and gone
        after two days anyway (see _speed.js).
      - site_events: carries a per-tab session id and never an account.
@@ -49,11 +53,16 @@
        display name. A display name is not unique, and deleting another
        player's runs because they share it would be worse than keeping
        these; they age out on the log's own 180-day TTL.
-     - The player's session cookie. It is a signed JWT with nothing stored
-       behind it, so there is nothing here to revoke; it stays valid until
-       it expires (thirty days, see _player.js) or they sign out. Anything
-       they play with it in the meantime is new data, and a fresh Discord
-       sign-in starts a fresh profile row, joinedAt and all.
+     - The player's session cookie, which lives in their browser. It is
+       ended all the same (30 Sept 2026): a session carries the players
+       row's session version, and a session carrying one whose row is gone
+       counts as revoked (SESSION VERSIONS in _player.js) — `me` answers it
+       signed out and clears the cookie, and a nickname write refuses it.
+       So deleting the row, as the first PLACE does, is the revocation, and
+       a fresh Discord sign-in starts a fresh profile row with a new version
+       an old session can never match. A session from before versions
+       existed carries none, and stays valid until it expires (thirty days)
+       or they sign out; anything played with it meanwhile is new data.
 
    LEADERBOARDS: nothing is cached for long. The daily boards are edge-
    cached for fifteen seconds (BOARD_CDN_CACHE in _cache.js) and Guess the
@@ -62,6 +71,7 @@
    five minutes, and it holds numbers for ranking, not names. So a
    forgotten player is off every board within half a minute, and out of
    the rank arithmetic within five. */
+const crypto = require("crypto");
 const { getDb } = require("./_db");
 const { isAuthorized, roleOf, usernameFromToken, sessionOf, UNAUTHORIZED, forbidden, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { record } = require("./_audit");
@@ -87,6 +97,9 @@ const QUERY_MAX = 64;
 const MATCHES_MAX = 20;
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// A signed-in entrant's code in event_entry_quotas: see withinByteQuota in
+// event-entries.js. Hex, so it needs no escaping in a pattern.
+const entryQuotaCode = (id) => crypto.createHash("sha256").update(`event-entries:p:${id}`).digest("hex").slice(0, 32);
 
 /* ---- PLACES: every collection a signed-in player's data lives in.
 
@@ -125,6 +138,12 @@ const PLACES = [
     // dead-end-leads.js: today's and yesterday's upload byte counters,
     // _id "p:<id>:<day>". Two-day TTL, but they carry the id till then.
     { label: "dead_end_upload_quotas", collection: "dead_end_upload_quotas", filter: id => ({ _id: { $regex: `^p:${escapeRegex(id)}:` } }) },
+    /* event-entries.js: the same kind of day counter for entry pictures
+       (30 Sept 2026), keyed "s:<code>:<day>" where the code is a one-way
+       hash of "p:<id>" — but a hash anyone holding the id can make again, so
+       it is the player's all the same. Worked out exactly as withinByteQuota
+       there works it out; keep the two in step. */
+    { label: "event_entry_quotas", collection: "event_entry_quotas", filter: id => ({ _id: { $regex: `^s:${entryQuotaCode(id)}:` } }) },
 
     // ---- unlinked, not deleted
 
@@ -157,7 +176,15 @@ const PLACES = [
        forgotten player stays banned. It is reported apart, as `kept`, and
        never counted here (see keptBans). */
     { label: "bans.playerId", collection: "bans", filter: id => ({ kind: { $ne: "player" }, playerId: id }),
-        unlink: { $unset: { playerId: "" } } }
+        unlink: { $unset: { playerId: "" } } },
+    /* event-entries.js (30 Sept 2026): an event entry keeps its Habbo name
+       and picture — it is an entry to a draw, and may have won — but no
+       longer says which account sent it, nor keeps the per-account key its
+       rate limit and dedupe used. */
+    { label: "event_entries.from", collection: "event_entries", filter: id => ({ "from.id": id }),
+        unlink: { $set: { from: null } } },
+    { label: "event_entries.sender", collection: "event_entries", filter: id => ({ sender: `p:${id}` }),
+        unlink: { $unset: { sender: "", clientRef: "" } } }
 ];
 
 /* The player's own account bans, which a forget keeps (see the last PLACE

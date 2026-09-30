@@ -292,6 +292,79 @@ for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
             "Daily.bonusLine should only invite a signed-out player to sign in, with no bonus figure");
         check(typeof Daily.bonusRule === "function" && /up to 36 /.test(Daily.bonusRule("10", "picking")),
             "Daily.bonusRule does not print the real most a round can earn");
+
+        /* The pasted result both games share (Daily.shareText, 30 Sept
+           2026): four lines, the site's own address, and the total the
+           boards rank by once the server has filed the day — the base
+           points before then (Daily.dayTotal). */
+        /* And the total is LABELLED once it has a speed bonus in it (30
+           Sept 2026): "187 pts incl. speed". Before the day is filed — no
+           bonus known — and for a practice run, the base points, plain
+           (Daily.shareScore). */
+        if (typeof Daily.shareText !== "function" || typeof Daily.dayTotal !== "function" || typeof Daily.shareScore !== "function") {
+            fail("js/daily.js did not publish Daily.shareText, Daily.dayTotal and Daily.shareScore");
+        } else {
+            check(Daily.dayTotal({ points: 40, bonus: 147 }, 40) === 187, "Daily.dayTotal does not add the filed bonus to the filed points");
+            check(Daily.dayTotal(null, 40) === 40, "Daily.dayTotal does not fall back to the base points before the day is filed");
+            check(Daily.dayTotal({ points: 40, bonus: 147, practice: "2026-10-03T08:00:00.000Z" }, 40) === 40,
+                "Daily.dayTotal counts a practice run's figures as a filed day");
+            const text = (served, base) => Daily.shareText(Object.assign({ game: "Odd One Out", day: "2026-10-03", right: 4, of: 5,
+                grid: "GGRGG", path: "odd" }, Daily.shareScore(served, base))).split("\n");
+            const shared = text({ points: 40, bonus: 147 }, 40);
+            check(shared.length === 4 && shared[0] === "Maze Rats · Odd One Out" && shared[1] === "3 Oct 2026 — 4/5 · 187 pts incl. speed" &&
+                shared[2] === "GGRGG" && shared[3] === "https://mazerats.net/odd",
+                `Daily.shareText is not the four-line result with the labelled total (saw ${JSON.stringify(shared)})`);
+            check(text(null, 40)[1] === "3 Oct 2026 — 4/5 · 40 pts",
+                `Daily.shareText before the day is filed should be the base points unlabelled (saw ${JSON.stringify(text(null, 40)[1])})`);
+            check(text({ points: 40, bonus: 0 }, 40)[1] === "3 Oct 2026 — 4/5 · 40 pts",
+                "Daily.shareText labels a filed day that earned no speed bonus");
+        }
+
+        /* A PRACTICE RUN (30 Sept 2026; PRACTICE BEFORE LAUNCH in
+           _speed.js): the card says so in place of the bonus line, and the
+           finishing POST's answer is settled, never sent again. */
+        const cut = "2026-10-03T08:00:00.000Z";
+        const before = Date.parse(cut) - 60000, after = Date.parse(cut) + 60000;
+        const pl = (day, at) => line({ score: { points: 40, bonus: 90 }, signedIn: true, mode: "account", practice: cut, day, now: at });
+        check(/practice run/i.test(pl("2026-10-03", before)) && /08:00 UTC/.test(pl("2026-10-03", before)) && /start fresh/.test(pl("2026-10-03", before)),
+            `Daily.bonusLine on launch day before the cut should say it is practice and when the day starts fresh (saw ${JSON.stringify(pl("2026-10-03", before))})`);
+        check(/practice run/i.test(pl("2026-10-02", before)) && !/08:00/.test(pl("2026-10-02", before)),
+            "Daily.bonusLine on a day before launch day should say practice, without launch day's time");
+        check(/practice run/i.test(pl("2026-10-03", after)) && /reopen/i.test(pl("2026-10-03", after)),
+            "Daily.bonusLine after the cut should say the run was practice and how to play the real day");
+        check(!/\d+ \+ \d+ speed bonus/.test(pl("2026-10-03", before)), "Daily.bonusLine shows a practice run's bonus as if it were on the boards");
+        const pf = Daily.filed(200, { recorded: false, reason: "practice", practice: cut, points: 40 }, "2026-10-03");
+        check(pf.final && !pf.ok && pf.practice, "Daily.filed: a practice run is not settled as practice (final, not filed)");
+        check(typeof Daily.track === "function" && typeof Daily.forgetStarts === "function",
+            "js/daily.js did not publish Daily.track and Daily.forgetStarts");
+
+        /* What a finishing POST's answer does to the day (Daily.filed):
+           a refusal that lifts leaves it owed, anything settled is final. */
+        const fin = (s, b) => Daily.filed(s, b, "2026-10-05").final;
+        check(fin(200, { recorded: true }) && fin(200, { reason: "already" }), "Daily.filed: a filed day is not final");
+        check(!fin(0, null) && !fin(503, {}) && !fin(401, {}) && !fin(200, { reason: "signed-out" }) &&
+            !fin(409, { reason: "unfinished" }), "Daily.filed: a day that can still be filed was marked final");
+        check(!fin(403, { nickRequired: true }) && !fin(403, { banned: { level: "soft", until: "2026-10-06T00:00:00Z" } }),
+            "Daily.filed: a refusal that lifts (a new nickname, a cool-down) was marked final, losing the day");
+        check(fin(403, { banned: { level: "hard", until: null } }) && fin(400, { error: "Bad moves" }),
+            "Daily.filed: a refusal that stands was not marked final");
+    }
+}
+
+/* ---- 6. the usage numbers (30 Sept 2026) ----
+   Daily.track sends "daily-open", "daily-finish" and "daily-share", and the
+   endpoint drops any name not on its list — so a name missing there is
+   counted nowhere, silently. */
+{
+    const names = read("netlify/functions/track.js");
+    for (const n of ["daily-open", "daily-finish", "daily-share"]) {
+        check(names.includes(`"${n}"`), `netlify/functions/track.js does not accept "${n}", which Daily.track sends`);
+    }
+    for (const [rel, game] of [["js/oddoneout.js", "odd"], ["js/guess.js", "guess"]]) {
+        const src = read(rel);
+        for (const what of ["open", "finish", "share"]) {
+            check(src.includes(`Daily.track("${what}", "${game}")`), `${rel} no longer counts "${what}" (Daily.track("${what}", "${game}"))`);
+        }
     }
 }
 

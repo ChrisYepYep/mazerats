@@ -189,19 +189,45 @@ document.addEventListener("DOMContentLoaded", () => {
         new ResizeObserver(refresh).observe(el);
         new MutationObserver(refresh).observe(el, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style", "class"] });
 
+        /* Pointer events, not mouse events (30 Sept 2026), so the thumb, the
+           track and the arrows work with a finger or a pen as well as a
+           mouse. They were mousedown-only, and on a phone the browser's
+           compatibility mouse events arrive only after the touch is over —
+           a tap was a single late nudge, and the thumb could not be dragged
+           at all. touch-action: none on the bar keeps a press on it from
+           being taken as a scroll or a zoom of the page instead; the box it
+           wraps is untouched and still scrolls by swiping, as before.
+
+           Primary button only — the left mouse button, or the one finger or
+           pen tip in contact (e.button is 0 for both) — on the thumb, the
+           track and the arrows. A right-click started a drag or a repeat
+           too, and on macOS and Linux the context menu eats the release —
+           so nothing stopped it, and a pane could page or scroll by itself
+           for good. Each press also clears a repeat already running before
+           starting its own, and a blur, a cancelled pointer or a context
+           menu stops them all. A context menu on the bar itself is refused,
+           which is also what lets a long press on a touchscreen keep
+           repeating rather than popping one up. */
+        bar.style.touchAction = "none";
+        bar.addEventListener("contextmenu", (e) => e.preventDefault());
+        const pressOk = (e) => e.button === 0 && e.isPrimary !== false;
+        // The window-wide stops skip a context menu that came from the bar,
+        // since that one was refused above and the release will still come.
+        const onMenuElsewhere = (stop) => (e) => { if (!bar.contains(e.target)) stop(); };
+
         let dragging = false;
+        let dragPointer = null;
         let dragStartPointer = 0;
         let dragStartScroll = 0;
 
-        /* Left button only, on the thumb, the track and the arrows (30 Sept
-           2026). A right-click started a drag or a repeat too, and on macOS
-           and Linux the context menu eats the mouseup — so nothing stopped
-           it, and a pane could page or scroll by itself for good. Each
-           mousedown also clears a repeat already running before starting
-           its own, and a blur or a context menu stops them all. */
-        thumb.addEventListener("mousedown", (e) => {
-            if (e.button !== 0) return;
+        /* The thumb captures its pointer, so a drag carries on however far
+           the finger or cursor strays from the bar, and its release comes
+           back to the thumb wherever it happens. */
+        thumb.addEventListener("pointerdown", (e) => {
+            if (!pressOk(e)) return;
             dragging = true;
+            dragPointer = e.pointerId;
+            try { thumb.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
             thumb.classList.add("is-dragging");
             dragStartPointer = e[A.pointer];
             dragStartScroll = el[A.scrollPos];
@@ -209,8 +235,8 @@ document.addEventListener("DOMContentLoaded", () => {
             e.preventDefault();
         });
 
-        window.addEventListener("mousemove", (e) => {
-            if (!dragging) return;
+        thumb.addEventListener("pointermove", (e) => {
+            if (!dragging || e.pointerId !== dragPointer) return;
             const maxScroll = el[A.scrollSize] - el[A.clientSize];
             const maxThumbStart = track[A.trackSize] - THUMB_SIZE;
             if (maxThumbStart <= 0) return;
@@ -226,12 +252,18 @@ document.addEventListener("DOMContentLoaded", () => {
         function stopDrag() {
             if (!dragging) return;
             dragging = false;
+            if (dragPointer !== null) {
+                try { thumb.releasePointerCapture(dragPointer); } catch (err) { /* already released */ }
+            }
+            dragPointer = null;
             thumb.classList.remove("is-dragging");
             document.body.style.userSelect = "";
         }
-        window.addEventListener("mouseup", stopDrag);
+        thumb.addEventListener("pointerup", stopDrag);
+        thumb.addEventListener("pointercancel", stopDrag);
+        thumb.addEventListener("lostpointercapture", stopDrag);
         window.addEventListener("blur", stopDrag);
-        window.addEventListener("contextmenu", stopDrag);
+        window.addEventListener("contextmenu", onMenuElsewhere(stopDrag));
 
         // Click/hold on one of the two track segments (not the thumb) —
         // page toward the click, then keep paging while the button stays
@@ -247,11 +279,13 @@ document.addEventListener("DOMContentLoaded", () => {
             refresh();
         }
 
-        track.addEventListener("mousedown", (e) => {
-            if (e.button !== 0) return;
+        track.addEventListener("pointerdown", (e) => {
+            if (!pressOk(e)) return;
             const segment = e.target === segUpper ? segUpper : e.target === segLower ? segLower : null;
             if (!segment) return;
             const direction = segment === segUpper ? -1 : 1;
+            // No text selection or focus change from holding the track.
+            e.preventDefault();
 
             if (trackIntervalId) clearInterval(trackIntervalId);
             if (activeSegment) activeSegment.classList.remove("is-active");
@@ -278,17 +312,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 refresh();
             }
         }
-        window.addEventListener("mouseup", stopTrackPaging);
+        /* Not captured, unlike the thumb: sliding off the track is how a
+           hold is let go of early, and a captured pointer never leaves. (A
+           finger is captured to what it touched by the browser anyway, so
+           on a touchscreen it is the lift that stops it.) */
+        window.addEventListener("pointerup", stopTrackPaging);
+        window.addEventListener("pointercancel", stopTrackPaging);
         window.addEventListener("blur", stopTrackPaging);
-        window.addEventListener("contextmenu", stopTrackPaging);
-        track.addEventListener("mouseleave", stopTrackPaging);
+        window.addEventListener("contextmenu", onMenuElsewhere(stopTrackPaging));
+        track.addEventListener("pointerleave", stopTrackPaging);
 
-        // Arrow buttons — a single nudge on click, repeating while held.
+        // Arrow buttons — a single nudge on press, repeating while held.
         function wireArrow(btn, direction) {
             let intervalId = null;
             function step() { el[A.scrollPos] += direction * ARROW_STEP; refresh(); }
-            btn.addEventListener("mousedown", (e) => {
-                if (e.button !== 0) return;
+            btn.addEventListener("pointerdown", (e) => {
+                if (!pressOk(e)) return;
                 e.preventDefault();
                 stop();
                 step();
@@ -300,10 +339,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     intervalId = null;
                 }
             }
-            window.addEventListener("mouseup", stop);
+            window.addEventListener("pointerup", stop);
+            window.addEventListener("pointercancel", stop);
             window.addEventListener("blur", stop);
-            window.addEventListener("contextmenu", stop);
-            btn.addEventListener("mouseleave", stop);
+            window.addEventListener("contextmenu", onMenuElsewhere(stop));
+            btn.addEventListener("pointerleave", stop);
         }
         wireArrow(arrowUp, -1);
         wireArrow(arrowDown, 1);

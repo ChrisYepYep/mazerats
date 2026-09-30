@@ -27,7 +27,7 @@ Disallow: /glyphs.html
 # It is a real feature now — scored, with leaderboards and accounts behind
 # it — and a real address people paste at each other, so it is worth being
 # findable. It still serves the homepage with the game open, so a crawler
-# reaches nothing here it could not already reach at /home.html; and the
+# reaches nothing here it could not already reach at /home; and the
 # page a searcher lands on is the game itself, which is exactly what the
 # link promised. The day's answers are not in the HTML at all — the day is
 # dealt on the server and the page is handed the puzzle without them (see
@@ -64,6 +64,14 @@ Allow: /.netlify/functions/dead-ends
 # longer, more specific Allow wins over the Disallow for the crawlers that
 # matter (Google, Bing, X, LinkedIn all follow the longest-match rule).
 Allow: /.netlify/images
+#
+# And the pictures in the guides and the Atlas. Those are uploaded images
+# served back through their own function rather than the image CDN, so they
+# sat under the Disallow below and no guide's pictures could be indexed
+# (30 Sept 2026). It answers GETs only, and the pictures sent in by the
+# public and not yet reviewed (tips/) still need an admin token whatever
+# this file says.
+Allow: /.netlify/functions/image
 Disallow: /tools/
 Disallow: /.netlify/
 

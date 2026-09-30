@@ -41,6 +41,10 @@ const path = require("path");
 const REPO = path.join(__dirname, "..");
 global.window = {};
 require(path.join(REPO, "js", "room-layouts.js"));
+// The public rooms too (30 Sept 2026), or the Library measured as the 8x13
+// room: `get` falls back to it for a layout it has never been told about.
+require(path.join(REPO, "js", "room-masks.js"));
+require(path.join(REPO, "js", "room-public.js"));
 eval(fs.readFileSync(path.join(REPO, "js", "furni-library.js"), "utf8"));
 const LAYOUTS = global.window.RoomLayouts;
 

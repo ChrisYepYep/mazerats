@@ -187,8 +187,8 @@ exports.handler = async (event) => {
            right up to that limit has to land, and the old "keep it under
            2000" told the sender the opposite of what was checked. */
         if (message.length > MESSAGE_MAX) return json(400, { error: `Your message is too long. Please keep it to ${MESSAGE_MAX} characters or fewer.` });
-        if (username.length > USERNAME_MAX) return json(400, { error: `Username is too long — keep it under ${USERNAME_MAX} characters` });
-        if (discord.length > DISCORD_MAX) return json(400, { error: `Discord username is too long — keep it under ${DISCORD_MAX} characters` });
+        if (username.length > USERNAME_MAX) return json(400, { error: `Username is too long. Please keep it to ${USERNAME_MAX} characters or fewer.` });
+        if (discord.length > DISCORD_MAX) return json(400, { error: `Discord username is too long. Please keep it to ${DISCORD_MAX} characters or fewer.` });
 
         const ip = clientIp(event);
         // What the caps count.

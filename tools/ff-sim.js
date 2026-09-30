@@ -109,11 +109,25 @@ global.window = {};
 global.document = { createElement: () => stubCanvas(), fonts: { load: () => Promise.resolve() } };
 global.Image = function () { this.onload = null; this.onerror = null; };
 global.requestAnimationFrame = noop;
-global.performance = { now: () => 0 };
+/* Only `now` is frozen (30 Sept 2026). Replacing the whole object took
+   Node's own fetch down with it — undici calls
+   performance.markResourceTiming as each response ends, so every run that
+   read the levels from the dev server died on "markResourceTiming is not a
+   function". Everything else goes to the real one, bound to it. */
+const realPerformance = global.performance;
+global.performance = new Proxy(realPerformance, {
+    get: (t, k) => (k === "now" ? () => 0
+        : typeof t[k] === "function" ? t[k].bind(t) : t[k])
+});
 
 const load = (f) => eval(fs.readFileSync(path.join(__dirname, "..", "js", f), "utf8"));
 load("furni-library.js");
 load("room-layouts.js");
+/* AND THE PUBLIC ROOMS (30 Sept 2026). These two are local files like the
+   rest, loaded in the page's own order after room-layouts.js; left out, the
+   Library was not a room this knew and level 50 was skipped on every run. */
+load("room-masks.js");
+load("room-public.js");
 load("room-iso.js");
 load("room-path.js");
 load("room-furni.js");
@@ -280,8 +294,11 @@ function nearestTile(seat, from) {
     const levels = LEVELS_FILE
         ? JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8"))
         : await fetch(`${SITE}/.netlify/functions/ff-levels`).then(r => r.json()).then(j => j.levels || j);
+    /* `.items` off a file too (30 Sept 2026): a file saved from the endpoint
+       is { count, items }, and read raw every class came back with no record,
+       so every level reported NO SEATS AT ALL. A bare items map still reads. */
     const meta = META_FILE
-        ? JSON.parse(fs.readFileSync(META_FILE, "utf8"))
+        ? (j => j.items || j)(JSON.parse(fs.readFileSync(META_FILE, "utf8")))
         : await fetch(`${SITE}/.netlify/functions/furni-meta`).then(r => r.json()).then(j => j.items || j);
 
     const list = (levels.levels || levels).slice().sort((a, b) => a.order - b.order);
@@ -294,11 +311,11 @@ function nearestTile(seat, from) {
         if (ONLY && !ONLY.has(raw.order)) continue;
         const level = Levels.normalise(raw);
         if (UNCAPPED) level.rules = { ...level.rules, seconds: 600 };
-        /* THE PUBLIC ROOMS ARE NOT IN HERE. js/room-public.js registers them
-           on the page, off data this has no way to fetch, so `get` quietly
-           hands back the 8x13 default — and a level played in the wrong room
-           reports numbers that are worse than meaningless, because they look
-           like numbers. The Library is the one this hits. */
+        /* A ROOM THIS HAS NO SHAPE FOR IS SKIPPED. The public rooms are loaded
+           above now (js/room-public.js), but a level naming any room this
+           does not know would get the 8x13 default back from `get` — and a
+           level played in the wrong room reports numbers that are worse than
+           meaningless, because they look like numbers. */
         /* `raw.model` and not the normalised one, because normalise is what
            does the falling back — by the time it has run, a room that does not
            exist has already become the 8x13 default and looks fine. Level 1

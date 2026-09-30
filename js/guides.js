@@ -93,17 +93,31 @@
         return attempt(0);
     }
 
+    /* Only the NEWEST ask may change what the window knows (30 Sept 2026).
+       A fresh ask can go out while an older one is still on its way (the
+       second look for a missing guide, after a failed load left `loading`
+       clear and a reopen asked again), and whichever answered LAST won: the
+       CDN's older list landing after the fresh one put back the list that
+       lacked the guide, and the window said it "isn't available". An older
+       answer, or an older failure, is now ignored; the count of asks in
+       flight still comes down for it. An older LIST is still taken while
+       the window has none at all — the newer ask failing first left the
+       window on "couldn't be loaded" with a good list thrown away. */
+    let loadSeq = 0;
+
     function load(fresh) {
         if (loading && !fresh) return loading;
         failed = false;
         asking++;
+        const seq = ++loadSeq;
         loading = fetchList(URL_ + (fresh ? `?fresh=${Date.now()}` : ""))
             .then(list => {
+                if (seq !== loadSeq && loaded) return;
                 guides = Array.isArray(list) ? list.filter(g => g && g.id) : [];
                 loaded = true;
                 listeners.forEach(fn => { try { fn(); } catch (e) { /* one listener is not the others' problem */ } });
             })
-            .catch(() => { failed = true; loading = null; })
+            .catch(() => { if (seq === loadSeq) { failed = true; loading = null; } })
             .then(() => { asking--; if (isOpen()) draw(); });
         return loading;
     }
@@ -129,15 +143,17 @@
 
     // ------------------------------------------------------------ helpers
 
-    /* In UTC, as every other date on the site is (28 Sept 2026). In the
-       reader's own zone a guide published late in the evening, UK time, was
-       dated the next day for anyone east of here and the day before for
-       anyone far enough west — so the same guide carried different dates
-       for different readers. */
+    /* In the READER'S own time zone (30 Sept 2026). It was UTC, but whether
+       a guide says "Updated" or "Added" is decided by the reader's day
+       (GuideText.wasUpdated), as What's New groups its log — so an edit
+       late one evening west of UTC could read "Updated 1 October" while
+       What's New filed it under 30 September, or be called "Updated" with
+       the same date it was added on. The date printed is now the same day
+       the decision and What's New use. */
     function longDate(iso) {
         const d = new Date(iso);
         if (isNaN(d)) return "";
-        return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+        return d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
     }
 
     function categories() {
@@ -148,7 +164,9 @@
 
     // A picture as the page shows it. Guide pictures are small pixel-art
     // screenshots, so they are drawn at their own size, never resampled
-    // up by an image service.
+    // up by an image service. The list's cards pass in a whole-number
+    // scale-down of it (GuideText.thumbSrc, 30 Sept 2026) rather than
+    // the full upload; the guide itself shows the original.
     const pic = (src, alt, cls) => src
         ? `<img class="${cls}" src="${esc(src)}" alt="${esc(alt || "")}" loading="lazy" decoding="async">`
         : "";
@@ -182,7 +200,7 @@
                     return `
                     <li>
                         <a class="guides-card${thumb ? "" : " no-thumb"}" href="${esc(addressFor(g.id))}" data-guide="${esc(g.id)}">
-                            ${thumb ? `<span class="guide-thumb guides-card-thumb">${pic(thumb, "", "")}</span>` : ""}
+                            ${thumb ? `<span class="guide-thumb guides-card-thumb">${pic(GuideText.thumbSrc(thumb, 150), "", "")}</span>` : ""}
                             <span class="guides-card-text">
                                 ${g.category ? `<span class="guides-pill">${esc(g.category)}</span>` : ""}
                                 <span class="guides-card-title">${esc(g.title)}</span>

@@ -166,6 +166,16 @@
                  the control existed at all, let alone why it did nothing.
                  js/welcome.js flips aria-disabled with the label. -->
             <a class="btn-enter is-disabled" id="welcome-btn" role="link" tabindex="0" aria-disabled="true"><img class="btn-sit-rat" src="assets/img/rat_sit3.png" alt="" aria-hidden="true"><span id="welcome-btn-label">Loading…</span></a>
+            <!-- THE SPOTLIGHT (30 Sept 2026, the owner's), under the button in
+                 every state of the landing page. Whichever events the Warren
+                 has put in it — ticked, and inside their spotlight dates —
+                 each a slide: its thumbnail, its caption, a link to its own
+                 #event- address, which opens the full event window by the
+                 same hashchange route the header ticker uses. Several take
+                 turns. Ships hidden and empty; js/welcome.js (showSpotlight)
+                 builds the slides, and with none to show there is nothing
+                 here at all. -->
+            <div class="welcome-promo" id="welcome-promo" role="region" aria-label="Event spotlight" hidden></div>
         </div>
     </main>
 
@@ -250,7 +260,7 @@
                             <div class="modal-meta-items" id="event-modal-meta"></div>
                             <div class="room-desc-panel">
                                 <div class="room-desc-box">
-                                    <p class="room-desc-full" id="event-modal-desc"></p>
+                                    <div class="room-desc-full" id="event-modal-desc"></div>
                                     <!-- A Habbo Origins article, read once by an admin and stored on the
                                          event (see netlify/functions/article.js). It stands where the
                                          event's full details would be — the two are mutually exclusive in
@@ -306,6 +316,9 @@
     <script src="js/privacy-content.js?v=2"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/site.js?v=2"></script>
+    <!-- Before welcome.js, which draws the event window's formatted details
+         with it (it can fetch it on demand, but this saves the redraw). -->
+    <script src="js/guide-text.js?v=2"></script>
     <script src="js/welcome.js?v=2"></script>
     <script src="js/custom-scrollbar.js?v=2"></script>
     <script src="js/track.js?v=2"></script>

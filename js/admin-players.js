@@ -972,8 +972,36 @@
                     <button type="button" class="ctl-btn pl-write" data-a="lock"${busy ? " disabled" : ""} title="${p.nickLocked ? "Let the player change their nickname again" : "Stop the player changing their nickname themselves; their Profile tells them to ask the admins"}">${p.nickLocked ? "Unlock nickname" : "Lock nickname"}</button>
                     <button type="button" class="ctl-btn pl-write" data-a="prompt"${!p.nickAsked ? " data-off" : ""}${busy || !p.nickAsked ? " disabled" : ""} title="${p.nickAsked ? "Show them the Choose a nickname? window again on their next visit (not while they have a nickname, or while it is locked)" : "They haven't seen it yet"}">Show the nickname prompt again</button>
                 </div>
+                ${turnedDownHtml(p)}
                 <p class="ctl-status pl-status" data-a="status" role="status"></p>
             </div>`;
+    }
+
+    /* The names the admins have turned down for this player (30 Sept 2026;
+       TURNED DOWN in player-nick.js). Each one stays refused after they
+       have moved off it, so this is the way to let one back: "Allow again"
+       takes it off the list (unTurnDown in players-admin.js). They are
+       shown as the row stores them — boiled down to lower-case letters and
+       digits, which is how the rule compares names — not as typed. Only in
+       the full detail, which is where the list comes from. */
+    function turnedDownHtml(p) {
+        const list = Array.isArray(p.nickTurnedDown) ? p.nickTurnedDown.filter(k => typeof k === "string" && k) : [];
+        if (!list.length) return "";
+        return `
+                <span class="ctl-label">Turned-down names</span>
+                <p class="admin-hint">They can't choose these (or anything that reads the same) again. Stored boiled down to letters and numbers, as shown.</p>
+                ${list.map(k => `
+                <div class="ctl-row">
+                    <span class="pl-history-nick">${escapeHtml(k)}</span>
+                    <button type="button" class="ctl-btn pl-write" data-a="untd" data-key="${escapeHtml(k)}"${busy ? " disabled" : ""} title="Let them choose this name again">Allow again</button>
+                </div>`).join("")}`;
+    }
+
+    async function unTurnDown(p, key) {
+        if (!key) return false;
+        const ok = await ask(`Take <strong>${escapeHtml(key)}</strong> off ${escapeHtml(shownOf(p))}'s turned-down names? They'll be able to choose it again.`);
+        if (!ok) return false;
+        return write(p, { unTurnDown: key }, "Done. They can choose that name again.");
     }
 
     /* The review's two buttons (29 Sept 2026; see FLAGGED at the top).
@@ -1317,6 +1345,7 @@
             else if (a === "clear") clearNick(p);
             else if (a === "lock") write(p, { locked: !p.nickLocked }, p.nickLocked ? "Unlocked. They can change their nickname again." : "Locked. They can't change their nickname themselves now.");
             else if (a === "allow" || a === "reject") reviewNick(p, a);
+            else if (a === "untd") unTurnDown(p, b.dataset.key || "");
             else if (a === "prompt") write(p, { resetPrompt: true }, "Done. They'll be asked to choose a nickname on their next visit, if they have none and it isn't locked.");
             else if (a === "forget-look") forgetLook(p);
             else if (a === "forget-cancel") { forgets.delete(ref); render(); }
@@ -1518,8 +1547,9 @@
         write(p, { nick: null }, "Removed. The boards show their Discord name again.");
     }
 
-    async function ask(html) {
-        if (typeof window.AdminConfirm === "function") return window.AdminConfirm(html);
+    // `opts` goes on to AdminConfirm — { danger: true } for the red Yes.
+    async function ask(html, opts) {
+        if (typeof window.AdminConfirm === "function") return window.AdminConfirm(html, opts);
         const div = document.createElement("div");
         div.innerHTML = html;
         return confirm(div.textContent);
@@ -1543,11 +1573,14 @@
         "ff_run_tokens": "Fallin' Furni run tokens",
         "ff_runs": "Fallin' Furni runs",
         "dead_end_upload_quotas": "Missing Pieces upload counters",
+        "event_entry_quotas": "Event entry upload counters",
         "dead_end_leads.from": "Missing Pieces submissions (name removed, kept)",
         "dead_end_leads.sender": "Missing Pieces submissions (sender link removed, kept)",
         "dead_end_uploads.playerId": "Missing Pieces screenshots (uploader removed, kept)",
         "contact_messages.from": "Contact messages (name removed, kept)",
-        "bans.playerId": "Network bans (player link removed, ban kept)"
+        "bans.playerId": "Network bans (player link removed, ban kept)",
+        "event_entries.from": "Event entries (account removed, entry kept)",
+        "event_entries.sender": "Event entries (sender key removed)"
     };
     /* player-forget.js reports counts by where they are kept (its PLACES);
        said plainly here. A key this list does not know yet is still shown,
@@ -1568,15 +1601,21 @@
     }
     /* `kept` (30 Sept 2026): player-forget.js leaves a ban on the account in
        force — a forgotten troll stays banned — and says how many, apart from
-       the counts, so the list above never claims a ban is deleted. */
+       the counts, so the list above never claims a ban is deleted.
+
+       Nor that a credit goes (30 Sept 2026). The name a Missing Pieces lead
+       was publicly credited to (dead_end_leads.credited) is public
+       attribution the admins manage, and the owner decided a forget leaves
+       it alone — so this no longer says "everything", and says so. */
     function forgetConfirmHtml(p, c, kept) {
         const list = Object.entries(c && typeof c === "object" ? c : {})
             .filter(([, n]) => Number(n) > 0)
             .map(([key, n]) => `${escapeHtml(forgetLabel(key))} (${escapeHtml(Number(n).toLocaleString("en-GB"))})`);
         const bans = Number(kept && kept.bans) || 0;
-        return `This permanently deletes everything the site keeps about <strong>${escapeHtml(shownOf(p))}</strong>` +
+        return `This permanently deletes or unlinks what the site keeps about <strong>${escapeHtml(shownOf(p))}</strong>` +
             ` (Discord ID ${escapeHtml(p.id)})${list.length ? ": " + list.join(", ") : ""}. It can't be undone.` +
-            (bans ? ` Bans on their account stay in force (${escapeHtml(bans.toLocaleString("en-GB"))}).` : "");
+            (bans ? ` Bans on their account stay in force (${escapeHtml(bans.toLocaleString("en-GB"))}).` : "") +
+            ` Public credits for Missing Pieces submissions stay as they are.`;
     }
     function forgetErrorText(err) {
         const status = err && err.status;
@@ -1607,7 +1646,7 @@
         const ref = refOf(p);
         const f = forgets.get(ref);
         if (!f || f.state !== "shown" || busy || !isOwner()) return;
-        if (!(await ask(forgetConfirmHtml(p, f.data && f.data.counts, f.data && f.data.kept)))) return;
+        if (!(await ask(forgetConfirmHtml(p, f.data && f.data.counts, f.data && f.data.kept), { danger: true }))) return;
         // Cancelled, cleared or signed out while the dialog was up.
         if (forgets.get(ref) !== f) return;
         if (typeof Api.forgetPlayer !== "function") { flash("Not available yet — reload the page.", true); return; }
@@ -1754,7 +1793,7 @@
         const shown = lookShown;
         if (!shown || busy) return;
         const p = shown.player;
-        if (!(await ask(forgetConfirmHtml({ id: p.id, displayName: p.nick || p.name || p.username }, shown.counts, shown.kept)))) return;
+        if (!(await ask(forgetConfirmHtml({ id: p.id, displayName: p.nick || p.name || p.username }, shown.counts, shown.kept), { danger: true }))) return;
         if (lookShown !== shown) return;
         const gen = ++lookGen;
         const btn = forgetEl.querySelector("[data-look-go]");

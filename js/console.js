@@ -33,12 +33,14 @@ document.addEventListener("DOMContentLoaded", () => {
         // js/console-info.js.
         message: document.getElementById("console-page-message"),
         info: document.getElementById("console-page-info"),
-        missing: document.getElementById("console-page-missing")
+        missing: document.getElementById("console-page-missing"),
+        // Event Submission (30 Sept 2026), wired further down this file.
+        entry: document.getElementById("console-page-entry")
     };
 
     // Which pages belong to the CONTACT tab, so the row of tab lights keeps
     // saying where you are rather than going blank on a sub-page.
-    const CONTACT_PAGES = ["contact", "message", "info", "missing"];
+    const CONTACT_PAGES = ["contact", "message", "info", "missing", "entry"];
 
     function clearPrivacyHash() {
         if (location.hash === "#privacy") {
@@ -244,10 +246,40 @@ document.addEventListener("DOMContentLoaded", () => {
     // a normal navigation otherwise — so this needs to run both at load
     // and on hashchange, same pattern as js/home.js's own openEventFromHash.
     function openPrivacyFromHash() {
+        if (location.hash === "#submit-entry") return openEntryFromHash();
         if (location.hash !== "#privacy") return;
         openConsole("privacy");
     }
     window.addEventListener("hashchange", openPrivacyFromHash);
+
+    /* /home#submit-entry opens the console on its Event Submission page
+       (30 Sept 2026, the owner's) — what a description's
+       [words](console:entry) link points at (see js/guide-text.js), so an
+       event can say "Submit your entry" and mean it. Taken back off the
+       address once it has opened, as #nickname is, so a refresh does not
+       open it again. */
+    function openEntryFromHash() {
+        if (location.hash !== "#submit-entry") return;
+        // Only home.html has the page. Fallin' Furni's console has none, and
+        // opening it there showed an empty screen with no tab lit.
+        if (!pages.entry) return;
+        openConsole("entry");
+        try { history.replaceState(history.state, "", location.pathname + location.search); } catch (e) { /* a sandboxed frame */ }
+    }
+
+    // The same link clicked on this page: straight to the page, with no
+    // navigation — from inside a maze or event window the address is that
+    // record's, so a plain link would reload the archive to get here. The
+    // window it was pressed in is left open underneath.
+    document.addEventListener("click", e => {
+        const a = e.target && e.target.closest ? e.target.closest("a[data-console-page]") : null;
+        if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        // A page this console lacks: the link's own address takes them there.
+        const name = a.dataset.consolePage;
+        if (!Object.prototype.hasOwnProperty.call(pages, name) || !pages[name]) return;
+        e.preventDefault();
+        openConsole(name);
+    });
     // The first look is at the END of this handler (30 Sept 2026), not here.
     // From here, a page loaded at #privacy opened the console before
     // loadContributors' own consts (contributorsListEl, contributorsAsking)
@@ -464,6 +496,273 @@ document.addEventListener("DOMContentLoaded", () => {
         // close({ keepFocus: true }) when closing to open another window.
         close: (opts) => closeConsole(opts)
     };
+
+    // ---------- event submission (30 Sept 2026) ----------
+
+    /* A Habbo Origins username and one picture, sent to
+       netlify/functions/event-entries.js — signed in or not. The server
+       decides which event it is for (the one the admins have opened in the
+       Warren, or the one event running right now); this page only asks, to
+       say "Entering: ..." above the form, and says nothing when there is no
+       such event. The picture is sent in the same request as the name: a
+       single 4MB picture fits a function's body, and anything bigger that
+       is shrunk here first (shrinkToFit). */
+    const entryUsername = document.getElementById("console-entry-username");
+    const entryImage = document.getElementById("console-entry-image");
+    const entryHp = document.getElementById("console-entry-hp");
+    const entryCancel = document.getElementById("console-entry-cancel");
+    const entrySend = document.getElementById("console-entry-send");
+    const entryStatus = document.getElementById("console-entry-status");
+    const entryEventEl = document.getElementById("console-entry-event");
+    const entrySignedAs = document.getElementById("console-entry-signed-as");
+    const entryFormReady = !!(entryUsername && entryImage && entryHp && entryCancel && entrySend && entryStatus);
+
+    const ENTRY_IMAGE_MAX = 4 * 1024 * 1024;
+    // PNG and JPG only (30 Sept 2026, the owner's) — the server holds the
+    // same line by the file's own bytes; see SIGNATURES in event-entries.js.
+    const ENTRY_TYPES = ["image/png", "image/jpeg"];
+    const ENTRY_EXTENSION = /\.(png|jpe?g)$/i;
+
+    function entrySay(text, isError) {
+        if (!entryStatus) return;
+        entryStatus.textContent = text || "";
+        entryStatus.classList.toggle("is-error", Boolean(isError));
+        entryStatus.style.display = text ? "block" : "none";
+    }
+
+    function paintEntryIdentity(player) {
+        if (!entrySignedAs) return;
+        entrySignedAs.hidden = !player;
+        // A comma, not a dash: Volter draws U+2014 as a picture.
+        entrySignedAs.textContent = player ? `Sending as ${player.name}, signed in with Discord.` : "";
+    }
+    if (window.Account) {
+        paintEntryIdentity(Account.current);
+        Account.onChange(paintEntryIdentity);
+    }
+
+    /* CLOSED (30 Sept 2026, the owner's): the Warren can shut entries
+       altogether. The page then says so and its form is disabled, rather
+       than letting somebody fill it in to be refused at Send. Learnt from
+       ?action=open each time the page is shown, and from a POST refused
+       with { closed: true } (closed while the page sat open). */
+    const ENTRY_CLOSED = "Entries are closed just now.";
+    let entryClosed = false;
+    function setEntryClosed(closed) {
+        const was = entryClosed;
+        entryClosed = Boolean(closed);
+        if (!entryFormReady) return;
+        entryUsername.disabled = entryClosed;
+        entryImage.disabled = entryClosed;
+        entrySend.disabled = entryClosed || entrySending;
+        if (entryClosed) entrySay(ENTRY_CLOSED, true);
+        else if (was && entryStatus.textContent === ENTRY_CLOSED) entrySay("");
+    }
+
+    /* Whether the Event Submission page is what the console shows now —
+       see console:page and console:close below. A send that answers after
+       the visitor has gone Back, or to another page, or shut the console,
+       leaves the page quietly (30 Sept 2026): no jump to Entry Submitted,
+       no error written onto a form nobody is reading. */
+    let entryShowing = false;
+
+    /* Asked each time the page is shown: the event can change while the
+       site is open. A failed ask hides the line rather than guessing, and
+       leaves the form open — the server still refuses a closed entry.
+       Fetched here rather than through Api.getEventEntryOpen, which hands
+       back only the event and not `closed`. */
+    let entryAsk = 0;
+    async function askEntryOpen() {
+        const ctrl = typeof AbortController === "function" ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 10000) : null;
+        try {
+            const res = await fetch("/.netlify/functions/event-entries?action=open", {
+                headers: { Accept: "application/json" },
+                credentials: "same-origin",
+                cache: "no-store",
+                ...(ctrl ? { signal: ctrl.signal } : {})
+            });
+            if (!res.ok) throw new Error(String(res.status));
+            const data = await res.json();
+            return {
+                event: data && data.event && typeof data.event === "object" ? data.event : null,
+                closed: Boolean(data && data.closed === true)
+            };
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    }
+    async function paintEntryEvent() {
+        if (!entryEventEl && !entryFormReady) return;
+        const mine = ++entryAsk;
+        let answer = null;
+        try { answer = await askEntryOpen(); } catch (e) { answer = null; }
+        if (mine !== entryAsk) return;
+        const ev = answer && answer.event;
+        const title = ev && typeof ev.title === "string" ? ev.title.trim() : "";
+        if (entryEventEl) {
+            entryEventEl.hidden = !title;
+            entryEventEl.textContent = title ? `Entering: ${title}` : "";
+        }
+        if (answer) setEntryClosed(answer.closed);
+    }
+
+    function readFileAsDataUrl(blob) {
+        return new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(r.result);
+            r.onerror = () => reject(new Error("Couldn't read that file."));
+            r.readAsDataURL(blob);
+        });
+    }
+
+    // Decoded bytes of a base64 data: URL, near enough.
+    function dataUrlBytes(dataUrl) {
+        const comma = dataUrl.indexOf(",");
+        return Math.floor((dataUrl.length - comma - 1) * 3 / 4);
+    }
+
+    /* A picture over the cap, redrawn smaller as a JPEG until it fits.
+       Anything the browser cannot draw is refused in words. */
+    async function shrinkToFit(file) {
+        const url = URL.createObjectURL(file);
+        try {
+            const img = await new Promise((resolve, reject) => {
+                const im = new Image();
+                im.onload = () => resolve(im);
+                im.onerror = () => reject(new Error("That picture couldn't be read. Try a PNG or JPG."));
+                im.src = url;
+            });
+            let scale = Math.min(1, 2560 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+            for (let attempt = 0; attempt < 6; attempt++) {
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+                canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+                const ctx = canvas.getContext("2d");
+                ctx.fillStyle = "#ffffff";          // a JPEG has no transparency
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+                if (dataUrlBytes(dataUrl) <= ENTRY_IMAGE_MAX) return dataUrl;
+                scale *= 0.75;
+            }
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+        throw new Error("That picture is too big. Keep it under 4MB.");
+    }
+
+    /* The same entry sent twice — a timeout whose request had landed, a
+       double press — is one entry: entryRef names this submission, is kept
+       through retries, and is dropped by any change to the form or a
+       success, as Add Maze Info's clientRef is (js/console-info.js). */
+    let entryRef = null;
+    let entrySending = false;
+    function newEntryRef() {
+        try {
+            if (window.crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+        } catch (e) { /* fall through */ }
+        return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
+    }
+
+    function clearEntryForm() {
+        entryUsername.value = "";
+        try { entryImage.value = ""; } catch (e) { /* some browsers refuse; harmless */ }
+        entryHp.value = "";
+        entryRef = null;
+        entrySay(entryClosed ? ENTRY_CLOSED : "", entryClosed);
+    }
+
+    /* A change made while a send is in flight is held until it answers, as
+       editedSubmission does in js/console-info.js (30 Sept 2026): it used to
+       be ignored, so after a failed send the fixed name went out under the
+       old ref, and the server answered with the first entry as it was. */
+    let entryEditedWhileSending = false;
+    function entryEdited() {
+        if (entrySending) entryEditedWhileSending = true;
+        else entryRef = null;
+    }
+
+    if (entryFormReady) {
+        entryUsername.addEventListener("input", entryEdited);
+        entryImage.addEventListener("change", () => { entryEdited(); if (!entryClosed) entrySay(""); });
+        entryCancel.addEventListener("click", () => {
+            clearEntryForm();
+            showPage("contact");
+        });
+
+        entrySend.addEventListener("click", async () => {
+            if (entrySending) return;
+            if (entryClosed) { entrySay(ENTRY_CLOSED, true); return; }
+            const habboName = entryUsername.value.trim();
+            if (!habboName) {
+                entrySay("What's your Habbo Origins username?", true);
+                entryUsername.focus();
+                return;
+            }
+            const file = entryImage.files && entryImage.files[0];
+            if (!file) {
+                entrySay("Add a picture of your entry.", true);
+                return;
+            }
+            // A 0-byte file: said here, not sent to be refused.
+            if (!file.size) {
+                entrySay("That file is empty.", true);
+                return;
+            }
+            // A type the browser gives is taken at its word; with none (some
+            // Windows set-ups), the file's own extension decides.
+            if (file.type ? ENTRY_TYPES.indexOf(file.type) === -1 : !ENTRY_EXTENSION.test(file.name || "")) {
+                entrySay("Pictures only: PNG or JPG.", true);
+                return;
+            }
+            entrySending = true;
+            entrySend.disabled = true;
+            if (!entryRef) entryRef = newEntryRef();
+            try {
+                entrySay("Sending...");
+                const dataUrl = file.size > ENTRY_IMAGE_MAX ? await shrinkToFit(file) : await readFileAsDataUrl(file);
+                await Api.submitEventEntry({ habboName, dataUrl, website: entryHp.value, clientRef: entryRef });
+                // Cleared either way, so a return visit starts fresh.
+                clearEntryForm();
+                if (entryShowing) MazeConsole.showThanks("Entry Submitted");
+            } catch (e) {
+                // Changed on its way: the retry is a new entry (entryEdited).
+                if (entryEditedWhileSending) entryRef = null;
+                const status = e && e.status;
+                const closedNow = status === 403 && e.data && e.data.closed === true;
+                // A session revoked or forgotten while the tab sat open: the
+                // page is told who it is now, whether or not it is showing.
+                if (status === 401 && window.Account && typeof Account.refresh === "function") Account.refresh();
+                if (closedNow) setEntryClosed(true);
+                if (!entryShowing) {
+                    // Left mid-send: nothing written onto the form.
+                    if (!entryClosed) entrySay("");
+                } else if (closedNow) {
+                    // setEntryClosed has said so.
+                } else if (status === 401) {
+                    entrySay("You were signed out. Press Send again to enter without an account.", true);
+                } else if (window.Account && Account.writeRefused && Account.writeRefused(e.status, e.data, "send")) {
+                    // A blocked sender gets the site's own "Can't Send" window.
+                    entrySay("");
+                } else {
+                    entrySay((e && e.message) || "Something went wrong. Try again in a moment.", true);
+                }
+            } finally {
+                entrySending = false;
+                entryEditedWhileSending = false;
+                entrySend.disabled = entryClosed;
+            }
+        });
+    }
+
+    const choiceEntryBtn = document.getElementById("console-choice-entry");
+    if (choiceEntryBtn) choiceEntryBtn.addEventListener("click", () => showPage("entry"));
+    document.addEventListener("console:page", e => {
+        entryShowing = Boolean(e.detail && e.detail.name === "entry");
+        if (entryShowing) paintEntryEvent();
+    });
+    document.addEventListener("console:close", () => { entryShowing = false; });
 
     // ---------- contributors page ----------
 

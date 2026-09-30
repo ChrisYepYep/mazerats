@@ -229,6 +229,33 @@ const fromLaunch = (from, launch) => {
     return day && from < day ? day : from;
 };
 
+/* Whether a request about `day`, arriving at `ms`, is in practice time —
+   see PRACTICE BEFORE LAUNCH in _speed.js. `cut` is the launch cut only
+   for a day it can matter to (launch day, or a day before it) and null for
+   every day after, so from the day after launch none of this costs more
+   than the one settings read. `now` is whether the request itself is
+   before the cut, which makes whatever it finishes practice. A settings
+   read that fails is no practice at all: the day plays as it always did.
+   Exported for guess-scores.js, so both games draw the line in one place. */
+async function practiceOf(db, day, ms) {
+    let cut = null;
+    try { cut = await launchCut(db); } catch (e) { cut = null; }
+    if (!cut || !(day <= cut.day)) return { cut: null, now: false };
+    return { cut, now: speed.beforeCut(cut, ms) };
+}
+
+/* The answer to a practice run finished: what it scored, and that it was
+   not filed. `practice` — the cut, as an ISO string — is what the results
+   card reads; final, so the page never sends it again (Daily.filed in
+   js/daily.js). */
+function practiceReply(scored, bonus, cut) {
+    return { recorded: false, reason: "practice", practice: cut.at, points: scored.points, bonus: bonus || 0, solved: scored.solved };
+}
+
+/* Whether a player's day on file, or on the clock, is a practice run that
+   the cut has now passed — to be set aside rather than counted. */
+const pastPractice = (practice, row) => Boolean(practice && practice.cut && !practice.now && speed.isPractice(row, practice.cut));
+
 /* A real calendar day, not only the right shape. "2026-13-45" passes the
    pattern, and rangeBounds turned it into an Invalid Date whose
    toISOString() THREW — outside any try, so the caller got Netlify's bare
@@ -438,10 +465,11 @@ async function combinedBoards(db, event, params) {
            expensive read on the site, and the answer is the same for
            everybody — so it goes behind the edge for fifteen seconds like
            the per-game board above. See BOARD_CDN_CACHE in _cache.js. */
+        // The spans' first days clipped to launch day, as the queries are.
         return cachedJson(event, {
             date: day,
-            weekFrom: week.from,
-            monthFrom: month.from,
+            weekFrom: fromLaunch(week.from, launch),
+            monthFrom: fromLaunch(month.from, launch),
             combined: true,
             day: bDay,
             week: bWeek,
@@ -515,7 +543,7 @@ exports.handler = async (event) => {
         // an unhandled rejection, which Netlify answers with its own bare
         // 502 page rather than JSON the results panel knows how to read.
         // rangeBounds too, which can throw on a day it cannot read.
-        let week, month, all;
+        let week, month, all, launch;
         let todayRows, weekRows, monthRows, allRows;
         try {
             week = rangeBounds("week", day);
@@ -523,7 +551,7 @@ exports.handler = async (event) => {
             all = rangeBounds("all", day);
             // Every span from launch day on, and every row from the launch
             // instant on — see launchCut. A day before it has no board at all.
-            const launch = await launchCut(db);
+            launch = await launchCut(db);
             const before = Boolean(launch) && day < launch.day;
             [todayRows, weekRows, monthRows, allRows] = await Promise.all([
                 before ? [] : dayBoard(col, { game, day, ...afterLaunch(launch) }),
@@ -557,10 +585,14 @@ exports.handler = async (event) => {
         /* Edge-cached for fifteen seconds — see BOARD_CDN_CACHE in
            _cache.js. Nothing caller-specific is read or returned on this
            path, so one answer genuinely serves everybody. */
+        /* The spans' first days as the boards actually count them: clipped
+           to launch day like the queries above, so launch week's tab says
+           "Since 3 October" rather than a Monday nothing before counts from
+           (30 Sept 2026). */
         return cachedJson(event, {
             date: day,
-            weekFrom: week.from,
-            monthFrom: month.from,
+            weekFrom: fromLaunch(week.from, launch),
+            monthFrom: fromLaunch(month.from, launch),
             // Shaped and made public above, inside the try.
             day: todayRows,
             week: weekRows,
@@ -605,6 +637,12 @@ exports.handler = async (event) => {
            write, so a refused request costs one memoised lookup. */
         const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true });
         if (refusal) return refusal;
+
+        /* Practice time, for a signed-in player's day — see PRACTICE BEFORE
+           LAUNCH in _speed.js. Read on the arrival time, like everything
+           else about the request. Signed out, nothing is stored to set
+           aside, and the page keeps its own practice day (js/oddoneout.js). */
+        const practice = player ? await practiceOf(db, day, arrived) : { cut: null, now: false };
 
         /* ---------- one pick ----------
 
@@ -678,6 +716,19 @@ exports.handler = async (event) => {
             const replayed = body.replay === true;
             let outcome;
             try {
+                /* A pick on a practice run once the cut has passed: the run
+                   is set aside, and the page is told to start the day
+                   afresh (409 "practice-over" — Daily.move forgets its
+                   start, and the game reads the day again). Round 0
+                   included: carrying on would find no start and play the
+                   real day untimed. */
+                if (practice.cut && !practice.now) {
+                    const row = await speed.progressFor(db, game, day, player.id);
+                    if (pastPractice(practice, row)) {
+                        await speed.dropPractice(db, game, day, player.id, row);
+                        return privateJson(409, { reason: "practice-over" });
+                    }
+                }
                 outcome = await speed.recordOddPick(db, ensureUniqueIndex, day, player.id, round, tile, dealt, arrived, replayed);
             } catch (e) {
                 console.error("daily-scores: could not record a pick", e);
@@ -732,6 +783,12 @@ exports.handler = async (event) => {
         if (body.action === "start") {
             if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
             try {
+                // A practice run from before the cut is set aside first, so
+                // this start is the real day's, timed from now.
+                if (practice.cut && !practice.now) {
+                    const row = await speed.progressFor(db, game, day, player.id);
+                    if (pastPractice(practice, row)) await speed.dropPractice(db, game, day, player.id, row);
+                }
                 await speed.recordStart(db, ensureUniqueIndex, game, day, player.id);
             } catch (e) {
                 console.error("daily-scores: could not record a start", e);
@@ -752,6 +809,14 @@ exports.handler = async (event) => {
         let filed;
         try {
             filed = await col.findOne({ game, day, playerId: player.id });
+            /* A day filed before the cut, by a server from before practice
+               runs were kept off the file, gives way to the real one: it is
+               on no board (the instant cut) and would otherwise hold the
+               unique index against the day being played properly. */
+            if (filed && pastPractice(practice, filed)) {
+                await col.deleteOne({ _id: filed._id, at: filed.at });
+                filed = null;
+            }
         } catch (e) {
             return json(500, { error: "Could not check the day" });
         }
@@ -783,12 +848,14 @@ exports.handler = async (event) => {
            (409, which the page keeps trying). The start row these read
            expires two days on (_speed.js), which bounds how late is late. */
         const closed = () => json(400, { error: "That day is not open" });
-        let scored, clock = null, claimed = false;
+        let scored, clock = null, claimed = false, practiceRun = practice.now;
         try {
             const row = await speed.progressFor(db, game, day, player.id);
             // Checked before the deal is read, so a closed day with nothing
             // recorded can never cause a day to be dealt.
             if (!open && !(speed.lastMarkAt(row) <= dayClosesAt(day))) return closed();
+            // Finished after the cut, but begun before it: still practice.
+            if (pastPractice(practice, row)) practiceRun = true;
             const deal = await deals.dealFor(db, ensureUniqueIndex, game, day);
             if (!deal.rounds.length) return json(409, { recorded: false, reason: "no-deal" });
             const moves = speed.movesOf(row, deal.rounds.length);
@@ -812,6 +879,12 @@ exports.handler = async (event) => {
            any. No clock (a claimed day, or an untimed one) is no bonus
            rather than a day that fails to record. */
         const { bonus, ms, roundSecs } = speed.dayBonus(clock, scored.grid.map(g => g > 0), arrived);
+
+        /* A practice run is answered — its points and the bonus it would
+           have earned, so the card can say how it went — and not filed:
+           no row, so nothing stands in the way of the day played properly
+           after the cut (PRACTICE BEFORE LAUNCH in _speed.js). */
+        if (practiceRun) return privateJson(200, practiceReply(scored, bonus, practice.cut));
 
         /* Their nickname if they have one, else their Discord name — read
            from the players row, not the session (publicName in _player.js;
@@ -894,17 +967,24 @@ async function dealReply(db, event, game, params) {
         return privateJson(503, { error: "The day could not be dealt just now" });
     }
     const player = playerFrom(event);
-    let progress = null, filed = false, score = null;
+    const practice = await practiceOf(db, day, Date.now());
+    let progress = null, filed = false, score = null, practiceOver = false;
     // How many rounds' pictures go out: none before the day has started,
     // then only the rounds this player has reached (ONE ROUND AT A TIME in
     // _deal.js). Signed out, none — the page keeps the rounds it was handed.
     let reached = 0;
     if (player) {
         try {
-            const row = await speed.progressFor(db, game, day, player.id);
+            let row = await speed.progressFor(db, game, day, player.id);
+            /* A practice run the cut has passed is not this player's day:
+               the day is offered from nothing, and `practiceOver` tells the
+               page to forget the start it remembers (Daily.deal). The row
+               itself is set aside by the next start — a GET writes nothing. */
+            if (pastPractice(practice, row)) { row = null; practiceOver = true; }
             progress = progressView(speed.movesOf(row, deal.rounds.length));
-            const onFile = await db.collection(COLLECTION).findOne({ game, day, playerId: player.id },
-                { projection: { _id: 1, points: 1, bonus: 1, solved: 1 } });
+            let onFile = await db.collection(COLLECTION).findOne({ game, day, playerId: player.id },
+                { projection: { _id: 1, points: 1, bonus: 1, solved: 1, at: 1 } });
+            if (pastPractice(practice, onFile)) onFile = null;
             filed = Boolean(onFile);
             score = filedScore(onFile);
             reached = deals.reachedOf(game, row, deal.rounds.length, filed);
@@ -918,7 +998,12 @@ async function dealReply(db, event, game, params) {
         game, day, today: today(), now: Date.now(),
         // Picture addresses, never the stored references — see _deal.js.
         rounds: deals.publicRounds(game, deal.rounds, day, reached),
-        progress, filed, score
+        progress, filed, score,
+        /* Practice time (PRACTICE BEFORE LAUNCH in _speed.js): the instant
+           it ends, so the page can mark the day a practice run and say when
+           the real one starts. For everybody, signed out included. */
+        ...(practice.now ? { practiceUntil: practice.cut.at } : {}),
+        ...(practiceOver ? { practiceOver: true } : {})
     });
 }
 
@@ -939,6 +1024,10 @@ module.exports.launchDay = launchDay;
 module.exports.launchCut = launchCut;
 module.exports.afterLaunch = afterLaunch;
 module.exports.fromLaunch = fromLaunch;
+// Practice runs before the cut — see PRACTICE BEFORE LAUNCH in _speed.js.
+module.exports.practiceOf = practiceOf;
+module.exports.practiceReply = practiceReply;
+module.exports.pastPractice = pastPractice;
 module.exports.isRealDay = isRealDay;
 // For guess-scores.js, so both games' deal replies carry the same shape.
 module.exports.filedScore = filedScore;

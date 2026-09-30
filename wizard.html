@@ -274,6 +274,14 @@
                  there is no way to tell the feature exists from the feature
                  being broken. Shown only once a couple of letters are in. -->
             <div class="wiz-whisper" id="wiz-whisper" hidden aria-hidden="true"></div>
+
+            <!-- What the whisper SAYS, as opposed to what it echoes (30 Sept
+                 2026). The echo of typed letters stays hidden from screen
+                 readers — they already hear each key — but the three replies
+                 (no room by that name, too many tries, couldn't check) are
+                 news, and a polite live region is how they get heard. Off
+                 screen rather than hidden, or it would not be read at all. -->
+            <p class="visually-hidden" id="wiz-whisper-said" role="status" aria-live="polite"></p>
         </div>
     </main>
 

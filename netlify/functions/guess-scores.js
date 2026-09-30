@@ -54,7 +54,8 @@ const { dayIsOpen, dayClosesAt, rangeBounds } = require("./_daily");
 /* Where the boards start, and what counts as a day, from daily-scores.js so
    the two games and the combined board cut at the same place. See launchCut
    and isRealDay there. */
-const { launchCut, afterLaunch, fromLaunch, isRealDay, filedScore } = require("./daily-scores");
+const { launchCut, afterLaunch, fromLaunch, isRealDay, filedScore,
+    practiceOf, practiceReply, pastPractice } = require("./daily-scores");
 const { clientNet } = require("./_net");
 const speed = require("./_speed");
 const deals = require("./_deal");
@@ -339,13 +340,14 @@ exports.handler = async (event) => {
         // A real calendar day, not only the right shape — see isRealDay.
         if (!isRealDay(day)) return json(400, { error: "Bad day" });
 
+        let launch = null;
         try {
             const week = rangeBounds("week", day);
             const month = rangeBounds("month", day);
             const all = rangeBounds("all", day);
             // Every span from launch day on, and every row from the launch
             // instant on (launchCut); a day before it has no board.
-            const launch = await launchCut(db);
+            launch = await launchCut(db);
             const before = Boolean(launch) && day < launch.day;
 
             /* All four boards in one request rather than one per tab. They
@@ -379,10 +381,12 @@ exports.handler = async (event) => {
                straight after a day was filed showed the board from before
                it, for Guess the Maze only. The browser now revalidates and
                the edge holds it fifteen seconds, like the others. */
+            // The spans' first days clipped to launch day, as the queries
+            // are, so launch week says "Since 3 October" (30 Sept 2026).
             return cachedJson(event, {
                 date: day,
-                weekFrom: week.from,
-                monthFrom: month.from,
+                weekFrom: fromLaunch(week.from, launch),
+                monthFrom: fromLaunch(month.from, launch),
                 day: bDay,
                 week: bWeek,
                 month: bMonth,
@@ -431,6 +435,10 @@ exports.handler = async (event) => {
            nickname the admins have rejected, until they choose another. */
         const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true });
         if (refusal) return refusal;
+
+        // Practice time for a signed-in player's day, as in daily-scores.js
+        // (PRACTICE BEFORE LAUNCH in _speed.js; 30 Sept 2026).
+        const practice = player ? await practiceOf(db, day, arrived) : { cut: null, now: false };
 
         /* ---------- one guess ----------
 
@@ -508,6 +516,16 @@ exports.handler = async (event) => {
             const replayed = body.replay === true;
             let outcome;
             try {
+                // A guess on a practice run the cut has passed: set aside,
+                // and the day starts afresh — see the same step in
+                // daily-scores.js.
+                if (practice.cut && !practice.now) {
+                    const row = await speed.progressFor(db, "guess", day, player.id);
+                    if (pastPractice(practice, row)) {
+                        await speed.dropPractice(db, "guess", day, player.id, row);
+                        return privateJson(409, { reason: "practice-over" });
+                    }
+                }
                 outcome = await speed.recordGuess(db, ensureUniqueIndex, day, player.id, round, offered, dealt, TRIES, arrived, replayed);
             } catch (e) {
                 console.error("guess-scores: could not record a guess", e);
@@ -565,6 +583,11 @@ exports.handler = async (event) => {
         if (body.action === "start") {
             if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
             try {
+                // A practice run from before the cut is set aside first.
+                if (practice.cut && !practice.now) {
+                    const row = await speed.progressFor(db, "guess", day, player.id);
+                    if (pastPractice(practice, row)) await speed.dropPractice(db, "guess", day, player.id, row);
+                }
                 await speed.recordStart(db, ensureUniqueIndex, "guess", day, player.id);
             } catch (e) {
                 console.error("guess-scores: could not record a start", e);
@@ -582,6 +605,12 @@ exports.handler = async (event) => {
         let filed;
         try {
             filed = await col.findOne({ day, playerId: player.id });
+            // Filed before the cut by an older server: gives way to the
+            // real day (see daily-scores.js).
+            if (filed && pastPractice(practice, filed)) {
+                await col.deleteOne({ _id: filed._id, at: filed.at });
+                filed = null;
+            }
         } catch (e) {
             return json(500, { error: "Could not check the day" });
         }
@@ -601,12 +630,14 @@ exports.handler = async (event) => {
            has no stamps and is refused once closed, and so is a day with a
            room still open — finally (400), not as "unfinished". */
         const closed = () => json(400, { error: "That day is not open" });
-        let scored, clock = null, claimed = false;
+        let scored, clock = null, claimed = false, practiceRun = practice.now;
         try {
             const row = await speed.progressFor(db, "guess", day, player.id);
             // Before the deal, so a closed day with nothing recorded never
             // causes one to be dealt.
             if (!open && !(speed.lastMarkAt(row) <= dayClosesAt(day))) return closed();
+            // Finished after the cut, but begun before it: still practice.
+            if (pastPractice(practice, row)) practiceRun = true;
             const deal = await deals.dealFor(db, ensureUniqueIndex, "guess", day);
             if (!deal.rounds.length) return json(409, { recorded: false, reason: "no-deal" });
             const moves = speed.movesOf(row, deal.rounds.length);
@@ -631,6 +662,9 @@ exports.handler = async (event) => {
            a round with no mark earns none. No clock — a claimed day, an
            untimed one — is no bonus rather than a day that fails to record. */
         const { bonus, ms, roundSecs } = speed.dayBonus(clock, grid.map(g => g > 0), arrived);
+
+        // A practice run: answered, not filed (see daily-scores.js).
+        if (practiceRun) return privateJson(200, practiceReply(scored, bonus, practice.cut));
 
         /* The name the board shows: their nickname if they have chosen one,
            read from the players row rather than the session (publicName in
@@ -697,16 +731,21 @@ async function dealReply(db, event, params) {
         return privateJson(503, { error: "The day could not be dealt just now" });
     }
     const player = playerFrom(event);
-    let progress = null, filed = false, score = null;
+    const practice = await practiceOf(db, day, Date.now());
+    let progress = null, filed = false, score = null, practiceOver = false;
     // Only the rooms this player has reached, and none signed out or
     // before the start — ONE ROUND AT A TIME in _deal.js.
     let reached = 0;
     if (player) {
         try {
-            const row = await speed.progressFor(db, "guess", day, player.id);
+            let row = await speed.progressFor(db, "guess", day, player.id);
+            // A practice run the cut has passed is offered afresh, as in
+            // dealReply in daily-scores.js.
+            if (pastPractice(practice, row)) { row = null; practiceOver = true; }
             progress = progressView(deal.rounds, speed.movesOf(row, deal.rounds.length));
-            const onFile = await db.collection(COLLECTION).findOne({ day, playerId: player.id },
-                { projection: { _id: 1, points: 1, bonus: 1, solved: 1 } });
+            let onFile = await db.collection(COLLECTION).findOne({ day, playerId: player.id },
+                { projection: { _id: 1, points: 1, bonus: 1, solved: 1, at: 1 } });
+            if (pastPractice(practice, onFile)) onFile = null;
             filed = Boolean(onFile);
             // The filed day's base, bonus and rounds right, for the results
             // card on a reload — see filedScore in daily-scores.js.
@@ -720,7 +759,11 @@ async function dealReply(db, event, params) {
         day, today: todayIso(), now: Date.now(),
         // Picture addresses, never the stored references — see _deal.js.
         rounds: deals.publicRounds("guess", deal.rounds, day, reached),
-        progress, filed, score
+        progress, filed, score,
+        // Practice time, and a practice run set aside — see dealReply in
+        // daily-scores.js.
+        ...(practice.now ? { practiceUntil: practice.cut.at } : {}),
+        ...(practiceOver ? { practiceOver: true } : {})
     });
 }
 

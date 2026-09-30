@@ -187,10 +187,19 @@ async function handle(event) {
         // anything. See _auth.js.
         if (!(await canWrite(event, scope))) return await refuseWrite(event);
 
-        const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+        /* No label at all is let through to the sniff below (30 Sept 2026).
+           A file whose extension Windows has no type registered for (a .webp
+           on some machines, a .PNG renamed by a tool) reaches the browser
+           with an empty file.type, and FileReader then labels it
+           application/octet-stream — so a real picture was refused here
+           before its bytes were ever looked at, which is the one thing the
+           sniff was meant to end. A label that names some OTHER type is
+           still refused as before. */
+        const match = /^data:([^;,]*);base64,(.+)$/.exec(dataUrl);
         if (!match) return json(400, { error: "Expected a base64 image data URL" });
         const [, claimed, base64] = match;
-        if (!EXT_BY_MIME[claimed]) return json(400, { error: "Unsupported image type — use PNG, JPG, GIF, or WebP" });
+        const unlabelled = !claimed || claimed === "application/octet-stream";
+        if (!unlabelled && !EXT_BY_MIME[claimed]) return json(400, { error: "Unsupported image type — use PNG, JPG, GIF, or WebP" });
 
         const buffer = Buffer.from(base64, "base64");
         if (buffer.length > MAX_BYTES) return json(400, { error: "Image too large — keep uploads under 4MB" });

@@ -955,8 +955,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 // so the separators are laid out as real boxes with real gaps
                 // rather than as inline text: every wrapped line then centres on
                 // its own items instead of being pushed off-centre by a dangling
-                // dot and its surrounding spaces. The last item's dot is hidden
-                // in CSS rather than skipped here.
+                // dot and its surrounding spaces. CSS moves each dot in front
+                // of its own name (30 Sept 2026: so a wrapped line never ends
+                // on one) and hides the first item's, rather than skipping it
+                // here.
                 `<span class="fellow-fansites-item"><a href="${url}" target="_blank" rel="noopener">${label}</a><span class="fellow-fansites-dot" aria-hidden="true">&bull;</span></span>`
             ).join("")}
         </p>
@@ -1071,7 +1073,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const href = (page === "home" || page === "welcome") ? "#privacy" : "/privacy";
     copyrightLine.insertAdjacentHTML(
         "beforeend",
-        ` <span class="footer-dot" aria-hidden="true">&middot;</span> <a href="${href}">Privacy Policy</a>`
+        // &nbsp; after the dot, so a phone never ends the line on it.
+        ` <span class="footer-dot" aria-hidden="true">&middot;</span>&nbsp;<a href="${href}">Privacy Policy</a>`
     );
 });
 

@@ -250,6 +250,7 @@ window.WizardMap = function WizardMap(options) {
            between the pass running once and running two hundred times. */
         if (bandedAtZoom === null || Math.abs(zoom - bandedAtZoom) > 0.01) applyBands();
         ensureDetail();
+        scheduleLayerSizes();
         if (options.onView) options.onView(zoom);
     }
 
@@ -409,9 +410,20 @@ window.WizardMap = function WizardMap(options) {
                banded is focusable. */
             if (entry.el.dataset.kind === "room") {
                 if (gone) {
+                    /* Focus does not go down with it (30 Sept 2026). A room
+                       that fades out while it has the keyboard would leave
+                       focus on something invisible and out of the Tab order,
+                       so it is handed to the stage, the map itself, where the
+                       next Tab carries on from. */
+                    if (document.activeElement === entry.el) {
+                        try { stage.focus({ preventScroll: true }); } catch (err) { stage.focus(); }
+                    }
                     entry.el.tabIndex = -1;
                     entry.el.setAttribute("aria-hidden", "true");
-                } else if (entry.el.hasAttribute("aria-hidden")) {
+                } else if (entry.el.hasAttribute("aria-hidden") && !entry.el.dataset.arriving) {
+                    /* `arriving` is a revealed room still waiting for its
+                       moment in the walk (markFound in js/wizard.js); it is
+                       put back in the order when it lands, not here. */
                     entry.el.removeAttribute("tabindex");
                     entry.el.removeAttribute("aria-hidden");
                 }
@@ -689,9 +701,108 @@ window.WizardMap = function WizardMap(options) {
         detailEl = el;
     }
 
+    /* ---------- pictures at the size they are drawn (30 Sept 2026) ----------
+
+       The castle, the lake and the rest were loaded as the originals: 8.5MB
+       for ten pictures, 4MB of it the castle alone, on the page's opening
+       view, where the castle is drawn about 800px across (1,708 in the
+       original). Measured on a 1920x1080 screen, the opening view now asks
+       for 2.3MB. So each picture
+       now comes through the image CDN at the width it is actually drawn on
+       screen — its share of the map, times the map's scale at this zoom,
+       times the screen's pixel density — rounded up to one of a few set
+       widths, so that nearly every zoom lands on a copy already cached.
+
+       Why not once, sized for the deepest zoom? Because the deepest zoom
+       (map.maxZoom, 8) needs more than the originals have: on an ordinary
+       1920x1080 screen the castle is over 3,000px across by then, against an
+       original 1,708px wide. So a small copy first, and a bigger one only
+       when the reader zooms past what the one on screen covers — fetched
+       aside and swapped in once it has arrived, so the picture never blanks
+       — and past the largest set width, the original itself. Upward only: a
+       copy already here is never swapped for a smaller one.
+
+       PNG throughout (fm=png), asked for by name. Left to choose, the CDN
+       picks WebP or AVIF by what the browser accepts, and lossy compression
+       on pencil line art is exactly where it shows. Not for a picture that
+       is not one of ours (a full address rather than a path on this site):
+       the CDN only fetches from here. A copy the CDN comes back narrower
+       than asked is the whole original, since it never enlarges, and that
+       picture is done. A copy that fails to load falls back to the original. */
+    const LAYER_WIDTHS = [256, 384, 512, 768, 1024];
+    const layerRes = new Map();         // <img> -> { layer, asked, full, latest }
+    let layerResTimer = 0;
+    let layersSizedFor = 0;             // the scale x density they were last sized for
+
+    function viaCdn(src) {
+        return typeof src === "string" && src.charAt(0) === "/" && src.charAt(1) !== "/"
+            && !src.startsWith("/.netlify/images");
+    }
+
+    // The scale the pictures should be sized for: wherever the view is going
+    // if it is on its way somewhere, so a glide in to 8x asks once, for 8x.
+    function layerScale() {
+        return fit * Math.max(zoom, wantZoom) * Math.max(1, window.devicePixelRatio || 1);
+    }
+
+    function layerWanted(layer) {
+        const w = Number(layer.w);
+        // No width set means drawn at its own size, which only the original has.
+        if (!(w > 0)) return Infinity;
+        return w / 100 * map.width * layerScale();
+    }
+
+    function layerCopy(layer, wanted) {
+        const width = LAYER_WIDTHS.find(t => t >= wanted);
+        if (!width || !viaCdn(layer.image)) return { src: layer.image, asked: Infinity };
+        const q = new URLSearchParams({ url: layer.image, w: String(width), fm: "png" });
+        return { src: `/.netlify/images?${q.toString()}`, asked: width };
+    }
+
+    function sizeLayer(el) {
+        const state = layerRes.get(el);
+        if (!state || state.full) return;
+        const wanted = layerWanted(state.layer);
+        if (state.asked >= wanted) return;
+        const next = layerCopy(state.layer, wanted);
+        state.asked = next.asked;
+        state.latest = next.src;
+        if (next.asked === Infinity) state.full = true;
+        // Nothing on screen yet (or still arriving): just point it at the new one.
+        if (!el.getAttribute("src") || !el.complete) { el.src = next.src; return; }
+        const aside = new Image();
+        aside.onload = () => { if (state.latest === next.src && layerRes.get(el) === state) el.src = next.src; };
+        aside.onerror = () => {
+            if (state.latest !== next.src || layerRes.get(el) !== state) return;
+            state.full = true;
+            el.src = state.layer.image;
+        };
+        aside.src = next.src;
+    }
+
+    function sizeLayers() {
+        clearTimeout(layerResTimer);
+        layerResTimer = 0;
+        layersSizedFor = layerScale();
+        for (const el of layerRes.keys()) sizeLayer(el);
+    }
+
+    /* From applyTransform, which runs every frame of a glide: only when the
+       view has gone in further than the pictures were sized for, and only
+       once it has stopped asking for a moment, so a wheel spun in fetches the
+       copy for where it ends rather than one for every notch on the way. */
+    function scheduleLayerSizes() {
+        if (!layerRes.size || layerScale() <= layersSizedFor * 1.001) return;
+        clearTimeout(layerResTimer);
+        layerResTimer = setTimeout(sizeLayers, 200);
+    }
+
     function drawLayers() {
         layersEl.innerHTML = "";
         layerEls.clear();
+        layerRes.clear();
+        clearTimeout(layerResTimer);
+        layerResTimer = 0;
 
         /* The paper goes in here, with the pictures, and that is the whole
            reason this exists rather than the parchment simply being the
@@ -741,8 +852,28 @@ window.WizardMap = function WizardMap(options) {
             if (layer.hidden) el.classList.add("is-hidden-room");
             el.dataset.kind = "layer";
             el.dataset.id = layer.id;
-            if (layer.image) {
+            if (layer.image && options.revealHidden) {
+                /* The editor keeps the originals: a picture being placed
+                   wants every pixel it has, and the GIF maker
+                   (js/wizard-gif.js) draws its frames from these very
+                   elements at whatever zoom it likes. */
                 el.src = layer.image;
+            } else if (layer.image) {
+                /* No src yet: sizeLayers gives it one, a moment from now
+                   (see the end of this function). */
+                const state = { layer, asked: 0, full: false, latest: "" };
+                layerRes.set(el, state);
+                el.addEventListener("load", () => {
+                    if (state.asked !== Infinity && el.naturalWidth && el.naturalWidth < state.asked) state.full = true;
+                });
+                el.addEventListener("error", () => {
+                    if (el.getAttribute("src") === layer.image) return;
+                    state.full = true;
+                    state.asked = Infinity;
+                    el.src = layer.image;
+                });
+            }
+            if (layer.image) {
                 el.alt = layer.name || "";
                 el.loading = "lazy";
                 /* An <img> is draggable by default, and that default eats
@@ -775,6 +906,12 @@ window.WizardMap = function WizardMap(options) {
             layerEls.set(layer.id, el);
             banded.push({ el, item: layer });
         }
+        /* Sized in a microtask rather than here: render() draws the sheet at
+           whatever zoom it happens to be at, and the page then sets its
+           opening view straight after, in the same task (load in
+           js/wizard.js). Sized now, the pictures would be asked for at 1x
+           and again a moment later for the opening zoom. */
+        if (layerRes.size) queueMicrotask(sizeLayers);
     }
 
     /* Everything about how a picture sits and looks, in one place.
@@ -1425,10 +1562,19 @@ window.WizardMap = function WizardMap(options) {
         if (e.target.closest(".wiz-handle")) return;
         if (!panEnabled) return;
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        if (pointers.size === 2) {
-            pinchStart = pinchSpread();
-            pinchZoom = wantZoom;
-            [pinchMidX, pinchMidY] = pinchMiddle();
+        /* Two fingers or MORE (30 Sept 2026). A third finger used to fall
+           through to the one-finger case below and start a drag from where
+           it landed, so every move of the other two panned the map by their
+           distance from it — a lurch across the castle — and the click the
+           gesture ended with opened whatever room was underneath. More than
+           two is held still; lifting back to two picks the pinch up afresh
+           (see endPointer). */
+        if (pointers.size >= 2) {
+            if (pointers.size === 2) {
+                pinchStart = pinchSpread();
+                pinchZoom = wantZoom;
+                [pinchMidX, pinchMidY] = pinchMiddle();
+            }
             dragging = false;
             /* A pinch is a gesture, not a press, so the click it ends with
                is not a click on whatever happened to be under a finger.
@@ -1514,6 +1660,13 @@ window.WizardMap = function WizardMap(options) {
     function endPointer(e) {
         pointers.delete(e.pointerId);
         if (pointers.size < 2) pinchStart = 0;
+        /* Down to two from more: a pinch again, seeded from the two fingers
+           that are left rather than from whichever pair began it. */
+        if (pointers.size === 2) {
+            pinchStart = pinchSpread();
+            pinchZoom = wantZoom;
+            [pinchMidX, pinchMidY] = pinchMiddle();
+        }
         /* One finger lifted out of a pinch, and one still down. That finger
            is a drag now — it was not before, because the pinch turned
            dragging off — so it is handed the gesture rather than being
@@ -1730,7 +1883,11 @@ window.WizardMap = function WizardMap(options) {
            looks like. */
         redrawLayer(layer) {
             const el = layerEls.get(layer.id);
-            if (el) applyLayerVisual(el, layer);
+            if (!el) return;
+            applyLayerVisual(el, layer);
+            // A picture made wider may now be drawn bigger than its copy.
+            const state = layerRes.get(el);
+            if (state) { state.layer = layer; sizeLayer(el); }
         },
         getZoom: () => zoom,
         /* For anything that has to reason about a zoom other than the

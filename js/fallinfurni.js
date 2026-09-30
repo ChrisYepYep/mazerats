@@ -135,12 +135,27 @@
     const DEFAULT_FIGURE = "hd-180-1.ch-210-66.lg-270-82.sh-290-80.hr-100-61";
     const STORE_KEY = "mazerats_ff_room_v2";
 
+    /* The three Origins hotels, as room-figure.js's ORIGINS_HOSTS knows them.
+       Anything else - an old stored entry, a hand-edited one - is COM. */
+    const HOTELS = ["COM", "ES", "BR"];
+    function hotelCode(v) {
+        const s = String(v || "").toUpperCase();
+        return HOTELS.includes(s) ? s : "COM";
+    }
+
     const state = {
         model: "a",
         floorPattern: "plain", floorColour: null,
         wallPattern: "plain", wallColour: null,
         figure: DEFAULT_FIGURE,
         name: "",
+        /* WHICH ORIGINS HOTEL (30 Sept 2026): COM, ES or BR, from the picker
+           beside the name box, remembered with the name. `nameHotel` is the
+           hotel the habbo being worn was actually found on - the picker can
+           be changed and its lookup fail, and the name still worn is then
+           from the hotel it came from, not the one now picked. */
+        hotel: "COM",
+        nameHotel: "COM",
         pos: { x: 3, y: 6 },
         dir: 2,
         path: [],
@@ -2605,6 +2620,7 @@
                 document.getElementById("ff-level-list").value = saved.id;
             } catch (e) {
                 Editor.save();      // keep it locally even when the server said no
+                if (e && e.changed) { await changedOnServer(publish); return; }
                 /* "Unauthorized" on its own tells a builder nothing they can
                    act on. The one cause worth naming is the common one: the
                    admin session has lapsed, and signing in again fixes it. */
@@ -2612,6 +2628,46 @@
                     ? "Not signed in as admin - sign in on the admin page, then Save again."
                     : (e.message || "Could not reach the server.");
                 status(`${why} Your work is safe in this browser meanwhile.`, "bad");
+            }
+        }
+        /* A SAVE REFUSED BECAUSE THE SERVER'S COPY MOVED ON (30 Sept 2026).
+
+           The only way out used to be "load it again", which replaces the
+           draft - and every draft opened before the 30 Sept retune hits
+           this. So first the draft is put somewhere safe (the clipboard, and
+           the console whatever the clipboard says), and then the builder is
+           offered the merge: the server's newer rules and version with this
+           draft's room edits on top (RoomEditor.mergeOntoServer). Cancel
+           writes nothing and keeps the draft in this browser as it was. */
+        async function changedOnServer(publish) {
+            const L = Editor.state.level;
+            const text = Editor.draftJson();
+            console.log(`Fallin' Furni: draft of “${L.name || L.id}” as it stood when the save was refused:\n` + text);
+            let copied = false;
+            try { await navigator.clipboard.writeText(text); copied = true; } catch { /* the console has it */ }
+            const kept = copied ? "A copy of this draft is on your clipboard and in the console."
+                : "A copy of this draft is in the console.";
+            const ok = window.confirm(
+                `“${L.name || L.id}” has been changed on the server since this draft was opened. ${kept}\n\n` +
+                "OK: keep the server's newer rules and put this draft's room on top of them - " +
+                "name, layout, floor, walls, start, decor and drop zones - then save.\n" +
+                "Cancel: save nothing and keep the draft here as it is.");
+            if (!ok) {
+                status(`Not saved - the server's copy is newer. ${kept}`, "bad");
+                return;
+            }
+            try {
+                status("Merging onto the server's copy…", "busy");
+                const saved = await Editor.mergeOntoServer(publish);
+                syncEditor();
+                status(`Saved “${saved.name}” - this draft's room on the server's newer rules` +
+                    `${saved.published === true ? ", published." : ", still a draft."}`, "good");
+                syncPublishButtons();
+                await refreshLevelList();
+                document.getElementById("ff-level-list").value = saved.id;
+            } catch (e) {
+                Editor.save();
+                status(`${e.message || "Could not merge with the server's copy."} ${kept}`, "bad");
             }
         }
         document.getElementById("ff-save").addEventListener("click", () => toServer());
@@ -2891,7 +2947,13 @@
             localStorage.setItem(STORE_KEY, JSON.stringify({
                 floorPattern: state.floorPattern, floorColour: state.floorColour,
                 wallPattern: state.wallPattern, wallColour: state.wallColour,
-                name: state.name
+                name: state.name,
+                hotel: state.hotel,
+                /* And the hotel that name was FOUND on (30 Sept 2026): the
+                   picker can move on and its lookup fail, and the name kept
+                   is still the old hotel's - without this a reload filed
+                   its runs under the picker's. */
+                nameHotel: state.nameHotel
             }));
         } catch { /* a blocked localStorage is not a reason to stop */ }
     }
@@ -2903,6 +2965,9 @@
             for (const k of ["floorPattern", "floorColour", "wallPattern", "wallColour", "name"]) {
                 if (v[k] !== undefined && v[k] !== null) state[k] = v[k];
             }
+            // An entry from before the picker has no hotel: it was COM.
+            state.hotel = hotelCode(v.hotel);
+            state.nameHotel = v.nameHotel ? hotelCode(v.nameHotel) : state.hotel;
         } catch { /* ignore a corrupt entry */ }
     }
 
@@ -2998,24 +3063,78 @@
        used to go straight on into the round as the default avatar, and the
        "No Origins habbo by that name" line was hidden with the title before
        anyone could read it. */
-    async function lookup(name) {
-        const clean = name.trim();
-        if (!clean) return "stale";
+    /* ONE LOOKUP PER NAME AND HOTEL (30 Sept 2026). Play used to ask Habbo
+       again even for the name the page had just found - and the page asks
+       for the remembered name on load, so the commonest Play of all (the
+       name already in the box, untouched) sat on "Looking up…" for a second
+       answer it already had. `lastFound` is the hotel and name of the habbo
+       being worn, set only by a lookup Habbo answered and cleared by
+       anything that takes them off; `pendingLookup` is the one in the air,
+       so asking for the same pair while it is out shares its answer rather
+       than sending a second request. */
+    let lastFound = null;
+    let pendingLookup = null;
+    const lookupKey = (name, hotel) => hotelCode(hotel) + ":" + String(name || "").trim().toLowerCase();
+
+    function wear(figure, who, hotel) {
+        state.figure = figure;
+        state.name = who;
+        state.nameHotel = hotelCode(hotel);
+        sprites.clear();
+        preload(figure);
+        dirty = true;
+    }
+
+    /* AN EMPTY BOX IS NOBODY (30 Sept 2026). The box starts filled with the
+       remembered name and the page is already wearing that habbo, so
+       clearing the box and pressing Play went on playing - and logging the
+       run - as the name just deleted. Any lookup still out is dropped too,
+       or its answer would dress the player again after the fact. */
+    function wearNobody() {
+        ++lookupSeq;
+        pendingLookup = null;
+        lastFound = null;
+        if (state.name || state.figure !== DEFAULT_FIGURE) {
+            wear(DEFAULT_FIGURE, "", state.hotel);
+            persist();
+        }
+    }
+
+    function lookup(name, hotel) {
+        const clean = String(name || "").trim();
+        if (!clean) return Promise.resolve("stale");
+        const key = lookupKey(clean, hotel);
+        if (pendingLookup && pendingLookup.key === key) return pendingLookup.promise;
+        const promise = askHabbo(clean, hotelCode(hotel), key);
+        pendingLookup = { key, promise };
+        const done = () => { if (pendingLookup && pendingLookup.promise === promise) pendingLookup = null; };
+        promise.then(done, done);
+        return promise;
+    }
+
+    async function askHabbo(clean, hotel, key) {
         const mine = ++lookupSeq;
         status("Looking up " + clean + "…", "busy");
 
-        const wear = (figure, who) => {
-            state.figure = figure;
-            state.name = who;
-            sprites.clear();
-            preload(figure);
-            dirty = true;
-        };
-
+        /* ON A LEASH (30 Sept 2026), like the levels and the furni. Play
+           now waits on this answer, so a request that never came back left
+           "Looking up…" up with Play held down for good. room-figure gives
+           Habbo six seconds; twelve covers that and a cold start. An abort
+           is "failed", and the round goes ahead as it does for any other. */
+        const ctl = typeof AbortController === "function" ? new AbortController() : null;
+        const leash = ctl ? setTimeout(() => ctl.abort(), 12000) : 0;
         try {
-            const res = await fetch("/.netlify/functions/room-figure?name=" + encodeURIComponent(clean));
+            // The hotel goes too: room-figure.js asks that hotel's own API.
+            const res = await fetch("/.netlify/functions/room-figure?name=" + encodeURIComponent(clean) +
+                "&hotel=" + encodeURIComponent(hotel),
+                ctl ? { signal: ctl.signal } : undefined);
             const data = await res.json().catch(() => ({}));
+            clearTimeout(leash);
             if (mine !== lookupSeq) return "stale"; // somebody asked again since
+            /* The leash can land while the BODY is being read (30 Sept 2026):
+               the .catch above turns that into {} on a 200, which read as
+               "no such habbo" and undressed the player over a slow answer. */
+            if (ctl && ctl.signal.aborted) throw new Error("timed out");
             if (!res.ok || !data.figureString) {
                 /* A REFUSED NAME TAKES THE OLD AVATAR OFF, and that is the
                    other half of the same complaint. The only way to be wearing
@@ -3032,18 +3151,22 @@
                    player, and neither is a reason to undress them. */
                 const missing = res.status === 404 || res.status === 400 || res.ok;
                 if (missing) {
-                    wear(DEFAULT_FIGURE, "");
+                    lastFound = null;
+                    wear(DEFAULT_FIGURE, "", hotel);
                     persist();
                 }
-                status(data.error || (missing ? "No Origins habbo by that name."
+                status(data.error || (missing ? `No habbo by that name on Origins ${hotel}.`
                     : "Could not reach the lookup just now."), "bad");
                 return missing ? "missing" : "failed";
             }
-            wear(data.figureString, data.name || clean);
-            status("Playing as " + state.name + ".", "good");
+            wear(data.figureString, data.name || clean, hotel);
+            lastFound = key;
+            // The hotel named only when it is not the usual one.
+            status("Playing as " + state.name + (hotel === "COM" ? "." : ` on Origins ${hotel}.`), "good");
             persist();
             return "found";
         } catch {
+            clearTimeout(leash);
             if (mine !== lookupSeq) return "stale";
             status("Could not reach the lookup just now.", "bad");
             return "failed";
@@ -3311,11 +3434,21 @@
            stayed disabled on an open game until a reload. The CSS already
            hides the form while the game is closed, and the submit handler
            checks gameClosed() itself. */
-        if (play) play.disabled = name === "loading" || name === "unreachable";
+        /* And EMPTY (30 Sept 2026): no levels published is nothing to
+           play either, and Play used to stay pressable over it and fail on
+           the round it could not build. */
+        if (play) play.disabled = name === "loading" || name === "unreachable" || name === "empty";
     }
 
     const hideTitle = () => titleState("playing");
+    /* WHAT THE CANVAS IS CALLED UNDER THE TITLE (30 Sept 2026): the hotel
+       view, not the last room played. beginLevel names the canvas after its
+       level ("The Library: …"), and nothing took that off again, so a screen
+       reader went on announcing a room that was no longer there. */
+    const TITLE_LABEL = "The hotel view, with furni falling past it";
     const showTitle = () => {
+        const cv = canvas || document.getElementById("ff-canvas");
+        if (cv) cv.setAttribute("aria-label", TITLE_LABEL);
         // null is a fetch that failed, not an empty game - see prepare().
         titleState(published === null ? "unreachable"
             : published.length ? "ready" : "empty");
@@ -3819,6 +3952,9 @@
                session alone, which is what stopped this field being a stored
                XSS hole the last time it existed (see ff-scores.js). */
             habbo: state.name || null,
+            // Which hotel that habbo is on (30 Sept 2026): the same name on
+            // Origins ES is somebody else. Null with no name.
+            hotel: state.name ? state.nameHotel : null,
             w: window.innerWidth,
             h: window.innerHeight,
             touch: navigator.maxTouchPoints > 0
@@ -4032,7 +4168,11 @@
         const pending = {
             body: {
                 levels: levelsCleared, ms, points, run: null,
-                rounds: x.rounds || [], ids: x.ids || [], revs: x.revs || []
+                rounds: x.rounds || [], ids: x.ids || [], revs: x.revs || [],
+                /* The hotel of the habbo worn (30 Sept 2026), one of three
+                   fixed codes - the name itself still stays off this
+                   request (see below). Null with no name. */
+                hotel: state.name ? state.nameHotel : null
             },
             sent: false,
             /* THIS run's token, as soon as it is known — not runTokenNow at
@@ -4352,9 +4492,23 @@
         if (box) box.hidden = true;
     }
 
+    /* THE TITLE SCREEN'S OWN SCALE (30 Sept 2026). The hotel view draws its
+       falling furni at RoomIso's tile size, and RoomIso keeps whatever the
+       last round set: after the Library - the one half-scale room - the
+       thrones behind the logo fell at half size until the next round. So the
+       default layout goes back up before the lobby is reset. applyLayout
+       rather than Iso.setLayout, so the page's own idea of the room (and the
+       figure's sprite size) goes back with it. */
+    function restoreTitleLayout() {
+        const L = window.RoomLayouts;
+        if (L && L.DEFAULT) applyLayout(L.DEFAULT);
+        else if (Iso.setLayout) Iso.setLayout(null);
+    }
+
     function hideRunEnd() {
         hideRunEndPanel();
         // Back to the hotel view; no room is kept behind the title.
+        restoreTitleLayout();
         if (Lobby) Lobby.reset();
         showTitle();
         dirty = true;
@@ -4630,6 +4784,22 @@
         return new Promise((resolve) => {
             let i = 0;
             root.hidden = false;
+            /* HELD WHILE THE TAB IS HIDDEN (30 Sept 2026). The count ran on
+               timers, which carry on in a background tab, so switching away
+               on "3" came back to a round already under way. A beat that
+               comes due while hidden waits for the tab to be seen again and
+               then shows the beat that was up when it left, in full, so the
+               player gets the look at the room the count is there for. */
+            const later = (ms) => setTimeout(() => {
+                if (!document.hidden) { step(); return; }
+                i = Math.max(0, i - 1);
+                const back = () => {
+                    if (document.hidden) return;
+                    document.removeEventListener("visibilitychange", back);
+                    step();
+                };
+                document.addEventListener("visibilitychange", back);
+            }, ms);
             const step = () => {
                 n.classList.remove("is-life-lost", "is-life-won");
                 if (i >= beats.length) {
@@ -4644,7 +4814,7 @@
                     n.style.animation = "none";
                     void n.offsetWidth;
                     n.style.animation = "";
-                    setTimeout(step, LIFE_BEAT_MS);
+                    later(LIFE_BEAT_MS);
                     return;
                 }
                 n.textContent = word;
@@ -4656,7 +4826,7 @@
                 n.style.animation = "none";
                 void n.offsetWidth;
                 n.style.animation = "";
-                setTimeout(step, word === "Go" ? COUNT_MS * 0.7 : COUNT_MS);
+                later(word === "Go" ? COUNT_MS * 0.7 : COUNT_MS);
             };
             step();
         });
@@ -4873,6 +5043,7 @@
         if (Editor) syncEditor();
         else {
             // Back to the title, which is the hotel view rather than a room.
+            restoreTitleLayout();
             if (Lobby) Lobby.reset();
             showTitle();
         }
@@ -5129,6 +5300,19 @@
 
         const nameInput = document.getElementById("ff-name");
         if (state.name) nameInput.value = state.name;
+        /* THE HOTEL PICKER (30 Sept 2026), beside the name. Changing it with
+           a name in the box asks that hotel about the same name straight
+           away, as the page does for the remembered name on load - so what is
+           worn and what is said below the box follow the picker, not Play. */
+        const hotelInput = document.getElementById("ff-hotel");
+        if (hotelInput) {
+            hotelInput.value = state.hotel;
+            hotelInput.addEventListener("change", () => {
+                state.hotel = hotelCode(hotelInput.value);
+                persist();
+                if (nameInput.value.trim()) lookup(nameInput.value, state.hotel);
+            });
+        }
         /* One button, one action. The name is looked up and the round starts
            — asking someone to press Load and then hunt for Play is two steps
            where the player only ever wanted one. An empty name plays as the
@@ -5143,7 +5327,17 @@
             const play = document.getElementById("ff-title-play");
             if (play) play.disabled = true;
             try {
-                const found = nameInput.value.trim() ? await lookup(nameInput.value) : "";
+                const typed = nameInput.value.trim();
+                let found = "";
+                if (!typed) wearNobody();
+                // Already found and still worn: no second lookup (see lastFound).
+                else if (state.name && lastFound === lookupKey(typed, state.hotel)) found = "found";
+                else found = await lookup(typed, state.hotel);
+                /* Overtaken while Play waited (30 Sept 2026) - the picker
+                   changed, and its own lookup is the one that counts. Waited
+                   for too, or the round began in whatever was worn and the
+                   newer answer re-dressed the player mid-round. */
+                if (found === "stale" && pendingLookup) found = await pendingLookup.promise;
                 /* A NAME HABBO DOES NOT KNOW STOPS HERE (30 Sept 2026), with
                    the title still up so "No Origins habbo by that name" can be
                    read, and the box focused to fix the typo. Going on meant
@@ -5257,7 +5451,7 @@
             Lobby.preload(() => { dirty = true; });
             loadLobbyFurni();
         }
-        if (state.name) lookup(state.name);
+        if (state.name) lookup(state.name, state.hotel);
         watchBoardActivity();
         watchVisibility();
         wirePause();

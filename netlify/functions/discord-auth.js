@@ -36,7 +36,7 @@
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { signPlayer, playerFrom, setCookie, clearCookie, parseCookies, playerView, nameKey } = require("./_player");
+const { signPlayer, playerFrom, setCookie, clearCookie, parseCookies, playerView, nameKey, sessionRevoked, svFor, newSv } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 // The caller's own public board id, for `me` (29 Sept 2026).
 const { publicIdOf } = require("./_publicid");
@@ -197,6 +197,8 @@ const banView = (ban) => (ban ? { level: ban.level, until: ban.until, reason: ba
    `me` it is written only when it has changed or is a day old, not on every
    page load. Never allowed to fail the answer. */
 const NET_HASH_REFRESH_MS = 24 * 60 * 60 * 1000;
+// How long `me` waits for that write — see meReply.
+const NET_HASH_WAIT_MS = 1000;
 function netHashUpdate(event, row) {
     const netHash = netHashFor(event);
     if (!netHash) return null;
@@ -213,22 +215,44 @@ async function meReply(event) {
     } catch (e) {
         db = null;
     }
-    const ban = db ? banView(await banFor(db, event, player ? player.id : null)) : null;
+    /* The bans and the players row side by side (30 Sept 2026). They are
+       independent, and this answers every page load of every signed-in
+       visitor: one after the other, a slow cluster cost each of them its
+       socket allowance in turn (_db.js), and two of those is past the
+       page's own ten-second leash on `me` (js/account.js), which then shows
+       a signed-in player signed out. Neither can reject — banFor fails open
+       by itself, and the row read is caught here.
+
+       A row that could not be read is `undefined`, not null (30 Sept 2026):
+       null means the read worked and there is no row, which for a session
+       carrying a session version means it was revoked (sessionRevoked in
+       _player.js), and a database blink must never read as that. */
+    const [banned, row] = db ? await Promise.all([
+        banFor(db, event, player ? player.id : null),
+        player
+            ? db.collection("players").findOne({ id: player.id }, { projection: { _id: 0 } }).catch(() => undefined)
+            : null
+    ]) : [null, undefined];
+    const ban = banView(banned);
     if (!player) return json(200, { player: null, ban });
-    let row = null;
-    try {
-        if (db) row = await db.collection("players").findOne({ id: player.id }, { projection: { _id: 0 } });
-    } catch (e) {
-        row = null;
+    /* Revoked — forgotten from the Warren, or its session version changed
+       (see SESSION VERSIONS in _player.js): answered as signed out, and the
+       cookie is cleared so the page stops sending it. */
+    if (sessionRevoked(player, row)) {
+        return json(200, { player: null, ban }, { "Set-Cookie": clearCookie() });
     }
     if (row) {
         const fresh = netHashUpdate(event, row);
         if (fresh) {
-            try {
-                await db.collection("players").updateOne({ id: player.id }, { $set: fresh });
-            } catch (e) {
-                console.warn("discord-auth: could not store the network code", e.message);
-            }
+            /* Held for NET_HASH_WAIT_MS at most: it is bookkeeping, not the
+               answer, and a write that does not land is simply made again by
+               the next `me`, since netHashAt has not moved. */
+            let timer;
+            await Promise.race([
+                db.collection("players").updateOne({ id: player.id }, { $set: fresh })
+                    .catch(e => console.warn("discord-auth: could not store the network code", e.message)),
+                new Promise(resolve => { timer = setTimeout(resolve, NET_HASH_WAIT_MS); })
+            ]).finally(() => clearTimeout(timer));
         }
     }
     const view = playerView(player, row);
@@ -238,9 +262,14 @@ async function meReply(event) {
        answer only — the cookie below is signed from `view` as before and
        never carries it; it is derived from the id every time. */
     const answer = { ...view, publicId: publicIdOf(view.id) };
-    const stale = row && ((view.nick || null) !== (player.nick || null) || view.nickAsked !== player.nickAsked);
+    /* Re-signed, too, when the row has a session version the cookie lacks —
+       a session from before they existed — so it becomes one that can be
+       revoked. The version rides in the cookie only, never in the answer. */
+    const sv = svFor(player, row);
+    const stale = row && ((view.nick || null) !== (player.nick || null) || view.nickAsked !== player.nickAsked ||
+        sv !== player.sv);
     if (stale && process.env.SESSION_SECRET) {
-        return json(200, { player: answer, ban }, { "Set-Cookie": setCookie(signPlayer(view)) });
+        return json(200, { player: answer, ban }, { "Set-Cookie": setCookie(signPlayer({ ...view, sv })) });
     }
     return json(200, { player: answer, ban });
 }
@@ -478,14 +507,25 @@ exports.handler = async (event) => {
                         nameKey: nameKey(player.name), usernameKey: nameKey(player.username),
                         ...(netHash ? { netHash, netHashAt: now } : {})
                     },
-                    $setOnInsert: { id: player.id, joinedAt: now, nickAsked: false }
+                    $setOnInsert: { id: player.id, joinedAt: now, nickAsked: false, sv: newSv() }
                 },
                 { upsert: true }
             );
-            const row = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, nickAsked: 1 } });
+            let row = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, nickAsked: 1, sv: 1 } });
+            /* A row from before session versions (30 Sept 2026; see SESSION
+               VERSIONS in _player.js) is given one now — only if it still
+               has none, so two sign-ins at once agree on the same number —
+               and read back. */
+            if (row && typeof row.sv !== "number") {
+                await players.updateOne({ id: player.id, sv: { $exists: false } }, { $set: { sv: newSv() } });
+                row = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, nickAsked: 1, sv: 1 } });
+            }
             if (row) {
                 player.nick = (typeof row.nick === "string" && row.nick) || null;
                 player.nickAsked = row.nickAsked === true;
+                // Only from a row that was read: a session carrying a number
+                // with no row behind it counts as forgotten.
+                if (typeof row.sv === "number") player.sv = row.sv;
             }
         } catch (e) {
             // The session is still worth issuing — the profile row is a

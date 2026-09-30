@@ -1257,8 +1257,10 @@
         render();
     }
 
-    async function ask(html) {
-        if (typeof window.AdminConfirm === "function") return window.AdminConfirm(html);
+    // opts go through (30 Sept 2026): { danger: true } makes the Yes red,
+    // as it is for every other delete for good in the Warren.
+    async function ask(html, opts) {
+        if (typeof window.AdminConfirm === "function") return window.AdminConfirm(html, opts);
         const div = document.createElement("div");
         div.innerHTML = html;
         return confirm(div.textContent);
@@ -1268,7 +1270,7 @@
         if (busy || !isOwner()) return;
         if (typeof Api.deleteSiteErrors !== "function") { flash("Not available yet — reload the page.", true); return; }
         const msg = String(g.message || "this error");
-        const ok = await ask(`Delete <strong>${escapeHtml(msg.length > 120 ? msg.slice(0, 120) + "…" : msg)}</strong> and its ${escapeHtml(num(g.count))} recorded occurrences? If it happens again it comes back as a new error.`);
+        const ok = await ask(`Delete <strong>${escapeHtml(msg.length > 120 ? msg.slice(0, 120) + "…" : msg)}</strong> and its ${escapeHtml(num(g.count))} recorded occurrences? If it happens again it comes back as a new error.`, { danger: true });
         if (!ok) return;
         setBusy(true);
         try {
@@ -1289,7 +1291,7 @@
         if (busy || !isOwner()) return;
         if (typeof Api.deleteSiteErrors !== "function") { flash("Not available yet — reload the page.", true); return; }
         const n = Number(totals && totals.resolved) || 0;
-        const ok = await ask(`Delete all ${escapeHtml(num(n))} resolved ${n === 1 ? "error" : "errors"} for good? Their counts, charts and occurrences go with them. Open and ignored errors are not touched.`);
+        const ok = await ask(`Delete all ${escapeHtml(num(n))} resolved ${n === 1 ? "error" : "errors"} for good? Their counts, charts and occurrences go with them. Open and ignored errors are not touched.`, { danger: true });
         if (!ok) return;
         setBusy(true);
         try {

@@ -111,7 +111,7 @@ $ScanLog  = Join-Path $env:TEMP "mazerats-furni-scan.log"
 # Measure-ScanRunning for why a scan announces itself in a file at all.
 $ScanLock = Join-Path $PSScriptRoot ".cache\furni-scan.pid"
 $Port     = 8888
-$AdminUrl = "http://localhost:$Port/admin.html"
+$AdminUrl = "http://localhost:$Port/warren"
 
 <# ---------- geometry, straight from css/style.css ----------
 

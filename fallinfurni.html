@@ -641,6 +641,15 @@
                                     <input id="ff-name" type="text" name="habbo"
                                            placeholder="Username" maxlength="32"
                                            autocomplete="off" spellcheck="false">
+                                    <!-- Which Origins hotel the name is on
+                                         (30 Sept 2026). Remembered with the
+                                         name; changing it looks the name up
+                                         again on that hotel. -->
+                                    <select id="ff-hotel" name="hotel" aria-label="Origins hotel" title="Origins hotel">
+                                        <option value="COM" selected>COM</option>
+                                        <option value="ES">ES</option>
+                                        <option value="BR">BR</option>
+                                    </select>
                                     <button type="submit" id="ff-title-play" disabled>Play</button>
                                 </div>
                             </form>

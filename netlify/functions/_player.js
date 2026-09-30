@@ -69,7 +69,10 @@ function cookieHeader(event) {
    what the public sees is shownName below. The claims are a convenience,
    not the record: the players row is, and every board write reads the nick
    from there (publicName), so a session minted before a nick was set on
-   another device cannot put the Discord name back on a board. */
+   another device cannot put the Discord name back on a board.
+
+   `sv`, the session version (30 Sept 2026), when the players row had one to
+   give — see SESSION VERSIONS below. */
 function signPlayer(player) {
     return jwt.sign(
         {
@@ -77,7 +80,8 @@ function signPlayer(player) {
             nick: typeof player.nick === "string" && player.nick ? player.nick : null,
             // Unknown stays unknown (null) rather than becoming "not asked" —
             // see playerView.
-            nickAsked: typeof player.nickAsked === "boolean" ? player.nickAsked : null
+            nickAsked: typeof player.nickAsked === "boolean" ? player.nickAsked : null,
+            ...(isSv(player.sv) ? { sv: player.sv } : {})
         },
         process.env.SESSION_SECRET,
         { expiresIn: MAX_AGE, audience: AUDIENCE }
@@ -104,11 +108,60 @@ function playerFrom(event) {
                existed: "never asked" and "we cannot tell" are different
                answers, and `me` (discord-auth.js) only falls back on this
                when the players row cannot be read. */
-            nickAsked: typeof claims.nickAsked === "boolean" ? claims.nickAsked : null
+            nickAsked: typeof claims.nickAsked === "boolean" ? claims.nickAsked : null,
+            // null for a session minted before session versions existed.
+            sv: isSv(claims.sv) ? claims.sv : null
         };
     } catch (e) {
         return null;
     }
+}
+
+/* ---- SESSION VERSIONS (30 Sept 2026) ----
+
+   A player session is a signed cookie with nothing stored behind it, so
+   until now nothing could end one early: a forgotten player's phone went on
+   playing, and writing new rows, for up to thirty days. Now the players row
+   carries `sv`, a number written at sign-in (discord-auth.js), and every
+   session signed from that row carries the same number. A session whose
+   number no longer matches the row's has been revoked:
+
+     - the row's sv has been changed (newSv, below), or
+     - the row is GONE while the session still carries a number — which is
+       what a forget does (player-forget.js deletes the row), and it stays
+       true if the player later signs in again somewhere else, because the
+       new row gets a new number.
+
+   Checked only where the players row is read anyway — `me` in
+   discord-auth.js, the nickname writes in player-nick.js — never with a
+   read of its own. A session from before sv existed carries none, and
+   keeps working until it expires as it always did; `me` swaps it for one
+   that carries the row's number the next time it re-signs the cookie.
+
+   A timestamp rather than a counter, so a row made again after a forget
+   can never hand out a number an old session already has. */
+function isSv(v) {
+    return typeof v === "number" && Number.isFinite(v);
+}
+function newSv() {
+    return Date.now();
+}
+
+/* True when `player`'s session has been revoked, given the players row as
+   read: the row, null for "read, and there is no row", or undefined for
+   "could not be read" — which revokes nothing, since a database blink must
+   not sign anybody out. */
+function sessionRevoked(player, row) {
+    if (!player || !isSv(player.sv) || row === undefined) return false;
+    if (row === null) return true;
+    return isSv(row.sv) && row.sv !== player.sv;
+}
+
+/* The number a re-signed session should carry: the row's when it has one,
+   otherwise whatever the session had. */
+function svFor(player, row) {
+    if (row && isSv(row.sv)) return row.sv;
+    return player && isSv(player.sv) ? player.sv : null;
 }
 
 /* ---- WHAT THE SITE CALLS A PLAYER (28 Sept 2026) ----
@@ -229,4 +282,5 @@ function clearCookie() {
     return `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
-module.exports = { COOKIE, AUDIENCE, MAX_AGE, signPlayer, playerFrom, setCookie, clearCookie, parseCookies, shownName, publicName, playerView, nameKey };
+module.exports = { COOKIE, AUDIENCE, MAX_AGE, signPlayer, playerFrom, setCookie, clearCookie, parseCookies, shownName, publicName, playerView, nameKey,
+    sessionRevoked, svFor, newSv };

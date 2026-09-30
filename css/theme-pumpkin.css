@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   958 rules, 1557 declarations, hues 18 (surfaces) / 38 (accents).
+   988 rules, 1604 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -311,6 +311,57 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 [data-theme="pumpkin"] .data-degraded-say {
     color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .welcome-promo {
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    background: #0a0401;
+}
+
+[data-theme="pumpkin"] .welcome-promo-slide:focus-visible {
+    outline: none;
+}
+
+[data-theme="pumpkin"] .welcome-promo:has(.welcome-promo-slide:focus-visible) {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .welcome-promo-dot {
+    border: 0;
+    background: none;
+}
+
+[data-theme="pumpkin"] .welcome-promo-dot::before {
+    background: rgba(255, 255, 255, 0.35);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="pumpkin"] .welcome-promo-dot.is-on::before {
+    background: #ffffff;
+}
+
+[data-theme="pumpkin"] .welcome-promo-dot:focus {
+    outline: none;
+}
+
+[data-theme="pumpkin"] .welcome-promo-dot:focus-visible::before {
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 0 3px var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .welcome-promo::after {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        inset 1px 0 0 rgba(255, 255, 255, 0.22);
+}
+
+[data-theme="pumpkin"] .welcome-promo:hover,
+[data-theme="pumpkin"] .welcome-promo:has(.welcome-promo-slide:focus-visible) {
+    border-color: var(--amber);
+}
+
+[data-theme="pumpkin"] .welcome-promo-cta {
+    background: linear-gradient(rgba(6, 6, 20, 0), rgba(6, 6, 20, 0.7));
+    color: #ebe8ff;
 }
 
 [data-theme="pumpkin"] .welcome-countdown-label {
@@ -1246,6 +1297,39 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
+[data-theme="pumpkin"] .room-desc-full strong {
+    color: inherit;
+}
+
+[data-theme="pumpkin"] .room-desc-full .fmt-heading,
+[data-theme="pumpkin"] .room-desc-full .fmt-subheading {
+    color: var(--parchment);
+    text-shadow: none;
+}
+
+[data-theme="pumpkin"] .room-desc-full .fmt-rule {
+    border: none;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="pumpkin"] .admin-check {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .admin-fmt-gap {
+    background: var(--chrome-border);
+    box-shadow: 1px 0 0 rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="pumpkin"] .admin-fmt-preview-wrap {
+    background: #342017;
+    border: 1px solid var(--chrome-border);
+}
+
+[data-theme="pumpkin"] .admin-fmt-preview {
+    color: var(--parchment-dim);
+}
+
 [data-theme="pumpkin"] .room-links-refs-label {
     color: var(--parchment-dim);
 }
@@ -2162,6 +2246,15 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--parchment);
 }
 
+[data-theme="pumpkin"] .chrome-list:has(> .timeline),
+[data-theme="pumpkin"] .chrome-list:has(> .furni-head),
+[data-theme="pumpkin"] .chrome-list:has(> .furni-rooms),
+[data-theme="pumpkin"] .chrome-list:has(> .updatelog) {
+    background: var(--chrome-row);
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
 [data-theme="pumpkin"] .timeline-summary {
     color: var(--parchment-dim);
 }
@@ -2208,7 +2301,7 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .timeline-entry-note {
-    color: #6e5e44;
+    color: var(--unknown-text);
 }
 
 [data-theme="pumpkin"] .row-when {
@@ -2443,7 +2536,7 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .side-menu-heading {
-    color: #4f3224;
+    color: #23130c;
 }
 
 [data-theme="pumpkin"] .side-menu-group {
@@ -2498,7 +2591,11 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .side-menu-badge {
-    color: #452517;
+    color: #23130c;
+}
+
+[data-theme="pumpkin"] .side-menu-item.is-on .side-menu-badge {
+    color: #170c08;
 }
 
 @media (max-width: 999px) {
@@ -3176,6 +3273,20 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: #faf7f2;
 }
 
+[data-theme="pumpkin"] .guide-body .fmt-heading,
+[data-theme="pumpkin"] .guide-body .fmt-subheading,
+[data-theme="pumpkin"] .guide-summary .fmt-heading,
+[data-theme="pumpkin"] .guide-summary .fmt-subheading {
+    color: #faf7f2;
+    text-shadow: none;
+}
+
+[data-theme="pumpkin"] .guide-body .fmt-rule,
+[data-theme="pumpkin"] .guide-summary .fmt-rule {
+    border: none;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
 [data-theme="pumpkin"] .guide-link {
     color: var(--amber-bright);
 }
@@ -3706,6 +3817,10 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 [data-theme="pumpkin"] .de-flash {
     color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .ctl-card::before {
+    background: rgba(0, 0, 0, 0.35);
 }
 
 [data-theme="pumpkin"] .ctl-label {
@@ -4755,6 +4870,38 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     border: 1.5px solid var(--chrome-highlight);
     background: rgba(0, 0, 0, 0.3);
     color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .console-entry-event {
+    color: #ffffff;
+}
+
+[data-theme="pumpkin"] .de-chip.ee-status-new {
+    border-color: var(--amber-bright);
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .de-chip.ee-status-reviewed {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .de-chip.ee-status-winner {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: #0d0501;
+}
+
+[data-theme="pumpkin"] .de-chip.ee-status-rejected {
+    border-color: var(--danger);
+    color: var(--danger-text, var(--danger));
+}
+
+[data-theme="pumpkin"] .ee-flash {
+    color: var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .ee-flash.is-bad {
+    color: var(--danger-text);
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION

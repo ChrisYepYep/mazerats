@@ -488,6 +488,230 @@ function showCoolDown(block, returnTo) {
     overlay.querySelector(".notice-ok").focus({ preventScroll: true });
 }
 
+/* THE SPOTLIGHT under the button (30 Sept 2026, the owner's).
+
+   Every state of the landing page, and no event hard-coded: whichever
+   events the Warren has ticked for it (spotlight: true), with a thumbnail,
+   whose spotlight window holds the present moment. No start means straight
+   away, no end means until it is unticked — see spotlightFieldsHtml in
+   js/admin.js. With none, nothing is here at all.
+
+   Each is a slide: the thumbnail, its caption (the event's own, or "Click
+   for more details.") in the event's chosen colour, and a link to its
+   #event- address, which opens the full event window. Several take turns,
+   ordered by when their spotlight began; a turn holds while the pointer is
+   over it or focus is in it, and while the tab is hidden. The window is
+   checked again every 20 seconds, so a spotlight comes off the page (and
+   the next one on) the moment its dates say, without a reload. */
+const SPOTLIGHT_TURN_MS = 7000;
+const SPOTLIGHT_RECHECK_MS = 20000;
+const DEFAULT_SPOTLIGHT_CAPTION = "Click for more details.";
+let spotlightEvents = null;
+let spotlightKey = "";
+let spotlightIndex = 0;
+let spotlightTurnTimer = null;
+let spotlightRecheck = null;
+/* Held by the pointer and by focus apart (30 Sept 2026), so a rebuild can
+   put the focus half right on its own: a focused slide that is replaced
+   takes the focus with it, and no browser promises a focusout for that —
+   the one flag was left true and the turns stopped for good. */
+let spotlightPointer = false;
+let spotlightFocus = false;
+/* Events whose picture would not load (30 Sept 2026). "Only events with a
+   thumbnail" meant only a thumbnail that was set: one that 404s, or that
+   the image CDN turned away, was a dark empty frame with a caption over it,
+   in its turn like any other. Dropped for this page load instead. */
+const spotlightBroken = new Set();
+
+const spotlightTime = v => {
+    const t = typeof v === "string" && v ? Date.parse(v) : NaN;
+    return isNaN(t) ? null : t;
+};
+function spotlightThumb(ev) {
+    return [ev.thumb, ev.thumbnail, ev.image].find(v => typeof v === "string" && v) || "";
+}
+function spotlightLive(ev, now) {
+    if (!ev || ev.spotlight !== true || !ev.id || !spotlightThumb(ev) || spotlightBroken.has(ev.id)) return false;
+    const from = spotlightTime(ev.spotlightFrom), until = spotlightTime(ev.spotlightUntil);
+    return (from === null || from <= now) && (until === null || now < until);
+}
+
+function spotlightSlide(ev) {
+    const a = document.createElement("a");
+    a.className = "welcome-promo-slide";
+    a.href = `#event-${encodeURIComponent(ev.id)}`;
+    const caption = (typeof ev.spotlightCaption === "string" && ev.spotlightCaption.trim()) || DEFAULT_SPOTLIGHT_CAPTION;
+    a.setAttribute("aria-label", `${ev.title || "Event"}: ${caption}`);
+    const img = document.createElement("img");
+    img.className = "welcome-promo-img";
+    img.alt = "";
+    img.decoding = "async";
+    img.addEventListener("error", () => {
+        spotlightBroken.add(ev.id);
+        showSpotlight();
+    }, { once: true });
+    img.src = imgCdn(spotlightThumb(ev), 960, null, 80);
+    const cta = document.createElement("span");
+    cta.className = "welcome-promo-cta";
+    cta.textContent = caption;
+    if (/^#[0-9a-f]{6}$/i.test(ev.spotlightColour || "")) cta.style.color = ev.spotlightColour;
+    a.append(img, cta);
+    return a;
+}
+
+function spotlightShow(index) {
+    const el = document.getElementById("welcome-promo");
+    const slides = el ? [...el.querySelectorAll(".welcome-promo-slide")] : [];
+    if (!slides.length) return;
+    spotlightIndex = ((index % slides.length) + slides.length) % slides.length;
+    slides.forEach((s, i) => {
+        const on = i === spotlightIndex;
+        s.classList.toggle("is-shown", on);
+        // Only the slide on show is a link anybody can reach.
+        s.tabIndex = on ? 0 : -1;
+        s.setAttribute("aria-hidden", on ? "false" : "true");
+    });
+    const dots = el.querySelectorAll(".welcome-promo-dot");
+    dots.forEach((d, i) => {
+        d.classList.toggle("is-on", i === spotlightIndex);
+        if (i === spotlightIndex) d.setAttribute("aria-current", "true");
+        else d.removeAttribute("aria-current");
+    });
+}
+
+/* NO TURNS UNDER REDUCED MOTION, AND NONE AFTER A DOT (30 Sept 2026, the
+   owner's). With "reduce motion" set, the slides never move by themselves
+   and the dots are how to change them. A dot pressed shows its slide and
+   stops the turns for the rest of this page load: somebody who picked a
+   slide wants to read that one, not have it taken away seven seconds on. */
+const spotlightReducedMotion = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null;
+let spotlightPaused = false;
+
+function spotlightSchedule() {
+    clearTimeout(spotlightTurnTimer);
+    const el = document.getElementById("welcome-promo");
+    if (!el || el.querySelectorAll(".welcome-promo-slide").length < 2) return;
+    if (spotlightPaused || (spotlightReducedMotion && spotlightReducedMotion.matches)) return;
+    spotlightTurnTimer = setTimeout(() => {
+        /* And held while a window is open over the page (30 Sept 2026):
+           the event window opened FROM a slide hands focus back to that
+           slide when it closes, and a slide that had meanwhile taken its
+           turn off is hidden and out of the tab order, so focus fell to
+           the top of the page instead. */
+        const covered = !!document.querySelector(".modal-overlay.open");
+        if (!spotlightPointer && !spotlightFocus && !covered && !document.hidden) spotlightShow(spotlightIndex + 1);
+        spotlightSchedule();
+    }, SPOTLIGHT_TURN_MS);
+}
+
+async function showSpotlight() {
+    const el = document.getElementById("welcome-promo");
+    if (!el) return;
+    if (!spotlightEvents) spotlightEvents = Api.getEvents().catch(() => []);
+    const events = await spotlightEvents;
+    const now = Date.now();
+    const live = (Array.isArray(events) ? events : [])
+        .filter(ev => spotlightLive(ev, now))
+        .sort((a, b) => (spotlightTime(a.spotlightFrom) || 0) - (spotlightTime(b.spotlightFrom) || 0)
+            || String(a.title || "").localeCompare(String(b.title || "")));
+    const key = live.map(ev => ev.id).join("|");
+    if (!live.length) {
+        el.hidden = true;
+        el.replaceChildren();
+        spotlightKey = "";
+        spotlightFocus = false;
+        clearTimeout(spotlightTurnTimer);
+        return;
+    }
+    if (key !== spotlightKey) {
+        // The one on show stays on show when others come or go around it.
+        const was = el.querySelector(".welcome-promo-slide.is-shown");
+        const wasId = was ? decodeURIComponent(was.getAttribute("href").replace(/^#event-/, "")) : "";
+        const hadFocus = el.contains(document.activeElement);
+        el.replaceChildren(...live.map(spotlightSlide));
+        if (live.length > 1) {
+            // Real buttons (30 Sept 2026): see spotlightPaused above. Beside
+            // the slides, not in them, so a press is never the slide's.
+            const dots = document.createElement("span");
+            dots.className = "welcome-promo-dots";
+            live.forEach((ev, i) => {
+                const d = document.createElement("button");
+                d.type = "button";
+                d.className = "welcome-promo-dot";
+                d.setAttribute("aria-label", `Show spotlight ${i + 1} of ${live.length}`);
+                d.addEventListener("click", () => {
+                    spotlightPaused = true;
+                    clearTimeout(spotlightTurnTimer);
+                    spotlightShow(i);
+                });
+                dots.appendChild(d);
+            });
+            el.appendChild(dots);
+        }
+        spotlightKey = key;
+        const keep = live.findIndex(ev => ev.id === wasId);
+        spotlightShow(keep >= 0 ? keep : 0);
+        // Focus that was on the one kept stays on it; otherwise it went
+        // with the old slides, and so does the hold it made.
+        if (hadFocus && keep >= 0) {
+            const shown = el.querySelector(".welcome-promo-slide.is-shown");
+            if (shown) shown.focus({ preventScroll: true });
+        }
+        spotlightFocus = el.contains(document.activeElement);
+        spotlightSchedule();
+    }
+    el.hidden = false;
+}
+
+function startSpotlight() {
+    const el = document.getElementById("welcome-promo");
+    if (!el) return;
+    el.addEventListener("pointerenter", () => { spotlightPointer = true; });
+    el.addEventListener("pointerleave", () => { spotlightPointer = false; });
+    el.addEventListener("focusin", () => { spotlightFocus = true; });
+    el.addEventListener("focusout", e => { if (!el.contains(e.relatedTarget)) spotlightFocus = false; });
+    // The setting changed while the page is open: the turns stop or start.
+    if (spotlightReducedMotion && typeof spotlightReducedMotion.addEventListener === "function") {
+        spotlightReducedMotion.addEventListener("change", spotlightSchedule);
+    }
+    showSpotlight();
+    clearInterval(spotlightRecheck);
+    spotlightRecheck = setInterval(showSpotlight, SPOTLIGHT_RECHECK_MS);
+    clearInterval(spotlightRefresh);
+    spotlightRefresh = setInterval(refreshSpotlightEvents, SPOTLIGHT_REFRESH_MS);
+}
+
+/* FROM THE SERVER AGAIN, EVERY THREE MINUTES (30 Sept 2026, the owner's).
+   The 20-second recheck only re-reads the events this page loaded with, so
+   a spotlight ticked or unticked in the Warren never reached a landing page
+   left open. Api.getEvents keeps one request per page load (its _inflight
+   memo, in js/api.js), so that memo is dropped and the events asked for
+   again — one GET per three minutes, none while the tab is hidden — and the
+   spotlight redrawn from the answer. The event window and the ticker read
+   the same memo, so they see it too. A failed ask (Api's offline stand-in)
+   keeps what the page already had rather than emptying the spotlight. */
+const SPOTLIGHT_REFRESH_MS = 3 * 60 * 1000;
+let spotlightRefresh = null;
+
+async function refreshSpotlightEvents() {
+    if (document.hidden || typeof Api === "undefined" || !Api._inflight) return;
+    const before = Api._inflight.events;
+    const kept = spotlightEvents;
+    delete Api._inflight.events;
+    const asked = Api.getEvents();
+    const memo = Api._inflight.events;
+    spotlightEvents = asked.then(events => {
+        if (Api._degraded && Api._degraded.has("event data")) {
+            // The stand-in, not an answer: put the last real one back.
+            if (before && Api._inflight.events === memo) Api._inflight.events = before;
+            return kept || [];
+        }
+        return events;
+    }, () => kept || []);
+    await spotlightEvents;
+    showSpotlight();
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
     const btn = document.getElementById("welcome-btn");
     const label = document.getElementById("welcome-btn-label");
@@ -502,7 +726,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
     }
 
-    const { landingState, launchAt } = await Api.getSiteSettings();
+    const { landingState, launchAt, fromCache } = await Api.getSiteSettings();
 
     // aria-disabled moves with the label: the button is focusable in every
     // state (see its markup in index.html), so the state has to be spoken
@@ -516,6 +740,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         btn.setAttribute("aria-disabled", "true");
     }
 
+    // Every state: see showSpotlight.
+    startSpotlight();
     if (landingState === "coming-soon" || landingState === "maintenance") {
         labelGated(landingState);
     } else {
@@ -590,7 +816,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (countdown) { countdown.stop(); countdown = null; }
         }
         showCountdownFor(state);
-    }, landingState);
+    /* Not the stand-in's state (30 Sept 2026). A read that failed comes
+       back as "coming-soon" with no date because nothing is known, not
+       because no date is set — and that took the far cadence, so a visitor
+       whose first read failed on launch morning, when the endpoint is
+       busiest, waited two to four minutes between asks. Seeded with nothing,
+       the poll stays on the fast pace until a real answer says otherwise. */
+    }, fromCache ? null : landingState);
 });
 
 // Upcoming Events widget on this page (see js/site.js) opens the event
@@ -660,6 +892,53 @@ document.addEventListener("DOMContentLoaded", async () => {
         } catch (e) {
             return "";
         }
+    }
+
+    /* The event's details in the guides' text format (30 Sept 2026) — bold,
+       italics, links and lists, from the /warren form's buttons — read by
+       js/guide-text.js, as the room window in js/home.js reads them, so an
+       event looks the same from either page. It escapes everything first:
+       nothing typed reaches the page as markup the format did not make.
+
+       This page does not load guide-text.js for anything else, so it is
+       fetched here, once, and only when an event window first opens. Until
+       it has arrived the text goes in as plain text, as it always did, and
+       is redrawn formatted the moment it lands if the same event is still
+       showing. Absolute, for the reason palette-wear.js gives. */
+    let guideTextLoad = null;
+    function loadGuideText() {
+        if (typeof GuideText !== "undefined") return Promise.resolve();
+        if (!guideTextLoad) {
+            guideTextLoad = new Promise((ok, fail) => {
+                const s = document.createElement("script");
+                s.src = "/js/guide-text.js?v=2";
+                s.onload = ok;
+                s.onerror = () => { guideTextLoad = null; fail(); };
+                document.head.appendChild(s);
+            });
+        }
+        return guideTextLoad;
+    }
+    let descShowing = 0;
+    /* The formatted details, with their links to the archive pointed here
+       while the site is gated (30 Sept 2026, the owner's): a maze: or
+       guide: link went to home.html, whose gate bounced the visitor straight
+       back. pointGatedLinksHome (js/site.js) does for them what it does for
+       the rest of this page. An event: link keeps its data-guide-event and
+       opens in this window instead — see the click handler below. */
+    function renderDesc(el, s) {
+        el.innerHTML = GuideText.render(s);
+        if (typeof pointGatedLinksHome === "function") pointGatedLinksHome(el);
+    }
+    function showDesc(el, text) {
+        const s = String(text == null ? "" : text);
+        const turn = ++descShowing;
+        if (typeof GuideText !== "undefined") { renderDesc(el, s); return; }
+        el.textContent = s;
+        loadGuideText().then(() => {
+            // Still this event's text: another may have opened meanwhile.
+            if (turn === descShowing && typeof GuideText !== "undefined") renderDesc(el, s);
+        }, () => {});
     }
 
     // Escapes first, then links what's left — same order and same trailing-
@@ -898,12 +1177,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         stripEl.querySelectorAll("img").forEach((el, i) => el.classList.toggle("active", i === index));
     }
 
+    /* Asked of Api each time (30 Sept 2026) — its memo makes that free —
+       rather than kept here from the first open, so an event the spotlight
+       has picked up since (see refreshSpotlightEvents) opens when its slide
+       is clicked instead of doing nothing. */
     let cachedEvents = null;
     async function ensureEvents() {
-        if (!cachedEvents) {
-            try { cachedEvents = await Api.getEvents(); }
-            catch (e) { cachedEvents = []; }
-        }
+        try { cachedEvents = await Api.getEvents(); }
+        catch (e) { cachedEvents = cachedEvents || []; }
         return cachedEvents;
     }
 
@@ -973,7 +1254,11 @@ document.addEventListener("DOMContentLoaded", async () => {
             `<span class="status-badge status-${escapeHtml(statusKey)}">${escapeHtml(statusLabel)}</span>` +
             `<span>Hotel: ${escapeHtml(event.hotel || "Unknown")}</span>` +
             `<span>Date: ${escapeHtml(formatEventDuration(event.date, event.endDate))}</span>`;
-        descEl.textContent = event.description || "";
+        /* The FULL details (30 Sept 2026), as home.js's modal shows them —
+           `description` is the short line the header ticker and the cards
+           use, and on its own here it cut every event opened from the
+           ticker down to its teaser. */
+        showDesc(descEl, event.details || event.description || "");
 
         /* The stored Habbo article, if this event has one.
         
@@ -1084,6 +1369,24 @@ document.addEventListener("DOMContentLoaded", async () => {
         try { id = decodeURIComponent(m[1]); } catch (e) { return; }
         openEventModalById(id);
     }
+
+    /* An event: link in the details (30 Sept 2026, the owner's) opens that
+       event in this window, in place, rather than loading its address —
+       which, while the site is gated, was home.html bouncing back here. A
+       maze: or guide: link has no window on this page, so it is left to the
+       browser (and pointed at this page while gated: see renderDesc), as is
+       an event this page's list does not have, and a new tab. */
+    descEl.addEventListener("click", e => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        const a = e.target.closest && e.target.closest("[data-guide-event]");
+        if (!a) return;
+        const key = a.dataset.guideEvent;
+        const known = cachedEvents && cachedEvents.find(ev => window.RecordAddress
+            ? window.RecordAddress.matches(ev, key) : ev && ev.id === key);
+        if (!known) return;
+        e.preventDefault();
+        openEventModalById(known.id);
+    });
 
     window.addEventListener("hashchange", checkHash);
     closeBtn.addEventListener("click", closeEventModal);

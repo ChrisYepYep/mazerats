@@ -271,10 +271,23 @@ const str = (v, max) => String(v === undefined || v === null ? "" : v).slice(0, 
    what a habbo name is. Anything else becomes null, which reads as "played
    without giving a name" — the honest description of a value we will not
    keep. Note what the character set leaves out: <, >, &, quotes and spaces. */
-const HABBO_NAME = /^[A-Za-z0-9_\-.:]{1,32}$/;
+// Widened with room-figure.js's to the client's -=?!@:., (30 Sept 2026).
+const HABBO_NAME = /^[A-Za-z0-9_\-=?!@:.,]{1,32}$/;
 const habboName = (v) => {
     const s = String(v === undefined || v === null ? "" : v).trim();
     return HABBO_NAME.test(s) ? s : null;
+};
+
+/* WHICH ORIGINS HOTEL that name is on (30 Sept 2026) - the game's picker
+   offers COM, ES and BR, the three room-figure.js can ask. Only with a name:
+   a name that came without one is from a page older than the picker, when
+   every lookup went to COM. Anything but the three is COM for the same
+   reason, and none of them can be markup. */
+const HOTELS = ["COM", "ES", "BR"];
+const hotelFor = (habbo, v) => {
+    if (!habbo) return null;
+    const s = typeof v === "string" ? v.trim().toUpperCase() : "";
+    return HOTELS.includes(s) ? s : "COM";
 };
 
 /* THE ADDRESS THE ROUND WAS PLAYED FROM.
@@ -439,6 +452,7 @@ async function record(db, event) {
            which is the failure ff-scores.js had to delete a field over. The
            panel escapes it as well. */
         habbo: habboName(body.habbo),
+        hotel: hotelFor(habboName(body.habbo), body.hotel),
         // Read from the request, never from the body — see clientIp.
         ip: clientIp(event),
         /* The subscriber that address belongs to — the address itself for
@@ -752,21 +766,25 @@ async function report(db, event) {
     const players = new Map();
     for (const r of rows) {
         const kind = r.player ? "player" : (r.habbo ? "habbo" : "none");
+        /* A typed name is one person PER HOTEL (30 Sept 2026): "Bob" on
+           Origins ES is not "Bob" on COM. A row from before the picker has
+           no hotel, and was COM. */
         const key = kind === "player" ? "p:" + (r.playerId || "name:" + r.player)
-            : kind === "habbo" ? "h:" + r.habbo
+            : kind === "habbo" ? "h:" + (r.hotel || "COM") + ":" + r.habbo
             : "";
         let e = players.get(key);
         if (!e) {
             e = {
                 name: kind === "player" ? r.player : "",
                 habbo: kind === "habbo" ? r.habbo : null,
+                hotel: kind === "habbo" ? (r.hotel || "COM") : null,
                 kind,
                 runs: 0, best: 0, bestPoints: 0, totalMs: 0, last: r.at, first: r.at
             };
             players.set(key, e);
         }
         // A signed-in player who also typed a name: keep the most recent one.
-        if (kind === "player" && r.habbo && !e.habbo) e.habbo = r.habbo;
+        if (kind === "player" && r.habbo && !e.habbo) { e.habbo = r.habbo; e.hotel = r.hotel || "COM"; }
         e.runs++;
         e.best = Math.max(e.best, r.cleared || 0);
         e.bestPoints = Math.max(e.bestPoints, r.points || 0);
@@ -825,7 +843,8 @@ async function report(db, event) {
            the same habbo name is one person being consistent; the same address
            giving four different ones is the shape this table exists to show,
            and it was invisible while signed-out runs had nothing on them. */
-        if (r.habbo) bump(e.habbos, r.habbo);
+        // Labelled with the hotel when it is not COM, as one name per hotel.
+        if (r.habbo) bump(e.habbos, r.hotel && r.hotel !== "COM" ? `${r.habbo} (${r.hotel})` : r.habbo);
         e.cleared = Math.max(e.cleared, r.cleared || 0);
         e.bestPoints = Math.max(e.bestPoints, r.points || 0);
         if (r.client && r.client.touch) e.touch++;

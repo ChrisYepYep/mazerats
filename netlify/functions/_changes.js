@@ -94,10 +94,16 @@ const GROUPS = [
    Save on an untouched maze) put it in What's New as "Updated details".
    furniRev and furniPatch are the furni write's machinery, not the furni:
    the furni itself is still judged, as merged, under "furni". */
+/* And the landing page spotlight (30 Sept 2026): putting an event in it, or
+   moving its dates, is promotion, not a change to the event — and the
+   first save of every event after it existed would otherwise have reported
+   the five new fields as "Updated details". spotlightAt is their version
+   stamp, written by events.js, and no more a change than updatedAt. */
 const IGNORED = new Set([
     "id", "_id", "createdAt", "updatedAt", "changes",
     "slug", "slugAliases", "slugManual", "_slugAuto",
-    "furniRev", "furniPatch"
+    "furniRev", "furniPatch",
+    "spotlight", "spotlightFrom", "spotlightUntil", "spotlightCaption", "spotlightColour", "spotlightAt"
 ]);
 
 // Anything real that is not in a group above still deserves to be reported,
@@ -155,8 +161,19 @@ function canon(value, depth) {
            whole record. Filtering here would instead reach inside nested
            shapes and drop any key that happened to share one of those names,
            masking a real edit to it. */
+        /* And a key holding nothing is a key that is not there (30 Sept
+           2026), by the same rule as a whole field: the form normalises
+           every gallery entry to carry `label: ""` and `oldVersions: []`,
+           and an entry stored without them read as edited — "Updated room
+           imagery" for a save that touched none. Clearing a value that WAS
+           there still differs ("{label:s:x}" against "{}"). */
         const keys = Object.keys(value).sort();
-        return "{" + keys.map(k => k + ":" + canon(value[k], d + 1)).join(",") + "}";
+        const parts = [];
+        for (const k of keys) {
+            const c = canon(value[k], d + 1);
+            if (c !== "") parts.push(k + ":" + c);
+        }
+        return "{" + parts.join(",") + "}";
     }
     // Functions, symbols, bigints: nothing the database or a JSON body can
     // hold. Treated as empty rather than allowed to stringify unpredictably.
