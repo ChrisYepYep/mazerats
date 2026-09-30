@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   988 rules, 1604 declarations, hues 350 (surfaces) / 212 (accents).
+   989 rules, 1605 declarations, hues 350 (surfaces) / 212 (accents).
 */
 :root[data-theme="crimson"] {
     --bg-black: #080506;
@@ -1314,6 +1314,10 @@ html[data-theme="crimson"]::-webkit-scrollbar-button {
 
 [data-theme="crimson"] .admin-check {
     color: var(--parchment);
+}
+
+[data-theme="crimson"] .admin-colour-pair input.is-invalid {
+    border-color: #c0392b;
 }
 
 [data-theme="crimson"] .admin-fmt-gap {

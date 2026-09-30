@@ -5110,6 +5110,8 @@ document.addEventListener("DOMContentLoaded", () => {
             wireTagPicker(cfg.formEl);
         }
 
+        if (isEvents) wireSpotlightColour(cfg.formEl);
+
         cfg.formEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
 
         // Taken last, once every draft and field above has been assigned,
@@ -5411,7 +5413,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const SPOTLIGHT_DEFAULT_COLOUR = "#ebe8ff";
     function spotlightFieldsHtml(item, splitIso) {
         const from = splitIso(item.spotlightFrom), until = splitIso(item.spotlightUntil);
-        const colour = /^#[0-9a-f]{6}$/i.test(item.spotlightColour || "") ? item.spotlightColour.toLowerCase() : SPOTLIGHT_DEFAULT_COLOUR;
+        const stored = spotlightHex(item.spotlightColour) || "";
+        const colour = stored || SPOTLIGHT_DEFAULT_COLOUR;
         return `
             <div class="admin-spotlight">
                 <h4 class="admin-subheading">Landing page spotlight</h4>
@@ -5423,9 +5426,41 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${fieldRow("Spotlight until time (UTC, 24-hour)", `<input type="time" name="spotlightUntilTime" value="${until.time}">`)}
                 <p class="admin-hint">Leave both blank to spotlight it from now until you untick it. It comes off the landing page by itself the moment the end passes.</p>
                 ${fieldRow("Spotlight caption (optional)", `<input type="text" name="spotlightCaption" maxlength="80" placeholder="Click for more details." value="${escapeHtml(item.spotlightCaption || "")}">`)}
-                ${fieldRow("Caption colour", `<input type="color" name="spotlightColour" value="${colour}">`)}
-                <p class="admin-hint">Blank caption reads "Click for more details." Pick a colour that matches the lettering in the event's thumbnail.</p>
+                ${fieldRow("Caption colour (hex, optional)", `<span class="admin-colour-pair"><input type="color" class="admin-colour-swatch" value="${colour}" aria-label="Pick the caption colour"><input type="text" name="spotlightColour" maxlength="7" spellcheck="false" autocomplete="off" placeholder="${SPOTLIGHT_DEFAULT_COLOUR}" value="${stored}"></span>`)}
+                <p class="admin-hint">Blank caption reads "Click for more details." Type a hex code such as #ebe8ff, or pick one from the swatch, to match the lettering in the event's thumbnail. Blank colour is ${SPOTLIGHT_DEFAULT_COLOUR}.</p>
             </div>`;
+    }
+
+    /* "#abc", "abc", "#AABBCC", "aabbcc" → "#aabbcc"; anything else → null,
+       and "" for a blank box (the page's own default). */
+    function spotlightHex(v) {
+        const s = String(v || "").trim().replace(/^#/, "").toLowerCase();
+        if (!s) return "";
+        if (/^[0-9a-f]{3}$/.test(s)) return "#" + s.split("").map(c => c + c).join("");
+        return /^[0-9a-f]{6}$/.test(s) ? "#" + s : null;
+    }
+
+    /* The hex box is what saves; the swatch is only a way to fill it (30 Sept
+       2026 — a bare colour input takes no typed code in most browsers). Each
+       follows the other, and the box is tidied to #rrggbb when it is left. */
+    function wireSpotlightColour(formEl) {
+        const swatch = formEl.querySelector(".admin-colour-swatch");
+        const box = formEl.querySelector('input[name="spotlightColour"]');
+        if (!swatch || !box) return;
+        swatch.addEventListener("input", () => {
+            box.value = swatch.value.toLowerCase();
+            box.classList.remove("is-invalid");
+            box.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        box.addEventListener("input", () => {
+            const hex = spotlightHex(box.value);
+            box.classList.toggle("is-invalid", hex === null);
+            if (hex !== null) swatch.value = hex || SPOTLIGHT_DEFAULT_COLOUR;
+        });
+        box.addEventListener("blur", () => {
+            const hex = spotlightHex(box.value);
+            if (hex !== null && hex !== box.value) box.value = hex;
+        });
     }
 
     function spotlightFault(d) {
@@ -5538,7 +5573,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const endTime = (data.endTime || "").trim();
             payload.date = startDate && startTime ? `${startDate}T${startTime}:00Z` : "";
             payload.endDate = endDate && endTime ? `${endDate}T${endTime}:00Z` : "";
-            payload._dateFault = dateFault(startDate, startTime, endDate, endTime) || spotlightFault(data);
+            payload._dateFault = dateFault(startDate, startTime, endDate, endTime) || spotlightFault(data) ||
+                (spotlightHex(data.spotlightColour) === null ? "The caption colour needs to be a hex code like #ebe8ff, or left blank." : "");
             // The spotlight — see spotlightFieldsHtml. Every field written,
             // so unticking or clearing one actually clears it.
             const pairIso = (d, t) => (d || "").trim() && (t || "").trim() ? `${d.trim()}T${t.trim()}:00Z` : "";
@@ -5546,14 +5582,10 @@ document.addEventListener("DOMContentLoaded", () => {
             payload.spotlightFrom = pairIso(data.spotlightFromDate, data.spotlightFromTime);
             payload.spotlightUntil = pairIso(data.spotlightUntilDate, data.spotlightUntilTime);
             payload.spotlightCaption = (data.spotlightCaption || "").trim().slice(0, 80);
-            /* A colour box always holds a colour, so one never chosen shows
-               the landing page's own default (SPOTLIGHT_DEFAULT_COLOUR) — and
-               saved as it stood, every old event gained "#ebe8ff" on its next
-               save, pinned there if the page's default ever moves (30 Sept
-               2026). Left on that default with nothing stored, it stays "". */
-            const hexOf = v => (/^#[0-9a-f]{6}$/i.test(v || "") ? v.toLowerCase() : "");
-            const pickedColour = hexOf(data.spotlightColour);
-            payload.spotlightColour = !hexOf(existing.spotlightColour) && pickedColour === SPOTLIGHT_DEFAULT_COLOUR ? "" : pickedColour;
+            /* The hex box, not the swatch, is what saves (wireSpotlightColour):
+               left blank it stays "", the landing page's own default, so an
+               old event never gains a colour nobody chose (30 Sept 2026). */
+            payload.spotlightColour = spotlightHex(data.spotlightColour) || "";
             /* "live" is never sent. The status box works it out from the
                dates and can say LIVE (see wireDerivedStatus), but it is not
                a status the events endpoint stores — a live event is an

@@ -6768,6 +6768,19 @@ body[data-page="home"] .hero { padding-top: 18px; }
     padding: 2px;
     cursor: var(--cursor-pointer);
 }
+/* The swatch and the hex box it fills — see wireSpotlightColour. */
+.admin-colour-pair {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.admin-colour-pair input[type="color"] { flex: 0 0 auto; }
+.admin-colour-pair input[type="text"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 120px;
+}
+.admin-colour-pair input.is-invalid { border-color: #c0392b; }
 
 /* Between the button groups: text style, block kind, links and lists, clear. */
 .admin-fmt-gap {
