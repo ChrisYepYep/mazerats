@@ -250,12 +250,23 @@
                             data-range="${r.key}" aria-pressed="${r.key === range}">${esc(r.label)}</button>`).join("")}
             </div>`;
 
+        /* The whole body is rewritten, so a focused tab went with it and
+           the keyboard fell to <body> — on every switch, and again when the
+           board it asked for arrived (30 Sept 2026). The tab that had focus
+           is found again in the new markup, by what it selects (a range tab
+           now selected is the same button; a game tab picked is too). */
+        const had = body.contains(document.activeElement) ? document.activeElement : null;
+        const again = had && had.dataset
+            ? (had.dataset.game ? `[data-game="${had.dataset.game}"]` : had.dataset.range ? `[data-range="${had.dataset.range}"]` : null)
+            : null;
         body.innerHTML = `
             <div class="guess-board boards-board">
                 <div class="guess-board-ranges boards-games" role="group" aria-label="Which game">${gameTabs}</div>
                 ${rangeTabs}
                 ${boardHtml(g)}
             </div>`;
+        const back = again && body.querySelector(again);
+        if (back) back.focus({ preventScroll: true });
     }
 
     body.addEventListener("click", e => {

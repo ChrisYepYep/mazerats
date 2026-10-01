@@ -40,7 +40,9 @@ const { SECURITY_HEADERS } = require("./_headers");
 // Points here are totals, the day's score plus its speed bonus, as every
 // public board and the Profile count them (see _speed.js). forgetDay is the
 // reset's reach into the day's clock and recorded moves — see the reset.
-const { TOTAL, totalOf, forgetDay } = require("./_speed");
+const { TOTAL, totalOf, forgetDay, progressFor, isPractice, notePractised } = require("./_speed");
+// The launch cut, for a reset of a practised launch day (1 Oct 2026).
+const { launchCut } = require("./daily-scores");
 
 const SCORES = "guess_scores";
 const RESETS = "daily_resets";
@@ -438,6 +440,20 @@ async function route(event, db, scores, resets) {
         let mirrorCleared = false;
         let clockCleared = 0;
         {
+            /* A practice run of launch day goes with the reset like any
+               other row (forgetDay below), and until the player's next
+               start set it aside it was the server's only witness that they
+               had seen the day's answers — so a launch day reset before then
+               came back with the speed bonus. Noted first, as dropPractice
+               notes it (NO SPEED BONUS AFTER PRACTICE in _speed.js; 1 Oct
+               2026), and before anything is deleted, so a note that fails
+               leaves the day as it was and the reset is tried again. */
+            const cut = await launchCut(db).catch(() => null);
+            if (cut && cut.day === today()) {
+                const row = await progressFor(db, meta.key, today(), playerId);
+                if (isPractice(row, cut)) await notePractised(db, meta.key, today(), playerId, "reset");
+            }
+
             // Today only. Deleting a player's whole history is a different
             // and much larger decision than giving them today back, and it
             // is not one a single button should be able to make.

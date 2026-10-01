@@ -2608,7 +2608,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 changes: Array.isArray(g.changes) ? g.changes : [],
                 activityAt: updated ? edited : published,
                 activity: updated ? "updated" : "added",
-                _haystack: [g.title, g.category, g.summary, "guide"].join(" ").toLowerCase()
+                // The summary as it reads (1 Oct 2026): as typed, a search for
+                // "https" or "maze" matched a guide by a link's address.
+                _haystack: [g.title, g.category,
+                    typeof GuideText !== "undefined" ? GuideText.plain(g.summary) : g.summary,
+                    "guide"].join(" ").toLowerCase()
             };
             return { n, at: n.activityAt, own: "" };
         });
@@ -3123,9 +3127,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const mazeCount = entries.filter(e => e.kind === "maze").length;
         const eventCount = entries.length - mazeCount;
         // No dash in this sentence on purpose — see timelineYearNote.
+        /* One year is "in 2026", not "from 2026 to 2026" (1 Oct 2026), as a
+           builder's search or a year filter often leaves it. Undated
+           entries (year "") name no year. */
+        const dated = years.filter(Boolean);
+        const span = dated.length > 1 ? `, from ${dated[dated.length - 1]} to ${dated[0]}`
+            : dated.length === 1 ? `, in ${dated[0]}` : "";
         const summary = `${mazeCount} ${mazeCount === 1 ? "maze" : "mazes"} and ` +
-            `${eventCount} ${eventCount === 1 ? "event" : "events"}, ` +
-            `from ${years[years.length - 1]} to ${years[0]}.`;
+            `${eventCount} ${eventCount === 1 ? "event" : "events"}${span}.`;
 
         /* What a timeline cannot show, said out loud.
 
@@ -3459,7 +3468,11 @@ document.addEventListener("DOMContentLoaded", () => {
             ? (searching ? "Nothing new matches your search." : "Nothing has been added yet.")
             : searching
                 ? (topView === "events" ? "No events match your search." : "No mazes match your search.")
-                : emptyMessagesNoSearch[view];
+                // Not "No events scheduled." when the events never arrived
+                // (1 Oct 2026): that reads as a fact, not an outage.
+                : topView === "events" && Api._degraded && Api._degraded.has("event data")
+                    ? "Couldn't load the events. Try refreshing the page."
+                    : emptyMessagesNoSearch[view];
 
         emptyEl.innerHTML = "";
         const say = document.createElement("p");
@@ -5505,15 +5518,56 @@ document.addEventListener("DOMContentLoaded", () => {
         // trailing space typed or pasted into the box otherwise matched
         // only names with a space at that point, and emptied the grid.
         const q = query.trim().toLowerCase();
-        const entries = q
-            ? all.filter(f => f.name.toLowerCase().includes(q))
-            : all;
+        /* THE BOX'S FILTERS WORK HERE TOO (1 Oct 2026). The whole box was
+           matched against furni names as one string, so the syntax the
+           chips teach — tag:illusion, by:"X" — found no furni at all and
+           said so. It is now read by parseSearch: words (and furni:) match
+           a piece's name, minus-words rule names out, and the maze filters
+           narrow the pieces to those found in the mazes they match. A
+           tile's count stays its count across the whole archive. */
+        let entries = all;
+        let filtered = false;
+        if (q) {
+            const s = parseSearch(query.trim());
+            const names = s.words.concat(s.keys.filter(k => k.key === "furni").map(k => k.value));
+            const notNames = s.not.concat(s.notKeys.filter(k => k.key === "furni").map(k => k.value));
+            const mazeKeys = s.keys.filter(k => k.key !== "furni");
+            const mazeNot = s.notKeys.filter(k => k.key !== "furni");
+            let inMazes = null;
+            if (mazeKeys.length || mazeNot.length) {
+                filtered = true;
+                inMazes = new Set();
+                /* keyMatches reads the NORMALIZED shape (owner, dateValue),
+                   as matchesQuery hands it; a raw room has creator and added
+                   instead, so by: and year: matched no maze at all and every
+                   such search came back empty. */
+                const asMaze = room => normalize(room, false);
+                ROOMS.filter(room => {
+                    if (isHallway(room)) return false;
+                    const n = asMaze(room);
+                    return mazeKeys.every(k => keyMatches(n, k)) && !mazeNot.some(k => keyMatches(n, k));
+                })
+                    .forEach(room => liveFurniRecords(room).forEach(([, record]) => {
+                        asList(record && record.items).forEach(item => {
+                            const key = item && !item.hidden ? furniKeyOf(item) : "";
+                            if (key) inMazes.add(key);
+                        });
+                    }));
+            }
+            entries = all.filter(f => {
+                const name = f.name.toLowerCase();
+                return names.every(w => name.includes(w)) && !notNames.some(w => name.includes(w))
+                    && (!inMazes || inMazes.has(f.key));
+            });
+        }
 
         if (!entries.length) {
             grid.innerHTML = "";
-            emptyEl.textContent = all.length
-                ? "No furni by that name has been found in the archive."
-                : "The archive has not been scanned for furni yet.";
+            emptyEl.textContent = !all.length
+                ? "The archive has not been scanned for furni yet."
+                : filtered
+                    ? "No furni has been found in the mazes that search matches."
+                    : "No furni by that name has been found in the archive.";
             emptyEl.style.display = "block";
             return;
         }
@@ -9974,12 +10028,27 @@ document.addEventListener("DOMContentLoaded", () => {
         notice.setAttribute("role", "alert");
 
         const what = [...Api._degraded].join(" and ");
+        /* ONLY THE ROOMS HAVE AN OFFLINE COPY (1 Oct 2026). With the mazes
+           in and only the events missing, this still said "you're seeing a
+           small offline copy — most of the archive isn't here", and there
+           is no event copy at all (DEFAULT_EVENTS is empty). Then it says
+           what is actually missing, and that the mazes are all here. */
+        const roomsOffline = Api._degraded.has("room data");
+        const onlyEvents = !roomsOffline && Api._degraded.has("event data") && Api._degraded.size === 1;
+        const head = roomsOffline ? "The archive is offline"
+            : onlyEvents ? "The events are offline" : "Part of the archive is offline";
+        const say = roomsOffline
+            ? "We can't reach the live " + escapeHtml(what) +
+                " right now, so you're seeing a small offline copy — most of the archive isn't here. " +
+                "This is usually brief; the full archive should be back shortly."
+            : onlyEvents
+                ? "We can't reach the event list right now. The mazes are all here; the events should be back shortly."
+                : "We can't reach the live " + escapeHtml(what) +
+                    " right now. The mazes are all here; this is usually brief.";
         notice.innerHTML =
             '<div class="data-degraded-body">' +
-                '<p class="data-degraded-head">The archive is offline</p>' +
-                "<p class=\"data-degraded-say\">We can't reach the live " + escapeHtml(what) +
-                " right now, so you're seeing a small offline copy — most of the archive isn't here. " +
-                "This is usually brief; the full archive should be back shortly.</p>" +
+                '<p class="data-degraded-head">' + head + "</p>" +
+                '<p class="data-degraded-say">' + say + "</p>" +
             "</div>" +
             '<button type="button" class="btn data-degraded-retry" id="data-degraded-retry">Try again</button>';
 

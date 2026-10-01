@@ -123,7 +123,14 @@
     const ADDRESS = "/glyphs";
     const isOpen = () => overlay.classList.contains("open");
     const onGlyphsPath = () => /^\/glyphs\/?$/.test(location.pathname);
-    const isOurEntry = () => !!(history.state && history.state.glyphs);
+    /* The marker is this document's own token, not `true` (1 Oct 2026), as
+       the maze window's is (PAGE_TOKEN in js/home.js). history.state
+       outlives the document that wrote it: after a reload at /glyphs the
+       entry still says glyphs:true, so a later Back onto it counted it as
+       ours, and closing then stepped back onto an entry of a document that
+       no longer exists — a whole reload of the archive. */
+    const TOKEN = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const isOurEntry = () => !!(history.state && history.state.glyphs === TOKEN);
 
     // ------------------------------------------------------------ drawing
 
@@ -325,7 +332,7 @@
             } else {
                 basePath = location.pathname + location.search + location.hash;
                 try {
-                    history.pushState({ glyphs: true }, "", ADDRESS);
+                    history.pushState({ glyphs: TOKEN }, "", ADDRESS);
                     ownsEntry = true;
                 } catch (e) { ownsEntry = false; }
             }
@@ -376,7 +383,7 @@
             if (pendingPush !== null && isOpen()) {
                 basePath = location.pathname + location.search + location.hash;
                 try {
-                    history.pushState({ glyphs: true }, "", pendingPush);
+                    history.pushState({ glyphs: TOKEN }, "", pendingPush);
                     ownsEntry = true;
                 } catch (e) { ownsEntry = false; }
             }

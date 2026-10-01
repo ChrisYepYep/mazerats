@@ -373,10 +373,43 @@ document.addEventListener("DOMContentLoaded", () => {
     const contactFormReady = !!(messageInput && usernameInput && discordInput && hpInput
         && cancelBtn && sendBtn && statusEl);
 
+    /* The two forms' status lines are role="status" live regions, hidden
+       (display:none) until there is something to say — and a screen reader
+       often skips a region that enters the page with its words already in
+       it. So (1 Oct 2026) the line is shown FIRST and its words set a frame
+       later, as a change it will announce. Text the same as what is there
+       is cleared at once, or the repeat (a second identical error) would
+       be no change at all. A newer say, or a hide, cancels a pending one;
+       liveText is what the line is about to say, for whoever asks before
+       the frame. A hidden tab gets no frames, so it is set straight away. */
+    const liveFrames = new WeakMap();
+    const liveText = new WeakMap();
+    function liveSay(el, text, isError) {
+        if (liveFrames.has(el)) cancelAnimationFrame(liveFrames.get(el));
+        liveFrames.delete(el);
+        liveText.set(el, text || "");
+        if (!text) {
+            el.textContent = "";
+            el.classList.toggle("is-error", Boolean(isError));
+            el.style.display = "none";
+            return;
+        }
+        el.style.display = "block";
+        const put = () => {
+            liveFrames.delete(el);
+            el.textContent = text;
+            el.classList.toggle("is-error", Boolean(isError));
+        };
+        if (document.hidden || typeof requestAnimationFrame !== "function") { put(); return; }
+        if (el.textContent === text) el.textContent = "";
+        liveFrames.set(el, requestAnimationFrame(put));
+    }
+
     function showStatus(text, isError) {
-        statusEl.textContent = text;
-        statusEl.classList.toggle("is-error", Boolean(isError));
-        statusEl.style.display = "block";
+        liveSay(statusEl, text, isError);
+    }
+    function hideStatus() {
+        liveSay(statusEl, "");
     }
 
     /* Signed in, the Discord field has nothing left to ask. The name is
@@ -418,7 +451,7 @@ document.addEventListener("DOMContentLoaded", () => {
         messageInput.value = "";
         usernameInput.value = "";
         discordInput.value = "";
-        statusEl.style.display = "none";
+        hideStatus();
         showPage("contact");
     });
 
@@ -443,12 +476,16 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         sendBtn.disabled = true;
+        // Said, as the entry form and Add Maze Info say it (1 Oct 2026): a
+        // cold function can take seconds, and a greyed-out button alone
+        // looked like nothing was happening. Success leaves for Thanks.
+        showStatus("Sending...", false);
         try {
             await Api.submitContactMessage(message, usernameInput.value.trim(), discordInput.value.trim(), hpInput.value);
             messageInput.value = "";
             usernameInput.value = "";
             discordInput.value = "";
-            statusEl.style.display = "none";
+            hideStatus();
             // The thanks page's own sentence: an Add Maze Info send before
             // this one may have left its wording there.
             MazeConsole.showThanks();
@@ -456,7 +493,14 @@ document.addEventListener("DOMContentLoaded", () => {
             // A blocked sender (403 { banned }) gets the site's own "Can't
             // Send" notice instead of the raw words (29 Sept 2026).
             if (window.Account && Account.writeRefused && Account.writeRefused(e.status, e.data, "send")) {
-                statusEl.style.display = "none";
+                hideStatus();
+            } else if (e.status === 401) {
+                /* A session the server has revoked (30 Sept 2026; see
+                   writeRefusal in _bans.js), which answered with the cookie
+                   cleared: the page is told, as the Event Submission page
+                   tells it, and the message stays in its box. */
+                if (window.Account && typeof Account.refresh === "function") Account.refresh();
+                showStatus("You were signed out. Press Send again to send it without an account.", true);
             } else {
                 showStatus(e.message || "Something went wrong. Try again in a moment.", true);
             }
@@ -525,9 +569,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function entrySay(text, isError) {
         if (!entryStatus) return;
-        entryStatus.textContent = text || "";
-        entryStatus.classList.toggle("is-error", Boolean(isError));
-        entryStatus.style.display = text ? "block" : "none";
+        // Shown first, worded a frame later: see liveSay above.
+        liveSay(entryStatus, text, isError);
     }
 
     function paintEntryIdentity(player) {
@@ -556,7 +599,7 @@ document.addEventListener("DOMContentLoaded", () => {
         entryImage.disabled = entryClosed;
         entrySend.disabled = entryClosed || entrySending;
         if (entryClosed) entrySay(ENTRY_CLOSED, true);
-        else if (was && entryStatus.textContent === ENTRY_CLOSED) entrySay("");
+        else if (was && liveText.get(entryStatus) === ENTRY_CLOSED) entrySay("");
     }
 
     /* Whether the Event Submission page is what the console shows now —

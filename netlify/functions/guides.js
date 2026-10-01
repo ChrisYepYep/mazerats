@@ -100,11 +100,17 @@ function shape(body) {
     const status = body.status === undefined ? "draft" : body.status;
     if (!STATUSES.includes(status)) return `"status" must be draft or published.`;
     if (body.sections !== undefined && !Array.isArray(body.sections)) return `"sections" must be a list.`;
-    const sections = (body.sections || []).slice(0, LIMITS.sections).map(s => ({
+    /* Empty sections dropped BEFORE the cap, and a guide over it refused
+       (30 Sept 2026). It was cut at 60 first and emptied after, so blank
+       sections counted against the cap, and anything past the 60th was
+       thrown away without a word: the save said it had worked, and the
+       guide came back shorter than it was written. */
+    const sections = (body.sections || []).map(s => ({
         heading: text(s && s.heading, LIMITS.heading),
         body: text(s && s.body, LIMITS.body),
         image: cleanImage(s && s.image)
     })).filter(s => s.heading || s.body || s.image);
+    if (sections.length > LIMITS.sections) return `A guide can have at most ${LIMITS.sections} sections.`;
     // The order guides are listed in; lower first, ties by newest.
     const order = Number.isFinite(Number(body.order)) ? Math.max(-9999, Math.min(9999, Math.round(Number(body.order)))) : 0;
     return {
@@ -201,7 +207,13 @@ exports.handler = async (event) => {
         // same step in rooms.js. Only on the admin read, which has already
         // checked the account above; the public list never carries them.
         if (full && params.retired === "1") return cachedJson(event, { records: list, retired }, { cache: false });
-        return cachedJson(event, list, { cache: !full });
+        /* ?fresh=<time> is js/guides.js asking past the edge's copy (30 Sept
+           2026). Each one is a key of its own, and was stored in the durable
+           cache like the plain list — for a day, stale — so every guide
+           looked for past the cache left one more copy there that nothing
+           would ever ask for again. It is answered and not kept. */
+        const fresh = Object.prototype.hasOwnProperty.call(params, "fresh");
+        return cachedJson(event, list, { cache: !full && !fresh });
     }
 
     // A write that fails part-way (the database dropping mid-request, say)

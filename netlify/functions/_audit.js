@@ -111,10 +111,39 @@ async function writeRecord(event, type, fields) {
    passes through (canWrite in _auth.js). Records the attempt rather than the
    outcome, which is the honest thing for an audit trail: what someone tried
    is as interesting as what succeeded. */
+/* What a write was aimed at when the query does not say (30 Sept 2026).
+   An edit sends its record's id in the BODY, and a settings save sends
+   nothing but the fields it changes — so the log read "PUT settings" for
+   switching the whole site live, with no way to tell that from a palette
+   change. Small bodies only (an upload's is megabytes of picture, and has
+   nothing to name); never throws. A settings save lists what it set, each
+   value cut short: every one of them is a short validated word or date. */
+const BODY_PEEK_MAX = 4096;
+function targetFromBody(event, endpoint) {
+    try {
+        const raw = event.body;
+        if (typeof raw !== "string" || !raw || raw.length > BODY_PEEK_MAX) return null;
+        const body = JSON.parse(raw);
+        if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+        if (endpoint === "settings") {
+            const parts = Object.keys(body).slice(0, 8).map(k => {
+                const v = body[k];
+                const shown = v === null || ["string", "number", "boolean"].includes(typeof v) ? String(v) : "…";
+                return `${k.slice(0, 40)}=${shown.slice(0, 40)}`;
+            });
+            return parts.length ? parts.join(", ") : null;
+        }
+        return typeof body.id === "string" && body.id ? body.id.slice(0, 200) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
 function recordWrite(event, username, session) {
     const path = (event.path || "").replace("/.netlify/functions/", "");
     const target = (event.queryStringParameters && (event.queryStringParameters.id ||
-        event.queryStringParameters.username || event.queryStringParameters.ip)) || null;
+        event.queryStringParameters.username || event.queryStringParameters.ip)) ||
+        targetFromBody(event, path) || null;
     return record(event, "write", {
         username,
         session,

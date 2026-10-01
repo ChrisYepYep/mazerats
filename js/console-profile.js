@@ -43,6 +43,8 @@ document.addEventListener("DOMContentLoaded", () => {
     let reading = null;
     let failed = false;
     let showing = false;
+    // When a 401 from the profile last made `me` be asked again (see load).
+    let askedMeAt = 0;
 
     function esc(str) {
         return String(str == null ? "" : str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -228,6 +230,10 @@ document.addEventListener("DOMContentLoaded", () => {
             <button type="button" class="console-btn console-profile-btn" data-act="progress">Your Progress</button>`;
     }
 
+    /* The note under Sign in says what DISCORD gives us (1 Oct 2026). It
+       said "We only see ... Nothing else", but a signed-in player's row also
+       keeps a keyed network code, and a message or lead keeps the address
+       for 30 days (both in the privacy policy). */
     function signedOutHtml() {
         return `
             <p class="console-blurb">Sign in with Discord and this page becomes yours.</p>
@@ -238,7 +244,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <li>Credit for what you send in</li>
             </ul>
             <button type="button" class="console-btn console-profile-btn" data-act="signin">Sign in with Discord</button>
-            <p class="console-note console-profile-note">We only see your Discord username, display name, picture and account ID. Nothing else.</p>
+            <p class="console-note console-profile-note">From Discord we only get your username, display name, picture and account ID.</p>
             ${rule}
             ${archiveBlock()}
             ${rule}
@@ -648,7 +654,20 @@ document.addEventListener("DOMContentLoaded", () => {
             headers: { Accept: "application/json" },
             signal: controller ? controller.signal : undefined
         })
-            .then(res => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+            .then(res => {
+                if (res.ok) return res.json();
+                /* A session the server has revoked (a forgotten player's old
+                   tab; 30 Sept 2026): the answer cleared the cookie, and `me`
+                   is asked again so the page — this one, and the header —
+                   redraws signed out rather than "could not be read". */
+                // Once a minute at most, so a `me` that still says signed in
+                // (its own read of the row failing) cannot set up a loop.
+                if (res.status === 401 && window.Account && typeof Account.refresh === "function" && Date.now() - askedMeAt > 60000) {
+                    askedMeAt = Date.now();
+                    Account.refresh();
+                }
+                return Promise.reject(new Error(String(res.status)));
+            })
             .then(body => {
                 const now = window.Account && Account.current ? Account.current.id : null;
                 if (now !== forId) return;
@@ -745,9 +764,11 @@ document.addEventListener("DOMContentLoaded", () => {
        in with Discord" in its place rather than letting it fall to <body>. */
     async function signOutAsked(btn) {
         if (!Account.confirmSignOut) { Account.signOut(); return; }
-        if (!(await Account.confirmSignOut())) return;
+        const answer = await Account.confirmSignOut();
+        if (!answer) return;
         if (btn.isConnected) btn.focus({ preventScroll: true });
-        await Account.signOut();
+        // "everywhere" is the window's quieter third answer (1 Oct 2026).
+        await Account.signOut({ everywhere: answer === "everywhere" });
         const again = host.querySelector('[data-act="signin"]');
         const lost = !document.activeElement || document.activeElement === document.body || !btn.isConnected;
         if (again && lost) again.focus({ preventScroll: true });

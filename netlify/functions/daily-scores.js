@@ -111,6 +111,62 @@ const privateJson = (statusCode, data) => ({
     body: JSON.stringify(data)
 });
 
+/* THE BOARDS' CACHE KEY, AND THE ONE WAY PAST IT (1 Oct 2026).
+
+   The boards sit behind BOARD_CDN_CACHE for fifteen seconds, and the edge
+   keyed them on the whole query string — so `&fresh=<anything>` was a new
+   key, and anybody adding a random one skipped the cache on every request:
+   eight aggregations a time for ?game=all, with no limit on how often. The
+   one fetch that is meant to get past it is the player's own, straight
+   after their day is filed, which must not be shown the copy from before
+   their row existed.
+
+   So the edge now keys a board on the parameters that change it and no
+   others (Netlify-Vary: game, day, deal — deal so a deal request is never
+   answered with a cached board — and mine), and an unknown `fresh` is the
+   cached board like any other request. The way past is `mine`, which the
+   page sends only after a submit (Daily.boards in js/daily.js, loadBoards
+   in js/guess.js). It reaches the function every time — a `mine` answer is
+   never stored at the edge — and is honoured only for a signed-in caller
+   whose day of that game was filed in the last BOARD_FRESH_MS: then the
+   board is read now and answered private, no-store. Anything else asking
+   with `mine` is sent to the same board without it (302), which the edge
+   answers, so it costs a session check and no aggregation. Shared with
+   guess-scores.js. */
+const BOARD_VARY = "query=game|day|deal|mine";
+const BOARD_FRESH_MS = 5 * 60 * 1000;
+
+// A board's response as it goes out: keyed as above, and kept off the edge
+// altogether when it is the player's own fresh read.
+function boardReply(res, fresh) {
+    res.headers = { ...res.headers, "Netlify-Vary": BOARD_VARY };
+    if (fresh) {
+        delete res.headers["Netlify-CDN-Cache-Control"];
+        res.headers["Cache-Control"] = "private, no-store";
+    }
+    return res;
+}
+
+// Whether a `mine` read is the refresh after this caller's own submit: a
+// day filed, by them, in `collection` matching `match`, a moment ago.
+async function freshFor(db, event, collection, match) {
+    const player = playerFrom(event);
+    if (!player) return false;
+    const row = await db.collection(collection).findOne({ ...match, playerId: player.id }, { projection: { _id: 0, at: 1 } });
+    const at = row ? Date.parse(row.at) : NaN;
+    const ago = Date.now() - at;
+    return Number.isFinite(ago) && ago < BOARD_FRESH_MS && ago > -60000;
+}
+
+// The same board without `mine` (or `fresh`), for the edge to answer.
+function plainBoard(event, params) {
+    let path = "";
+    try { path = new URL(event.rawUrl).pathname; } catch (e) { path = event.path || ""; }
+    const qs = Object.keys(params || {}).filter(k => k !== "mine" && k !== "fresh")
+        .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join("&");
+    return { statusCode: 302, headers: { ...SECURITY_HEADERS, "Cache-Control": "private, no-store", Location: path + (qs ? "?" + qs : "") }, body: "" };
+}
+
 let ensured = false;
 async function ensureIndexes(col) {
     if (ensured) return;
@@ -154,14 +210,17 @@ function scoreRecorded(dealRounds, moves) {
    would not, and it earns less: no bonus. */
 function scoreClaim(dealRounds, moves) {
     if (!Array.isArray(moves) || moves.length !== dealRounds.length) return null;
-    const grid = [];
+    const grid = [], judged = [];
     for (let i = 0; i < dealRounds.length; i++) {
         const pick = moves[i] && moves[i].tile;
         if (!Number.isInteger(pick) || pick < 0 || pick >= dealRounds[i].tiles.length) return null;
-        grid.push(dealRounds[i].tiles[pick].odd ? 1 : 0);
+        const right = Boolean(dealRounds[i].tiles[pick].odd);
+        grid.push(right ? 1 : 0);
+        judged.push({ tile: pick, right });
     }
     const solved = grid.filter(Boolean).length;
-    return { points: solved * POINTS_EACH, solved, grid, complete: true };
+    // `moves`, as judged, for recordClaimed in _speed.js (1 Oct 2026).
+    return { points: solved * POINTS_EACH, solved, grid, complete: true, moves: judged };
 }
 
 /* What the page is told about the moves recorded so far, for a signed-in
@@ -466,7 +525,8 @@ async function combinedBoards(db, event, params) {
            everybody — so it goes behind the edge for fifteen seconds like
            the per-game board above. See BOARD_CDN_CACHE in _cache.js. */
         // The spans' first days clipped to launch day, as the queries are.
-        return cachedJson(event, {
+        // Keyed on its own parameters only — see BOARD_VARY.
+        return boardReply(cachedJson(event, {
             date: day,
             weekFrom: fromLaunch(week.from, launch),
             monthFrom: fromLaunch(month.from, launch),
@@ -475,7 +535,7 @@ async function combinedBoards(db, event, params) {
             week: bWeek,
             month: bMonth,
             allTime: bAll
-        }, { cdn: BOARD_CDN_CACHE });
+        }, { cdn: BOARD_CDN_CACHE }), false);
     } catch (e) {
         console.error("daily-scores: combined board read failed", e);
         return json(500, { error: "Could not read the scores" });
@@ -526,6 +586,8 @@ exports.handler = async (event) => {
            against someone else's three. `games` says how many of the three
            each row's points came from, so the board can be honest about
            that rather than leaving it to be guessed. */
+        // Never anybody's own fresh read: one game's day is filed, not all.
+        if (game === "all" && params.mine !== undefined) return plainBoard(event, params);
         if (game === "all") return combinedBoards(db, event, params);
 
         if (!GAMES.includes(game)) return json(400, { error: "Unknown game" });
@@ -534,6 +596,14 @@ exports.handler = async (event) => {
 
         const day = String(params.day || today()).slice(0, 10);
         if (!isRealDay(day)) return json(400, { error: "Bad day" });
+
+        // The player's own read after a submit, or sent to the cached board
+        // — see BOARD_VARY. A check that fails is not fresh.
+        let fresh = false;
+        if (params.mine !== undefined) {
+            try { fresh = await freshFor(db, event, COLLECTION, { game, day }); } catch (e) { fresh = false; }
+            if (!fresh) return plainBoard(event, params);
+        }
 
         // All four spans in one request: they are small, they are read
         // together, and a results panel whose tabs each cost a round trip
@@ -589,7 +659,7 @@ exports.handler = async (event) => {
            to launch day like the queries above, so launch week's tab says
            "Since 3 October" rather than a Monday nothing before counts from
            (30 Sept 2026). */
-        return cachedJson(event, {
+        return boardReply(cachedJson(event, {
             date: day,
             weekFrom: fromLaunch(week.from, launch),
             monthFrom: fromLaunch(month.from, launch),
@@ -598,7 +668,7 @@ exports.handler = async (event) => {
             week: weekRows,
             month: monthRows,
             allTime: allRows
-        }, { cdn: BOARD_CDN_CACHE });
+        }, { cdn: BOARD_CDN_CACHE }), fresh);
     }
 
     if (event.httpMethod === "POST") {
@@ -607,6 +677,9 @@ exports.handler = async (event) => {
         const arrived = Date.now();
         const player = playerFrom(event);
 
+        // Nothing this endpoint takes is anywhere near this (MAX_FINISH_BODY
+        // in _speed.js); refused before the parse.
+        if (String(event.body || "").length > speed.MAX_FINISH_BODY) return privateJson(413, { error: "Too large" });
         let body = {};
         try { body = JSON.parse(event.body || "{}"); } catch (e) { body = {}; }
         // `null` parses cleanly and then has nothing to read a field off.
@@ -638,11 +711,14 @@ exports.handler = async (event) => {
         const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true });
         if (refusal) return refusal;
 
-        /* Practice time, for a signed-in player's day — see PRACTICE BEFORE
-           LAUNCH in _speed.js. Read on the arrival time, like everything
-           else about the request. Signed out, nothing is stored to set
-           aside, and the page keeps its own practice day (js/oddoneout.js). */
-        const practice = player ? await practiceOf(db, day, arrived) : { cut: null, now: false };
+        /* Practice time — see PRACTICE BEFORE LAUNCH in _speed.js. Read on
+           the arrival time, like everything else about the request. Signed
+           out, nothing is stored to set aside, and the page keeps its own
+           practice day (js/oddoneout.js) — but it is read signed out too
+           (1 Oct 2026), so the answers can say `practice` and the page can
+           own up to it once signed in (NO SPEED BONUS AFTER PRACTICE). */
+        const practice = await practiceOf(db, day, arrived);
+        const practiceMark = practice.now ? { practice: practice.cut.at } : {};
 
         /* ---------- one pick ----------
 
@@ -705,7 +781,7 @@ exports.handler = async (event) => {
                 // `next`: the round after this one, handed out now that this
                 // one is over — see ONE ROUND AT A TIME in _deal.js.
                 return privateJson(200, { recorded: false, tile, right: Boolean(dealt.tiles[tile].odd),
-                    next: deals.nextRound(game, deal.rounds, round, day) });
+                    next: deals.nextRound(game, deal.rounds, round, day), ...practiceMark });
             }
             /* `replay: true` is a pick made signed out and sent again now
                the day is recorded (Daily.replay in js/daily.js). Recording
@@ -764,7 +840,7 @@ exports.handler = async (event) => {
         };
         if (!player && body.action === "start") {
             if (String(event.body || "").length > speed.MAX_START_BODY) return json(413, { error: "Too large" });
-            return privateJson(200, { started: false, recorded: false, reason: "signed-out", next: await openingRound() });
+            return privateJson(200, { started: false, recorded: false, reason: "signed-out", next: await openingRound(), ...practiceMark });
         }
 
         // Signed out is not an error: the game posts unconditionally and
@@ -788,6 +864,11 @@ exports.handler = async (event) => {
                 if (practice.cut && !practice.now) {
                     const row = await speed.progressFor(db, game, day, player.id);
                     if (pastPractice(practice, row)) await speed.dropPractice(db, game, day, player.id, row);
+                    /* And a run this page played SIGNED OUT before the cut,
+                       which only the page knows of (`practised`, from
+                       Daily.start; NO SPEED BONUS AFTER PRACTICE in
+                       _speed.js, 1 Oct 2026). Only `true` counts. */
+                    if (body.practised === true) await speed.notePractised(db, game, day, player.id, "page");
                 }
                 await speed.recordStart(db, ensureUniqueIndex, game, day, player.id);
             } catch (e) {
@@ -814,6 +895,8 @@ exports.handler = async (event) => {
                on no board (the instant cut) and would otherwise hold the
                unique index against the day being played properly. */
             if (filed && pastPractice(practice, filed)) {
+                // Noted first: it was a practice run all the same.
+                await speed.notePractised(db, game, day, player.id, "filed");
                 await col.deleteOne({ _id: filed._id, at: filed.at });
                 filed = null;
             }
@@ -848,16 +931,29 @@ exports.handler = async (event) => {
            (409, which the page keeps trying). The start row these read
            expires two days on (_speed.js), which bounds how late is late. */
         const closed = () => json(400, { error: "That day is not open" });
-        let scored, clock = null, claimed = false, practiceRun = practice.now;
+        let scored, clock = null, claimed = false, practiceRun = practice.now, practised = false;
         try {
-            const row = await speed.progressFor(db, game, day, player.id);
+            let row = await speed.progressFor(db, game, day, player.id);
             // Checked before the deal is read, so a closed day with nothing
             // recorded can never cause a day to be dealt.
             if (!open && !(speed.lastMarkAt(row) <= dayClosesAt(day))) return closed();
-            // Finished after the cut, but begun before it: still practice.
-            if (pastPractice(practice, row)) practiceRun = true;
             const deal = await deals.dealFor(db, ensureUniqueIndex, game, day);
             if (!deal.rounds.length) return json(409, { recorded: false, reason: "no-deal" });
+            /* Finished after the cut, but begun before it: still practice —
+               when the practice row IS the run being finished, every round
+               of it recorded before the cut (moves on it after the cut are
+               refused, practice-over). A row with rounds still unrecorded
+               is not (1 Oct 2026): it is a practice run left behind, and
+               this request is a different run — the real day, played signed
+               out after the cut and claimed now. It was answered "practice"
+               (a start-only row) or 409 "unfinished" for good (a part-played
+               one), so the real day could never be filed. The row is set
+               aside as a move on it would be (dropPractice, which notes the
+               practice), and the day goes on as a claim. */
+            if (pastPractice(practice, row)) {
+                if (speed.movesOf(row, deal.rounds.length).every(Boolean)) practiceRun = true;
+                else { await speed.dropPractice(db, game, day, player.id, row); row = null; }
+            }
             const moves = speed.movesOf(row, deal.rounds.length);
             if (moves.some(Boolean)) {
                 scored = scoreRecorded(deal.rounds, moves);
@@ -867,6 +963,14 @@ exports.handler = async (event) => {
                 if (!open) return closed();
                 scored = scoreClaim(deal.rounds, body.moves);
                 claimed = true;
+            }
+            /* The real launch day of a player who practised it: no clock,
+               so no bonus, and filed on its base points (NO SPEED BONUS
+               AFTER PRACTICE in _speed.js; 1 Oct 2026). Only on a day the
+               cut matters to, once it has passed. */
+            if (!practiceRun && practice.cut && !practice.now) {
+                practised = await speed.practisedOn(db, game, day, player.id);
+                if (practised) clock = null;
             }
         } catch (e) {
             console.error("daily-scores: could not check the day", e);
@@ -915,6 +1019,8 @@ exports.handler = async (event) => {
                 // A day filed from the page's own picks after signing in —
                 // see scoreClaim. Only there so the difference can be told.
                 ...(claimed ? { claimed: true } : {}),
+                // Played in practice first, so no bonus — see above.
+                ...(practised ? { practised: true } : {}),
                 at: new Date().toISOString()
             });
         } catch (e) {
@@ -928,15 +1034,27 @@ exports.handler = async (event) => {
             return json(500, { error: "Could not record the score" });
         }
 
-        return privateJson(200, { recorded: true, points: scored.points, bonus, solved: scored.solved });
+        /* A claimed day's picks written down as the day's moves, so the
+           account's other devices see it played (recordClaimed in
+           _speed.js; 1 Oct 2026). The day is filed whatever happens here,
+           so a failure is only logged. */
+        if (claimed) {
+            try { await speed.recordClaimed(db, ensureUniqueIndex, game, day, player.id, scored.moves); } catch (e) {
+                console.warn("daily-scores: could not write a claimed day's picks", e && e.message);
+            }
+        }
+
+        return privateJson(200, { recorded: true, points: scored.points, bonus, solved: scored.solved, ...(practised ? { practised: true } : {}) });
     }
 
     return json(405, { error: "Method not allowed" });
 };
 
 // The answer to a day already on file: the stored row's own figures.
+// `practised`, so the card can say why there is no bonus (1 Oct 2026).
 function alreadyReply(row) {
-    return { recorded: false, reason: "already", points: row.points || 0, bonus: row.bonus || 0, solved: row.solved || 0 };
+    return { recorded: false, reason: "already", points: row.points || 0, bonus: row.bonus || 0, solved: row.solved || 0,
+        ...(row.practised ? { practised: true } : {}) };
 }
 
 /* The page's deal for a day: what to play, and nothing that says how.
@@ -983,7 +1101,7 @@ async function dealReply(db, event, game, params) {
             if (pastPractice(practice, row)) { row = null; practiceOver = true; }
             progress = progressView(speed.movesOf(row, deal.rounds.length));
             let onFile = await db.collection(COLLECTION).findOne({ game, day, playerId: player.id },
-                { projection: { _id: 1, points: 1, bonus: 1, solved: 1, at: 1 } });
+                { projection: { _id: 1, points: 1, bonus: 1, solved: 1, at: 1, practised: 1 } });
             if (pastPractice(practice, onFile)) onFile = null;
             filed = Boolean(onFile);
             score = filedScore(onFile);
@@ -1014,7 +1132,7 @@ async function dealReply(db, event, game, params) {
    what the submit answers with. */
 function filedScore(row) {
     if (!row) return null;
-    return { points: row.points || 0, bonus: row.bonus || 0, solved: row.solved || 0 };
+    return { points: row.points || 0, bonus: row.bonus || 0, solved: row.solved || 0, ...(row.practised ? { practised: true } : {}) };
 }
 
 /* For guess-scores.js, player-profile.js and player-data.js — see launchCut
@@ -1031,6 +1149,10 @@ module.exports.pastPractice = pastPractice;
 module.exports.isRealDay = isRealDay;
 // For guess-scores.js, so both games' deal replies carry the same shape.
 module.exports.filedScore = filedScore;
+// And the boards' one way past the edge — see BOARD_VARY (1 Oct 2026).
+module.exports.boardReply = boardReply;
+module.exports.freshFor = freshFor;
+module.exports.plainBoard = plainBoard;
 // For the tests: the pure scoring halves.
 module.exports.scoreRecorded = scoreRecorded;
 module.exports.scoreClaim = scoreClaim;

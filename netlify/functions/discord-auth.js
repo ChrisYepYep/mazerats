@@ -17,7 +17,8 @@
                since 29 Sept 2026 whether the visitor is banned:
                { player: {... nickRefused }, ban: { level, until, reason } | null }
                for signed-in and signed-out visitors alike (see meReply)
-     signout   clears the cookie — POST, from this site only (30 Sept 2026)
+     signout   clears the cookie — POST, from this site only (30 Sept 2026);
+               with &everywhere=1 every other device's session too (1 Oct 2026)
 
    The OAuth scopes asked for are "identify" and nothing else: an id, a
    display name and an avatar. Not email, not guilds, not anything that
@@ -45,6 +46,20 @@ const { banFor, netHashFor } = require("./_bans");
 
 const STATE_COOKIE = "mr_oauth";
 const STATE_TTL = 10 * 60;                 // ten minutes to finish a login
+
+/* ONE STATE COOKIE PER ATTEMPT (1 Oct 2026). There used to be one
+   `mr_oauth` cookie, so starting a second sign-in — in another tab, or
+   pressing Sign in again before Discord answered — overwrote the first
+   attempt's nonce, and that one came back "Discord sign-in did not work".
+   Each attempt now has its own, named by the first 12 hex of its nonce
+   (48 bits: two attempts in one ten-minute window never share one), and
+   the callback reads the one its state names. The plain `mr_oauth` is
+   still accepted for a sign-in that was under way when this deployed;
+   nothing sets it any more. */
+const stateCookieName = (nonce) => `${STATE_COOKIE}_${String(nonce || "").slice(0, 12)}`;
+const clearStateCookie = (name) => `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+// How many attempts' cookies may stand at once — see `start`.
+const MAX_STATE_COOKIES = 4;
 const STATE_AUDIENCE = "mazerats-oauth-state";
 const DISCORD_API = "https://discord.com/api/v10";
 // The token exchange and the profile read together — see the callback.
@@ -132,7 +147,18 @@ function safeReturn(to) {
        "//evil"; the origin in front of it makes that harmless today, but
        nothing about a return path needs one. */
     if (/[\u0000-\u001f\u007f\\]/.test(raw)) return "/home";
-    return raw;
+    /* And nothing past ASCII left raw (30 Sept 2026). A browser always sends
+       the page's address percent-encoded, but `to` is decoded from the query
+       string on its way in, so a hand-made "?to=/%C3%A9" arrived as "/é" —
+       and a Location header is Latin-1 at best: the character went out
+       mangled, or took the redirect down with it. Spaces and anything past
+       "~" are encoded again, one code point at a time; a lone surrogate,
+       which cannot be, sends them home. */
+    try {
+        return raw.replace(/[^\x21-\x7e]/gu, c => encodeURIComponent(c));
+    } catch (e) {
+        return "/home";
+    }
 }
 
 /* A Discord display name. Discord has two shapes: modern accounts have a
@@ -188,7 +214,18 @@ function avatarUrl(user) {
    Signed out, this is now one memoised bans read per page load where it used
    to be none; the lookup fails OPEN (banFor), so a database blip shows
    nobody a banned screen. Never cached: json() says no-store. */
-const banView = (ban) => (ban ? { level: ban.level, until: ban.until, reason: ban.reason } : null);
+/* The REASON only to the person it was written about (1 Oct 2026): an
+   account ban's own player, or the player a "nethash" ban was taken from
+   (fromPlayer, see summary in _bans.js), signed in. An address, /64 or
+   network ban is shared by everybody behind it — a school, a flat, a whole
+   CGNAT mobile address — and its reason, typed about somebody else, could
+   name them or the incident. Everyone else gets the level and the end with
+   the reason "", which the page already shows as no Reason line. */
+function banView(ban, player) {
+    if (!ban) return null;
+    const own = !!player && (ban.kind === "player" || (ban.kind === "nethash" && ban.fromPlayer === player.id));
+    return { level: ban.level, until: ban.until, reason: own ? ban.reason : "" };
+}
 
 /* THE NETWORK CODE (29 Sept 2026; see netHashOf in _bans.js): the sign-in
    and every `me` keep on the players row `netHash`, a keyed one-way code of
@@ -233,14 +270,14 @@ async function meReply(event) {
             ? db.collection("players").findOne({ id: player.id }, { projection: { _id: 0 } }).catch(() => undefined)
             : null
     ]) : [null, undefined];
-    const ban = banView(banned);
-    if (!player) return json(200, { player: null, ban });
+    if (!player) return json(200, { player: null, ban: banView(banned, null) });
     /* Revoked — forgotten from the Warren, or its session version changed
        (see SESSION VERSIONS in _player.js): answered as signed out, and the
        cookie is cleared so the page stops sending it. */
     if (sessionRevoked(player, row)) {
-        return json(200, { player: null, ban }, { "Set-Cookie": clearCookie() });
+        return json(200, { player: null, ban: banView(banned, null) }, { "Set-Cookie": clearCookie() });
     }
+    const ban = banView(banned, player);
     if (row) {
         const fresh = netHashUpdate(event, row);
         if (fresh) {
@@ -290,6 +327,38 @@ exports.handler = async (event) => {
     if (action === "signout") {
         if (event.httpMethod !== "POST") return json(405, { error: "Method not allowed" }, { Allow: "POST" });
         if (!sameOrigin(event)) return json(403, { error: "Not from this site" });
+        /* SIGN OUT EVERYWHERE (1 Oct 2026): ?everywhere=1 also gives the
+           players row a new session version (see SESSION VERSIONS in
+           _player.js), so the session on every OTHER device — a phone, a
+           shared computer, a copied cookie — reads as revoked at its next
+           `me` or write. Only a signed-in caller's own row; signed out it is
+           the plain sign-out. If the row cannot be written the cookie is
+           KEPT and 503 said, so the page does not claim the other devices
+           are signed out when they are not. `svStrict` revokes a session
+           from before session versions too, which carries no number: it
+           used to run on, and `me` even re-signed it with the NEW number
+           (see sessionRevoked in _player.js). */
+        if ((event.queryStringParameters || {}).everywhere === "1") {
+            const player = playerFrom(event);
+            if (player) {
+                /* Only from a session that is still current (1 Oct 2026).
+                   Matched on the row as an update filter, so an old cookie
+                   the row has already moved on from — a copied one, say,
+                   from before the last "every device" — cannot go on
+                   signing the real player out of everything for the rest of
+                   its thirty days. It gets the plain sign-out. */
+                const current = typeof player.sv === "number"
+                    ? { $or: [{ sv: player.sv }, { sv: { $exists: false } }] }
+                    : { svStrict: { $ne: true } };
+                try {
+                    const db = await getDb();
+                    await db.collection("players").updateOne({ id: player.id, ...current }, { $set: { sv: newSv(), svStrict: true } });
+                } catch (e) {
+                    console.warn("discord-auth: could not sign out everywhere", e && e.message);
+                    return json(503, { error: "Couldn't sign out your other devices just now. Try again in a minute." });
+                }
+            }
+        }
         return json(200, { player: null }, { "Set-Cookie": clearCookie() });
     }
 
@@ -333,8 +402,17 @@ exports.handler = async (event) => {
            prompt=consent if Discord comes back saying it needed to ask. */
         authorize.searchParams.set("prompt", retried ? "consent" : "none");
 
+        /* At most a handful at once (1 Oct 2026). An attempt abandoned
+           part-way — Discord's page closed, Back pressed — leaves its cookie
+           for the ten minutes, and every one rides on every request to the
+           site. Past MAX_STATE_COOKIES the older ones, which are almost
+           certainly abandoned, are cleared as this one is set, so pressing
+           Sign in over and over can never swell the Cookie header. */
+        const jar = parseCookies(event.headers && (event.headers.cookie || event.headers.Cookie));
+        const older = Object.keys(jar).filter(k => /^mr_oauth_[0-9a-f]{12}$/.test(k));
         return redirect(authorize.toString(), [
-            `${STATE_COOKIE}=${nonce}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${STATE_TTL}`
+            `${stateCookieName(nonce)}=${nonce}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${STATE_TTL}`,
+            ...(older.length >= MAX_STATE_COOKIES ? older.map(clearStateCookie) : [])
         ]);
     }
 
@@ -342,13 +420,16 @@ exports.handler = async (event) => {
     if (action === "callback") {
         const q = event.queryStringParameters || {};
         const origin = siteOrigin(event);
-        const fail = (why) => redirect(`${origin}/home?signin=${encodeURIComponent(why)}`, [
-            `${STATE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
-        ]);
+        // This attempt's own state cookie, once the state says which it is,
+        // and the plain one (see ONE STATE COOKIE PER ATTEMPT). Only ever
+        // this attempt's: another tab's sign-in in progress is left alone.
+        let claims = null;
+        const spent = () => [clearStateCookie(STATE_COOKIE),
+            ...(claims && claims.nonce ? [clearStateCookie(stateCookieName(claims.nonce))] : [])];
+        const fail = (why) => redirect(`${origin}/home?signin=${encodeURIComponent(why)}`, spent());
 
         // The state is read before the error is acted on, because whether an
         // error is worth retrying depends on what we already tried.
-        let claims = null;
         if (q.state) {
             // algorithms named, for the same reason _auth.js and _player.js
             // name theirs: what counts as a valid signature should not be
@@ -371,7 +452,7 @@ exports.handler = async (event) => {
                 const to = safeReturn(claims.to);
                 return redirect(
                     `${origin}/auth/discord/start?consent=1&to=${encodeURIComponent(to)}`,
-                    [`${STATE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`]
+                    spent()
                 );
             }
             return fail("failed");
@@ -379,7 +460,8 @@ exports.handler = async (event) => {
 
         if (!q.code || !q.state) return fail("failed");
         if (!claims) return fail("expired");
-        const cookieNonce = parseCookies(event.headers && (event.headers.cookie || event.headers.Cookie))[STATE_COOKIE];
+        const jar = parseCookies(event.headers && (event.headers.cookie || event.headers.Cookie));
+        const cookieNonce = jar[stateCookieName(claims.nonce)] || jar[STATE_COOKIE];
         // Both halves, and they must match. Either one alone proves nothing.
         if (!cookieNonce || cookieNonce !== claims.nonce) return fail("failed");
 
@@ -535,7 +617,7 @@ exports.handler = async (event) => {
 
         return redirect(`${origin}${safeReturn(claims.to)}`, [
             setCookie(signPlayer(player)),
-            `${STATE_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`
+            ...spent()
         ]);
     }
 

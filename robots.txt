@@ -26,7 +26,9 @@ Disallow: /glyphs.html
 # /guess was disallowed while the daily game was an unfinished experiment.
 # It is a real feature now — scored, with leaderboards and accounts behind
 # it — and a real address people paste at each other, so it is worth being
-# findable. It still serves the homepage with the game open, so a crawler
+# findable. It still serves the homepage with the game open (under its own
+# title, description and canonical since 1 Oct 2026, as /odd and /guides
+# are: see FIXED_PAGES in netlify/functions/share.js), so a crawler
 # reaches nothing here it could not already reach at /home; and the
 # page a searcher lands on is the game itself, which is exactly what the
 # link promised. The day's answers are not in the HTML at all — the day is

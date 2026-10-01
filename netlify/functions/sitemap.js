@@ -90,6 +90,11 @@ exports.handler = async (event) => {
            only the deal changes, and that is never in it. */
         url(`${origin}/guess`, "", "0.6"),
         url(`${origin}/odd`, "", "0.6"),
+        /* The Guides window's own address (1 Oct 2026). It used to be left
+           out, as home.html naming /home; since share.js serves /guides
+           with its own title, description and canonical (FIXED_PAGES there),
+           it is a page of its own like the two above. */
+        url(`${origin}/guides`, "", "0.6"),
         /* The privacy policy, last and lowest, because nobody searches for
            it — but it belongs here.
 
@@ -167,10 +172,9 @@ exports.handler = async (event) => {
         // only the published ones are listed.
         const guideSlugs = assignSlugs(guides, "guide", retiredGuides);
         const published = guides.filter(g => g.status === "published");
-        /* No entry for /guides itself. It is home.html with the window open,
-           and home.html names /home as its canonical, so listing /guides
-           would be a sitemap entry asking to be ignored. The guides are
-           listed at their own addresses, which do carry their own. */
+        /* /guides itself is listed with the pages above, whether or not
+           this read works. The guides are listed at their own addresses,
+           which carry their own canonicals. */
         published.forEach(g => {
             if (g.id) entries.push(url(`${origin}/guides/${encodeURIComponent(guideSlugs.get(g.id))}`, lastmod(g.updatedAt), "0.6"));
         });

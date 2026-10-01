@@ -50,6 +50,37 @@ function versionFilter(id, base) {
 
 const CONFLICT = "Someone else saved this record since you opened it - reload it to see their changes.";
 
+/* ---- the shape of the list and picture fields (1 Oct 2026) ----
+
+   checkRecord cleans what these hold, but only when they already have the
+   right shape: tags sent as a string, or a gallery sent as a string or an
+   object, were stored exactly as sent, and every reader of the record
+   (js/home.js's normalize, the share function, the daily deals) then had
+   to guess what it was looking at. The admin form always sends lists here
+   and an object or null for the two bookends (submitForm in js/admin.js),
+   so a body that does not is refused rather than stored. Absent or null
+   is left alone, as $set leaves an absent field.
+
+   And a ceiling on the two short text fields every page prints: a name or
+   a builder line of a hundred thousand characters went straight into the
+   archive payload every visitor downloads. Far above any real one (the
+   longest stored name is 35 characters, the longest builder line 36). */
+const NAME_MAX = 200;
+const CREATOR_MAX = 500;
+function checkShapes(body) {
+    for (const field of ["tags", "gallery", "relatedImages"]) {
+        const v = body[field];
+        if (v !== undefined && v !== null && !Array.isArray(v)) return `"${field}" must be a list`;
+    }
+    for (const field of ["entrance", "finish"]) {
+        const v = body[field];
+        if (v !== undefined && v !== null && (typeof v !== "object" || Array.isArray(v))) return `"${field}" must be a picture or nothing`;
+    }
+    if (typeof body.name === "string" && body.name.length > NAME_MAX) return `A name is at most ${NAME_MAX} characters`;
+    if (typeof body.creator === "string" && body.creator.length > CREATOR_MAX) return `The builder line is at most ${CREATOR_MAX} characters`;
+    return null;
+}
+
 /* ---- furni, patched rather than replaced (see the PUT below) ---- */
 
 /* { image: entry }, or null for no patch, or false for a body that is not
@@ -351,7 +382,7 @@ async function handle(event) {
     });
 
     if (event.httpMethod === "POST" || event.httpMethod === "PUT") {
-        const problem = checkRecord(body, CHOICES);
+        const problem = checkShapes(body) || checkRecord(body, CHOICES);
         if (problem) return json(400, { error: problem });
         /* The admin form only attaches articles to events, but the page's
            renderer does not ask which collection a record came from — so a

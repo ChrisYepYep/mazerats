@@ -94,6 +94,9 @@
         var ignored = 0;
         var timer = null;
         var busy = false;
+        // Set by pagehide: see the network-failure hold in the fetch watcher.
+        var leaving = false;
+        var LEAVE_GRACE_MS = 1500;
 
         /* ---------------------------------------------------- small helpers */
 
@@ -310,7 +313,9 @@
             if (distinct >= PAGE_MAX || sentThisVisit() >= SESSION_MAX) return;
             distinct++;
             countSent();
-            var rep = environment();
+            // f.env: a snapshot taken earlier, for a report held back
+            // (the network failures below).
+            var rep = f.env || environment();
             rep.kind = kind;
             rep.message = message;
             if (source) rep.source = source;
@@ -582,7 +587,9 @@
                 if (document.visibilityState === "hidden") flush(true);
             } catch (x) { /* never */ }
         });
-        window.addEventListener("pagehide", function () { safe(flush, true); });
+        window.addEventListener("pagehide", function () { leaving = true; safe(flush, true); });
+        // Back from the back/forward cache: the page is in use again.
+        window.addEventListener("pageshow", function () { leaving = false; });
 
         /* fetch, watched without being changed: the original is called with
            the same arguments and ITS promise is what the caller gets back,
@@ -628,12 +635,34 @@
                                    the same as for a failed picture above
                                    (29 Sept 2026): counted, not sent. */
                                 if (!fn && NOT_OURS.test(cleanUrl(url, 300))) { ignored++; return; }
-                                capture("fetch", {
+                                var failure = {
                                     message: "Network failure on " + (fn || cleanUrl(url, 120)),
                                     source: fn ? "/.netlify/functions/" + fn : cleanUrl(url, 300),
                                     fn: fn || undefined, method: method, status: 0, ms: ms,
                                     context: { detail: cut(String((err && err.message) || err), 200) }
-                                });
+                                };
+                                /* Held a moment before it counts (1 Oct 2026).
+                                   Leaving the page cancels whatever is still in
+                                   flight, and Safari rejects each such request
+                                   ("Load failed") before the page has gone — so
+                                   the landing page's Enter, pressed just after
+                                   pointing at it had started fetching the
+                                   archive, filed "Network failure on rooms"
+                                   for a request nobody wanted any more. A page
+                                   that is leaving never runs this timer, or
+                                   has hidden itself by then; either way it is
+                                   not reported.
+
+                                   The page as it was AT the failure, though
+                                   (1 Oct 2026): taken when the report was
+                                   made, the snapshot was 1.5s late — the
+                                   address a window had moved on to, whether
+                                   the tab was still visible or online, and
+                                   crumbs from after it. */
+                                try { failure.env = environment(); } catch (x) { /* capture takes its own */ }
+                                setTimeout(function () {
+                                    try { if (!leaving) capture("fetch", failure); } catch (x) { /* never */ }
+                                }, LEAVE_GRACE_MS);
                             } catch (x) { /* never */ }
                         });
                     }

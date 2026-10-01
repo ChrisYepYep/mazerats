@@ -230,7 +230,13 @@
        exactly like one. They are counted from the text as TYPED, before the
        headings and dividers are cut out into blocks of their own below,
        which adds no space of its own. */
-    function render(text) {
+    /* opts.level (1 Oct 2026): the tag a "## " heading is written as, 3 by
+       default, and "### " one below it. The Guides reader passes 5 for a
+       section's text, so headings typed into it rank under the section's
+       own h4 title for a screen reader; everything else keeps h3 and h4.
+       Only the tag changes: the look comes from the classes. */
+    function render(text, opts) {
+        const lv = Math.min(5, Math.max(1, Math.floor(Number(opts && opts.level)) || 3));
         const src = String(text || "").replace(/\r\n?/g, "\n").trim();
         // Chunks, with the runs of blank lines between them kept (odd indices).
         const parts = src.split(/(\n(?:[ \t]*\n)+)/);
@@ -243,13 +249,39 @@
                 .map(l => (HEADING.test(l) || DIVIDER.test(l)) ? `\n${l}\n` : l)
                 .join("\n")
                 .split(/\n\s*\n/)
-                .forEach(b => { const html = block(b); if (html) out.push(html); });
+                .forEach(b => { const html = block(b, lv); if (html) out.push(html); });
         }
         return out.join("");
     }
 
-    function block(chunk) {
+    const BULLET = /^\s*[-*]\s+/;
+    const NUMBERED = /^\s*\d+[.)]\s+/;
+    /* A NUMBERED LIST KEEPS ITS NUMBERS (1 Oct 2026). Every <ol> counted
+       from 1, so "1999. The year it opened." showed as "1.", and a list
+       broken by a note ("1.", "2.", the note, "3.") began again at "1."
+       The first item's number is now the list's start (up to 99999), and
+       a list whose numbers reach three figures is marked fmt-ol-wide, so
+       css/style.css can give "1999." room beside its words. */
+    function numberedList(lines) {
+        const n = parseInt(/^\s*(\d+)/.exec(lines[0])[1], 10);
+        const keep = n !== 1 && n <= 99999;
+        // By the number the LAST item shows, which for a list counted from
+        // 1 is its length: 100 items typed "1." to "100." reach three
+        // figures too, and were left at the narrow padding.
+        const wide = (keep ? n : 1) + lines.length - 1 >= 100 ? ` class="fmt-ol-wide"` : "";
+        const start = keep ? ` start="${n}"` : "";
+        return `<ol${wide}${start}>${lines.map(l => `<li>${inline(l.replace(NUMBERED, ""))}</li>`).join("")}</ol>`;
+    }
+    function bulletList(lines) {
+        return `<ul>${lines.map(l => `<li>${inline(l.replace(BULLET, ""))}</li>`).join("")}</ul>`;
+    }
+    function paragraph(lines) {
+        return `<p>${inline(lines.join("\n")).replace(/\n/g, "<br>")}</p>`;
+    }
+
+    function block(chunk, lv) {
         {
+            const level = lv || 3;
             const lines = chunk.split("\n").map(l => l.trimEnd());
             // A heading cut out above can leave an empty line at a block's edge.
             while (lines.length && !lines[0].trim()) lines.shift();
@@ -260,20 +292,34 @@
             const h = only.length === 1 && HEADING.exec(only[0]);
             if (h) {
                 return h[1].length === 2
-                    ? `<h3 class="fmt-heading">${inline(headingText(h[2]))}</h3>`
-                    : `<h4 class="fmt-subheading">${inline(headingText(h[2]))}</h4>`;
+                    ? `<h${level} class="fmt-heading">${inline(headingText(h[2]))}</h${level}>`
+                    : `<h${level + 1} class="fmt-subheading">${inline(headingText(h[2]))}</h${level + 1}>`;
             }
-            if (lines.every(l => /^\s*[-*]\s+/.test(l))) {
-                return `<ul>${lines.map(l => `<li>${inline(l.replace(/^\s*[-*]\s+/, ""))}</li>`).join("")}</ul>`;
-            }
-            if (lines.every(l => /^\s*\d+[.)]\s+/.test(l))) {
-                return `<ol>${lines.map(l => `<li>${inline(l.replace(/^\s*\d+[.)]\s+/, ""))}</li>`).join("")}</ol>`;
+            if (lines.every(l => BULLET.test(l))) return bulletList(lines);
+            if (lines.every(l => NUMBERED.test(l))) return numberedList(lines);
+            /* A LIST STRAIGHT UNDER ITS INTRO (1 Oct 2026): "Bring:", then
+               "- a hat" and "- a coat" with no blank line between, came out
+               as one paragraph with its dashes showing. When the lines from
+               the first list line to the end are all items of one kind, the
+               lines above it are a paragraph and the rest the list. plain()
+               already takes each line's marker off, so it reads the same.
+               Two items at least (1 Oct 2026, the owner's): one marked line
+               under a text line, "Entry 5c" over "* while stocks last", is
+               a footnote, and stays the paragraph it always was, star and
+               all, rather than a one-item list. */
+            const first = lines.findIndex(l => BULLET.test(l) || NUMBERED.test(l));
+            if (first > 0 && lines.length - first >= 2) {
+                const kind = BULLET.test(lines[first]) ? BULLET : NUMBERED;
+                const items = lines.slice(first);
+                if (items.every(l => kind.test(l)) && !lines.slice(0, first).every(l => /^\s*>/.test(l))) {
+                    return paragraph(lines.slice(0, first)) + (kind === BULLET ? bulletList(items) : numberedList(items));
+                }
             }
             if (lines.every(l => /^\s*>/.test(l))) {
                 const body = lines.map(l => l.replace(/^\s*>\s?/, "")).join("\n");
                 return `<aside class="guide-tip">${inline(body).replace(/\n/g, "<br>")}</aside>`;
             }
-            return `<p>${inline(lines.join("\n")).replace(/\n/g, "<br>")}</p>`;
+            return paragraph(lines);
         }
     }
 

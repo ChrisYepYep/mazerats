@@ -333,6 +333,17 @@ for (const rel of ["js/guess.js", "js/oddoneout.js", "js/daily.js"]) {
         check(/practice run/i.test(pl("2026-10-03", after)) && /reopen/i.test(pl("2026-10-03", after)),
             "Daily.bonusLine after the cut should say the run was practice and how to play the real day");
         check(!/\d+ \+ \d+ speed bonus/.test(pl("2026-10-03", before)), "Daily.bonusLine shows a practice run's bonus as if it were on the boards");
+        /* NO SPEED BONUS AFTER PRACTICE (1 Oct 2026; _speed.js): the real
+           day of a player who practised it is filed with no bonus and
+           `practised`, and the card says why; the pasted result of a
+           practice run says "(practice)". */
+        check(line({ score: { points: 50, bonus: 0, practised: true }, signedIn: true, mode: "account" }) ===
+            "No speed bonus today: you played these rounds in practice before the site opened.",
+            "Daily.bonusLine does not say a practised day earns no bonus");
+        check(typeof Daily.shareText === "function" &&
+            Daily.shareText({ game: "Odd One Out", day: "2026-10-03", right: 4, of: 5, points: 40, grid: "G", path: "odd", practice: true })
+                .split("\n")[1] === "3 Oct 2026 (practice) — 4/5 · 40 pts",
+            "Daily.shareText does not mark a practice run's result \"(practice)\"");
         const pf = Daily.filed(200, { recorded: false, reason: "practice", practice: cut, points: 40 }, "2026-10-03");
         check(pf.final && !pf.ok && pf.practice, "Daily.filed: a practice run is not settled as practice (final, not filed)");
         check(typeof Daily.track === "function" && typeof Daily.forgetStarts === "function",

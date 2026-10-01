@@ -44,9 +44,14 @@ const PRIVATE_HEADERS = { "Cache-Control": "private, no-store" };
    only ever seen again by the one person who already saw it, and only at
    an address the site no longer links to, so it can afford to be long —
    just not so long that it outlives any reason to keep it. */
+/* `durable` (1 Oct 2026): without it the edge's copy is per node and the
+   shared durable layer is bypassed — see CDN_CACHE in _cache.js — so every
+   node that had not yet seen a picture read it out of Blobs again. The
+   hour is the same hour in either layer, so a takedown still lands within
+   it. */
 const PUBLIC_IMAGE_HEADERS = {
     "Cache-Control": "public, max-age=604800",
-    "Netlify-CDN-Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400"
+    "Netlify-CDN-Cache-Control": "public, durable, s-maxage=3600, stale-while-revalidate=86400"
 };
 
 const refuse = (statusCode, body) => ({

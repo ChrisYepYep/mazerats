@@ -275,9 +275,20 @@
            keys on it, so every visitor in the same ten seconds shares one
            edge entry — a crowd arriving on launch morning costs a handful of
            function runs rather than one each — and no answer it gets can be
-           older than the bucket. */
+           older than the bucket.
+
+           AND FOR ANYBODY, ONCE THE LAUNCH TIME HAS GONE (1 Oct 2026). Only
+           the "enter" note earned the ask, and before launch nobody has one,
+           so a first-timer who clicked the announcement's /home or /maze/
+           link in the minute after the switch heard the edge's stale
+           "coming-soon", was sent to the landing page, and lost the maze
+           they clicked for. A Coming Soon answer whose own launchAt has
+           passed is one the switch is due to overturn, so it is asked past
+           the edge too: one extra bucketed ask per visit, and only in the
+           gap between the launch time and the switch. */
         var decided = settingsRequest.then(function (settings) {
-            if (!cameInOpen || !settings || !isGated(settings.landingState)) return settings;
+            var due = !!settings && settings.landingState === "coming-soon" && typeof settings.launchAt === "string" && Date.parse(settings.launchAt) <= Date.now();
+            if ((!cameInOpen && !due) || !settings || !isGated(settings.landingState)) return settings;
             return fetchWithTimeout("/.netlify/functions/settings?fresh=" + Math.floor(Date.now() / 10000), { cache: "no-store" }, 8000)
                 .then(function (res) { return res.ok ? res.json() : null; })
                 .catch(function () { return null; })
@@ -1010,7 +1021,7 @@
                             <button type="button" class="console-btn console-btn-cancel" id="console-contact-cancel">Back</button>
                             <button type="button" class="console-btn console-btn-send" id="console-contact-send">Send</button>
                         </div>
-                        <p class="console-form-status" id="console-contact-status" style="display:none;"></p>
+                        <p class="console-form-status" id="console-contact-status" role="status" aria-live="polite" style="display:none;"></p>
                     </div>
                     <!-- Add Maze Info: what somebody knows about a maze or event,
                          in the archive or not yet. Built by js/console-info.js,

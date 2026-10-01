@@ -609,6 +609,7 @@
         roundSheets = [];
         builtFor = rounds;
         // A new deal has no results yet; the old day's card goes with it.
+        stopFootTimer();
         if (el.resultsInner) el.resultsInner.innerHTML = "";
         const tpl = document.getElementById("odd-round-template");
         if (!tpl || !el.results) return;
@@ -715,6 +716,7 @@
         if (finished()) {
             view = "results";
             el.resultsInner.innerHTML = resultsHtml();
+            watchFoot();
             layout();
             return wireResults();
         }
@@ -947,6 +949,47 @@
         line.hidden = !text;
     }
 
+    /* The line under the share button. A practice run of launch day points
+       at the cut instead (1 Oct 2026): the real rounds are today's, from
+       08:00, and "Five more rounds tomorrow." under "nothing counts until
+       08:00" said the opposite. Read at drawing time, on the server's
+       clock (Daily.now). */
+    function footText() {
+        const cut = state && typeof state.practice === "string" ? Date.parse(state.practice) : NaN;
+        if (Number.isFinite(cut) && new Date(cut).toISOString().slice(0, 10) === day()) {
+            return window.Daily.now() < cut
+                ? `The real rounds start at ${new Date(cut).toISOString().slice(11, 16)} UTC today.`
+                : "The real rounds are open — close this and reopen it to play them.";
+        }
+        return "Five more rounds tomorrow.";
+    }
+
+    /* A practice card left open across the cut rewrites its own line at
+       08:00 (1 Oct 2026), as Guess the Maze's countdown does: it went on
+       saying "start at 08:00 UTC today" after they had. Checked every 30s
+       on the server's clock, like Guess's, rather than one long timeout a
+       sleeping laptop would overshoot; it writes only once, on crossing,
+       so "Copied" under the button is not clobbered every tick. Cleared
+       when the card is redrawn, the deal is rebuilt or the window closes. */
+    let footTimer = null;
+    function stopFootTimer() {
+        clearInterval(footTimer);
+        footTimer = null;
+    }
+    function watchFoot() {
+        stopFootTimer();
+        const before = footText();
+        if (!/^The real rounds start at/.test(before)) return;
+        footTimer = setInterval(() => {
+            const foot = document.getElementById("odd-foot");
+            if (!foot) return stopFootTimer();
+            const now = footText();
+            if (now === before) return;
+            foot.textContent = now;
+            stopFootTimer();
+        }, 30000);
+    }
+
     function resultsHtml() {
         const rounds = dealt();
         const right = state.picks.filter(p => p.right).length;
@@ -968,7 +1011,7 @@
                 <div class="guess-summary-actions">
                     <button type="button" class="guess-btn" id="odd-share">Copy result</button>
                 </div>
-                <p class="daily-note" id="odd-foot">Five more rounds tomorrow.</p>
+                <p class="daily-note" id="odd-foot">${escapeHtml(footText())}</p>
 
                 <div class="guess-boards" id="odd-boards"></div>
             </div>`;
@@ -1013,7 +1056,8 @@
             right: state.picks.filter(p => p.right).length,
             of: dealt().length || ROUNDS,
             grid: shareGrid(),
-            path: "odd"
+            path: "odd",
+            practice: Boolean(state && state.practice)
         }, window.Daily.shareScore(s, score())));
     }
 
@@ -1071,7 +1115,7 @@
                         // already on file — for the line under the points.
                         const b = res.body;
                         if (res.ok && b && Number.isFinite(b.points)) {
-                            served = { day: forDay, points: b.points, bonus: b.bonus || 0 };
+                            served = { day: forDay, points: b.points, bonus: b.bonus || 0, practised: Boolean(b.practised) };
                             if (state && state.day === forDay) drawBonus();
                         }
                         /* A practice run, answered and not filed: the day
@@ -1270,7 +1314,7 @@
         // A day already filed brings its own figures, bonus included, so a
         // results card reopened later says what the board says.
         if (reply.score && Number.isFinite(reply.score.points)) {
-            served = { day: reply.day, points: reply.score.points, bonus: reply.score.bonus || 0 };
+            served = { day: reply.day, points: reply.score.points, bonus: reply.score.bonus || 0, practised: Boolean(reply.score.practised) };
         } else if (Array.isArray(reply.progress)) {
             /* And a day the server says is NOT on file forgets the figures
                kept for it. An administrator's reset takes the filed row
@@ -1360,6 +1404,7 @@
 
     function close() {
         if (!el.overlay) return;
+        stopFootTimer();
         el.overlay.classList.remove("open");
         document.body.classList.remove("modal-open");
         if (window.PageMeta) window.PageMeta.restore("odd");

@@ -11,11 +11,41 @@ const { clientIp, clientNet, claimNotifySlot, forgetOldAddresses } = require("./
 const { writeRefusal } = require("./_bans");
 const { SECURITY_HEADERS } = require("./_headers");
 
+/* No-store on every answer (30 Sept 2026), as auth.js and bans.js have it:
+   the GET is every message anybody has sent, addresses and Discord ids
+   included, and nothing between here and the admin page should be left to
+   decide whether to keep a copy. */
 const json = (statusCode, data) => ({
     statusCode,
-    headers: SECURITY_HEADERS,
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store" },
     body: JSON.stringify(data)
 });
+
+/* The largest POST body taken at all (30 Sept 2026). The fields allow some
+   2,100 characters, and JSON escapes can make each of those six; anything
+   past this is not the console's form, and the public POST used to parse
+   whatever the platform let through — megabytes — before any cap had
+   looked at it. */
+const MAX_BODY = 32 * 1024;
+
+/* The request came from this site — player-nick.js's check, as
+   event-entries.js has it (30 Sept 2026). A cross-site page can POST here
+   with a plain HTML form (text/plain parses as JSON well enough), and the
+   Lax cookie keeps the visitor's session out of it, but not their address:
+   every stranger's browser that loaded such a page became one more address
+   past the per-sender cap. A browser always sends Origin on a POST; one
+   naming another site is refused. No Origin at all is allowed through. */
+function sameOrigin(event) {
+    const h = event.headers || {};
+    const origin = h.origin || h.Origin;
+    if (!origin) return true;
+    const host = h["x-forwarded-host"] || h.host || h.Host || "";
+    try {
+        return new URL(origin).host === host;
+    } catch (e) {
+        return false;
+    }
+}
 
 /* Anything off the wire is text or it is nothing. `(body.x || "").trim()`
    throws on an object or an array, and this endpoint takes an unauthenticated
@@ -159,6 +189,8 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
+        if (!sameOrigin(event)) return json(403, { error: "Not from this site" });
+        if (String(event.body || "").length > MAX_BODY) return json(413, { error: `Your message is too long. Please keep it to ${MESSAGE_MAX} characters or fewer.` });
         let body;
         try {
             body = JSON.parse(event.body || "{}");
@@ -179,8 +211,14 @@ exports.handler = async (event) => {
         }
 
         const message = text(body.message).trim();
-        const username = text(body.username).trim();
-        const discord = text(body.discord).trim();
+        /* The two one-line fields as one line (30 Sept 2026): the Origins
+           username goes into the notification email's SUBJECT, and a line
+           break there, from a hand-made request, is the classic way to smuggle
+           in a header of one's own. Control characters and every run of
+           whitespace become a space; the message keeps its lines. */
+        const oneLine = (s) => s.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+        const username = oneLine(text(body.username));
+        const discord = oneLine(text(body.discord));
         if (!message) return json(400, { error: "Message can't be empty" });
         /* Exactly MESSAGE_MAX is allowed (30 Sept 2026): the form's
            textarea carries maxlength="2000" (home.html), so a message typed

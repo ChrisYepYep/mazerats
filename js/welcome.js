@@ -6,15 +6,17 @@
    the moment a real answer says the site is open. */
 /* ---------------------------------------------------- THE COUNTDOWN
 
-   Under the Enter button while the site is gated and a launch date is set.
+   Above the wordmark (see its markup in index.html for why there) while
+   the site is in Coming Soon and a launch date is set.
    The markup is in index.html; this fills it and ticks it.
 
    TWO CONDITIONS, both required: the site is in Coming Soon (not merely
    gated — see showCountdownFor) and a readable launchAt exists. (It used
    to be three — the date also had to be still ahead — and
    that third condition is what stranded launch-morning arrivals; see the
-   note on the poll below. A date already past now shows the "any moment"
-   state from the first tick.) Either failing and there is no clock, and the
+   note on the poll below. The clock itself still goes at zero — see
+   countdownGone, 1 Oct 2026 — but the poll no longer goes with it.)
+   Either failing and there is no clock, and the
    landing page is what it always was. That is deliberate — the gate is the
    only thing on this page that has to work, and a countdown is decoration
    on top of it.
@@ -23,7 +25,7 @@
    the site: the gate is the landingState setting and only an admin flips
    it, which is right — a date typed a fortnight ago should not be able to
    publish the archive on its own while nobody is watching. So at zero the
-   clock stops, and the page keeps asking the settings endpoint whether the
+   clock goes, and the page keeps asking the settings endpoint whether the
    switch has been thrown yet; the moment it has, it goes into the open
    site. Somebody who left the tab open overnight walks in without touching
    anything, and nobody has to sit refreshing on launch morning.
@@ -85,6 +87,10 @@ const POLL_BUCKET_MS = 10000;
 // Same leash as js/api.js's first attempt in _getWithFallback. A poll that
 // hangs must not stop the next one being scheduled.
 const POLL_TIMEOUT_MS = 10000;
+// The first ask's jitter once the launch time has passed, and the return-
+// to-the-tab ask's (both 1 Oct 2026; see watchForOpening).
+const DUE_FIRST_JITTER_MS = 5000;
+const RETURN_JITTER_MS = 2000;
 
 const isGatedState = s => s === "coming-soon" || s === "maintenance";
 
@@ -136,9 +142,77 @@ async function freshSettings() {
    instead of a blank window. */
 let handedOff = false;
 
+/* THE DOOR SAYS IT IS OPEN THE MOMENT IT IS (1 Oct 2026). The hand-off
+   below can take a few seconds — the plain-address wait, or a window the
+   visitor is reading — and the button used to say "Coming Soon" all the
+   while over a site that had opened. It becomes the Enter link the open
+   page draws (see the DOMContentLoaded handler), so a click meanwhile just
+   goes in, and the countdown goes if it is still up (an admin who opened
+   the site before its date). */
+function showDoorOpen() {
+    const btn = document.getElementById("welcome-btn");
+    const label = document.getElementById("welcome-btn-label");
+    if (label) label.textContent = "Enter";
+    if (btn) {
+        btn.setAttribute("href", "/home");
+        btn.classList.remove("is-disabled");
+        btn.removeAttribute("aria-disabled");
+        btn.removeAttribute("role");
+        btn.removeAttribute("tabindex");
+        warmTheArchive(btn);
+    }
+    const box = document.getElementById("welcome-countdown");
+    if (box && !box.hidden) countdownGone(box, true);
+}
+
+/* NOT OUT OF AN OPEN WINDOW (1 Oct 2026). Somebody reading an event (from
+   the spotlight or the ticker) or the privacy policy when the site opened
+   was taken to /home mid-sentence. With a window open, the hand-off waits
+   for it to close — the button already says Enter, so they can go sooner
+   by pressing it. Checked twice a second: cheap, and it needs no hook in
+   each window's own close code. */
+const WINDOW_CHECK_MS = 500;
+function windowsClosed() {
+    if (!document.querySelector(".modal-overlay.open")) return Promise.resolve();
+    return new Promise(resolve => {
+        const check = setInterval(() => {
+            if (document.querySelector(".modal-overlay.open")) return;
+            clearInterval(check);
+            resolve();
+        }, WINDOW_CHECK_MS);
+    });
+}
+
 async function goInside(state) {
     handedOff = true;
+    showDoorOpen();
     try { Api.rememberLandingState(state); } catch (e) { /* private mode */ }
+    /* And the archive links on this page go back to the archive (1 Oct
+       2026). pointGatedLinksHome (js/site.js) pointed them here while the
+       site was shut — an open event's maze: and guide: links among them —
+       and the wait just below leaves that window open to be read, so a
+       click on one meant a trip back to this page. With the note now
+       "enter", nothing written later is rewritten either. */
+    try {
+        document.querySelectorAll("a[data-archive-href]").forEach(a => {
+            a.setAttribute("href", a.getAttribute("data-archive-href"));
+            a.removeAttribute("data-archive-href");
+        });
+    } catch (e) { /* never worth holding the hand-off up for */ }
+    await windowsClosed();
+    /* STRAIGHT IN WHEN THAT NOTE STUCK (1 Oct 2026). home.html's gate has,
+       since 28 Sept, asked past the edge itself for anybody whose note says
+       "enter" (its "one more ask"), so for them the wait below only held
+       the hand-off up — up to six seconds on launch morning, with the page
+       still reading Coming Soon. It is kept for a browser that would not
+       keep the note (private mode, storage refused), where the gate has no
+       way to know this visitor was just let in. */
+    let noted = false;
+    try { noted = localStorage.getItem("mazerats_landing_state") === state; } catch (e) { /* not kept */ }
+    if (noted) {
+        location.assign("/home");
+        return;
+    }
     for (let i = 0; i < 3; i++) {
         const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
         const timer = controller ? setTimeout(() => controller.abort(), 5000) : null;
@@ -162,11 +236,11 @@ async function goInside(state) {
 /* BACK, AFTER THE HAND-OFF.
 
    The browser keeps this page whole in its back/forward cache, and Back
-   from the archive restores it exactly as it was left: the button still
-   reading "Coming Soon", the countdown still saying "any moment", and the
-   poll finished for good — it stopped asking the moment it saw the site
-   open, and set `leaving` so it would never go twice. A dead gate over an
-   open site, with nothing on it that would ever change.
+   from the archive restores it exactly as it was left: the button
+   relabelled by the hand-off rather than by an answer (see showDoorOpen),
+   and the poll finished for good — it stopped asking the moment it saw
+   the site open, and set `leaving` so it would never go twice. A door
+   nothing on the page would ever check again, whatever the site does next.
 
    So a page restored from that cache after it handed the visitor inside is
    loaded afresh, which asks the settings again and draws whichever door is
@@ -211,14 +285,37 @@ function watchForOpening(getTarget, onStillGated, initialState) {
     const nextDelay = () => far()
         ? FAR_POLL_MS + Math.floor(Math.random() * FAR_POLL_JITTER_MS)
         : COUNTDOWN_POLL_MS + Math.floor(Math.random() * COUNTDOWN_POLL_JITTER_MS);
+    // Coming Soon with its launch time already gone: the switch is due.
+    const due = () => {
+        const target = getTarget();
+        return lastState === "coming-soon" && !!target && target.getTime() <= Date.now();
+    };
 
+    /* ONE TIMER, AND ONE ASK AT A TIME (1 Oct 2026). The poll used to chain
+       bare setTimeouts, which was fine while nothing but the chain itself
+       ever started one. The return-to-the-tab ask below starts one too, so
+       the pending timer is kept and replaced rather than a second chain
+       being set running beside the first. */
     let leaving = false;
+    let timer = null;
+    let asking = false;
+    let lastAsk = 0;
+    function schedule(ms) {
+        clearTimeout(timer);
+        timer = setTimeout(poll, ms);
+    }
     async function poll() {
-        const settings = await freshSettings();
+        timer = null;
+        if (leaving || asking) return;      // the ask in flight schedules the next
+        asking = true;
+        lastAsk = Date.now();
+        let settings = null;
+        try { settings = await freshSettings(); } finally { asking = false; }
         const state = settings ? settings.landingState : null;
         if (state && !isGatedState(state)) {
             if (leaving) return;
             leaving = true;
+            clearTimeout(timer);
             goInside(state);
             return;
         }
@@ -226,13 +323,75 @@ function watchForOpening(getTarget, onStillGated, initialState) {
             lastState = state;
             try { onStillGated(state, settings); } catch (e) { /* the poll outlives a bad label */ }
         }
-        setTimeout(poll, nextDelay());
+        schedule(nextDelay());
     }
+
+    /* BACK ON THE TAB (1 Oct 2026). A hidden tab's timers are held back —
+       Chrome runs a hidden page's chained timers at most once a minute
+       after five minutes, and a phone's browser freezes the page outright —
+       so somebody who opened this before 08:00, went off to Discord and
+       came back once the site had opened could look at "Opening any moment
+       now" for another half a minute or more before the held-back ask came
+       round. So coming back to the tab asks at once (within two seconds),
+       but only when at least the cadence's own base interval has gone by
+       since the last ask: that is the tab that was held back, and flicking
+       between tabs costs nothing extra. Arrivals are spread by when each
+       person looks, so this is no herd. */
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden || leaving || asking) return;
+        const gap = far() ? FAR_POLL_MS : COUNTDOWN_POLL_MS;
+        if (Date.now() - lastAsk < gap) return;
+        schedule(Math.floor(Math.random() * RETURN_JITTER_MS));
+    });
 
     /* The FIRST check is jittered too, and that one matters most: a crowd
        that arrived together (or a page reloaded by the thousand) would
-       otherwise all ask in the same second. */
-    setTimeout(poll, Math.floor(Math.random() * (far() ? FAR_POLL_MS : COUNTDOWN_POLL_JITTER_MS)));
+       otherwise all ask in the same second.
+
+       Except when the launch time has already passed (1 Oct 2026). The
+       answer this page loaded with came through the plain address, which
+       the edge may hold for up to a minute and a half (see the note at the
+       top of this file), so arriving just after the switch was thrown can
+       mean a gated page over an open site — and it used to wait up to
+       twenty seconds for its first fresh ask. Five, now: a reload by the
+       thousand at 08:00 still spreads over five seconds, and every tab in
+       one ten-second bucket shares one edge entry anyway (POLL_BUCKET_MS). */
+    const first = far() ? FAR_POLL_MS : due() ? DUE_FIRST_JITTER_MS : COUNTDOWN_POLL_JITTER_MS;
+    schedule(Math.floor(Math.random() * first));
+}
+
+/* GONE AT ZERO (1 Oct 2026, the owner's). When the clock runs out, the
+   whole block goes — label, digits and date — rather than standing over the
+   title as "Opening any moment now" with a row of noughts. The poll is not
+   the countdown's (see watchForOpening), so it goes on asking regardless.
+
+   VISIBILITY, NOT `hidden`, so the space it held is kept: on a narrow screen
+   the block is in the flow above the title (see .welcome-countdown in
+   css/style.css), and taking it out of the layout would jump the wordmark
+   and the button up the page at 08:00. It fades out first where the CSS has
+   the fade (.is-gone); the visibility is set from here as well, after the
+   fade's length, so it is gone even where that rule is missing.
+
+   A page that loads after the launch time never shows it at all — it stays
+   as it ships, hidden, so there is nothing to jump there either. And it can
+   come back: a launch date moved into the future again draws a fresh clock
+   (see showCountdownFor). */
+const COUNTDOWN_FADE_MS = 600;
+let countdownFade = null;
+
+function countdownGone(box, fade) {
+    clearTimeout(countdownFade);
+    box.classList.add("is-gone");
+    box.setAttribute("aria-hidden", "true");
+    if (fade) countdownFade = setTimeout(() => { box.style.visibility = "hidden"; }, COUNTDOWN_FADE_MS);
+    else box.style.visibility = "hidden";
+}
+
+function countdownBack(box) {
+    clearTimeout(countdownFade);
+    box.classList.remove("is-gone");
+    box.removeAttribute("aria-hidden");
+    box.style.visibility = "";
 }
 
 function startCountdown(target) {
@@ -248,6 +407,14 @@ function startCountdown(target) {
         secs: document.getElementById("wc-secs")
     };
     if (!label || !when || Object.values(parts).some(el => !el)) return;
+
+    // Already past: nothing to draw. A block still on show from an earlier
+    // date (moved to another past one) goes at once, its space kept.
+    const idle = { stop(keepSpace) { if (!keepSpace) { countdownBack(box); box.hidden = true; } } };
+    if (target.getTime() <= Date.now()) {
+        if (!box.hidden) countdownGone(box, false);
+        return idle;
+    }
 
     label.textContent = "The archive opens in";
     /* The date said twice over: the clock says how long, this says when.
@@ -268,49 +435,55 @@ function startCountdown(target) {
         weekday: "long", day: "numeric", month: "long",
         hour: "2-digit", minute: "2-digit"
     }) + " your time";
-    box.hidden = false;
 
     const pad = n => String(n).padStart(2, "0");
+    let ticker = 0;
+    let atZero = 0;
 
     // The asking is watchForOpening's, which the caller starts alongside
-    // this. All the clock does at zero is stop and say so.
+    // this. All the clock does at zero is stop and go (see countdownGone).
     function tick() {
         const left = target.getTime() - Date.now();
         if (left <= 0) {
-            // Stop counting and start watching. The wording is honest about
-            // what it knows: the moment has arrived, the switch has not
-            // necessarily been thrown. Also what somebody arriving AFTER
-            // the launch time sees from the first tick — a clock counting
-            // down to a moment already past would be nonsense.
-            label.textContent = "Opening any moment now";
-            box.classList.add("is-due");
-            parts.days.textContent = "0";
-            parts.hours.textContent = "00";
-            parts.mins.textContent = "00";
-            parts.secs.textContent = "00";
-            // The one thing worth knowing while waiting: there is nothing
-            // to do. The page lets them in by itself.
-            when.textContent = "No need to refresh: this page will let you in";
             clearInterval(ticker);
+            clearTimeout(atZero);
+            countdownGone(box, true);
             return;
         }
-        const secs = Math.floor(left / 1000);
+        /* Rounded UP (1 Oct 2026), so the last second reads 1 and the
+           block goes at zero: rounded down, the final second showed
+           "0 days 00 : 00 : 00" for up to a second first. */
+        const secs = Math.ceil(left / 1000);
         parts.days.textContent = String(Math.floor(secs / 86400));
         parts.hours.textContent = pad(Math.floor(secs / 3600) % 24);
         parts.mins.textContent = pad(Math.floor(secs / 60) % 60);
         parts.secs.textContent = pad(secs % 60);
     }
 
-    const ticker = setInterval(tick, 1000);
+    // Digits first, then shown, so it never appears with the zeros it ships with.
     tick();
+    countdownBack(box);
+    box.hidden = false;
+    ticker = setInterval(tick, 1000);
+    // Zero itself, to the moment, rather than at whichever second the
+    // interval happens to land on after it.
+    const untilZero = target.getTime() - Date.now();
+    atZero = untilZero < 2147483647 ? setTimeout(tick, untilZero + 20) : 0;
 
     // Taken down again when the site moves out of Coming Soon without
-    // opening (see showCountdownFor).
+    // opening (see showCountdownFor) — out of the layout altogether — or
+    // when its date changes, keeping its space (keepSpace), since the
+    // next date may well draw it again in the same place.
     return {
-        stop() {
+        stop(keepSpace) {
             clearInterval(ticker);
+            clearTimeout(atZero);
+            if (keepSpace) {
+                if (!box.hidden) countdownGone(box, true);
+                return;
+            }
+            countdownBack(box);
             box.hidden = true;
-            box.classList.remove("is-due");
         }
     };
 }
@@ -614,7 +787,11 @@ async function showSpotlight() {
         .filter(ev => spotlightLive(ev, now))
         .sort((a, b) => (spotlightTime(a.spotlightFrom) || 0) - (spotlightTime(b.spotlightFrom) || 0)
             || String(a.title || "").localeCompare(String(b.title || "")));
-    const key = live.map(ev => ev.id).join("|");
+    /* What a slide is drawn from, not only which events (1 Oct 2026): keyed
+       on the ids alone, a caption, colour or picture changed in the Warren
+       was fetched by the three-minute refresh and then never drawn, because
+       the same events were still on. */
+    const key = JSON.stringify(live.map(ev => [ev.id, spotlightThumb(ev), ev.spotlightCaption || "", ev.spotlightColour || "", ev.title || ""]));
     if (!live.length) {
         el.hidden = true;
         el.replaceChildren();
@@ -726,7 +903,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
     }
 
-    const { landingState, launchAt, fromCache } = await Api.getSiteSettings();
+    /* Every state, and before the settings are read (30 Sept 2026): the
+       spotlight doesn't depend on them, and a cold settings function kept it
+       waiting. After the ban check on purpose — a banned visitor never gets
+       it, and without a ban note that check answers at once. */
+    startSpotlight();
+
+    let { landingState, launchAt, fromCache } = (await Api.getSiteSettings()) || {};
+    /* An answer with no state in it is no answer (1 Oct 2026), exactly as
+       home.html's gate reads one: it used to fall to the else below and
+       make the button a live Enter link. Shut, as for any unreadable read,
+       and the poll corrects it. */
+    if (typeof landingState !== "string" || !landingState) {
+        landingState = typeof Api.unreadableLandingState === "function" ? Api.unreadableLandingState() : "coming-soon";
+        launchAt = "";
+        fromCache = true;
+    }
 
     // aria-disabled moves with the label: the button is focusable in every
     // state (see its markup in index.html), so the state has to be spoken
@@ -740,8 +932,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         btn.setAttribute("aria-disabled", "true");
     }
 
-    // Every state: see showSpotlight.
-    startSpotlight();
     if (landingState === "coming-soon" || landingState === "maintenance") {
         labelGated(landingState);
     } else {
@@ -770,8 +960,8 @@ document.addEventListener("DOMContentLoaded", async () => {
        exactly as the block above left it. */
     const gated = isGatedState(landingState);
     if (!gated) return;
-    // Past as well as future: startCountdown shows the "any moment" state
-    // for a date already gone rather than nothing at all.
+    // Past as well as future: a date already gone is still the date the
+    // poll paces itself by, though startCountdown draws nothing for it.
     const launchDate = v => {
         if (!v || typeof v !== "string") return null;
         const parsed = new Date(v);
@@ -813,7 +1003,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         const fresh = launchDate(settings && settings.launchAt);
         if ((fresh ? fresh.getTime() : null) !== (target ? target.getTime() : null)) {
             target = fresh;
-            if (countdown) { countdown.stop(); countdown = null; }
+            // Its space kept (1 Oct 2026): a moved date redraws it in the
+            // same place, and a cleared or past one leaves no jump behind.
+            if (countdown) { countdown.stop(true); countdown = null; }
         }
         showCountdownFor(state);
     /* Not the stand-in's state (30 Sept 2026). A read that failed comes

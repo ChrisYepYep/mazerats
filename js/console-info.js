@@ -539,6 +539,17 @@ document.addEventListener("DOMContentLoaded", () => {
             // A blocked sender gets the site's own notice, not the raw words.
             if (window.Account && Account.writeRefused && Account.writeRefused(err.status, err.data, "send")) {
                 say("", false);
+            } else if (err.status === 401 && signedIn()) {
+                /* A session the server has revoked (30 Sept 2026; see
+                   writeRefusal in _bans.js), answered with the cookie
+                   cleared: the page is told, and the image rows turn into
+                   their sign-in prompts. Pictures cannot go without an
+                   account, so a form with some says so rather than inviting
+                   a Send that would leave them behind. */
+                if (typeof Account.refresh === "function") Account.refresh();
+                say(fileCount
+                    ? "You were signed out. Sign in again to send this with its pictures."
+                    : "You were signed out. Press Send again to send it without an account.", true);
             } else {
                 say(err.message, true);
             }

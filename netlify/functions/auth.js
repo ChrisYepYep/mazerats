@@ -60,6 +60,29 @@ function validPassword(password) {
     return typeof password === "string" && password.length >= 8;
 }
 
+/* The bootstrap's shared password, compared in constant time (30 Sept
+   2026). `!==` stops at the first character that differs, which is a
+   timing oracle on the one secret this function holds in plain text. Both
+   sides are hashed first, so the comparison is always of two 32-byte
+   values and says nothing about the length either. */
+function sameSecret(given, secret) {
+    const a = crypto.createHash("sha256").update(String(given)).digest();
+    const b = crypto.createHash("sha256").update(String(secret)).digest();
+    return crypto.timingSafeEqual(a, b);
+}
+
+/* What a NEW account's username may be (30 Sept 2026): at most
+   LOGGED_NAME_MAX characters, so every name can be logged and throttled
+   whole (the sign-in cuts what it logs to that length), and no control
+   characters, which no keyboard types and every list in the Warren would
+   draw as nothing. Existing accounts are untouched; this is only asked
+   at "create". */
+function usernameProblem(username) {
+    if (username.length > LOGGED_NAME_MAX) return `Usernames can be at most ${LOGGED_NAME_MAX} characters.`;
+    if (/[\u0000-\u001f\u007f-\u009f]/.test(username) || username.includes(String.fromCharCode(0x2028)) || username.includes(String.fromCharCode(0x2029))) return "Usernames can't contain control characters.";
+    return null;
+}
+
 /* Anything off the wire is text or it is nothing. `(body.x || "").trim()`
    throws outright on an object or an array, which turned a one-line crafted
    request into an unhandled 500 with a stack trace in the body — and on a
@@ -652,7 +675,7 @@ async function handlePost(event, body, db, admins) {
                first with the shared password — after an accidental wipe, say
                — got to name the site's first owner, and it need not have
                been the person the whole role system is built around. */
-            if (username !== PERMANENT_OWNER || !process.env.ADMIN_PASSWORD || password !== process.env.ADMIN_PASSWORD) {
+            if (username !== PERMANENT_OWNER || !process.env.ADMIN_PASSWORD || !sameSecret(password, process.env.ADMIN_PASSWORD)) {
                 /* AWAITED. The row IS the counter loginThrottle reads; see
                    there. Paid only on a failure. With no accounts at all,
                    any other name is by definition not one. */
@@ -758,6 +781,8 @@ async function handlePost(event, body, db, admins) {
         if (!username || !validPassword(password)) {
             return json(400, { error: "Username and an 8+ character password are required" });
         }
+        const badName = usernameProblem(username);
+        if (badName) return json(400, { error: badName });
         /* The role the account will actually HAVE, not only the one asked
            for (30 Sept 2026): resolveRole makes a row named PERMANENT_OWNER
            an owner whatever its `role` says, so "admin" named ChrisYepYep

@@ -17,8 +17,9 @@
    preview tags written in. The old /guides?g=<id> form still opens the
    guide, and is rewritten to the clean address. Opening the
    window from the menu pushes one history entry, so Back closes it, as it
-   does for a maze; moving between guides inside it replaces that entry
-   rather than stacking more.
+   does for a maze; a guide opened from the list's cards adds one more, so
+   Back returns to the list (1 Oct 2026), and moving between guides inside
+   the reader replaces that entry rather than stacking more.
 
    The guides come from netlify/functions/guides.js, and are edited in the
    /warren Guides panel (js/admin-guides.js). Their text is rendered by
@@ -52,6 +53,10 @@
     let basePath = "/home";     // where closing returns the address to
     let triggerEl = null;
     let retriedFor = null;      // a missing guide id already re-asked for, uncached
+    let listPlace = null;       // { scroll, card }: where the list was when a card was opened
+    let listBackPending = false; // "‹ All guides" has stepped Back and it has not landed
+    let listBackTimer = null;
+    let listBackLanded = 0;     // when it landed (see the click handler)
 
     // ------------------------------------------------------------ loading
 
@@ -182,6 +187,12 @@
         if (!guides.length) return `<p class="guides-note">There are no guides yet. Check back soon.</p>`;
 
         const cats = categories();
+        /* A filter whose category has gone (30 Sept 2026): the list was
+           read again past the cache and no published guide carries it now,
+           or only one category is left. Kept, it filtered to nothing (or
+           hid the uncategorised guides) — and with fewer than two categories
+           the chips are not drawn, so there was no "All" to press. */
+        if (category && (cats.length < 2 || !cats.includes(category))) category = "";
         const shown = guides.filter(g => !category || g.category === category);
         const chips = cats.length > 1 ? `
             <div class="guides-cats" role="group" aria-label="Guide category">
@@ -215,6 +226,15 @@
 
     function readerHtml(g) {
         const sections = g.sections || [];
+        /* "In this guide" lists the sections that have a heading, and is
+           drawn only when three or more do (1 Oct 2026): it counted every
+           section but listed only the headed ones, so a guide of untitled
+           sections showed an empty box. */
+        const heads = sections.map((s, i) => [s, i]).filter(([s]) => s.heading);
+        /* Headings typed inside the text sit under the guide's title (h3)
+           and its section titles (h4), for a screen reader's outline (1 Oct
+           2026): a section's "## " is an h5 and its "### " an h6, the
+           summary's an h4 and h5. They look the same, styled by class. */
         // By the reader's day, as What's New decides it (js/guide-text.js).
         const updated = GuideText.wasUpdated(g)
             ?`Updated ${longDate(g.updatedAt)}` : (g.publishedAt ? `Added ${longDate(g.publishedAt)}` : "");
@@ -230,16 +250,16 @@
                 <div class="guide-head-text">
                     ${g.category ? `<span class="guides-pill">${esc(g.category)}</span>` : ""}
                     <h3 class="guide-title" id="guide-title">${esc(g.title)}</h3>
-                    ${g.summary ? `<div class="guide-summary">${GuideText.render(g.summary)}</div>` : ""}
+                    ${g.summary ? `<div class="guide-summary">${GuideText.render(g.summary, { level: 4 })}</div>` : ""}
                     ${updated ? `<p class="guide-date">${esc(updated)}</p>` : ""}
                 </div>
                 ${thumb ? `<span class="guide-thumb guide-head-thumb">${pic(thumb, g.title, "")}</span>` : ""}
             </header>
-            ${sections.length > 2 ? `
+            ${heads.length > 2 ? `
                 <nav class="guide-contents" aria-label="In this guide">
                     <p class="guide-contents-title">In this guide</p>
-                    <ol>${sections.map((s, i) => s.heading
-                        ? `<li><button type="button" class="guides-textbtn" data-jump="${i}">${esc(s.heading)}</button></li>` : "").join("")}</ol>
+                    <ol>${heads.map(([s, i]) =>
+                        `<li><button type="button" class="guides-textbtn" data-jump="${i}">${esc(s.heading)}</button></li>`).join("")}</ol>
                 </nav>` : ""}
             ${sections.map((s, i) => `
                 <section class="guide-section" id="guide-section-${i}">
@@ -249,7 +269,7 @@
                             role="button" tabindex="0" aria-expanded="false" aria-label="${esc(s.heading ? `Picture: ${s.heading}, full size` : "Picture, full size")}">
                             ${pic(s.image, s.heading, "guide-img")}
                         </figure>` : ""}
-                    <div class="guide-body">${GuideText.render(s.body)}</div>
+                    <div class="guide-body">${GuideText.render(s.body, { level: 5 })}</div>
                 </section>`).join("")}
             ${others.length ? `
                 <aside class="guide-more">
@@ -301,7 +321,12 @@
                 try { history.replaceState(history.state, "", addressFor(g.id)); } catch (e) { /* fine */ }
             }
         }
-        if (o.focus || hadFocus) focusHeading(g);
+        if (o.focus || hadFocus) {
+            // Back to the list from a card: that card, not the heading.
+            const card = !g && o.card ? [...body.querySelectorAll("[data-guide]")].find(a => a.dataset.guide === o.card) : null;
+            if (card) card.focus({ preventScroll: true });
+            else focusHeading(g);
+        }
     }
 
     function focusHeading(g) {
@@ -315,9 +340,12 @@
        window is open they name what it shows, so a bookmark, a share sheet or
        a crawler that runs the page gets the guide's address, not /home's.
        The archive's are put back on close (PageMeta in js/site.js). */
+    /* "X — Maze Rats", as netlify/functions/share.js titles a guide's
+       page (1 Oct 2026): it said "X — Maze Rats Guides", so the tab's title
+       changed under the reader the moment the list arrived. */
     function setMeta(g) {
         if (!window.PageMeta) return;
-        window.PageMeta.set("guides", g ? `${g.title} — Maze Rats Guides` : "Guides — Maze Rats",
+        window.PageMeta.set("guides", g ? `${g.title} — Maze Rats` : "Guides — Maze Rats",
             "https://mazerats.net" + addressFor(g ? g.id : null));
     }
 
@@ -355,15 +383,45 @@
 
     // Whether the entry the browser is on is one this window pushed. The
     // state object survives Back and Forward, so it answers for either.
-    const isOurEntry = () => !!(history.state && history.state.guides);
+    // This document's own token, not `true` (1 Oct 2026): the state also
+    // outlives a reload, and an entry left by the page before it is not
+    // ours to step back off — see the same fix in js/glyphs.js.
+    const TOKEN = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const isOurEntry = () => !!(history.state && history.state.guides === TOKEN);
+
+    /* BACK FROM A GUIDE GOES TO THE LIST (1 Oct 2026, the owner's). A
+       guide opened from the list's cards used to replace the list's entry,
+       so Back (a phone's back gesture above all) closed the whole window
+       instead of going back to the list. A card now pushes one more entry,
+       marked step 2, and `below` says whether the list's entry under it is
+       ours too. Moving from guide to guide inside the reader still
+       replaces, so only one guide ever sits above the list. "‹ All guides"
+       on that entry is a Back, and closing steps off both (or, over a
+       pasted link's entry that is not ours, off ours and then rewrites
+       the pasted one, as closing always has). */
+    const onDeepEntry = () => isOurEntry() && history.state.step === 2;
+    let pendingReplace = null;  // an address for the entry our Back lands on
+    let pendingThen = null;     // what to run once that Back has landed
+    function pushGuide(id) {
+        try {
+            history.pushState({ guides: TOKEN, step: 2, below: isOurEntry() }, "", addressFor(id));
+        } catch (e) { setAddress(id); }
+    }
 
     // ------------------------------------------------------------ open/close
 
-    // opts.focus: see draw().
+    /* opts.focus: see draw(). opts.toList: back to the list from a guide
+       (Back, or "‹ All guides"), which comes back where it was left, scrolled
+       to the same place with focus on the card that was opened (1 Oct 2026).
+       It used to come back at the top with focus on the heading, so a phone
+       scrolled down again and a keyboard tabbed through every card again. */
     function show(id, opts) {
+        const o = opts || {};
         view = { id: id || null };
-        draw(opts);
-        body.scrollTop = 0;
+        const place = !view.id && o.toList ? listPlace : null;
+        if (!view.id) listPlace = null;
+        draw(place ? Object.assign({}, o, { card: place.card }) : o);
+        body.scrollTop = place ? place.scroll : 0;
     }
 
     /* opts.fromAddress: opened because the address says so (a pasted link,
@@ -376,6 +434,7 @@
     function open(id, opts) {
         const o = opts || {};
         if (!isOpen()) {
+            listPlace = null;
             triggerEl = document.activeElement;
             if (!o.fromAddress) {
                 if (pendingBack) {
@@ -388,7 +447,7 @@
                 } else {
                     basePath = location.pathname + location.search + location.hash;
                     try {
-                        history.pushState({ guides: true }, "", addressFor(id));
+                        history.pushState({ guides: TOKEN }, "", addressFor(id));
                         ownsEntry = true;
                     } catch (e) { ownsEntry = false; }
                 }
@@ -401,8 +460,13 @@
         } else {
             setAddress(id);
         }
-        show(id);
+        /* Asked for BEFORE the first draw (30 Sept 2026). After a failed
+           load, drawing first showed "couldn't be loaded ... Try again" for
+           the whole of the new attempt this open was already making, since
+           load() is what clears `failed`; now the window says it is
+           loading while it is. */
         load();
+        show(id);
         win.focus();
     }
 
@@ -419,11 +483,37 @@
         overlay.classList.remove("open");
         document.body.classList.remove("modal-open");
         restoreMeta();
+        listPlace = null;
+        listBackPending = false;
+        clearTimeout(listBackTimer);
+        let deferred = false;
         if (!o.fromHistory) {
             if (pendingBack) {
                 // Reopened and closed again while our Back is still in
                 // flight: that Back already lands where closing wants to be.
                 pendingPush = null;
+            } else if (onDeepEntry() && !o.replace) {
+                /* On a guide pushed from the list (see onDeepEntry). Off
+                   both entries when the list's is ours; a hand-off waits
+                   one Back, to the list's entry, and the room window then
+                   replaces that, leaving the stack a hand-off from the
+                   list would have. */
+                const below = !!history.state.below;
+                const steps = below && !o.handOff ? 2 : 1;
+                /* The entry under this one is about to be rewritten (to the
+                   address underneath, or into the room window's), so this
+                   one, left in Forward, no longer sits on a list of ours
+                   (1 Oct 2026). Kept as it was, Forward onto it and then
+                   "‹ All guides" stepped Back onto the maze, opening it, or
+                   onto /home, closing the window. Unmarked, it is a pasted
+                   link's entry: the list is drawn in place. */
+                if (!below || o.handOff) {
+                    try { history.replaceState(null, "", location.pathname + location.search + location.hash); } catch (e) { /* fine */ }
+                }
+                if (!below) pendingReplace = basePath || "/home";
+                if (o.handOff && typeof o.then === "function") { pendingThen = o.then; deferred = true; }
+                pendingBack = true;
+                history.go(-steps);
             } else if (ownsEntry && o.handOff) {
                 // Left for the room window to replace.
             } else if (ownsEntry && !o.replace) {
@@ -434,6 +524,7 @@
             }
         }
         ownsEntry = false;
+        if (!deferred && typeof o.then === "function") o.then();
         const back = triggerEl;
         triggerEl = null;
         if (o.keepFocus || !back || !document.body.contains(back)) return;
@@ -442,14 +533,30 @@
     }
 
     window.addEventListener("popstate", () => {
+        if (listBackPending) {
+            listBackPending = false;
+            clearTimeout(listBackTimer);
+            listBackLanded = Date.now();
+        }
         if (pendingBack) {
             pendingBack = false;
+            // Landed on a pasted link's entry under a guide we pushed: it
+            // becomes the address underneath, as a close from it would make it.
+            if (pendingReplace !== null) {
+                try { history.replaceState(null, "", pendingReplace); } catch (e) { /* fine */ }
+                pendingReplace = null;
+            }
+            // A hand-off to the room window that waited for this Back, once
+            // every other popstate listener (js/home.js's) has seen it land.
+            const then = pendingThen;
+            pendingThen = null;
+            if (then) setTimeout(then, 0);
             // A reopen that was waiting on this Back gets its entry now that
             // the old one is gone, pushed from the entry it will return to.
             if (pendingPush !== null && isOpen()) {
                 basePath = location.pathname + location.search + location.hash;
                 try {
-                    history.pushState({ guides: true }, "", pendingPush);
+                    history.pushState({ guides: TOKEN }, "", pendingPush);
                     ownsEntry = true;
                 } catch (e) { ownsEntry = false; }
             }
@@ -460,7 +567,7 @@
             // Forward onto a guides address, or Back from one guide to the
             // list inside the window.
             if (!isOpen()) open(idFromAddress(), { fromAddress: true, owned: isOurEntry() });
-            else show(idFromAddress(), { focus: true });
+            else show(idFromAddress(), { focus: true, toList: true });
         } else if (isOpen()) {
             close({ fromHistory: true });
         }
@@ -470,11 +577,22 @@
 
     body.addEventListener("click", e => {
         const t = e.target;
+        /* A double-tap on "‹ All guides" (1 Oct 2026). The second tap, while
+           the first Back is in flight, was a second Back that closed the
+           window; just after it lands, it hit whichever card the list had
+           put under the finger and opened that guide. Both are ignored. */
+        if (listBackPending) { e.preventDefault(); return; }
         const guideLink = t.closest("[data-guide]");
+        if (guideLink && Date.now() - listBackLanded < 350) { e.preventDefault(); return; }
         if (guideLink) {
             if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return; // a new tab is the browser's
             e.preventDefault();
-            setAddress(guideLink.dataset.guide);
+            // Where the list was, for the way back to it (see show).
+            if (!view.id) listPlace = { scroll: body.scrollTop, card: guideLink.dataset.guide };
+            // From the list, a step of its own so Back returns to the list;
+            // from a guide's "More guides", in place (see onDeepEntry).
+            if (!view.id && pendingPush === null && !pendingBack) pushGuide(guideLink.dataset.guide);
+            else setAddress(guideLink.dataset.guide);
             show(guideLink.dataset.guide, { focus: true });
             return;
         }
@@ -499,10 +617,13 @@
             e.preventDefault();
             const kind = record.dataset.guideMaze ? "maze" : "event";
             const id = record.dataset.guideMaze || record.dataset.guideEvent;
-            close({ handOff: true, keepFocus: true });
-            if (!(window.ArchiveRecords && window.ArchiveRecords.open(kind, id, { fromGuides: true }))) {
-                location.href = window.RecordAddress.of(kind, { id });
-            }
+            // Run by close(): at once, or once its Back off a guide pushed
+            // from the list has landed (1 Oct 2026).
+            close({ handOff: true, keepFocus: true, then: () => {
+                if (!(window.ArchiveRecords && window.ArchiveRecords.open(kind, id, { fromGuides: true }))) {
+                    location.href = window.RecordAddress.of(kind, { id });
+                }
+            } });
             return;
         }
         // A section's picture: see toggleZoom.
@@ -534,7 +655,18 @@
         }
         const act = t.closest("[data-act]");
         if (!act) return;
-        if (act.dataset.act === "list") { setAddress(null); show(null, { focus: true }); }
+        // On a guide pushed from the list, "‹ All guides" is Back: the
+        // popstate below draws the list.
+        if (act.dataset.act === "list") {
+            if (onDeepEntry() && !pendingBack && pendingPush === null) {
+                // Cleared by the popstate, or after a second if none comes.
+                listBackPending = true;
+                clearTimeout(listBackTimer);
+                listBackTimer = setTimeout(() => { listBackPending = false; }, 1000);
+                history.back();
+            }
+            else { setAddress(null); show(null, { focus: true, toList: true }); }
+        }
         else if (act.dataset.act === "retry") { load(); draw({ focus: true }); }
         // Past the cache again: the cached list is the one that lacked it.
         else if (act.dataset.act === "retry-guide") { load(true); draw({ focus: true }); }

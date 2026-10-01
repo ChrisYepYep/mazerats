@@ -168,14 +168,23 @@
         }
     }
 
+    /* Numbered (30 Sept 2026): New, then All, pressed quickly sent two
+       reads, and whichever came back LAST was drawn — so the All list could
+       end up under the New tab. Only the newest read is drawn now, and a
+       load for another account (loadGen, see reset) is dropped too. */
+    let leadsSeq = 0;
     async function reloadLeads() {
+        const seq = ++leadsSeq;
+        const gen = loadGen;
         try {
             const data = await call(`${LEADS_URL}?status=${encodeURIComponent(leadStatus)}`, "GET");
+            if (seq !== leadsSeq || gen !== loadGen) return;
             leads = data.leads || [];
             counts = data.counts || counts;
             renderLeadTabs();
             renderLeads();
         } catch (err) {
+            if (seq !== leadsSeq || gen !== loadGen) return;
             if (!sessionGone(err)) tell(`Could not load the leads: ${err.message}`);
         }
     }
@@ -934,7 +943,10 @@
     async function badge() {
         if (!token() || !navCount) return;
         try {
-            const data = await call(`${LEADS_URL}?status=new`, "GET");
+            // The counts alone (30 Sept 2026) — see ?counts=1 in
+            // dead-end-leads.js. A server from before it answers the whole
+            // new list as it always did, counts and all, which works too.
+            const data = await call(`${LEADS_URL}?status=new&counts=1`, "GET");
             counts = data.counts || counts;
             navCount.textContent = counts.new ? String(counts.new) : "";
             navCount.hidden = !counts.new;

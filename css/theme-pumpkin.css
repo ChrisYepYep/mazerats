@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   989 rules, 1605 declarations, hues 18 (surfaces) / 38 (accents).
+   984 rules, 1602 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -384,8 +384,8 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
-[data-theme="pumpkin"] .welcome-countdown.is-due .welcome-countdown-label {
-    color: var(--amber-bright);
+[data-theme="pumpkin"] .welcome-noscript {
+    color: var(--parchment-dim);
 }
 
 [data-theme="pumpkin"] .btn-enter {
@@ -565,8 +565,7 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .chrome-titlebar h1,
-[data-theme="pumpkin"] .chrome-titlebar h2,
-[data-theme="pumpkin"] .chrome-titlebar .chrome-title-text {
+[data-theme="pumpkin"] .chrome-titlebar h2 {
     color: #fefdfc;
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.65);
 }
@@ -825,14 +824,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] .sort-box select option:hover {
     background: var(--amber-bright);
     color: #120601;
-}
-
-[data-theme="pumpkin"] .result-count {
-    color: var(--parchment-dim);
-}
-
-[data-theme="pumpkin"] .empty-state {
-    color: var(--parchment-dim);
 }
 
 [data-theme="pumpkin"] .modal-overlay {
@@ -2454,10 +2445,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--unknown-text);
 }
 
-[data-theme="pumpkin"] .furni-browse-intro {
-    color: var(--parchment-dim);
-}
-
 [data-theme="pumpkin"] .furni-band-head {
     color: var(--amber-bright);
 }
@@ -2932,10 +2919,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--danger);
 }
 
-[data-theme="pumpkin"] .guess-board-title {
-    color: var(--amber-bright);
-}
-
 [data-theme="pumpkin"] .guess-board-games {
     border: 1px solid var(--border);
     background: rgba(0, 0, 0, 0.28);
@@ -2943,10 +2926,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .guess-board-games span {
-    color: var(--unknown-text);
-}
-
-[data-theme="pumpkin"] .guess-board-head {
     color: var(--unknown-text);
 }
 
@@ -3949,10 +3928,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--danger);
 }
 
-[data-theme="pumpkin"] .daily-eyebrow {
-    color: #5f2d14;
-}
-
 [data-theme="pumpkin"] .daily-head {
     border-bottom: 1px solid rgba(232, 194, 128, 0.18);
 }
@@ -4412,6 +4387,16 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
 }
 
+[data-theme="pumpkin"] .signout-everywhere {
+    border: none;
+    background: none;
+    color: inherit;
+}
+
+[data-theme="pumpkin"] .signout-everywhere:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="pumpkin"] .rc-load-label {
     color: var(--parchment-dim);
 }
@@ -4757,7 +4742,8 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 @media (pointer: coarse) {
     [data-theme="pumpkin"] .console-btn::after,
-    [data-theme="pumpkin"] .console-link-btn::after {
+    [data-theme="pumpkin"] .console-link-btn::after,
+    [data-theme="pumpkin"] .signout-everywhere::after {
         background: transparent;
     }
 }
@@ -4787,14 +4773,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .notice-word {
-    color: var(--amber-bright);
-}
-
-[data-theme="pumpkin"] .modal-overlay.ban-screen {
-    background: var(--bg-black);
-}
-
-[data-theme="pumpkin"] .ban-foot a {
     color: var(--amber-bright);
 }
 
@@ -4906,6 +4884,12 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 
 [data-theme="pumpkin"] .ee-flash.is-bad {
     color: var(--danger-text);
+}
+
+@media (hover: none) {
+    [data-theme="pumpkin"] .admin-gallery-thumb.admin-gallery-thumb-filled .admin-gallery-thumb-replace-text {
+        background: rgba(11, 5, 2, 0.55);
+    }
 }
 
 /* ------------------------------------------- COLOUR THAT IS INFORMATION

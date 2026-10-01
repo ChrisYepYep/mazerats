@@ -791,20 +791,34 @@ const classicChromeFill = () => classicVar("--chrome-fill");
    it is SOLVED, the way the grip dot is: the themed --amber keeps its hue
    and saturation and takes the lightness that gives it classic's own ratio
    against --chrome-row (5.1:1), and never less than 4.5:1. A palette whose
-   --amber already clears that (Pumpkin) is left exactly as it is. */
+   --amber already clears that (Pumpkin) is left exactly as it is.
+
+   And 4.5:1 on the lightest surface it is actually set on, too (1 Oct
+   2026). --chrome-row is the darkest of them. The guide's "In this guide"
+   box is --frame-bg under a 22% black wash (.guide-contents), and Crimson's
+   solved value came out at 4.47:1 there. The archive rows' wash is darker
+   (25%), so the box is the one that binds. The answer is the lightest of
+   the two, so a palette that already clears both still keeps its --amber. */
+const CONTENTS_WASH = 0.22;
 function solveAmberText() {
     const fg = classicVar("--amber");
     const bg = classicVar("--chrome-row");
+    const frame = classicVar("--frame-bg");
     const target = Math.max(4.5, contrast(fg, bg));
     const themedBg = toPurple(bg[0], bg[1], bg[2]) || bg;
+    const themedFrame = toPurple(frame[0], frame[1], frame[2]) || frame;
+    // Not rounded: the wash composites in floats, and rounded down the box
+    // read a shade darker than measured and let 4.49:1 through.
+    const themedBox = themedFrame.map(c => c * (1 - CONTENTS_WASH));
+    const passes = px => contrast(px, themedBg) >= target && contrast(px, themedBox) >= 4.5;
     const themedFg = toPurple(fg[0], fg[1], fg[2]) || fg;
-    if (contrast(themedFg, themedBg) >= target) return themedFg;
+    if (passes(themedFg)) return themedFg;
     const [h, s, l0] = rgbToHsl(themedFg[0], themedFg[1], themedFg[2]);
     let lo = l0, hi = 1, best = themedFg;
     for (let i = 0; i < 20; i++) {
         const mid = (lo + hi) / 2;
         const px = hslToRgb(h, s, mid);
-        if (contrast(px, themedBg) < target) lo = mid;
+        if (!passes(px)) lo = mid;
         else { hi = mid; best = px; }
     }
     return best;
@@ -1121,6 +1135,16 @@ function buildCss(recoloured) {
             // Solved against --chrome-row rather than shifted; see solveAmberText.
             if (prop === "--amber-text") {
                 keep.push("    --amber-text: " + asHex(...solveAmberText()) + ";");
+                declCount++;
+                continue;
+            }
+            /* Shifted from the value it had before classic's was lifted for
+               contrast (#a89a84 → #c1b7a7, 1 Oct 2026). The themes already
+               passed with that one; mapped from the new value their dim text
+               came out almost as bright as --parchment, and the quiet tier
+               all but vanished. Only the classic palette needed the lift. */
+            if (prop === "--parchment-dim" && /^\s*#c1b7a7\s*$/i.test(value)) {
+                keep.push("    --parchment-dim: " + shiftValue("#a89a84", recoloured) + ";");
                 declCount++;
                 continue;
             }

@@ -133,6 +133,9 @@
         return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
     }
 
+    // "1 section", not "1 sections" (1 Oct 2026).
+    const sectionCount = n => n + (n === 1 ? " section" : " sections");
+
     // ------------------------------------------------------------ loading
 
     /* Counted, so a read still out when the account changed (see reset)
@@ -192,7 +195,7 @@
         if (!s || starterAdded(s)) { starterEl.innerHTML = ""; return; }
         starterEl.innerHTML = `
             <div class="guides-starter">
-                <p><strong>${esc(s.title)}</strong> is ready to add: ${s.sections.length} sections on the basic tricks, written from markeh's Tutorial Maze, with its room pictures.</p>
+                <p><strong>${esc(s.title)}</strong> is ready to add: ${sectionCount(s.sections.length)} on the basic tricks, written from markeh's Tutorial Maze, with its room pictures.</p>
                 <div class="admin-row-actions">
                     <button type="button" class="admin-action-pill admin-pill-solid" data-starter="published">Add and publish</button>
                     <button type="button" class="admin-action-pill" data-starter="draft">Add as a draft</button>
@@ -225,7 +228,7 @@
                     <h3>${esc(g.title)}</h3>
                     <p class="row-creator">
                         <span class="guides-admin-status is-${g.status === "published" ? "live" : "draft"}">${g.status === "published" ? "Published" : "Draft"}</span>
-                        ${g.category ? esc(g.category) + " · " : ""}${(g.sections || []).length} sections
+                        ${g.category ? esc(g.category) + " · " : ""}${sectionCount((g.sections || []).length)}
                         ${g.updatedAt ? " · edited " + esc(when(g.updatedAt)) + (g.updatedBy ? " by " + esc(g.updatedBy) : "") : ""}
                     </p>
                     <p class="row-creator">/guides/${esc(g.slug || g.id)}</p>
@@ -388,7 +391,9 @@
             </div>`;
     }
 
-    const FORMAT_HELP = `Text format: a blank line starts a new paragraph · **bold** · *italic* · "- " starts a bullet · "1. " a numbered list · "> " a tip box · [words](https://...) links out (https addresses only) · [words](maze:maze-id), [words](event:event-id) or [words](guide:guide-id) link inside the site.`;
+    // Everything js/guide-text.js renders (1 Oct 2026): headings, dividers,
+    // underline, strike and console links were missing from this.
+    const FORMAT_HELP = `Text format: a blank line starts a new paragraph · **bold** · *italic* · __underline__ · ~~crossed out~~ · "## " a heading and "### " a subheading (own line) · "---" a divider · "- " starts a bullet · "1. " a numbered list · "> " a tip box · [words](https://...) links out (https addresses only) · [words](maze:maze-id), [words](event:event-id) or [words](guide:guide-id) link inside the site · [words](console:entry) opens Event Submission.`;
 
     function sectionHtml(s, i, n) {
         return `
@@ -698,7 +703,7 @@
                     <div class="guide-head-text">
                         ${g.category ? `<span class="guides-pill">${esc(g.category)}</span>` : ""}
                         <h3 class="guide-title">${esc(g.title || "Untitled guide")}</h3>
-                        ${g.summary ? `<div class="guide-summary">${GuideText.render(g.summary)}</div>` : ""}
+                        ${g.summary ? `<div class="guide-summary">${GuideText.render(g.summary, { level: 4 })}</div>` : ""}
                     </div>
                     ${thumb ? `<span class="guide-thumb guide-head-thumb"><img src="${esc(thumb)}" alt=""></span>` : ""}
                 </header>
@@ -706,7 +711,7 @@
                     <section class="guide-section">
                         ${s.heading ? `<h4 class="guide-section-title">${esc(s.heading)}</h4>` : ""}
                         ${s.image ? `<figure class="guide-figure"><img class="guide-img" src="${esc(s.image)}" alt=""></figure>` : ""}
-                        <div class="guide-body">${GuideText.render(s.body)}</div>
+                        <div class="guide-body">${GuideText.render(s.body, { level: 5 })}</div>
                     </section>`).join("")}
             </div>`;
         previewEl.hidden = false;

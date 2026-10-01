@@ -13,10 +13,11 @@
                     one event whose dates say it is running now, none while
                     there are several or none), No event, Closed (none
                     taken at all, and the form says so), or one picked.
-     THE FILTERS    By status (New, Reviewed, Winner, Rejected, All) and by
-                    event.
+     THE FILTERS    By status (New, Approved, Winner, Rejected, All) and by
+                    event. "Usernames (.txt)" saves every name the filters
+                    show, across all pages, one to a line (namesFile).
      THE LIST       Newest first, a page at a time: the picture, the name,
-                    the event, when, the status, and Mark reviewed / Winner /
+                    the event, when, the status, and Approve / Winner /
                     Reject / Note / Delete for owners and admins. A view-only
                     account reads everything and is shown none of those.
 
@@ -43,8 +44,10 @@
     const refreshBtn = panel.querySelector("#entries-refresh-btn");
     const navCount = document.getElementById("entries-nav-count");
 
-    const STATUS_TABS = [["new", "New"], ["reviewed", "Reviewed"], ["winner", "Winner"], ["rejected", "Rejected"], ["all", "All"]];
-    const STATUS_WORD = { new: "New", reviewed: "Reviewed", winner: "Winner", rejected: "Rejected" };
+    // "reviewed" is the stored word; the Warren has called it Approved since
+    // 30 Sept 2026. Only the labels changed, so no entry needed rewriting.
+    const STATUS_TABS = [["new", "New"], ["reviewed", "Approved"], ["winner", "Winner"], ["rejected", "Rejected"], ["all", "All"]];
+    const STATUS_WORD = { new: "New", reviewed: "Approved", winner: "Winner", rejected: "Rejected" };
 
     // ------------------------------------------------------------- state
 
@@ -329,19 +332,78 @@
         entries.forEach(entry => listEl.appendChild(row(entry)));
     }
 
+    /* An entry's picture full size, over the Warren rather than in a new tab
+       (30 Sept 2026). The homepage's own lightbox look (.lightbox-* in
+       css/style.css), built once on first use. Closed by the ×, a click
+       anywhere on it, or Escape; focus goes back to the thumbnail. */
+    let viewer = null;
+    function openViewer(url, label, from) {
+        if (!viewer) {
+            const overlay = document.createElement("div");
+            overlay.className = "lightbox-overlay";
+            overlay.setAttribute("role", "dialog");
+            overlay.setAttribute("aria-modal", "true");
+            overlay.tabIndex = -1;
+            const close = document.createElement("button");
+            close.type = "button";
+            close.className = "lightbox-close";
+            close.setAttribute("aria-label", "Close");
+            close.textContent = "×";
+            const img = document.createElement("img");
+            img.className = "lightbox-img";
+            const caption = document.createElement("span");
+            caption.className = "gallery-counter lightbox-counter";
+            overlay.append(close, img, caption);
+            document.body.appendChild(overlay);
+            const hide = () => {
+                overlay.classList.remove("open");
+                img.removeAttribute("src");
+                document.removeEventListener("keydown", onKey, true);
+                /* The list re-renders every minute while it is showing (1
+                   Oct 2026), so the thumbnail that opened this may have been
+                   replaced meanwhile; its stand-in has the same object URL. */
+                let back = viewer.from;
+                if (back && !document.contains(back)) {
+                    const href = back.getAttribute("href");
+                    back = href ? Array.from(listEl.querySelectorAll("a.ee-shot")).find(a => a.getAttribute("href") === href) || null : null;
+                }
+                if (back) back.focus();
+            };
+            const onKey = e => {
+                if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); hide(); }
+                else if (e.key === "Tab") { e.preventDefault(); close.focus(); }
+            };
+            overlay.addEventListener("click", hide);
+            viewer = { overlay, img, caption, close, hide, onKey, from: null };
+        }
+        viewer.from = from || null;
+        viewer.img.src = url;
+        viewer.img.alt = label;
+        viewer.caption.textContent = label;
+        viewer.overlay.setAttribute("aria-label", label);
+        viewer.overlay.classList.add("open");
+        document.addEventListener("keydown", viewer.onKey, true);
+        viewer.close.focus();
+    }
+
     /* Built from nodes, not markup: every word here came from a visitor. */
     function row(entry) {
         const r = document.createElement("div");
         r.className = "chrome-list-row admin-row ee-row";
         r.dataset.status = entry.status || "new";
 
-        // The picture, opened full size in a new tab from its object URL.
+        // The picture, opened full size in the lightbox (openViewer); the
+        // href stays for a middle-click or "open in new tab".
         const key = entry.image && entry.image.key;
         const shot = document.createElement("a");
         shot.className = "de-shot ee-shot";
-        shot.target = "_blank";
         shot.rel = "noopener";
         shot.title = "Open the full picture";
+        shot.addEventListener("click", e => {
+            if (!shot.href || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            openViewer(shot.href, `Entry from ${entry.habboName || "someone"}`, shot);
+        });
         if (key) {
             const im = document.createElement("img");
             im.alt = `Entry from ${entry.habboName || "someone"}`;
@@ -407,7 +469,7 @@
             const actions = document.createElement("div");
             actions.className = "admin-row-actions";
             const st = entry.status || "new";
-            if (st !== "reviewed") actions.appendChild(button("Mark reviewed", () => setStatus(entry, "reviewed")));
+            if (st !== "reviewed") actions.appendChild(button("Approve", () => setStatus(entry, "reviewed")));
             if (st !== "winner") actions.appendChild(button("Winner", () => setStatus(entry, "winner")));
             if (st !== "rejected") actions.appendChild(button("Reject", () => setStatus(entry, "rejected")));
             if (st !== "new") actions.appendChild(button("Back to new", () => setStatus(entry, "new")));
@@ -489,6 +551,64 @@
 
     if (refreshBtn) refreshBtn.addEventListener("click", () => { events = []; load(); });
 
+    /* Every username the filters show — all pages, not just this one — as a
+       plain .txt, one to a line, and on the clipboard too: made for pasting
+       into a wheel spinner (30 Sept 2026). Oldest first, and each name once
+       (compared ignoring case), so a double entry is not a double chance. */
+    const namesBtn = panel.querySelector("#entries-names-btn");
+    async function namesFile() {
+        if (!token() || namesBtn.disabled) return;
+        namesBtn.disabled = true;
+        const label = namesBtn.textContent;
+        namesBtn.textContent = "Gathering…";
+        /* The filters as they were when pressed (1 Oct 2026). The loop read
+           them live, so changing a filter while a long list was still being
+           gathered mixed pages of two filters into one file under the new
+           filter's name. And a different account signing in meanwhile
+           (reset) drops the gathering rather than saving the last one's. */
+        const want = { status, event: eventFilter };
+        const mine = sessionNo;
+        try {
+            const all = [];
+            for (let p = 0; p < 200; p++) {
+                const data = await Api.getEventEntries(token(), { status: want.status, event: want.event, page: p });
+                if (mine !== sessionNo) return;
+                const got = Array.isArray(data && data.entries) ? data.entries : [];
+                all.push(...got);
+                const size = Number(data && data.pageSize) || pageSize;
+                if (got.length < size || all.length >= (Number(data && data.total) || 0)) break;
+            }
+            const seen = new Set();
+            const names = [];
+            all.slice().reverse().forEach(x => {
+                const n = String(x.habboName || "").trim();
+                if (n && !seen.has(n.toLowerCase())) { seen.add(n.toLowerCase()); names.push(n); }
+            });
+            if (!names.length) { flash("No usernames to save for these filters."); return; }
+            const txt = names.join("\r\n") + "\r\n";
+            const evName = want.event === "none" ? "no-event" : want.event ? eventTitle(want.event, want.event) : "every-event";
+            const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "entries";
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(new Blob([txt], { type: "text/plain;charset=utf-8" }));
+            a.download = `${slug(evName)}-${want.status === "reviewed" ? "approved" : want.status}-usernames.txt`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+            let copied = false;
+            try { await navigator.clipboard.writeText(txt); copied = true; } catch (e) { /* the file is enough */ }
+            const dupes = all.filter(x => String(x.habboName || "").trim()).length - names.length;
+            flash(`${names.length} username${names.length === 1 ? "" : "s"} saved${copied ? " and copied" : ""}` +
+                (dupes ? ` (${dupes} repeat${dupes === 1 ? "" : "s"} left out).` : "."));
+        } catch (err) {
+            if (!sessionGone(err)) flash(`Couldn't gather the usernames: ${(err && err.message) || "something went wrong"}`, true);
+        } finally {
+            namesBtn.disabled = false;
+            namesBtn.textContent = label;
+        }
+    }
+    if (namesBtn) namesBtn.addEventListener("click", namesFile);
+
     // ------------------------------------------------------------ timers
 
     // Re-read every minute while the panel and the browser tab are showing.
@@ -547,6 +667,10 @@
         events = [];
         loadedAt = 0;
         busy = false;
+        /* A picture left open full size goes too (30 Sept 2026): the
+           lightbox sits over the whole page, sign-in box included, and its
+           picture is one the next account may not have been sent. */
+        closeViewer();
         const urls = Array.from(imageUrls.values());
         imageUrls.clear();
         urls.forEach(p => p.then(u => URL.revokeObjectURL(u)).catch(() => {}));
@@ -560,7 +684,14 @@
         onShownChange();
         badge();
     }
-    window.AdminEntries = { reset };
+    /* closeViewer for admin.js's lockOut (30 Sept 2026): the lightbox sits
+       at z-index 250, over the sign-in box's 100, and its Tab trap kept
+       focus on its own ×, so a session that ran out while a picture was
+       open put the sign-in box up where nobody could see or reach it. */
+    function closeViewer() {
+        if (viewer && viewer.overlay.classList.contains("open")) { viewer.from = null; viewer.hide(); }
+    }
+    window.AdminEntries = { reset, closeViewer };
 
     onShownChange();
 })();

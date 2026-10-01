@@ -553,7 +553,7 @@ async function handler(event) {
             return await reply();
         }
 
-        const found = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, name: 1, nickLocked: 1, nickRejected: 1, nickTurnedDown: 1, sv: 1 } });
+        const found = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, name: 1, nickLocked: 1, nickRejected: 1, nickTurnedDown: 1, sv: 1, svStrict: 1 } });
         if (sessionRevoked(player, found)) return revoked();
         const current = found || {};
         const had = (typeof current.nick === "string" && current.nick) || "";

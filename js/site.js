@@ -997,7 +997,10 @@ document.addEventListener("DOMContentLoaded", () => {
    such link exists at DOMContentLoaded: the header ticker writes its
    /event/<slug> link later, and again on every turn, and calls this on
    each new slide (see writeSlide). */
+let archiveLinksOpen = false;
+let archiveLinksAsked = false;
 function pointGatedLinksHome(root) {
+    if (archiveLinksOpen) return;       // seen open this page load: see below
     let state = null, token = null;
     try {
         state = localStorage.getItem("mazerats_landing_state");
@@ -1031,9 +1034,42 @@ function pointGatedLinksHome(root) {
        the share pages link to now. Matching only the "home" spellings missed
        every one of them — the same bug, one rename later. */
     const ARCHIVE = /^(?:\/)?(?:home(?:\.html)?|(?:maze|event|guides)\/[^?#]*)(?:[#?].*)?$/;
+    let changed = false;
     (root || document).querySelectorAll("a[href]").forEach(a => {
-        if (ARCHIVE.test(a.getAttribute("href") || "")) a.href = "/";
+        const href = a.getAttribute("href") || "";
+        if (!ARCHIVE.test(href)) return;
+        a.setAttribute("data-archive-href", href);
+        a.href = "/";
+        changed = true;
     });
+    if (changed) pointLinksBackWhenOpen();
+}
+
+/* AND BACK, ONCE THE SITE IS SEEN OPEN (1 Oct 2026). The note above is the
+   PREVIOUS answer this browser heard, so on the first visit after launch
+   somebody whose note still said "coming-soon" had the policy's and the 404
+   page's archive links pointed at the landing page — one needless trip
+   through Enter. Nothing on those pages read the settings, so the note never
+   caught up there either. Now a page that rewrote anything asks once (the
+   page's one shared request, Api.getSiteSettings), and a real answer that
+   the site is open puts every rewritten link back as it was written, and
+   stops any later one (the ticker's) being rewritten. A failed read, the
+   stand-in, or a gated answer leaves them pointed at the landing page. It
+   is the one time a link changes under the reader, and it changes to where
+   they were going anyway. (Its two flags are declared above
+   pointGatedLinksHome, which reads one.) */
+function pointLinksBackWhenOpen() {
+    if (archiveLinksAsked || typeof Api === "undefined" || typeof Api.getSiteSettings !== "function") return;
+    archiveLinksAsked = true;
+    Promise.resolve(Api.getSiteSettings()).then(s => {
+        const state = s && !s.fromCache && typeof s.landingState === "string" ? s.landingState : "";
+        if (!state || state === "coming-soon" || state === "maintenance") return;
+        archiveLinksOpen = true;
+        document.querySelectorAll("a[data-archive-href]").forEach(a => {
+            a.setAttribute("href", a.getAttribute("data-archive-href"));
+            a.removeAttribute("data-archive-href");
+        });
+    }, () => { /* unreadable: they stay pointed at the landing page */ });
 }
 document.addEventListener("DOMContentLoaded", () => pointGatedLinksHome(document));
 

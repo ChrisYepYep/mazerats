@@ -254,16 +254,22 @@
 # own, so this serves home.html and js/guess.js opens the game when it sees
 # the path — the same trick /wizard/<room> uses. A rewrite, not a redirect,
 # so a link pasted as /guess keeps the address it was pasted as.
+#
+# THROUGH THE SHARE FUNCTION (1 Oct 2026), not straight to home.html, and
+# the same for /odd and /guides below: served as the file, a pasted link
+# unfurled with the archive's own title and description, and its canonical
+# said /home. share.js serves the same page with the window's own tags
+# (FIXED_PAGES there), without touching the database.
 [[redirects]]
   from = "/guess"
-  to = "/home.html"
+  to = "/.netlify/functions/share"
   status = 200
 
 # The Guides window (js/guides.js): /guides is the homepage with the window
-# open, and one guide is /guides?g=<id>.
+# open, and one guide is /guides?g=<id>. Its own preview tags, as /guess.
 [[redirects]]
   from = "/guides"
-  to = "/home.html"
+  to = "/.netlify/functions/share"
   status = 200
 
 # A guide's own address, on the same terms as /maze/:id below: the share
@@ -287,7 +293,7 @@
 # roster.
 [[redirects]]
   from = "/odd"
-  to = "/home.html"
+  to = "/.netlify/functions/share"
   status = 200
 
 # Fallin' Furni. A page of its own rather than a window on the homepage, unlike

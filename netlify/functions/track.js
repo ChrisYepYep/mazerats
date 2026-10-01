@@ -135,23 +135,38 @@ async function overLimit(db, event) {
    site_events by `at` would let a sender hide its rows from the count.
    Keyed by the minute alone: nothing about any caller is on it. The TTL
    index on `at` sweeps old minutes with the per-address rows. */
-async function overGlobal(db, rows) {
-    const minute = new Date(Math.floor(Date.now() / 60000) * 60000);
-    const doc = await db.collection(LIMITS).findOneAndUpdate(
-        { _id: `global:${minute.toISOString()}` },
-        { $inc: { n: rows }, $setOnInsert: { at: minute } },
+/* The first bump of a minute (or a day) is an upsert, and two of those
+   racing can have the second refused with E11000 — which, thrown out to the
+   handler's catch, dropped that batch whole. By then the counter exists, so
+   the same bump once more is an ordinary update (1 Oct 2026; bumpHourly in
+   _errors.js does the same). Every minute's first second on launch day is
+   exactly when two batches arrive together. */
+async function bump(db, id, rows, onInsert) {
+    const run = () => db.collection(LIMITS).findOneAndUpdate(
+        { _id: id },
+        { $inc: { n: rows }, $setOnInsert: onInsert },
         { upsert: true, returnDocument: "after" }
     );
+    let doc;
+    try {
+        doc = await run();
+    } catch (e) {
+        if (!e || e.code !== 11000) throw e;
+        doc = await run();
+    }
+    // Either driver shape: the document, or { value }.
+    return doc && doc.value !== undefined ? doc.value : doc;
+}
+
+async function overGlobal(db, rows) {
+    const minute = new Date(Math.floor(Date.now() / 60000) * 60000);
+    const doc = await bump(db, `global:${minute.toISOString()}`, rows, { at: minute });
     if (Boolean(doc) && doc.n > GLOBAL_ROWS_PER_MIN) return true;
     /* The day's counter, the same way. Bumped only by batches the minute
        let through, so a burst refused above does not also eat into the day.
        `dayAt`, not `at` — see DAY_COUNTER_KEEP_S. */
     const day = new Date(Math.floor(Date.now() / 86400000) * 86400000);
-    const daily = await db.collection(LIMITS).findOneAndUpdate(
-        { _id: `global-day:${day.toISOString().slice(0, 10)}` },
-        { $inc: { n: rows }, $setOnInsert: { dayAt: day } },
-        { upsert: true, returnDocument: "after" }
-    );
+    const daily = await bump(db, `global-day:${day.toISOString().slice(0, 10)}`, rows, { dayAt: day });
     return Boolean(daily) && daily.n > GLOBAL_ROWS_PER_DAY;
 }
 const KEEP_DAYS = 60;              // matches the retention the policy states

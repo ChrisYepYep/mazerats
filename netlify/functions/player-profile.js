@@ -22,7 +22,7 @@
    worked out over every player, not only the ten a board shows — being
    27th is still worth knowing when the board stops at 10. */
 const { getDb } = require("./_db");
-const { playerFrom, playerView } = require("./_player");
+const { playerFrom, playerView, sessionRevoked, clearCookie } = require("./_player");
 const { today } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { totalOf } = require("./_speed");
@@ -255,7 +255,11 @@ exports.handler = async (event) => {
             // nickLocked too (29 Sept 2026): playerView reads it off this
             // row, and a projection that left it out made every Profile
             // report the nickname unlocked, whatever the admins had set.
-            db.collection("players").findOne({ id }, { projection: { _id: 0, joinedAt: 1, name: 1, avatar: 1, nick: 1, nickAsked: 1, nickLocked: 1 } }),
+            // sv for the revocation check below (30 Sept 2026), and svStrict
+            // with it (1 Oct 2026): sessionRevoked reads that flag for a
+            // cookie from before session versions, which "Sign out on every
+            // device" revokes — left out, those were never signed out here.
+            db.collection("players").findOne({ id }, { projection: { _id: 0, joinedAt: 1, name: 1, avatar: 1, nick: 1, nickAsked: 1, nickLocked: 1, sv: 1, svStrict: 1 } }),
             guessCol.find({ playerId: id, ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
             dailyCol.find({ playerId: id, game: "odd", ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
             boardTotals(guessCol, dailyCol, launch),
@@ -266,6 +270,17 @@ exports.handler = async (event) => {
             ]).toArray(),
             bannedIds(db)
         ]);
+
+        /* A REVOKED SESSION (30 Sept 2026; see SESSION VERSIONS in
+           _player.js) is signed out here as it is on `me`: a forgotten
+           player's old tab asked this and was answered from the cookie as if
+           nothing had happened — their name, their avatar, "Rat since". 401
+           with the cookie cleared; the Profile answers it by asking `me`. */
+        if (sessionRevoked(player, profile)) {
+            const out = json(401, { error: "Not signed in" });
+            out.headers = { ...out.headers, "Set-Cookie": clearCookie() };
+            return out;
+        }
 
         // Their own totals, fresh from their own rows; null means no place.
         const myGuess = guessRows.length ? sumPoints(guessRows) : null;

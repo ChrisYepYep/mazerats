@@ -442,6 +442,40 @@ async function recordGuess(db, ensureUniqueIndex, day, playerId, round, name, de
     return { error: "busy" };
 }
 
+/* A day played signed out and filed by claim after signing in, written
+   down here as well (1 Oct 2026), as the moves the claim was judged from.
+
+   Nothing else records it: a claim has no moves on file by definition
+   (that is what makes it one), so the account's second device was told
+   the day was `filed` with no progress, and offered the splash and the
+   rounds as if nothing had been played — then its finish was answered
+   "already" with the claimed score, and the card and the board
+   disagreed. Written, the deal reply carries the day as played and the
+   second device shows it finished, as it would a day played signed in.
+
+   `moves` is per round in the stored shape — Odd One Out's
+   { tile, right }, Guess the Maze's { guesses, done, won, tries } — all
+   stamped now and marked, under noClock: a claim was never timed and this
+   must never read as a clock. Only onto a row with no moves (a start with
+   nothing after it, or no row at all); one that has moves already raced
+   this, and keeps them. Never counted for anything: the day is filed. */
+async function recordClaimed(db, ensureUniqueIndex, game, day, playerId, moves) {
+    const col = db.collection(COLLECTION);
+    await ensureIndexes(col, ensureUniqueIndex);
+    const at = new Date();
+    const set = { noClock: true };
+    (moves || []).forEach((m, i) => {
+        set["moves." + markKey(i)] = { ...m, at };
+        set["marks." + markKey(i)] = at;
+    });
+    try {
+        await col.updateOne({ game, day, playerId, moves: { $exists: false } },
+            { $set: set, $setOnInsert: { at } }, { upsert: true });
+    } catch (e) {
+        if (!(e && e.code === 11000)) throw e;
+    }
+}
+
 /* A player's day taken away, for an administrator's reset (daily-games.js):
    the start, every mark and every move, so the day given back really does
    start again rather than finding its rounds already played. */
@@ -484,6 +518,14 @@ function dayBonus(clock, right, now) {
    shape-and-size rule the other endpoints that take a POST from the page
    keep. */
 const MAX_START_BODY = 512;
+
+/* And the finishing request, whose body is a day's picks or guesses: five
+   tile numbers, or five rounds of at most three maze names. A few hundred
+   bytes, a few KB with long names — so 16KB is far past any real one. It had
+   no cap at all (30 Sept 2026): the whole body was parsed whatever its size,
+   up to the platform's own limit of megabytes, before anything looked at
+   it. Checked before the parse, in both scores endpoints. */
+const MAX_FINISH_BODY = 16 * 1024;
 
 /* ----------------------------------------------------------------------
    THE CAP ON SIGNED-OUT VERDICTS
@@ -606,17 +648,90 @@ const isPractice = (row, cut) => Boolean(row) && beforeCut(cut, timeOf(row.at));
 
 /* A practice row set aside, now the cut has passed. Deleted by its own
    `at` as read, so a fresh start another device wrote a moment ago (a
-   different `at`) can never be the one taken away. */
+   different `at`) can never be the one taken away.
+
+   Noted as PRACTISED first (notePractised below; 1 Oct 2026), and before
+   the delete, so a note that fails to write leaves the row where it is
+   and the request fails (503) rather than the run vanishing unrecorded. */
 async function dropPractice(db, game, day, playerId, row) {
     if (!row || row.at == null) return 0;
+    await notePractised(db, game, day, playerId, "start-row");
     const res = await db.collection(COLLECTION).deleteMany({ game, day, playerId, at: row.at });
     return (res && res.deletedCount) || 0;
 }
 
+/* ----------------------------------------------------------------------
+   NO SPEED BONUS AFTER PRACTICE (1 Oct 2026)
+
+   Practice deals the same five rounds as the real day — it IS the day,
+   played early — so a player whose practice run was set aside at the cut
+   starts the real rounds knowing every answer, and answering each at the
+   1.2s floor is most of 180 bonus: the top of launch day's board for
+   whoever looked first. The simple fix, and Chris's: anyone who practised
+   launch day earns no speed bonus on it. They still play, are still
+   filed and listed, on their base points, exactly like an untimed day.
+
+   One note per (game, day, player) in daily_practised, written once and
+   never taken away — not by the practice row's drop, and not by an
+   administrator's reset (forgetDay), so a reset launch day still earns no
+   bonus. The finish reads it (practisedOn) and files the day with no clock.
+
+   HOW THE SERVER KNOWS a run happened, which is the whole difficulty:
+
+     - signed in: the practice run's own start row (daily_starts, `at`
+       before the cut). Every way past the cut goes through dropPractice —
+       the next start, or a move on the old run — and that writes the note.
+       A day filed before the cut by an older server is noted as it gives
+       way (the finish, in both endpoints). Reliable.
+     - signed in, Guess the Maze's account mirror: a day saved to
+       player_data before the cut is stamped practice there (player-data.js),
+       and a stamped copy with a guess in it writes the note too — so a run
+       played signed out and then signed into before the cut is caught.
+     - signed out: the server records nothing against anybody, so it
+       cannot know on its own. The answers it sends a signed-out player
+       before the cut (the start's first round, every verdict) say
+       `practice`, the page remembers that for the day (Daily.move and
+       Daily.opening in js/daily.js), and its signed-in start later says
+       `practised: true`, which writes the note. That covers the same
+       browser: the ordinary way an early player signs in on launch day.
+       It does NOT cover a different browser or device, a private window,
+       or cleared storage — the page is the only witness, and it is this
+       one's word. That is the private-window route the notes at the top of
+       this file already accept.
+
+   Matching by NETWORK was considered and left out: the signed-out verdict
+   counters know which networks played before the cut, but a phone
+   network's shared address or a household's would take the bonus off
+   people who never practised, on the one morning it matters most. */
+const PRACTISED_COLLECTION = "daily_practised";
+const practisedId = (game, day, playerId) => `${game}:${day}:${playerId}`;
+
+let practisedIndexed = null;
+async function notePractised(db, game, day, playerId, why) {
+    const col = db.collection(PRACTISED_COLLECTION);
+    if (!practisedIndexed) {
+        // Housekeeping only, as for the starts: read on its own day.
+        practisedIndexed = col.createIndex({ at: 1 }, { expireAfterSeconds: 2 * 24 * 60 * 60 }).catch(() => {});
+    }
+    await col.updateOne(
+        { _id: practisedId(game, day, playerId) },
+        { $setOnInsert: { game, day, playerId, why: String(why || "").slice(0, 20), at: new Date() } },
+        { upsert: true }
+    );
+}
+
+// Whether a player is noted as having practised the day. Throws on a read
+// that fails, so the finish answers 500 and is sent again rather than
+// filing a bonus it could not check.
+async function practisedOn(db, game, day, playerId) {
+    const doc = await db.collection(PRACTISED_COLLECTION).findOne({ _id: practisedId(game, day, playerId) }, { projection: { _id: 1 } });
+    return Boolean(doc);
+}
+
 module.exports = {
-    COLLECTION, ROUND_BONUS_SECONDS, NO_TIME, TOTAL, MAX_START_BODY, MIN_MOVE_MS,
+    COLLECTION, ROUND_BONUS_SECONDS, NO_TIME, TOTAL, MAX_START_BODY, MAX_FINISH_BODY, MIN_MOVE_MS,
     ANON_COLLECTION, ANON_MULTIPLE, ANON_SLACK,
     totalOf, roundBonusFor, markRound, recordStart, progressFor, clockOf, clockFor, movesOf, lastMarkAt,
-    recordOddPick, recordGuess, forgetDay, dayBonus, normalise, optionFor, anonMoveLimit, claimAnonMove,
-    beforeCut, isPractice, dropPractice
+    recordOddPick, recordGuess, recordClaimed, forgetDay, dayBonus, normalise, optionFor, anonMoveLimit, claimAnonMove,
+    beforeCut, isPractice, dropPractice, PRACTISED_COLLECTION, notePractised, practisedOn
 };

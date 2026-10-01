@@ -954,6 +954,19 @@ exports.handler = async (event) => {
 
         if (event.httpMethod === "GET") {
             if (!(await hasAccount(event))) return UNAUTHORIZED;
+            /* The counts alone (?counts=1, 30 Sept 2026), for the Nav's badge
+               in js/admin-dead-ends.js. It asked for ?status=new and threw
+               the list away: up to 300 whole leads on every sign-in, for one
+               number. No sweep either — that is the queue read's job. */
+            const countByStatus = async () => {
+                const counts = await db.collection("dead_end_leads").aggregate([
+                    { $group: { _id: "$status", n: { $sum: 1 } } }
+                ]).toArray();
+                const byStatus = { new: 0, accepted: 0, rejected: 0 };
+                counts.forEach(c => { byStatus[c._id] = c.n; });
+                return byStatus;
+            };
+            if (q.counts === "1") return json(200, { counts: await countByStatus() });
             await sweepOrphans(db).catch(() => {});
             const status = text(q.status) || "new";
             const filter = status === "all" ? {} : { status };
@@ -981,12 +994,7 @@ exports.handler = async (event) => {
                 .sort({ createdAt: -1 })
                 .limit(300)
                 .toArray();
-            const counts = await db.collection("dead_end_leads").aggregate([
-                { $group: { _id: "$status", n: { $sum: 1 } } }
-            ]).toArray();
-            const byStatus = { new: 0, accepted: 0, rejected: 0 };
-            counts.forEach(c => { byStatus[c._id] = c.n; });
-            return json(200, { leads: list, counts: byStatus });
+            return json(200, { leads: list, counts: await countByStatus() });
         }
 
         // refuseWrite answers a missing account with the 401 this did by

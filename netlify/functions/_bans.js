@@ -194,15 +194,22 @@ function mostSevere(docs, now = Date.now()) {
     return best;
 }
 
-// What callers are given: never the target itself, never who made it.
+/* What callers are given: never the target itself, never who made it.
+   `fromPlayer` (1 Oct 2026) is a "nethash" ban's player, the one whose
+   row the code was taken from (bans.js keeps it as `playerId`), or null:
+   `me` (banView in discord-auth.js) shows the reason only to the person
+   it was written about, never to a stranger who shares their network. It
+   is for that test on the server and is never sent to the page. */
 function summary(doc) {
     if (!doc) return null;
     const u = untilOf(doc);
+    const kind = kindOf(doc);
     return {
         level: levelOf(doc),
         until: u ? u.toISOString() : null,
         reason: typeof doc.reason === "string" ? doc.reason : "",
-        kind: kindOf(doc)
+        kind,
+        fromPlayer: kind === "nethash" && typeof doc.playerId === "string" ? doc.playerId : null
     };
 }
 
@@ -268,7 +275,7 @@ async function matchingBans(db, keys) {
     if (hit && Date.now() - hit.at < MEMO_MS) return hit.docs;
 
     const found = await db.collection(COLLECTION)
-        .find({ $or: or }, { projection: { _id: 0, kind: 1, value: 1, ip: 1, net: 1, level: 1, until: 1, reason: 1 } })
+        .find({ $or: or }, { projection: { _id: 0, kind: 1, value: 1, ip: 1, net: 1, level: 1, until: 1, reason: 1, playerId: 1 } })
         .toArray();
     const docs = found.filter(d => banMatches(d, keys));
     if (memo.size >= MEMO_MAX) memo.clear();
@@ -320,9 +327,19 @@ const NICK_REQUIRED_MESSAGE = "Set a new nickname to play.";
 const nickRequiredReply = () => reply(403, { error: NICK_REQUIRED_MESSAGE, nickRequired: true });
 const unavailableReply = () => reply(503, { error: "That can't be saved just now. Try again in a minute." });
 
+/* A revoked session's refusal (30 Sept 2026), with the cookie cleared as
+   `me` clears it, so the page stops sending a session that can never work
+   again. The page answers a 401 by asking `me`, which shows it signed out. */
+function revokedReply() {
+    const { clearCookie } = require("./_player");
+    const r = reply(401, { error: "Not signed in" });
+    r.headers = { ...r.headers, "Set-Cookie": clearCookie() };
+    return r;
+}
+
 /* The gate every player or visitor WRITE goes through. Returns the response
-   to send instead — 403 banned, 403 nickRequired, or 503 — or null to carry
-   on.
+   to send instead — 403 banned, 403 nickRequired, 401 for a revoked session
+   (see the end), or 503 — or null to carry on.
 
    `playerId` is the signed-in player's, or null for a signed-out visitor
    (whose network is still checked). `game: true` for a game's writes, which
@@ -342,23 +359,42 @@ async function writeRefusal(db, event, playerId, { game = false } = {}) {
         return unavailableReply();
     }
     if (ban) return bannedReply(ban);
+    const { playerFrom, sessionRevoked } = require("./_player");
+    const who = playerId ? playerFrom(event) : null;
+    const mine = who && String(who.id) === String(playerId) ? who : null;
     if (game && playerId) {
         try {
-            const row = await db.collection("players").findOne({ id: String(playerId) }, { projection: { _id: 0, nickRejected: 1, sv: 1 } });
+            const row = await db.collection("players").findOne({ id: String(playerId) }, { projection: { _id: 0, nickRejected: 1, sv: 1, svStrict: 1 } });
             /* A revoked session (30 Sept 2026): the same read tells whether
                this cookie's session version is still the row's — a forgotten
                player's row is gone, so an old cookie cannot keep filing
                scores. See SESSION VERSIONS in _player.js. `findOne` gives
                null for a real "no row", which is what sessionRevoked needs. */
-            const { playerFrom, sessionRevoked } = require("./_player");
-            const who = playerFrom(event);
-            if (who && String(who.id) === String(playerId) && sessionRevoked(who, row)) {
-                return reply(401, { error: "Not signed in" });
-            }
+            if (mine && sessionRevoked(mine, row)) return revokedReply();
             if (row && row.nickRejected && typeof row.nickRejected === "object") return nickRequiredReply();
         } catch (e) {
             console.error("bans: could not read the players row for a game write", e);
             return unavailableReply();
+        }
+    } else if (mine) {
+        /* EVERY PLAYER WRITE, not only a game's (30 Sept 2026). Only the
+           game writes asked, so a forgotten player's old phone — its session
+           still carrying the version of a row the forget deleted — went on
+           PUTting its ticks to player-data.js, whose upsert made their
+           player_state again under their Discord id, and went on filing
+           contact messages and Missing Pieces leads as "(signed in)" with
+           that id. One indexed read. Since 1 Oct 2026 for a session with no
+           version too, which "Sign out on every device" revokes (svStrict;
+           see sessionRevoked in _player.js) — `me` gives every such session
+           a version at its first page load, so they are few and short-lived.
+           It fails OPEN, unlike the game path: this is a
+           second line behind the forget, and a players-row blip should not
+           refuse a contact message the bans lookup has already let through. */
+        try {
+            const row = await db.collection("players").findOne({ id: String(playerId) }, { projection: { _id: 0, sv: 1, svStrict: 1 } });
+            if (sessionRevoked(mine, row)) return revokedReply();
+        } catch (e) {
+            console.error("bans: could not read the players row to check the session; letting the write through", e);
         }
     }
     return null;

@@ -3,7 +3,8 @@
 
    Reached as /maze/<slug>, /event/<slug> or /guides/<slug> (see the
    rewrites in netlify.toml, which are 200s rather than redirects so the page
-   is served at the address that was pasted).
+   is served at the address that was pasted). And, since 1 Oct 2026, as
+   /guess, /odd and /guides, the windows' own addresses — see FIXED_PAGES.
 
    ONE ADDRESS FOR PEOPLE AND FOR PREVIEWS. This used to answer with a small
    stand-in page carrying the record's preview tags and a redirect on to
@@ -33,6 +34,16 @@ const { resolveSlug, isRetired, loadRetired, PROJECTION: SLUG_FIELDS } = require
    hitting the database twenty times. The browser revalidates every time, as
    it does for home.html served as a file. */
 const CACHE = "public, max-age=0, must-revalidate, s-maxage=600, stale-while-revalidate=86400";
+/* And the same life in the DURABLE cache (1 Oct 2026), which is opt-in and
+   was never asked for: production answered a record's page with
+   `"Netlify Durable"; fwd=bypass`, so every edge node that had not seen the
+   page ran this function and read the whole collection for itself — the
+   same trap CDN_CACHE in _cache.js describes for /rooms. A link pasted into
+   a busy channel on launch day is exactly that crowd. Only on a real
+   record's page; the not-found and fresh answers keep their own. Netlify
+   reads this in place of Cache-Control at the edge and never passes it on,
+   so the browser still revalidates every time. */
+const CDN_CACHE = "public, durable, s-maxage=600, stale-while-revalidate=86400";
 
 const PATH_KINDS = { maze: "maze", event: "event", guides: "guide" };
 const PREFIX = { maze: "maze", event: "event", guide: "guides" };
@@ -71,6 +82,9 @@ function slugFromPath(event) {
     if (event.rawUrl) {
         try { pathname = new URL(event.rawUrl).pathname; } catch (e) { /* keep event.path */ }
     }
+    // A window's own address (1 Oct 2026): see FIXED_PAGES below.
+    const page = /^\/(guess|odd|guides)\/?$/.exec(pathname);
+    if (page) return { page: page[1] };
     const m = /^\/(maze|event|guides)\/([^/]+)\/?$/.exec(pathname);
     if (!m) return undefined;
     /* A stray % in a pasted link ("/maze/100%-maze") makes decodeURIComponent
@@ -182,7 +196,7 @@ function withTags(html, t) {
         `<meta name="description" content="${e(t.description)}">`,
         `<link rel="canonical" href="${e(t.canonical)}" data-archive="${archive.canonical}">`,
         `<meta property="og:site_name" content="Maze Rats">`,
-        `<meta property="og:type" content="article">`,
+        `<meta property="og:type" content="${t.type === "website" ? "website" : "article"}">`,
         `<meta property="og:title" content="${e(t.title)}">`,
         `<meta property="og:description" content="${e(t.description)}">`,
         `<meta property="og:image" content="${e(t.image)}">`,
@@ -409,6 +423,42 @@ function tagsFor(kind, record, origin, slug) {
     };
 }
 
+/* THE WINDOWS' OWN ADDRESSES (1 Oct 2026). /guess, /odd and /guides are
+   the archive with a window open, and they were served as home.html as it
+   stands — the archive's title, description and canonical /home — so a
+   daily result or the Guides pasted into Discord unfurled as the homepage,
+   and a crawler that runs no script read /guess and /odd (both in the
+   sitemap) as duplicates of /home. They come through here now with a fixed
+   set of tags each, no database needed. The page's script still sets the
+   same title and canonical when the window opens, and PageMeta (js/site.js)
+   puts the archive's back from data-archive when it closes, as for a
+   record's page. */
+const FIXED_PAGES = {
+    guess: {
+        title: "Guess the Maze",
+        description: "A daily game from the Maze Rats archive: five rooms a day, cropped from real Habbo Origins mazes. Name the maze each one came from."
+    },
+    odd: {
+        title: "Odd One Out",
+        description: "A daily game from the Maze Rats archive: four rooms, three from one Habbo Origins maze and one that wandered in. Spot the odd one out."
+    },
+    guides: {
+        title: "Guides",
+        description: "Guides to Habbo Origins mazes from the Maze Rats archive: the tricks they are built from, and how to get through them."
+    }
+};
+function fixedTags(page, origin) {
+    const f = FIXED_PAGES[page];
+    return {
+        title: f.title,
+        description: f.description,
+        image: `${origin}/assets/img/og-thumbnail.png`,
+        sized: true,
+        canonical: `${origin}/${page}`,
+        type: "website"
+    };
+}
+
 /* ---------- answering ---------- */
 
 /* WHICH QUERY STRINGS MAKE A DIFFERENT PAGE. By default the edge keys its
@@ -479,6 +529,10 @@ exports.handler = async (event) => {
     const MISS_CACHE = fresh ? "no-store" : "public, max-age=0, must-revalidate, s-maxage=60";
     const HIT_CACHE = fresh ? "no-store" : CACHE;
     if (!asked) return pageResponse(404, notFound, MISS_CACHE);
+    if (asked.page) {
+        return pageResponse(200, fixedTags(asked.page, origin), HIT_CACHE,
+            fresh ? undefined : { "Netlify-CDN-Cache-Control": CDN_CACHE });
+    }
     const { slug, kind } = asked;
 
     let found, record, gone;
@@ -550,11 +604,12 @@ exports.handler = async (event) => {
         };
     }
     if (!record) return pageResponse(404, notFound, MISS_CACHE);
-    return pageResponse(200, tagsFor(kind, record, origin, found.slug), HIT_CACHE);
+    return pageResponse(200, tagsFor(kind, record, origin, found.slug), HIT_CACHE,
+        fresh ? undefined : { "Netlify-CDN-Cache-Control": CDN_CACHE });
 };
 
 // For tools/check-share-headers.js and the local tests.
-exports._test = { withTags, PAGE_HEADERS, requestedSlug, tagsFor };
+exports._test = { withTags, PAGE_HEADERS, requestedSlug, tagsFor, fixedTags };
 
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally

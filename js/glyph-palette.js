@@ -242,6 +242,17 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const start = el.selectionStart != null ? el.selectionStart : el.value.length;
         const end = el.selectionEnd != null ? el.selectionEnd : start;
+        /* The field's own limit (1 Oct 2026). maxlength only stops typing;
+           setting .value goes straight past it, so a glyph inserted into a
+           full field stored the longer text or had the save refused. Both
+           sides count UTF-16 units, as the browser's own check does, so a
+           two-unit glyph needs two free. A selection being replaced frees
+           its own length. */
+        if (el.maxLength > 0 && el.value.length - (end - start) + ch.length > el.maxLength) {
+            el.focus();
+            say("That field is full");
+            return;
+        }
         el.value = el.value.slice(0, start) + ch + el.value.slice(end);
         const caret = start + ch.length;
         el.focus();

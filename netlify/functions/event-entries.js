@@ -68,6 +68,8 @@ const json = (statusCode, data) => ({
 
 // Anything off the wire is text or it is nothing — see contact.js.
 const text = (v) => (typeof v === "string" ? v : "");
+// A one-line field, as one line — see the POST's habboName.
+const oneLine = (s) => s.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
 
 const COLLECTION = "event_entries";
 const CONFIG = "event_entries_config";
@@ -87,7 +89,8 @@ const STATUSES = ["new", "reviewed", "winner", "rejected"];
 
 /* Throttles. An entry is one picture, so the caps are tighter than a lead's:
    a few in ten minutes (a wrong picture sent, then the right one), a day's
-   worth per network or player, and a ceiling across everybody an hour, which
+   worth per player — or per network for a signed-out entrant (1 Oct 2026;
+   see the POST) — and a ceiling across everybody an hour, which
    is what holds when many addresses arrive at once. Bytes are capped per day
    too, per sender and for the whole site, on the same one-round-trip counter
    dead-end-leads.js keeps for its uploads. Raised (30 Sept 2026, the
@@ -98,6 +101,11 @@ const WINDOW_LIMIT = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DAY_LIMIT = 10;
 const GLOBAL_PER_HOUR = 600;
+/* Per network over ALL its entries, signed in or not (1 Oct 2026, the
+   owner's numbers). Looser than an account's own, so a household or a LAN
+   party still fits; a farm of alt Discord accounts on one address doesn't. */
+const NET_WINDOW_LIMIT = 15;
+const NET_DAY_LIMIT = 40;
 const SENDER_BYTES_PER_DAY = 40 * 1024 * 1024;
 const GLOBAL_BYTES_PER_DAY = 400 * 1024 * 1024;
 
@@ -272,7 +280,12 @@ async function handlePost(event, db) {
         return json(400, { error: "Invalid request body" });
     }
 
-    const habboName = text(body.habboName).trim();
+    /* One line (30 Sept 2026): a name is typed into a one-line box, and the
+       Warren's "Usernames (.txt)" writes one name to a line for the draw —
+       so a hand-made request with a line break in the name put a second,
+       invented name on the list. Control characters and every run of
+       whitespace (line and paragraph separators included) become a space. */
+    const habboName = oneLine(text(body.habboName));
     if (!habboName) return json(400, { error: "What's your Habbo Origins username?" });
     if (habboName.length > HABBO_NAME_MAX) {
         return json(400, { error: `Username is too long. Please keep it to ${HABBO_NAME_MAX} characters or fewer.` });
@@ -313,19 +326,35 @@ async function handlePost(event, db) {
         if (prior) return answer(prior, 200);
     }
 
-    /* Counted by network OR account, so neither a new address nor a new
-       Discord account resets it; a caller with neither (no address from
-       Netlify) is held by the global cap alone. */
-    const who = [...(net ? [{ net }] : []), ...(player ? [{ "from.id": player.id }] : [])];
+    /* Counted by account for a signed-in entrant, and by network for a
+       signed-out one; a caller with neither (no address from Netlify) is
+       held by the global cap alone.
+
+       By account ALONE when signed in (1 Oct 2026). It used to be network OR
+       account, so neither a new address nor a new account reset it — but
+       then one household, LAN party or mobile address (CGNAT shares one
+       IPv4 between strangers) shared ONE day's ten entries between everyone
+       on it, and the eleventh was refused whoever sent it. A signed-out
+       entrant is counted by network among the signed-out entries only, so
+       a signed-in housemate's entries never use up theirs either. What
+       holds a crowd of fresh Discord accounts is the network's own looser
+       cap over everything it sends, signed in or not (1 Oct 2026), then the
+       hourly site-wide cap and the byte quotas. */
+    const who = player ? [{ "from.id": player.id }] : (net ? [{ net, from: null }] : []);
     const since = (ms) => new Date(Date.now() - ms);
     const countMine = (ms) => (who.length ? entries.countDocuments({ createdAt: { $gte: since(ms) }, $or: who }) : Promise.resolve(0));
+    const countNet = (ms) => (net ? entries.countDocuments({ createdAt: { $gte: since(ms) }, net }) : Promise.resolve(0));
     const countAll = () => entries.countDocuments({ createdAt: { $gte: since(60 * 60 * 1000) } });
     const TOO_MANY = "That's a lot of entries at once. Give it ten minutes.";
     const TOO_MANY_TODAY = "That's as many entries as can be sent today. Try again tomorrow.";
+    const NET_TOO_MANY = "That's a lot of entries from this network at once. Give it ten minutes.";
+    const NET_TOO_MANY_TODAY = "That's as many entries as can be sent from this network today. Try again tomorrow.";
     const BUSY = "Lots of entries are arriving just now. Try again in a few minutes.";
     // Cheap early refusals; the real checks follow the insert below.
     if (await countMine(WINDOW_MS) >= WINDOW_LIMIT) return json(429, { error: TOO_MANY });
     if (await countMine(DAY_MS) >= DAY_LIMIT) return json(429, { error: TOO_MANY_TODAY });
+    if (await countNet(WINDOW_MS) >= NET_WINDOW_LIMIT) return json(429, { error: NET_TOO_MANY });
+    if (await countNet(DAY_MS) >= NET_DAY_LIMIT) return json(429, { error: NET_TOO_MANY_TODAY });
     if (await countAll() >= GLOBAL_PER_HOUR) return json(429, { error: BUSY });
 
     const ev = await currentEvent(db);
@@ -362,6 +391,8 @@ async function handlePost(event, db) {
     const takeBack = () => entries.deleteOne({ id: entry.id });
     if (await countMine(WINDOW_MS) > WINDOW_LIMIT) { await takeBack(); return json(429, { error: TOO_MANY }); }
     if (await countMine(DAY_MS) > DAY_LIMIT) { await takeBack(); return json(429, { error: TOO_MANY_TODAY }); }
+    if (await countNet(WINDOW_MS) > NET_WINDOW_LIMIT) { await takeBack(); return json(429, { error: NET_TOO_MANY }); }
+    if (await countNet(DAY_MS) > NET_DAY_LIMIT) { await takeBack(); return json(429, { error: NET_TOO_MANY_TODAY }); }
     if (await countAll() > GLOBAL_PER_HOUR) { await takeBack(); return json(429, { error: BUSY }); }
     const quotaKey = player ? `p:${player.id}` : net;
     const refundBytes = await withinByteQuota(db, quotaKey, buffer.length);

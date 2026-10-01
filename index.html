@@ -129,9 +129,11 @@
                  Ships hidden and empty. js/welcome.js fills it only when
                  the site is gated AND a launch date is set — either
                  failing leaves the landing page exactly as it was before
-                 this existed. A date already past shows "Opening any
-                 moment now" rather than a clock; the page asks whether the
-                 site has opened either way (watchForOpening).
+                 this existed. At zero the whole block goes, its space
+                 kept so the title stays put, and a page loaded after the
+                 launch time never shows it (1 Oct 2026, the owner's: see
+                 countdownGone); the page asks whether the site has opened
+                 either way (watchForOpening).
 
                  aria-live="off" deliberately: a polite live region that
                  changes every second is a screen reader reading a clock
@@ -151,7 +153,9 @@
                 <p class="welcome-countdown-when" id="welcome-countdown-when"></p>
             </div>
 
-            <h1 class="hero-title welcome-title"><span id="welcome-maze">MAZE<img class="hand-rat" src="assets/img/rat_handstand.png" alt="" aria-hidden="true"></span><span>RATS</span></h1>
+            <!-- aria-label (1 Oct 2026): the two spans sit with no space
+                 between them, so a screen reader said one word, "MAZERATS". -->
+            <h1 class="hero-title welcome-title" aria-label="Maze Rats"><span id="welcome-maze">MAZE<img class="hand-rat" src="assets/img/rat_handstand.png" alt="" aria-hidden="true"></span><span>RATS</span></h1>
             <!-- No href by default and starts disabled — js/welcome.js is the
                  only thing that ever turns this into a working link, and only
                  once it's actually confirmed the site is open. Shipping this
@@ -166,6 +170,10 @@
                  the control existed at all, let alone why it did nothing.
                  js/welcome.js flips aria-disabled with the label. -->
             <a class="btn-enter is-disabled" id="welcome-btn" role="link" tabindex="0" aria-disabled="true"><img class="btn-sit-rat" src="assets/img/rat_sit3.png" alt="" aria-hidden="true"><span id="welcome-btn-label">Loading…</span></a>
+            <!-- With JavaScript off the button above says "Loading…" for
+                 ever, since only js/welcome.js ever changes it; this says
+                 why instead (1 Oct 2026). -->
+            <noscript><p class="welcome-noscript">Maze Rats needs JavaScript switched on.</p></noscript>
             <!-- THE SPOTLIGHT (30 Sept 2026, the owner's), under the button in
                  every state of the landing page. Whichever events the Warren
                  has put in it — ticked, and inside their spotlight dates —

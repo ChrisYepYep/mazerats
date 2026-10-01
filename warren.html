@@ -352,6 +352,15 @@
                                     <button type="button" class="btn-enter-mini" data-state="enter">Live</button>
                                 </div>
                                 <p class="ctl-status" id="landing-toggle-status" style="display:none;"></p>
+                                <!-- The switch-against-launch-date warning
+                                     (1 Oct 2026), on its own line for the
+                                     same reason as Fallin' Furni's above:
+                                     Live with the date still ahead makes
+                                     every game until then practice, and Soon
+                                     with the date gone leaves a plain Coming
+                                     Soon (the countdown goes at zero). See
+                                     sayLandingMismatch. -->
+                                <p class="ctl-status" id="landing-state-warning" style="display:none;"></p>
                             </div>
 
                             <!-- The countdown on the front door.
@@ -369,16 +378,28 @@
                                  js/admin.js does the conversion both ways.
                                  UTC because the countdown is to an instant
                                  and the people watching it are spread across
-                                 a dozen of them. -->
+                                 a dozen of them.
+
+                                 It is also where every leaderboard starts
+                                 (1 Oct 2026): the daily boards, Guess the
+                                 Maze, Profiles, the Players tab's activity
+                                 and, while it has no date of its own,
+                                 Fallin' Furni's all cut at this moment, and
+                                 anything played before it is practice. So
+                                 it is labelled the launch DATE, not the
+                                 countdown, and moving or clearing one that
+                                 has passed asks first. The stored field is
+                                 still launchAt. -->
                             <div class="ctl-card" id="launch-at" style="display:none;"
-                                 title="When the site opens. Shown as a countdown on the landing page while it is gated.">
-                                <span class="ctl-label">Launch countdown (UTC)</span>
+                                 title="When the site opens, and where every leaderboard starts counting. Shown as a countdown on the landing page while it says Coming Soon.">
+                                <span class="ctl-label">Launch date (UTC)</span>
                                 <div class="ctl-seg">
                                     <input type="datetime-local" id="launch-at-input" class="ctl-input"
                                            aria-label="Launch date and time, in UTC">
                                     <button type="button" class="ctl-btn" id="launch-at-save">Save</button>
                                     <button type="button" class="ctl-btn" id="launch-at-clear">Clear</button>
                                 </div>
+                                <p class="admin-hint">The landing page counts down to it while it says Coming Soon. It is also where the daily games' and Fallin' Furni's boards start counting: anything played before it is practice. It does not open the site; the Landing page switch does.</p>
                                 <p class="ctl-status" id="launch-at-status" style="display:none;"></p>
                             </div>
 
@@ -1167,6 +1188,7 @@
                                     </div>
                                     <div class="admin-activity-controls">
                                         <span class="admin-hint se-updated" id="entries-updated"></span>
+                                        <button class="admin-action-pill" id="entries-names-btn" type="button" title="Save every username the filters show, one to a line, and copy them">Usernames (.txt)</button>
                                         <button class="admin-action-pill" id="entries-refresh-btn" type="button">Refresh</button>
                                     </div>
                                 </header>

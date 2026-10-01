@@ -1733,5 +1733,31 @@ window.AdminRecolour = (function () {
         e.returnValue = "";
     });
 
-    return { mount, state, render };
+    /* Back to a blank editor, for the next account (1 Oct 2026). The editor
+       is mounted once for the life of the page, so a palette left unsaved at
+       log out — after admin.js's question — was still loaded for whoever
+       signed in next, its preview still painted over the page, and they
+       could Save it under their own name. admin.js calls this from doLogout
+       and when a different account signs in after a lock-out
+       (resetAccountPanels). The saved list is left: it is the same list for
+       every account, and the panel re-reads it before loading from it. A
+       theme read still in flight is dropped (state.loading). */
+    function reset() {
+        clearTimeout(applyTimer);
+        state.loading++;
+        state.palette = EMPTY();
+        state.current = null;
+        state.origin = null;
+        state.name = "";
+        state.loadedAt = null;
+        state.history = [];
+        state.filter = "";
+        state.group = "all";
+        state.dirty = false;
+        Recolour.clear();
+        say("");
+        if (root) render();
+    }
+
+    return { mount, state, render, reset };
 })();

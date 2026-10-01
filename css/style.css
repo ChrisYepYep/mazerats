@@ -12,7 +12,16 @@
     --amber: #ab8b64;
     --amber-bright: #c7a679;
     --parchment: #d8cbb2;
-    --parchment-dim: #a89a84;
+    /* Lifted from #a89a84 (1 Oct 2026). Every window's panel is --frame-bg,
+       and the quiet copy on it (guide body text, room and event
+       descriptions, the Guides and Alt Codes intros) measured 3.26:1 there,
+       short of the 4.5:1 body text needs. This is the same grey-brown made
+       just light enough (4.53:1), and it still reads as dim beside
+       --parchment (5.60:1). It stays in :root, not a classic-only rule,
+       because the Warren's Recolour reads and overrides the tokens here.
+       tools/themes.js derives the other palettes from it, so their
+       --parchment-dim came up too, nearer their --parchment. */
+    --parchment-dim: #c1b7a7;
     --danger: #a1462f;
     --ok: #6f8f4f;
     --unknown: #7a6e5a;
@@ -52,8 +61,16 @@
        classic does not change at all; tools/themes.js (solveAmberText)
        keeps each palette's --amber hue and lifts only its lightness, until
        it is back to classic's 5.1:1 on the row. Fills and borders stay on
-       --amber. */
-    --amber-text: #ab8b64;
+       --amber.
+
+       Classic no longer matches --amber exactly (1 Oct 2026). The 5.1:1
+       above is on --chrome-row, but the archive rows and the guide panels
+       sit on --frame-bg with a dark wash over it (#403529, #42372a), and
+       there it measured 3.6-3.8:1. #b89e7d is --amber's own hue lifted to
+       4.5:1 on the lighter of those (4.54 on the guide contents box, 4.68
+       on a row). tools/themes.js solves from --amber, not from this, so
+       the other palettes are unaffected. */
+    --amber-text: #b89e7d;
     --border: rgba(201, 151, 79, 0.35);
     --shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
 
@@ -77,6 +94,7 @@
        reference one definition. */
     --cursor-pointer: url('../assets/img/pointer.png') 2 0, pointer;
 }
+
 
 /* Self-hosted rather than a web font service — Volter (Goldfish) isn't
    distributed through any of those, only circulated as a font file within
@@ -297,8 +315,7 @@ html:has(> body[data-page="fallinfurni"]) {
        of its own beside it, one class short of the .is-open / .is-closing
        rules that set the animation, so it never won; and it left the
        stagger delays in, so the icons still arrived one after another. */
-    .gallery-photos .gallery-photo-btn,
-    .gallery-photo-icon {
+    .gallery-photos .gallery-photo-btn {
         animation-duration: 1ms !important;
         animation-delay: 0ms !important;
     }
@@ -961,7 +978,10 @@ a.header-badge:hover {
     letter-spacing: 0.6px;
     text-transform: uppercase;
     color: var(--parchment-dim);
-    opacity: 0.75;
+    /* 0.9, up from 0.75 (1 Oct 2026). At 8px it measured about 3-3.5:1 on
+       the header's gradient in classic; with the lifted --parchment-dim
+       and this it is 5.0:1 at the gradient's lightest. */
+    opacity: 0.9;
     line-height: 1;
 }
 
@@ -1589,7 +1609,15 @@ body[data-page="home"] .hero { padding-top: 18px; }
    short row, and tall enough that there is somewhere for the block to go.
    Anywhere else it goes back in the flow above the title and is allowed
    to move it: on a narrow screen the page scrolls anyway, and being able
-   to read the thing beats where it sits. */
+   to read the thing beats where it sits.
+
+   860px TALL NOW, NOT 620 (1 Oct 2026). The spotlight came after this was
+   measured, and under 860px tall it stays in the flow under the button
+   (see .welcome-promo), so the stack grew by its height and, centred, rose
+   by half of it. At 1366x768 that put the countdown's top at 26px, and
+   "The archive opens in" sat behind the 46px header. Gated on the same
+   height as the spotlight, the two are out of the flow together or in it
+   together. */
 .welcome-countdown {
     margin-bottom: 14px;
     text-align: left;
@@ -1609,7 +1637,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     z-index: 3;
 }
 
-@media (min-width: 700px) and (min-height: 620px) {
+@media (min-width: 700px) and (min-height: 860px) {
     .welcome-stack { position: relative; }
 
     .welcome-countdown {
@@ -1706,16 +1734,29 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: var(--parchment-dim);
 }
 
-/* At zero, while the page waits for the switch to actually be thrown. The
-   clock reads all noughts and would otherwise sit there looking broken;
-   dimming it puts the weight on the line above, which is the one now
-   saying something. */
-.welcome-countdown.is-due .welcome-countdown-clock {
-    opacity: 0.35;
+/* With JavaScript off (1 Oct 2026): says why the button under the title
+   reads "Loading…" for ever. Quiet, like the countdown's date line. */
+.welcome-noscript {
+    margin: 14px 0 0;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.72rem;
+    color: var(--parchment-dim);
+    text-align: center;
 }
 
-.welcome-countdown.is-due .welcome-countdown-label {
-    color: var(--amber-bright);
+/* At zero the whole block goes (1 Oct 2026, the owner's): js/welcome.js
+   adds .is-gone and, after the fade, sets visibility: hidden itself, so the
+   space is kept and the title does not move. This is only the fade. */
+.welcome-countdown {
+    transition: opacity 0.6s ease;
+}
+
+.welcome-countdown.is-gone {
+    opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .welcome-countdown { transition: none; }
 }
 
 /* A phone holds the four units at their full size only just — 4 x 44px plus
@@ -2678,8 +2719,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
    the grip's own top put the baseline 10px down — 5px above that last row,
    measured — so the title is dropped by --titlebar-title-drop. */
 .chrome-titlebar h1,
-.chrome-titlebar h2,
-.chrome-titlebar .chrome-title-text {
+.chrome-titlebar h2 {
     font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
     font-weight: 400;
     font-size: 0.5625rem;
@@ -3026,6 +3066,11 @@ body[data-page="home"] .hero { padding-top: 18px; }
     text-shadow: none;
     margin: 0 0 3px;
     letter-spacing: 0;
+    /* A name with no spaces in it (30 Sept 2026): measured at 375px, a
+       40-character one ran 240px out of its 165px column, over the row's
+       edge. break-word rather than anywhere, so it only ever breaks a word
+       that cannot fit and leaves the row's own sizing alone. */
+    overflow-wrap: break-word;
 }
 
 .chrome-list-row .row-creator {
@@ -3035,6 +3080,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
     line-height: 17.76px;
     color: var(--amber-text);
     margin: 0 0 4px;
+    overflow-wrap: break-word;
 }
 
 /* A shade up from --parchment-dim, and mixed rather than named.
@@ -3326,21 +3372,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
    dark fill; the outline keeps the difficulty colour itself. */
 .difficulty-extreme { color: #d47979; border-color: #731418; }
 
-/* ---------- tabs (docked directly under the titlebar, like Habbo's own
-   Public Spaces / Rooms tabs) — each tab is the actual btn_active.png /
-   btn_inactive.png pill asset, applied as a border-image so it stretches
-   cleanly to whatever width the row divides into. ---------- */
-
-.chrome-tabs {
-    display: flex;
-    gap: 6px;
-    padding: 8px 8px 6px;
-    border-bottom: 2px solid var(--chrome-border);
-}
-
 /* .chrome-tab itself is gone: no page and no script had rendered one since
    the tabs became .chrome-nav-btn, and its outline: none was a focus-ring
-   hazard waiting for someone to reuse the class. */
+   hazard waiting for someone to reuse the class. Its row, .chrome-tabs,
+   followed it on 30 Sept 2026 for the same reason: nothing renders one. */
 
 /* ---------- archive controls ---------- */
 
@@ -4040,19 +4075,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
 .sort-box select option:hover {
     background: var(--amber-bright);
     color: #241505;
-}
-
-.result-count {
-    text-align: center;
-    font-size: 0.78rem;
-    color: var(--parchment-dim);
-    margin-bottom: 10px;
-}
-
-.empty-state {
-    text-align: center;
-    padding: 50px 20px;
-    color: var(--parchment-dim);
 }
 
 /* ---------- modal ---------- */
@@ -4981,17 +5003,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* Progress of a running furni scan (admin sidebar). The scan is a
    background job, so this is fed by polling rather than by the request that
    started it. */
-/* The three scan buttons, stacked. .admin-action-pill is inline-flex, so
-   without a column flex container they sit shoulder to shoulder and wrap
-   mid-word down a 240px sidebar. Same 8px rhythm as .admin-sidebar-add
-   directly above them, so the rail reads as one list rather than two. */
-.furni-scan-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 10px;
-}
-
 .furni-progress { margin-top: 10px; }
 .furni-progress[hidden] { display: none; }
 
@@ -6997,20 +7008,10 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: var(--amber-bright);
 }
 
-/* Below this the sidebar stops being fixed and stacks under the content
-   (see .admin-sidebar's own query); the palette does the same rather than
-   floating over the form on a narrow screen. */
-@media (max-width: 900px) {
-    .glyph-palette {
-        position: static;
-        width: 100%;
-        right: auto;
-        margin-top: 24px;
-        max-height: none;
-    }
-    .glyph-palette-list { overflow-y: visible; }
-    .glyph-grid { grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); }
-}
+/* The palette's own narrow-screen block (a full-width static column under
+   900px) went on 30 Sept 2026: it could never show. The Warren hides the
+   palette outright under 1100px (see "narrow windows" below), and its
+   178px rule there came later and beat this one's width in any case. */
 
 @media (prefers-reduced-motion: reduce) {
     .glyph-btn { transition: none; }
@@ -7151,12 +7152,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
     font-size: 0.62rem;
 }
 
-.admin-toolbar {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 14px;
-}
-
 .admin-you-tag {
     color: var(--parchment-dim);
     font-size: 0.75rem;
@@ -7193,8 +7188,7 @@ body[data-page="home"] .hero { padding-top: 18px; }
 /* Same "smart pill" family as .admin-pill-btn (Bonus/Run-Through/etc.)
    rather than the heavy amber-gradient .btn-solid these used before — just
    sized up since these are real section-level actions ("+ Add a Maze"),
-   not small per-row toggles. Shared with the sidebar's own ADD MAZE/ADD
-   EVENT shortcuts (see .admin-sidebar-add) for the exact same look. */
+   not small per-row toggles. */
 .admin-action-pill {
     display: inline-flex;
     align-items: center;
@@ -7233,24 +7227,6 @@ body[data-page="home"] .hero { padding-top: 18px; }
     border-color: #fff8ec;
     color: #241505;
     box-shadow: 0 0 8px rgba(255, 248, 236, 0.65);
-}
-
-/* Sidebar shortcuts straight to the same two forms .admin-action-pill
-   already opens further down the (now internally-scrolling) list — sit
-   directly under the Landing Page controls so both live actions are
-   reachable without hunting through the page. */
-.admin-sidebar-add {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 4px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border);
-}
-
-.admin-sidebar-add .admin-action-pill {
-    width: 100%;
-    padding: 9px 12px;
 }
 
 /* Closed by default; js/admin.js opens one by adding .is-open rather than
@@ -9878,9 +9854,7 @@ body[data-page="admin"] #contributors-list {
 .admin-stage .admin-form > .admin-form-error,
 .admin-stage .admin-form > .admin-form-actions,
 .admin-stage .admin-form > .admin-tags-field,
-.admin-stage .admin-form > .admin-entrance-field,
 .admin-stage .admin-form > .admin-gallery-field,
-.admin-stage .admin-form > .admin-finish-field,
 .admin-stage .admin-form > .admin-related-field,
 .admin-stage .admin-form > .admin-furni-field,
 .admin-stage .admin-form > .admin-field:has(textarea) {
@@ -10810,14 +10784,6 @@ body[data-page="admin"] #activity-sessions {
     vertical-align: 1px;
 }
 
-/* One badge, two wordings — see timeline.html's own back link. */
-.badge-short { display: none; }
-
-@media (max-width: 640px) {
-    .badge-long { display: none; }
-    .badge-short { display: inline; }
-}
-
 /* The dated line What's New puts on each row: when it was added to the
    archive, and when it last changed. Only that view renders it (see
    whatsNewDatesHtml) — in the ordinary listings it would be a third date
@@ -11338,15 +11304,6 @@ body[data-page="admin"] #activity-sessions {
    that order). Each band is a heading, a line saying what it is, and its
    own grid, so the run of tiles has somewhere to breathe and the reader
    always knows which part of the archive they are in. */
-.furni-browse-intro {
-    margin: 0 0 16px;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    line-height: 1.6;
-    color: var(--parchment-dim);
-}
-
 .furni-band + .furni-band {
     margin-top: 22px;
     padding-top: 18px;
@@ -12200,6 +12157,15 @@ body[data-page="admin"] #activity-sessions {
     .side-spine-arrow { transition: none; }
     /* No slide to wait for, so no held visibility either. */
     .side-drawer .side-menu { transition: none; }
+    /* The phone's burger folding into a cross, and the Featured Mazes
+       arrow's quarter-turn: both still ran their 0.28s and 0.3s here,
+       measured with this block forced on (30 Sept 2026). Each simply
+       lands in its end state now, as the spine's own arrow above does.
+       Nothing listens for their transitionend. */
+    .side-spine-burger,
+    .side-spine-burger::before,
+    .side-spine-burger::after,
+    .chrome-nav-btn-arrow { transition: none; }
 }
 
 /* --- below 900px: a pop-out instead ------------------------------------
@@ -13374,18 +13340,6 @@ body[data-page="admin"] #activity-sessions {
     gap: 12px;
 }
 
-/* Names the second column, since "All time" in its range row could
-   otherwise be read as belonging to the board on the left. */
-.guess-board-title {
-    margin: 0 0 2px;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--amber-bright);
-}
-
 /* How many of the three games a row's points came from. Sits where the
    per-game board puts its result grid, because it does the same job there:
    the one piece of context that stops a number being misread. */
@@ -13409,16 +13363,6 @@ body[data-page="admin"] #activity-sessions {
     flex-direction: column;
     gap: 5px;
     text-align: left;
-}
-
-.guess-board-head {
-    margin: 0;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--unknown-text);
 }
 
 .guess-board-list {
@@ -14183,6 +14127,16 @@ body[data-page="admin"] #activity-sessions {
     width: 100%;
     max-width: 398px;
     height: auto;
+    /* The room's place is held before it arrives (30 Sept 2026). The
+       pictures are lazy, and an unloaded one was a 14px sliver, so every
+       one that came in grew the guide by about 220px under the reader —
+       and a jump from "In this guide", which measures where to scroll to
+       the moment it is pressed, landed short by that much per picture
+       still to come. "auto" first: a loaded picture keeps its own shape,
+       and 398 by 316 is the size the guide screenshots are taken at. This
+       holds in the 250px side column, and under 640px too now that the
+       phone figure is full width (1 Oct 2026). */
+    aspect-ratio: auto 398 / 316;
     image-rendering: auto;
     /* The frame's 8px less its 6px padding, so the picture's corners run
        parallel to the frame's. */
@@ -14225,6 +14179,11 @@ body[data-page="admin"] #activity-sessions {
 .guide-body .fmt-blank { height: 0; margin: 0 0 12px; }
 .guide-body ul,
 .guide-body ol { margin: 0 0 12px; padding-left: 22px; }
+/* A list numbered from 100 or more (1 Oct 2026): js/guide-text.js keeps
+   the number typed ("1999. The year it opened."), so the marker needs
+   room for up to five figures and its full stop. The doubled class beats
+   every list padding (guide, description, article) wherever it sits. */
+ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
 .guide-body li { margin-bottom: 4px; }
 .guide-body strong,
 .guide-summary strong { color: #efe4cc; }
@@ -14408,7 +14367,13 @@ body[data-page="admin"] #activity-sessions {
         grid-template-columns: minmax(0, 1fr);
         grid-template-areas: "head" "fig" "body";
     }
-    .guide-section:has(> .guide-figure) > .guide-figure { max-width: 320px; margin: 0 auto 12px; }
+    /* width: 100% so the figure is min(column, 320px) whether or not its
+       picture has arrived, and the picture's aspect-ratio has a width to
+       hold its place with (1 Oct 2026). Shrinking to fit the picture, an
+       unloaded one was a 14px sliver and the guide grew about 230px as
+       each came in. A picture narrower than 320px would now be stretched
+       to the column; every guide shot so far is 398x316. */
+    .guide-section:has(> .guide-figure) > .guide-figure { width: 100%; max-width: 320px; margin: 0 auto 12px; }
     .guide-title { font-size: 1.2rem; }
     /* On a phone the thumbnail goes under the introduction, at the size the
        section pictures use there. */
@@ -14557,8 +14522,11 @@ body[data-page="admin"] #activity-sessions {
     color: #fff8ec;
 }
 
-/* Mapped in the font but drawing nothing (js/glyphs.js measures each). */
-.glyphs-cell.is-blank { opacity: 0.42; }
+/* Mapped in the font but drawing nothing (js/glyphs.js measures each).
+   Only the glyph fades, not the tile (1 Oct 2026): faded whole, its
+   "Alt+0129" fell to about 2.4:1, and the tile is still a copy button
+   whose label has to be read. */
+.glyphs-cell.is-blank .glyphs-glyph { opacity: 0.42; }
 
 /* The glyph itself at Volter's own size, 0.5625rem (9px), in the bold
    cut. The bold cut lacks some of the upper-range glyphs; for those the
@@ -16307,15 +16275,6 @@ textarea.ctl-input.de-note {
    anything wanting to be bigger reaches for Montserrat rather than scaling
    this. Restating the weight matters for the same reason: 700 would silently
    swap in the separately registered bold cut. */
-.daily-eyebrow {
-    margin: 0;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    font-size: 0.5625rem;
-    font-weight: 400;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: #8a6a3d;
-}
 
 /* ---------- while it is being played ---------- */
 
@@ -17842,7 +17801,6 @@ body.is-logging-out * {
 @media (max-width: 360px) {
     .chrome-titlebar h1,
     .chrome-titlebar h2,
-    .chrome-titlebar .chrome-title-text,
     .modal .chrome-titlebar h2 {
         display: block;
         -webkit-line-clamp: unset;
@@ -17976,6 +17934,24 @@ body.is-logging-out * {
     padding-top: 10px;
     padding-bottom: 10px;
 }
+
+/* "Sign out on every device" (1 Oct 2026): the quieter third answer, a
+   link-shaped line under the pair rather than a third button beside them. */
+.signout-everywhere {
+    margin: 12px 0 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    color: inherit;
+    opacity: 0.85;
+    text-decoration: underline;
+    cursor: var(--cursor-pointer);
+}
+.signout-everywhere:hover { opacity: 1; }
+.signout-everywhere:focus-visible { opacity: 1; outline: 2px solid var(--amber-bright); outline-offset: 1px; }
 
 /* /warren's Forget a player section lived here until 29 Sept 2026; it is a
    per-player action in the Players tab now, styled with that tab at the end
@@ -18453,10 +18429,15 @@ body.is-viewer .admin-panel[data-panel="errors"] .se-write { display: none !impo
 .console-btn:disabled:hover { background: transparent; }
 
 /* 16px on a touch screen: below that, iOS zooms the whole page in when the
-   field takes focus, and leaves it zoomed after. */
+   field takes focus, and leaves it zoomed after.
+
+   input.nick-prompt-input, one element deeper (30 Sept 2026): the
+   prompt's own .nick-prompt-input rule further down sets 0.85rem at the
+   same one-class weight, and being later it won, so on a phone the
+   nickname prompt measured 13.6px and iOS zoomed on it after all. */
 @media (pointer: coarse) {
     .console-nick-input,
-    .nick-prompt-input { font-size: 16px; }
+    input.nick-prompt-input { font-size: 16px; }
 }
 
 /* ---- picking a game on the Profile ---- */
@@ -18844,6 +18825,14 @@ body[data-page="admin"] .ctl-seg .btn-enter-mini {
 .guides-body { max-height: min(clamp(380px, 76vh, 760px), calc(100dvh - 110px)); }
 .progress-body { max-height: min(clamp(380px, 70vh, 620px), calc(100dvh - 110px)); }
 .guides-preview .guides-body { max-height: none; }
+/* ...but the line above is unconditional, so it also capped a portrait
+   phone at 76vh (617px at 375x812), beating the phone blocks' own
+   calc(100dvh - 110px) (702px) by coming later. Restated for phones
+   (1 Oct 2026). The preview's none is more specific and still wins. */
+@media (max-width: 640px) {
+    .glyphs-body,
+    .guides-body { max-height: calc(100vh - 110px); max-height: calc(100dvh - 110px); }
+}
 
 /* iOS zooms the whole page in on a field whose text is under 16px, and
    leaves it zoomed. Warren's small fields — the Errors search and note, the
@@ -18990,9 +18979,11 @@ body[data-page="admin"] .ctl-seg .btn-enter-mini {
        (Cancel / Send, Save / Remove), so up and down only. --- */
     .console-btn:not(.console-play-btn),
     .console-link-btn,
+    .signout-everywhere,
     .console-missing-name { position: relative; }
     .console-btn::after,
-    .console-link-btn::after {
+    .console-link-btn::after,
+    .signout-everywhere::after {
         content: "";
         position: absolute;
         left: 0;
@@ -19198,8 +19189,7 @@ body[data-page="admin"] .ctl-seg .btn-enter-mini {
     image-rendering: pixelated;
 }
 
-.notice-text,
-.ban-text {
+.notice-text {
     margin: 0 0 16px;
     font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
     font-size: 0.5625rem;
@@ -19207,10 +19197,8 @@ body[data-page="admin"] .ctl-seg .btn-enter-mini {
     line-height: 1.6;
     overflow-wrap: anywhere;
 }
-.notice-text p,
-.ban-text p { margin: 0; }
-.notice-text p + p,
-.ban-text p + p { margin-top: 6px; }
+.notice-text p { margin: 0; }
+.notice-text p + p { margin-top: 6px; }
 
 /* The one line that says what happened, in the bold cut, as .signout-ask
    is: Volter Goldfish is drawn for one size, so emphasis is the cut. */
@@ -19234,29 +19222,10 @@ body[data-page="admin"] .ctl-seg .btn-enter-mini {
     justify-content: center;
 }
 
-/* ---- The banned screen: the page replaced ----
-   Over everything the pages put up, the loading screen, the console and
-   Fallin' Furni's rotate cover (9000) included, on the darkest colour the
-   site has rather than the usual see-through dim: there is nothing behind
-   it to see. */
-.modal-overlay.ban-screen {
-    z-index: 10000;
-    background: var(--bg-black);
-}
-body.is-banned { overflow: hidden; }
-
-.ban-body {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-}
-
-.ban-foot {
-    margin: 0;
-    font-size: 0.72rem;
-}
-.ban-foot a { color: var(--amber-bright); }
+/* The banned screen that stood here (.ban-screen, .ban-body, .ban-foot,
+   .ban-text, body.is-banned) was never drawn by any script: a banned
+   visitor is shown the Maintenance page instead (js/welcome.js). Removed
+   30 Sept 2026. */
 
 /* ==========================================================================
    Warren: bans and cool-downs (29 Sept 2026)
@@ -19472,4 +19441,33 @@ body.is-viewer #bans-add { display: none !important; }
     .chrome-list-row.ee-row { flex-wrap: wrap; }
     .chrome-list-row.ee-row .row-info { flex: 1 1 100%; }
     .chrome-list-row.ee-row .admin-row-actions { flex: 1 1 100%; justify-content: flex-start; margin-top: 6px; }
+}
+
+/* The Admins list does the same (1 Oct 2026). At 375 each row's Reset
+   Password and Delete squeezed the words to 118px, so "Admin · Added
+   2026-08-24" ran to three lines and the two-line clamp cut the date. */
+@media (max-width: 560px) {
+    .admin-panel[data-panel="admins"] .chrome-list-row { flex-wrap: wrap; }
+    .admin-panel[data-panel="admins"] .chrome-list-row .row-info { flex: 1 1 100%; }
+    .admin-panel[data-panel="admins"] .admin-row-actions { flex: 1 1 100%; justify-content: flex-start; margin-top: 6px; }
+}
+
+/* A filled gallery thumbnail says "Replace" on hover or drag, which a
+   tablet never does, so there nothing said a tap swaps the picture. On a
+   screen with no hover it shows all the time, over a lighter wash so the
+   picture still reads through it (1 Oct 2026). */
+@media (hover: none) {
+    .admin-gallery-thumb.admin-gallery-thumb-filled .admin-gallery-thumb-replace-text {
+        opacity: 1;
+        background: rgba(20, 14, 8, 0.55);
+    }
+}
+
+/* The guide's text links as touch targets (1 Oct 2026). "In this guide" is
+   up to fifteen buttons 22px tall at a 22px pitch, and "‹ All guides" and
+   "Copy link" were 19px, against the site's 30px floor for small controls.
+   About 32px each on a finger; the contents list simply grows. */
+@media (pointer: coarse) {
+    .guide-contents .guides-textbtn { padding: 5px 0; }
+    .guides-crumbs .guides-textbtn { min-height: 32px; }
 }

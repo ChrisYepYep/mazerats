@@ -1700,9 +1700,10 @@
     /* `force` is the call submitDay makes once the day has been recorded,
        and it has two jobs the ordinary call does not.
 
-       It goes past every cache in the way (the `fresh` parameter makes it a
-       different URL, so neither the browser's thirty seconds nor anything
-       at the edge can answer it with a board from before the row existed).
+       It goes past every cache in the way (the `mine` parameter, which the
+       server honours for the player whose day was just filed, so neither
+       the browser nor the edge can answer it with a board from before the
+       row existed).
 
        And it is never dropped. It used to return early if a load was
        already running — which it usually was, because arriving on the
@@ -1727,7 +1728,9 @@
            no refresh could ever get past it. A board that will not load is
            a disappointment, not a failure of the game; the day's own result
            is already on screen and stays there. */
-        const { status, body } = await Daily.request(force ? `${base}&fresh=${Date.now()}` : base, {
+        // `mine`, not a throwaway `fresh`, since 1 Oct 2026 — see boardUrl
+        // in js/daily.js and BOARD_VARY in netlify/functions/daily-scores.js.
+        const { status, body } = await Daily.request(force ? `${base}&mine=1` : base, {
             headers: { "Accept": "application/json" }
         });
         if (status === 200 && body) {
@@ -1834,7 +1837,7 @@
         // The filed day's base and bonus — just now, or already on file —
         // for the line under the points.
         if (sent && body && Number.isFinite(body.points)) {
-            served = { day: forDay, points: body.points, bonus: body.bonus || 0 };
+            served = { day: forDay, points: body.points, bonus: body.bonus || 0, practised: Boolean(body.practised) };
             if (state && state.day === forDay) drawBonus();
         }
         /* A practice run, answered and not filed: marked one if this page
@@ -2064,6 +2067,11 @@
                 // Everything is already in hand — one request fetched all
                 // four — so switching is a redraw, not a round trip.
                 renderBoards();
+                // The redraw took the pressed tab away, and the keyboard's
+                // place with it; the same tab in the new markup gets it back
+                // (30 Sept 2026, as Daily.boards).
+                const again = host.querySelector(`.guess-board-range[data-range="${boardRange}"]`);
+                if (again) again.focus({ preventScroll: true });
             });
         });
 
@@ -2092,10 +2100,28 @@
            (see open()). */
         const next = new Date(state.day + "T00:00:00Z");
         next.setUTCDate(next.getUTCDate() + 1);
+        /* A practice run of launch day counts to the CUT instead (1 Oct
+           2026): the real rooms are today's, from 08:00, and "Five new
+           rooms in 16h" under "nothing counts until 08:00" said the
+           opposite. A practice run of an earlier day counts to its
+           midnight as any day does. */
+        const cut = typeof state.practice === "string" ? Date.parse(state.practice) : NaN;
+        const launchDay = Number.isFinite(cut) && new Date(cut).toISOString().slice(0, 10) === state.day;
         const update = () => {
             // The server's now, not the device's: a wrong clock counted down
             // to a midnight that was not the day's.
-            const ms = next - (window.Daily && Daily.now ? Daily.now() : Date.now());
+            const at = window.Daily && Daily.now ? Daily.now() : Date.now();
+            if (launchDay) {
+                const left = cut - at;
+                if (left <= 0) {
+                    target.textContent = "Today's real rooms are open — close this and reopen it to play.";
+                    clearInterval(countdownTimer);
+                    return;
+                }
+                target.textContent = `Today's real rooms in ${Math.floor(left / 3600000)}h ${Math.floor((left % 3600000) / 60000)}m.`;
+                return;
+            }
+            const ms = next - at;
             if (ms <= 0) {
                 target.textContent = "Five new rooms are ready — close this and reopen it to play.";
                 clearInterval(countdownTimer);
@@ -2122,7 +2148,8 @@
             right: state.results.filter(r => r.won).length,
             of: ROUNDS,
             grid: state.results.map(squareFor).join(""),
-            path: "guess"
+            path: "guess",
+            practice: Boolean(state.practice)
         }, Daily.shareScore(s, dayPoints())));
     }
 
@@ -2207,7 +2234,7 @@
         // A day already filed brings its own figures, bonus included, so a
         // results card reopened later says what the board says.
         if (reply.score && Number.isFinite(reply.score.points)) {
-            served = { day: reply.day, points: reply.score.points, bonus: reply.score.bonus || 0 };
+            served = { day: reply.day, points: reply.score.points, bonus: reply.score.bonus || 0, practised: Boolean(reply.score.practised) };
         } else if (Array.isArray(reply.progress)) {
             /* And a day the server says is NOT on file forgets the figures
                kept for it, as in js/oddoneout.js: after an administrator's
@@ -2442,7 +2469,23 @@
                    record over this page's copy (applyRecorded). */
                 if (!reopened || !state) return;
                 if (!((signedIn() && state.day === today()) || state.practice)) return;
+                const wasDone = Boolean(state.done);
                 if (await refreshDay()) {
+                    /* Finished elsewhere since this page last looked (1 Oct
+                       2026): the day is banked into this device's record,
+                       and the account's figures are read again, as start()
+                       reads them — the card's Streak, Days played and
+                       All-time were behind until a reload. Odd One Out
+                       does the same on its reopen. */
+                    if (state && state.done && !wasDone) {
+                        localStats = loadStats();
+                        if (localStats.lastDay !== state.day && !state.practice) countDay();
+                        if (window.Account && Account.current) {
+                            const remote = await Account.fetchState();
+                            if (remote && remote.stats) accountStats = { ...localStats, ...remote.stats };
+                        }
+                        shownStats();
+                    }
                     renderAll();
                     prepareRound(state.round);
                 }

@@ -82,6 +82,7 @@
                 Account.ban = readBan(data && data.ban);
                 rememberBlock();
                 applyBan();
+                noticeWhoChanged();
             } catch (e) {
                 // No session, no network, or the function is not deployed.
                 // All three mean the same thing to every caller: signed out.
@@ -134,32 +135,63 @@
            otherwise, and the next page load signed them straight back in.
            So a failure keeps the signed-in state and says so. A POST, which
            discord-auth.js now insists on. */
-        async signOut() {
+        /* { everywhere: true } (1 Oct 2026) signs out every other device as
+           well: the server gives the account a new session version, so every
+           other session it has issued is revoked (see the sign-out in
+           discord-auth.js). Offered, quietly, from the "Sign out?" window. */
+        async signOut(opts) {
+            const everywhere = !!(opts && opts.everywhere);
             // Whatever is still queued for this account goes first, while
             // the session cookie is still good; after, it would be dropped.
             try { await flushState(); } catch (e) { /* nothing to undo */ }
             try {
                 // Leashed: the header button is disabled until this returns.
-                const res = await timedFetch(`${ENDPOINT}?action=signout`, {
+                const res = await timedFetch(`${ENDPOINT}?action=signout${everywhere ? "&everywhere=1" : ""}`, {
                     method: "POST",
                     credentials: "same-origin",
                     headers: { Accept: "application/json" }
                 });
                 if (!res.ok) throw new Error(String(res.status));
             } catch (e) {
+                /* Timed out (1 Oct 2026): the server may well have bumped the
+                   session version before the leash ran out — a cold function
+                   — so "still signed in everywhere" could be untrue. Say only
+                   what is known, and ask `me` again: if it did work, this
+                   device's own cookie is now revoked and the header follows. */
+                if (everywhere && e && e.name === "AbortError") {
+                    notice({
+                        title: "Couldn't Confirm",
+                        html: `<p class="notice-lines">Couldn't confirm — if you're still signed in on another device, try again.</p>`
+                    });
+                    try { Account.refresh(); } catch (e2) { /* the notice stands */ }
+                    return false;
+                }
                 notice({
                     title: "Couldn't Sign Out",
-                    html: `<p class="notice-lines">Couldn't sign you out — check your connection and try again.</p>`
+                    html: `<p class="notice-lines">${everywhere
+                        ? "Couldn't sign you out of your other devices — you're still signed in everywhere. Try again in a minute."
+                        : "Couldn't sign you out — check your connection and try again."}</p>`
                 });
                 return false;
             }
             Account.current = null;
             Account.unsure = false;
+            rememberWho("");
             /* The account's own ticks are taken back off this browser by
                home.js's dropAccountTicks, on the announce below; that is
                what stops the next person to sign in here uploading them. */
             announce();
             tellOtherTabs();
+            /* A plain sign-out and "every device" looked the same — the header
+               just said "Sign in" — so the second says it worked (1 Oct 2026).
+               A tick later, so the caller has already moved focus to the fresh
+               "Sign in" and the window hands it back there when closed. */
+            if (everywhere) {
+                setTimeout(() => notice({
+                    title: "Signed Out Everywhere",
+                    html: `<p class="notice-lines">Signed out on every device: here now, and anywhere else the next time it loads a page.</p>`
+                }), 0);
+            }
             return true;
         },
 
@@ -241,14 +273,41 @@
         if (typeof BroadcastChannel === "function") {
             signOutChannel = new BroadcastChannel(SIGNOUT_CHANNEL);
             signOutChannel.onmessage = e => {
-                if (e && e.data && e.data.type === "signout") Account.refresh();
+                if (e && e.data && (e.data.type === "signout" || e.data.type === "change")) Account.refresh();
             };
         }
     } catch (e) { signOutChannel = null; }
     if (!signOutChannel) {
         window.addEventListener("storage", e => {
-            if (e.key === SIGNOUT_KEY && e.newValue) Account.refresh();
+            if ((e.key === SIGNOUT_KEY && e.newValue) || e.key === WHO_KEY) Account.refresh();
         });
+    }
+
+    /* And signed IN in every tab (1 Oct 2026). Signing in happens in one
+       tab's address bar, so the others went on saying "Sign in" until they
+       were reloaded — while the shared cookie quietly filed their game
+       writes under the account. So the last answer `me` gave is kept in
+       WHO_KEY (the player's public board id, or "" for nobody; never the
+       Discord id), and a tab whose answer DIFFERS from it writes the new
+       one and says "change"; the others ask `me` for themselves. That
+       settles at once: their answers now match WHO_KEY, so they say
+       nothing. A failed `me` changes nothing (see refresh). Without
+       BroadcastChannel, the WHO_KEY write is the signal itself. */
+    const WHO_KEY = "mazerats_account_who";
+    function rememberWho(who) {
+        try { localStorage.setItem(WHO_KEY, who); } catch (e) { /* blocked: no broadcast either */ }
+    }
+    function noticeWhoChanged() {
+        const p = Account.current;
+        const who = p ? String(p.publicId || "signed-in") : "";
+        let was;
+        try { was = localStorage.getItem(WHO_KEY); } catch (e) { return; }
+        if ((was || "") === who) return;
+        rememberWho(who);
+        // A first visit, or a first since this shipped, says nothing for
+        // a signed-out answer: there is nobody to tell about.
+        if (was === null && !who) return;
+        try { if (signOutChannel) signOutChannel.postMessage({ type: "change" }); } catch (e) { /* the WHO_KEY write stands */ }
     }
     function tellOtherTabs() {
         try {
@@ -291,6 +350,12 @@
                 if (res.ok) {
                     Account.stored = await res.json();
                     storedListeners.forEach(fn => { try { fn(Account.stored); } catch (e) { /* its own problem */ } });
+                } else if (res.status === 401) {
+                    /* The session is over on the server — revoked, or its
+                       cookie cleared in another tab (30 Sept 2026; see
+                       writeRefusal in _bans.js). Asked, so the page stops
+                       showing a player whose saves are all refused. */
+                    signedOutUnderneath();
                 }
             } catch (e) { /* the local copy is already right; nothing to undo */ }
         })();
@@ -341,9 +406,22 @@
                 credentials: "same-origin",
                 keepalive: true
             });
+            if (res && res.status === 401) signedOutUnderneath();
             return !!(res && res.ok);
         } catch (e) { return false; }
     }
+
+    /* A 401 from a save: `me` is asked again, once a minute at most, so a
+       `me` that still says signed in (its own read failing) cannot loop. */
+    let askedAfter401 = 0;
+    function signedOutUnderneath() {
+        if (!Account.current || Date.now() - askedAfter401 < 60000) return;
+        askedAfter401 = Date.now();
+        Account.refresh();
+    }
+    // For any other page's write that gets the same 401 (the daily games;
+    // 1 Oct 2026), so they share the one-a-minute leash.
+    Account.sessionEnded = signedOutUnderneath;
     Account.forgetWalked = id => forget("walked", id);
     Account.forgetSaved = id => forget("saved", id);
 
@@ -642,7 +720,8 @@
             </button>`;
         const btn = document.getElementById("account-signout");
         if (btn) btn.addEventListener("click", async () => {
-            if (!(await confirmSignOut())) return;
+            const answer = await confirmSignOut();
+            if (!answer) return;
             /* Focus kept somewhere real for the length of the sign-out (it
                can take a few seconds: queued ticks are flushed first). A
                disabled button cannot hold focus, so it waits on the name
@@ -654,7 +733,7 @@
             btn.disabled = true;
             // Still signed in (the request failed, and a window says so):
             // the name goes back to being pressable.
-            if (!(await Account.signOut())) { btn.disabled = false; return; }
+            if (!(await Account.signOut({ everywhere: answer === "everywhere" }))) { btn.disabled = false; return; }
             const again = document.getElementById("account-signin");
             if (again && (!document.activeElement || document.activeElement === document.body || !btn.isConnected)) {
                 again.focus({ preventScroll: true });
@@ -665,7 +744,10 @@
     /* "Sign out?" — a small window in the site's own frame, the same
        .modal-overlay / .modal / chrome titlebar every other window wears.
 
-       Resolves true only for the Sign out button. The ×, Escape, a press on
+       Resolves true only for the Sign out button, and "everywhere" (also
+       truthy) for the quieter "Sign out on every device" line under the
+       pair (1 Oct 2026): the caller passes that on to Account.signOut as
+       { everywhere: true }. The ×, Escape, a press on
        the dimmed page around it and "Stay signed in" all answer no, and the
        window opens with focus on "Stay signed in", so a second Enter from
        the press that opened it cannot sign anyone out by accident.
@@ -706,6 +788,7 @@
                                 <button type="button" class="guess-btn guess-btn--lead" data-choice="yes">Sign out</button>
                                 <button type="button" class="guess-btn" data-choice="no">Stay signed in</button>
                             </div>
+                            <button type="button" class="signout-everywhere" data-choice="everywhere">Sign out on every device</button>
                         </div>
                     </div>
                 </div>`;
@@ -728,7 +811,8 @@
             overlay.finish = finish;
 
             overlay.querySelectorAll("[data-choice]").forEach(b => {
-                b.addEventListener("click", () => finish(b.dataset.choice === "yes"));
+                const c = b.dataset.choice;
+                b.addEventListener("click", () => finish(c === "everywhere" ? "everywhere" : c === "yes"));
             });
             overlay.querySelector(".chrome-close").addEventListener("click", () => finish(false));
             /* A press on the dimmed page closes it — but only a press that

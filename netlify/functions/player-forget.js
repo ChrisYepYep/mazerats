@@ -124,6 +124,8 @@ const PLACES = [
     { label: "daily_scores", collection: "daily_scores", filter: id => ({ playerId: id }) },
     // _speed.js: each day's start time and recorded moves.
     { label: "daily_starts", collection: "daily_starts", filter: id => ({ playerId: id }) },
+    // _speed.js: a note that a launch day was practised first (1 Oct 2026).
+    { label: "daily_practised", collection: "daily_practised", filter: id => ({ playerId: id }) },
     // daily-games.js: a reset ticket waiting to be collected, name on it.
     { label: "daily_resets", collection: "daily_resets", filter: id => ({ playerId: id }) },
     // ff-scores.js: the Fallin' Furni board, one best row per player.

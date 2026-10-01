@@ -84,6 +84,13 @@ exports.handler = async (event) => {
     if (!ids.every(id => typeof id === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(id))) {
         return json(400, { error: "ids must be plain record ids" });
     }
+    /* The run id is an argument too, and was passed through as sent (30
+       Sept 2026): one beginning "--" would be read by the scanner as a flag
+       of its own. The page makes "<ms>-<base36>" (newFurniRunId in
+       js/admin.js), which this passes. */
+    if (runId != null && (typeof runId !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$/.test(runId))) {
+        return json(400, { error: "runId must be a plain run id" });
+    }
 
     /* One scan at a time. They share the single furni_scans record, so a
        second run would overwrite the first's progress and leave the admin
@@ -106,7 +113,7 @@ exports.handler = async (event) => {
     // for when FurniIndex has catalogued something that was always in the
     // room but could not be matched before. See the flag in the scanner.
     if (additive) args.push("--additive");
-    if (runId) args.push("--run-id", String(runId));
+    if (runId) args.push("--run-id", runId);
 
     try {
         const child = spawn(process.execPath, args, {

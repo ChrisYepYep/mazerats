@@ -25,11 +25,13 @@
    a choice between double-counting and throwing history away. Derived, the
    question never arises. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { playerFrom } = require("./_player");
+const { playerFrom, sessionRevoked, clearCookie } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { today } = require("./_daily");
 const { launchCut, afterLaunch } = require("./daily-scores");
 const { writeRefusal } = require("./_bans");
+// notePractised — NO SPEED BONUS AFTER PRACTICE in _speed.js (1 Oct 2026).
+const speed = require("./_speed");
 
 const COLLECTION = "player_state";
 const SCORES = "guess_scores";
@@ -122,6 +124,17 @@ function cleanGuess(g) {
 
     const round = Number(g.round);
     const v = Number(g.v);
+    /* `practice` is KEPT too (30 Sept 2026): the launch cut, on a day played
+       before the site opened (PRACTICE BEFORE LAUNCH in _speed.js). It was
+       stripped with everything else not listed, so the mirror of a practice
+       run came back with nothing saying it was one — and js/guess.js, which
+       puts a practice run away once the cut has passed, adopted it from the
+       account as the real launch day (adoptAccountDay reads this very flag
+       to refuse it). A day begun signed out was then shown finished and
+       could not be played at all. The PUT below stamps it from the server's
+       own clock as well; this only keeps what a page sent, as a date. */
+    const practice = typeof g.practice === "string" && g.practice.length <= 40 && Number.isFinite(Date.parse(g.practice))
+        ? g.practice : null;
     return {
         v: Number.isInteger(v) && v > 0 && v < 1000 ? v : null,
         day: g.day,
@@ -129,9 +142,17 @@ function cleanGuess(g) {
         results,
         done: Boolean(g.done),
         mode: g.mode === "account" || g.mode === "anon" ? g.mode : null,
-        posted: Boolean(g.posted)
+        posted: Boolean(g.posted),
+        ...(practice ? { practice } : {})
     };
 }
+
+/* A mirrored practice run the launch cut has since passed (30 Sept 2026).
+   It is not the day any more — the page starts the real one fresh at the
+   cut — so it is read as no game at all: never handed back to a device,
+   and never the copy that wins the merge against the real day's saves. */
+const practiceOver = g => Boolean(g && typeof g.practice === "string" && Date.parse(g.practice) <= Date.now());
+const liveGuess = g => (g && !practiceOver(g) ? g : null);
 
 function yesterdayOf(iso) {
     const d = new Date(iso + "T00:00:00Z");
@@ -250,6 +271,23 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "GET") {
+        /* A REVOKED SESSION reads nothing either (1 Oct 2026; SESSION
+           VERSIONS in _player.js). Every write here was already refused to
+           it (writeRefusal), and the Profile signs it out — but this read
+           still handed a device signed out "on every device" the account's
+           ticks, saves, day in progress and stats. One indexed read; it
+           fails OPEN, as the write check's non-game path does, since the
+           read is the player's own and a blip should not hide it. */
+        try {
+            const row = await db.collection("players").findOne({ id: String(player.id) }, { projection: { _id: 0, sv: 1, svStrict: 1 } });
+            if (sessionRevoked(player, row)) {
+                const out = json(401, { error: "Not signed in" });
+                out.headers = { ...out.headers, "Set-Cookie": clearCookie() };
+                return out;
+            }
+        } catch (e) {
+            console.error("player-data: could not check the session; reading on", e);
+        }
         try {
             const [doc, stats] = await Promise.all([
                 col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1 } }),
@@ -258,7 +296,7 @@ exports.handler = async (event) => {
             return json(200, {
                 walked: (doc && doc.walked) || [],
                 saved: (doc && doc.saved) || [],
-                guess: (doc && doc.guess) || null,
+                guess: liveGuess(doc && doc.guess),
                 stats
             });
         } catch (e) {
@@ -311,6 +349,32 @@ exports.handler = async (event) => {
                and a 400 would throw away the ticks sent alongside it; a
                device whose clock has run a day ahead loses only a copy of a
                game it still has in localStorage. */
+            /* A day saved before the launch cut is a practice run whatever
+               the page said, stamped from this server's clock and the site's
+               launchAt (launchCut in daily-scores.js) — so a page that never
+               knew, or a mirror written in the minute a deal reply was
+               stale, still carries the mark. A settings read that fails
+               leaves the page's own mark, if any. */
+            let cut = null;
+            if (g) {
+                try { cut = await launchCut(db); } catch (e) { cut = null; }
+            }
+            if (g && !g.practice) {
+                if (cut && g.day <= cut.day && Date.now() < Date.parse(cut.at)) g.practice = cut.at;
+            }
+            /* A practice copy of launch day with a guess in it is a practice
+               run this account played — signed out, perhaps, and only
+               signed into now — so the real day earns no speed bonus (NO
+               SPEED BONUS AFTER PRACTICE in _speed.js; 1 Oct 2026). A copy
+               for any other day is no concern of the cut's. A note that
+               fails to write is only logged: this save carries the ticks
+               too, and the page's own `practised` on its start is the other
+               witness to the same run. */
+            if (g && g.practice && cut && g.day === cut.day && g.results.some(r => r.guesses.length)) {
+                try { await speed.notePractised(db, "guess", g.day, player.id, "mirror"); } catch (e) {
+                    console.warn("player-data: could not note a practice run", e && e.message);
+                }
+            }
             if (g === null || guessDayOpen(g.day)) set.guess = g;
         }
 
@@ -362,7 +426,11 @@ exports.handler = async (event) => {
                one written before the day was checked (see the PUT above).
                It is no game at all, and letting it win would block every
                real save for as long as the clock takes to catch up. */
-            if ("guess" in set && current.guess && !(String(current.guess.day) > today())) {
+            /* And unless it is a practice run the cut has passed
+               (practiceOver): the real launch day's first saves are always
+               "behind" a finished practice run of the same day, and were
+               dropped as stale all day long (30 Sept 2026). */
+            if ("guess" in set && current.guess && !(String(current.guess.day) > today()) && !practiceOver(current.guess)) {
                 const held = current.guess;
                 const incoming = set.guess;
                 const stale = incoming === null
@@ -393,7 +461,7 @@ exports.handler = async (event) => {
             return json(200, {
                 walked: (doc && doc.walked) || [],
                 saved: (doc && doc.saved) || [],
-                guess: (doc && doc.guess) || null,
+                guess: liveGuess(doc && doc.guess),
                 stats
             });
         } catch (e) {

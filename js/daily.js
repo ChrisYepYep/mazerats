@@ -202,6 +202,13 @@ window.Daily = (function () {
                 && window.Account && typeof Account.writeRefused === "function") {
                 try { Account.writeRefused(403, body, "play"); } catch (e) { /* the refusal stands either way */ }
             }
+            /* A session the server has revoked — "Sign out on every device"
+               on another device, or a forget (1 Oct 2026): the answer cleared
+               the cookie, and the page is told, once a minute at most, so it
+               stops showing a player who is no longer signed in. */
+            if (res.status === 401 && window.Account && typeof Account.sessionEnded === "function") {
+                try { Account.sessionEnded(); } catch (e) { /* the refusal stands */ }
+            }
             return { status: res.status, body };
         } catch (e) {
             return { status: 0, body: null };
@@ -294,8 +301,40 @@ window.Daily = (function () {
            goes from this page's memory too, as in deal() above; the game
            reads the day again on any 409 and starts it fresh. */
         if (reply.status === 409 && reply.body && reply.body.reason === "practice-over") forgetStarts(game);
+        // A signed-out verdict from before the cut says so — see practised.
+        if (reply.status === 200) notePractice(game, day, reply.body);
         return reply;
     }
+
+    /* PRACTISED, ON THIS DEVICE (1 Oct 2026). A player who practised
+       launch day earns no speed bonus on its real rounds, which deal the
+       same five (NO SPEED BONUS AFTER PRACTICE in
+       netlify/functions/_speed.js). Signed in, the server knows from its
+       own records. Signed out it records nothing, so it says `practice` on
+       every answer it gives before the cut — the first round's, each
+       verdict — and this page remembers the day here, then owns up to it
+       with `practised: true` on its signed-in start (start below). Only
+       this browser's word, so it covers the ordinary way an early player
+       signs in on launch day, not a private window or another device.
+       Kept for LATE_FILE_DAYS, which is as long as a day can matter. */
+    const PRACTISED_KEY = "mazerats_daily_practised";
+    function practisedDays() {
+        let all = null;
+        try { all = JSON.parse(localStorage.getItem(PRACTISED_KEY) || "null"); } catch (e) { all = null; }
+        return all && typeof all === "object" && !Array.isArray(all) ? all : {};
+    }
+    function notePractice(game, day, body) {
+        if (!body || typeof body.practice !== "string") return;
+        const all = practisedDays();
+        const key = game + ":" + day;
+        if (all[key]) return;
+        all[key] = body.practice;
+        let earliest = today();
+        for (let i = 0; i < LATE_FILE_DAYS; i++) earliest = dayBefore(earliest);
+        for (const k of Object.keys(all)) if (!(k.slice(k.indexOf(":") + 1) >= earliest)) delete all[k];
+        try { localStorage.setItem(PRACTISED_KEY, JSON.stringify(all)); } catch (e) { /* private mode */ }
+    }
+    const practised = (game, day) => Boolean(practisedDays()[game + ":" + day]);
 
     /* Whether a move's answer is the server refusing `anon` because the
        request carried a session (see move). */
@@ -377,6 +416,10 @@ window.Daily = (function () {
          filed, with a bonus      "50 + 161 speed bonus = 211 on the boards"
          filed, no bonus, begun signed out
                                   "No speed bonus: this day began signed out."
+         filed, no bonus, practised first (`practised`, 1 Oct 2026)
+                                  "No speed bonus today: you played these
+                                   rounds in practice before the site
+                                   opened."
          filed, no bonus          "No speed bonus this time."
          signed in, not filed yet nothing, until the submission answers
          signed out               "Sign in before you play to earn a speed
@@ -392,6 +435,9 @@ window.Daily = (function () {
             const points = Number(s.points) || 0;
             const bonus = Number(s.bonus) || 0;
             if (bonus > 0) return `${points} + ${bonus} speed bonus = ${points + bonus} on the boards`;
+            // Filed with no clock because the day was practised first (NO
+            // SPEED BONUS AFTER PRACTICE in netlify/functions/_speed.js).
+            if (s.practised) return "No speed bonus today: you played these rounds in practice before the site opened.";
             return o.mode === "anon" ? "No speed bonus: this day began signed out." : "No speed bonus this time.";
         }
         if (!o.signedIn) return "Sign in before you play to earn a speed bonus as well.";
@@ -488,9 +534,12 @@ window.Daily = (function () {
         return { points: dayTotal(served, base), speed };
     }
 
+    /* `practice` adds " (practice)" after the date (1 Oct 2026): a practice
+       run pasted looked exactly like a real result, though it was on no
+       board. */
     function shareText(o) {
         return `Maze Rats · ${o.game}\n` +
-            `${shareDate(o.day)} — ${o.right}/${o.of} · ${o.points} pts${o.speed ? " incl. speed" : ""}\n` +
+            `${shareDate(o.day)}${o.practice ? " (practice)" : ""} — ${o.right}/${o.of} · ${o.points} pts${o.speed ? " incl. speed" : ""}\n` +
             `${o.grid}\n` +
             `${SHARE_SITE}/${o.path}`;
     }
@@ -632,8 +681,18 @@ window.Daily = (function () {
         const job = (async () => {
             try { await Account.ready(); } catch (e) { startSent.delete(key); return; }
             if (!Account.current) { startSent.delete(key); return; }
-            const { status, body } = await post(url || SCORES_URL, { game, day, action: "start" });
-            if (status === 200) startConfirmed.add(key);
+            // `practised`: a run this page played signed out before the cut
+            // (see notePractice above; 1 Oct 2026).
+            const { status, body } = await post(url || SCORES_URL,
+                Object.assign({ game, day, action: "start" }, practised(game, day) ? { practised: true } : {}));
+            /* Only a start the server says it RECORDED (30 Sept 2026). A
+               session that lapsed after the page loaded is answered 200
+               { started: false, reason: "signed-out" }, and counting that
+               as confirmed meant round 0's move never re-sent the start
+               once the player had signed in again in another tab. */
+            if (status === 200 && body && body.started) startConfirmed.add(key);
+            // Not recorded, so it may be sent again (round 0's move does).
+            if (status === 200 && body && body.started === false) startSent.delete(key);
             if (status === 200 && body && body.next) openings.set(key, body.next);
             // A refusal (a closed day, say) will be refused again; only a
             // server that could not answer is worth another go.
@@ -663,7 +722,14 @@ window.Daily = (function () {
         const key = game + ":" + day;
         if (!openings.has(key)) await start(game, day, url);
         if (openings.has(key)) return openings.get(key);
-        const { status, body } = await post(url || SCORES_URL, { game, day, action: "start" });
+        /* `practised` here too (1 Oct 2026): signed in, this can be the
+           start that lands — start() above fell over, this did not — and
+           when it says started, round 0's move never sends start() again,
+           so the run this page practised went unmentioned. */
+        const { status, body } = await post(url || SCORES_URL,
+            Object.assign({ game, day, action: "start" }, practised(game, day) ? { practised: true } : {}));
+        // Signed out before the cut, round 0 says `practice` (notePractice).
+        if (status === 200) notePractice(game, day, body);
         if (status === 200 && body && body.next) {
             openings.set(key, body.next);
             if (body.started) startConfirmed.add(key);
@@ -831,12 +897,15 @@ window.Daily = (function () {
        idly opening the results — and wrong for the player who has just
        submitted, because the copy the edge is holding was made before their
        row existed, so the board they are shown is the one board on the site
-       guaranteed not to have them on it. A throwaway query parameter is a
-       different cache key, which is all it takes; the endpoint ignores it.
-       Only ever passed straight after a submit, so it costs one uncached
-       read per player per day. */
+       guaranteed not to have them on it. `mine` is the way past (1 Oct
+       2026): the endpoint reads the board now for a signed-in player whose
+       day was filed a moment ago, and sends anybody else to the cached copy
+       — see BOARD_VARY in netlify/functions/daily-scores.js. It was a
+       throwaway `fresh=<time>`, a new cache key that anybody could add to
+       skip the cache on every request; the edge ignores that now. Only
+       ever passed straight after a submit. */
     function boardUrl(base, fresh) {
-        return fresh ? `${base}&fresh=${Date.now()}` : base;
+        return fresh ? `${base}&mine=1` : base;
     }
 
     /* Draws the board into a host element and keeps it there: one fetch
@@ -888,6 +957,8 @@ window.Daily = (function () {
                     <button type="button" class="guess-btn" data-daily-signin>Sign in with Discord to be listed</button>
                 </p>`;
             const spec = RANGES.find(r => r.key === range) || RANGES[0];
+            const focused = panel.contains(document.activeElement) ? document.activeElement : null;
+            const hadRange = focused && focused.dataset ? focused.dataset.range : null;
             const span = range === "week" && data.weekFrom ? `Since ${niceDate(data.weekFrom)}`
                 : range === "month" && data.monthFrom ? `Since ${niceDate(data.monthFrom)}`
                     : range === "day" ? "Your day against everyone else's"
@@ -904,6 +975,13 @@ window.Daily = (function () {
                     <ol class="guess-board-list">${rows(data[range], me(), spec.empty)}</ol>
                 </div>`;
 
+            /* The panel is rewritten on every switch, which took the pressed
+               tab — and the keyboard's place with it — away, so focus fell
+               to <body> and a keyboard player was sent back to the top of
+               the page after every span they picked (30 Sept 2026). The
+               same tab in the new markup gets it back. */
+            const back = hadRange && panel.querySelector(`.guess-board-range[data-range="${hadRange}"]`);
+            if (back) back.focus({ preventScroll: true });
             panel.querySelectorAll(".guess-board-range").forEach(btn => {
                 btn.addEventListener("click", () => { range = btn.dataset.range; draw(); });
             });

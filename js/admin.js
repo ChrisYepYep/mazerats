@@ -101,6 +101,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // The switch-against-launch-date warning — its own line, see
     // sayFfMismatch and the note in warren.html.
     const ffMismatchEl = document.getElementById("ff-state-warning");
+    // And the landing switch's against the site's launch date (1 Oct 2026)
+    // — see sayLandingMismatch.
+    const landingMismatchEl = document.getElementById("landing-state-warning");
     // The site-wide palette switch, beneath the landing one.
     const themeToggleEl = document.getElementById("theme-toggle");
     const themeToggleBtns = document.querySelectorAll(".theme-btn");
@@ -551,6 +554,9 @@ document.addEventListener("DOMContentLoaded", () => {
            inert, the sign-in box included, so the admin could neither see
            nor type into it. Its caller then does nothing, as for any No. */
         if (cancelOpenDialog) cancelOpenDialog();
+        // And an Event Entries picture open full size, whose lightbox sits
+        // over the sign-in box (30 Sept 2026) — see closeViewer there.
+        if (window.AdminEntries && typeof window.AdminEntries.closeViewer === "function") window.AdminEntries.closeViewer();
         writeToken("");
         adminToken = "";
         currentUsername = "";
@@ -626,6 +632,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.AdminEntries) window.AdminEntries.reset();
         // The Bans tab's Add a ban and open Change forms (29 Sept 2026).
         resetBanForms();
+        // The Recolour editor's palette and preview (1 Oct 2026) — the same
+        // inheritance, after a lock-out with somebody else signing in.
+        if (typeof AdminRecolour !== "undefined" && AdminRecolour && typeof AdminRecolour.reset === "function") AdminRecolour.reset();
     }
 
     /* The panels that live in files of their own (js/admin-guides.js,
@@ -712,6 +721,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const dirty = () => keys.some(isFormDirty) || isContributorFormDirty() ||
             !!(deadEnds && deadEnds.isDirty()) || !!(guides && guides.isDirty());
         const saving = () => keys.some(key => COLLECTIONS[key].formEl._saving) || !!(guides && guides.isSaving());
+        /* A Recolour palette with unsaved edits (30 Sept 2026) is asked
+           about too — its own beforeunload guards a reload, and a log out
+           dropped the lot without a word. Asked once and not in the loop's
+           dirty(): nothing here closes the palette editor, so its flag
+           would still be up after the awaits and the loop would never end. */
+        const recolour = typeof AdminRecolour !== "undefined" && AdminRecolour && AdminRecolour.state ? AdminRecolour : null;
+        let paletteAsked = false;
+        const paletteDirty = () => !paletteAsked && !!(recolour && recolour.state.dirty);
         let loggedOut = false;
         try {
             /* Round again if, once the awaits are back, something is open
@@ -722,9 +739,10 @@ document.addEventListener("DOMContentLoaded", () => {
                leaves this admin signed in: nothing has been dropped yet. */
             for (;;) {
                 if (refused()) return;
-                if (dirty()) {
+                if (dirty() || paletteDirty()) {
                     const ok = await showConfirmDialog("Log out and discard your unsaved changes? Anything you have added or edited in the open form will be lost.");
                     if (!ok) return;
+                    paletteAsked = true;
                     if (refused()) return;
                 }
                 setLoggingOut(true);
@@ -785,6 +803,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.AdminErrors) window.AdminErrors.reset();
         if (window.AdminPlayers) window.AdminPlayers.reset();
         if (window.AdminEntries) window.AdminEntries.reset();
+        // The palette editor, asked about above (1 Oct 2026): its edits and
+        // its preview were still there for whoever signed in next.
+        if (recolour && typeof recolour.reset === "function") recolour.reset();
         loginModal.classList.add("open");
         loginError.style.display = "none";
         loginForm.reset();
@@ -808,12 +829,24 @@ document.addEventListener("DOMContentLoaded", () => {
     const activityRefreshBtn = document.getElementById("activity-refresh-btn");
     const activityRangeEl = document.getElementById("activity-range");
 
+    /* UTC, and labelled so (1 Oct 2026). Activity was the one panel giving
+       the reader's own local time with no zone beside it, while Errors,
+       Players, Bans and Entries all say UTC — so two admins in different
+       zones read the same row as two different times. The local time is
+       on hover, as it is in those panels (formatWhenLocal, for title=). */
     function formatWhen(iso) {
         const d = new Date(iso);
         if (isNaN(d)) return "—";
         return d.toLocaleString("en-GB", {
-            day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false
-        });
+            timeZone: "UTC", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false
+        }).replace(",", "") + " UTC";
+    }
+    function formatWhenLocal(iso) {
+        const d = new Date(iso);
+        if (isNaN(d)) return "";
+        return d.toLocaleString("en-GB", {
+            day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short"
+        }) + " (your time)";
     }
 
     // Reads as a duration rather than a number of seconds — "under a minute"
@@ -905,7 +938,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 '<div class="chrome-list-row admin-row admin-activity-row">' +
                     '<div class="row-info">' +
                         '<h3>' + escapeHtml(s.username) + '</h3>' +
-                        '<p class="row-creator">' + escapeHtml(formatWhen(s.startedAt)) +
+                        '<p class="row-creator"><span title="' + escapeHtml(formatWhenLocal(s.startedAt)) + '">' + escapeHtml(formatWhen(s.startedAt)) + '</span>' +
                             ' &middot; active for ' + escapeHtml(formatDuration(s.activeSeconds)) + '</p>' +
                     '</div>' +
                     '<div class="row-side">' +
@@ -932,7 +965,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             (what ? '<p class="row-creator">' + escapeHtml(what) + '</p>' : "") +
                         '</div>' +
                         '<div class="row-side">' +
-                            '<span class="admin-activity-meta">' + escapeHtml(formatWhen(e.at)) + '</span>' +
+                            '<span class="admin-activity-meta" title="' + escapeHtml(formatWhenLocal(e.at)) + '">' + escapeHtml(formatWhen(e.at)) + '</span>' +
                             '<span class="admin-activity-meta">' + escapeHtml(e.ip || "") + '</span>' +
                         '</div>' +
                     '</div>';
@@ -1491,7 +1524,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (adminRailEl) adminRailEl.style.display = "flex";
         if (adminSessionUserEl) {
             adminSessionUserEl.textContent = currentUsername || "";
-            adminSessionUserEl.title = currentUserRole === "owner" ? "Owner" : "Admin";
+            // Every role by its own name (1 Oct 2026): this said "Admin" for
+            // View only and Albus accounts, which can't change anything.
+            adminSessionUserEl.title = ROLE_LABELS[currentUserRole] || "Admin";
         }
         landingToggleEl.style.display = "flex";
         if (launchAtEl) launchAtEl.style.display = "flex";
@@ -2048,6 +2083,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (key && adminToken) deleteImageSafe(key);
             throw Object.assign(new Error("The form was closed before this upload finished, so it was not kept."), { stale: true });
         }
+        /* Every caller writes the picture into its draft straight after
+           this resolves, before a timer can run, so the floating bar's
+           label is re-measured then (1 Oct 2026, final fixes): it stayed
+           "Editing" after a gallery or bookend upload landed. */
+        setTimeout(syncFloatingLabel, 0);
         return result;
     }
 
@@ -5122,9 +5162,55 @@ document.addEventListener("DOMContentLoaded", () => {
         if (isEdit) applyFurniRescue(cfg.formEl, key, editId);
 
         activeFormKey = key;
-        floatingActionsEl.classList.add("open");
+        syncFloatingBar();
         syncFloatingBusy();
     }
+
+    /* The floating bar belongs to the form's own panel (1 Oct 2026). It sits
+       in .admin-stage, outside every panel, so with a maze open it stayed
+       pinned over Players, Bans and the rest, and its Save there submitted
+       a form nobody could see — a refusal was written into that hidden
+       form, so the press seemed to do nothing. Now it shows only while the
+       panel holding the active form is the one on screen, and comes back
+       with it. Its label says "Unsaved changes" only when there are some;
+       it said so the moment a form opened. */
+    let shownPanel = null;
+    const floatingLabelEl = floatingActionsEl ? floatingActionsEl.querySelector(".admin-floating-actions-label") : null;
+    function syncFloatingBar() {
+        if (!floatingActionsEl) return;
+        /* Mazes and Events each have a form of their own, and both can be
+           open at once (1 Oct 2026, final scan). With a maze open, opening
+           an event made Events the active form; back on Mazes the bar then
+           stayed away from the maze form still open there, since it was
+           not the active one. The form open on the panel being shown is
+           the one the bar acts for. */
+        const panelOf = key => PANEL_FOR_COLLECTION[key] || key;
+        if (shownPanel && (!activeFormKey || panelOf(activeFormKey) !== shownPanel)) {
+            const here = Object.keys(COLLECTIONS).find(k => panelOf(k) === shownPanel &&
+                COLLECTIONS[k].formEl && COLLECTIONS[k].formEl.classList.contains("is-open"));
+            if (here) { activeFormKey = here; syncFloatingBusy(); }
+        }
+        const on = !!activeFormKey && panelOf(activeFormKey) === shownPanel;
+        floatingActionsEl.classList.toggle("open", on);
+        if (on) syncFloatingLabel();
+    }
+    function syncFloatingLabel() {
+        if (!floatingLabelEl || !activeFormKey) return;
+        floatingLabelEl.textContent = isFormDirty(activeFormKey) ? "Unsaved changes" : "Editing";
+    }
+    // Typing, picking and the chip/gallery buttons all land here. Deferred,
+    // so a click handler that changes a draft has run before it is measured.
+    /* A dialog's buttons sit outside the form (1 Oct 2026, final fixes):
+       answering a confirm the form asked ("Remove this room?") changes
+       the draft once it resolves, so a press in an overlay re-measures
+       too. Uploads re-measure from formUpload once they land. */
+    ["input", "change", "click"].forEach(type => document.addEventListener(type, e => {
+        if (!activeFormKey || !floatingActionsEl.classList.contains("open")) return;
+        const formEl = COLLECTIONS[activeFormKey].formEl;
+        const t = e.target;
+        if (!formEl || !t) return;
+        if (formEl.contains(t) || (t.closest && t.closest(".modal-overlay"))) setTimeout(syncFloatingLabel, 0);
+    }, true));
 
     /* The floating Save/Cancel, greyed while the form they act on is
        saving. submitForm and refuseWhileSaving already refuse a second
@@ -6559,7 +6645,10 @@ document.addEventListener("DOMContentLoaded", () => {
             heading.appendChild(document.createTextNode(msg.username || "Anonymous"));
             const when = document.createElement("span");
             when.className = "admin-contributor-count";
-            when.textContent = ` - ${new Date(msg.createdAt).toLocaleString()}`;
+            /* UTC with the label, local time on hover, as Activity does
+               (1 Oct 2026). It was the reader's own zone with no label. */
+            when.textContent = ` - ${formatWhen(msg.createdAt)}`;
+            when.title = formatWhenLocal(msg.createdAt);
             heading.appendChild(when);
             if (msg.discord) {
                 const discordTag = document.createElement("span");
@@ -6714,24 +6803,65 @@ document.addEventListener("DOMContentLoaded", () => {
        empty is NOT a clear any more — it used to be, silently, which made
        an accidental Save on a blank field the same as deciding there was no
        launch date. */
+    /* The launch date is where the boards start, not only the countdown's
+       target (1 Oct 2026). daily-scores (launchCut), guess-scores,
+       player-profile, players-admin and — with no ffLaunchAt — ff-scores
+       all cut there. So once it has passed, Clear puts every pre-launch
+       test and practice score back onto the boards, and a move shifts
+       where they start; both now say so and ask. A date still ahead is
+       moved without a question, as before: nothing counts from it yet.
+       currentLaunchAt is what is STORED, kept by loadLandingState,
+       relightSwitches and a save here — not what the field holds. */
+    let currentLaunchAt = "";
     async function saveLaunchAt(value, clearing) {
         if (!launchFieldsLoaded) { showLaunchAtStatus(LAUNCH_NOT_LOADED); return; }
         if (!clearing && !String(value || "").trim()) {
-            showLaunchAtStatus("Pick a date and time first. To switch the countdown off, use Clear.");
+            showLaunchAtStatus("Pick a date and time first. To remove the launch date, use Clear.");
             return;
         }
         const iso = clearing ? "" : localFieldToIso(value);
         if (iso === null) { showLaunchAtStatus("That is not a date I can read."); return; }
-        if (clearing && !await showConfirmDialog("Clear the launch countdown? The landing page goes back to just saying Coming Soon.")) return;
+        const storedAt = currentLaunchAt ? Date.parse(currentLaunchAt) : NaN;
+        const storedPassed = !isNaN(storedAt) && storedAt <= Date.now();
+        /* Clear says what it does to the boards whether or not the date has
+           passed (1 Oct 2026, final scan). With no launchAt there is no cut
+           at all — launchCut returns null — so clearing a date still AHEAD
+           puts the test runs already in the collections onto the boards
+           just the same, from the moment the site opens, and ends launch-day
+           practice (practiceOf in daily-scores.js). Only the gentle
+           wording was shown for that case. */
+        if (clearing) {
+            const question = "Clear the launch date? The landing page goes back to just saying Coming Soon, and the boards stop cutting at launch, so every test and practice score from before it comes back onto them.";
+            if (!await showConfirmDialog(question, { danger: true })) return;
+        } else if (storedPassed && Date.parse(iso) !== storedAt) {
+            if (!await showConfirmDialog("The launch date (" + escapeHtml(bothZones(currentLaunchAt)) +
+                ") has already passed, and every leaderboard counts from it. Move it to " + escapeHtml(bothZones(iso)) +
+                "? The boards count from the new moment, so scores between the two drop off them or come back onto them.", { danger: true })) return;
+        } else if (!isNaN(storedAt) && !storedPassed && Date.parse(iso) <= Date.now()) {
+            /* A date still ahead moved to a moment already gone (1 Oct 2026,
+               final fixes) starts the boards counting straight away, from
+               that past moment — so it asks, like the two above. */
+            if (!await showConfirmDialog("The launch date (" + escapeHtml(bothZones(currentLaunchAt)) +
+                ") is still ahead. " + escapeHtml(bothZones(iso)) +
+                " has already passed, so the boards will count from it straight away: every score since then goes onto them. Save it?", { danger: true })) return;
+        }
         const controls = [launchAtInput, launchAtSave, launchAtClear].filter(Boolean);
         controls.forEach(c => c.disabled = true);
         showLaunchAtStatus("");
+        switchSaves++;   // see relightSwitches
         try {
             await Api.updateSiteSettings(adminToken, { launchAt: iso });
             launchAtInput.value = isoToLocalField(iso);
-            showLaunchAtStatus(iso
-                ? "Counting down to " + bothZones(iso) + "."
-                : "Countdown off — the gate just says Coming Soon.");
+            currentLaunchAt = iso;
+            /* A moment already gone has no countdown to it (1 Oct 2026):
+               this said "Counting down to …" for a past date, when what the
+               save actually did was move where the boards start. */
+            showLaunchAtStatus(!iso
+                ? "No launch date — the gate just says Coming Soon, and the boards don't cut at launch."
+                : Date.parse(iso) <= Date.now()
+                    ? "Saved: " + bothZones(iso) + ". That moment has passed, so there's no countdown. The boards count from it."
+                    : "Counting down to " + bothZones(iso) + ". The boards will count from then.");
+            sayLandingMismatch();
         } catch (err) {
             if (err.status === 401) { lockOut(); return; }
             showLaunchAtStatus(err.message || "Couldn't save the launch date.");
@@ -6775,6 +6905,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const controls = [ffLaunchAtInput, ffLaunchAtSave, ffLaunchAtClear].filter(Boolean);
         controls.forEach(c => c.disabled = true);
         showFfLaunchAtStatus("");
+        switchSaves++;   // see relightSwitches
         try {
             await Api.updateSiteSettings(adminToken, { ffLaunchAt: iso });
             ffLaunchAtInput.value = isoToLocalField(iso);
@@ -6830,6 +6961,46 @@ document.addEventListener("DOMContentLoaded", () => {
         ffMismatchEl.style.display = warning ? "block" : "none";
     }
 
+    /* The site's switch against its launch date (1 Oct 2026), the same idea
+       as sayFfMismatch. The boards follow launchAt, not the switch, so:
+       Live with the date still ahead lets everyone in while every game they
+       play is practice and never reaches a board; Coming Soon with the date
+       passed leaves the landing page on a plain Coming Soon — its countdown
+       goes at zero now (countdownGone in js/welcome.js; this said "any
+       moment", which it no longer does) — and nothing in this panel saying
+       the switch is the thing still to do. Maintenance is not warned about: after launch it is the normal
+       way to close for a while, and the gate shows no countdown in it (see
+       showCountdownFor in js/welcome.js). Kept in step by loadLandingState,
+       relightSwitches, both saves, and the tab and minute timer below. */
+    let currentLandingState = "";
+    function sayLandingMismatch() {
+        if (!landingMismatchEl) return;
+        const at = currentLaunchAt ? Date.parse(currentLaunchAt) : NaN;
+        let warning = "";
+        if (currentLandingState && !isNaN(at)) {
+            if (currentLandingState === "enter" && at > Date.now()) {
+                warning = "Heads up: the site is Live, but its launch date is still ahead (" +
+                    bothZones(currentLaunchAt) + "). Games played before then are practice and won't reach the boards.";
+            } else if (currentLandingState === "coming-soon" && at <= Date.now()) {
+                warning = "Heads up: the launch date has passed, but the site is still closed. Visitors see Coming Soon, with no countdown, until you press Live.";
+            }
+        }
+        landingMismatchEl.textContent = warning;
+        landingMismatchEl.style.display = warning ? "block" : "none";
+    }
+    if (landingMismatchEl) {
+        const landingWarningTab = landingMismatchEl.closest(".admin-tab");
+        if (landingWarningTab) {
+            ["mouseenter", "focusin", "click"].forEach(type =>
+                landingWarningTab.addEventListener(type, sayLandingMismatch));
+        }
+        setInterval(() => {
+            if (landingMismatchEl.getClientRects().length || (landingWarningTab && landingWarningTab.matches(".is-open, :hover, :focus-within"))) {
+                sayLandingMismatch();
+            }
+        }, 60000);
+    }
+
     /* The warning depends on the clock as well as on the two settings: a
        panel left open across the launch moment went on saying "still ahead"
        about a date that had passed, because it was only worked out on load
@@ -6877,7 +7048,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (body && typeof body.landingState === "string" && body.landingState) {
                     // What getSiteSettings would have done with a real answer.
                     if (typeof Api.rememberLandingState === "function") Api.rememberLandingState(body.landingState);
-                    if (body.theme && typeof Api.applyTheme === "function") Api.applyTheme(body.theme);
+                    /* Only when it is a different theme (1 Oct 2026, final
+                       scan). This read now also runs on opening Control
+                       (relightSwitches), and applyTheme sets data-theme
+                       even to the value it already has — which the Recolour
+                       editor's observer (watchTheme) takes as a theme
+                       change: a full stylesheet rescan and a redraw of the
+                       editor under whoever was working in it, every time
+                       the pointer crossed the Control tab. */
+                    const shown = document.documentElement.getAttribute("data-theme") || "classic";
+                    if (body.theme && body.theme !== shown && typeof Api.applyTheme === "function") Api.applyTheme(body.theme);
                     return body;
                 }
             }
@@ -6887,7 +7067,15 @@ document.addEventListener("DOMContentLoaded", () => {
         return Api.getSiteSettings();
     }
 
+    const SETTINGS_UNREAD = "Couldn't read the current site settings — reload to see which mode is on.";
+    let settingsTriedAt = 0;   // when loadLandingState last set off — see the Control tab
     async function loadLandingState() {
+        /* switchSaves, as relightSwitches uses it (1 Oct 2026, final scan):
+           this read can now also be set off by opening Control after a
+           failed first read (see the Control tab below), and a switch
+           pressed while it was out must not be relit by its older answer. */
+        const saves = switchSaves;
+        settingsTriedAt = Date.now();
         try {
             // One read, every switch: they all live in the same settings document.
             const { landingState, fallinFurniState, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
@@ -6899,21 +7087,34 @@ document.addEventListener("DOMContentLoaded", () => {
                so nothing is lit and the reason is said instead. */
             if (fromCache) {
                 launchFieldsLoaded = false;
-                landingToggleStatus.textContent = "Couldn't read the current site settings — reload to see which mode is on.";
+                landingToggleStatus.textContent = SETTINGS_UNREAD;
                 landingToggleStatus.style.display = "block";
                 return;
             }
-            if (launchAtInput) launchAtInput.value = isoToLocalField(launchAt);
-            if (ffLaunchAtInput) ffLaunchAtInput.value = isoToLocalField(ffLaunchAt);
+            const raced = saves !== switchSaves;
+            // A launch-date save can only have raced this once the fields
+            // were loaded (see saveLaunchAt), so unloaded ones are filled.
+            if (!raced || !launchFieldsLoaded) {
+                if (launchAtInput) launchAtInput.value = isoToLocalField(launchAt);
+                if (ffLaunchAtInput) ffLaunchAtInput.value = isoToLocalField(ffLaunchAt);
+                currentLaunchAt = launchAt || "";
+                currentFfLaunchAt = ffLaunchAt || "";
+            }
             // Only now do the two fields say what is stored — see
             // launchFieldsLoaded.
             launchFieldsLoaded = true;
-            landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
-            renderDevModeLink(landingState);
-            const ff = fallinFurniState || "live";
-            ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
-            currentFfState = ff;
-            currentFfLaunchAt = ffLaunchAt || "";
+            switchesReadAt = Date.now();
+            // The failed first read's "Couldn't read…" line, now untrue.
+            if (landingToggleStatus.textContent === SETTINGS_UNREAD) landingToggleStatus.style.display = "none";
+            if (!raced) {
+                landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === landingState));
+                renderDevModeLink(landingState);
+                currentLandingState = landingState || "";
+                const ff = fallinFurniState || "live";
+                ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
+                currentFfState = ff;
+            }
+            sayLandingMismatch();
             sayFfMismatch();
             // getSiteSettings has already applied the palette to this page —
             // this only lights the button that matches what is stored.
@@ -6933,21 +7134,92 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    /* After a switch save that failed WITHOUT an answer (30 Sept 2026) — a
+       timeout, a dropped connection, a 5xx — the write may still have
+       landed: a slow cold function answers after the page has given up. The
+       buttons kept lighting the state it had left, so on launch morning a
+       Live that had in fact gone through read as "still Soon" beside an
+       error, and there was nothing to say which was true. The two switches
+       are re-read and lit from what is stored. Only the switches: the
+       launch-date fields may hold a date being typed, and are left alone.
+       A read that fails, or gets the outage stand-in, lights nothing. */
+    /* Also used when the Control tab is opened (1 Oct 2026): the switches
+       were read once, at sign-in, so with two admins one could flip Live
+       and the other's panel went on lighting Soon — and its Live confirm
+       then offered to open a site that was already open. The stored dates
+       are taken too, for the warnings and the launch date's questions, but
+       never written into the fields.
+
+       switchSaves is bumped by every switch save, so a read that set off
+       before one and lands after it cannot light the state it replaced. */
+    let switchesReadAt = 0;
+    let switchSaves = 0;
+    async function relightSwitches() {
+        const saves = switchSaves;
+        try {
+            const s = await freshSiteSettings();
+            if (!s || s.fromCache || typeof s.landingState !== "string") return;
+            if (saves !== switchSaves) return;
+            switchesReadAt = Date.now();
+            landingToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.state === s.landingState));
+            renderDevModeLink(s.landingState);
+            currentLandingState = s.landingState;
+            if (launchFieldsLoaded) currentLaunchAt = s.launchAt || "";
+            sayLandingMismatch();
+            const ff = s.fallinFurniState || "live";
+            ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
+            currentFfState = ff;
+            if (launchFieldsLoaded) currentFfLaunchAt = s.ffLaunchAt || "";
+            sayFfMismatch();
+        } catch (e) { /* the error already said is all there is to say */ }
+    }
+    const answerless = err => !err || !err.status || err.status >= 500;
+
+    // The Control tab: re-read on opening, at most every 30 seconds, and not
+    // while a switch is mid-save (its buttons are disabled then).
+    const SWITCH_REREAD_MS = 30000;
+    const controlTabEl = document.querySelector('.admin-tab[data-menu="control"]');
+    if (controlTabEl) {
+        ["mouseenter", "focusin", "click"].forEach(type => controlTabEl.addEventListener(type, () => {
+            if (!adminToken) return;
+            /* A sign-in whose settings read failed (1 Oct 2026, final scan):
+               a cold function or the outage stand-in left the switches
+               unlit, the launch fields unsavable and switchesReadAt at 0,
+               which this check used to read as "never re-read" — so the one
+               panel most in need of a fresh look never got one, short of a
+               reload, on launch morning of all times. The whole first read
+               is tried again instead, at most every 30 seconds. */
+            if (!launchFieldsLoaded) {
+                if (Date.now() - settingsTriedAt < SWITCH_REREAD_MS) return;
+                loadLandingState();
+                return;
+            }
+            if (!switchesReadAt || Date.now() - switchesReadAt < SWITCH_REREAD_MS) return;
+            if (Array.from(landingToggleBtns).concat(Array.from(ffToggleBtns)).some(b => b.disabled)) return;
+            switchesReadAt = Date.now();   // one read per opening, not one per event
+            relightSwitches();
+        }));
+    }
+
     // Returns whether the update actually went through, so callers that
     // show a follow-up success message (see the offline-confirmation flow
     // below) know not to show one after a failed save.
     async function setLandingState(state, clickedBtn) {
         landingToggleBtns.forEach(b => b.disabled = true);
         landingToggleStatus.style.display = "none";
+        switchSaves++;
         try {
             await Api.updateSiteSettings(adminToken, { landingState: state });
             landingToggleBtns.forEach(b => b.classList.toggle("active", b === clickedBtn));
             renderDevModeLink(state);
+            currentLandingState = state;
+            sayLandingMismatch();
             return true;
         } catch (err) {
             if (err.status === 401) { lockOut(); return false; }
             landingToggleStatus.textContent = err.message || "Couldn't update the landing page.";
             landingToggleStatus.style.display = "block";
+            if (answerless(err)) relightSwitches();
             return false;
         } finally {
             landingToggleBtns.forEach(b => b.disabled = false);
@@ -6970,9 +7242,21 @@ document.addEventListener("DOMContentLoaded", () => {
         },
         "enter": {
             confirmSteps: ["You're about to bring Maze Rats back online! Are you sure?"],
-            success: "Live mode activated. Website open to visitors."
+            /* "Within a minute" (1 Oct 2026), not "open": the public settings
+               read is edge-cached, so for up to about a minute some visitors
+               are still told Coming Soon. Nobody is stranded — the landing
+               page's own poll lets them in — but "open" read as instant. */
+            success: "Live mode activated. The site opens for every visitor within a minute; anyone on the landing page is let in by itself."
         }
     };
+    /* "Back online" is for Maint. → Live. From Coming Soon — the first
+       opening, launch morning — it has never been online to come back
+       (1 Oct 2026). Unknown (the read failed) keeps the old wording. */
+    const FIRST_OPENING_CONFIRM = "You're about to open Maze Rats to everyone! Are you sure?";
+    function landingConfirmSteps(state, config) {
+        if (state === "enter" && currentLandingState === "coming-soon") return [FIRST_OPENING_CONFIRM];
+        return config.confirmSteps;
+    }
 
     /* ---- Fallin' Furni: live or under maintenance
 
@@ -6983,6 +7267,7 @@ document.addEventListener("DOMContentLoaded", () => {
     async function setFallinFurniState(state, clickedBtn) {
         ffToggleBtns.forEach(b => b.disabled = true);
         ffToggleStatus.style.display = "none";
+        switchSaves++;
         try {
             await Api.updateSiteSettings(adminToken, { fallinFurniState: state });
             ffToggleBtns.forEach(b => b.classList.toggle("active", b === clickedBtn));
@@ -6997,6 +7282,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (err.status === 401) { lockOut(); return false; }
             ffToggleStatus.textContent = err.message || "Couldn't update Fallin' Furni.";
             ffToggleStatus.style.display = "block";
+            if (answerless(err)) relightSwitches();
             return false;
         } finally {
             ffToggleBtns.forEach(b => b.disabled = false);
@@ -7259,7 +7545,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 setLandingState(state, btn);
                 return;
             }
-            for (const message of config.confirmSteps) {
+            for (const message of landingConfirmSteps(state, config)) {
                 const ok = await showConfirmDialog(message);
                 if (!ok) return;
             }
@@ -7663,6 +7949,9 @@ document.addEventListener("DOMContentLoaded", () => {
         adminPanelEls.forEach(panel => {
             panel.hidden = panel.dataset.panel !== name;
         });
+        shownPanel = name;
+        // The floating Save/Cancel follows its form's panel — see syncFloatingBar.
+        syncFloatingBar();
         adminNavEl.querySelectorAll(".chrome-nav-btn").forEach(btn => {
             const on = btn.dataset.panel === name;
             btn.classList.toggle("active", on);

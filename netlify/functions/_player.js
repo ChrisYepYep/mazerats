@@ -136,7 +136,8 @@ function playerFrom(event) {
    discord-auth.js, the nickname writes in player-nick.js — never with a
    read of its own. A session from before sv existed carries none, and
    keeps working until it expires as it always did; `me` swaps it for one
-   that carries the row's number the next time it re-signs the cookie.
+   that carries the row's number the next time it re-signs the cookie —
+   unless the row has been signed out everywhere (svStrict, below).
 
    A timestamp rather than a counter, so a row made again after a forget
    can never hand out a number an old session already has. */
@@ -150,9 +151,18 @@ function newSv() {
 /* True when `player`'s session has been revoked, given the players row as
    read: the row, null for "read, and there is no row", or undefined for
    "could not be read" — which revokes nothing, since a database blink must
-   not sign anybody out. */
+   not sign anybody out.
+
+   AND A SESSION WITH NO NUMBER, ONCE THE ROW SAYS SO (1 Oct 2026). "Sign
+   out on every device" (discord-auth.js) gives the row a new sv and sets
+   `svStrict`. Without that flag a session from before session versions
+   was not only spared — `me` re-signed it with the row's NEW number (see
+   svFor), so a copied pre-sv cookie came out of "every device" holding a
+   fresh, current session. With it, a session carrying no number is
+   revoked like any other the row has moved on from. */
 function sessionRevoked(player, row) {
-    if (!player || !isSv(player.sv) || row === undefined) return false;
+    if (!player || row === undefined) return false;
+    if (!isSv(player.sv)) return !!(row && row.svStrict === true);
     if (row === null) return true;
     return isSv(row.sv) && row.sv !== player.sv;
 }

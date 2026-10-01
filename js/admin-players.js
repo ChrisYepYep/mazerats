@@ -302,7 +302,7 @@
                 </div>
                 <div class="bn-field">
                     <label class="ctl-label" for="${uid}-reason">Reason <span class="bn-optional">optional</span></label>
-                    <input type="text" class="ctl-input" id="${uid}-reason" data-bn="reason" maxlength="${REASON_MAX}" autocomplete="off" placeholder="Shown to them — except on a permanent whole-site ban" value="${esc(state.reason)}">
+                    <input type="text" class="ctl-input" id="${uid}-reason" data-bn="reason" maxlength="${REASON_MAX}" autocomplete="off" placeholder="Shown to the banned player only (not on a permanent whole-site ban), never to others on their network" value="${esc(state.reason)}">
                 </div>
             </div>`;
     }
@@ -1567,6 +1567,7 @@
         "guess_scores": "Guess the Maze scores",
         "daily_scores": "Daily game scores",
         "daily_starts": "Daily game start times",
+        "daily_practised": "Launch-day practice notes",
         "daily_resets": "Daily game reset tickets",
         "ff_scores": "Fallin' Furni leaderboard entries",
         "ff_tournament": "Fallin' Furni tournament entries",
