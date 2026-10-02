@@ -70,11 +70,17 @@ const Api = {
         if (Array.isArray(payload)) return payload;
         if (!payload || payload.v !== 2 || !Array.isArray(payload.f)) return [];
         const prefix = payload.p || "";
+        /* A whole address goes as it stands (1 Oct 2026): the prefix is
+           FurniIndex's new API now, and the few pictures it can't serve are
+           sent with their old address in full (_furni-payload.js). */
+        // An empty one stays empty (2 Oct 2026): js/home.js reads "" as "no
+        // picture", where the bare prefix is a request for a 404.
+        const at = v => (!v || /^https?:\/\//.test(v) ? (v || "") : prefix + v);
         const table = payload.f.map(t => ({
             name: t.n || "",
             className: t.c || "",
             motto: t.m || "",
-            icon: prefix + (t.i || ""),
+            icon: at(t.i || ""),
             url: t.u || "",
             releaseDate: t.d || ""
         }));
@@ -86,7 +92,7 @@ const Api = {
                     items: hits.map(([index, sprite]) => {
                         const base = table[index];
                         if (!base) return null;
-                        return { ...base, sprite: sprite ? prefix + sprite : base.icon };
+                        return { ...base, sprite: sprite ? at(sprite) : base.icon };
                     }).filter(Boolean)
                 };
             }
@@ -286,6 +292,8 @@ const Api = {
 
     createRoom(token, room) { return this._write("/.netlify/functions/rooms", "POST", token, room); },
     updateRoom(token, room) { return this._write("/.netlify/functions/rooms", "PUT", token, room); },
+    // The "Furni complete" tick on a maze's /warren row (2 Oct 2026).
+    setRoomFurniComplete(token, id, complete) { return this._write("/.netlify/functions/rooms?action=furni-complete", "PUT", token, { id, complete: !!complete }); },
     deleteRoom(token, id) { return this._write(`/.netlify/functions/rooms?id=${encodeURIComponent(id)}`, "DELETE", token); },
 
     createEvent(token, ev) { return this._write("/.netlify/functions/events", "POST", token, ev); },
@@ -372,10 +380,29 @@ const Api = {
         const params = new URLSearchParams({ q: q || "" });
         if (limit > 0) params.set("limit", String(limit));
         if (q) params.set("sprites", "1");
+        // Furni FurniIndex hasn't catalogued yet, from Habbo's own names,
+        // after the catalogue's matches (1 Oct 2026; see furni-catalogue.js).
+        if (q) params.set("unlisted", "1");
         const res = await this._timedFetch("/.netlify/functions/furni-catalogue?" + params);
         const data = await this._body(res, {});
         if (!res.ok) throw new Error(data.error || `Furni catalogue unavailable (${res.status})`);
         return data;
+    },
+
+    /* When our copy of FurniIndex's catalogue was fetched, and how big it is
+       — one row's worth of the public answer (2 Oct 2026). */
+    async getFurniCatalogueInfo() {
+        // ?info=1 is never held at the edge (furni-catalogue.js), so this
+        // sees a refresh at once; the plain catalogue URL is held an hour.
+        const res = await this._timedFetch("/.netlify/functions/furni-catalogue?info=1", { cache: "no-store" });
+        const data = await this._body(res, {});
+        if (!res.ok) throw new Error(data.error || `Furni catalogue unavailable (${res.status})`);
+        return { fetchedAt: data.fetchedAt, count: data.total };
+    },
+    // Owners only: fetch it from FurniIndex now. Thirteen pages, so a long leash.
+    async refreshFurniCatalogue(token) {
+        const data = await this._write("/.netlify/functions/furni-catalogue?refresh=1&limit=1", "GET", token, undefined, 60000);
+        return { fetchedAt: data && data.fetchedAt, count: data && data.total };
     },
 
     deleteImage(token, key) {
@@ -630,8 +657,14 @@ const Api = {
         return done;
     },
 
+    /* The public list is held at the edge for a minute (2 Oct 2026; see
+       netlify/functions/contributors.js). The Warren edits it, and reads it
+       back straight after a save, so there it asks with ?full=1, which is
+       never cached — the same split rooms and events make. */
     getContributors() {
-        return this._getWithFallback("/.netlify/functions/contributors", "contributor data", () => []);
+        let warren = false;
+        try { warren = /^\/warren(\.html)?\/?$/.test(location.pathname); } catch (e) { /* not a page */ }
+        return this._getWithFallback("/.netlify/functions/contributors" + (warren ? "?full=1" : ""), "contributor data", () => []);
     },
     createContributor(token, contributor) { return this._write("/.netlify/functions/contributors", "POST", token, contributor); },
     updateContributor(token, contributor) { return this._write("/.netlify/functions/contributors", "PUT", token, contributor); },

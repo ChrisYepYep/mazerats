@@ -3,6 +3,7 @@
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
+const { cachedJson } = require("./_cache");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -111,7 +112,15 @@ exports.handler = async (event) => {
     if (event.httpMethod === "GET") {
         try {
             const all = await contributors.find({}, { projection: { _id: 0 } }).toArray();
-            return json(200, all);
+            /* Through the edge, as rooms and events are (2 Oct 2026). This
+               went to Mongo on every open of the console's Contributors page
+               — the same answer for everybody, with no cache header at all.
+               The Warren asks with ?full=1 (getContributors in js/api.js),
+               which stays uncached exactly as before, so an admin reading
+               the list straight after a save reads the truth. Keyed on
+               `full` alone, so a random parameter is not a way past it. */
+            if ((event.queryStringParameters || {}).full === "1") return json(200, all);
+            return cachedJson(event, all, { vary: "full" });
         } catch (e) {
             console.error("contributors: read failed", e);
             return json(503, { error: "The contributors could not be read just now." });

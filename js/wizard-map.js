@@ -169,7 +169,25 @@ window.WizardMap = function WizardMap(options) {
         if (gliding) { cancelAnimationFrame(gliding); gliding = 0; }
     }
 
+    /* A reader who has asked for reduced motion is cut to the new view
+       rather than glided to it (2 Oct 2026). The reveal already honoured
+       that (calmly() in js/wizard.js), but search, "Leads to", the +/-
+       buttons, the wheel and the arrow keys all came through here and still
+       eased for a third of a second. Asked each time, not once, so turning
+       the setting on with the page open is obeyed straight away. */
+    const reducedMotion = () => !!(typeof window !== "undefined" && window.matchMedia
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
     function glideTo(nextZoom, nextPanX, nextPanY, rate) {
+        if (reducedMotion()) {
+            const held = clampedPan(nextPanX, nextPanY, nextZoom);
+            zoom = nextZoom;
+            panX = held.x;
+            panY = held.y;
+            settle();
+            applyTransform();
+            return;
+        }
         wantZoom = nextZoom;
         const held = clampedPan(nextPanX, nextPanY, nextZoom);
         wantPanX = held.x;
@@ -392,7 +410,7 @@ window.WizardMap = function WizardMap(options) {
                Flagged with a class as well as a number, so the stylesheet
                can mark a ghost as one — an outline that says "this is not
                really here" — without having to guess at an opacity. */
-            const ghosted = options.revealHidden && opacity < GHOST_OPACITY;
+            const ghosted = !!(options.revealHidden && opacity < GHOST_OPACITY);
             if (ghosted) opacity = GHOST_OPACITY;
             entry.el.classList.toggle("is-ghost", ghosted);
             entry.el.style.opacity = opacity;
@@ -874,7 +892,13 @@ window.WizardMap = function WizardMap(options) {
                 });
             }
             if (layer.image) {
-                el.alt = layer.name || "";
+                /* Named in the editor, decorative on the public page (2 Oct
+                   2026). A layer's name is the file it was uploaded as —
+                   "pencil-castle-medium", "crest-huffle" — and a screen
+                   reader on /wizard was reading all ten of them out. The
+                   rooms carry the map's real names; the drawings are
+                   scenery. */
+                el.alt = options.revealHidden ? (layer.name || "") : "";
                 el.loading = "lazy";
                 /* An <img> is draggable by default, and that default eats
                    the gesture. Press an image and move a pixel and the
@@ -1890,6 +1914,9 @@ window.WizardMap = function WizardMap(options) {
             if (state) { state.layer = layer; sizeLayer(el); }
         },
         getZoom: () => zoom,
+        // Where a glide is heading, for anything that reports the zoom the
+        // view will land on rather than the one it is passing through.
+        getTargetZoom: () => wantZoom,
         /* For anything that has to reason about a zoom other than the
            current one — the GIF maker, which draws frames at zooms the map
            is not at. getFit is the scale the whole map is drawn at when the

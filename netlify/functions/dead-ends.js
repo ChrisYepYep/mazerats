@@ -103,7 +103,9 @@ exports.handler = async (event) => {
                 trail
             };
             // The admin copy is never cached: it is read straight after a save.
-            return cachedJson(event, data, { cache: !full });
+            // Keyed on `full` alone, so a random parameter is not a way
+            // past the edge (2 Oct 2026; see `vary` in _cache.js).
+            return cachedJson(event, data, { cache: !full, vary: "full" });
         }
 
         /* refuseWrite (30 Sept 2026): the same 401 for no account this

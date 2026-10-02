@@ -473,6 +473,19 @@
                                 <p class="ctl-status" id="furni-scan-status" style="display:none;"></p>
                             </div>
 
+                            <!-- Our copy of FurniIndex's catalogue (2 Oct 2026): it
+                                 refreshes itself once a day; this fetches it now,
+                                 so furni FurniIndex has just listed get their link
+                                 and date without waiting. Owner-only, as the
+                                 function's ?refresh=1 is (furni-catalogue.js). -->
+                            <div class="ctl-card ctl-card-wide" id="furni-catalogue-card" hidden>
+                                <span class="ctl-label">Furni Index catalogue</span>
+                                <div class="ctl-actions">
+                                    <button type="button" class="ctl-btn" id="furni-catalogue-refresh-btn">Refresh now</button>
+                                </div>
+                                <p class="ctl-status" id="furni-catalogue-status" aria-live="polite"></p>
+                            </div>
+
                         </div>
                     </div>
                 </div>

@@ -107,7 +107,43 @@ function cleanLaunchAt(value) {
     return when.toISOString();
 }
 
+/* THE SETTINGS, KEPT FOR A MOMENT (2 Oct 2026). The gate's poll asks with
+   ?fresh=<time bucket> on purpose (js/welcome.js), so anybody can ask with a
+   ?fresh of their own and miss the edge every time — on the endpoint every
+   page asks. Each warm instance now answers from the document it read in
+   the last SETTINGS_MEMO_MS, without touching the database. A few seconds
+   on top of a ten-second poll bucket and a twenty-second edge copy changes
+   nothing anybody can see; this instance's own save forgets it at once. */
+const SETTINGS_MEMO_MS = 3000;
+let settingsMemo = null;
+
+function settingsReply(event, doc) {
+    /* Through the edge, on the short gate policy — see GATE_CDN_CACHE in
+       _cache.js for why this one is twenty seconds and not sixty. This
+       is the most-requested endpoint on the site by a wide margin (every
+       page asks once, and before this every page asked three times), and
+       it was the only hot public read with no cache header at all. */
+    /* Keyed at the edge on `fresh` alone (2 Oct 2026): the gate's poll
+       asks with ?fresh=<time bucket> (js/welcome.js) and each bucket is
+       meant to be a copy of its own; any other parameter is not, and no
+       longer makes one. See rooms.js. */
+    const res = cachedJson(event, {
+        landingState: (doc && doc.landingState) || DEFAULT_STATE,
+        lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
+        fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
+        theme: (doc && doc.theme) || DEFAULT_THEME,
+        palette: (doc && doc.palette) || null,
+        launchAt: (doc && doc.launchAt) || "",
+        ffLaunchAt: (doc && doc.ffLaunchAt) || ""
+    }, { cdn: GATE_CDN_CACHE });
+    res.headers = { ...res.headers, "Netlify-Vary": "query=fresh" };
+    return res;
+}
+
 exports.handler = async (event) => {
+    if (event.httpMethod === "GET" && settingsMemo && Date.now() - settingsMemo.at < SETTINGS_MEMO_MS) {
+        return settingsReply(event, settingsMemo.doc);
+    }
     let db;
     try {
         db = await getDb();
@@ -127,21 +163,11 @@ exports.handler = async (event) => {
             console.error("settings: read failed", e);
             return json(503, { error: "Settings could not be read just now." });
         }
-        /* Through the edge, on the short gate policy — see GATE_CDN_CACHE in
-           _cache.js for why this one is twenty seconds and not sixty. This
-           is the most-requested endpoint on the site by a wide margin (every
-           page asks once, and before this every page asked three times), and
-           it was the only hot public read with no cache header at all. */
-        return cachedJson(event, {
-            landingState: (doc && doc.landingState) || DEFAULT_STATE,
-            lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
-            fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
-            theme: (doc && doc.theme) || DEFAULT_THEME,
-            palette: (doc && doc.palette) || null,
-            launchAt: (doc && doc.launchAt) || "",
-            ffLaunchAt: (doc && doc.ffLaunchAt) || ""
-        }, { cdn: GATE_CDN_CACHE });
+        settingsMemo = { at: Date.now(), doc };
+        return settingsReply(event, doc);
     }
+    // A save on this instance is read back as saved — see SETTINGS_MEMO_MS.
+    settingsMemo = null;
 
     /* The write half inside one try, as the GET above already is. The save
        and its read-back had nothing around them, so a database that dropped

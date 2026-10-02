@@ -280,6 +280,15 @@ function normaliseMessage(m) {
 function groupSource(kind, source) {
     const s = String(source || "").replace(/[?#].*$/, "");
     if (kind !== "resource") return s;
+    /* FurniIndex's new picture API (1 Oct 2026) names the furni in a FOLDER
+       — /furni/<classname>/icon, /furni/<classname>/large/r2/s0/noshadow —
+       so "the folder" was a different one for every furni, and each picture
+       that failed started a group of its own. On a bad FurniIndex afternoon
+       that was a new group per furni per visitor's page, spending the
+       site's two hundred new groups an hour (NEW_PER_HOUR) in a few dozen
+       visits and dropping every real failure after them. One group for the
+       whole API; the samples still name each picture. */
+    if (/^\/\/api\.furniindex\.com\/furni\//i.test(s)) return "//api.furniindex.com/furni/*";
     const slash = s.lastIndexOf("/");
     const ext = (/\.([A-Za-z0-9]{1,6})$/.exec(s) || [])[1] || "";
     return s.slice(0, slash + 1) + "*" + (ext ? "." + ext.toLowerCase() : "");
@@ -521,11 +530,17 @@ async function overNetCap(db, event, n) {
     const k = limiterKey(event);
     if (!k) return false;
     const col = db.collection(LIMITS);
+    const recent = () => col.countDocuments({ k, at: { $gte: new Date(Date.now() - NET_WINDOW_MS) } },
+        { limit: NET_PER_MINUTE + 1 });
+    /* Counted before the insert too (2 Oct 2026), as track.js's overLimit:
+       a network already over its minute used to write up to MAX_REPORTS
+       rows a POST for as long as it kept posting. Over the line now, a batch
+       costs one indexed count and writes nothing; the insert-then-count
+       below still keeps a parallel burst from all fitting under together. */
+    if (await recent() >= NET_PER_MINUTE) return true;
     const at = new Date();
     await col.insertMany(Array.from({ length: n }, () => ({ k, at })), { ordered: false });
-    const seen = await col.countDocuments({ k, at: { $gte: new Date(Date.now() - NET_WINDOW_MS) } },
-        { limit: NET_PER_MINUTE + 1 });
-    return seen > NET_PER_MINUTE;
+    return (await recent()) > NET_PER_MINUTE;
 }
 
 /* One counter per hour, bumped and read back in the same atomic step. The
@@ -928,6 +943,8 @@ function pathOf(event) {
     return String((event && event.path) || "") + (search ? "?" + search : "");
 }
 
+let functionHourSpent = -1;
+
 async function reportFunctionFailure(name, event, context, { status, ms, error, message }) {
     const h = (event && event.headers) || {};
     const frame = frameOf(error && error.stack, name);
@@ -953,9 +970,19 @@ async function reportFunctionFailure(name, event, context, { status, ms, error, 
     if (error && !error.message && !message) raw.message = String(error);
     const rep = cleanReport(raw, { fromClient: false });
     if (!rep) return;
+    /* An hour this instance already knows is spent (2 Oct 2026). Past the
+       budget every failure still bumped the counter and the dropped tally —
+       two writes per failing request, at exactly the moment (a database
+       struggling, a flood answered with 5xx) that the database can least
+       spare them. Once one bump has said the hour is over, this instance
+       stops asking until the hour turns; the dropped tally then undercounts
+       for that instance, which is the cheaper thing to be wrong about. */
+    const hourNow = Math.floor(Date.now() / 3600000);
+    if (functionHourSpent === hourNow && !testDb) return;
     const db = testDb || await getDb();
     // Its own hour, not the browsers' (FUNCTIONS HAVE THEIR OWN BUDGET, above).
     if (await overGlobalCap(db, 1, "function")) {
+        functionHourSpent = hourNow;
         await countMeta(db, "dropped", 1);
         return;
     }

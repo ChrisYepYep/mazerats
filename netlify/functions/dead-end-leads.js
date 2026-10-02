@@ -85,6 +85,13 @@ const REVIEW_NOTE_MAX = 500;
    Counting the exact address let anyone on IPv6 take a fresh allowance with
    every one of the /64's addresses, which is to say an unlimited one. */
 const LEAD_LIMIT = 6;
+/* And a ceiling for the whole site (2 Oct 2026), because a subscriber is
+   cheap: a free IPv6 tunnel is a /48, 65,536 subscribers each with their own
+   six leads per ten minutes, and nothing bounded the rows that could write.
+   Past this many leads in the last hour, from anybody, the form says it is
+   busy; the leads already in are untouched. Same idea as contact.js's
+   SITE_PER_HOUR and event-entries.js's GLOBAL_PER_HOUR. */
+const LEADS_SITE_PER_HOUR = 300;
 const UPLOAD_LIMIT = 12;
 const WINDOW_MS = 10 * 60 * 1000;
 const ORPHAN_AGE_MS = 24 * 60 * 60 * 1000;
@@ -182,6 +189,7 @@ async function buildIndexes(db) {
     await ensureIndex(leads, { status: 1, createdAt: -1 });
     await ensureIndex(leads, { ip: 1, createdAt: -1 });
     await ensureIndex(leads, { net: 1, createdAt: -1 });
+    await ensureIndex(leads, { createdAt: -1 });         // the site-wide ceiling
     await ensureIndex(leads, { type: 1, recordId: 1 });
     // The Profile counts a player's own submissions by `from.id` on every
     // open (player-profile.js), and nickname renames update by it too.
@@ -419,6 +427,12 @@ async function handleUpload(event, db) {
 // -------------------------------------------------------------- POST: lead
 
 async function handleLead(event, db) {
+    /* Measured before it is parsed (2 Oct 2026). The biggest real lead is
+       eight answers of LEAD_ITEM_MAX characters and eight picture keys —
+       about ten thousand characters — but nothing stopped a six-megabyte
+       body being parsed first and refused after, as often as anybody liked.
+       The pictures themselves come through ?action=upload, not here. */
+    if (String(event.body || "").length > 64 * 1024) return json(413, { error: "That is a lot at once. Send the rest separately." });
     let body;
     try {
         body = JSON.parse(event.body || "{}");
@@ -520,6 +534,12 @@ async function handleLead(event, db) {
     // A cheap early refusal only; the real check follows the insert below.
     if (net && await countRecentLeads() >= LEAD_LIMIT) {
         return json(429, { error: TOO_MANY_LEADS });
+    }
+    // The site-wide ceiling — see LEADS_SITE_PER_HOUR. On the createdAt index.
+    const siteHour = await leads.countDocuments({ createdAt: { $gte: new Date(Date.now() - 60 * 60 * 1000) } },
+        { limit: LEADS_SITE_PER_HOUR + 1 });
+    if (siteHour >= LEADS_SITE_PER_HOUR) {
+        return json(429, { error: "Lots of these are arriving just now. Try again in a little while." });
     }
 
     let recordName = newName;

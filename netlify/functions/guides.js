@@ -115,7 +115,11 @@ function shape(body) {
     const order = Number.isFinite(Number(body.order)) ? Math.max(-9999, Math.min(9999, Math.round(Number(body.order)))) : 0;
     return {
         title,
-        category: text(body.category, LIMITS.category).replace(/[<>"'`]/g, ""),
+        /* As typed (2 Oct 2026). Quotes and angle brackets were stripped,
+           so "Builder's Tips" was saved as "Builders Tips" without a word;
+           every place a category is shown escapes it (js/guides.js,
+           js/admin-guides.js, What's New in js/home.js). */
+        category: text(body.category, LIMITS.category),
         summary: text(body.summary, LIMITS.summary),
         thumb: cleanImage(body.thumb),
         sections,
@@ -213,7 +217,12 @@ exports.handler = async (event) => {
            looked for past the cache left one more copy there that nothing
            would ever ask for again. It is answered and not kept. */
         const fresh = Object.prototype.hasOwnProperty.call(params, "fresh");
-        return cachedJson(event, list, { cache: !full && !fresh });
+        /* Keyed at the edge on the two parameters that change the answer
+           (2 Oct 2026), so a random one is the cached list rather than a
+           fresh read of every guide — see rooms.js. */
+        const res = cachedJson(event, list, { cache: !full && !fresh });
+        res.headers = { ...res.headers, "Netlify-Vary": "query=full|fresh" };
+        return res;
     }
 
     // A write that fails part-way (the database dropping mid-request, say)

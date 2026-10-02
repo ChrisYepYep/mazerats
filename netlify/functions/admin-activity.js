@@ -19,7 +19,7 @@
    and EVENTS (the raw log, newest first). */
 
 const { getDb } = require("./_db");
-const { isAuthorized, isOwner, UNAUTHORIZED, forbidden, AUTH_UNAVAILABLE } = require("./_auth");
+const { isAuthorized, roleOf, UNAUTHORIZED, forbidden, AUTH_UNAVAILABLE } = require("./_auth");
 const { COLLECTION, KEEP_DAYS } = require("./_audit");
 const { COLLECTION: SITE_EVENTS, KEEP_DAYS: SITE_KEEP_DAYS } = require("./track");
 const { SECURITY_HEADERS } = require("./_headers");
@@ -60,13 +60,19 @@ exports.handler = async (event) => {
     /* isOwner throws when the account lookup cannot be made (lookUpRole in
        _auth.js). A 503 to retry — this used to come back as the 403, which
        told an owner they were not one. */
-    let owner;
+    let role;
     try {
-        owner = await isOwner(event);
+        role = await roleOf(event);
     } catch (e) {
         return AUTH_UNAVAILABLE;
     }
-    if (!owner) return forbidden("Only an owner can read the activity log.");
+    /* No role is no account (1 Oct 2026, night scan): a token for an account
+       since deleted, or minted before its password last changed. That is a
+       signed-out session, and the page signs out on a 401 — the 403 below
+       told it "not an owner" and left the dead session sitting there, as
+       refuseWrite in _auth.js explains for the write endpoints. */
+    if (role === null) return UNAUTHORIZED;
+    if (role !== "owner") return forbidden("Only an owner can read the activity log.");
 
     let db;
     try {

@@ -330,10 +330,13 @@ async function handle(event) {
            uncached, which is what keeps an admin reading the truth. */
         /* `rev` on every level, 0 where it has never been saved through
            here — the page sends it back with its run (see VERSIONS). */
+        /* Keyed on `all` alone (2 Oct 2026; see `vary` in _cache.js): the
+           list reads no other parameter, so ?x=<random> is the cached copy
+           rather than a fresh read of every level. */
         return cachedJson(event, {
             count: published.length,
             levels: published.map(l => ({ ...l, rev: revOf(l) }))
-        });
+        }, { vary: "all" });
     }
 
     let body = {};

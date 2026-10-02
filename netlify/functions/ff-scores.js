@@ -612,14 +612,37 @@ function minPointsFor(level) {
    a run that came without versions. */
 const LEVEL_LIST_SLACK_MS = 26 * 60 * 60 * 1000;
 
-function followsPublishedOrder(ids, published, startedAt, settledAt) {
+// Whether a level has held still since before the page's list was read; see
+// above. Shared by the order check and the life bonus's (see listsEvery).
+function settledTest(startedAt, settledAt) {
     const settledBefore = Number.isFinite(settledAt) ? settledAt
         : (Number.isFinite(startedAt) ? startedAt : Date.now()) - LEVEL_LIST_SLACK_MS;
     const changedAt = (lv) => {
         const ms = Date.parse(lv.updatedAt || lv.createdAt || "");
         return Number.isFinite(ms) ? ms : -Infinity;      // no stamp: older than stamps
     };
-    const settled = (lv) => changedAt(lv) < settledBefore;
+    return (lv) => changedAt(lv) < settledBefore;
+}
+
+/* ---- AND THE LIFE BONUS NEEDS THE WHOLE LIST (1 Oct 2026).
+
+   The bonus is paid on a run that cleared every level it was DEALT, and
+   the page deals every published level. But the order check above only
+   asks for a prefix — so a run listing just the first level, cleared,
+   was "finished" and took up to 300 points of lives for it; one that
+   cleared 49 of 50 and died on the last could list the 49 and take 1,200.
+   A prefix is still a fine list for a run that ended early; it is only
+   the bonus that needs the rest. So: every SETTLED published level must be
+   on the list (a level changed since the page read its list may be
+   missing, exactly as the order check allows). */
+function listsEvery(ids, published, startedAt, settledAt) {
+    const settled = settledTest(startedAt, settledAt);
+    const listed = new Set(ids);
+    return !published.some(lv => settled(lv) && !listed.has(String(lv.id)));
+}
+
+function followsPublishedOrder(ids, published, startedAt, settledAt) {
+    const settled = settledTest(startedAt, settledAt);
     const orderOf = (lv) => Number(lv.order) || 0;
     const byId = new Map(published.map(lv => [String(lv.id), lv]));
     let last = -Infinity;
@@ -701,7 +724,10 @@ function checkBreakdown(body, totals, published, startedAt, view) {
     if (sumMs > totals.ms + RUN_SUM_TOLERANCE_MS) return bad("The rounds add up to longer than the run");
     const bonus = totals.points - sumPoints;
     if (bonus !== 0) {
-        const finished = won === dealt.length;
+        // Every level dealt, and every level there was to deal: see listsEvery.
+        const finished = won === dealt.length && (view
+            ? listsEvery(ids, view.order, startedAt, view.settledBefore)
+            : listsEvery(ids, published, startedAt));
         if (!finished || bonus < 0 || bonus % LIFE_BONUS !== 0 || bonus > maxLifeBonus(won)) {
             return bad("The points do not add up to the rounds");
         }

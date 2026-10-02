@@ -8,8 +8,8 @@
    press drops another load. Once the game is open the row goes to its page
    as before (see sideMenuEntries in js/home.js).
 
-   The pictures are FurniIndex's own in-game renders, the same host the
-   archive's furni icons come from — the large ones (-lrg), at their own
+   The pictures are FurniIndex's own in-game renders, from the same API the
+   archive's furni icons come from — the large ones, at their own
    size on every screen. They used to be doubled again on a desktop, which
    made the seats far too big; the small renders (-sml) were tried next
    and read as too small. Nothing is asked of this site's server.
@@ -20,48 +20,49 @@
 (function () {
     "use strict";
 
-    const HOST = "https://furniindex.com/image/furni/furni-";
-    /* [FurniIndex name, the views of it], seats only: things you can sit on.
-       The name is the one the LARGE renders use, which is not always the
-       small renders' name: Throne's large render is furni-throne-1-s1-r1-lrg
-       and its small one furni-throne-s1-r1-sml (the catalogue's largeImages
-       are the authority). */
+    /* FurniIndex's new public API (1 Oct 2026): renders by the furni's own
+       classname and the game's own direction and state. The views below
+       are the ones the old host's r1..r4 turned out to be, matched by their
+       pixels (tools/furni-api-map.js) — not that it matters much for a seat
+       falling past. Large renders, no shadow, as before. */
+    const HOST = "https://api.furniindex.com/furni/";
+    // [classname, its views as rotation/state], seats only: things you can sit on.
     const SEATS = [
-        ["amberwood-bench", ["s1-r1","s1-r2"]],
-        ["amberwood-stool", ["s1-r1"]],
-        ["aqua-deck-chair", ["s1-r1","s1-r2"]],
-        ["armchair-2", ["s1-r1","s1-r2"]],
-        ["armchair-3", ["s1-r1","s1-r2"]],
-        ["barrel-stool", ["s1-r1"]],
-        ["bench", ["s1-r1","s1-r2"]],
-        ["club-sofa", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["deepgrove-wooden-chair", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["dining-chair", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["dining-chair-1", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["director-s-chair", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["executive-3-seater-sofa", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["executive-sofa-chair", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["gothic-chair-pink", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["gothic-sofa-pink", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["grunge-chair", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["hc-chair", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["majestic-chair", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["marrs-green-two-seater-sofa", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["night-lotus-gothic-chair", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["pink-fluffy-pillow", ["s1-r1","s1-r2"]],
-        ["pirate-s-bench", ["s1-r1","s1-r2"]],
-        ["polar-sofa", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["rose-quartz-chair", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["sheji-sofa", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["stool", ["s1-r1"]],
-        ["throne-1", ["s1-r1"]],
-        ["throne-sofa", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["two-seater-sofa-3", ["s1-r1","s1-r2"]],
-        ["two-seater-sofa-1", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["urban-bench", ["s1-r1","s1-r2","s1-r3","s1-r4"]],
-        ["wood-stool", ["s1-r1","s1-r2","s1-r3","s1-r4"]]
+        ["bench_autumn", ["r2/s0","r0/s0"]],   // amberwood-bench
+        ["stool_autumn", ["r0/s0"]],   // amberwood-stool
+        ["summer_chair*1", ["r2/s0","r4/s0"]],   // aqua-deck-chair
+        ["sofachair_silo", ["r0/s0","r2/s0"]],   // armchair-2
+        ["sofachair_polyfon", ["r0/s0","r2/s0"]],   // armchair-3
+        ["bar_chair_armas", ["r0/s0"]],   // barrel-stool
+        ["bench_armas", ["r2/s0","r0/s0"]],   // bench
+        ["club_sofa", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // club-sofa
+        ["deepgrove_chair", ["r0/s0","r4/s0","r6/s0"]],   // deepgrove-wooden-chair
+        ["chair_silo", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // dining-chair
+        ["chair_polyfon", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // dining-chair-1
+        ["habbowood_chair", ["r2/s0","r4/s0","r6/s0","r0/s0"]],   // director-s-chair
+        ["exe_sofa", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // executive-3-seater-sofa
+        ["exe_chair", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // executive-sofa-chair
+        ["gothic_chair*1", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // gothic-chair-pink
+        ["gothic_sofa*1", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // gothic-sofa-pink
+        ["grunge_chair", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // grunge-chair
+        ["chair_plasto*14", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // hc-chair
+        ["hc_chr", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // majestic-chair
+        ["funky_sofa_polyfon*1", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // marrs-green-two-seater-sofa
+        ["asian_gothic_chair*1", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // night-lotus-gothic-chair
+        ["pillow*1", ["r0/s0","r2/s0"]],   // pink-fluffy-pillow
+        ["cabin_bench_armas", ["r0/s0","r2/s0"]],   // pirate-s-bench
+        ["rclr_sofa", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // polar-sofa
+        ["romantique_chair*1", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // rose-quartz-chair
+        ["sheji_sofa", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // sheji-sofa
+        ["small_chair_armas", ["r0/s0"]],   // stool
+        ["throne", ["r0/s0"]],   // throne-1
+        ["hcsohva", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // throne-sofa
+        ["sofa_polyfon", ["r0/s0","r2/s0"]],   // two-seater-sofa-3
+        ["sofa_silo", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // two-seater-sofa-1
+        ["urban_bench", ["r0/s0","r2/s0","r4/s0","r6/s0"]],   // urban-bench
+        ["lc_stool", ["r0/s0","r2/s0","r4/s0","r6/s0"]]    // wood-stool
     ];
-    const urlOf = (slug, view) => `${HOST}${slug}-${view}-lrg.png`;
+    const urlOf = (cls, view) => `${HOST}${encodeURIComponent(cls)}/large/${view}/noshadow`;
 
     const reduceMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const pick = list => list[Math.floor(Math.random() * list.length)];

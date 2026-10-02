@@ -30,7 +30,7 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { isAuthorized, hasAccount, canWrite, refuseWrite, usernameFromToken, sessionOf, tokenPayload, tokenIsCurrent, UNAUTHORIZED, READ_ONLY, ROLES, PERMANENT_OWNER, resolveRole, signAdminToken, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
-const { record, COLLECTION: ACTIVITY } = require("./_audit");
+const { record, ensureIndexes: ensureActivityIndexes, COLLECTION: ACTIVITY } = require("./_audit");
 const { SECURITY_HEADERS } = require("./_headers");
 // The cookie reader the player session already uses; see isKnownDevice.
 const { parseCookies } = require("./_player");
@@ -135,6 +135,9 @@ const text = (v) => (typeof v === "string" ? v : "");
 const LOGIN_MAX_PER_IP = 10;
 const LOGIN_MAX_PER_USER_IP = 15;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+// Failed sign-ins across the whole site per window — see the ceiling in
+// loginThrottle. Real traffic is a handful a day.
+const LOGIN_SITE_MAX = 300;
 const LOGGED_NAME_MAX = 60;
 // The largest request body taken at all — see the handler.
 const MAX_BODY = 8192;
@@ -514,6 +517,41 @@ async function loginThrottle(db, event, username, findAccount) {
     const net = clientNet(event);
     const activity = db.collection(ACTIVITY);
 
+    const refuse = (seconds) => ({
+        refused: {
+            statusCode: 429,
+            headers: { ...SECURITY_HEADERS, "Retry-After": String(Math.max(1, Math.ceil(seconds))) },
+            body: JSON.stringify({ error: "Too many sign-in attempts. Try again in a few minutes." })
+        }
+    });
+
+    /* ---- A CEILING FOR THE WHOLE SITE (2 Oct 2026), checked before
+       anything is written.
+
+       The caps below are per subscriber and per name, and both are cheap to
+       come by: a free IPv6 tunnel is a /48 — 65,536 subscribers — and every
+       made-up name has a lock of its own. Each attempt writes a row kept for
+       ninety days, so a spread-out flood could write hundreds of thousands
+       of them an hour, and a full database stops every save on the site.
+
+       So past LOGIN_SITE_MAX failures in the window, from anybody, an
+       attempt from a network or device the account does not know is
+       refused without a row; one the account DOES know goes on exactly as
+       before, so the owner signing in from home is not shut out by somebody
+       else's flood. The account is looked up only on this path, and handed
+       on below so it is not asked twice. Counted on { type, at } (see
+       _audit.js), stopping at the ceiling. */
+    ensureActivityIndexes(db);     // beside the count, never in front of it; memoised, never throws
+    let early;
+    const siteFails = await activity.countDocuments({ type, at: { $gte: since } }, { limit: LOGIN_SITE_MAX + 1 });
+    if (siteFails > LOGIN_SITE_MAX) {
+        early = findAccount ? await findAccount() : null;
+        if (!isKnownNet(early, net) && !isKnownDevice(early, event)) {
+            console.warn(`auth: over ${LOGIN_SITE_MAX} failed sign-ins this window; refusing unknown networks`);
+            return refuse(LOGIN_WINDOW_MS / 1000);
+        }
+    }
+
     // The same shape _audit.js's record() writes, so the activity page reads
     // it as any other failed sign-in.
     const { insertedId } = await activity.insertOne({
@@ -541,14 +579,6 @@ async function loginThrottle(db, event, username, findAccount) {
             { limit: LOGIN_MAX_PER_USER_IP + 1 })
     ]);
 
-    const refuse = (seconds) => ({
-        refused: {
-            statusCode: 429,
-            headers: { ...SECURITY_HEADERS, "Retry-After": String(Math.max(1, Math.ceil(seconds))) },
-            body: JSON.stringify({ error: "Too many sign-in attempts. Try again in a few minutes." })
-        }
-    });
-
     // Strictly more than the cap, because the count includes this attempt's
     // own row: ten earlier failures plus this one is eleven, and refused.
     if (byIp > LOGIN_MAX_PER_IP || byPair > LOGIN_MAX_PER_USER_IP) {
@@ -563,7 +593,7 @@ async function loginThrottle(db, event, username, findAccount) {
     let account = null;
     let claim = null;
     try {
-        account = findAccount ? await findAccount() : null;
+        account = early !== undefined ? early : findAccount ? await findAccount() : null;
         /* A device the account has signed in on counts as a known network
            (28 Sept 2026) — see A DEVICE THE ACCOUNT HAS SIGNED IN ON. */
         if (!isKnownNet(account, net) && !isKnownDevice(account, event)) claim = await claimUserAttempt(db, username);

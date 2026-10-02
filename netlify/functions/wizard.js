@@ -262,7 +262,9 @@ function forVisitor(record) {
 }
 
 function slugify(text) {
-    return (text || "").toLowerCase().trim()
+    // String(): a name sent as a number or an object was a TypeError here
+    // and a bare 500 on the create (1 Oct 2026).
+    return String(text || "").toLowerCase().trim()
         .replace(/[^a-z0-9]+/g, "-")
         .replace(/(^-|-$)/g, "") || "place";
 }
@@ -430,11 +432,20 @@ const FIELDS = {
         "focusX", "focusY", "focusZoom", "enabled", "order"]
 };
 
+/* A trail's points: a list of [x, y] pairs, or nothing stored (1 Oct 2026).
+   See the bulk save, and pick() below, which both drop anything else. */
+function validPoints(points) {
+    return Array.isArray(points) && points.length <= 2000
+        && points.every(p => Array.isArray(p) && p.length >= 2
+            && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])));
+}
+
 function pick(kind, body) {
     const out = {};
     for (const field of FIELDS[kind] || []) {
         if (body[field] !== undefined) out[field] = body[field];
     }
+    if (out.points !== undefined && !validPoints(out.points)) delete out.points;
     const band = readBand(body);
     if (FIELDS[kind].includes("fromZoom")) {
         out.fromZoom = band.fromZoom;
@@ -479,6 +490,20 @@ function pick(kind, body) {
         if (out.followZoom != null) out.followZoom = Math.max(1, Math.min(8, out.followZoom));
         if (out.stepMs != null) out.stepMs = Math.max(60, Math.min(1500, Math.round(out.stepMs)));
     }
+    /* The sheet's size and zoom limits are divisors on the public page (1 Oct
+       2026). The editor's map form sends Number(field), and a number box
+       left empty passes its own min="200" and arrives as 0 — a sheet 0px
+       wide, every room drawn at the same point, the whole atlas collapsed
+       into a line until somebody noticed. A size or zoom that is not a
+       positive number is left out of the write, so what was stored stands. */
+    if (kind === "map") {
+        for (const field of ["width", "height", "minZoom", "maxZoom", "backgroundDetailZoom"]) {
+            if (out[field] === undefined) continue;
+            const n = Number(out[field]);
+            if (Number.isFinite(n) && n > 0) out[field] = n;
+            else delete out[field];
+        }
+    }
     return out;
 }
 
@@ -513,6 +538,11 @@ exports.handler = async (event) => {
 
 async function route(event, wizard) {
     if (event.httpMethod === "GET") {
+        /* ?fresh=1 refused before the atlas is read, not after (2 Oct 2026):
+           it is never cached, so an anonymous request for it was a whole-
+           collection read answered 401. See the same step in rooms.js; the
+           check below stays, memoised. */
+        if ((event.queryStringParameters || {}).fresh === "1" && !(await hasAccount(event))) return UNAUTHORIZED;
         const all = await wizard.find({}, { projection: { _id: 0 } }).toArray();
         const of = kind => all.filter(d => d.kind === kind);
         const reveals = of("reveal");
@@ -601,7 +631,11 @@ async function route(event, wizard) {
                 .sort((a, b) => (a.order || 0) - (b.order || 0))
                 .map(r => ({ id: publicSecretId(r), hint: r.hint || "" }))
         };
-        return cachedJson(event, payload);
+        /* Keyed at the edge on `fresh` alone (2 Oct 2026), so a random
+           parameter is the cached map, not a fresh read — see rooms.js. */
+        const res = cachedJson(event, payload);
+        res.headers = { ...res.headers, "Netlify-Vary": "query=fresh" };
+        return res;
     }
 
     let body;
@@ -637,7 +671,14 @@ async function route(event, wizard) {
            so batching buys a round trip and not a larger allowance. */
         const asked = Array.isArray(body.codes) ? body.codes
             : body.code === undefined ? [] : [body.code];
-        const codes = [...new Set(asked.map(codeKey))]
+        /* Cut down BEFORE each is keyed (1 Oct 2026): the cap of forty was
+           applied after, so a body of a few hundred thousand junk codes was
+           normalised one by one before any of that was thrown away. The page
+           sends at most forty-one. */
+        // And each one cut to a length no typed buffer reaches (the page
+        // keeps sixty letters) before it is folded.
+        const codes = [...new Set(asked.slice(0, 200)
+            .map(c => codeKey(String(c == null ? "" : c).slice(0, 1000))))]
             // An empty box is not a guess, and a code long enough to be an
             // attack is not one either.
             .filter(code => code && code.length <= 120)
@@ -910,6 +951,11 @@ async function route(event, wizard) {
                     $set[field] = item[field];
                 }
             }
+            /* A trail's points as a list of [x, y] pairs or not at all (1 Oct
+               2026). Anything else stored here — a flat [1, 2], a string —
+               threw inside sampleCurve on the public page, which draws every
+               trail in one pass, so one bad record blanked the whole map. */
+            if ($set.points !== undefined && !validPoints($set.points)) delete $set.points;
             writes.push({
                 updateOne: { filter: { id: item.id, kind: item.kind }, update: { $set } }
             });

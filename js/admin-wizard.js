@@ -2406,7 +2406,7 @@ window.AdminWizard = (function () {
                     </label>
                     <label>A step every
                         <input type="number" name="stepMs" min="60" max="1500" step="20"
-                               value="${secret.stepMs != null ? esc(secret.stepMs) : ""}" placeholder="280">
+                               value="${secret.stepMs != null ? esc(secret.stepMs) : ""}" placeholder="340">
                         <span>ms</span>
                     </label>
                 </div>

@@ -54,7 +54,7 @@ const { dayIsOpen, dayClosesAt, rangeBounds } = require("./_daily");
 /* Where the boards start, and what counts as a day, from daily-scores.js so
    the two games and the combined board cut at the same place. See launchCut
    and isRealDay there. */
-const { launchCut, afterLaunch, fromLaunch, isRealDay, filedScore,
+const { launchCut, afterLaunch, fromLaunch, isRealDay, boardDay, filedScore,
     practiceOf, practiceReply, pastPractice, boardReply, freshFor, plainBoard } = require("./daily-scores");
 const { clientNet } = require("./_net");
 const speed = require("./_speed");
@@ -338,8 +338,10 @@ exports.handler = async (event) => {
         if (params.deal === "1") return dealReply(db, event, params);
 
         const day = (params.day || todayIso()).slice(0, 10);
-        // A real calendar day, not only the right shape — see isRealDay.
-        if (!isRealDay(day)) return json(400, { error: "Bad day" });
+        // A real calendar day, not only the right shape — see isRealDay —
+        // and one a board could hold (boardDay, 2 Oct 2026: every real day
+        // was its own edge cache key).
+        if (!boardDay(day)) return json(400, { error: "Bad day" });
 
         // The player's own read after a submit, or sent to the cached board
         // — see BOARD_VARY in daily-scores.js (1 Oct 2026).
@@ -556,7 +558,11 @@ exports.handler = async (event) => {
                 done: outcome.done,
                 won: outcome.won,
                 answer: outcome.done ? answerOf(dealt) : null,
-                next: outcome.done ? deals.nextRound("guess", deal.rounds, round, day) : null
+                next: outcome.done ? deals.nextRound("guess", deal.rounds, round, day) : null,
+                // Practice time, so a day dealt before the cut and played
+                // after it is not carded as practice — see the same reply
+                // in daily-scores.js (1 Oct 2026).
+                ...(practice.now ? { practiceUntil: practice.cut.at } : {})
             });
         }
 

@@ -439,8 +439,15 @@
 /* Faded fully out is out of the way as well as out of sight — otherwise a
    name at zero opacity still takes the hover meant for the painting drawn
    over it. The keyboard half — out of the Tab order and the accessibility
-   tree — is applyBands in js/wizard-map.js, since CSS cannot do it. */
-.is-gone { pointer-events: none; }
+   tree — is applyBands in js/wizard-map.js, since CSS cannot do it.
+
+   Named for the three things applyBands marks (1 Oct 2026). It was a bare
+   .is-gone, and this sheet also loads in the Warren, where a secret's held
+   row for a deleted record is .admin-wiz-hold-row.is-gone — so the row, and
+   the × inside it that exists to take that record out, ignored the mouse. */
+.wiz-room.is-gone,
+.wiz-layer.is-gone,
+.wiz-trail.is-gone { pointer-events: none; }
 
 /* A picture placed on the map.
 

@@ -39,6 +39,20 @@ function subscriberOf(ip) {
     const groups = halves.length > 1
         ? [...head, ...Array(Math.max(0, 8 - width(head) - width(tail))).fill("0"), ...tail]
         : head;
+    /* An IPv4 address dressed as IPv6 in any other spelling (1 Oct 2026):
+       hex ("::ffff:102:304") or written out ("0:0:0:0:0:ffff:1.2.3.4"). The
+       pattern above only knew the short dotted one, so these were the /64
+       "0:0:0:0::/64" — one bucket shared by every such address on the
+       internet, for each cap that counts by this (contact.js, event-entries.js,
+       the sign-in throttle) — while _bans.js, which canonicalises first,
+       read the same request as its IPv4 address. Now both read it alike. */
+    const n = groups.map(g => (g.includes(".") ? g : parseInt(g, 16) || 0));
+    if (n.length >= 7 && n.slice(0, 5).every(x => x === 0) && n[5] === 0xffff) {
+        if (typeof n[6] === "string" && /^\d{1,3}(?:\.\d{1,3}){3}$/.test(n[6])) return n[6];
+        if (n.length === 8 && typeof n[6] === "number" && typeof n[7] === "number") {
+            return [n[6] >> 8, n[6] & 255, n[7] >> 8, n[7] & 255].join(".");
+        }
+    }
     return groups.slice(0, 4).map(g => (parseInt(g, 16) || 0).toString(16)).join(":") + "::/64";
 }
 

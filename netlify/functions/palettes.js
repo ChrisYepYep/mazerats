@@ -180,7 +180,12 @@ exports.handler = async (event) => {
                    minute's staleness after an edit is the same promise rooms
                    and events make (see _cache.js). The 404 is not cached, so a
                    palette created a moment ago is not hidden behind one. */
-                return one ? cachedJson(event, clean(one)) : json(404, { error: "No palette by that name." });
+                if (!one) return json(404, { error: "No palette by that name." });
+                // Keyed at the edge on `id` alone (2 Oct 2026), so another
+                // parameter is the cached palette, not a read — see rooms.js.
+                const res = cachedJson(event, clean(one));
+                res.headers = { ...res.headers, "Netlify-Vary": "query=id" };
+                return res;
             }
             const all = await col.find({}, { projection: { _id: 0 } }).sort({ at: 1 }).toArray();
             const signedIn = isAuthorized(event);

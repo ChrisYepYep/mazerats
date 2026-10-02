@@ -276,6 +276,14 @@ async function handle(event) {
     const rooms = db.collection("rooms");
 
     if (event.httpMethod === "GET") {
+        /* ?full=1 is checked BEFORE the archive is read (2 Oct 2026). It is
+           never cached, so every request for it reaches here — and it used to
+           read every maze, and their retired addresses, and only then answer
+           an anonymous caller 401: a whole-collection read per request, free
+           to anyone who could type the URL. Now a caller without a live
+           account costs nothing but the token check. The same check below
+           stays where the reasoning for it is written; roleOf memoises it. */
+        if ((event.queryStringParameters || {}).full === "1" && !(await hasAccount(event))) return UNAUTHORIZED;
         let all;
         try {
             all = await rooms.find({}, { projection: { _id: 0 } }).toArray();
@@ -336,7 +344,15 @@ async function handle(event) {
         }
         // Old addresses are the share function's business, not the page's.
         all.forEach(r => { delete r.slugAliases; delete r.slugManual; delete r.furniRev; });
-        return cachedJson(event, await packRecords(all));
+        /* Keyed at the edge on `full` alone (2 Oct 2026). The edge keys on
+           the whole query string by default, so ?x=<anything> was a cache
+           miss every time — the full archive read, packed and gzipped for
+           each request, by anybody adding a random parameter. Nothing else
+           changes this answer, so nothing else makes a new copy. Same idea
+           as share.js's VARY and daily-scores.js's BOARD_VARY. */
+        const res = cachedJson(event, await packRecords(all));
+        res.headers = { ...res.headers, "Netlify-Vary": "query=full" };
+        return res;
     }
 
     if (!isAuthorized(event)) return UNAUTHORIZED;
@@ -364,6 +380,23 @@ async function handle(event) {
        check events.js makes. */
     if (!body || typeof body !== "object" || Array.isArray(body)) {
         return json(400, { error: "Invalid request body" });
+    }
+
+    /* PUT ?action=furni-complete { id, complete } (2 Oct 2026, the owner's):
+       the tick on a maze's row in /warren saying its furni listing is whole.
+       One field, set on its own: not an edit of the maze, so it moves
+       neither updatedAt (What's New) nor the version a form open on the same
+       maze was read at. The homepage's Furni view lists the ticked mazes. */
+    if (event.httpMethod === "PUT" && (event.queryStringParameters || {}).action === "furni-complete") {
+        if (!body.id || typeof body.id !== "string") return json(400, { error: "Missing room id" });
+        if (typeof body.complete !== "boolean") return json(400, { error: "complete must be true or false" });
+        const done = await rooms.findOneAndUpdate(
+            { id: body.id },
+            { $set: { furniComplete: body.complete } },
+            { returnDocument: "after", projection: { _id: 0, id: 1, furniComplete: 1 } }
+        );
+        if (!done) return json(404, { error: "Room not found" });
+        return json(200, done);
     }
 
     /* Names arrive with whatever whitespace the form was given.
@@ -410,6 +443,7 @@ async function handle(event) {
         if (newFurni) body.furni = mergeFurni(body.furni, newFurni);
         delete body.furniPatch;
         delete body.furniRev;
+        delete body.furniComplete;   // set from the list row only
         delete body.changes;
         delete body.updatedAt;
         delete body._baseUpdatedAt;
@@ -540,6 +574,9 @@ async function handle(event) {
         delete update.furniPatch;
         delete update.furni;
         delete update.furniRev;
+        /* The row's tick is ?action=furni-complete's alone: a form opened
+           before it was ticked would otherwise put the old value back. */
+        delete update.furniComplete;
 
         /* The version the editor started from, for the conflict check
            below. Taken off the update so it is never stored. Absent means a

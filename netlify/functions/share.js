@@ -290,6 +290,28 @@ function textOf(v) {
     return "";
 }
 
+/* A name as a link preview shows it (2 Oct 2026, the owner's): Discord and
+   the rest have no Volter to draw the picture characters, so
+   "*ÕMaze EmpireÕ*" unfurled as its raw letters. They go, with the stars
+   or bars framing them — "Maze Empire". The em dash and curly quote stay:
+   titles use them as themselves. Keep in step with plainTitle and
+   PICTURE_GLYPHS in js/site.js. */
+const TITLE_PICTURES = new RegExp("[" + [
+    0x0192, 0x2020, 0x2021, 0x2022, 0x00A5, 0x00AA, 0x00AC, 0x00B1,
+    0x00B5, 0x00B6, 0x00BA, 0x00BB, 0x00CC, 0x00CD, 0x00CE, 0x00D5,
+    0x00E6, 0x00EC, 0x00ED, 0x00EE, 0x00F5, 0x00F7
+].map(c => String.fromCodePoint(c)).join("") + "]", "gu");
+function plainTitle(text) {
+    const raw = String(text || "");
+    const s = raw.replace(TITLE_PICTURES, " ")
+        .replace(/[[({]\s*[\])}]/g, " ")      // "[ ª ]" leaves an empty pair
+        .replace(/\s{2,}/g, " ")
+        .replace(/^[\s*~_|]+/, "")
+        .replace(/(?:\s*[*~_|]+)+(?=\s+—|\s*$)/g, "")
+        .trim();
+    return s || raw;
+}
+
 // The same rule the site uses (GuideText.thumbOf in js/guide-text.js): the
 // guide's own thumbnail, else its first section picture, else none.
 // Sections that are not a list count as none — see textOf.
@@ -389,7 +411,7 @@ function tagsFor(kind, record, origin, slug) {
     const recordRef = `${kind}:${record.id}`;
     if (kind === "guide") {
         return {
-            title: textOf(record.title) || "Guides",
+            title: plainTitle(textOf(record.title)) || "Guides",
             // With its format taken off (30 Sept 2026), as the Guides
             // list's cards show it: a summary is written in the same
             // format as a guide's sections, and its stars and [words](...)
@@ -414,7 +436,7 @@ function tagsFor(kind, record, origin, slug) {
         || textOf(typeof first === "string" ? first : first && first.image)
         || "";
     return {
-        title: textOf(isEvent ? record.title : record.name) || "Maze Rats",
+        title: plainTitle(textOf(isEvent ? record.title : record.name)) || "Maze Rats",
         description: describe(record, isEvent),
         image: previewImage(origin, thumb),
         sized: true,
@@ -509,6 +531,37 @@ const COLLECTION = { maze: "rooms", event: "events", guide: "guides" };
 // the API, or the two could name a guide differently.
 const isPublic = (kind, r) => kind !== "guide" || (r && r.status === "published");
 
+/* THE ADDRESS BOOK, KEPT FOR A FEW SECONDS (2 Oct 2026).
+
+   Every address is its own page at the edge, so /maze/<anything made up>
+   is a miss every time, and each miss read every maze's address and the
+   retired ones — a free whole-collection read per request for anybody
+   inventing slugs. Each warm instance now keeps that list for ADDRESSES_MS,
+   so a flood of made-up addresses is answered from memory and a real one
+   costs one findOne. Never for ?fresh (/warren's View link, which must see
+   the save it was clicked after), and a failed read is not kept. A record
+   added a moment ago can 404 for those few seconds on an instance that
+   read the list just before — the edge's own copy of the archive is a
+   minute behind anyway. */
+const ADDRESSES_MS = 10 * 1000;
+const addressBook = new Map();
+async function addressesOf(db, kind, fresh) {
+    const kept = addressBook.get(kind);
+    if (!fresh && kept && Date.now() - kept.at < ADDRESSES_MS) return kept;
+    const [all, retired] = await Promise.all([
+        db.collection(COLLECTION[kind]).find({}, { projection: { ...SLUG_FIELDS, status: 1 } }).toArray(),
+        loadRetired(db, kind).catch(e => {
+            console.error("share: retired addresses unreadable", e);
+            return null;
+        })
+    ]);
+    const book = { at: Date.now(), all, retired: retired || [] };
+    // Unreadable retired addresses are none for this answer, as before, but
+    // are asked for again next time rather than remembered as none.
+    if (retired) addressBook.set(kind, book);
+    return book;
+}
+
 exports.handler = async (event) => {
     const origin = originOf();
     const asked = requestedSlug(event);
@@ -544,13 +597,7 @@ exports.handler = async (event) => {
                are worked out around them exactly as the API does, and one
                that names nothing live may be one of them. Unreadable is
                none, as it is for the API (see loadRetired). */
-            const [all, retired] = await Promise.all([
-                coll.find({}, { projection: { ...SLUG_FIELDS, status: 1 } }).toArray(),
-                loadRetired(db, kind).catch(e => {
-                    console.error("share: retired addresses unreadable", e);
-                    return [];
-                })
-            ]);
+            const { all, retired } = await addressesOf(db, kind, fresh);
             let hit = resolveSlug(all, kind, slug, retired);
             if (hit && !isPublic(kind, hit.record)) hit = null;
             const doc = hit && hit.current

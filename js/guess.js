@@ -1004,6 +1004,15 @@
         // server's answer says which kind of day it is.
         if (!state.mode) state.mode = body.recorded ? "account" : "anon";
 
+        /* The day's first verdict, given after the launch cut, on a day the
+           deal marked practice (dealt at 07:59, played from 08:00): the day
+           is the real one, and is carded, shared and banked as it — see
+           choose in js/oddoneout.js (1 Oct 2026; Daily.afterPractice). */
+        if (!anyGuesses() && state.practice && Daily.afterPractice && Daily.afterPractice(body)) {
+            delete state.practice;
+            practiceUntil = null;
+        }
+
         if (Array.isArray(body.guesses)) {
             // The round as the server has it — which, if another tab got
             // there first, is not quite what was just pressed.
@@ -2115,6 +2124,9 @@
                 const left = cut - at;
                 if (left <= 0) {
                     target.textContent = "Today's real rooms are open — close this and reopen it to play.";
+                    // The bonus line above too (2 Oct 2026): it went on
+                    // saying "nothing counts until … 08:00 UTC" after 08:00.
+                    drawBonus();
                     clearInterval(countdownTimer);
                     return;
                 }

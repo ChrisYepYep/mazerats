@@ -187,7 +187,13 @@ exports.handler = async (event) => {
 
     return {
         statusCode: 200,
-        headers: headersFor("application/xml; charset=utf-8", { "Cache-Control": cache }),
+        /* Netlify-Vary (2 Oct 2026): the sitemap reads no parameter at all,
+           and the edge keyed it on the whole query string, so
+           /sitemap.xml?x=<random> skipped the hour's copy every time and
+           cost a read of every room, event and guide. Naming one parameter
+           that nothing sends keys every spelling on that one (empty) value,
+           so all of them share the one cached copy. See `vary` in _cache.js. */
+        headers: headersFor("application/xml; charset=utf-8", { "Cache-Control": cache, "Netlify-Vary": "query=v" }),
         body: '<?xml version="1.0" encoding="UTF-8"?>\n' +
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
             entries.join("\n") + "\n</urlset>\n"

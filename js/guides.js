@@ -314,7 +314,15 @@
         }
         win.setAttribute("aria-labelledby", g ? "guide-title" : "guides-title");
         if (isOpen()) {
-            setMeta(g);
+            /* Not while the list that says which guide the address names is
+               still on its way (1 Oct 2026). A pasted /guides/<slug> link
+               opens the window at once, and this named it "Guides — Maze
+               Rats" (canonical /guides) over the guide's own title, which
+               share.js had written, until the list landed a moment later
+               and put it back: the tab's title flickered. What the page was
+               served with stands until then. Once a list is here, a guide
+               it lacks is named as the Guides, as before. */
+            if (g || !view.id || (loaded && !asking)) setMeta(g);
             // The address the guide was reached by (an old ?g= link, its id)
             // becomes its own, now the list has said which guide it names.
             if (g && onGuidesPath() && pendingPush === null && location.pathname + location.search !== addressFor(g.id)) {
@@ -343,14 +351,23 @@
     /* "X — Maze Rats", as netlify/functions/share.js titles a guide's
        page (1 Oct 2026): it said "X — Maze Rats Guides", so the tab's title
        changed under the reader the moment the list arrived. */
+    let metaHeld = false;       // this window has named the page (see draw)
     function setMeta(g) {
         if (!window.PageMeta) return;
+        metaHeld = true;
         window.PageMeta.set("guides", g ? `${g.title} — Maze Rats` : "Guides — Maze Rats",
             "https://mazerats.net" + addressFor(g ? g.id : null));
     }
 
+    /* Closed before it ever named the page (a pasted guide link shut
+       before the list came, see draw): the page still has the guide's
+       tags share.js served it with, and closing is what hands back the
+       archive's. Naming it first gives PageMeta a hold to let go of. */
     function restoreMeta() {
-        if (window.PageMeta) window.PageMeta.restore("guides");
+        if (!window.PageMeta) return;
+        if (!metaHeld) setMeta(null);
+        window.PageMeta.restore("guides");
+        metaHeld = false;
     }
 
     // ------------------------------------------------------------ address

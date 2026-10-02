@@ -248,7 +248,13 @@
 
     function renderOpen() {
         const value = config.mode === "event" && config.eventId ? "event:" + config.eventId : config.mode;
+        /* A picked event takes entries only while it runs (2 Oct 2026; see
+           currentEvent in event-entries.js), so the line says when. */
+        const at = iso => when(iso || "");
         const now = config.mode === "closed" ? "Entries are closed: the console's form says so, and nothing is taken."
+            : open && open.title && open.shut === "before" ? `Entries for ${open.title} open by themselves at ${at(open.opensAt)} and close at ${at(open.closesAt)}. Until then the form says when.`
+            : open && open.title && open.shut === "after" ? `${open.title} has ended, so entries are closed.`
+            : open && open.title && open.closesAt ? `New entries go to ${open.title}, until it ends at ${at(open.closesAt)}.`
             : open && open.title ? `New entries go to ${open.title}.` : "New entries are not filed under any event right now.";
         /* The picked event is always an option (30 Sept 2026). With the
            archive unread (loadEvents failed) or the event since deleted, it
@@ -279,7 +285,12 @@
             const out = await Api.setEventEntryOpen(token(), body);
             config = (out && out.config) || config;
             open = (out && out.open) || null;
+            /* Picking an event that hasn't started, or has ended, takes no
+               entries yet (2 Oct 2026, launch-eve scan): the flash said "now
+               go to" it while the line under the box said they don't. */
             flash(config.mode === "closed" ? "Entries are closed now."
+                : open && open.title && open.shut === "before" ? `Entries will go to ${open.title} once it starts.`
+                : open && open.title && open.shut === "after" ? `${open.title} has ended, so no entries are taken.`
                 : open && open.title ? `New entries now go to ${open.title}.` : "New entries are not filed under any event now.");
         } catch (err) {
             if (!sessionGone(err)) flash(`Not changed: ${(err && err.message) || "something went wrong"}`, true);
@@ -444,6 +455,15 @@
         chip.className = `de-chip ee-status-${entry.status || "new"}`;
         chip.textContent = STATUS_WORD[entry.status] || "New";
         chips.appendChild(chip);
+        /* An entrant's second entry for an event is their correction (2 Oct
+           2026: two an event, the second only to fix the first). */
+        if (entry.correction === true) {
+            const fix = document.createElement("span");
+            fix.className = "de-chip";
+            fix.textContent = "Correction";
+            fix.title = "This entrant's second entry for this event, sent to correct their first";
+            chips.appendChild(fix);
+        }
         info.appendChild(chips);
 
         const who = document.createElement("p");

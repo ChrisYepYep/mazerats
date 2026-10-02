@@ -367,6 +367,14 @@
         // The next round's four pictures come with this verdict, and only
         // now (ONE ROUND AT A TIME in js/daily.js).
         window.Daily.takeRound(dealt(), body.next);
+        /* The day's first verdict, given after the launch cut, on a day the
+           deal marked practice (dealt at 07:59, played from 08:00): the day
+           is the real one, and is carded, shared and banked as it (1 Oct
+           2026; Daily.afterPractice). */
+        if (!state.picks.length && state.practice && window.Daily.afterPractice && window.Daily.afterPractice(body)) {
+            delete state.practice;
+            practiceUntil = null;
+        }
         state.picks.push(pick);
         practiceEnded = false;         // said once, on the fresh day's splash
         if (state.picks.length >= dealt().length) state.done = true;
@@ -986,6 +994,9 @@
             const now = footText();
             if (now === before) return;
             foot.textContent = now;
+            // The bonus line too (2 Oct 2026): it went on saying "nothing
+            // counts until … 08:00 UTC" after 08:00.
+            drawBonus();
             stopFootTimer();
         }, 30000);
     }

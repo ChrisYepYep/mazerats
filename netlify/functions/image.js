@@ -49,9 +49,14 @@ const PRIVATE_HEADERS = { "Cache-Control": "private, no-store" };
    node that had not yet seen a picture read it out of Blobs again. The
    hour is the same hour in either layer, so a takedown still lands within
    it. */
+/* Netlify-Vary (2 Oct 2026, final scan): keyed on `key` alone, as every
+   other cached GET now is (see `vary` in _cache.js). Without it the edge
+   keyed on the whole query string, so `&x=<random>` on any picture was a
+   Blobs read and the whole file sent again, every time. */
 const PUBLIC_IMAGE_HEADERS = {
     "Cache-Control": "public, max-age=604800",
-    "Netlify-CDN-Cache-Control": "public, durable, s-maxage=3600, stale-while-revalidate=86400"
+    "Netlify-CDN-Cache-Control": "public, durable, s-maxage=3600, stale-while-revalidate=86400",
+    "Netlify-Vary": "query=key"
 };
 
 const refuse = (statusCode, body) => ({

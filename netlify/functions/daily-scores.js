@@ -326,6 +326,24 @@ function isRealDay(day) {
     return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === day;
 }
 
+/* A day a BOARD may be asked for (2 Oct 2026): a real day, and one inside
+   the span anybody could have played — from BOARD_FIRST_DAY, before the
+   first practice day, to two days past today on the server's clock (the
+   page's own day comes from the server, so this is slack, not a need).
+
+   The boards are edge-cached, but `day` is one of the parameters they are
+   keyed on (BOARD_VARY), so every real day was its own cache key: walking
+   0001-01-01 to 9999-12-31 was three million keys, each a miss and four
+   aggregations (eight for ?game=all), however the rest of the query was
+   held still. Bounded, the whole of the keyspace is a few dozen days a
+   game, each answered from the edge for its fifteen seconds. Outside it is
+   the 400 a day that does not exist already gets. */
+const BOARD_FIRST_DAY = "2026-09-01";
+function boardDay(day) {
+    if (!isRealDay(day)) return false;
+    return day >= BOARD_FIRST_DAY && day <= new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+}
+
 /* rangeBounds is shared from _daily.js now. This file's own copy made "This
    week" the last seven days rolling while Guess the Maze's was the calendar
    week from Monday — two spans under one label, and the combined board
@@ -482,7 +500,7 @@ function fold(...lists) {
 
 async function combinedBoards(db, event, params) {
     const day = String(params.day || today()).slice(0, 10);
-    if (!isRealDay(day)) return json(400, { error: "Bad day" });
+    if (!boardDay(day)) return json(400, { error: "Bad day" });
 
     const daily = db.collection(COLLECTION);
     const guess = db.collection("guess_scores");
@@ -595,7 +613,7 @@ exports.handler = async (event) => {
         if (params.deal === "1") return dealReply(db, event, game, params);
 
         const day = String(params.day || today()).slice(0, 10);
-        if (!isRealDay(day)) return json(400, { error: "Bad day" });
+        if (!boardDay(day)) return json(400, { error: "Bad day" });
 
         // The player's own read after a submit, or sent to the cached board
         // — see BOARD_VARY. A check that fails is not fresh.
@@ -813,8 +831,17 @@ exports.handler = async (event) => {
             if (outcome.error === "too-fast") return privateJson(429, { reason: "too-fast", retryInMs: outcome.retryInMs });
             if (outcome.error === "bad-move") return privateJson(400, { error: "Bad move" });
             if (outcome.error) return privateJson(409, { reason: outcome.error });
+            /* `practiceUntil` while practice time lasts (1 Oct 2026), as the
+               deal reply says it: a page that was dealt the day before the
+               cut and played it after had marked the whole run practice, so
+               a real, filed launch day was carded as "isn't on the boards",
+               shared as "(practice)" and left out of the streak. The page
+               reads a first verdict WITHOUT it as the day having begun for
+               real (choose in js/oddoneout.js). Not `practice`, which the
+               page notes as "this browser practised" (Daily.move). */
             return privateJson(200, { recorded: true, already: Boolean(outcome.already), tile: outcome.tile, right: outcome.right,
-                next: deals.nextRound(game, deal.rounds, round, day) });
+                next: deals.nextRound(game, deal.rounds, round, day),
+                ...(practice.now ? { practiceUntil: practice.cut.at } : {}) });
         }
 
         // Anything else with an action is not a request this endpoint takes —
@@ -1147,6 +1174,7 @@ module.exports.practiceOf = practiceOf;
 module.exports.practiceReply = practiceReply;
 module.exports.pastPractice = pastPractice;
 module.exports.isRealDay = isRealDay;
+module.exports.boardDay = boardDay;
 // For guess-scores.js, so both games' deal replies carry the same shape.
 module.exports.filedScore = filedScore;
 // And the boards' one way past the edge — see BOARD_VARY (1 Oct 2026).

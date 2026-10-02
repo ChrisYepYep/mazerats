@@ -14,11 +14,22 @@
 
 const { blobStore } = require("./_blobs.js");
 const { SECURITY_HEADERS } = require("./_headers");
-const { isOwnerWrite } = require("./_auth");
+const { isOwnerWrite, roleOf, UNAUTHORIZED } = require("./_auth");
 const { cachedJson } = require("./_cache");
 
 // The edge policy furni-meta.js gives its ?classes= answer — see the handler.
 const CATALOGUE_CDN_CACHE = "public, durable, s-maxage=3600, stale-while-revalidate=86400";
+
+// Habbo's own furni names, for ?unlisted=1 (see the search below). Read on
+// first use only: no other caller of this endpoint pays for the 290KB.
+const UNLISTED_API = "https://api.furniindex.com/furni/";
+let unlistedCache = null;
+function unlistedNames() {
+    if (!unlistedCache) {
+        try { unlistedCache = require("./_habbo-names.json"); } catch (e) { unlistedCache = {}; }
+    }
+    return unlistedCache;
+}
 
 const ENDPOINT = "https://furniindex.com/api/mazerats/all";
 const PAGE_SIZE = 100;          // their cap; anything larger is ignored
@@ -35,6 +46,9 @@ const MAX_AGE_MS = 24 * 60 * 60 * 1000;
    slow pages from adding up to a function timeout. */
 const PAGE_TIMEOUT_MS = 5000;
 const REFRESH_BUDGET_MS = 8000;
+// Pages asked for at once after the first (see fetchCatalogue): eight at a
+// time, once a day. Five measured 7.8s against the 8s budget.
+const PAGE_CONCURRENCY = 8;
 /* With NO copy to fall back on there is nothing to protect by giving up
    early, and the command-line tools (tools/furni-scan-local.js and friends)
    call getCatalogue with no Blobs store at all — so that case gets the
@@ -138,10 +152,29 @@ async function fetchCatalogue(budgetMs = REFRESH_BUDGET_MS) {
     try {
         first = await fetchPage(1, budget.signal);
         all.push(...first.results);
-        for (let page = 2; page <= first.totalPages; page++) {
-            const next = await fetchPage(page, budget.signal);
-            all.push(...next.results);
-        }
+        /* The rest a few at a time, not one after another (2 Oct 2026). At
+           fifteen pages one by one, FurniIndex took longer than the 8s the
+           walk is allowed (a function has 10), so every refresh — the
+           owner's button and the daily one alike — gave up and the day-old
+           copy was served on, with newly listed furni never arriving.
+           Pages land in their own slots, so the order is unchanged. */
+        const pages = [];
+        for (let page = 2; page <= first.totalPages; page++) pages.push(page);
+        const results = new Array(pages.length);
+        let next = 0;
+        await Promise.all(Array.from({ length: Math.min(PAGE_CONCURRENCY, pages.length) }, async () => {
+            while (next < pages.length) {
+                const i = next++;
+                results[i] = (await fetchPage(pages[i], budget.signal)).results;
+            }
+        }));
+        results.forEach(rows => all.push(...rows));
+    } catch (e) {
+        /* One page failing fails the walk, so the other workers stop here
+           rather than asking FurniIndex for the pages still queued — six
+           more requests for nothing, measured (2 Oct 2026, night scan). */
+        budget.abort();
+        throw e;
     } finally {
         clearTimeout(budgetTimer);
     }
@@ -213,10 +246,26 @@ exports.handler = async (event) => {
         } catch (e) {
             return json(503, { error: "The database is unavailable just now. Please try again in a moment." });
         }
-        if (!owner) return json(403, { error: "Only an owner can refresh the furni catalogue." });
+        if (!owner) {
+            /* No role is no account (2 Oct 2026): a deleted account or a
+               token from before a password change is a signed-out session,
+               which the Warren's "Refresh now" signs out on a 401 — not an
+               admin to be told they aren't an owner. roleOf is memoized. */
+            let role = null;
+            try { role = await roleOf(event); } catch (e) { /* answered above if the lookup is down */ }
+            if (role === null) return UNAUTHORIZED;
+            return json(403, { error: "Only an owner can refresh the furni catalogue." });
+        }
     }
     try {
         const catalogue = await getCatalogue({ force: params.refresh === "1" });
+        /* ?info=1 (2 Oct 2026): just when our copy was fetched and how big
+           it is, for the Warren's catalogue card — a few bytes, never stored
+           at the edge, so a refresh shows at once without the card having to
+           ask for the whole catalogue at a one-off address. */
+        if (params.info === "1") {
+            return cachedJson(event, { total: catalogue.total, fetchedAt: catalogue.fetchedAt }, { cache: false });
+        }
         const q = (params.q || "").trim().toLowerCase();
         // Number(undefined) is NaN, and every comparison against NaN is
         // false — so an absent limit falls through to "no limit" on its own.
@@ -277,6 +326,35 @@ exports.handler = async (event) => {
                 else if ((i.className || "").toLowerCase().replace(/_/g, " ").includes(q)) themed.push(i);
             }
             items = named.concat(themed);
+
+            /* Furni FurniIndex hasn't catalogued yet (1 Oct 2026), for the
+               Warren's add-by-hand picker only (?unlisted=1). Habbo's own
+               names (_habbo-names.json, built by tools/habbo-names.js) for
+               every classname the catalogue lacks, after its own matches,
+               marked notListed. Pictures by classname from FurniIndex's new
+               API; no page link yet — _furni-payload.js fills the link and
+               release date in once the catalogue has it. */
+            if (params.unlisted === "1") {
+                const listed = new Set(catalogue.items.map(i => i.className));
+                const extra = [];
+                for (const [cls, [name, desc]] of Object.entries(unlistedNames())) {
+                    if (listed.has(cls)) continue;
+                    if (name.toLowerCase().includes(q) || cls.toLowerCase().replace(/_/g, " ").includes(q)) {
+                        const enc = encodeURIComponent(cls);
+                        extra.push({
+                            name, className: cls, motto: desc || "",
+                            icon: `${UNLISTED_API}${enc}/icon`,
+                            sprite: `${UNLISTED_API}${enc}/small`,
+                            url: "", releaseDate: "", notListed: true
+                        });
+                    }
+                }
+                // The exact name first, then names starting with the search,
+                // then any name containing it, then classname-only hits.
+                const rank = i => { const n = i.name.toLowerCase(); return n === q ? 0 : n.startsWith(q) ? 1 : n.includes(q) ? 2 : 3; };
+                extra.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+                items = items.concat(extra);
+            }
         }
         // The sprite grids are wanted by the scanner and by the admin's
         // add-by-hand picker, never by anything else — and they are by far
@@ -310,7 +388,11 @@ exports.handler = async (event) => {
            must never be stored for the next caller of the same URL (see
            uncached() in furni-meta.js for how that went wrong there). */
         if (!q && params.refresh !== "1") {
-            return cachedJson(event, data, { cdn: CATALOGUE_CDN_CACHE });
+            /* Keyed on the parameters this reads and no others (2 Oct 2026;
+               see `vary` in _cache.js), so a junk parameter can't skip the
+               edge for the ~930KB answer. The Warren's card asks ?info=1
+               instead of a one-off address (see above). */
+            return cachedJson(event, data, { cdn: CATALOGUE_CDN_CACHE, vary: "q|classes|sprites|limit|unlisted|refresh" });
         }
         /* Uncached, but still gzipped (30 Sept 2026): a one-letter ?q= with
            sprites is most of the 930KB catalogue, and went out raw to

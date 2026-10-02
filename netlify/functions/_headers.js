@@ -14,12 +14,18 @@
 
    `default-src 'none'` rather than the site's own policy: an API response has
    no business loading anything at all, so the strictest thing that can be
-   said is also the correct one. */
+   said is also the correct one.
+
+   HSTS too (2 Oct 2026, security scan), the same value as netlify.toml's
+   and share.js's: the API is on the same host, and it was the one kind of
+   response that did not say the host is HTTPS-only. Browsers ignore it over
+   plain http, so `netlify dev` on :8888 is unaffected. */
 const SECURITY_HEADERS = {
     "Content-Type": "application/json",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
     "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
 };
 

@@ -89,6 +89,23 @@ function countRecent(messages, net) {
     return messages.countDocuments({ net, createdAt: { $gte: since } });
 }
 
+/* ---- A CEILING FOR THE WHOLE SITE (2 Oct 2026).
+
+   The cap above is per subscriber, and a subscriber is cheap: a free IPv6
+   tunnel hands out a /48, which is 65,536 of them, each with its own five
+   messages per ten minutes. Nothing else bounded how many rows that could
+   write, and a database that fills up stops every save on the site, not
+   only this one. So past SITE_PER_HOUR messages in the last hour, from
+   anybody, the form says it is busy. Real traffic is a handful a day; the
+   rows already saved are untouched, and the form works again as the hour
+   rolls on. Counted on the createdAt index, stopping at the ceiling. */
+const SITE_PER_HOUR = 100;
+function overSiteCeiling(messages) {
+    const since = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    return messages.countDocuments({ createdAt: { $gte: since } }, { limit: SITE_PER_HOUR + 1 })
+        .then(n => n >= SITE_PER_HOUR);
+}
+
 /* The index that count runs on. Without it every submission scans the whole
    collection, and the public can make as many submissions as the cap
    allows. createIndex is a no-op when the index exists; asked once per warm
@@ -98,6 +115,8 @@ async function ensureIndexes(messages) {
     if (indexed) return;
     await messages.createIndex({ ip: 1, createdAt: 1 }).catch(() => {});
     await messages.createIndex({ net: 1, createdAt: 1 }).catch(() => {});
+    // For the site-wide ceiling (overSiteCeiling above).
+    await messages.createIndex({ createdAt: 1 }).catch(() => {});
     indexed = true;
 }
 
@@ -265,6 +284,11 @@ exports.handler = async (event) => {
                 // Not the real check — see after the insert below for that.
                 if (await countRecent(messages, net) >= RATE_LIMIT_COUNT) {
                     return json(429, { error: "Too many messages sent — please wait a bit before trying again." });
+                }
+                // Indexed before it is counted, like countRecent's own after the insert.
+                await ensureIndexes(messages);
+                if (await overSiteCeiling(messages)) {
+                    return json(429, { error: "Lots of messages are arriving just now — please try again in a little while." });
                 }
             } catch (e) {
                 console.error("contact: could not check the sender", e);

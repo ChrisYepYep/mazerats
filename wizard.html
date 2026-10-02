@@ -61,6 +61,19 @@
     <meta name="robots" content="noindex, nofollow">
     <title>The Sorcerer's Atlas — Maze Rats</title>
     <meta name="description" content="An interactive map of the magical hallways within Habbo Hotel: Origins — every room, the passages between them, and what each one held.">
+    <!-- A link preview of its own (2 Oct 2026, the owner's): a pasted /wizard
+         link unfurled bare. noindex keeps it out of search, not out of chat
+         previews, so the two don't conflict. -->
+    <meta property="og:url" content="https://mazerats.net/wizard">
+    <meta property="og:site_name" content="Maze Rats">
+    <meta property="og:title" content="The Sorcerer's Atlas">
+    <meta property="og:description" content="An interactive map of the magical hallways within Habbo Hotel: Origins — every room, the passages between them, and what each one held.">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https://mazerats.net/assets/img/og-thumbnail.png">
     <!-- Bitmap copies of the MZ mark below, for the browsers that take no SVG
          favicon (Safari, until recently) and for a phone's home screen, which
          asks for a 180px picture of its own and showed a blank tile without
@@ -247,7 +260,12 @@
             </div>
 
             <div class="wiz-controls">
-                <span class="wiz-zoom-label" id="wiz-zoom-label" aria-live="polite">100%</span>
+                <!-- Not a live region (2 Oct 2026): it is rewritten on every
+                     frame of a glide, a pinch and a reveal's walk, and was
+                     read out as a stream of percentages. The buttons beside
+                     it announce where they landed through #wiz-zoom-said. -->
+                <span class="wiz-zoom-label" id="wiz-zoom-label">100%</span>
+                <span class="visually-hidden" id="wiz-zoom-said" role="status" aria-live="polite"></span>
                 <button type="button" id="wiz-zoom-out" aria-label="Zoom out">&minus;</button>
                 <button type="button" id="wiz-zoom-reset" aria-label="Back to the opening view">&#9635;</button>
                 <button type="button" id="wiz-zoom-in" aria-label="Zoom in">+</button>

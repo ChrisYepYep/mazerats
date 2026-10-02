@@ -39,6 +39,53 @@ document.addEventListener("DOMContentLoaded", () => {
         return s;
     }
 
+    /* The hand-add picker's icon, from FurniIndex's new public API by
+       classname (1 Oct 2026; see netlify/functions/_furni-payload.js for the
+       site's side). The stored icon is still what gets saved — it is the
+       record's identity — and is put back if the new API has no icon for
+       this furni (the error listener below, on data-fallback). */
+    function pickerIcon(f) {
+        return f && f.className
+            ? "https://api.furniindex.com/furni/" + encodeURIComponent(f.className) + "/icon"
+            : (f && f.icon) || "";
+    }
+    /* A picker row for a furni FurniIndex has no picture of (2 Oct 2026, the
+       owner's): greyed out and disabled, saying why, instead of a broken
+       picture that would go on to the site if it were added. Decided by its
+       icon failing to load, so a furni gains its row back by itself as soon
+       as FurniIndex has a picture. */
+    function markNoPicture(img) {
+        const btn = img && img.closest && img.closest(".admin-furni-result");
+        if (!btn || btn.classList.contains("is-added")) return;
+        btn.classList.add("is-nopicture");
+        btn.disabled = true;
+        btn.title = "FurniIndex has no picture of this furni yet, so it can't be added until it does.";
+        const hint = btn.querySelector(".admin-hint");
+        if (hint) hint.textContent = "No picture yet";
+    }
+    // Whether an unlisted row's icon loaded, waiting for one still loading.
+    function hasPicture(img) {
+        if (!img) return Promise.resolve(false);
+        if (img.complete) return Promise.resolve(img.naturalWidth > 0);
+        img.loading = "eager";
+        return new Promise(resolve => {
+            const done = good => { clearTimeout(timer); img.removeEventListener("load", onLoad); img.removeEventListener("error", onError); resolve(good); };
+            const onLoad = () => done(img.naturalWidth > 0);
+            const onError = () => done(false);
+            const timer = setTimeout(() => done(false), 8000);
+            img.addEventListener("load", onLoad);
+            img.addEventListener("error", onError);
+        });
+    }
+    document.addEventListener("error", e => {
+        const img = e.target;
+        if (img && img.tagName === "IMG" && img.dataset && img.dataset.unlisted) { markNoPicture(img); return; }
+        if (!img || img.tagName !== "IMG" || !img.dataset || !img.dataset.fallback) return;
+        const back = safeUrl(img.dataset.fallback);
+        delete img.dataset.fallback;
+        if (back && img.src !== back) img.src = back;
+    }, true);
+
     // localStorage, not sessionStorage — an admin checking the live site
     // (home.html, see the pre-load Coming Soon/Maintenance gate in its own
     // <head>) in a second tab or window needs this same token there too;
@@ -619,6 +666,7 @@ document.addEventListener("DOMContentLoaded", () => {
        delete them anyway, so they are left rather than half-cleaned. */
     function resetAccountPanels() {
         ffClear();
+        clearActivity();
         refusedUploads.clear();
         furniRescue.clear();
         Object.keys(COLLECTIONS).forEach(key => closeForm(key));
@@ -798,6 +846,7 @@ document.addEventListener("DOMContentLoaded", () => {
         // as whoever is signed in by then).
         lastSignedInAs = "";
         ffClear();
+        clearActivity();
         if (window.AdminDeadEnds) window.AdminDeadEnds.reset();
         if (window.AdminGuides) window.AdminGuides.reset();
         if (window.AdminErrors) window.AdminErrors.reset();
@@ -973,12 +1022,30 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    /* Only the newest read is drawn (1 Oct 2026, night scan): "All" is the
+       slow one, and a range changed back to "24h" while it was out was then
+       painted over by it, under the 24h choice. */
+    let activitySeq = 0;
+    /* Emptied when the account changes (doLogout, resetAccountPanels): it
+       holds every admin's addresses, and stayed in the page, hidden, under
+       a non-owner signing in next. */
+    function clearActivity() {
+        activitySeq++;
+        [activitySummaryEl, activityVisitorsEl, activitySessionsEl, activityEventsEl].forEach(el => { if (el) el.innerHTML = ""; });
+    }
     async function loadActivity() {
         if (!canReadActivity()) return;
+        const mine = ++activitySeq;
         activitySummaryEl.innerHTML = '<span class="admin-hint">Loading…</span>';
         try {
-            renderActivity(await Api.getAdminActivity(adminToken, activityRangeEl && activityRangeEl.value));
+            const data = await Api.getAdminActivity(adminToken, activityRangeEl && activityRangeEl.value);
+            // Nor drawn for an account that is no longer an owner's: a read
+            // landing after a sign-out would leave the log's addresses in
+            // the hidden panel for whoever signs in next.
+            if (mine !== activitySeq || !canReadActivity()) return;
+            renderActivity(data);
         } catch (err) {
+            if (mine !== activitySeq) return;
             if (err.status === 401) { lockOut(); return; }
             activitySummaryEl.innerHTML = '<span class="admin-hint">' +
                 escapeHtml(err.message || "Couldn't load the activity log.") + '</span>';
@@ -1370,6 +1437,56 @@ document.addEventListener("DOMContentLoaded", () => {
         return currentUserRole === "owner";
     }
 
+    /* ---------- our copy of FurniIndex's catalogue (2 Oct 2026) ----------
+
+       It refreshes itself once a day (furni-catalogue.js, MAX_AGE_MS); this
+       card says when it last did and fetches it now on the owner's say-so,
+       so furni FurniIndex has just listed get their link, date and motto
+       on the site without waiting for tomorrow. Owner-only, as the
+       function's ?refresh=1 is — the same line as the scans. */
+    const furniCatalogueCard = document.getElementById("furni-catalogue-card");
+    const furniCatalogueBtn = document.getElementById("furni-catalogue-refresh-btn");
+    const furniCatalogueStatus = document.getElementById("furni-catalogue-status");
+    const catalogueWhen = ms => {
+        const t = Number(ms);
+        if (!Number.isFinite(t) || !t) return "";
+        return new Date(t).toLocaleString("en-GB", {
+            timeZone: "UTC", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false
+        }).replace(",", "") + " UTC";
+    };
+    const catalogueLine = info => `${Number(info.count || 0).toLocaleString("en-GB")} furni, fetched ${catalogueWhen(info.fetchedAt)}. It refreshes itself once a day.`;
+    let furniCatalogueAsk = 0;
+    async function showFurniCatalogueInfo() {
+        if (!furniCatalogueStatus) return;
+        const mine = ++furniCatalogueAsk;
+        try {
+            const info = await Api.getFurniCatalogueInfo();
+            if (mine === furniCatalogueAsk) furniCatalogueStatus.textContent = catalogueLine(info);
+        } catch (e) {
+            if (mine === furniCatalogueAsk) furniCatalogueStatus.textContent = "Couldn't read the catalogue just now.";
+        }
+    }
+    if (furniCatalogueBtn) furniCatalogueBtn.addEventListener("click", async () => {
+        if (!canScanFurni()) return;
+        furniCatalogueBtn.disabled = true;
+        furniCatalogueAsk++;   // an older read answering late mustn't overwrite this
+        let before = null;
+        try { before = await Api.getFurniCatalogueInfo(); } catch (e) { /* the count is a nicety */ }
+        furniCatalogueStatus.textContent = "Fetching the catalogue from FurniIndex…";
+        try {
+            const after = await Api.refreshFurniCatalogue(adminToken);
+            const gained = before && Number.isFinite(before.count) ? after.count - before.count : null;
+            furniCatalogueStatus.textContent = `Refreshed: ${catalogueLine(after).replace(/ It refreshes itself once a day\.$/, "")}` +
+                (gained > 0 ? ` ${gained} more than before.` : gained === 0 ? " Nothing new since the last copy." : "") +
+                " Furni cards pick it up within about 3 minutes.";
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            furniCatalogueStatus.textContent = (err && err.message) || "The refresh didn't work. Try again in a minute.";
+        } finally {
+            furniCatalogueBtn.disabled = false;
+        }
+    });
+
     /* A scan runs on the machine serving this page, so it can only be
        started from a page this machine is serving. Judged by hostname
        rather than by asking the server: the answer never changes for the
@@ -1458,6 +1575,10 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.classList.toggle("is-albus", currentUserRole === "wizard");
         if (activityNavBtn) activityNavBtn.hidden = !canReadActivity();
         if (furniSidebar) furniSidebar.hidden = !owner;
+        if (furniCatalogueCard) {
+            furniCatalogueCard.hidden = !owner;
+            if (owner) showFurniCatalogueInfo();
+        }
         /* The Players tab (js/admin-players.js, 29 Sept 2026) draws its
            write buttons and the owner's Forget from the role, so it is
            told when that is known or has changed; it empties anything an
@@ -2217,7 +2338,13 @@ document.addEventListener("DOMContentLoaded", () => {
             const from = !here && entry.from && furniOwn(fresh, entry.from) ? entry.from : null;
             draft[image] = mergeFurniRecord(here ? fresh[image] : from ? fresh[from] : undefined, entry.base, entry.draft);
             if (from) moves.set(image, from);
-            if (shown.has(image)) restored++;
+            /* Only a room the rescue actually changed is counted (2 Oct
+               2026, launch-eve scan). A save whose answer was lost (a
+               timeout) has landed, so its retry is refused as "someone
+               else's" — and the stored record already holds every change:
+               the notice said they were "back" on rooms it left as they
+               were, asking for a Save that had nothing to save. */
+            if (shown.has(image) && JSON.stringify(draft[image]) !== JSON.stringify(here ? fresh[image] : undefined)) restored++;
         }
         if (formEl._renderFurni) formEl._renderFurni();
         if (!restored) return;
@@ -2634,7 +2761,23 @@ document.addEventListener("DOMContentLoaded", () => {
        furniKeyOf uses in js/home.js, which is what the reverse index and the
        archive's furni browser are built on, so the admin and the public site
        agree about what counts as one piece. */
-    const furniKey = f => (f && (f.url || f.name)) || "";
+    // className before name (1 Oct 2026): same-named colours ("Telephone
+    // Box") are different furni, and one not yet on FurniIndex has no url.
+    const furniKey = f => (f && (f.url || f.className || f.name)) || "";
+    /* Whether two entries are the same furni, for the picker's "added" and
+       addFurni's refusal (1 Oct 2026, night scan). Not furniKey equality: a
+       furni added by hand before FurniIndex listed it is stored with no url
+       (keyed by its classname), and once it IS listed the catalogue's row
+       for it has a url — two keys for one furni, so the picker offered it
+       again and addFurni recorded it twice in the same room. A url decides
+       when both sides have one, a classname when both have that, and only
+       then the key as before. */
+    const sameFurni = (a, b) => {
+        if (!a || !b) return false;
+        if (a.url && b.url) return a.url === b.url;
+        if (a.className && b.className) return a.className === b.className;
+        return furniKey(a) === furniKey(b);
+    };
 
     function wireFurniEditor(formEl, item) {
         const wrap = formEl.querySelector(".admin-furni-field");
@@ -2666,6 +2809,20 @@ document.addEventListener("DOMContentLoaded", () => {
            rebuild, so the only place this can live is outside them. */
         let pickerQuery = "";
         let pickerResults = [];
+        /* The search's own bookkeeping lives out here too (1 Oct 2026, night
+           scan). It was inside wirePicker, so every render — an add, a Hide
+           in another room — started a fresh counter and stranded the old
+           picker's: a search still in its 250ms wait, or still out, when an
+           add re-rendered landed in the old, detached results box. The new
+           box kept the previous results under the new words ("sofa" over
+           the chairs) with nothing pending. Now the newest search always
+           draws into whichever picker is on screen (pickerView), and one
+           still waiting is carried over to it. */
+        let pickerSeq = 0;
+        let pickerTimer = null;
+        let pickerView = null;
+        let pickerSearchFor = null;
+        let pickerSearching = false;
         // Set by the two buttons that open the picker, so the render they
         // cause brings it into view — see revealPicker.
         let revealPickerNext = false;
@@ -2722,15 +2879,23 @@ document.addEventListener("DOMContentLoaded", () => {
                 const shown = items.filter(i => !i.hidden).length;
                 let note = "";
                 if (rec.skipped === "lighting-effects") {
-                    note = '<p class="admin-hint">Skipped: this screenshot has lighting effects on it (' + rec.roomColours + ' colours), which shifts every pixel and makes exact matching impossible. Anything in it has to be added by hand.</p>';
+                    note = '<p class="admin-hint">Skipped: this screenshot has lighting effects on it (' + escapeHtml(rec.roomColours) + ' colours), which shifts every pixel and makes exact matching impossible. Anything in it has to be added by hand.</p>';
                 } else if (rec.error) {
                     note = '<p class="admin-hint">Failed: ' + escapeHtml(rec.error) + '</p>';
                 } else if (!rec.scannedAt && !items.length) {
                     note = '<p class="admin-hint">Not scanned yet — you can still add furni by hand.</p>';
                 }
-                const rows = items.map((f, i) => '' +
+                const open = openRooms.has(image);
+                /* Only an open room's rows are drawn (1 Oct 2026, night scan).
+                   A shut room's panel is display: none, but its rows were
+                   built all the same — and with The Little Maze at 3,100
+                   pieces over 102 rooms, every Hide, Remove or add rebuilt
+                   all of them and made 3,100 pictures, each one fetched on
+                   opening the maze although none could be seen. The rows of
+                   a room are drawn when it is opened, which re-renders. */
+                const rows = !open ? "" : items.map((f, i) => '' +
                     '<div class="admin-furni-item ' + (f.hidden ? "is-hidden" : "") + (f.manual ? " is-manual" : "") + '" data-image="' + escapeHtml(image) + '" data-index="' + i + '">' +
-                        '<img src="' + escapeHtml(safeUrl(f.sprite || f.icon)) + '" alt="">' +
+                        '<img src="' + escapeHtml(safeUrl(f.sprite || f.icon)) + '" alt="" loading="lazy" decoding="async">' +
                         '<span class="admin-furni-name">' + escapeHtml(f.name || "") + '</span>' +
                         // A hand-added entry has no coverage to report, and
                         // showing it as "0%" read as a failed match rather
@@ -2739,7 +2904,6 @@ document.addEventListener("DOMContentLoaded", () => {
                         '<button type="button" class="admin-pill-btn admin-furni-hide">' + (f.hidden ? "Show" : "Hide") + '</button>' +
                         '<button type="button" class="admin-pill-btn admin-pill-danger admin-furni-remove">Remove</button>' +
                     '</div>').join("");
-                const open = openRooms.has(image);
                 const picking = pickerFor === image;
                 const summary = items.length ? shown + ' shown of ' + items.length : 'nothing yet';
                 return '' +
@@ -2850,6 +3014,16 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
             });
 
+            /* A search still waiting or out belongs to the picker it was
+               typed into: one that has closed, or moved to another room with
+               an empty box, must not have it land (see pickerSeq). */
+            if (pickerFor !== pickerSearchFor) {
+                pickerSearchFor = pickerFor;
+                pickerSeq++;
+                pickerSearching = false;
+                clearTimeout(pickerTimer);
+                pickerTimer = null;
+            }
             if (pickerFor) wirePicker(pickerFor);
             if (revealPickerNext) {
                 revealPickerNext = false;
@@ -2933,11 +3107,10 @@ document.addEventListener("DOMContentLoaded", () => {
             input.focus({ preventScroll: true });
             input.setSelectionRange(input.value.length, input.value.length);
 
-            let timer = null;
-            // Rises with every search started, and a response is only drawn
-            // if it is still the newest — otherwise a slow "ch" landing after
-            // a fast "chair" would replace the right results with stale ones.
-            let seq = 0;
+            // pickerSeq rises with every search started, and a response is
+            // only drawn if it is still the newest — otherwise a slow "ch"
+            // landing after a fast "chair" would replace the right results
+            // with stale ones. Held outside, with the timer: see pickerSeq.
 
             function drawResults(items) {
                 if (!items.length) {
@@ -2947,7 +3120,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 // Read, not recordFor: opening the picker on a room must
                 // not leave an empty record behind on a room nobody added to.
-                const already = new Set(((formEl._furniDraft[image] || {}).items || []).map(furniKey));
+                const roomItems = (formEl._furniDraft[image] || {}).items || [];
+                const already = { has: f => roomItems.some(x => sameFurni(x, f)) };
 
                 /* Which of these results share a display name, so only those
                    have to carry their furni line as well.
@@ -2961,8 +3135,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 items.forEach(f => { nameCount[f.name] = (nameCount[f.name] || 0) + 1; });
 
                 results.innerHTML = items.map((f, i) => {
-                    const key = furniKey(f);
-                    const isAdded = already.has(key);
+                    const isAdded = already.has(f);
                     const line = nameCount[f.name] > 1 && f.className
                         ? '<span class="admin-furni-result-class">' + escapeHtml(f.className) + '</span>'
                         : '';
@@ -2974,48 +3147,91 @@ document.addEventListener("DOMContentLoaded", () => {
                            220px scroller (.admin-furni-results), so all but
                            the first handful are genuinely off screen and the
                            rest arrive as they are scrolled to. */
-                        '<img src="' + escapeHtml(safeUrl(f.icon)) + '" alt="" loading="lazy" decoding="async">' +
+                        /* Not on Furni Index yet: its icon is the only picture
+                           there is, so it has no fallback, and failing to load
+                           greys the row out (markNoPicture). */
+                        (f.notListed
+                            ? '<img src="' + escapeHtml(safeUrl(pickerIcon(f))) + '" data-unlisted="1" alt="" loading="lazy" decoding="async">'
+                            : '<img src="' + escapeHtml(safeUrl(pickerIcon(f))) + '" data-fallback="' + escapeHtml(safeUrl(f.icon)) + '" alt="" loading="lazy" decoding="async">') +
                         '<span class="admin-furni-result-name">' + escapeHtml(f.name || "") + line + '</span>' +
-                        '<span class="admin-hint">' + (isAdded ? "added" : escapeHtml((f.releaseDate || "").slice(0, 4))) + '</span>' +
+                        // A furni FurniIndex hasn't catalogued yet (1 Oct 2026),
+                        // from Habbo's own list: it can still be added, by name
+                        // and classname, and gets its link once it's listed.
+                        '<span class="admin-hint">' + (isAdded ? "added" : f.notListed ? "Not on Furni Index yet" : escapeHtml((f.releaseDate || "").slice(0, 4))) + '</span>' +
                     '</button>';
                 }).join("");
                 results.querySelectorAll(".admin-furni-result").forEach(btn => {
-                    btn.addEventListener("click", () => addFurni(image, items[Number(btn.dataset.index)]));
+                    btn.addEventListener("click", async () => {
+                        const f = items[Number(btn.dataset.index)];
+                        /* A furni with no picture can't be added (2 Oct 2026):
+                           one clicked before its lazy icon has answered is
+                           asked first, and added only if a picture arrives. */
+                        if (f && f.notListed && !(await hasPicture(btn.querySelector("img")))) return;
+                        addFurni(image, f);
+                    });
                 });
-                const added = items.filter(f => already.has(furniKey(f))).length;
+                const added = items.filter(f => already.has(f)).length;
                 status.textContent = items.length + " match" + (items.length === 1 ? "" : "es")
                     + (added ? ` — ${added} added` : "")
                     + " — click to add, and keep clicking for more.";
                 revealPicker(false);
             }
 
+            // This picker is the one on screen now: the newest search draws
+            // into it, whichever render it was started under.
+            pickerView = {
+                draw: drawResults,
+                fail: message => {
+                    results.innerHTML = "";
+                    status.textContent = message;
+                }
+            };
+
             // Redraw whatever the last search found, so the results are
             // still there after adding one of them.
             if (pickerResults.length) drawResults(pickerResults);
+            // And say so if a newer one is still on its way (see pickerSeq).
+            if (pickerTimer || pickerSearching) status.textContent = "Searching…";
 
             /* The request itself, lifted out of the debounce so that Enter
                below can run it immediately instead of duplicating it. */
             async function runSearch(q) {
-                const mine = ++seq;
+                pickerTimer = null;
+                const mine = ++pickerSeq;
+                pickerSearching = true;
                 status.textContent = "Searching…";
                 try {
                     const data = await Api.getFurniCatalogue(q);
-                    if (mine !== seq) return;
+                    if (mine !== pickerSeq) return;
+                    pickerSearching = false;
                     pickerResults = data.items || [];
-                    drawResults(pickerResults);
+                    if (pickerView) pickerView.draw(pickerResults);
                 } catch (err) {
-                    if (mine !== seq) return;
+                    if (mine !== pickerSeq) return;
+                    pickerSearching = false;
                     pickerResults = [];
-                    results.innerHTML = "";
-                    status.textContent = err.message || "Couldn't reach the furni catalogue.";
+                    if (pickerView) pickerView.fail(err.message || "Couldn't reach the furni catalogue.");
                 }
+            }
+
+            /* One still waiting out its 250ms when this picker was drawn
+               was the old picker's timer; it is started again here, from
+               the words now in the box, so it lands in this one. */
+            if (pickerTimer) {
+                clearTimeout(pickerTimer);
+                const q = pickerQuery.trim();
+                pickerTimer = q.length >= 2 ? setTimeout(() => runSearch(q), 250) : null;
             }
 
             input.addEventListener("input", () => {
                 const q = input.value.trim();
                 pickerQuery = input.value;
-                clearTimeout(timer);
+                clearTimeout(pickerTimer);
+                pickerTimer = null;
                 if (q.length < 2) {
+                    // And one already out is dropped when it lands.
+                    pickerSeq++;
+                    pickerSearching = false;
                     pickerResults = [];
                     results.innerHTML = "";
                     status.textContent = "Type at least two letters.";
@@ -3023,7 +3239,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
                 // Waits for a pause in typing: the catalogue is proxied and
                 // cached, but it is still a request per keystroke otherwise.
-                timer = setTimeout(() => runSearch(q), 250);
+                pickerTimer = setTimeout(() => runSearch(q), 250);
             });
 
             /* Enter searches, and must never reach the form.
@@ -3042,7 +3258,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (e.key !== "Enter") return;
                 e.preventDefault();
                 const q = input.value.trim();
-                clearTimeout(timer);
+                clearTimeout(pickerTimer);
+                pickerTimer = null;
                 if (q.length < 2) {
                     status.textContent = "Type at least two letters.";
                     return;
@@ -3059,13 +3276,15 @@ document.addEventListener("DOMContentLoaded", () => {
            make for a furni that was never detected. */
         function addFurni(image, f) {
             const rec = recordFor(image);
-            if ((rec.items || []).some(x => furniKey(x) === furniKey(f))) return;
+            if ((rec.items || []).some(x => sameFurni(x, f))) return;
             rec.items.push({
                 name: f.name,
                 motto: f.motto || "",
                 icon: f.icon,
-                sprite: (f.largeImages && f.largeImages[0] && f.largeImages[0][0]) || null,
-                url: f.url,
+                // A not-yet-catalogued furni has no sprite grid; it brings its
+                // new-API picture instead (see furni-catalogue.js ?unlisted=1).
+                sprite: (f.largeImages && f.largeImages[0] && f.largeImages[0][0]) || f.sprite || null,
+                url: f.url || "",
                 releaseDate: f.releaseDate || "",
                 className: f.className || "",
                 manual: true,
@@ -4307,6 +4526,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 </div>
                 <div class="row-side">
                     <span class="status-badge status-${escapeHtml(item.status || "")}">${escapeHtml(item.status || "")}</span>
+                    ${key === "rooms" ? `<label class="admin-furni-complete"><input type="checkbox" class="admin-furni-complete-box"${item.furniComplete ? " checked" : ""}${canWrite() ? "" : " disabled"}> Furni complete</label>` : ""}
                     <div class="admin-row-actions">
                         <button type="button" class="btn admin-edit-btn">Edit</button>
                         ${key === "rooms" && canScanFurni() && isLocalSite() ? '<button type="button" class="btn admin-scan-btn">Scan</button>' : ""}
@@ -4323,6 +4543,33 @@ document.addEventListener("DOMContentLoaded", () => {
             row.querySelector(".admin-delete-btn").addEventListener("click", () => deleteItem(key, item.id));
             const scanBtn = row.querySelector(".admin-scan-btn");
             if (scanBtn) scanBtn.addEventListener("click", () => scanOneItem(key, item.id));
+            /* "Furni complete" (2 Oct 2026, the owner's): saved the moment it
+               is ticked, on its own (rooms.js ?action=furni-complete), so it
+               is no edit of the maze and needs no Save. The homepage's Furni
+               view lists the ticked mazes. */
+            const completeBox = row.querySelector(".admin-furni-complete-box");
+            if (completeBox) completeBox.addEventListener("change", async () => {
+                const want = completeBox.checked;
+                completeBox.disabled = true;
+                try {
+                    const out = await Api.setRoomFurniComplete(adminToken, item.id, want);
+                    const done = !!(out && out.furniComplete);
+                    item.furniComplete = done;
+                    /* And on the loaded copy as it is NOW (2 Oct 2026,
+                       launch-eve scan): a Save of this maze, or the re-read
+                       after a 409, landing while the tick was out swaps a new
+                       object in, which said the old value on the next draw. */
+                    const current = cfg.getAll().find(i => i.id === item.id);
+                    if (current) current.furniComplete = done;
+                    completeBox.checked = done;
+                } catch (err) {
+                    completeBox.checked = !want;
+                    if (err.status === 401) { lockOut(); return; }
+                    await sayProblem(err.message || "Couldn't save that tick — try again.");
+                } finally {
+                    completeBox.disabled = !canWrite();
+                }
+            });
             const rowImg = row.querySelector(".row-thumb-img");
             if (rowImg) {
                 if (rowImg.complete) rowImg.classList.add("is-loaded");
@@ -5304,7 +5551,15 @@ document.addEventListener("DOMContentLoaded", () => {
     async function requestCloseForm(key) {
         if (refuseWhileSaving(key)) return;
         if (isFormDirty(key)) {
-            const ok = await showConfirmDialog("Discard your unsaved changes to this entry? Anything you have added or edited since opening it will be lost.");
+            /* After a refused save the furni changes are held for the next
+               opening (furniRescue), so this must not say everything goes
+               (2 Oct 2026: it was believed, and nearly cost a day's furni). */
+            const formEl = COLLECTIONS[key] && COLLECTIONS[key].formEl;
+            const id = formEl && formEl.dataset.editId;
+            const rescued = !!(id && furniRescue.has(rescueKeyOf(key, id)));
+            const ok = await showConfirmDialog(rescued
+                ? "Close this entry? Text you typed since opening it will be lost, but your furni changes are kept: reopen it and they're put back for you to check and save."
+                : "Discard your unsaved changes to this entry? Anything you have added or edited since opening it will be lost.");
             if (!ok) return;
             // The dialog is awaited: a Save pressed behind it is possible.
             if (refuseWhileSaving(key)) return;

@@ -108,8 +108,18 @@ const BOARD_CDN_CACHE = "public, durable, s-maxage=15";
    including `netlify dev` locally, which does not compress at all.
 
    `cdn` picks the edge policy: the archive's long one by default, or
-   GATE_CDN_CACHE above for /settings. */
-function cachedJson(event, data, { cache = true, cdn = CDN_CACHE } = {}) {
+   GATE_CDN_CACHE above for /settings.
+
+   `vary` (2 Oct 2026) is the query parameters the answer actually depends
+   on, "a|b|c", sent as Netlify-Vary: query=a|b|c. Without it the edge keys
+   a cached answer on the WHOLE query string, so `?x=<anything new>` is a
+   new key every time: a script adding a random parameter skipped the cache
+   on every request and put each one on the function and the database —
+   the hole daily-scores.js closed for the boards (BOARD_VARY). Named, the
+   edge ignores every other parameter and answers them from the one copy.
+   Only for a caller that names every parameter its answer reads, which is
+   why it is opt-in; left out, nothing changes. */
+function cachedJson(event, data, { cache = true, cdn = CDN_CACHE, vary = null } = {}) {
     const body = JSON.stringify(data);
     /* SECURITY_HEADERS first, then this function's own on top. Every cached
        read on the site returns through here — rooms, events, contributors —
@@ -123,6 +133,7 @@ function cachedJson(event, data, { cache = true, cdn = CDN_CACHE } = {}) {
         "Vary": "Accept-Encoding"
     };
     if (cache) headers["Netlify-CDN-Cache-Control"] = cdn;
+    if (cache && vary) headers["Netlify-Vary"] = `query=${vary}`;
 
     if (acceptsGzip(event) && Buffer.byteLength(body) >= MIN_COMPRESS_BYTES) {
         const zipped = zlib.gzipSync(Buffer.from(body));

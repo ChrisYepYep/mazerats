@@ -288,6 +288,37 @@ document.addEventListener("DOMContentLoaded", () => {
        "button" inside anything marked so (29 Sept 2026). */
     nickEl.setAttribute("data-crumb-private", "");
 
+    /* WHAT A SCREEN READER HEARS (1 Oct 2026). The status line under the
+       field was the live region, but drawNick rebuilds nickEl whole — on
+       Save, and again when the save answers — so "Saving...", "Saved. The
+       boards now show ..." and every refusal arrived in a region that had
+       only just been put on the page with its words already in it, which
+       screen readers mostly do not read out. So one region that is never
+       rebuilt says them instead: kept beside the page body (not inside it,
+       which render() also rebuilds), emptied and then worded a frame later
+       so a repeat of the same sentence is still a change, as liveSay does
+       for the Contact form in js/console.js. The visible line keeps its id
+       for the field's aria-describedby, and is no longer a region itself,
+       so nothing is said twice. */
+    const nickSpoken = document.createElement("p");
+    nickSpoken.className = "visually-hidden";
+    nickSpoken.setAttribute("role", "status");
+    nickSpoken.setAttribute("aria-live", "polite");
+    (host.parentNode || host).appendChild(nickSpoken);
+    let nickSaid = "";
+    let nickSayFrame = 0;
+    function sayNick(text) {
+        const words = text || "";
+        if (words === nickSaid) return;
+        nickSaid = words;
+        if (nickSayFrame) cancelAnimationFrame(nickSayFrame);
+        nickSayFrame = 0;
+        nickSpoken.textContent = "";
+        if (!words) return;
+        if (document.hidden || typeof requestAnimationFrame !== "function") { nickSpoken.textContent = words; return; }
+        nickSayFrame = requestAnimationFrame(() => { nickSayFrame = 0; nickSpoken.textContent = words; });
+    }
+
     function nickNote() {
         return `<p class="console-note console-profile-note console-nick-note">Shown on the scoreboards instead of your Discord name. Optional ${DASH} change it any time.</p>`;
     }
@@ -296,8 +327,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const me = window.Account ? Account.current : null;
         if (!me) { nickEl.innerHTML = ""; return; }
         const current = me.nick || "";
+        // Said aloud by sayNick, not by this line (see WHAT A SCREEN READER HEARS).
+        sayNick(nick.msg);
         const status = `<p class="console-form-status console-nick-status${nick.tone ? " is-" + nick.tone : ""}"
-                           id="console-nick-status" role="status" aria-live="polite"${nick.msg ? "" : " hidden"}>${esc(nick.msg)}</p>`;
+                           id="console-nick-status"${nick.msg ? "" : " hidden"}>${esc(nick.msg)}</p>`;
 
         if (!Account.canNick || !Account.canNick()) {
             nickEl.innerHTML = `
@@ -391,6 +424,7 @@ document.addEventListener("DOMContentLoaded", () => {
         nick.msg = text || "";
         nick.tone = tone || "";
         nick.fromServer = !!fromServer;
+        sayNick(nick.msg);
         const out = nickEl.querySelector("#console-nick-status");
         if (!out) return;
         out.textContent = nick.msg;

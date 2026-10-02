@@ -123,6 +123,9 @@ async function handle(event) {
     const events = db.collection("events");
 
     if (event.httpMethod === "GET") {
+        // ?full=1 refused before the read, not after it (2 Oct 2026) — see
+        // the same step in rooms.js.
+        if ((event.queryStringParameters || {}).full === "1" && !(await hasAccount(event))) return UNAUTHORIZED;
         let all;
         try {
             all = await events.find({}, { projection: { _id: 0 } }).toArray();
@@ -164,7 +167,11 @@ async function handle(event) {
         }
         // spotlightAt too: the editor's version stamp (see PUT), nothing a page reads.
         all.forEach(r => { delete r.slugAliases; delete r.slugManual; delete r.spotlightAt; });
-        return cachedJson(event, await packRecords(all));
+        // Keyed at the edge on `full` alone, so a random parameter is not a
+        // fresh read of the archive (2 Oct 2026) — see rooms.js.
+        const res = cachedJson(event, await packRecords(all));
+        res.headers = { ...res.headers, "Netlify-Vary": "query=full" };
+        return res;
     }
 
     if (!isAuthorized(event)) return UNAUTHORIZED;

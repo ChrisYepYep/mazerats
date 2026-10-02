@@ -111,7 +111,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <button type="button" class="console-missing-name" data-open="${esc(r.type)}:${esc(r.id)}">${esc(r.name)}</button>
                     <p class="console-missing-needs">Needs: ${esc(pieceWords(r.pieces))}</p>
                     ${r.note ? `<p class="console-missing-note">${esc(r.note)}</p>` : ""}
-                    ${r.waiting ? `<p class="console-missing-note">${r.waiting} ${r.waiting === 1 ? "lead" : "leads"} waiting to be read.</p>` : ""}
+                    ${r.waiting ? `<p class="console-missing-note">${esc(r.waiting)} ${r.waiting === 1 ? "lead" : "leads"} waiting to be read.</p>` : ""}
                     <button type="button" class="console-btn console-missing-help" data-help="${esc(r.type)}:${esc(r.id)}">I can help</button>
                 </div>`).join("")}`;
     }
@@ -342,12 +342,28 @@ document.addEventListener("DOMContentLoaded", () => {
         if (e.target.id === "ci-send") send();
     });
 
+    /* Shown first and worded a frame later (1 Oct 2026), as js/console.js's
+       liveSay does for the Contact and Event Submission lines: this line is
+       a role="status" region hidden until it has something to say, and a
+       screen reader often skips a region that appears with its words
+       already in it — so "Sending image 1 of 3...", "Sending..." and every
+       refusal here went unspoken. The same words again are emptied first so
+       the repeat is still a change; a newer say cancels a pending one. */
+    let sayFrame = 0;
     function say(text, bad) {
         const el = document.getElementById("ci-status");
         if (!el) return;
-        el.textContent = text;
-        el.classList.toggle("is-error", Boolean(bad));
+        if (sayFrame) cancelAnimationFrame(sayFrame);
+        sayFrame = 0;
         el.style.display = text ? "block" : "none";
+        const put = () => {
+            sayFrame = 0;
+            el.textContent = text;
+            el.classList.toggle("is-error", Boolean(bad));
+        };
+        if (!text || document.hidden || typeof requestAnimationFrame !== "function") { put(); return; }
+        if (el.textContent === text) el.textContent = "";
+        sayFrame = requestAnimationFrame(put);
     }
 
     function readAsDataUrl(file) {

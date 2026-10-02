@@ -302,7 +302,9 @@
         function capture(kind, f) {
             var message = scrub(f.message || "", 500) || "(no message)";
             var source = f.source ? cleanUrl(f.source, 300) : "";
-            var fp = kind + "|" + message + "|" + source + "|" + (f.line || 0);
+            // f.group: what the failure counts as here, when that is wider than
+            // its own address (the FurniIndex pictures in onResourceError).
+            var fp = kind + "|" + message + "|" + (f.group || source) + "|" + (f.line || 0);
             var had = seen[fp];
             if (had) {
                 // The same failure again: a count, not another report.
@@ -354,8 +356,28 @@
             if (!url || /^(?:data|blob|about):/.test(url)) return;
             var clean = cleanUrl(url, 300);
             if (NOT_OURS.test(clean) || EXTENSION.test(url)) { ignored++; return; }
+            /* A picture that carries its own way back (data-fallback: the
+               Warren's add-by-hand picker, 1 Oct 2026) is a failure the page
+               expects and handles — FurniIndex's new API has no icon for
+               about one Habbo furni in five, and each search showed several.
+               Counted, not sent. The fallback is taken off as it is used, so
+               if that fails too, it is reported. */
+            if (el.hasAttribute && el.hasAttribute("data-fallback")) { ignored++; return; }
+            /* The same picker's "Not on Furni Index yet" rows (2 Oct 2026)
+               carry data-unlisted instead: they have no fallback, and an icon
+               that fails greys its row out as "No picture yet" — about one in
+               three of them, by design, so not a fault either. */
+            if (el.hasAttribute && el.hasAttribute("data-unlisted")) { ignored++; return; }
             var what = tag === "img" ? "A picture" : tag === "script" ? "A script" : "A stylesheet or linked file";
-            capture("resource", { message: what + " failed to load", source: clean, tag: tag });
+            /* Every picture from FurniIndex's new API is one failure on this
+               page (1 Oct 2026), as the server groups them (groupSource in
+               netlify/functions/_errors.js): a maze's furni list is dozens of
+               them, and when that host has a bad minute each was a report of
+               its own — ten a page, the whole page's allowance, and a share
+               of the site's hourly one per visitor. Now the first is sent and
+               the rest add to its count. */
+            var group = /^\/\/api\.furniindex\.com\/furni\//i.test(clean) ? "//api.furniindex.com/furni/*" : "";
+            capture("resource", { message: what + " failed to load", source: clean, tag: tag, group: group });
         }
 
         function onRejection(e) {

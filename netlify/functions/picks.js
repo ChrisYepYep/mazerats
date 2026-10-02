@@ -89,7 +89,10 @@ exports.handler = async (event) => {
                 .toArray();
             const current = shown.length && shown[0].weekOf === thisWeek ? publicPick(shown[0]) : null;
             const past = (current ? shown.slice(1) : shown).map(publicPick);
-            return cachedJson(event, { thisWeek, current, past });
+            // Keyed on `full` alone: nothing else changes this answer, so a
+            // random parameter is not a way past the edge (2 Oct 2026; see
+            // `vary` in _cache.js).
+            return cachedJson(event, { thisWeek, current, past }, { vary: "full" });
         }
 
         // refuseWrite: 401 for no account, and the right 403 for the rest

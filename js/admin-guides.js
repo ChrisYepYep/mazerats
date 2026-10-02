@@ -562,10 +562,60 @@
         }
     }
 
-    function redrawKeepingScroll() {
+    /* KEEPING FOCUS TOO (1 Oct 2026). The redraw replaced every field and
+       button, and whatever had focus went with it, to <body>: a picture
+       landing while the admin typed in another section's text took the
+       caret away mid-word (the keys after it went nowhere), and Up, Down,
+       Remove and a picture's Remove left a keyboard user at the top of the
+       page after every press. The control is found again in the redrawn
+       form by what it is and by its SECTION (not the section's number,
+       which a move changes), with the caret where it was; a control the
+       redraw took away hands focus to the nearest one left. `fallback`
+       (a section index) is for a section that has gone. */
+    const FOCUS_KEYS = ["data-g", "data-f", "data-address-input", "data-move", "data-remove-section", "data-upload", "data-unpic", "data-add-section", "data-preview"];
+    function focusSpot() {
+        const a = document.activeElement;
+        if (!a || !formEl.contains(a) || a === formEl) return null;
+        const secEl = a.closest("[data-section]");
+        const key = FOCUS_KEYS.find(k => a.hasAttribute(k));
+        if (!key) return null;
+        // A picture's controls are named by slot ("s3"), which a move renumbers.
+        const value = secEl && (key === "data-upload" || key === "data-unpic") ? null : a.getAttribute(key);
+        return {
+            section: secEl ? editing.sections[Number(secEl.getAttribute("data-section"))] : null,
+            inSection: !!secEl, key, value,
+            sel: typeof a.selectionStart === "number" ? [a.selectionStart, a.selectionEnd] : null
+        };
+    }
+    function restoreFocus(spot, fallback) {
+        let el = null;
+        const at = i => formEl.querySelector(`[data-section="${i}"]`);
+        if (spot) {
+            const i = spot.inSection ? editing.sections.indexOf(spot.section) : -1;
+            const root = spot.inSection ? at(i) : formEl;
+            const sel = spot.value === null ? `[${spot.key}]` : `[${spot.key}="${spot.value}"]`;
+            el = root && root.querySelector(sel);
+            if (el && el.disabled && spot.key === "data-move") el = root.querySelector(`[data-move="${-Number(spot.value)}"]:not([disabled])`) || root.querySelector('[data-f="heading"]');
+            if (!el && root && spot.key === "data-unpic") el = root.querySelector(spot.value === null ? "[data-upload]" : `[data-upload="${spot.value}"]`);
+            if (!el && root && root !== formEl) el = root.querySelector('[data-f="heading"]');
+        }
+        if (!el && typeof fallback === "number") {
+            const sec = at(Math.min(fallback, editing.sections.length - 1));
+            el = sec && sec.querySelector('[data-f="heading"]');
+        }
+        if (!el || typeof el.focus !== "function") return;
+        el.focus({ preventScroll: true });
+        if (spot && spot.sel && el.setSelectionRange && (spot.key === "data-g" || spot.key === "data-f" || spot.key === "data-address-input")) {
+            try { el.setSelectionRange(spot.sel[0], spot.sel[1]); } catch (e) { /* a number field has no caret */ }
+        }
+    }
+
+    // `spot`: taken by a caller that reorders the sections first.
+    function redrawKeepingScroll(fallback, spot = focusSpot()) {
         const y = window.scrollY;
         renderForm();
         window.scrollTo(0, y);
+        restoreFocus(spot, fallback);
     }
 
     formEl.addEventListener("click", async e => {
@@ -582,17 +632,21 @@
             const j = i + Number(t.closest("[data-move]").dataset.move);
             if (j < 0 || j >= editing.sections.length) return;
             const list = editing.sections;
+            const spot = focusSpot();
             [list[i], list[j]] = [list[j], list[i]];
-            redrawKeepingScroll();
+            redrawKeepingScroll(undefined, spot);
         } else if (t.closest("[data-remove-section]") && i >= 0) {
             const s = editing.sections[i];
             const ed = editing;
             if ((s.heading || s.body || s.image) && !await ask(`Remove section ${i + 1}${s.heading ? ` ("${esc(s.heading)}")` : ""}? Its picture is deleted when you save.`, { danger: true })) return;
             // Answered after a wait: still this edit, and still that section.
             if (editing !== ed || editing.sections[i] !== s) return;
+            const spot = focusSpot();
             editing.sections.splice(i, 1);
             if (!editing.sections.length) editing.sections.push(blankSection());
-            redrawKeepingScroll();
+            // Focus to the heading of the section that took its place (see
+            // restoreFocus), not to its Remove button.
+            redrawKeepingScroll(i, spot);
         } else if (t.closest("[data-unpic]")) {
             setPic(t.closest("[data-unpic]").dataset.unpic, "");
             redrawKeepingScroll();
@@ -673,6 +727,16 @@
                     uploaded.clear();
                 }
                 showError("Someone else saved this guide since you opened it. Your edits are still here: copy any text you need, then Cancel and Edit it again to see their version. Pictures you uploaded are kept until that next edit is saved or cancelled: right-click one to save a copy, then upload it again.");
+                saving = false;
+                await load();
+                return;
+            }
+            /* Deleted by another admin after this form opened (2 Oct 2026):
+               the server's "Guide not found", every retry, said nothing of
+               why, or that the words were still here to keep. The list is
+               re-read so the deleted guide leaves it. */
+            if (err.status === 404 && stored) {
+                showError("This guide was deleted after you opened it, so it can't be saved. Your text is still here: copy what you need, then Cancel. Pictures you uploaded go when you Cancel: right-click one to save a copy first.");
                 saving = false;
                 await load();
                 return;

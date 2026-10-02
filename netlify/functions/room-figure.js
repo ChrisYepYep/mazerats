@@ -88,7 +88,12 @@ const json = (statusCode, data) => ({
     statusCode,
     headers: {
         ...SECURITY_HEADERS,
-        "Cache-Control": (statusCode === 200 || statusCode === 404) ? "public, max-age=300" : "no-store"
+        "Cache-Control": (statusCode === 200 || statusCode === 404) ? "public, max-age=300" : "no-store",
+        /* Keyed on the two parameters read above and no others (2 Oct
+           2026), so `&x=<random>` on a name already looked up is the edge's
+           copy rather than another call towards Habbo. See `vary` in
+           _cache.js. */
+        "Netlify-Vary": "query=name|hotel"
     },
     body: JSON.stringify(data)
 });
@@ -150,7 +155,8 @@ exports.handler = async (event) => {
        straight past twelve-a-minute. The client-ip fallback and "unknown"
        are kept as they were — this limiter is in memory and per instance,
        so a shared bucket for callers with no address costs only them. */
-    const raw = event.headers["x-nf-client-connection-ip"] || event.headers["client-ip"];
+    const h = event.headers || {};
+    const raw = h["x-nf-client-connection-ip"] || h["client-ip"];
     const address = raw ? subscriberOf(raw) : "unknown";
     if (rateLimited(address)) {
         // A hyphen, not an em dash: this sentence is shown inside the game

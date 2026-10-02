@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   984 rules, 1602 declarations, hues 18 (surfaces) / 38 (accents).
+   1006 rules, 1635 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -1024,6 +1024,10 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     outline: 2px solid #421705;
 }
 
+[data-theme="pumpkin"] .furni-card-unlisted {
+    color: #421705;
+}
+
 [data-theme="pumpkin"] .furni-card-link {
     color: #471905;
 }
@@ -1411,6 +1415,10 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] .admin-delete-btn {
     border-color: var(--danger);
     color: var(--danger);
+}
+
+[data-theme="pumpkin"] .admin-furni-complete {
+    color: var(--parchment-dim);
 }
 
 [data-theme="pumpkin"] .admin-delete-btn:hover {
@@ -2241,10 +2249,7 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--parchment);
 }
 
-[data-theme="pumpkin"] .chrome-list:has(> .timeline),
-[data-theme="pumpkin"] .chrome-list:has(> .furni-head),
-[data-theme="pumpkin"] .chrome-list:has(> .furni-rooms),
-[data-theme="pumpkin"] .chrome-list:has(> .updatelog) {
+[data-theme="pumpkin"] .chrome-list:has(> .timeline) {
     background: var(--chrome-row);
     border: 1px solid var(--chrome-border);
     box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
@@ -2446,27 +2451,104 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .furni-band-head {
-    color: var(--amber-bright);
-}
-
-[data-theme="pumpkin"] .furni-band-count {
-    color: var(--unknown-text);
+    color: var(--parchment);
 }
 
 [data-theme="pumpkin"] .furni-band-note {
     color: var(--parchment-dim);
 }
 
+[data-theme="pumpkin"] .furni-sig-name {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .furni-sig-n {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .furni-tile.is-open {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .furni-expand {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="pumpkin"] .furni-expand-head {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .furni-expand-n {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .furni-expand-close {
+    background: none;
+    border: 0;
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .furni-expand-close:hover,
+[data-theme="pumpkin"] .furni-expand-close:focus-visible {
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .furni-expand-close:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .furni-expand-maze {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .furni-expand-maze:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .furni-expand-maze-n {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .furni-head-complete-link {
+    background: none;
+    border: 0;
+    color: inherit;
+}
+
+[data-theme="pumpkin"] .furni-head-complete-link:hover,
+[data-theme="pumpkin"] .furni-head-complete-link:focus-visible {
+    color: #ffffff;
+    text-shadow: 0 0 4px rgba(234, 212, 173, 0.85), 0 0 9px rgba(234, 212, 173, 0.45);
+}
+
+[data-theme="pumpkin"] .furni-head-complete-link:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
+[data-theme="pumpkin"] .furni-band-more {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .furni-band-more:focus-visible {
+    outline: 2px solid var(--amber-bright);
+}
+
 [data-theme="pumpkin"] .furni-tile {
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
     color: var(--parchment);
 }
 
 [data-theme="pumpkin"] .furni-tile:hover,
 [data-theme="pumpkin"] .furni-tile:focus-visible {
-    background: var(--wood-mid);
-    border-color: var(--amber);
     outline: none;
 }
 
@@ -2479,7 +2561,7 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .furni-tile-meta {
-    color: var(--unknown-text);
+    color: var(--parchment-dim);
 }
 
 [data-theme="pumpkin"] .side-spine {
@@ -3622,28 +3704,33 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .updatelog-date {
-    color: var(--amber-bright);
+    color: var(--parchment);
 }
 
 [data-theme="pumpkin"] .updatelog-count {
-    color: var(--unknown-text);
+    color: var(--parchment);
+}
+
+[data-theme="pumpkin"] .updatelog-entries::before {
+    background: linear-gradient(to bottom, transparent, var(--amber) 14px, var(--amber) calc(100% - 14px), transparent);
+    box-shadow: 1px 0 0 rgba(0, 0, 0, 0.35);
 }
 
 [data-theme="pumpkin"] .updatelog-entry {
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
     color: var(--parchment);
 }
 
 [data-theme="pumpkin"] .updatelog-entry::before {
     background: var(--wood-mid);
-    border: 1px solid var(--amber);
+    border: 1px solid var(--amber-bright);
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="pumpkin"] .updatelog-entry:hover,
 [data-theme="pumpkin"] .updatelog-entry:focus-visible {
-    background: var(--wood-mid);
-    border-color: var(--amber);
     outline: none;
 }
 
@@ -3667,7 +3754,7 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .updatelog-verb.is-updated {
-    color: var(--amber-bright);
+    color: #ecdbbf;
     border-color: var(--amber);
     background: rgba(180, 137, 62, 0.18);
 }
@@ -3686,7 +3773,7 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .updatelog-meta {
-    color: var(--unknown-text);
+    color: var(--parchment-dim);
 }
 
 [data-theme="pumpkin"] .updatelog-change {
@@ -3860,7 +3947,7 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .furni-head-title {
-    color: var(--amber-bright);
+    color: var(--parchment);
     text-shadow: 2px 2px 0 var(--bg-black);
 }
 
@@ -3868,16 +3955,24 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
+[data-theme="pumpkin"] .furni-head-complete {
+    color: var(--parchment-dim);
+}
+
+[data-theme="pumpkin"] .furni-head-complete-names {
+    color: var(--parchment);
+}
+
 [data-theme="pumpkin"] .furni-stat-n {
     color: var(--amber-bright);
 }
 
 [data-theme="pumpkin"] .furni-stat-l {
-    color: var(--unknown-text);
+    color: var(--parchment-dim);
 }
 
 [data-theme="pumpkin"] .furni-head-filter {
-    color: var(--amber-text);
+    color: var(--parchment);
 }
 
 [data-theme="pumpkin"] .furni-rooms-count {
@@ -3885,25 +3980,24 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .furni-rooms-name {
-    color: var(--amber-bright);
+    color: var(--parchment);
     text-shadow: 2px 2px 0 var(--bg-black);
 }
 
 [data-theme="pumpkin"] .furni-rooms-n {
-    color: var(--unknown-text);
+    color: var(--parchment);
     text-shadow: none;
 }
 
 [data-theme="pumpkin"] .furni-room-row {
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
     color: var(--parchment);
 }
 
 [data-theme="pumpkin"] .furni-room-row:hover,
 [data-theme="pumpkin"] .furni-room-row:focus-visible {
-    background: var(--wood-mid);
-    border-color: var(--amber);
     outline: none;
 }
 
@@ -4889,6 +4983,13 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 @media (hover: none) {
     [data-theme="pumpkin"] .admin-gallery-thumb.admin-gallery-thumb-filled .admin-gallery-thumb-replace-text {
         background: rgba(11, 5, 2, 0.55);
+    }
+}
+
+@media (pointer: coarse) {
+    [data-theme="pumpkin"] .furni-band-more::after,
+    [data-theme="pumpkin"] .furni-expand-close::after {
+        background: transparent;
     }
 }
 

@@ -174,6 +174,8 @@ document.addEventListener("DOMContentLoaded", () => {
        is furniFilter's listing, which predates it — this is only the way in.
        Cleared by the same top-nav and sub-nav clicks the other two are. */
     let showFurni = false;
+    // The furni browser's piece opened in place, by key (see placeFurniExpand).
+    let furniExpanded = null;
     /* A search carried in the address (?q=), so a filtered list is a link
        somebody can send. Read once, before the first render; kept in step
        from then on by syncSearchToUrl. */
@@ -3233,6 +3235,10 @@ document.addEventListener("DOMContentLoaded", () => {
        Nothing happens unless focus was on one of those entries, so a render
        from typing in the search box or pressing a tab is untouched. */
     function render() {
+        /* Leaving the furni browser closes its open piece (2 Oct 2026, the
+           owner's), so coming back starts fresh. "See every room" keeps its
+           own way back (leaveFurniFilter), which is not leaving. */
+        if (!showFurni && furniExpanded) furniExpanded = null;
         const active = document.activeElement;
         const held = active && active.closest && active.closest("[data-focus-key]");
         const container = held && (grid.contains(held) ? grid
@@ -3370,7 +3376,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const clearFilter = document.getElementById("furni-filter-clear");
         if (clearFilter) {
             clearFilter.addEventListener("click", () => {
-                furniFilter = null;
+                leaveFurniFilter();
                 render();
             });
         }
@@ -5226,13 +5232,15 @@ document.addEventListener("DOMContentLoaded", () => {
        consulted in one direction.
 
        Built once, lazily, from ROOMS. Keyed by the furni's Furni Index URL
-       where it has one and its name otherwise, which is exactly the key
-       openFurniCard already uses to tell two cards apart, so a card and its
-       index entry can never disagree about which furni they mean. */
+       where it has one, its classname next and its name last, which is
+       exactly the key openFurniCard uses to tell two cards apart, so a card
+       and its index entry can never disagree about which furni they mean.
+       The classname step (1 Oct 2026) is for furni FurniIndex hasn't listed
+       yet: same-named colours ("Chair") have no URL to tell them apart. */
     let furniIndexByKey = null;
 
     function furniKeyOf(entry) {
-        return entry.url || entry.name || "";
+        return entry.url || entry.className || entry.name || "";
     }
 
     /* The scan records a maze's furni keyed by the picture it came from, and
@@ -5476,11 +5484,13 @@ document.addEventListener("DOMContentLoaded", () => {
             .sort((a, b) => a.mazes - b.mazes || compareNames(a.name, b.name));
     }
 
-    function furniTileHtml(f) {
+    function furniTileHtml(f, opts) {
         /* The caption under each sprite carries the finding, not the
            number: for a piece only one maze used, that maze's name is far
-           more interesting than the digit 1. */
-        const caption = f.only
+           more interesting than the digit 1 — unless the tile already sits
+           under that maze's name (opts.inMaze, the signature groups). */
+        const caption = opts && opts.inMaze ? ""
+            : f.only
             ? `only in ${escapeHtml(f.only.name)}`
             : `${f.mazes} mazes`;
         const label = f.only
@@ -5495,12 +5505,33 @@ document.addEventListener("DOMContentLoaded", () => {
                         : `<span class="furni-tile-art-missing" aria-hidden="true"></span>`}
                 </span>
                 <span class="furni-tile-name">${escapeHtml(f.name)}</span>
-                <span class="furni-tile-meta">${caption}</span>
+                ${caption ? `<span class="furni-tile-meta">${caption}</span>` : ""}
             </button>`;
     }
 
+    /* Which of the browser's shortened lists are open in full (2 Oct 2026):
+       band keys, and "sig:<maze id>" for one maze's signature pieces. Kept
+       for the visit, so a re-render (a tick, a search cleared) doesn't
+       fold them back up. */
+    const furniOpen = new Set();
+    // Whole rows of the desktop panel's five tiles across.
+    const FURNI_BAND_CAP = 10;
+    const FURNI_SIG_MAZES = 6;
+    const FURNI_SIG_SAMPLE = 5;
+
+    function furniMoreHtml(openKey, total, shown) {
+        const open = furniOpen.has(openKey);
+        if (!open && total <= shown) return "";
+        return `<button type="button" class="furni-band-more" data-open-key="${escapeHtml(openKey)}" aria-expanded="${open}">${open ? "Show fewer" : `Show all ${total}`}</button>`;
+    }
+
+    /* A band's tiles. `cap` shortens it to its first few, with a button for
+       the rest — the browse view's bands run to hundreds (2 Oct 2026, the
+       owner's: "massive"); a search shows every match uncapped. */
     function furniBandHtml(band) {
         if (!band.items.length) return "";
+        const open = !band.cap || furniOpen.has(band.key);
+        const items = open ? band.items : band.items.slice(0, band.cap);
         return `
             <section class="furni-band">
                 <h4 class="furni-band-head">
@@ -5508,7 +5539,61 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span class="furni-band-count">${band.items.length}</span>
                 </h4>
                 <p class="furni-band-note">${escapeHtml(band.note)}</p>
-                <div class="furni-grid">${band.items.map(furniTileHtml).join("")}</div>
+                <div class="furni-grid">${items.map(f => furniTileHtml(f)).join("")}</div>
+                ${band.cap ? furniMoreHtml(band.key, band.items.length, band.cap) : ""}
+            </section>`;
+    }
+
+    /* SIGNATURE PIECES (2 Oct 2026, the owner's). The furni only one maze
+       used were a wall of 460 tiles, nearly half of them The Little Maze's.
+       Grouped by maze instead, the mazes with the most first, each with a
+       few of its pieces: which mazes went their own way, and with what.
+       The sample is the same few every visit (ordered by a hash of the key
+       rather than alphabetically, so it isn't always the A's). */
+    function furniSignatureHtml(solo) {
+        if (!solo.length) return "";
+        const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+        const byMaze = new Map();
+        solo.forEach(f => {
+            if (!f.only) return;
+            const id = f.only.id || f.only.name;
+            if (!byMaze.has(id)) byMaze.set(id, { id, name: f.only.name, items: [] });
+            byMaze.get(id).items.push(f);
+        });
+        const groups = [...byMaze.values()]
+            .sort((a, b) => b.items.length - a.items.length || compareNames(a.name, b.name));
+        const shown = furniOpen.has("sig") ? groups : groups.slice(0, FURNI_SIG_MAZES);
+        return `
+            <section class="furni-band">
+                <h4 class="furni-band-head">
+                    <span class="furni-band-title">Signature pieces</span>
+                    <span class="furni-band-count">${solo.length}</span>
+                </h4>
+                <p class="furni-band-note">${solo.length} pieces turn up in one maze and nowhere else. These are the mazes that went their own way the most.</p>
+                <div class="furni-sig-list">
+                    ${shown.map(g => {
+                        const key = "sig:" + g.id;
+                        // Opened in full, the sample stays at the front and
+                        // the rest follow alphabetically, so the five just
+                        // looked at don't scatter.
+                        const sample = g.items.slice().sort((a, b) => hash(a.key) - hash(b.key)).slice(0, FURNI_SIG_SAMPLE);
+                        const items = furniOpen.has(key)
+                            ? sample.concat(g.items.filter(f => !sample.includes(f)))
+                            : sample;
+                        return `
+                        <div class="furni-sig">
+                            <p class="furni-sig-head">
+                                <span class="furni-sig-name">${escapeHtml(g.name)}</span>
+                                <span class="furni-sig-n">${g.items.length} only here</span>
+                            </p>
+                            <div class="furni-grid">${items.map(f => furniTileHtml(f, { inMaze: true })).join("")}</div>
+                            ${furniMoreHtml(key, g.items.length, FURNI_SIG_SAMPLE)}
+                        </div>`;
+                    }).join("")}
+                </div>
+                ${groups.length > FURNI_SIG_MAZES
+                    ? `<button type="button" class="furni-band-more" data-open-key="sig" aria-expanded="${furniOpen.has("sig")}">${furniOpen.has("sig") ? "Show fewer mazes" : `Show all ${groups.length} mazes`}</button>`
+                    : ""}
             </section>`;
     }
 
@@ -5574,30 +5659,40 @@ document.addEventListener("DOMContentLoaded", () => {
         emptyEl.style.display = "none";
 
         const solo = entries.filter(f => f.mazes === FURNI_SOLO);
-        const few = entries.filter(f => f.mazes > FURNI_SOLO && f.mazes <= FURNI_FEW_MAX);
+        // Most-shared first in this one (2 Oct 2026): it is shortened to its
+        // first few, and those should be the ones nearest to common.
+        const few = entries.filter(f => f.mazes > FURNI_SOLO && f.mazes <= FURNI_FEW_MAX)
+            .slice()
+            .sort((a, b) => b.mazes - a.mazes || compareNames(a.name, b.name));
         // Most-used first in this one, because within "everything common"
         // the ranking IS the interesting part.
         const common = entries.filter(f => f.mazes > FURNI_FEW_MAX)
             .slice()
             .sort((a, b) => b.mazes - a.mazes || compareNames(a.name, b.name));
 
-        const bands = [
-            {
-                title: "Used by one maze alone",
-                note: "Nobody else built with these. Each one is the signature of the maze beside it.",
-                items: solo
-            },
-            {
-                title: "Shared by a handful",
-                note: `In ${FURNI_SOLO + 1} to ${FURNI_FEW_MAX} mazes — the pieces a few builders found and the rest did not.`,
-                items: few
-            },
-            {
-                title: "The common kit",
-                note: "What most Origins mazes are built from, most widespread first.",
-                items: common
-            }
-        ];
+        /* The common kit leads now, then the mazes' signature pieces, then
+           the handful (2 Oct 2026, the owner's). Browsing, each is cut to a
+           few with "Show all"; a search shows every match, uncapped, and the
+           one-maze pieces as the plain band they were — a search is for
+           finding a piece, not for browsing mazes. */
+        const cap = q ? 0 : FURNI_BAND_CAP;
+        const commonBand = {
+            key: "common",
+            title: "The common kit",
+            // Opened in full ("Show all"), it no longer shows only the top few.
+            note: q || furniOpen.has("common") || common.length <= cap ? "What most Origins mazes are built from, most widespread first."
+                : `What most Origins mazes are built from: the ${Math.min(cap, common.length)} most widespread of ${common.length}.`,
+            items: common, cap
+        };
+        const fewBand = {
+            key: "few",
+            title: "Shared by a handful",
+            note: `In ${FURNI_SOLO + 1} to ${FURNI_FEW_MAX} mazes — the pieces a few builders found and the rest did not.`,
+            items: few, cap
+        };
+        const bandsHtml = q
+            ? [commonBand, { key: "solo", title: "Used by one maze alone", note: "Nobody else built with these.", items: solo }, fewBand].map(furniBandHtml).join("")
+            : furniBandHtml(commonBand) + furniSignatureHtml(solo) + furniBandHtml(fewBand);
 
         /* A proper head, because without one this view arrived with no
            explanation of itself: a wall of four hundred sprites and a
@@ -5619,8 +5714,24 @@ document.addEventListener("DOMContentLoaded", () => {
                 <span class="furni-stat-l">${escapeHtml(label)}</span>
             </div>`;
 
+        /* Which mazes' furni listings are whole (2 Oct 2026, the owner's):
+           ticked one by one in /warren ("Furni complete" on a maze's row),
+           named here alphabetically as one line of prose rather than a
+           list. Said only once at least one maze is ticked. */
+        // compareNames is the archive's own name order: decorations and a
+        // leading "The" set aside, so "*ÕMaze EmpireÕ*" files under M.
+        const complete = ROOMS.filter(r => r && r.furniComplete === true && !isHallway(r) && String(r.name || "").trim())
+            .sort((a, b) => compareNames(a.name, b.name));
+        // Each name opens its maze (wired below, with the tiles).
+        const completeHtml = complete.length
+            ? `<p class="furni-head-complete">Not all mazes' furni listings are fully complete. Currently these mazes have 100% furni listings:
+                <span class="furni-head-complete-names">${complete.map(r =>
+                    `<button type="button" class="furni-head-complete-link" data-room-id="${escapeHtml(r.id)}">${escapeHtml(String(r.name).trim())}</button>`).join(", ")}</span></p>`
+            : "";
+
         const head = `
             <section class="furni-head">
+                ${completeHtml}
                 <h3 class="furni-head-title">Browse by furni</h3>
                 <p class="furni-head-blurb">Every room picture in the archive has been scanned and matched
                     against Habbo's furni catalogue. This is what it found. Pick any piece to see every
@@ -5635,31 +5746,234 @@ document.addEventListener("DOMContentLoaded", () => {
                     : ""}
             </section>`;
 
-        grid.innerHTML = head + bands.map(furniBandHtml).join("");
+        grid.innerHTML = head + bandsHtml;
 
-        grid.querySelectorAll(".furni-tile").forEach(btn => {
+        grid.querySelectorAll(".furni-band-more").forEach(btn => {
             btn.addEventListener("click", () => {
-                const entry = all.find(f => f.key === btn.dataset.furniKey);
-                if (!entry) return;
-                furniFilter = {
-                    key: entry.key,
-                    name: entry.name,
-                    icon: entry.icon,
-                    // Nothing to go "Back" to: this was reached from the
-                    // browser, not from inside a maze. The chip drops that
-                    // button on its own when this is unset.
-                    fromMazeId: null
-                };
-                // The search term narrowed the FURNI list; it would narrow
-                // the maze list too, and mean something different there.
-                searchInput.value = "";
-                query = "";
-                render();
-                const results = document.querySelector(".home-results");
-                if (results) results.scrollTop = 0;
+                const key = btn.dataset.openKey;
+                const closing = furniOpen.has(key);
+                if (closing) furniOpen.delete(key); else furniOpen.add(key);
+                renderFurniBrowser();
+                // Back on the same button, now saying the opposite.
+                const again = [...grid.querySelectorAll(".furni-band-more")].find(b => b.dataset.openKey === key);
+                if (again) {
+                    again.focus({ preventScroll: true });
+                    /* "Show fewer" under a list of hundreds pulls the button
+                       up past the top of the panel, leaving the visitor
+                       looking at the next band with no idea where it went
+                       (night 3, 2 Oct 2026). Brought back into view, the
+                       least distance. Not on opening: that would jump past
+                       the very tiles just shown. */
+                    if (closing) again.scrollIntoView({ block: "nearest" });
+                }
             });
         });
+
+        /* A piece opens IN PLACE (2 Oct 2026, the owner's): the mazes that
+           use it, in a panel under its row, rather than the whole view
+           swapping to a filtered listing that read as leaving the browser.
+           Pressing it again closes it. */
+        grid.querySelectorAll(".furni-tile").forEach(btn => {
+            btn.setAttribute("aria-expanded", "false");
+            btn.addEventListener("click", () => {
+                const key = btn.dataset.furniKey;
+                furniExpanded = furniExpanded === key ? null : key;
+                placeFurniExpand(all);
+            });
+        });
+
+        // The complete-mazes line's names open their maze, over this view.
+        grid.querySelectorAll(".furni-head-complete-link").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const room = ROOMS.find(r => r.id === btn.dataset.roomId);
+                if (room) openModal(normalize(room, false));
+            });
+        });
+
+        placeFurniExpand(all);
     }
+
+    /* Which piece is open in place: furniExpanded, declared beside showFurni
+       near the top, since render() reads it from its first call. */
+
+    // The mazes a piece is in, each with the rooms it was found in, in the
+    // order they are walked; the mazes with the most rooms first.
+    function furniMazesFor(key) {
+        const out = [];
+        ROOMS.filter(room => !isHallway(room)).forEach(room => {
+            const images = [];
+            liveFurniRecords(room).forEach(([image, record]) => {
+                if (asList(record && record.items).some(f => f && !f.hidden && furniKeyOf(f) === key)) images.push(image);
+            });
+            if (images.length) out.push({ room, images: images.sort((a, b) => galleryOrderOf(room, a) - galleryOrderOf(room, b)) });
+        });
+        return out.sort((a, b) => b.images.length - a.images.length || compareNames(a.room.name, b.room.name));
+    }
+
+    /* The panel goes after the LAST tile on the opened tile's row, spanning
+       the grid (grid-column 1 / -1), so it opens beneath the whole row and
+       the tiles after it move down rather than reflowing around it. Re-run
+       on a re-render and on a resize, which can move the row's end. */
+    function placeFurniExpand(all) {
+        grid.querySelectorAll(".furni-expand").forEach(el => el.remove());
+        grid.querySelectorAll(".furni-tile.is-open").forEach(t => {
+            t.classList.remove("is-open");
+            t.setAttribute("aria-expanded", "false");
+            // Nothing to point at once the panel has gone.
+            t.removeAttribute("aria-controls");
+        });
+        if (!furniExpanded) { furniRevealOnRender = false; return; }
+        const tile = [...grid.querySelectorAll(".furni-tile")].find(t => t.dataset.furniKey === furniExpanded);
+        const entry = (all || furniBrowserEntries()).find(f => f.key === furniExpanded);
+        /* The reveal goes with it (night 3): left set when the piece was not
+           on show, the NEXT tile anybody pressed was scrolled to the middle
+           of the panel and refocused, as if it were coming back. */
+        if (!tile || !entry) { furniExpanded = null; furniRevealOnRender = false; return; }
+
+        let last = tile;
+        for (const t of tile.parentElement.querySelectorAll(":scope > .furni-tile")) {
+            if (t.offsetTop === tile.offsetTop) last = t;
+        }
+        const mazes = furniMazesFor(entry.key);
+        const panel = document.createElement("div");
+        panel.className = "furni-expand";
+        panel.id = "furni-expand";
+        panel.setAttribute("role", "region");
+        panel.setAttribute("aria-label", `Mazes with ${entry.name}`);
+        panel.innerHTML = `
+            <p class="furni-expand-head">
+                <span class="furni-expand-title"><span class="furni-expand-name">${escapeHtml(entry.name)}</span> - <span class="furni-expand-n">${mazes.length} ${mazes.length === 1 ? "Maze" : "Mazes"}</span></span>
+                <button type="button" class="furni-expand-close" data-focus-key="furni-expand:close">Close</button>
+            </p>
+            <div class="furni-expand-mazes">
+                ${mazes.map((m, i) => `
+                    <button type="button" class="furni-expand-maze" data-i="${i}" data-focus-key="${escapeHtml("furni-expand:" + m.room.id)}">
+                        <span class="furni-expand-maze-name">${escapeHtml(m.room.name || m.room.id)}</span>
+                        <span class="furni-expand-maze-n">${m.images.length} ${m.images.length === 1 ? "room" : "rooms"}</span>
+                    </button>`).join("")}
+            </div>
+            <button type="button" class="furni-band-more furni-expand-rooms" data-focus-key="furni-expand:rooms">See every room</button>`;
+        last.after(panel);
+        tile.classList.add("is-open");
+        tile.setAttribute("aria-expanded", "true");
+        tile.setAttribute("aria-controls", "furni-expand");
+        // Back from "See every room": the piece where the visitor left it.
+        if (furniRevealOnRender) {
+            furniRevealOnRender = false;
+            tile.scrollIntoView({ block: "center" });
+            tile.focus({ preventScroll: true });
+        }
+
+        // A maze opens at the first room the piece is in, over this view, so
+        // closing it comes back here with the panel still open.
+        panel.querySelectorAll(".furni-expand-maze").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const m = mazes[Number(btn.dataset.i)];
+                if (m) openModal(normalize(m.room, false), { atImage: m.images[0] });
+            });
+        });
+        // Close: the panel goes, and focus back to the piece that opened it.
+        panel.querySelector(".furni-expand-close").addEventListener("click", () => {
+            furniExpanded = null;
+            placeFurniExpand(all);
+            tile.focus({ preventScroll: true });
+        });
+        // Every room's picture, as the listing it used to open.
+        panel.querySelector(".furni-expand-rooms").addEventListener("click", () => {
+            furniExpanded = null;
+            furniFilter = {
+                key: entry.key,
+                name: entry.name,
+                icon: entry.icon,
+                // Nothing to go "Back" to: this was reached from the
+                // browser, not from inside a maze. The chip drops that
+                // button on its own when this is unset.
+                fromMazeId: null,
+                // ...but clearing it goes back to the browser, with this
+                // piece open again (see leaveFurniFilter).
+                fromBrowser: true,
+                // And with the search it was found by: a piece found by a
+                // search is often not on show without one (the bands are
+                // shortened, the signature groups sampled), so going back
+                // with the box empty could not open it again.
+                fromQuery: query.trim()
+            };
+            // The search term narrowed the FURNI list; it would narrow
+            // the maze list too, and mean something different there.
+            searchInput.value = "";
+            query = "";
+            render();
+            const results = document.querySelector(".home-results");
+            if (results) results.scrollTop = 0;
+        });
+    }
+
+    /* Clearing a furni filter (2 Oct 2026, the owner's). One opened from
+       the browser's "See every room" goes back to the browser with that
+       piece open again, rather than out to the maze list; any other (one
+       from a maze's furni card) leaves furni altogether, as before. The
+       caller renders. */
+    let furniRevealOnRender = false;
+    function leaveFurniFilter() {
+        const was = furniFilter;
+        furniFilter = null;
+        if (was && was.fromBrowser) {
+            showFurni = true;
+            furniExpanded = was.key;
+            furniRevealOnRender = true;
+            // The browser as it was left, search and all (night 3, 2 Oct
+            // 2026): see fromQuery. Set after the callers' own clearing of
+            // the box, which runs first.
+            if (was.fromQuery) {
+                searchInput.value = was.fromQuery;
+                query = was.fromQuery;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /* Escape closes the open piece's panel and goes back to its tile — only
+       while focus is in the browser itself, so a maze opened from the panel
+       keeps Escape for closing the maze. */
+    document.addEventListener("keydown", e => {
+        if (e.key !== "Escape" || !furniExpanded || !showFurni || furniFilter) return;
+        const active = document.activeElement;
+        if (!active || !grid.contains(active)) return;
+        const tile = [...grid.querySelectorAll(".furni-tile")].find(t => t.dataset.furniKey === furniExpanded);
+        e.preventDefault();
+        furniExpanded = null;
+        placeFurniExpand();
+        if (tile) tile.focus({ preventScroll: true });
+    });
+
+    let furniExpandResize = 0;
+    window.addEventListener("resize", () => {
+        if (!furniExpanded) return;
+        clearTimeout(furniExpandResize);
+        furniExpandResize = setTimeout(() => {
+            if (!showFurni || furniFilter) return;
+            /* The panel is rebuilt, and whatever in it had focus — or opened
+               the maze window now over it — is carried to its new copy
+               (night 3, 2 Oct 2026). A phone fires resize as its toolbar
+               slides away on a scroll and as its keyboard opens: focus on
+               one of the panel's buttons fell to <body>, and a maze opened
+               from it had no button to come back to on closing. */
+            const old = document.getElementById("furni-expand");
+            const keyIn = el => (old && el && old.contains(el) && el.dataset ? el.dataset.focusKey : null);
+            const focusKey = keyIn(document.activeElement);
+            const triggerKey = keyIn(modalTriggerEl);
+            placeFurniExpand();
+            const fresh = document.getElementById("furni-expand");
+            const find = key => (fresh && key
+                ? [...fresh.querySelectorAll("[data-focus-key]")].find(el => el.dataset.focusKey === key)
+                : null);
+            const again = find(focusKey);
+            if (again) again.focus({ preventScroll: true });
+            const trigger = find(triggerKey);
+            if (trigger) modalTriggerEl = trigger;
+        }, 150);
+    });
 
     /* The stats block that opens the Timeline.
 
@@ -5923,7 +6237,7 @@ document.addEventListener("DOMContentLoaded", () => {
        render() when the furni listing stopped going through it. */
     function wireFurniChip() {
         const clear = document.getElementById("furni-filter-clear");
-        if (clear) clear.addEventListener("click", () => { furniFilter = null; render(); });
+        if (clear) clear.addEventListener("click", () => { leaveFurniFilter(); render(); });
 
         const back = document.getElementById("furni-filter-back");
         if (back) back.addEventListener("click", () => {
@@ -5956,7 +6270,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${icon}
                 <span class="furni-filter-text">Mazes with <strong>${escapeHtml(furniFilter.name)}</strong></span>
                 ${back}
-                <button type="button" class="furni-filter-btn" id="furni-filter-clear" data-focus-key="furni-filter-clear" aria-label="Show the whole archive again">Clear</button>
+                <button type="button" class="furni-filter-btn" id="furni-filter-clear" data-focus-key="furni-filter-clear" aria-label="${furniFilter.fromBrowser ? "Back to browsing by furni" : "Show the whole archive again"}">Clear</button>
             </div>`;
     }
 
@@ -5964,7 +6278,18 @@ document.addEventListener("DOMContentLoaded", () => {
         // Already showing this one? Just keep it — and bring it up, since
         // coming back to its icon while it sits under another card is
         // exactly how a buried one gets asked for.
-        const existing = openFurniCards.find(c => c.dataset.furni === (entry.url || entry.name));
+        let existing = openFurniCards.find(c => c.dataset.furni === furniKeyOf(entry));
+        /* Unless it is the hover card of ANOTHER icon with the same key (1 Oct
+           2026): a room can show the same piece twice, and FurniIndex gives
+           colour variants one page (the 2nd Anniversary Trophy's two colours
+           in The Little Maze). Kept, that card was watched only on the first
+           icon, so it closed 160ms into hovering the second — showing the
+           other colour's picture until it did. It gives way, as any hover
+           card does, and this icon gets its own. */
+        if (existing && existing === transientFurniCard && existing._anchor !== anchor) {
+            closeFurniCard(existing);
+            existing = null;
+        }
         if (existing) {
             bringFurniCardToFront(existing);
             if (pinNow) pinFurniCard(existing);
@@ -5979,7 +6304,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (transientFurniCard) closeFurniCard(transientFurniCard);
 
         const card = furniCardTemplate.content.firstElementChild.cloneNode(true);
-        card.dataset.furni = entry.url || entry.name || String(furniCardSeq++);
+        card.dataset.furni = furniKeyOf(entry) || String(furniCardSeq++);
         // The furni's own small art in the rotation it was matched in.
         // netlify/functions/_furni-payload.js resolves that from the large
         // sprite the scan actually compared against, and falls back to the
@@ -6002,7 +6327,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const link = card.querySelector(".furni-card-link");
         const furniUrl = safeHttpUrl(entry.url);
         if (furniUrl) link.href = furniUrl;
-        else link.remove();
+        else {
+            /* A furni FurniIndex hasn't listed yet (1 Oct 2026): it was
+               added by classname, its picture comes from their API, and its
+               link fills itself in once they list it (see _furni-payload.js).
+               Until then the link's place says so, rather than going blank. */
+            const note = document.createElement("span");
+            note.className = "furni-card-unlisted";
+            note.textContent = "Not yet listed on Furni Index";
+            link.replaceWith(note);
+        }
         // Where else this same furni turns up in the archive.
         renderFurniAlsoIn(card, entry);
 
@@ -9382,13 +9716,14 @@ document.addEventListener("DOMContentLoaded", () => {
         clearFilterBtn.addEventListener("click", () => {
             searchInput.value = "";
             query = "";
+            let backToBrowser = false;
             if (furniFilter) {
-                furniFilter = null;
-                showFurni = false;
+                backToBrowser = leaveFurniFilter();
+                if (!backToBrowser) showFurni = false;
             }
             render();
             const results = document.querySelector(".home-results");
-            if (results) results.scrollTop = 0;
+            if (results && !backToBrowser) results.scrollTop = 0;
             searchInput.focus({ preventScroll: true });
         });
     }

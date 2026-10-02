@@ -52,9 +52,12 @@ const SNAPSHOT = require("./_furnidata.json");
 const CACHE_KEY = "furnidata.json";
 const MIN_REFRESH_FRACTION = 0.8;
 
+/* Netlify-Vary (2 Oct 2026): keyed on the four parameters this reads and no
+   others, so `?x=<random>` is not a way past the edge's copy to a fresh
+   1.3MB answer every time. See `vary` in _cache.js. */
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { ...SECURITY_HEADERS, "Cache-Control": "public, max-age=3600" },
+    headers: { ...SECURITY_HEADERS, "Cache-Control": "public, max-age=3600", "Netlify-Vary": "query=className|sit|classes|refresh" },
     body: JSON.stringify(data)
 });
 

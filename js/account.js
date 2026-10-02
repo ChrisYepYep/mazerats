@@ -43,6 +43,9 @@
     // A failed "who am I" is asked again — see refresh's catch.
     const ME_RETRY_MS = 4000;
     let meRetried = false;
+    // Counts this page's completed sign-outs (Account.signOut), so a `me`
+    // sent before one can tell it is out of date when it lands (1 Oct 2026).
+    let signOutGen = 0;
     window.addEventListener("online", () => {
         if (Account.unsure) Account.refresh();
     });
@@ -65,6 +68,8 @@
         },
 
         async refresh() {
+            // See signOutGen: which sign-out this ask was made after.
+            const gen = signOutGen;
             try {
                 const res = await timedFetch(`${ENDPOINT}?action=me`, {
                     credentials: "same-origin",
@@ -72,6 +77,13 @@
                 });
                 if (!res.ok) throw new Error(String(res.status));
                 const data = await res.json();
+                /* A "signed in" that set off BEFORE a sign-out finished here
+                   (1 Oct 2026) — the retry, an "online", another tab's
+                   "change" — is the cookie as it was, not as it is: landing
+                   after the sign-out, it put the player back in the header
+                   over a cleared session. Asked again instead, which now
+                   carries no cookie (or whatever a sign-in since has set). */
+                if (gen !== signOutGen && data && data.player) return Account.refresh();
                 Account.current = data && data.player ? data.player : null;
                 Account.unsure = false;
                 /* A ban rides on the same answer, beside the player rather
@@ -176,6 +188,7 @@
             }
             Account.current = null;
             Account.unsure = false;
+            signOutGen++;
             rememberWho("");
             /* The account's own ticks are taken back off this browser by
                home.js's dropAccountTicks, on the announce below; that is
@@ -226,6 +239,9 @@
                     credentials: "same-origin",
                     headers: { Accept: "application/json" }
                 });
+                // Revoked since `me` last answered (1 Oct 2026): the read is
+                // refused as the saves are, and is told the same way.
+                if (res.status === 401) signedOutUnderneath();
                 if (!res.ok) throw new Error(String(res.status));
                 Account.stored = await res.json();
             } catch (e) {
@@ -675,9 +691,17 @@
             .replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
+    // A ?signin= result still on show — see reportSignInResult.
+    let signInNote = null;
+
     function renderButton() {
         const host = document.getElementById("account-slot");
         if (!host) return;
+        drawButton(host);
+        if (signInNote) host.appendChild(signInNote);
+    }
+
+    function drawButton(host) {
         const me = Account.current;
 
         if (!me) {
@@ -1494,12 +1518,40 @@
         const note = document.createElement("p");
         note.className = "header-signin-note";
         note.setAttribute("role", "status");
-        note.textContent = said;
         const host = document.getElementById("account-slot");
         if (host) {
+            /* On the page first, worded a frame later (1 Oct 2026): a status
+               region that arrives with its words already in it is mostly not
+               read out, so a screen-reader user was never told the sign-in
+               had been cancelled, had failed or was refused. */
             host.appendChild(note);
-            // The longest of them, and not a retry-now: a little longer to read.
-            setTimeout(() => note.remove(), why === "banned" ? 10000 : 6000);
+            if (typeof requestAnimationFrame === "function" && !document.hidden) {
+                requestAnimationFrame(() => { note.textContent = said; });
+            } else {
+                note.textContent = said;
+            }
+            /* KEPT THROUGH THE HEADER'S REDRAWS (1 Oct 2026). The note sits
+               in #account-slot, which renderButton rewrites whole on every
+               announcement — and the first `me` answers a moment after this
+               runs, so the note was gone within a second, mostly while the
+               archive's loading screen still covered the header: "blocked
+               from signing in" was meant to stand ten seconds and was
+               effectively never seen. renderButton now puts signInNote back,
+               and the reading time starts once the loading screen has gone. */
+            signInNote = note;
+            const ms = why === "banned" ? 10000 : 6000;      // the longest, and not a retry-now: a little longer to read
+            const started = Date.now();
+            const countdown = () => {
+                const loader = document.getElementById("site-loader");
+                const covered = loader && !loader.dataset.done && !loader.classList.contains("is-done");
+                // Never more than 15s waiting on a loader that does not finish.
+                if (covered && Date.now() - started < 15000) { setTimeout(countdown, 250); return; }
+                setTimeout(() => {
+                    if (signInNote === note) signInNote = null;
+                    note.remove();
+                }, ms);
+            };
+            countdown();
         }
 
         params.delete("signin");

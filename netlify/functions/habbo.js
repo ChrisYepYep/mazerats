@@ -10,7 +10,7 @@
    the live hotel, and it can change without notice, so this fails soft
    everywhere: any problem returns "no profile" and the maze modal falls
    back to the plain creator line it always showed. */
-const { getDb } = require("./_db");
+const { getDb, ensureIndex } = require("./_db");
 const { SECURITY_HEADERS } = require("./_headers");
 
 /* A profile is the same answer for every visitor, and the modal asks for
@@ -22,9 +22,12 @@ const { SECURITY_HEADERS } = require("./_headers");
    Origins having a bad minute, and should not outlast it. */
 const CACHEABLE = { 200: "public, max-age=300", 404: "public, max-age=300" };
 
+/* Netlify-Vary (2 Oct 2026): keyed on `name` alone, so `&x=<random>` on a
+   name somebody has already asked about is the edge's copy, not another
+   function run — see `vary` in _cache.js. */
 const json = (statusCode, data) => ({
     statusCode,
-    headers: { ...SECURITY_HEADERS, "Cache-Control": CACHEABLE[statusCode] || "no-store" },
+    headers: { ...SECURITY_HEADERS, "Cache-Control": CACHEABLE[statusCode] || "no-store", "Netlify-Vary": "query=name" },
     body: JSON.stringify(data)
 });
 
@@ -212,6 +215,10 @@ exports.handler = async (event) => {
     // Keyed by hotel as well as name: the same username on origins.habbo.com
     // and origins.habbo.es is not necessarily the same person.
     const cache = db.collection("habbo_cache");
+    /* The key every lookup below is made on had no index, so each one —
+       the cache-first read included — scanned the whole collection
+       (2 Oct 2026). Memoised and never fatal (ensureIndex in _db.js). */
+    await ensureIndex(cache, { key: 1 });
     const isFresh = (c) => c && (Date.now() - new Date(c.fetchedAt).getTime()) < CACHE_TTL_MS;
     const cachedAnswer = (c) => c.found
         ? json(200, { ...c.profile, cachedAt: c.fetchedAt, stale: false })

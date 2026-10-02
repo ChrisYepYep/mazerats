@@ -121,10 +121,20 @@ async function overLimit(db, event) {
     const k = limiterKey(event);
     if (!k) return false;
     const col = db.collection(LIMITS);
-    await col.insertOne({ k, at: new Date() });
-    const n = await col.countDocuments({ k, at: { $gte: new Date(Date.now() - LIMIT_WINDOW_MS) } },
+    const recent = () => col.countDocuments({ k, at: { $gte: new Date(Date.now() - LIMIT_WINDOW_MS) } },
         { limit: LIMIT_BATCHES + 1 });
-    return n > LIMIT_BATCHES;
+    /* Counted BEFORE the insert as well (2 Oct 2026). Every batch used to
+       insert its row first, so an address already far over the line still
+       wrote one row a request for as long as it kept sending — a flood from
+       one address was a flood of writes into this collection. Once it is
+       over, a batch now costs one indexed count and writes nothing. The
+       insert-then-count below is unchanged, so a parallel burst still
+       cannot all fit under together; what changes is that an address's
+       allowance comes back ten minutes after its last ACCEPTED batch rather
+       than its last attempt, which is the same sixty a window. */
+    if (await recent() >= LIMIT_BATCHES) return true;
+    await col.insertOne({ k, at: new Date() });
+    return (await recent()) > LIMIT_BATCHES;
 }
 
 /* One counter document per minute, bumped by the rows each batch brings
@@ -173,6 +183,8 @@ const KEEP_DAYS = 60;              // matches the retention the policy states
 const MAX_EVENTS_PER_BATCH = 20;
 const MAX_NAME = 40;
 const MAX_LABEL = 80;
+// Far above any real batch (see the handler), far below the platform's 6MB.
+const MAX_BODY = 16 * 1024;
 
 const ok = { statusCode: 204, body: "" };
 
@@ -202,9 +214,16 @@ exports.handler = async (event) => {
     // A beacon is always a POST; anything else is not this endpoint's business.
     if (event.httpMethod !== "POST") return { statusCode: 405, body: "" };
 
+    /* A size limit before anything is parsed (2 Oct 2026), as site-errors.js
+       and ff-runs.js have. Twenty events of a forty-character name and an
+       eighty-character label is under 4KB; anything near the platform's 6MB
+       ceiling was parsed whole just to be cut to twenty and thrown away. */
+    const raw = event.body || "";
+    if (raw.length > MAX_BODY) return ok;
+
     let body;
     try {
-        body = JSON.parse(event.body || "{}");
+        body = JSON.parse(raw || "{}");
     } catch (e) {
         return ok;                 // malformed telemetry is not worth an error
     }

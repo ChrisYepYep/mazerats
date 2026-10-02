@@ -50,6 +50,9 @@ async function buildIndexes(db) {
     await col.createIndex({ type: 1, username: 1, at: -1 }).catch(() => {});
     // The throttle now counts by subscriber (`net`, see _net.js), not by ip.
     await col.createIndex({ type: 1, net: 1, at: -1 }).catch(() => {});
+    // And the site-wide ceiling on failures, which counts by time alone
+    // (2 Oct 2026, see loginThrottle).
+    await col.createIndex({ type: 1, at: -1 }).catch(() => {});
 }
 
 function clientIp(event) {
@@ -141,8 +144,12 @@ function targetFromBody(event, endpoint) {
 
 function recordWrite(event, username, session) {
     const path = (event.path || "").replace("/.netlify/functions/", "");
-    const target = (event.queryStringParameters && (event.queryStringParameters.id ||
-        event.queryStringParameters.username || event.queryStringParameters.ip)) ||
+    /* Cut short like the body's (1 Oct 2026, night scan): a query string is
+       the caller's to make as long as the URL allows, and every row of it
+       went into the log, and out again to the owner's Activity panel, whole. */
+    const fromQuery = event.queryStringParameters && (event.queryStringParameters.id ||
+        event.queryStringParameters.username || event.queryStringParameters.ip);
+    const target = (fromQuery ? String(fromQuery).slice(0, 200) : null) ||
         targetFromBody(event, path) || null;
     return record(event, "write", {
         username,
@@ -153,4 +160,4 @@ function recordWrite(event, username, session) {
     });
 }
 
-module.exports = { record, recordWrite, COLLECTION, KEEP_DAYS };
+module.exports = { record, recordWrite, ensureIndexes, COLLECTION, KEEP_DAYS };

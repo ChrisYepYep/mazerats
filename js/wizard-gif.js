@@ -337,13 +337,19 @@ window.WizardGif = (function () {
 
     async function paperStill(canvasEl, width) {
         const { w: mapW, h: mapH } = mapSize(canvasEl);
-        if (paperKeep && paperKeep.width === Math.round(width)) return paperKeep;
+        /* Kept per sheet SIZE as well as per width (1 Oct 2026): saving new
+           map dimensions in the same sitting left the old sheet's paper
+           here, stretched to the new shape on every frame after. */
+        if (paperKeep && paperKeep.width === Math.round(width)
+            && paperKeep.mapW === mapW && paperKeep.mapH === mapH) return paperKeep;
         const sheet = document.createElement("canvas");
         sheet.width = Math.round(width);
         sheet.height = Math.round(mapH * (width / mapW));
         const ctx = sheet.getContext("2d");
         ctx.scale(width / mapW, width / mapW);
         await drawPaper(ctx, mapW, mapH, canvasEl.querySelector(".wiz-paper"));
+        sheet.mapW = mapW;
+        sheet.mapH = mapH;
         paperKeep = sheet;
         return sheet;
     }
@@ -547,7 +553,13 @@ window.WizardGif = (function () {
                     ctx.shadowBlur = blur ? parseFloat(blur[1]) : 4;
                 }
             }
-            const lines = room.textContent.trim().split("\n").map(s => s.trim()).filter(Boolean);
+            /* Without the sheet's "(1)", "(2)" (1 Oct 2026). The editor letters
+               its names with them — telling seven corridors apart is its job
+               — and this read the editor's own text, so a shared GIF said
+               "Grand Staircase (2)" where the public map says "Grand
+               Staircase". Same rule as roomName in js/wizard-map.js. */
+            const lines = room.textContent.trim().replace(/\s*\(\d+\)\s*$/, "")
+                .split("\n").map(s => s.trim()).filter(Boolean);
             const top = name.h / 2 - ((lines.length - 1) * name.lineHeight) / 2;
             lines.forEach((line, i) => ctx.fillText(line, name.w / 2, top + i * name.lineHeight));
             ctx.shadowBlur = 0;

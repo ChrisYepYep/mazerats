@@ -149,7 +149,12 @@ const AFTER_CLOSE_MS = 2 * DAY_MS;
 const LIFE_S = 3 * 24 * 60 * 60;
 const IMAGE_HEADERS = {
     "Cache-Control": `public, max-age=${LIFE_S}, immutable`,
-    "Netlify-CDN-Cache-Control": `public, durable, s-maxage=${LIFE_S}, immutable`
+    "Netlify-CDN-Cache-Control": `public, durable, s-maxage=${LIFE_S}, immutable`,
+    /* Keyed on the five parameters readAddress reads and no others (2 Oct
+       2026, final scan; see `vary` in _cache.js), so `&x=<random>` on a
+       signed address is the cached picture, not a deal read and a fresh
+       fetch through the image CDN every time. */
+    "Netlify-Vary": "query=g|d|r|t|s"
 };
 
 /* The one output each game's pictures are served at (see ONE SIZE PER

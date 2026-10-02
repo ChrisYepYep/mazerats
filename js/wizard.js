@@ -219,6 +219,9 @@ document.addEventListener("DOMContentLoaded", () => {
         return s.charAt(0).toUpperCase() + s.slice(1);
     }
 
+    // Who opened the sheet, and what it shows — see returnFocusFromSheet.
+    let sheetOpener = null, sheetFromMap = false, sheetRoomId = null;
+
     function openRoom(id, { push = true } = {}) {
         const room = roomById(id);
         // Hidden is hidden, whoever asks - see roomIdFromPath.
@@ -228,6 +231,17 @@ document.addEventListener("DOMContentLoaded", () => {
         // open decides whether this room is a new place in the history or a
         // move within one. See the pushState at the end of this function.
         const alreadyOpen = modal.classList.contains("open");
+        /* Where focus goes back to when the sheet shuts (2 Oct 2026). It
+           used to go nowhere: closing left focus on <body>, so the next Tab
+           started again from the site bar instead of from the room that had
+           been opened. Remembered on the first open only — walking on
+           through "Leads to" is still the same visit. See closeRoom. */
+        if (!alreadyOpen) {
+            const active = document.activeElement;
+            sheetOpener = active && active !== document.body ? active : null;
+            sheetFromMap = !!(sheetOpener && sheetOpener.closest && sheetOpener.closest(".wiz-room"));
+        }
+        sheetRoomId = room.id;
 
         modalTitle.textContent = view.fullName(room);
         const picture = room.image || room.thumb;
@@ -352,9 +366,30 @@ document.addEventListener("DOMContentLoaded", () => {
        map and popstate finds the sheet already shut. Anything else (the
        entry a pasted room link landed on) is rewritten to /wizard in place,
        since stepping back from it would leave the page. (28 Sept 2026) */
+    /* Back to the room on the map: the one the sheet was showing last, when
+       it was opened from the map, since walking through "Leads to" flew the
+       map there and that is the room now in the middle of the frame. Looked
+       up by id rather than kept as an element, because an unlock redraws
+       every room while a sheet can be open. Otherwise whatever opened it,
+       if it is still on the page, and failing both the map itself — never
+       <body>. Without scrolling: the rooms sit inside a transformed canvas
+       in an overflow:hidden stage, and a plain focus() scrolls that stage
+       out from under the transform. */
+    function returnFocusFromSheet() {
+        // Not a room faded out at this zoom (aria-hidden, out of the Tab
+        // order — see wizard-map.js): focus would sit on something unseen.
+        const usable = el => el && el.isConnected && !el.disabled && el.getAttribute("aria-hidden") !== "true" ? el : null;
+        const back = usable(sheetFromMap && sheetRoomId ? view.elementFor("room", sheetRoomId) : null)
+            || usable(sheetOpener)
+            || stage;
+        sheetOpener = null;
+        try { back.focus({ preventScroll: true }); } catch (e) { /* nothing to hand it to */ }
+    }
+
     function closeRoom({ pop = true } = {}) {
         if (!modal.classList.contains("open")) return;
         modal.classList.remove("open");
+        returnFocusFromSheet();
         if (!pop) return;
         if (history.state && history.state.pushed) history.back();
         else history.replaceState({}, "", "/wizard");
@@ -463,6 +498,12 @@ document.addEventListener("DOMContentLoaded", () => {
             if (el) {
                 el.classList.add("is-found");
                 setTimeout(() => el.classList.remove("is-found"), 1600);
+                /* Focus goes to the room that was found (2 Oct 2026). The
+                   result button that had it has just been removed, which
+                   dropped focus on <body> and left a keyboard user to Tab
+                   through every room on the map to reach this one. Without
+                   scrolling, for the reason in returnFocusFromSheet. */
+                el.focus({ preventScroll: true });
             }
         });
         document.addEventListener("click", e => {
@@ -572,8 +613,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const zoomInBtn = document.getElementById("wiz-zoom-in");
     const zoomOutBtn = document.getElementById("wiz-zoom-out");
-    zoomInBtn.addEventListener("click", () => view.zoomBy(1.5));
-    zoomOutBtn.addEventListener("click", () => view.zoomBy(1 / 1.5));
+    /* What the three buttons say once the view has settled (2 Oct 2026).
+       The readout itself stopped being a live region, since it changes on
+       every frame of every movement; this speaks once, after the last press
+       of a run, with the number the view landed on. */
+    const zoomSaid = document.getElementById("wiz-zoom-said");
+    let zoomSayTimer = 0;
+    function sayZoomSoon() {
+        if (!zoomSaid) return;
+        clearTimeout(zoomSayTimer);
+        zoomSayTimer = setTimeout(() => {
+            const z = view.getTargetZoom ? view.getTargetZoom() : view.getZoom();
+            zoomSaid.textContent = `Zoom ${Math.round(z * 100)}%`;
+        }, 450);
+    }
+    zoomInBtn.addEventListener("click", () => { view.zoomBy(1.5); sayZoomSoon(); });
+    zoomOutBtn.addEventListener("click", () => { view.zoomBy(1 / 1.5); sayZoomSoon(); });
 
     /* Back to where the map opens, not out to its full extent.
 
@@ -599,6 +654,7 @@ document.addEventListener("DOMContentLoaded", () => {
         } else {
             view.fitContent();
         }
+        sayZoomSoon();
     });
 
     /* ---------- secret passages ----------
@@ -719,6 +775,21 @@ document.addEventListener("DOMContentLoaded", () => {
             secretTally.title = lines.length
                 ? lines.join("\n") + "\n\nSome words are best simply spoken aloud."
                 : "Some words are best simply spoken aloud.";
+            /* On a touch screen the tally IS a button — it opens the sheet
+               below (wireTouchSecrets) — so it says so to VoiceOver and
+               TalkBack, which announced it as plain text (2 Oct 2026). Only
+               there: to a mouse it opens nothing, and must not claim to. */
+            if (coarse()) {
+                secretTally.setAttribute("role", "button");
+                secretTally.tabIndex = 0;
+                secretTally.setAttribute("aria-controls", "wiz-secret-sheet");
+                secretTally.setAttribute("aria-expanded", secretSheet && !secretSheet.hidden ? "true" : "false");
+            } else {
+                secretTally.removeAttribute("role");
+                secretTally.removeAttribute("tabindex");
+                secretTally.removeAttribute("aria-controls");
+                secretTally.removeAttribute("aria-expanded");
+            }
         }
 
         /* The same clues again, for the touch sheet (wireTouchSecrets) - a
@@ -763,6 +834,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!secretSheet || !secretsEl) return;
         secretSheet.hidden = !open;
         secretsEl.classList.toggle("is-open", open);
+        if (secretTally && secretTally.hasAttribute("aria-expanded")) {
+            secretTally.setAttribute("aria-expanded", open ? "true" : "false");
+        }
         /* The field is NOT focused on open: on a phone that throws the
            keyboard up over the map before the reader has read a clue. They
            tap the line when they have a word for it. */
@@ -773,6 +847,14 @@ document.addEventListener("DOMContentLoaded", () => {
         secretTally.addEventListener("click", () => {
             if (!coarse() || !secrets.length) return;
             setSheet(secretSheet.hidden);
+        });
+        // A role="button" answers Enter and Space as well as a tap — a
+        // tablet with a keyboard attached is still a coarse pointer.
+        secretTally.addEventListener("keydown", e => {
+            if (secretTally.getAttribute("role") !== "button") return;
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault();
+            secretTally.click();
         });
         secretForm.addEventListener("submit", async e => {
             e.preventDefault();

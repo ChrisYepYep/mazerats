@@ -44,6 +44,26 @@ const PICTURE_GLYPHS = new Set([
     0x00CE, 0x00D5, 0x00E6, 0x00EC, 0x00ED, 0x00EE, 0x00F5, 0x00F7
 ]);
 
+/* A name as a browser tab shows it (2 Oct 2026, the owner's): outside the
+   page there is no Volter to draw the pictures, so "*ÕMaze EmpireÕ*" read
+   as its raw letters. The picture characters go, and the stars or bars
+   that framed them, leaving "Maze Empire". Not the em dash or the curly
+   quote: titles use those as themselves ("Maze Empire — Maze Rats"). The
+   same rule is in netlify/functions/share.js, for link previews. */
+const TITLE_PICTURES = new RegExp("[" + [...PICTURE_GLYPHS]
+    .filter(c => c !== 0x2014 && c !== 0x2018)
+    .map(c => String.fromCodePoint(c)).join("") + "]", "gu");
+function plainTitle(text) {
+    const raw = String(text || "");
+    const s = raw.replace(TITLE_PICTURES, " ")
+        .replace(/[[({]\s*[\])}]/g, " ")      // "[ ª ]" leaves an empty pair
+        .replace(/\s{2,}/g, " ")
+        .replace(/^[\s*~_|]+/, "")
+        .replace(/(?:\s*[*~_|]+)+(?=\s+—|\s*$)/g, "")
+        .trim();
+    return s || raw;
+}
+
 // A leading article is skipped too, the way a library or a record shop
 // files things: "A Horrible Maze" belongs under H, and "The Little Maze"
 // under L, because those are the words someone actually looks them up by.
@@ -620,7 +640,7 @@ const PageMeta = (() => {
     function apply() {
         const top = holders[holders.length - 1];
         const title = top && top.title ? top.title : saved.title;
-        document.title = title;
+        document.title = plainTitle(title);
         const c = canonicalEl(), o = ogUrlEl();
         if (top && top.url) {
             if (c) c.setAttribute("href", top.url);
@@ -1109,8 +1129,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const href = (page === "home" || page === "welcome") ? "#privacy" : "/privacy";
     copyrightLine.insertAdjacentHTML(
         "beforeend",
-        // &nbsp; after the dot, so a phone never ends the line on it.
-        ` <span class="footer-dot" aria-hidden="true">&middot;</span>&nbsp;<a href="${href}">Privacy Policy</a>`
+        // The dot and the link as one unbreakable piece (.footer-tail): the
+        // &nbsp; alone didn't stop a phone ending the line on the dot.
+        ` <span class="footer-tail"><span class="footer-dot" aria-hidden="true">&middot;</span>&nbsp;<a href="${href}">Privacy Policy</a></span>`
     );
 });
 

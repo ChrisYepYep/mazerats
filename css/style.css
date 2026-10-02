@@ -200,6 +200,29 @@
                    U+2020, U+2021, U+2022;
 }
 
+/* ---- AND THE OPPOSITE: TWO PUNCTUATION MARKS VOLTER CAN'T SET ----
+
+   For prose in Volter (2 Oct 2026). What's New's lines and the furni
+   browser's notes moved into the pixel face that day, and with them two
+   characters Volter Goldfish gets wrong: U+00B7, the middot between "Maze"
+   and its builders and between two changes, is an EMPTY glyph (see
+   .row-date-dot), so "Maze · hustle" read "Maze   hustle"; and U+2014 is a
+   musical note, so a band note read "In 2 to 4 mazes ♫ the pieces…".
+
+   Put first in those elements' stacks, this face takes exactly those two
+   characters from the device's own sans and leaves every other to Volter.
+   local() only, so no download; a device with none of these simply falls
+   through to Volter, which is where it was. Not for anything printing a
+   maze or furni name verbatim — there the Habbo reading is the right one
+   (see 'Volter Glyphs' above). */
+@font-face {
+    font-family: 'Volter Punct';
+    src: local('Roboto'), local('Arial'), local('Helvetica'), local('Helvetica Neue'), local('Segoe UI'), local('DejaVu Sans');
+    font-weight: normal;
+    font-style: normal;
+    unicode-range: U+00B7, U+2014;
+}
+
 * { box-sizing: border-box; }
 
 /* THE hidden ATTRIBUTE MEANS HIDDEN, whatever else the element is.
@@ -1141,6 +1164,14 @@ main { display: block; flex: 1 0 auto; }
 .footer-dot {
     margin: 0 6px;
     color: var(--parchment-dim);
+}
+
+/* The dot and "Privacy Policy" as one unbreakable piece (2 Oct 2026). The
+   &nbsp; between them was meant to do this, but Chrome still broke between
+   the &nbsp; and the link on a phone, so the line ended on a lone dot. Takes
+   effect once js/site.js wraps the two in .footer-tail. */
+.footer-tail {
+    white-space: nowrap;
 }
 
 .site-footer a {
@@ -3081,6 +3112,13 @@ body[data-page="home"] .hero { padding-top: 18px; }
     color: var(--amber-text);
     margin: 0 0 4px;
     overflow-wrap: break-word;
+}
+/* The Warren's rows write a bare middot into this line ("No area set ·
+   nothing recorded" on the Atlas, "· Discord: …" on Contributors), which
+   Volter draws as a blank — see 'Volter Punct' (2 Oct 2026). */
+body[data-page="admin"] .chrome-list-row .row-creator,
+body[data-page="admin"] .admin-contributor-count {
+    font-family: 'Volter Punct', 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
 }
 
 /* A shade up from --parchment-dim, and mixed rather than named.
@@ -5515,6 +5553,16 @@ body[data-page="home"] .hero { padding-top: 18px; }
 
 .furni-card-also[hidden] { display: none; }
 
+/* In the link's place for a furni FurniIndex hasn't listed yet (see
+   openFurniCard in js/home.js). Plain text, not link-coloured, so it
+   doesn't look clickable: the side menu's dark brown, 5.76:1 on the paper.
+   No italic — the card's pixel face has none, and a slanted Volter smears. */
+.furni-card-unlisted {
+    flex: 0 1 auto;
+    color: #6b4b18;
+    white-space: nowrap;
+}
+
 .furni-card-link {
     flex: 0 1 auto;
     color: #8c3600;
@@ -7181,6 +7229,26 @@ body[data-page="home"] .hero { padding-top: 18px; }
 }
 
 .admin-delete-btn { border-color: var(--danger); color: var(--danger); }
+
+/* "Furni complete" on a maze's row (2 Oct 2026): saved as soon as it is
+   ticked — see the listener in renderList, js/admin.js. */
+.admin-furni-complete {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    color: var(--parchment-dim);
+    white-space: nowrap;
+    cursor: var(--cursor-pointer);
+}
+.admin-furni-complete input {
+    margin: 0;
+    accent-color: var(--amber);
+    cursor: inherit;
+}
+.admin-furni-complete:has(input:disabled) { cursor: default; opacity: 0.6; }
 .admin-delete-btn:hover { background: var(--danger); color: #fff; }
 
 .admin-add-btn { margin-top: 14px; }
@@ -7715,11 +7783,18 @@ body[data-page="admin"] .search-box input {
     background: rgba(0, 0, 0, 0.25);
 }
 
+/* The same fixed 26px box as .admin-furni-item img above (1 Oct 2026), and
+   for the same reason. Sized by its content, an icon that never arrives —
+   furniindex.com has no icon yet for some of the "Not on Furni Index yet"
+   furni, and those have no catalogue icon to fall back to — is 0px wide, so
+   its name started 26px left of every name above and below it.
+   scale-down rather than contain, so an icon smaller than the box stays at
+   its own size, as it did under the old max-width/max-height. */
 .admin-furni-result img {
-    width: auto;
-    height: auto;
-    max-width: 26px;
-    max-height: 26px;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    object-fit: scale-down;
     image-rendering: pixelated;
 }
 
@@ -7747,6 +7822,16 @@ body[data-page="admin"] .search-box input {
     opacity: 0.45;
     cursor: default;
 }
+
+/* A "Not on Furni Index yet" furni FurniIndex has no picture of either (2
+   Oct 2026, the owner's): greyed out and not addable, since it would show
+   as a broken picture on the site. Its icon box stays, empty, so the
+   names still line up. It comes back by itself once FurniIndex has one. */
+.admin-furni-result.is-nopicture {
+    opacity: 0.45;
+    cursor: default;
+}
+.admin-furni-result.is-nopicture img { visibility: hidden; }
 
 /* Added by hand rather than detected. Marked because the two behave
    differently on a rescan — this one survives it, a detection doesn't. */
@@ -9318,6 +9403,12 @@ body[data-page="admin"] .search-box input {
     }
     .admin-row .admin-row-actions { flex-direction: row; }
     .admin-row .admin-row-actions .btn { flex: 1; }
+    /* A maze row's side holds "Furni complete" too since 2 Oct 2026, and at
+       375 the pill, the box and the three buttons came to 305px in a 249px
+       row: Delete ran out past the frame. The buttons wrap to a line of
+       their own when they must, still held to the right. */
+    .admin-row .row-side { flex-wrap: wrap; row-gap: 6px; }
+    .admin-row .row-side > .admin-row-actions { margin-left: auto; }
 
     /* The active sub-nav tab's merge-bridge (see .chrome-nav-sub
        .chrome-nav-btn.active::after) is sized for the desktop button —
@@ -10552,11 +10643,16 @@ body[data-page="admin"] #activity-sessions {
    this sheet can key off what each one draws first. One :has() per view
    rather than one with a list inside it: tools/themes.js splits selectors
    on their commas, and a comma inside the brackets came out as a broken
-   rule in every palette. */
-.chrome-list:has(> .timeline),
-.chrome-list:has(> .furni-head),
-.chrome-list:has(> .furni-rooms),
-.chrome-list:has(> .updatelog) {
+   rule in every palette.
+
+   What's New is no longer one of them (2 Oct 2026, the owner's): a panel
+   inside the list's frame read as a smaller window of its own. Its entries
+   are cards on the frame now, like the maze and event rows, and the lines
+   between them (intro, dates, counts) use inks that pass on the frame
+   itself — see .updatelog below. The furni browser followed it the same
+   day, for the same reason: its tiles and room shots are cards on the
+   frame, and its headings and notes take the frame's inks. */
+.chrome-list:has(> .timeline) {
     margin: 10px 10px 6px;
     padding: 14px 14px 16px;
     background: var(--chrome-row);
@@ -11304,38 +11400,202 @@ body[data-page="admin"] #activity-sessions {
    that order). Each band is a heading, a line saying what it is, and its
    own grid, so the run of tiles has somewhere to breathe and the reader
    always knows which part of the archive they are in. */
+/* Set like What's New's day headings (2 Oct 2026, the owner's): the title
+   in the small pixel face, uppercase, its count held to the right, in the
+   parchment that passes on the frame these now sit on. */
 .furni-band + .furni-band {
-    margin-top: 22px;
-    padding-top: 18px;
-    border-top: 1px solid var(--border);
+    margin-top: 18px;
 }
 
-/* Title and count on one line, the count held out to the right so the three
-   headings line their numbers up down the panel. */
 .furni-band-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 10px;
-    margin: 0;
+    margin: 0 0 4px;
     font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
     font-size: 0.5625rem;
     font-weight: 400;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: var(--amber-bright);
+    color: var(--parchment);
 }
 
 .furni-band-count {
-    color: var(--unknown-text);
     font-variant-numeric: tabular-nums;
 }
 
 .furni-band-note {
-    margin: 5px 0 12px;
-    font-size: 0.68rem;
+    margin: 0 0 9px;
+    /* 'Volter Punct' for the em dash in "In 2 to 4 mazes — …" (above). */
+    font-family: 'Volter Punct', 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     line-height: 1.5;
     color: var(--parchment-dim);
+}
+
+/* Signature pieces (2 Oct 2026): one block per maze — its name and how
+   many pieces only it used, over a few of them. */
+.furni-sig-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.furni-sig-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 5px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+}
+.furni-sig-name {
+    color: var(--parchment);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.furni-sig-n {
+    flex: 0 0 auto;
+    color: var(--parchment-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+/* A piece opened in place (2 Oct 2026): the mazes it is in, in a panel the
+   width of the grid, under the opened tile's row. The tile stays lit. */
+.furni-tile.is-open {
+    transform: translateY(-2px);
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 1px;
+}
+
+.furni-expand {
+    grid-column: 1 / -1;
+    margin: 2px 0 4px;
+    padding: 9px 10px 10px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+}
+
+/* "FIREPLACE - 30 Mazes" on the left, a plain-text Close on the right. */
+.furni-expand-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 7px;
+    color: var(--parchment);
+}
+.furni-expand-title { min-width: 0; }
+.furni-expand-name { text-transform: uppercase; letter-spacing: 0.07em; }
+.furni-expand-n { color: var(--parchment-dim); }
+
+.furni-expand-close {
+    flex: 0 0 auto;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: var(--parchment-dim);
+    font: inherit;
+    cursor: var(--cursor-pointer);
+}
+.furni-expand-close:hover,
+.furni-expand-close:focus-visible { color: var(--parchment); text-decoration: underline; text-underline-offset: 2px; }
+.furni-expand-close:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
+
+/* The mazes as small rows: name, then how many of its rooms. */
+.furni-expand-mazes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 4px;
+}
+
+.furni-expand-maze {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    padding: 5px 8px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    color: var(--parchment);
+    font: inherit;
+    text-align: left;
+    cursor: var(--cursor-pointer);
+    transition: transform 0.15s;
+}
+.furni-expand-maze:hover,
+.furni-expand-maze:focus-visible { transform: translateY(-2px); }
+.furni-expand-maze:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
+.furni-expand-maze-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.furni-expand-maze-n {
+    flex: 0 0 auto;
+    color: var(--parchment-dim);
+}
+
+/* The complete-mazes line's names, as links in the prose. */
+.furni-head-complete-link {
+    padding: 0;
+    background: none;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    cursor: var(--cursor-pointer);
+    transition: text-shadow 0.15s, color 0.15s;
+}
+/* No underline (2 Oct 2026, the owner's): a soft amber glow on hover. */
+.furni-head-complete-link:hover,
+.furni-head-complete-link:focus-visible {
+    color: #fff3dc;
+    text-shadow: 0 0 4px rgba(232, 196, 120, 0.85), 0 0 9px rgba(232, 196, 120, 0.45);
+}
+.furni-head-complete-link:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .furni-expand-maze { transition: none; }
+    .furni-tile.is-open { transform: none; }
+    .furni-head-complete-link { transition: none; }
+}
+
+/* "Show all 225" / "Show fewer" under a shortened list: a small card in the
+   tiles' own look, so it reads as part of the list it opens. */
+.furni-band-more {
+    display: inline-block;
+    margin: 8px 0 0;
+    padding: 4px 10px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    border-radius: 6px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+    color: var(--parchment);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    cursor: var(--cursor-pointer);
+    transition: transform 0.15s;
+}
+.furni-band-more:hover,
+.furni-band-more:focus-visible { transform: translateY(-2px); }
+.furni-band-more:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) {
+    .furni-band-more { transition: none; }
 }
 
 /* auto-fill rather than a fixed column count: the archive panel is a fixed
@@ -11353,20 +11613,22 @@ body[data-page="admin"] #activity-sessions {
     align-items: center;
     gap: 3px;
     padding: 8px 5px 7px;
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--border);
-    border-radius: 5px;
+    /* A card on the frame, as a What's New entry is (2 Oct 2026): the maze
+       rows' ground, black edge, hard shadow and hover lift. */
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
     color: var(--parchment);
     font-family: inherit;
     text-align: center;
     cursor: var(--cursor-pointer);
-    transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
+    transition: transform 0.15s;
 }
 
 .furni-tile:hover,
 .furni-tile:focus-visible {
-    background: var(--wood-mid);
-    border-color: var(--amber);
+    transform: translateY(-2px);
     outline: none;
 }
 
@@ -11408,8 +11670,10 @@ body[data-page="admin"] #activity-sessions {
    (Dark)", and a tile that grows to fit the longest one would drag every
    tile in its row with it. */
 .furni-tile-name {
-    font-size: 0.6rem;
-    line-height: 1.25;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.3;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -11420,9 +11684,12 @@ body[data-page="admin"] #activity-sessions {
 /* The finding, under the name: for a piece only one maze used, that maze's
    name rather than the digit 1. */
 .furni-tile-meta {
-    font-size: 0.55rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     line-height: 1.3;
-    color: var(--unknown-text);
+    /* --unknown-text is 4.0:1 on the card ground; this is 6.0:1. */
+    color: var(--parchment-dim);
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -15045,26 +15312,46 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
     font-weight: 400;
     letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: var(--amber-bright);
+    /* On the list's frame, not a dark panel (2 Oct 2026): --amber-bright
+       measured 3.9:1 there and --unknown-text 3.0:1; --parchment is 5.6:1. */
+    color: var(--parchment);
 }
 
 .updatelog-count {
-    color: var(--unknown-text);
+    color: var(--parchment);
     font-variant-numeric: tabular-nums;
 }
 
 /* The rule the entries hang from. It is what makes this read as a log at a
-   glance rather than as a list with dates on it. */
+   glance rather than as a list with dates on it. A 2px amber thread that
+   fades in and out at each day's ends (2 Oct 2026, the owner's: a bare 1px
+   black line read as nothing), on a pseudo-element so the markers below
+   can be centred on it exactly: thread at 4–6px, markers centred on 5px. */
 .updatelog-entries {
+    position: relative;
     list-style: none;
     margin: 0;
-    padding: 0 0 0 14px;
-    border-left: 1px solid var(--border);
+    padding: 0 0 0 18px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 5px;
+}
+.updatelog-entries::before {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    border-radius: 1px;
+    background: linear-gradient(to bottom, transparent, var(--amber) 14px, var(--amber) calc(100% - 14px), transparent);
+    box-shadow: 1px 0 0 rgba(0, 0, 0, 0.35);
+    pointer-events: none;
 }
 
+/* Each entry is a card like a maze or event row (.chrome-list-row): the
+   row's dark ground, black edge, hard drop shadow and hover lift — so What's
+   New reads as the same list in the same frame, not a window inside it. */
 .updatelog-entry {
     position: relative;
     display: grid;
@@ -15072,36 +15359,41 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
     align-items: center;
     gap: 9px;
     width: 100%;
-    padding: 6px 9px;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--border);
-    border-radius: 4px;
+    padding: 5px 9px;
+    /* The maze rows' own ground in this frame — .featured-frame
+       .chrome-list-row, not the bare .chrome-list-row colour. */
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
     color: var(--parchment);
     font: inherit;
     text-align: left;
     cursor: var(--cursor-pointer);
-    transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
+    transition: transform 0.15s, background-color 0.12s ease-out;
 }
 
 /* The marker on the rule. Sits in the gutter the padding above reserves,
-   so it lands ON the line rather than beside it. */
+   so it lands ON the line rather than beside it: 8px across with its
+   border, its left edge 1px into the gutter (the entry's 18px offset and
+   1px border, less 18px), so its centre is the thread's, 5px. */
 .updatelog-entry::before {
     content: "";
     position: absolute;
     left: -18px;
     top: 50%;
-    width: 7px;
-    height: 7px;
+    width: 6px;
+    height: 6px;
     margin-top: -4px;
     border-radius: 50%;
     background: var(--wood-mid);
-    border: 1px solid var(--amber);
+    border: 1px solid var(--amber-bright);
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.4);
 }
 
 .updatelog-entry:hover,
 .updatelog-entry:focus-visible {
-    background: var(--wood-mid);
-    border-color: var(--amber);
+    transform: translateY(-2px);
     outline: none;
 }
 .updatelog-entry:hover::before,
@@ -15131,7 +15423,9 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
 }
 
 .updatelog-verb.is-updated {
-    color: var(--amber-bright);
+    /* Not --amber-bright: on the row ground the entries took on 2 Oct 2026
+       that measured 4.04:1 at 9px; this pale amber is 5.3:1. */
+    color: #dcc095;
     border-color: var(--amber);
     background: rgba(171, 139, 100, 0.18);
 }
@@ -15159,9 +15453,24 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
     gap: 1px;
 }
 
-.updatelog-name {
-    font-size: 0.74rem;
+/* All three lines in the archive's pixel face at its small size (2 Oct
+   2026, the owner's), as the date headings and the verb chip already are. */
+.updatelog-name,
+.updatelog-meta,
+.updatelog-change {
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     line-height: 1.25;
+}
+/* Their middots are a blank in Volter — see 'Volter Punct'. The name is
+   left as it is: a maze's name is printed the way it was typed. */
+.updatelog-meta,
+.updatelog-change {
+    font-family: 'Volter Punct', 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+}
+
+.updatelog-name {
     color: var(--parchment);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -15169,8 +15478,9 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
 }
 
 .updatelog-meta {
-    font-size: 0.62rem;
-    color: var(--unknown-text);
+    /* --unknown-text measured 4.0:1 on the row ground the entries share
+       with the maze rows since 2 Oct 2026; this is 6.0:1. */
+    color: var(--parchment-dim);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -15191,7 +15501,6 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
    has room; the ellipsis is for a narrow phone rather than for runaway
    text. */
 .updatelog-change {
-    font-size: 0.62rem;
     color: var(--amber-text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -15969,16 +16278,40 @@ textarea.ctl-input.de-note {
     font-size: 0.5625rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--amber-bright);
+    /* On the frame since 2 Oct 2026: --amber-bright is 3.9:1 there. */
+    color: var(--parchment);
     text-shadow: 2px 2px 0 var(--bg-black);
 }
 
+/* The head's prose in the archive's small pixel face (2 Oct 2026). */
+.furni-head-blurb,
+.furni-head-complete,
+.furni-head-filter,
+.furni-stat-l {
+    /* 'Volter Punct': prose, so a middot or an em dash in it reads as one. */
+    font-family: 'Volter Punct', 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+}
+/* ...but the maze names in it are printed as typed. */
+.furni-head-complete-names { font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace; }
+
 .furni-head-blurb {
     margin: 0 0 12px;
-    font-size: 0.72rem;
     line-height: 1.5;
     color: var(--parchment-dim);
 }
+
+/* Which mazes' furni listings are whole, ticked in /warren: one line of
+   prose, the names in the brighter ink so they read as the answer. */
+.furni-head-complete {
+    margin: 0 0 14px;
+    padding: 0 0 12px;
+    border-bottom: 1px solid var(--border);
+    line-height: 1.6;
+    color: var(--parchment-dim);
+}
+.furni-head-complete-names { color: var(--parchment); }
 
 /* Three figures across, separated by rules rather than boxed — the same
    treatment the Timeline's own stats block uses, so the two read as the
@@ -16005,24 +16338,24 @@ textarea.ctl-input.de-note {
 .furni-stat-n {
     font-family: 'Montserrat', sans-serif;
     font-weight: 800;
-    font-size: 1.15rem;
+    /* 1.2rem at 800 is large text, which --amber-bright passes on the frame
+       (3.9:1 against a 3:1 bar); at 1.15rem it was just under the size. */
+    font-size: 1.2rem;
     line-height: 1.1;
     color: var(--amber-bright);
     font-variant-numeric: tabular-nums;
 }
 
 .furni-stat-l {
-    font-size: 0.62rem;
     line-height: 1.3;
-    color: var(--unknown-text);
+    color: var(--parchment-dim);
 }
 
 /* Only while a search is narrowing the list — how much of the above is
    still on screen. */
 .furni-head-filter {
     margin: 12px 0 0;
-    font-size: 0.68rem;
-    color: var(--amber-text);
+    color: var(--parchment);
 }
 
 @media (max-width: 700px) {
@@ -16040,7 +16373,10 @@ textarea.ctl-input.de-note {
    the maze instead. */
 .furni-rooms-count {
     margin: 0 0 14px;
-    font-size: 0.72rem;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.5;
     color: var(--parchment-dim);
 }
 
@@ -16061,14 +16397,14 @@ textarea.ctl-input.de-note {
     font-size: 0.5625rem;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: var(--amber-bright);
+    color: var(--parchment);
     text-shadow: 2px 2px 0 var(--bg-black);
 }
 
 /* How many rooms of that maze hold the piece — the number that makes a
    four-room hit read as one maze rather than as four results. */
 .furni-rooms-n {
-    color: var(--unknown-text);
+    color: var(--parchment);
     font-variant-numeric: tabular-nums;
     text-shadow: none;
 }
@@ -16090,20 +16426,21 @@ textarea.ctl-input.de-note {
     gap: 4px;
     width: 100%;
     padding: 5px;
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--border);
-    border-radius: 5px;
+    /* A card on the frame, like the furni tiles (2 Oct 2026). */
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
     color: var(--parchment);
     font: inherit;
     text-align: left;
     cursor: var(--cursor-pointer);
-    transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
+    transition: transform 0.15s;
 }
 
 .furni-room-row:hover,
 .furni-room-row:focus-visible {
-    background: var(--wood-mid);
-    border-color: var(--amber);
+    transform: translateY(-2px);
     outline: none;
 }
 .furni-room-row:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
@@ -16120,8 +16457,10 @@ textarea.ctl-input.de-note {
 }
 
 .furni-room-label {
-    font-size: 0.66rem;
-    line-height: 1.25;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    line-height: 1.3;
     color: var(--parchment);
     overflow-wrap: anywhere;
 }
@@ -18810,6 +19149,13 @@ body[data-page="admin"] .ctl-seg .btn-enter-mini {
    overrunning one another. One more class, and it holds. */
 .ctl-seg.ctl-seg-themes .btn-enter-mini { flex: 0 0 auto; }
 
+/* Event Entries' five status filters (2 Oct 2026): New, Approved, Winner,
+   Rejected and All came to 322px in a 295px panel at 375, so "All (1)" ran
+   out past the frame and "Approved (1)" was cut to "Approved (". They wrap
+   and size to their words, as the Players tab's filter track does. */
+.admin-panel[data-panel="entries"] .ctl-seg { flex-wrap: wrap; }
+.admin-panel[data-panel="entries"] .ctl-seg .btn-enter-mini { flex: 0 0 auto; }
+
 /* Grids whose columns asked for more than a 320px phone has inside a
    Warren panel (about 240px): the right edge of the error timeline charts
    and of the forms' fields was clipped by the window frame. Same columns,
@@ -19452,6 +19798,16 @@ body.is-viewer #bans-add { display: none !important; }
     .admin-panel[data-panel="admins"] .admin-row-actions { flex: 1 1 100%; justify-content: flex-start; margin-top: 6px; }
 }
 
+/* A maze form's furni rooms do the same (1 Oct 2026). Each room's head is
+   the toggle (caret, picture, name, "27 shown of 28") beside + Add Furni
+   and Remove all, and at 375 the buttons left the toggle 93px: every one of
+   The Little Maze's 102 heads painted its name and count under the two
+   buttons, overrunning by up to 107px. Measured clean from 520px up. */
+@media (max-width: 560px) {
+    .admin-furni-room-head { flex-wrap: wrap; row-gap: 6px; }
+    .admin-furni-toggle { flex: 1 1 100%; }
+}
+
 /* A filled gallery thumbnail says "Replace" on hover or drag, which a
    tablet never does, so there nothing said a tap swaps the picture. On a
    screen with no hover it shows all the time, over a lighter wash so the
@@ -19470,4 +19826,27 @@ body.is-viewer #bans-add { display: none !important; }
 @media (pointer: coarse) {
     .guide-contents .guides-textbtn { padding: 5px 0; }
     .guides-crumbs .guides-textbtn { min-height: 32px; }
+}
+
+/* The furni browser's small controls (2 Oct 2026): "Show all", "See every
+   room" and the open panel's Close were 20px and 14px tall on a finger.
+   An invisible reach, as the header pills have, so the look stays. Sized
+   to the gaps measured at 375: 36px clears the tiles above "Show all" and
+   the next band below it; Close's 28px stays inside the panel's head and
+   off the first maze button. */
+@media (pointer: coarse) {
+    .furni-band-more,
+    .furni-expand-close { position: relative; }
+    .furni-band-more::after,
+    .furni-expand-close::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 100%;
+        height: max(100%, 36px);
+        background: transparent;
+    }
+    .furni-expand-close::after { width: max(100%, 44px); height: max(100%, 28px); }
 }

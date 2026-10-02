@@ -589,17 +589,22 @@ document.addEventListener("DOMContentLoaded", () => {
        than letting somebody fill it in to be refused at Send. Learnt from
        ?action=open each time the page is shown, and from a POST refused
        with { closed: true } (closed while the page sat open). */
-    const ENTRY_CLOSED = "Entries are closed just now.";
+    /* The server's own words when it gives them (2 Oct 2026): a picked
+       event opens and closes with its dates, so "closed" can be "Entries
+       for Vermin's Vault open at 19:05 UTC on 3 October." */
+    let ENTRY_CLOSED = "Entries are closed just now.";
     let entryClosed = false;
-    function setEntryClosed(closed) {
+    function setEntryClosed(closed, message) {
         const was = entryClosed;
+        const wasSaying = ENTRY_CLOSED;
         entryClosed = Boolean(closed);
+        if (entryClosed && typeof message === "string" && message.trim()) ENTRY_CLOSED = message.trim();
         if (!entryFormReady) return;
         entryUsername.disabled = entryClosed;
         entryImage.disabled = entryClosed;
         entrySend.disabled = entryClosed || entrySending;
         if (entryClosed) entrySay(ENTRY_CLOSED, true);
-        else if (was && liveText.get(entryStatus) === ENTRY_CLOSED) entrySay("");
+        else if (was && liveText.get(entryStatus) === wasSaying) entrySay("");
     }
 
     /* Whether the Event Submission page is what the console shows now —
@@ -627,9 +632,15 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             if (!res.ok) throw new Error(String(res.status));
             const data = await res.json();
+            // The server's clock, from its Date header, when it gives one.
+            let serverNow = NaN;
+            try { serverNow = Date.parse(res.headers && res.headers.get ? res.headers.get("date") || "" : ""); } catch (e) { serverNow = NaN; }
             return {
+                serverNow,
                 event: data && data.event && typeof data.event === "object" ? data.event : null,
-                closed: Boolean(data && data.closed === true)
+                closed: Boolean(data && data.closed === true),
+                message: data && typeof data.message === "string" ? data.message : "",
+                changesAt: data && typeof data.changesAt === "string" ? Date.parse(data.changesAt) : NaN
             };
         } finally {
             if (timer) clearTimeout(timer);
@@ -647,8 +658,25 @@ document.addEventListener("DOMContentLoaded", () => {
             entryEventEl.hidden = !title;
             entryEventEl.textContent = title ? `Entering: ${title}` : "";
         }
-        if (answer) setEntryClosed(answer.closed);
+        if (answer) setEntryClosed(answer.closed, answer.message);
+        /* A picked event opens and shuts at its own times (2 Oct 2026): a
+           form left showing asks again just after, so 19:05 opens it without
+           a reopen. Only while the page shows, and within a day. */
+        /* Timed by the server's clock, not this device's (2 Oct 2026): a
+           device running fast asked again before 19:05, was told "not yet"
+           with a changesAt already behind it, and re-asked every 1.5s until
+           the server agreed — all evening, for a clock hours out. A time
+           already past by the server's clock is asked again in 10s. Up to
+           3s more at random, so every form left open doesn't ask in the
+           same second. */
+        clearTimeout(entryRecheck);
+        const now = answer && Number.isFinite(answer.serverNow) ? answer.serverNow : Date.now();
+        const wait = answer ? answer.changesAt - now : NaN;
+        if (entryShowing && Number.isFinite(wait) && wait < 24 * 60 * 60 * 1000) {
+            entryRecheck = setTimeout(() => { if (entryShowing) paintEntryEvent(); }, (wait > 0 ? wait + 1500 : 10000) + Math.floor(Math.random() * 3000));
+        }
     }
+    let entryRecheck = 0;
 
     function readFileAsDataUrl(blob) {
         return new Promise((resolve, reject) => {
@@ -765,10 +793,15 @@ document.addEventListener("DOMContentLoaded", () => {
             try {
                 entrySay("Sending...");
                 const dataUrl = file.size > ENTRY_IMAGE_MAX ? await shrinkToFit(file) : await readFileAsDataUrl(file);
-                await Api.submitEventEntry({ habboName, dataUrl, website: entryHp.value, clientRef: entryRef });
+                const sent = await Api.submitEventEntry({ habboName, dataUrl, website: entryHp.value, clientRef: entryRef });
                 // Cleared either way, so a return visit starts fresh.
                 clearEntryForm();
-                if (entryShowing) MazeConsole.showThanks("Entry Submitted");
+                /* Two entries an event (2 Oct 2026): the first says one more
+                   can follow to correct it, the correction that it's the last. */
+                const forEvent = sent && sent.event && typeof sent.correction === "boolean";
+                if (entryShowing) MazeConsole.showThanks(!forEvent ? "Entry Submitted"
+                    : sent.correction ? "Correction Submitted. That's both of your entries for this event."
+                    : "Entry Submitted. If you need to correct it, you can send one more.");
             } catch (e) {
                 // Changed on its way: the retry is a new entry (entryEdited).
                 if (entryEditedWhileSending) entryRef = null;
@@ -777,7 +810,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 // A session revoked or forgotten while the tab sat open: the
                 // page is told who it is now, whether or not it is showing.
                 if (status === 401 && window.Account && typeof Account.refresh === "function") Account.refresh();
-                if (closedNow) setEntryClosed(true);
+                if (closedNow) setEntryClosed(true, e.message);
                 if (!entryShowing) {
                     // Left mid-send: nothing written onto the form.
                     if (!entryClosed) entrySay("");
@@ -805,7 +838,7 @@ document.addEventListener("DOMContentLoaded", () => {
         entryShowing = Boolean(e.detail && e.detail.name === "entry");
         if (entryShowing) paintEntryEvent();
     });
-    document.addEventListener("console:close", () => { entryShowing = false; });
+    document.addEventListener("console:close", () => { entryShowing = false; clearTimeout(entryRecheck); });
 
     // ---------- contributors page ----------
 

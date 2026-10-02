@@ -112,6 +112,12 @@ window.Daily = (function () {
     }
 
     async function claimReset(game) {
+        /* Not asked at all for somebody known to be signed out (1 Oct
+           2026): the answer is always "none", and asking cost a function
+           run and a database connection on every open of either game by
+           every signed-out visitor — most of launch day's opens. Asked
+           whenever the sign-in is unknown or unsure, as before. */
+        if (window.Account && Account.known && !Account.unsure && !Account.current) return false;
         try {
             const { res, body } = await fetchWithTimeout("/.netlify/functions/daily-games?mine=1", { credentials: "same-origin" }, true);
             if (!res.ok) return false;
@@ -335,6 +341,15 @@ window.Daily = (function () {
         try { localStorage.setItem(PRACTISED_KEY, JSON.stringify(all)); } catch (e) { /* private mode */ }
     }
     const practised = (game, day) => Boolean(practisedDays()[game + ":" + day]);
+
+    /* Whether a move's verdict was given after practice time (1 Oct 2026).
+       Every verdict before the cut says so — `practice` signed out,
+       `practiceUntil` recorded — so one carrying neither landed after it.
+       Both games ask this of a day's FIRST verdict: a day dealt at 07:59
+       and played from 08:00 was marked practice by the deal and kept the
+       mark, so a real, filed launch day was carded "isn't on the boards",
+       shared as "(practice)" and left out of the streak. */
+    const afterPractice = body => Boolean(body) && typeof body.practice !== "string" && typeof body.practiceUntil !== "string";
 
     /* Whether a move's answer is the server refusing `anon` because the
        request carried a session (see move). */
@@ -1023,7 +1038,7 @@ window.Daily = (function () {
 
     return {
         today, now, setServerNow, seededRandom, dayBefore, request,
-        claimReset, deal, move, replay, refusedAsSignedIn, submit, filed, fileable, start, opening, takeRound, mergeRounds,
+        claimReset, deal, move, replay, refusedAsSignedIn, afterPractice, submit, filed, fileable, start, opening, takeRound, mergeRounds,
         forgetStarts, track,
         clock, scoreCell, boards, ranks, isMine,
         SPEED_BONUS_MAX, bonusLine, practiceLine, bonusRule,

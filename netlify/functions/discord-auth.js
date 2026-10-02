@@ -167,7 +167,11 @@ function safeReturn(to) {
    expect to see next to their own score. */
 function displayName(user) {
     const name = user.global_name || user.username || "Someone";
-    return String(name).slice(0, 40);
+    /* Forty CHARACTERS, not forty UTF-16 units (1 Oct 2026): Discord display
+       names are often emoji, and .slice(0, 40) could stop halfway through
+       one, leaving a lone surrogate that every board, the header and the
+       Warren drew as a broken glyph. */
+    return Array.from(String(name)).slice(0, 40).join("");
 }
 
 /* And the unique handle, which displayName above deliberately passes over.

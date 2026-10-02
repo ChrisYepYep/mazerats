@@ -41,6 +41,30 @@ const ROUNDS = 5;
 // crafted request cannot fill the database with one call.
 const MAX_WALKED = 5000;
 const MAX_ID = 80;
+/* The largest body a save may carry (1 Oct 2026). Every other player write
+   caps its body before parsing it; this one parsed whatever the platform let
+   through — megabytes — before MAX_WALKED trimmed the lists. The page sends
+   its saves with keepalive, which a browser holds to 64KB anyway, so 256KB
+   is room for any real save and none for anything else. */
+const MAX_BODY = 256 * 1024;
+
+/* The request came from this site — player-nick.js's check, as the sign-out,
+   contact.js and event-entries.js make it (1 Oct 2026). The cookie is
+   SameSite=Lax, so a cross-site write does not carry it in the first place;
+   this is the belt to those braces, on the one player write that lacked it.
+   A browser always sends Origin on a PUT, POST or DELETE; one naming
+   another site is refused. No Origin at all is allowed through. */
+function sameOrigin(event) {
+    const h = event.headers || {};
+    const origin = h.origin || h.Origin;
+    if (!origin) return true;
+    const host = h["x-forwarded-host"] || h.host || h.Host || "";
+    try {
+        return new URL(origin).host === host;
+    } catch (e) {
+        return false;
+    }
+}
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -244,6 +268,11 @@ async function statsFor(db, playerId) {
 exports.handler = async (event) => {
     const player = playerFrom(event);
     if (!player) return json(401, { error: "Not signed in" });
+    // Writes only: see sameOrigin and MAX_BODY above.
+    if (event.httpMethod !== "GET") {
+        if (!sameOrigin(event)) return json(403, { error: "Not from this site" });
+        if (String(event.body || "").length > MAX_BODY) return json(413, { error: "Too large" });
+    }
 
     let db;
     try {

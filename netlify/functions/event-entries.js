@@ -22,9 +22,12 @@
    ---------------------------------------------------------------- PUBLIC
 
    GET  ?action=open
-        { event: { id, title } | null, closed } — what the form shows.
-        `closed` is true while the Warren has entries set to Closed; the
-        POST then answers 403 { error, closed: true }.
+        { event: { id, title } | null, closed, message? } — what the form
+        shows. `closed` is true while the Warren has entries set to Closed,
+        or a picked event isn't running (before its start or after its end,
+        2 Oct 2026), with `message` saying which; the POST then answers 403
+        { error: message, closed: true }. Two entries an event at most per
+        entrant (EVENT_ENTRIES); a third is 429 { error, eventFull: true }.
 
    POST { habboName, dataUrl, website, clientRef }
         The entry. `habboName` is required, 60 characters at most, as on
@@ -108,6 +111,8 @@ const NET_WINDOW_LIMIT = 15;
 const NET_DAY_LIMIT = 40;
 const SENDER_BYTES_PER_DAY = 40 * 1024 * 1024;
 const GLOBAL_BYTES_PER_DAY = 400 * 1024 * 1024;
+// Entries one entrant may make for one event: theirs, and a correction.
+const EVENT_ENTRIES = 2;
 
 // How long an event with no usable end date runs — js/event-status.js's rule.
 const DEFAULT_EVENT_MS = 3 * 60 * 60 * 1000;
@@ -197,6 +202,8 @@ function isLive(ev, now) {
    refused and the console's form says so before anybody fills it in. */
 const MODES = ["auto", "none", "event", "closed"];
 const CLOSED = "Entries are closed just now.";
+// An entry the database or the picture store could not take (see the POST).
+const UNSAVED = "Your entry couldn't be saved just now. Try again in a minute.";
 
 async function readConfig(db) {
     const row = await db.collection(CONFIG).findOne({ _id: "open" });
@@ -204,7 +211,32 @@ async function readConfig(db) {
     return { mode, eventId: mode === "event" && typeof row.eventId === "string" ? row.eventId : null };
 }
 
-/* The event an entry made now belongs to: { id, title } or null. */
+/* An event's running time, [start, end) in ms — isLive's rule — or null
+   for an event with no usable start date. */
+function spanOf(ev) {
+    const start = ev && ev.date ? Date.parse(ev.date) : NaN;
+    if (!Number.isFinite(start)) return null;
+    let end = ev.endDate ? Date.parse(ev.endDate) : NaN;
+    if (!Number.isFinite(end) || end < start) end = start + DEFAULT_EVENT_MS;
+    return { start, end };
+}
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+// "19:05 UTC on 3 October", the site's UTC wording.
+function utcWhen(ms) {
+    const d = new Date(ms);
+    const hm = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+    return `${hm} UTC on ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+}
+
+/* The event an entry made now belongs to: { id, title } or null.
+
+   A PICKED event takes entries only while it runs (2 Oct 2026, the
+   owner's): from its start to its end, as its dates in the archive say,
+   so a launch-day pick of Vermin's Vault opens at 19:05 by itself and
+   shuts when the event does. Outside that it comes back with `shut` —
+   "before" or "after" — and the times, and nothing is taken (see
+   entryState). An event with no start date stays open while it's picked. */
 async function currentEvent(db) {
     const config = await readConfig(db);
     if (config.mode === "none" || config.mode === "closed") return null;
@@ -213,11 +245,34 @@ async function currentEvent(db) {
     if (config.mode === "event") {
         const ev = config.eventId ? await events.findOne({ id: config.eventId }, shape) : null;
         // Chosen, then deleted: nothing, rather than an id nobody can read.
-        return ev ? { id: ev.id, title: ev.title || ev.id } : null;
+        if (!ev) return null;
+        const out = { id: ev.id, title: ev.title || ev.id };
+        const span = spanOf(ev);
+        if (span) {
+            const now = Date.now();
+            out.opensAt = new Date(span.start).toISOString();
+            out.closesAt = new Date(span.end).toISOString();
+            if (now < span.start) out.shut = "before";
+            else if (now >= span.end) out.shut = "after";
+        }
+        return out;
     }
     const now = Date.now();
     const live = (await events.find({}, shape).toArray()).filter(ev => ev && ev.id && isLive(ev, now));
     return live.length === 1 ? { id: live[0].id, title: live[0].title || live[0].id } : null;
+}
+
+/* Whether an entry can be made now, and under which event: { ev, closed,
+   message }. Closed by the Warren, or a picked event that hasn't started or
+   has ended (see currentEvent), whose words say which. */
+async function entryState(db) {
+    if ((await readConfig(db)).mode === "closed") return { ev: null, closed: true, message: CLOSED };
+    const ev = await currentEvent(db);
+    if (ev && ev.shut === "before") {
+        return { ev, closed: true, message: `Entries for ${ev.title} open at ${utcWhen(Date.parse(ev.opensAt))}.` };
+    }
+    if (ev && ev.shut === "after") return { ev, closed: true, message: `Entries for ${ev.title} have closed.` };
+    return { ev, closed: false, message: "" };
 }
 
 /* ---- the byte quota ---- */
@@ -256,7 +311,8 @@ async function withinByteQuota(db, senderKey, bytes) {
 async function handlePost(event, db) {
     if (!sameOrigin(event)) return json(403, { error: "Not from this site" });
     // Closed: refused before the body (up to 5.75MB) is even read.
-    if ((await readConfig(db)).mode === "closed") return json(403, { error: CLOSED, closed: true });
+    const state = await entryState(db);
+    if (state.closed) return json(403, { error: state.message, closed: true });
 
     let raw = event.body || "";
     if (event.isBase64Encoded) raw = Buffer.from(raw, "base64").toString("utf8");
@@ -315,10 +371,13 @@ async function handlePost(event, db) {
     // Who "the same sender" is, for clientRef and for the per-sender caps.
     const sender = player ? `p:${player.id}` : (ip ? `ip:${ip}` : null);
     const dedupe = Boolean(clientRef && sender);
-    const earlier = () => entries.findOne({ sender, clientRef }, { projection: { _id: 0, id: 1, status: 1, eventId: 1, eventTitle: 1 } });
+    // `correction` too (2 Oct 2026): a retried correction was answered as a first entry.
+    const earlier = () => entries.findOne({ sender, clientRef }, { projection: { _id: 0, id: 1, status: 1, eventId: 1, eventTitle: 1, correction: 1 } });
     const answer = (row, code) => json(code, {
         id: row.id, status: row.status,
         event: row.eventId ? { id: row.eventId, title: row.eventTitle || row.eventId } : null,
+        // The console's thanks says whether a correction can still follow.
+        ...(row.eventId ? { correction: row.correction === true } : {}),
         ...(code === 200 ? { duplicate: true } : {})
     });
     if (dedupe) {
@@ -357,12 +416,26 @@ async function handlePost(event, db) {
     if (await countNet(DAY_MS) >= NET_DAY_LIMIT) return json(429, { error: NET_TOO_MANY_TODAY });
     if (await countAll() >= GLOBAL_PER_HOUR) return json(429, { error: BUSY });
 
-    const ev = await currentEvent(db);
+    const ev = state.ev;
+    /* TWO ENTRIES AN EVENT (2 Oct 2026, the owner's): the entry, and one more
+       in case it needs correcting. Counted by account when signed in, and by
+       Habbo name on the same network when not. The second is marked as the
+       correction, for the Warren. Counted before the insert for the words
+       and again after it, like the caps above, so two tabs sending at once
+       can't make it three. */
+    const nameKey = habboName.toLowerCase();
+    const mineForEvent = ev ? (player ? { eventId: ev.id, "from.id": player.id } : { eventId: ev.id, from: null, net, nameKey }) : null;
+    const countForEvent = () => (mineForEvent ? entries.countDocuments(mineForEvent) : Promise.resolve(0));
+    const EVENT_FULL = ev ? `You've already sent two entries for ${ev.title}: your entry and its correction. That's as many as there can be.` : "";
+    const before = await countForEvent();
+    if (before >= EVENT_ENTRIES) return json(429, { error: EVENT_FULL, eventFull: true });
     const day = new Date().toISOString().slice(0, 10);
     const key = `${KEY_PREFIX}${day}/${crypto.randomUUID()}.${kind.ext}`;
     const entry = {
         id: crypto.randomUUID(),
         habboName,
+        nameKey,
+        ...(ev && before >= 1 ? { correction: true } : {}),
         eventId: ev ? ev.id : null,
         eventTitle: ev ? ev.title : null,
         image: { key, contentType: kind.mime, bytes: buffer.length },
@@ -394,6 +467,7 @@ async function handlePost(event, db) {
     if (await countNet(WINDOW_MS) > NET_WINDOW_LIMIT) { await takeBack(); return json(429, { error: NET_TOO_MANY }); }
     if (await countNet(DAY_MS) > NET_DAY_LIMIT) { await takeBack(); return json(429, { error: NET_TOO_MANY_TODAY }); }
     if (await countAll() > GLOBAL_PER_HOUR) { await takeBack(); return json(429, { error: BUSY }); }
+    if (await countForEvent() > EVENT_ENTRIES) { await takeBack(); return json(429, { error: EVENT_FULL, eventFull: true }); }
     const quotaKey = player ? `p:${player.id}` : net;
     const refundBytes = await withinByteQuota(db, quotaKey, buffer.length);
     if (!refundBytes) {
@@ -405,7 +479,13 @@ async function handlePost(event, db) {
     } catch (e) {
         await takeBack().catch(() => {});
         await refundBytes();
-        throw e;
+        /* The store not answering is an outage to wait out, said as one (1
+           Oct 2026): rethrown, it reached the handler's 500 "Something went
+           wrong with that entry", which reads as the entrant's fault and
+           filed a fault, not an outage, in the Errors tab. Nothing is kept,
+           so Send again is safe; the same clientRef is a fresh entry. */
+        console.error("event-entries: picture store failed", e && e.message);
+        return json(503, { error: UNSAVED });
     }
     return answer(entry, 201);
 }
@@ -501,7 +581,7 @@ exports.handler = async (event) => {
         if (event.httpMethod !== "GET") await ensureIndexes(db);
     } catch (e) {
         console.error("event-entries: database connection failed", e);
-        return json(503, { error: "Your entry couldn't be saved just now. Try again in a minute." });
+        return json(503, { error: UNSAVED });
     }
     const q = event.queryStringParameters || {};
 
@@ -512,8 +592,15 @@ exports.handler = async (event) => {
 
         if (event.httpMethod === "GET") {
             if (q.action === "open") {
-                const closed = (await readConfig(db)).mode === "closed";
-                return json(200, { event: closed ? null : await currentEvent(db), closed });
+                const state = await entryState(db);
+                return json(200, {
+                    event: state.ev ? { id: state.ev.id, title: state.ev.title } : null,
+                    closed: state.closed,
+                    ...(state.closed ? { message: state.message } : {}),
+                    // When the answer next changes by itself, so an open form can ask again then.
+                    ...(state.ev && state.ev.shut === "before" ? { changesAt: state.ev.opensAt }
+                        : state.ev && !state.ev.shut && state.ev.closesAt ? { changesAt: state.ev.closesAt } : {})
+                });
             }
             return await handleList(event, db, q);
         }
@@ -554,6 +641,13 @@ exports.handler = async (event) => {
     } catch (e) {
         console.error("event-entries: request failed", e);
         if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
+        /* ...and so is the database dropping mid-request (1 Oct 2026), as
+           bans.js, auth.js and players-admin.js tell it apart: an entrant is
+           told to try again in a minute rather than that something went
+           wrong with their entry, and the Warren gets the 503 it retries. */
+        if (e && /^Mongo/.test(e.name || "")) {
+            return event.httpMethod === "POST" ? json(503, { error: UNSAVED }) : AUTH_UNAVAILABLE;
+        }
         return json(500, { error: "Something went wrong with that entry." });
     }
 };
