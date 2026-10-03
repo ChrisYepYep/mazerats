@@ -719,6 +719,11 @@ function spotlightSlide(ev) {
     img.className = "welcome-promo-img";
     img.alt = "";
     img.decoding = "async";
+    /* Marked as a failure this page expects and handles (3 Oct 2026): a
+       slide whose picture fails is dropped (spotlightBroken), so
+       js/error-report.js counts it rather than filing "A picture failed to
+       load" for every visitor who saw the spotlight. */
+    img.setAttribute("data-fallback", "drop");
     img.addEventListener("error", () => {
         spotlightBroken.add(ev.id);
         showSpotlight();
@@ -1373,11 +1378,80 @@ document.addEventListener("DOMContentLoaded", async () => {
        rather than kept here from the first open, so an event the spotlight
        has picked up since (see refreshSpotlightEvents) opens when its slide
        is clicked instead of doing nothing. */
+    /* The last GOOD list when the ask fails (3 Oct 2026). Api answers a
+       failure with its offline stand-in, and this page has no
+       events-data.js, so that is [] — and a click landing while
+       refreshSpotlightEvents had dropped the memo opened nothing. The
+       window's own last list, or the spotlight's (which keeps what it had
+       on a failed refresh), is used instead. */
     let cachedEvents = null;
     async function ensureEvents() {
-        try { cachedEvents = await Api.getEvents(); }
-        catch (e) { cachedEvents = cachedEvents || []; }
+        let events = null;
+        try { events = await Api.getEvents(); } catch (e) { /* below */ }
+        const standIn = !Array.isArray(events) || (Api._degraded && Api._degraded.has("event data"));
+        if (standIn) {
+            let held = cachedEvents;
+            if (!Array.isArray(held) || !held.length) {
+                try { held = spotlightEvents ? await spotlightEvents : null; } catch (e) { held = null; }
+            }
+            if (Array.isArray(held) && held.length) events = held;
+        }
+        cachedEvents = Array.isArray(events) ? events : (cachedEvents || []);
         return cachedEvents;
+    }
+
+    /* "Couldn't load that event" (3 Oct 2026): what a click on a spotlight
+       or ticker event says when no list this page has holds it, rather than
+       nothing at all. The cool-down's small window, with one OK. */
+    let missingOverlay = null;
+    let missingEscape = false;
+    function showEventMissing() {
+        if (missingOverlay && missingOverlay.isConnected) return;
+        const returnTo = document.activeElement;
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay open nick-overlay notice-overlay event-missing-overlay";
+        overlay.innerHTML = `
+            <div class="modal confirm-modal notice-window" role="dialog" aria-modal="true"
+                 aria-labelledby="event-missing-title" aria-describedby="event-missing-text" tabindex="-1">
+                <div class="chrome-titlebar">
+                    <h2 id="event-missing-title">Event</h2>
+                    <button type="button" class="chrome-close" aria-label="Close"><img src="/assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+                </div>
+                <div class="chrome-frame">
+                    <div class="modal-body notice-body">
+                        <div class="notice-text" id="event-missing-text"><p class="notice-lines">Couldn't load that event just now. Please try again in a moment.</p></div>
+                        <div class="notice-actions"><button type="button" class="view-switch-btn notice-ok">OK</button></div>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        document.body.classList.add("modal-open");
+        missingOverlay = overlay;
+        function close() {
+            if (!overlay.isConnected) return;
+            overlay.remove();
+            document.removeEventListener("keydown", onKey, true);
+            if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
+            if (returnTo && document.contains(returnTo) && typeof returnTo.focus === "function") returnTo.focus({ preventScroll: true });
+        }
+        overlay.closeNotice = close;
+        function onKey(e) { if (e.key === "Escape") close(); }
+        overlay.querySelector(".notice-ok").addEventListener("click", close);
+        overlay.querySelector(".chrome-close").addEventListener("click", close);
+        overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+        // Registered once for the page, not once a notice.
+        if (window.EscapeLayers) {
+            if (!missingEscape) {
+                missingEscape = true;
+                EscapeLayers.register({
+                    elements: () => (missingOverlay && missingOverlay.isConnected ? [missingOverlay] : []),
+                    close: el => el.closeNotice()
+                });
+            }
+        } else {
+            document.addEventListener("keydown", onKey, true);
+        }
+        overlay.querySelector(".notice-ok").focus({ preventScroll: true });
     }
 
     /* Where focus was when the modal opened, so closing it can put focus
@@ -1386,25 +1460,66 @@ document.addEventListener("DOMContentLoaded", async () => {
        close, with no idea where the thing they had been reading went. */
     let eventTrigger = null;
 
-    function closeEventModal() {
+    /* ONE BACK, ONE THING (3 Oct 2026). A spotlight or ticker link PUSHES
+       its #event- entry (js/site.js follows fragment links with
+       location.hash), so Back went to "/" with the window still open, and
+       the next Back left the site; and closing with × rewrote the pushed
+       entry to "/", leaving two "/" entries for Back to step through with
+       nothing happening. Now every entry this page's own hash links pushed
+       is numbered in history.state (eventDepth: how many #event- entries
+       above the plain page it is), Back to an address without #event-
+       closes the window, and × or Escape steps back over the pushed ones
+       instead of rewriting them. An address that arrived with the hash
+       (a shared link, nothing pushed) still has it dropped in place. */
+    const EVENT_DEPTH_KEY = "welcomeEventDepth";
+    let eventDepth = 0;
+    function depthOfEntry() {
+        const s = history.state;
+        return s && typeof s === "object" && Number.isInteger(s[EVENT_DEPTH_KEY]) ? s[EVENT_DEPTH_KEY] : null;
+    }
+    function markEntry(depth) {
+        const s = history.state && typeof history.state === "object" ? history.state : {};
+        try { history.replaceState({ ...s, [EVENT_DEPTH_KEY]: depth }, ""); } catch (e) { /* unmarked: × drops it in place */ }
+    }
+    // Off the #event- address: back over what was pushed, or dropped in place.
+    function leaveEventHash(all) {
+        if (!/^#event-/.test(location.hash)) return;
+        if (eventDepth > 0) {
+            history.go(all ? -eventDepth : -1);
+            return;
+        }
+        history.replaceState(history.state, "", location.pathname + location.search);
+    }
+
+    function closeEventModal(fromHistory) {
         modal.classList.remove("open");
         const back = eventTrigger;
         eventTrigger = null;
         if (back && document.contains(back) && typeof back.focus === "function") {
             back.focus({ preventScroll: true });
         }
-        // Same replaceState-not-clear approach as home.js's closeModal —
-        // drops the hash without adding a back-button entry or re-firing
-        // hashchange.
-        if (/^#event-/.test(location.hash)) {
-            history.replaceState(null, "", location.pathname + location.search);
-        }
+        // History already moved (Back): nothing more to do to it.
+        if (fromHistory === true) return;
+        leaveEventHash(true);
     }
 
-    async function openEventModalById(id) {
+    async function openEventModalById(id, fromHash) {
         const events = await ensureEvents();
+        // Back pressed while the list was being asked for: that hash is gone.
+        if (fromHash === true && hashEventId() !== id) return;
         const event = events.find(e => e.id === id);
-        if (!event) return;
+        if (!event) {
+            /* Not found (3 Oct 2026): the hash is taken off again, or it
+               stays set and a second click on the same link — the same
+               hash, so no hashchange — does nothing at all. */
+            if (hashEventId() === id) {
+                leaveEventHash(false);
+                // Said only when the list itself is in doubt; a link to an
+                // event since deleted is dropped quietly, as before.
+                if (!events.length || (Api._degraded && Api._degraded.has("event data"))) showEventMissing();
+            }
+            return;
+        }
         // Only on a fresh open: a second event opened over the first (the
         // ticker moves on underneath) must not replace the real opener with
         // something inside the modal.
@@ -1550,16 +1665,36 @@ document.addEventListener("DOMContentLoaded", async () => {
     // updates location.hash on its own with no reload — no click handler
     // needed, just react to the hashchange it causes, the same as a
     // shared/bookmarked "index.html#event-..." link landing here directly.
-    function checkHash() {
+    // A hand-typed or mangled address can carry a bare "%" that is not
+    // an escape, and decodeURIComponent throws on it — which, here at the
+    // top of a listener, took the whole handler down. A hash that does not
+    // decode names no event, so it is ignored like any other unknown one.
+    function hashEventId() {
         const m = /^#event-(.+)$/.exec(location.hash);
-        if (!m) return;
-        // A hand-typed or mangled address can carry a bare "%" that is not
-        // an escape, and decodeURIComponent throws on it — which, here at the
-        // top of a listener, took the whole handler down. A hash that does not
-        // decode names no event, so it is ignored like any other unknown one.
-        let id;
-        try { id = decodeURIComponent(m[1]); } catch (e) { return; }
-        openEventModalById(id);
+        if (!m) return null;
+        try { return decodeURIComponent(m[1]); } catch (e) { return null; }
+    }
+
+    // `pushed`: from a hashchange, where an unmarked #event- entry is one
+    // just pushed on top of the entry we were on (see ONE BACK, ONE THING).
+    function checkHash(pushed) {
+        const onEvent = /^#event-/.test(location.hash);
+        const marked = depthOfEntry();
+        if (!onEvent) {
+            eventDepth = 0;
+            // Back (or any move) to an address without an event: the window goes.
+            if (pushed === true && modal.classList.contains("open")) closeEventModal(true);
+            return;
+        }
+        if (marked !== null) eventDepth = marked;
+        else {
+            // Arrived with the page (a shared link) is 0, so Back onto it later reads right.
+            eventDepth = pushed === true ? eventDepth + 1 : 0;
+            markEntry(eventDepth);
+        }
+        const id = hashEventId();
+        if (id === null) return;
+        openEventModalById(id, true);
     }
 
     /* An event: link in the details (30 Sept 2026, the owner's) opens that
@@ -1580,8 +1715,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         openEventModalById(known.id);
     });
 
-    window.addEventListener("hashchange", checkHash);
-    closeBtn.addEventListener("click", closeEventModal);
+    window.addEventListener("hashchange", () => checkHash(true));
+    closeBtn.addEventListener("click", () => closeEventModal());
     modal.addEventListener("click", e => { if (e.target === modal) closeEventModal(); });
     document.addEventListener("keydown", e => {
         if (e.key === "Escape" && modal.classList.contains("open")) closeEventModal();

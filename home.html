@@ -202,10 +202,20 @@
             });
         }
 
+        /* IN TEN-SECOND BUCKETS, THE FIRST ASK TOO (3 Oct 2026). The plain
+           address is held at the edge for twenty seconds and served stale
+           for sixty more while it refreshes (GATE_CDN_CACHE in _cache.js),
+           and only a GATED answer was asked again past it — so for up to
+           about eighty seconds after the owner switched to Maintenance, the
+           edge's old "enter" let every visitor into the archive. Each
+           bucket is a cache entry of its own (settings.js varies on
+           `fresh`), so no answer believed here is older than its bucket:
+           one function call per bucket per edge, which the function's own
+           three-second memo absorbs. js/api.js asks the same way. */
         function getSettings() {
             var attempts = [6000, 12000];
             function attempt(i) {
-                return fetchWithTimeout("/.netlify/functions/settings", null, attempts[i])
+                return fetchWithTimeout("/.netlify/functions/settings?fresh=" + Math.floor(Date.now() / 10000), null, attempts[i])
                     .then(function (res) {
                         if (!res.ok) throw new Error("settings fetch failed");
                         return res.json();

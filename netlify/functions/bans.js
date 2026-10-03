@@ -106,6 +106,17 @@ const Bans = require("./_bans");
               _bans.js): a week past the end, and only on documents whose
               `until` is a Date, so a permanent ban is never touched. */
 const IP_INDEX = "ip_unique_when_set";
+/* ACTIVE_KEY (3 Oct 2026). createNew checked for a live ban and then
+   inserted, and only an "ip" ban had a unique index behind it, so a double
+   click made two live bans on one player, network or network code — and
+   lifting one left the other. Those bans now carry `activeKey`
+   ("kind:value"), unique where it is set. A ban only stops being live by
+   being lifted (deleted) or by its cool-down ending, and createNew clears
+   ended ones off the target before it inserts, so the key never blocks a
+   ban it should not. A clash is the double click: answered as "already
+   banned", with the ban that won. */
+const ACTIVE_KEY_INDEX = "active_key_unique_when_set";
+const ACTIVE_KEY_KINDS = ["player", "nethash", "net"];
 const ENDED_KEPT_SECONDS = 7 * 24 * 60 * 60;
 let banIndexing = null;
 function ensureBanIndexes(bans) {
@@ -121,6 +132,12 @@ function ensureBanIndexes(bans) {
                 await bans.createIndex({ ip: 1 }, { unique: true, name: IP_INDEX, partialFilterExpression: { ip: { $type: "string" } } });
             } catch (e) {
                 console.error("bans: the partial unique index on bans.ip is unavailable", e);
+            }
+            // One ban per target that has no address (3 Oct 2026); see ACTIVE_KEY.
+            try {
+                await bans.createIndex({ activeKey: 1 }, { unique: true, name: ACTIVE_KEY_INDEX, partialFilterExpression: { activeKey: { $type: "string" } } });
+            } catch (e) {
+                console.error("bans: the unique index on bans.activeKey is unavailable", e);
             }
             await ensureIndex(bans, { net: 1 });
             await ensureIndex(bans, { kind: 1, value: 1 });
@@ -566,13 +583,21 @@ async function createNew(event, db, bans, body, reason, who) {
     if (kind === "ip") doc.ip = target;
     if (kind === "net") doc.net = target;
     if (fromPlayer) doc.playerId = fromPlayer;
+    // See ACTIVE_KEY: the double click's second insert is refused below.
+    if (ACTIVE_KEY_KINDS.includes(kind)) doc.activeKey = `${kind}:${target}`;
 
     const shown = kind === "nethash" ? `nethash${fromPlayer ? ` of player ${fromPlayer}` : ""}` : `${kind}:${target}`;
     await audit(event, "POST", `ban ${shown} ${body.level} ${end.until ? "until " + end.until.toISOString() : "permanent"}`);
     try {
         await bans.insertOne({ ...doc });
     } catch (e) {
-        if (e.code === 11000) return ALREADY(null);
+        if (e.code === 11000) {
+            // The ban that got in first, for the form to point at (3 Oct 2026).
+            const won = doc.activeKey
+                ? await bans.findOne({ activeKey: doc.activeKey }, { projection: { _id: 0, id: 1 } }).catch(() => null)
+                : null;
+            return ALREADY(won && won.id);
+        }
         throw e;
     }
     Bans.invalidate();

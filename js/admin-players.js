@@ -522,6 +522,9 @@
     // ----------------------------------------------------------- helpers
 
     function token() {
+        // This tab's own session from js/admin.js (3 Oct 2026), not whatever
+        // another tab last stored — see window.AdminToken there.
+        if (typeof window.AdminToken === "function") return window.AdminToken() || "";
         try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; }
     }
 
@@ -908,9 +911,24 @@
             ["Review", p.nickRejected
                 ? `Rejected${p.nickRejected.by ? " by " + escapeHtml(p.nickRejected.by) : ""}${p.nickRejected.at ? ", " + escapeHtml(fmtUtc(p.nickRejected.at)) : ""} — they're asked to choose another nickname on each visit until they do`
                 : "Not rejected"],
-            ["Their changes today", has(p.changesToday) ? `${escapeHtml(num(p.changesToday))} of ${escapeHtml(num(p.changesPerDay || 5))}` : "—"]
+            ["Their changes today", has(p.changesToday) ? `${escapeHtml(num(p.changesToday))} of ${escapeHtml(num(p.changesPerDay || 5))}` : "—"],
+            // What OriginsBot said (3 Oct 2026; see _originsbot.js).
+            ["Habbo (OriginsBot)", habboText(p.habbo)]
         ];
         return `<dl class="se-grid pl-facts">${f.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${v}</dd>`).join("")}</dl>`;
+    }
+
+    /* The detail's OriginsBot line (3 Oct 2026): the linked Habbo name and
+       hotel, and whether it became the nickname — or why not. */
+    function habboText(h) {
+        if (!h) return "Not looked up yet";
+        const when = h.checkedAt ? ", checked " + escapeHtml(fmtUtc(h.checkedAt)) : "";
+        if (!h.name) return "No Habbo account linked" + when;
+        const named = escapeHtml(h.name) + (h.hotel ? " (" + escapeHtml(h.hotel) + ")" : "");
+        if (h.applied) return named + " — set as their nickname and locked" + when;
+        if (h.clash) return named + " — not set: another player's nickname is the same name or too close to it" + when;
+        if (h.unusable) return named + " — not set: the boards can't display it" + when;
+        return named + when;
     }
 
     function activityHtml(a, isFull) {

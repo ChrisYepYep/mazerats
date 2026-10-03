@@ -24,7 +24,8 @@
                          canWrite. Creates or replaces a record's flag. A flag
                          with no pieces is deleted rather than stored empty —
                          a note on its own asks for nothing a visitor can
-                         answer.
+                         answer. With _baseUpdatedAt (3 Oct 2026), refused
+                         with a 409 if the flag has changed since.
      DELETE ?type=&id=   canWrite. The record is no longer a dead end. */
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { hasAccount, canWrite, refuseWrite, usernameFromToken, UNAUTHORIZED, isAuthUnavailable, AUTH_UNAVAILABLE } = require("./_auth");
@@ -39,6 +40,9 @@ const json = (statusCode, data) => ({
 });
 
 const text = (v) => (typeof v === "string" ? v : "");
+
+// The editor's version check (3 Oct 2026) — see the PUT below.
+const CONFLICT = "This record's missing pieces changed since you opened it — a lead was accepted, or someone else saved it. It has been reloaded: check it and save again.";
 
 // Which collection each kind of record lives in.
 const COLLECTION_OF = { maze: "rooms", event: "events" };
@@ -149,28 +153,66 @@ exports.handler = async (event) => {
 
             const key = `${type}:${recordId}`;
 
+            /* SOMEBODY ELSE CHANGED IT FIRST (3 Oct 2026). A save here
+               replaces the whole flag, and the flag is not only written by
+               this editor: accepting a lead takes the pieces it answered off
+               it (dead-end-leads.js). An editor opened before that accept
+               saved them straight back on. The editor now sends the
+               updatedAt it was opened on as _baseUpdatedAt — null for a
+               record that had no flag, "" for a flag with no stamp — and a
+               flag that has moved on since is refused with a 409. Absent
+               means a caller that does not take part, as in contributors.js. */
+            const hasBase = Object.prototype.hasOwnProperty.call(body, "_baseUpdatedAt");
+            const base = !hasBase ? undefined : body._baseUpdatedAt === null ? null : text(body._baseUpdatedAt);
+            const atBase = base === undefined ? { key }
+                : base === "" ? { key, updatedAt: { $in: [null, ""] } }
+                : { key, updatedAt: base };
+            const conflict = () => json(409, { error: CONFLICT, conflict: true });
+
             // Nothing marked: that is no flag at all, whatever the note says.
             if (!pieces.length) {
-                await flags.deleteOne({ key });
+                if (base === null) {
+                    if (await flags.findOne({ key }, { projection: { _id: 1 } })) return conflict();
+                    return json(200, { key, cleared: true });
+                }
+                const gone = await flags.deleteOne(atBase);
+                if (!gone.deletedCount && base !== undefined && await flags.findOne({ key }, { projection: { _id: 1 } })) return conflict();
                 return json(200, { key, cleared: true });
             }
 
             await ensureUniqueIndex(flags, "key");
             const now = new Date().toISOString();
-            await flags.updateOne(
-                { key },
-                {
-                    $set: { key, type, recordId, pieces, note, updatedAt: now, updatedBy: usernameFromToken(event) },
-                    // From the first version of this, which also stored the
-                    // page's guesses an admin had dismissed. Nothing reads it.
-                    $unset: { dismissed: "" },
-                    /* markedAt is when it first became a dead end, and stays
-                       put through later edits — "on the list since" should
-                       not reset every time somebody fixes a typo in the note. */
-                    $setOnInsert: { markedAt: now, markedBy: usernameFromToken(event) }
-                },
-                { upsert: true }
-            );
+            /* With a base: a record that had no flag may only gain one if it
+               still has none (the insert below meets the unique index on
+               `key` otherwise), and an existing flag is only written while
+               its updatedAt is still the one the editor read. */
+            if (base === null && await flags.findOne({ key }, { projection: { _id: 1 } })) return conflict();
+            const filter = base === null ? { key, markedAt: { $exists: false } } : atBase;
+            let written;
+            try {
+                written = await flags.updateOne(
+                    filter,
+                    {
+                        $set: { key, type, recordId, pieces, note, updatedAt: now, updatedBy: usernameFromToken(event) },
+                        // From the first version of this, which also stored the
+                        // page's guesses an admin had dismissed. Nothing reads it.
+                        $unset: { dismissed: "" },
+                        /* markedAt is when it first became a dead end, and stays
+                           put through later edits — "on the list since" should
+                           not reset every time somebody fixes a typo in the note. */
+                        $setOnInsert: { markedAt: now, markedBy: usernameFromToken(event) }
+                    },
+                    // An existing flag the editor read is never re-created:
+                    // if it went (its last piece answered), that is a 409.
+                    { upsert: base === undefined || base === null }
+                );
+            } catch (e) {
+                // A flag created by somebody else between the check and the
+                // insert: the unique index on `key` refuses the second one.
+                if (base === null && e && e.code === 11000) return conflict();
+                throw e;
+            }
+            if (base !== undefined && base !== null && !written.matchedCount) return conflict();
             const saved = await flags.findOne({ key }, { projection: { _id: 0 } });
             return json(200, { ...publicFlag(saved), markedBy: saved.markedBy || null, updatedAt: saved.updatedAt });
         }

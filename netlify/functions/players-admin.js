@@ -263,6 +263,17 @@ function detailShape(row, seesIds, act, bans) {
        one off (unTurnDown, below). */
     out.nickTurnedDown = (Array.isArray(row.nickTurnedDown) ? row.nickTurnedDown : [])
         .filter(k => typeof k === "string" && k);
+    /* What OriginsBot said (3 Oct 2026; see _originsbot.js): the linked
+       Habbo name and hotel, whether it became their nickname, and why not
+       when it did not — `clash` (the name, or one that folds to it, is held
+       by somebody it could not be taken from) or `unusable` (the boards
+       cannot draw it). null when they have never been looked up. A Habbo
+       name, never another player's id, so it is shown to every role. */
+    const h = row.habbo && typeof row.habbo === "object" ? row.habbo : null;
+    out.habbo = h ? {
+        name: str(h.name), hotel: str(h.hotel), applied: str(h.applied),
+        clash: !!h.clash, unusable: str(h.unusable), checkedAt: str(h.checkedAt)
+    } : null;
     return out;
 }
 
@@ -618,6 +629,13 @@ async function update(event, db, role) {
     const settled = nickChanges ? key : (body.locked === true && had ? nameKey(had) : null);
     if (settled && Array.isArray(row.nickTurnedDown) && row.nickTurnedDown.includes(settled)) {
         $set.nickTurnedDown = nickRules.turnedDownWithout(row.nickTurnedDown, settled);
+    }
+    /* A name the admins set over OriginsBot's lock is the admins' now
+       (3 Oct 2026; see _originsbot.js): the lock stays, but it is theirs,
+       so the Warren and the player's Profile stop calling it their Habbo
+       name. */
+    if (nickChanges && row.nickLocked === true && row.nickLockedBy === "OriginsBot" && body.locked !== false) {
+        Object.assign($set, { nickLockedBy: who, nickLockedAt: now });
     }
     if (body.locked === true && row.nickLocked !== true) {
         Object.assign($set, { nickLocked: true, nickLockedBy: who, nickLockedAt: now });

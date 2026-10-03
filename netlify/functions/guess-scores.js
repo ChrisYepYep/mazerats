@@ -83,6 +83,9 @@ const ROUNDS = 5;
 const POINTS = [10, 6, 3];
 const TRIES = POINTS.length;
 const BOARD_SIZE = 10;
+// A few spare past the top ten, cut back after the banned are taken out —
+// see BOARD_READ in daily-scores.js (3 Oct 2026).
+const BOARD_READ = BOARD_SIZE + 5;
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -369,10 +372,10 @@ exports.handler = async (event) => {
                 // The day's own board keeps its per-player rows rather than
                 // being grouped, because it carries the grid for the
                 // head-to-head and there is nothing to sum over one day.
-                before ? [] : dayBoard(col, { day, ...afterLaunch(launch) }, BOARD_SIZE),
-                board(col, fromLaunch(week.from, launch), week.to, BOARD_SIZE, launch),
-                board(col, fromLaunch(month.from, launch), month.to, BOARD_SIZE, launch),
-                board(col, fromLaunch(all.from, launch), all.to, BOARD_SIZE, launch)
+                before ? [] : dayBoard(col, { day, ...afterLaunch(launch) }, BOARD_READ),
+                board(col, fromLaunch(week.from, launch), week.to, BOARD_READ, launch),
+                board(col, fromLaunch(month.from, launch), month.to, BOARD_READ, launch),
+                board(col, fromLaunch(all.from, launch), all.to, BOARD_READ, launch)
             ]);
 
             /* The public id in place of the Discord one on every row, and
@@ -381,7 +384,7 @@ exports.handler = async (event) => {
             // Banned accounts' rows off first, while the ids are still the
             // raw ones (29 Sept 2026; withoutBanned in _bans.js).
             const [bDay, bWeek, bMonth, bAll] = await publicLists(db,
-                await withoutBanned(db, [todayRows.map(dayRow), weekRows, monthRows, allRows]));
+                (await withoutBanned(db, [todayRows.map(dayRow), weekRows, monthRows, allRows])).map(l => l.slice(0, BOARD_SIZE)));
 
             // "date" is the day these are FOR; "day" is the board itself.
             // Named for how the page reads them, not for how they are stored.
@@ -488,7 +491,20 @@ exports.handler = async (event) => {
                (claimAnonMove in _speed.js), at twenty times a day's most
                guesses and then some — room for a whole school or phone
                network behind one address, and still a ceiling on a script
-               asking every round. */
+               asking every round.
+
+           NEITHER STOPS ONE PERSON (3 Oct 2026, corrected). Leaving the
+           cookie off sidesteps the first, and five `final` requests are
+           nowhere near the second, so somebody can still learn a day's
+           answers signed out and then play it signed in for the full speed
+           bonus. Nothing request-shaped can close that: every signed-out
+           verdict says whether a name is right, so trying the options in
+           turn finds the answer whatever `final` does — `final` only makes
+           it cheaper. Docking the bonus from a network that had answers
+           shown would also dock every honest player behind a school's or a
+           phone network's one address. So it stays the accepted
+           private-window route daily-scores.js describes; these two are
+           fences against scripts, not against a person. */
         if (body.action === "move") {
             if (String(event.body || "").length > speed.MAX_START_BODY) return privateJson(413, { error: "Too large" });
             const round = speed.markRound(body.round, ROUNDS);

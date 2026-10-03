@@ -81,6 +81,12 @@ const { writeRefusal, withoutBanned } = require("./_bans");
 
 const COLLECTION = "daily_scores";
 const BOARD_SIZE = 10;
+/* Read a few past the top ten (3 Oct 2026): withoutBanned (_bans.js) takes
+   a banned player's rows out AFTER the cut, so a board with one in its top
+   ten came out nine long and the eleventh player never showed. The spare
+   rows fill those places; every list is cut back to BOARD_SIZE after it. */
+const BOARD_READ = BOARD_SIZE + 5;
+const topOf = lists => lists.map(l => l.slice(0, BOARD_SIZE));
 /* Ten a right pick, so a perfect day is 50, as in Guess the Maze. It was
    100 (a 500 day) until just before launch; the rows scored that way are
    all test days from before launch day, which the launch cut hides from
@@ -376,7 +382,7 @@ async function board(col, game, from, to, cut) {
         },
         { $addFields: { total: speed.TOTAL } },
         { $sort: { solved: -1, total: -1, days: 1, _id: 1 } },
-        { $limit: BOARD_SIZE }
+        { $limit: BOARD_READ }
     ]).toArray();
     return rows.map(r => ({
         id: r._id, name: r.name, avatar: r.avatar,
@@ -394,7 +400,7 @@ async function dayBoard(col, match) {
         { $match: match },
         { $addFields: { total: speed.TOTAL, msOrder: { $ifNull: ["$ms", speed.NO_TIME] } } },
         { $sort: { solved: -1, total: -1, msOrder: 1, at: 1, playerId: 1 } },
-        { $limit: BOARD_SIZE }
+        { $limit: BOARD_READ }
     ]).toArray();
 }
 
@@ -495,7 +501,7 @@ function fold(...lists) {
         // keep one order.
         .sort((a, b) => b.solved - a.solved || b.points - a.points || b.games - a.games || a.days - b.days ||
             (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-        .slice(0, BOARD_SIZE);
+        .slice(0, BOARD_READ);
 }
 
 async function combinedBoards(db, event, params) {
@@ -534,9 +540,9 @@ async function combinedBoards(db, event, params) {
            all four. */
         /* Banned accounts off first (29 Sept 2026; withoutBanned in
            _bans.js), while the ids are still the raw ones. */
-        const [bDay, bWeek, bMonth, bAll] = await publicLists(db, await withoutBanned(db, [
+        const [bDay, bWeek, bMonth, bAll] = await publicLists(db, topOf(await withoutBanned(db, [
             fold(dToday, gToday), fold(dWeek, gWeek), fold(dMonth, gMonth), fold(dAll, gAll)
-        ]));
+        ])));
 
         /* Eight aggregations across two collections is the most
            expensive read on the site, and the answer is the same for
@@ -655,7 +661,7 @@ exports.handler = async (event) => {
                collection (and fails closed on its own if that read fails). */
             /* And a banned account's rows left out of all four, before the
                ids are swapped (29 Sept 2026; withoutBanned in _bans.js). */
-            [todayRows, weekRows, monthRows, allRows] = await publicLists(db, await withoutBanned(db, [
+            [todayRows, weekRows, monthRows, allRows] = await publicLists(db, topOf(await withoutBanned(db, [
                 todayRows.map(r => ({
                     id: r.playerId, name: r.name, avatar: r.avatar,
                     points: speed.totalOf(r), base: r.points || 0, bonus: r.bonus || 0,
@@ -664,7 +670,7 @@ exports.handler = async (event) => {
                     grid: Array.isArray(r.grid) ? r.grid : null
                 })),
                 weekRows, monthRows, allRows
-            ]));
+            ])));
         } catch (e) {
             console.error("daily-scores: board read failed", e);
             return json(500, { error: "Could not read the scores" });

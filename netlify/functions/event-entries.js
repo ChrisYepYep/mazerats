@@ -564,8 +564,23 @@ async function handleReview(event, db, id) {
         set.note = note;
     }
     if (!Object.keys(set).length) return json(400, { error: "Nothing to change" });
-    set.reviewedBy = usernameFromToken(event);
-    set.reviewedAt = new Date();
+    /* Who did what, said separately (3 Oct 2026). reviewedBy was stamped on
+       every PUT, a note on its own included, and the Warren then read
+       "Winner by X" for an admin who had only typed a note on somebody
+       else's winner. It moves now only when the status does; a note that
+       changes gets its own noteBy and noteAt. */
+    const current = await db.collection(COLLECTION).findOne({ id }, { projection: { _id: 0, status: 1, note: 1 } });
+    if (!current) return json(404, { error: "No such entry" });
+    const who = usernameFromToken(event);
+    const now = new Date();
+    if (set.status !== undefined && set.status !== (current.status || "new")) {
+        set.reviewedBy = who;
+        set.reviewedAt = now;
+    }
+    if (set.note !== undefined && set.note !== (current.note || "")) {
+        set.noteBy = who;
+        set.noteAt = now;
+    }
     const res = await db.collection(COLLECTION).updateOne({ id }, { $set: set });
     if (!res.matchedCount) return json(404, { error: "No such entry" });
     return json(200, { id, ...set });

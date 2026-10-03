@@ -428,9 +428,10 @@ async function bannedAmong(db, ids) {
    (the shape publicLists in _publicid.js takes, and should be called BEFORE
    it, while the id is still the raw one): one read for the lot, and every
    banned account's rows left out. New arrays; the lists passed in are left
-   alone. A board already cut to its top N simply shows one fewer row per
-   banned player in it — a ban is rare, and re-running the aggregation for a
-   replacement row is not worth it. */
+   alone. The boards read a few rows past their top N and cut back after
+   this (BOARD_READ in daily-scores.js and guess-scores.js, 3 Oct 2026), so
+   a banned player's place goes to the next one rather than leaving the
+   board a row short. */
 async function withoutBanned(db, lists, idOf = (r) => r && r.id) {
     const banned = await bannedAmong(db, lists.flat().map(idOf));
     if (!banned.size) return lists.map(l => (l || []).slice());

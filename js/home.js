@@ -3510,7 +3510,12 @@ document.addEventListener("DOMContentLoaded", () => {
         count.textContent = String(n);
         btn.append(label, count);
         btn.setAttribute("aria-label", `Search ${other} instead, ${n} ${n === 1 ? "match" : "matches"}`);
-        btn.addEventListener("click", () => jumpKeepingSearch(other === "events" ? eventsSub : mazesSub));
+        /* The events sub the tab would actually land on, not the stored one
+           (3 Oct 2026): eventsSub is still "upcoming" until somebody picks,
+           and the jump marks it touched — so with nothing scheduled this
+           locked the tab to an empty Upcoming instead of falling to Past as
+           the top nav's Events does. */
+        btn.addEventListener("click", () => jumpKeepingSearch(other === "events" ? resolvedEventsSub() : mazesSub));
         row.appendChild(btn);
         emptyEl.appendChild(row);
     }
@@ -7625,10 +7630,19 @@ document.addEventListener("DOMContentLoaded", () => {
         };
 
         btn.addEventListener("click", async () => {
+            /* The window as it was when pressed (3 Oct 2026). The clipboard
+               can take its time — a permission prompt — and the answer was
+               said regardless, so "Link copied" landed in the status line
+               of a window since closed or showing another record. Every
+               open and close moves modalCloseToken. */
+            const token = modalCloseToken;
+            const stale = () => token !== modalCloseToken;
             try {
                 await navigator.clipboard.writeText(url);
+                if (stale()) return;
                 say("Link copied", "Link copied");
             } catch (e) {
+                if (stale()) return;
                 /* No clipboard (an old browser, or permission refused).
                    Select the URL in a field the visitor can copy by hand
                    rather than telling them it failed and leaving them with
@@ -9689,8 +9703,47 @@ document.addEventListener("DOMContentLoaded", () => {
             }, TURN_MS);
         }
 
+        /* A failed fetch is not kept (3 Oct 2026). It was cached as [] for
+           the life of the page, so one blip hid the tab until a reload; now
+           the next recheck asks again, and meanwhile the last good list
+           stands in, if there was one. Api.getEvents never rejects — it
+           answers a dead endpoint with the bundled offline copy and keeps
+           that promise for the page's life — so a failure is read off
+           Api._degraded, the offline copy stands in until a live list
+           arrives, and the asking-again is a plain fetch of its own that
+           leaves the shared promise and _degraded (which the archive's
+           offline notice reads) alone. */
+        let lastGood = null;
+        let standIn = [];
+        let askedShared = false;
+        function fetchEvents() {
+            if (!askedShared) {
+                askedShared = true;
+                return Api.getEvents().then(list => {
+                    if (Api._degraded && Api._degraded.has("event data")) {
+                        standIn = Array.isArray(list) ? list : [];
+                        throw new Error("offline copy");
+                    }
+                    return list;
+                });
+            }
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 15000);
+            return fetch("/.netlify/functions/events", { signal: controller.signal })
+                .then(res => {
+                    if (!res.ok) throw new Error(`events fetch failed: ${res.status}`);
+                    return res.json();
+                })
+                .then(d => Api._unpack(d))
+                .finally(() => clearTimeout(timer));
+        }
         async function draw() {
-            if (!events) events = Api.getEvents().catch(() => []);
+            if (!events) {
+                events = fetchEvents().then(
+                    list => { lastGood = list; return list; },
+                    () => { events = null; return lastGood || standIn; }
+                );
+            }
             const list = await events;
             const now = Date.now();
             const on = (Array.isArray(list) ? list : [])
@@ -10083,15 +10136,24 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function openRecord(kind, record, opts) {
-        if (kind === "event") {
-            openModal(normalize(record, true), opts);
-            return;
-        }
         // A maze can sit in any of the three maze tabs, and a link to one
         // should not depend on which tab happens to be showing. Switch to
         // the list it actually lives in before opening it, so closing the
         // modal leaves the visitor somewhere that contains it.
-        topView = "mazes";
+        /* Events the same way (3 Oct 2026): they opened over whatever was
+           showing, so closing one from a link left the visitor on Mazes, or
+           on an Events tab that did not list it. The sub follows sourceItems'
+           own split; marked touched because resolvedEventsSub would
+           otherwise turn an untouched "archive" into Past when nothing is
+           scheduled. */
+        if (kind === "event") {
+            topView = "events";
+            eventsSub = isUpcomingTabEvent(record) ? "upcoming" : eventStatus(record) === "past" ? "past" : "archive";
+            eventsSubTouched = true;
+        } else {
+            topView = "mazes";
+            mazesSub = record.status === "closed" ? "archived" : record.status === "collab" ? "collab" : "open";
+        }
         showFeatured = false;
         /* And out of the layered views, as applyFilterChip does. Switching
            the tab underneath them changed nothing on screen: What's New,
@@ -10104,9 +10166,8 @@ document.addEventListener("DOMContentLoaded", () => {
         showTimeline = false;
         showFurni = false;
         furniFilter = null;
-        mazesSub = record.status === "closed" ? "archived" : record.status === "collab" ? "collab" : "open";
         render();
-        openModal(normalize(record, false), opts);
+        openModal(normalize(record, kind === "event"), opts);
     }
 
     /* The record the share function served this page for, by id (its
@@ -10154,7 +10215,9 @@ document.addEventListener("DOMContentLoaded", () => {
        ONCE. It is only ever called for the address the page loaded with,
        and that address is replaced with /home in the same breath (see
        openFromAddress), so Back and Forward never come back to a dead
-       address to trip it again, and a reload is a reload of /home.
+       address to trip it again, and a reload is a reload of /home. (An old
+       #maze-/#event- hash naming nothing is also told when followed on the
+       page, and its hash cleared the same way — 3 Oct 2026.)
 
        role=status, polite, and it never takes focus: the visitor has not
        asked it anything, and the archive under it is what they should be
@@ -10234,7 +10297,25 @@ document.addEventListener("DOMContentLoaded", () => {
                archive" or the missing maze's, which would otherwise stay
                for the rest of the visit (and be saved as the page's own by
                the next window that borrows them). */
-            if (how === "load" && !asked.legacy) {
+            /* Only when the miss proves something (3 Oct 2026). On the
+               offline copy (Api._degraded) nothing matches, so a valid shared
+               /maze/<slug> was rewritten to /home and lost — and the offline
+               notice's "Try again", a reload, then reloaded /home. The same
+               test tellAddressMissing makes: the share function's own 404,
+               or a miss in the live archive. */
+            const liveArchive = !(Api._degraded && Api._degraded.size);
+            const missProven = liveArchive || (!asked.legacy && SERVED_AS_MISSING);
+            /* A dead old #maze-/#event- hash too (3 Oct 2026), on load or
+               when followed on the page: it was left in place, so the
+               address still named a record, onModalAddress stayed true and
+               writeSearchToUrl never wrote the search again. archiveAddress
+               is the path without the hash; the page's tags are already the
+               archive's, so PageMeta is left alone for it. */
+            if (asked.legacy && missProven && (how === "load" || how === "hashchange")) {
+                try { history.replaceState(history.state, "", archiveAddress()); } catch (e) { /* fine */ }
+                tellAddressMissing(asked.kind);
+            }
+            if (how === "load" && !asked.legacy && missProven) {
                 /* With the search the link carried, which the list below
                    is already filtered by (30 Sept 2026). archiveSearch is
                    only filled in when a window opens, so a dead

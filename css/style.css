@@ -12534,6 +12534,11 @@ body[data-page="admin"] #activity-sessions {
 
 @media (prefers-reduced-motion: reduce) {
     .spotlight-card { transition: none; }
+    /* The tab's own slide, and its tuck behind the window while the menu
+       is out (3 Oct 2026): that rule's selector outranks the plain
+       .side-drawer one in the block below, so it slid here regardless. */
+    .side-drawer--spotlight,
+    .archive-stack:has(> #side-drawer.is-open) > .side-drawer--spotlight { transition: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

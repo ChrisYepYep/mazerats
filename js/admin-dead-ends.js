@@ -53,6 +53,9 @@
     const imageUrls = new Map();    // quarantined key -> promise of an object URL
 
     function token() {
+        // This tab's own session from js/admin.js (3 Oct 2026), not whatever
+        // another tab last stored — see window.AdminToken there.
+        if (typeof window.AdminToken === "function") return window.AdminToken() || "";
         try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; }
     }
 
@@ -152,6 +155,7 @@
                 ...listOf(rooms).map(r => ({ type: "maze", id: r.id, name: r.name || r.id, raw: r })),
                 ...listOf(events).map(e => ({ type: "event", id: e.id, name: e.title || e.id, raw: e }))
             ].sort((a, b) => a.name.localeCompare(b.name));
+            reconcileEditor();
             renderLeadTabs();
             renderLeads();
             renderRecords();
@@ -189,11 +193,46 @@
         }
     }
 
-    async function reloadFlags() {
+    async function reloadFlags(notice) {
         const data = await call(`${FLAGS_URL}?full=1`, "GET");
         flags = new Map((data.flags || []).map(f => [keyOf(f.type, f.id), f]));
         trail = new Map((data.trail || []).map(t => [keyOf(t.type, t.id), t.leads]));
+        reconcileEditor(notice);
         renderRecords();
+    }
+
+    /* The open editor, against a flag that has just been re-read (3 Oct
+       2026). The editor is rebuilt from editorDraft, not the flag — so when
+       a lead accepted underneath it took "builder" off this record, the
+       editor came back with builder still ticked, and Save put it straight
+       back on the public list. A flag that has moved on since the editor
+       opened (its updatedAt, which every write stamps) now replaces the
+       draft's ticks; the note being typed is kept, and the editor says
+       why its boxes changed. editorBase moves on with it, so the next Save
+       is checked against the flag as it is now (see _baseUpdatedAt in
+       netlify/functions/dead-ends.js). */
+    const CHANGED_UNDER = "This record changed while it was open — a lead was accepted, or someone else saved it — so its ticks have been reloaded. Your note is kept.";
+    function stampOf(flag) { return flag ? (flag.updatedAt || "") : null; }
+    function reconcileEditor(notice) {
+        if (!openEditor || !editorBase || editorBase.key !== openEditor) return;
+        const flag = flags.get(openEditor) || null;
+        const now = stampOf(flag);
+        if (now === editorBase.updatedAt) {
+            if (notice) editorBase.notice = notice;
+            return;
+        }
+        const draft = editorDraft && editorDraft.key === openEditor ? editorDraft : null;
+        const rec = records.find(r => keyOf(r.type, r.id) === openEditor);
+        const pieces = flag ? (flag.pieces || []).slice()
+            : !draft && rec ? DeadEnds.suggested(rec.raw, rec.type) : [];
+        if (draft) editorDraft = { key: openEditor, pieces: pieces.slice(), note: draft.note };
+        editorBase = {
+            key: openEditor,
+            pieces: pieces.slice().sort(),
+            note: (flag && flag.note) || "",
+            updatedAt: now,
+            notice: notice || (draft ? CHANGED_UNDER : "")
+        };
     }
 
     // --------------------------------------------------------------- leads
@@ -772,7 +811,8 @@
         const ticked = new Set(draft ? draft.pieces : flag ? flag.pieces : DeadEnds.suggested(rec.raw, rec.type));
         const noteText = draft ? draft.note : flag ? flag.note : "";
         // What it opened with, for isEditorDirty. Kept across rebuilds.
-        if (!editorBase || editorBase.key !== k) editorBase = { key: k, pieces: [...ticked].sort(), note: noteText || "" };
+        // With the flag's updatedAt, for Save's version check (3 Oct 2026).
+        if (!editorBase || editorBase.key !== k) editorBase = { key: k, pieces: [...ticked].sort(), note: noteText || "", updatedAt: stampOf(flag), notice: "" };
         const form = document.createElement("div");
         form.className = "de-editor";
         form.innerHTML = `
@@ -788,6 +828,13 @@
                 <button type="button" class="ctl-btn" data-f="cancel">Cancel</button>
             </div>
             <p class="ctl-status" data-f="status"></p>`;
+        // Why the boxes changed, or why a Save was refused — see
+        // reconcileEditor. Kept on editorBase, so a rebuild does not lose it.
+        if (editorBase.notice) {
+            const status = form.querySelector('[data-f="status"]');
+            status.textContent = editorBase.notice;
+            status.classList.add("is-bad");
+        }
 
         const remember = () => {
             editorDraft = {
@@ -811,7 +858,10 @@
                 type: rec.type,
                 id: rec.id,
                 pieces: Array.from(form.querySelectorAll("[data-mark]")).filter(i => i.checked).map(i => i.dataset.mark),
-                note: form.querySelector(".de-note").value.trim()
+                note: form.querySelector(".de-note").value.trim(),
+                // The flag this editor was opened on (3 Oct 2026): the server
+                // refuses the save with a 409 if it has changed since.
+                _baseUpdatedAt: editorBase && editorBase.key === k ? editorBase.updatedAt : stampOf(flag)
             };
             // Nothing ticked is "not a dead end": the server deletes the flag.
             if (!body.pieces.length && !flag) {
@@ -819,11 +869,31 @@
                 status.classList.add("is-bad");
                 return;
             }
+            /* ...which took a marked record off the list without a word
+               (3 Oct 2026), where Clear beside it asks first. Asked the same
+               question now. */
+            if (!body.pieces.length && flag) {
+                if (!await ask(`Take "${escapeHtml(rec.name)}" off the Missing Pieces list? It will show as complete everywhere on the site.`, { danger: true })) return;
+            }
             status.textContent = "Saving…";
             status.classList.remove("is-bad");
             try {
                 await call(FLAGS_URL, "PUT", body);
             } catch (err) {
+                /* Changed underneath (3 Oct 2026) — see reconcileEditor. The
+                   flag is read again, the editor rebuilt on it with the
+                   refusal said in it, and nothing is saved. */
+                if (err && err.status === 409) {
+                    try {
+                        await reloadFlags(err.message);
+                    } catch (e2) {
+                        if (!sessionGone(e2)) {
+                            status.textContent = `${err.message} (It could not be reloaded: ${e2.message} — press Refresh.)`;
+                            status.classList.add("is-bad");
+                        }
+                    }
+                    return;
+                }
                 /* The sign-in box is up over the editor, which is kept (see
                    sessionGone) — but its status line used to stay on
                    "Saving…" underneath, so after signing back in it read as

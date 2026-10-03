@@ -52,6 +52,24 @@ const SIGN_IN_UNAVAILABLE = () => ({
     body: JSON.stringify({ error: "Sign-in is unavailable just now. Please try again in a minute." })
 });
 
+/* The request came from this site — contact.js's check (3 Oct 2026). A
+   cross-site page could fire failed sign-ins from an admin's own browser,
+   and so from their network, until the per-network cap shut the real
+   sign-in out for the window. The Warren's own fetches send an Origin that
+   names this host; one naming another site is refused before the throttle
+   counts anything. No Origin at all is allowed through. */
+function sameOrigin(event) {
+    const h = event.headers || {};
+    const origin = h.origin || h.Origin;
+    if (!origin) return true;
+    const host = h["x-forwarded-host"] || h.host || h.Host || "";
+    try {
+        return new URL(origin).host === host;
+    } catch (e) {
+        return false;
+    }
+}
+
 // Minted in _auth.js, beside the verifier that has to agree with it about
 // the audience — see ADMIN_AUDIENCE there.
 const signToken = signAdminToken;
@@ -875,6 +893,8 @@ exports.handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
+        // Before the throttle sees it (3 Oct 2026). See sameOrigin.
+        if (!sameOrigin(event)) return json(403, { error: "Not from this site" });
         let body;
         try {
             body = JSON.parse(event.body || "{}");

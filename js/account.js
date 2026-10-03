@@ -178,13 +178,27 @@
                     try { Account.refresh(); } catch (e2) { /* the notice stands */ }
                     return false;
                 }
-                notice({
-                    title: "Couldn't Sign Out",
-                    html: `<p class="notice-lines">${everywhere
-                        ? "Couldn't sign you out of your other devices — you're still signed in everywhere. Try again in a minute."
-                        : "Couldn't sign you out — check your connection and try again."}</p>`
-                });
-                return false;
+                /* A plain sign-out that timed out is asked about too (3 Oct
+                   2026): the server may have cleared the cookie before the
+                   leash ran out, and "Couldn't sign you out" was then untrue.
+                   If `me` now answers — for certain — nobody, it worked, and
+                   it carries on below as a sign-out that answered. */
+                let cleared = false;
+                if (e && e.name === "AbortError") {
+                    try {
+                        await Account.refresh();
+                        cleared = !Account.unsure && !Account.current;
+                    } catch (e2) { /* not known, so not cleared */ }
+                }
+                if (!cleared) {
+                    notice({
+                        title: "Couldn't Sign Out",
+                        html: `<p class="notice-lines">${everywhere
+                            ? "Couldn't sign you out of your other devices — you're still signed in everywhere. Try again in a minute."
+                            : "Couldn't sign you out — check your connection and try again."}</p>`
+                    });
+                    return false;
+                }
             }
             Account.current = null;
             Account.unsure = false;

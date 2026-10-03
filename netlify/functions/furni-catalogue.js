@@ -391,8 +391,11 @@ exports.handler = async (event) => {
             /* Keyed on the parameters this reads and no others (2 Oct 2026;
                see `vary` in _cache.js), so a junk parameter can't skip the
                edge for the ~930KB answer. The Warren's card asks ?info=1
-               instead of a one-off address (see above). */
-            return cachedJson(event, data, { cdn: CATALOGUE_CDN_CACHE, vary: "q|classes|sprites|limit|unlisted|refresh" });
+               instead of a one-off address (see above). `info` is keyed
+               too (3 Oct 2026): without it, ?info=1 was the same key as the
+               plain address, and the edge answered the card with this
+               whole catalogue. */
+            return cachedJson(event, data, { cdn: CATALOGUE_CDN_CACHE, vary: "q|classes|sprites|limit|unlisted|refresh|info" });
         }
         /* Uncached, but still gzipped (30 Sept 2026): a one-letter ?q= with
            sprites is most of the 930KB catalogue, and went out raw to

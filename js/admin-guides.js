@@ -68,7 +68,13 @@
     let saving = false;
 
     const esc = GuideText.esc;
-    const token = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; } };
+    // This tab's own session from js/admin.js (3 Oct 2026), not whatever
+    // another tab last stored — see window.AdminToken there. The stored
+    // copy is only the fallback for a page without it.
+    const token = () => {
+        if (typeof window.AdminToken === "function") return window.AdminToken() || "";
+        try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; }
+    };
     const call = (url, method, body) => Api._write(url, method, token(), body);
 
     /* A 401: the twelve-hour session ran out while the panel was open.

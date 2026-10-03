@@ -162,6 +162,10 @@ function publicSnapshot(g) {
 
 const revOf = g => Number(g && g.rev) || 0;
 
+// The public list as last read here, for a ?fresh without an account (3 Oct 2026; see the GET).
+const FRESH_LIST_MS = 1000;
+let publicMemo = null;
+
 exports.handler = async (event) => {
     let db;
     try {
@@ -178,6 +182,22 @@ exports.handler = async (event) => {
         // A live account, not just a signature: drafts are admin-only, and a
         // deleted or password-reset account's old token must not read them.
         if (full && !(await hasAccount(event))) return UNAUTHORIZED;
+        /* ?fresh=<time> is js/guides.js asking past the edge's copy (see
+           below). ONLY AN ADMIN ACCOUNT reads the guides afresh for it now
+           (3 Oct 2026): anybody could add it, and every one was a read of
+           every guide. The Warren's View link opens /guides in a new tab, so
+           the page asking has no token to send; without one, ?fresh is
+           answered from a list read in the last FRESH_LIST_MS — still past
+           the edge, and still showing a save made before the click — so a
+           flood of them costs one read a second per instance. */
+        const fresh = Object.prototype.hasOwnProperty.call(params, "fresh");
+        const freshRead = fresh && !full && await hasAccount(event).catch(() => false);
+        if (fresh && !full && !freshRead && publicMemo && Date.now() - publicMemo.at < FRESH_LIST_MS) {
+            const res = cachedJson(event, publicMemo.list, { cache: false });
+            res.headers = { ...res.headers, "Netlify-Vary": "query=full|fresh" };
+            return res;
+        }
+        const readAt = Date.now();
         let list;
         try {
             list = await guides.find({}, { projection: { _id: 0 } })
@@ -205,6 +225,8 @@ exports.handler = async (event) => {
         if (!full) {
             list = list.filter(g => g.status === "published")
                 .map(({ updatedBy, createdBy, rev, publicCopy, slugAliases, slugManual, ...g }) => g);
+            // Stamped when the read began, so a save it raced is not counted in it.
+            publicMemo = { at: readAt, list };
         }
         // ?full=1&retired=1 (28 Sept 2026): with the deleted guides'
         // addresses beside the list, for /warren's Address field — see the
@@ -216,7 +238,6 @@ exports.handler = async (event) => {
            cache like the plain list — for a day, stale — so every guide
            looked for past the cache left one more copy there that nothing
            would ever ask for again. It is answered and not kept. */
-        const fresh = Object.prototype.hasOwnProperty.call(params, "fresh");
         /* Keyed at the edge on the two parameters that change the answer
            (2 Oct 2026), so a random one is the cached list rather than a
            fresh read of every guide — see rooms.js. */
@@ -231,6 +252,7 @@ exports.handler = async (event) => {
     try {
         if (!isAuthorized(event)) return UNAUTHORIZED;
         if (!(await canWrite(event))) return await refuseWrite(event);
+        publicMemo = null;     // a save here is never answered from before it (3 Oct 2026)
         const who = usernameFromToken(event) || "";
 
         if (event.httpMethod === "DELETE") {

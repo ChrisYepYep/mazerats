@@ -355,7 +355,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     ? line("Nickname", esc(current))
                     : `${head("Nickname")}
                        <p class="console-blurb console-nick-none">None set ${DASH} the boards show your Discord name (${esc(me.name || "")}).</p>`}
-                <p class="console-note console-profile-note console-nick-locked">Your nickname was set by the site's admins. Ask them if you'd like it changed.</p>`;
+                <p class="console-note console-profile-note console-nick-locked">${me.nickHabbo
+                    // From OriginsBot (3 Oct 2026; see _originsbot.js).
+                    ? "This is your Habbo name, linked to your Discord through OriginsBot. Ask the site's admins if it's wrong."
+                    : "Your nickname was set by the site's admins. Ask them if you'd like it changed."}</p>`;
             return;
         }
 
@@ -640,7 +643,7 @@ document.addEventListener("DOMContentLoaded", () => {
            same element, field and all, is simply moved into the new page. */
         // nickRejected and nickRefused too (29 Sept 2026), so the admins'
         // lines come and go.
-        const key = JSON.stringify([me.id, me.nick || "", me.name || "", !!(Account.canNick && Account.canNick()), !!me.nickLocked, !!me.nickRejected, !!me.nickRefused]);
+        const key = JSON.stringify([me.id, me.nick || "", me.name || "", !!(Account.canNick && Account.canNick()), !!me.nickLocked, !!me.nickHabbo, !!me.nickRejected, !!me.nickRefused]);
         if (key !== drawnFor || !nickEl.childElementCount) {
             drawnFor = key;
             drawNick();

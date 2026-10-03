@@ -27,6 +27,8 @@
 const fs = require("fs");
 const path = require("path");
 const { getDb } = require("./_db");
+// Who may read past the address book with ?fresh (3 Oct 2026; see FRESH_ADDRESSES_MS).
+const { hasAccount } = require("./_auth");
 const { resolveSlug, isRetired, loadRetired, PROJECTION: SLUG_FIELDS } = require("./_slugs");
 
 /* How long a page may be reused. Chat clients cache aggressively on their
@@ -539,15 +541,26 @@ const isPublic = (kind, r) => kind !== "guide" || (r && r.status === "published"
    inventing slugs. Each warm instance now keeps that list for ADDRESSES_MS,
    so a flood of made-up addresses is answered from memory and a real one
    costs one findOne. Never for ?fresh (/warren's View link, which must see
-   the save it was clicked after), and a failed read is not kept. A record
+   the save it was clicked after; but see FRESH_ADDRESSES_MS below), and a
+   failed read is not kept. A record
    added a moment ago can 404 for those few seconds on an instance that
    read the list just before — the edge's own copy of the archive is a
    minute behind anyway. */
 const ADDRESSES_MS = 10 * 1000;
+/* ?FRESH WITHOUT AN ACCOUNT (3 Oct 2026). Anybody could add ?fresh, and
+   every one was a whole-collection read: past the edge (it is never
+   stored) and past the book above. Only a caller with an admin account now
+   skips the book outright. The View link cannot be one — it is a plain
+   link opened in a new tab, which carries no token — so a ?fresh without
+   one still skips the edge, but takes a book read in the last second
+   rather than none: one read a second per instance however hard it is
+   asked, and a View clicked after a save still finds the saved address.
+   The record itself is always read fresh. */
+const FRESH_ADDRESSES_MS = 1000;
 const addressBook = new Map();
-async function addressesOf(db, kind, fresh) {
+async function addressesOf(db, kind, maxAge) {
     const kept = addressBook.get(kind);
-    if (!fresh && kept && Date.now() - kept.at < ADDRESSES_MS) return kept;
+    if (kept && Date.now() - kept.at < maxAge) return kept;
     const [all, retired] = await Promise.all([
         db.collection(COLLECTION[kind]).find({}, { projection: { ...SLUG_FIELDS, status: 1 } }).toArray(),
         loadRetired(db, kind).catch(e => {
@@ -597,7 +610,9 @@ exports.handler = async (event) => {
                are worked out around them exactly as the API does, and one
                that names nothing live may be one of them. Unreadable is
                none, as it is for the API (see loadRetired). */
-            const { all, retired } = await addressesOf(db, kind, fresh);
+            // See FRESH_ADDRESSES_MS. A lookup that fails is no account.
+            const admin = fresh && await hasAccount(event).catch(() => false);
+            const { all, retired } = await addressesOf(db, kind, !fresh ? ADDRESSES_MS : admin ? 0 : FRESH_ADDRESSES_MS);
             let hit = resolveSlug(all, kind, slug, retired);
             if (hit && !isPublic(kind, hit.record)) hit = null;
             const doc = hit && hit.current

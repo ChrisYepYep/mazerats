@@ -77,7 +77,14 @@
                the 404 page back as a script, and never recoloured. */
             s.src = "/js/recolour.js?v=2";
             s.onload = () => ok(window.Recolour);
-            s.onerror = fail;
+            /* Forgotten on failure (3 Oct 2026): a rejection kept here was
+               every later wear's too, for the life of the page. The tag goes
+               and the next wear asks again. */
+            s.onerror = () => {
+                engine = null;
+                s.remove();
+                fail(new Error("The recolour engine did not load"));
+            };
             document.head.appendChild(s);
         });
         return engine;
@@ -109,7 +116,12 @@
     async function wear(palette) {
         if (!palette) return;
         const seq = ++wearing;
-        const R = await loadEngine();
+        /* Caught here (3 Oct 2026): every wear() is called without a
+           .catch, so an engine that would not load was an unhandled
+           rejection js/error-report.js filed on top of the script's own
+           failure. The page simply stays unrecoloured. */
+        let R;
+        try { R = await loadEngine(); } catch (e) { return; }
         if (!R || seq !== wearing) return;
         R.rescan();
         /* base "/": the engine fetches the original art to recolour it as

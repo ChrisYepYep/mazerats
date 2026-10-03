@@ -680,7 +680,13 @@ document.addEventListener("DOMContentLoaded", () => {
             // Only on a real change: onChange also fires on a re-read that
             // changed nothing, and that must not cost a retry its ref.
             const who = Account.current ? String(Account.current.id || Account.current.name || "?") : "";
-            if (who !== senderSeen) {
+            /* Nobody-because-the-network-blinked is not a sender (3 Oct
+               2026): a failed `me` reads as null with Account.unsure set,
+               and taking that as a change dropped the ref, so the retry
+               after "That took too long" saved the lead twice. The real
+               answer, when it lands, is compared as usual. */
+            const doubtful = !Account.current && Account.unsure === true;
+            if (!doubtful && who !== senderSeen) {
                 senderSeen = who;
                 uploadedKeys = new WeakMap();
                 clientRef = null;

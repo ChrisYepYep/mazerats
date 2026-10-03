@@ -160,9 +160,17 @@ function newSv() {
    svFor), so a copied pre-sv cookie came out of "every device" holding a
    fresh, current session. With it, a session carrying no number is
    revoked like any other the row has moved on from. */
+/* AND A SESSION WITH NO NUMBER WHOSE ROW IS GONE (3 Oct 2026). Every
+   signed-in player has a row — the sign-in makes it — so a numberless
+   session (one from before session versions, or one a sign-in issued while
+   the database was down and could not stamp it) finding NO row means the
+   player was forgotten. It used to pass, and player-nick.js's upsert then
+   made the row again, fresh number and all, which `me` signed into the
+   cookie: the forgotten account came back without a sign-in. Revoked now,
+   like a numbered one. */
 function sessionRevoked(player, row) {
     if (!player || row === undefined) return false;
-    if (!isSv(player.sv)) return !!(row && row.svStrict === true);
+    if (!isSv(player.sv)) return row === null || !!(row && row.svStrict === true);
     if (row === null) return true;
     return isSv(row.sv) && row.sv !== player.sv;
 }
@@ -269,6 +277,12 @@ function playerView(player, row) {
         displayName: nick || name,
         nickAsked,
         nickLocked: !!(row && row.nickLocked === true),
+        // Locked because it is their Habbo name, from OriginsBot (3 Oct
+        // 2026; see _originsbot.js), so the Profile can say so — and only
+        // while the nickname still IS that name: one the admins have
+        // changed since is theirs, whoever locked it first.
+        nickHabbo: !!(row && row.nickLocked === true && row.nickLockedBy === "OriginsBot" &&
+            row.habbo && typeof row.nick === "string" && row.nick === row.habbo.applied),
         nickRejected: !!(row && row.nickRejected && typeof row.nickRejected === "object"),
         nickRefused: !!(row && row.nickRefused === true)
     };

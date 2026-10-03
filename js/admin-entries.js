@@ -72,6 +72,9 @@
     // ----------------------------------------------------------- helpers
 
     function token() {
+        // This tab's own session from js/admin.js (3 Oct 2026), not whatever
+        // another tab last stored — see window.AdminToken there.
+        if (typeof window.AdminToken === "function") return window.AdminToken() || "";
         try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; }
     }
 
@@ -480,7 +483,10 @@
             const rv = document.createElement("p");
             rv.className = "de-lead-who";
             const by = entry.reviewedBy ? `${STATUS_WORD[entry.status] || "Changed"} by ${entry.reviewedBy}` : "";
-            rv.textContent = [by, entry.note ? `Note: ${entry.note}` : ""].filter(Boolean).join(" · ");
+            // The note's own author (3 Oct 2026) — see noteBy in
+            // netlify/functions/event-entries.js. Older notes have none.
+            const note = entry.note ? (entry.noteBy ? `Note by ${entry.noteBy}: ${entry.note}` : `Note: ${entry.note}`) : "";
+            rv.textContent = [by, note].filter(Boolean).join(" · ");
             info.appendChild(rv);
         }
         r.appendChild(info);

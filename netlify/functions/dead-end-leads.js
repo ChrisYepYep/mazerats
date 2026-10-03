@@ -69,6 +69,28 @@ const json = (statusCode, data) => ({
 // Anything off the wire is text or it is nothing — see contact.js for why a
 // stringified object is worse than an empty field.
 const text = (v) => (typeof v === "string" ? v : "");
+/* A one-line field, as one line (3 Oct 2026) — contact.js's oneLine. A new
+   maze's name goes into the notification email's subject, and a line break
+   there from a hand-made request is how a header of one's own gets in. */
+const oneLine = (s) => s.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+
+/* The request came from this site — contact.js's check (3 Oct 2026). A
+   cross-site page could POST a lead with a plain HTML form (text/plain
+   parses as JSON well enough), and every visitor's browser that loaded it
+   became one more address past the per-sender throttle, its lead filed
+   under their address. A browser always sends Origin on a POST; one naming
+   another site is refused. No Origin at all is allowed through. */
+function sameOrigin(event) {
+    const h = event.headers || {};
+    const origin = h.origin || h.Origin;
+    if (!origin) return true;
+    const host = h["x-forwarded-host"] || h.host || h.Host || "";
+    try {
+        return new URL(origin).host === host;
+    } catch (e) {
+        return false;
+    }
+}
 
 const COLLECTION_OF = { maze: "rooms", event: "events" };
 const NAME_OF = { maze: "name", event: "title" };
@@ -320,7 +342,7 @@ async function notify(lead, recordName) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), EMAIL_TIMEOUT_MS);
     try {
-        await fetch("https://api.resend.com/emails", {
+        const res = await fetch("https://api.resend.com/emails", {
             method: "POST",
             signal: controller.signal,
             headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -333,6 +355,9 @@ async function notify(lead, recordName) {
                 text: `${lead.from ? `From ${lead.from.name} (Discord, signed in${lead.from.username ? `, @${lead.from.username}` : ""}, id ${lead.from.id})\n` : ""}${lead.habboName ? `Habbo: ${lead.habboName}\n` : ""}\n${lines.join("\n")}\n\nReview it in Warren, under Missing Pieces.`
             })
         });
+        // A refusal from Resend is logged as contact.js logs it (3 Oct 2026);
+        // fetch only throws when no answer came at all.
+        if (!res.ok) console.warn("dead-end-leads: email notification failed", res.status, await res.text().catch(() => ""));
     } catch (e) {
         console.warn("dead-end-leads: email notification failed", e.message);
     } finally {
@@ -464,7 +489,8 @@ async function handleLead(event, db) {
        the name the visitor gave it). */
     const type = text(body.type);
     const recordId = type === "new" ? null : text(body.id).trim();
-    const newName = type === "new" ? text(body.name).trim() : "";
+    // Flattened to one line (3 Oct 2026): it is the email's subject. See oneLine.
+    const newName = type === "new" ? oneLine(text(body.name)) : "";
     const habboName = text(body.habboName).trim();
 
     if (type === "new") {
@@ -969,6 +995,8 @@ exports.handler = async (event) => {
         if (event.httpMethod === "POST" || event.httpMethod === "GET") await forgetOldSenders(db);
 
         if (event.httpMethod === "POST") {
+            // Both POSTs, before anything else (3 Oct 2026). See sameOrigin.
+            if (!sameOrigin(event)) return json(403, { error: "Not from this site" });
             return q.action === "upload" ? await handleUpload(event, db) : await handleLead(event, db);
         }
 

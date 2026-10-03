@@ -116,6 +116,9 @@
     // ----------------------------------------------------------- helpers
 
     function token() {
+        // This tab's own session from js/admin.js (3 Oct 2026), not whatever
+        // another tab last stored — see window.AdminToken there.
+        if (typeof window.AdminToken === "function") return window.AdminToken() || "";
         try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; }
     }
 

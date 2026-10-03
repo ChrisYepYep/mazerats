@@ -33,13 +33,13 @@ const Api = {
        be far rarer now that the durable cache is actually in use (see
        CDN_CACHE in netlify/functions/_cache.js), so the long leash should be
        reached less often as well as mattering less when it is. */
-    async _getWithFallback(url, label, fallbackFn) {
+    async _getWithFallback(url, label, fallbackFn, headers) {
         const attempts = [10000, 15000];
         for (let i = 0; i < attempts.length; i++) {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), attempts[i]);
             try {
-                const res = await fetch(url, { signal: controller.signal });
+                const res = await fetch(url, headers ? { signal: controller.signal, headers } : { signal: controller.signal });
                 if (!res.ok) throw new Error(`${label} fetch failed: ${res.status}`);
                 const data = await res.json();
                 this._degraded.delete(label);
@@ -620,7 +620,8 @@ const Api = {
             // rather than rejecting into every caller on the page.
             ? Promise.resolve(shared).catch(() => null).then(v => (v && v.landingState) ? v :
                 ({ landingState: this.unreadableLandingState(), fromCache: true }))
-            : this._getWithFallback("/.netlify/functions/settings", "site settings",
+            // Bucketed as home.html's gate asks (3 Oct 2026): see getSettings there.
+            : this._getWithFallback("/.netlify/functions/settings?fresh=" + Math.floor(Date.now() / 10000), "site settings",
                 () => ({ landingState: this.unreadableLandingState(), fromCache: true }));
 
         this._settingsPromise = fetched.then(settings => {
@@ -664,7 +665,12 @@ const Api = {
     getContributors() {
         let warren = false;
         try { warren = /^\/warren(\.html)?\/?$/.test(location.pathname); } catch (e) { /* not a page */ }
-        return this._getWithFallback("/.netlify/functions/contributors" + (warren ? "?full=1" : ""), "contributor data", () => []);
+        /* With the admin token (3 Oct 2026): contributors.js now gives the
+           full list only to a signed-in account, and sends anybody else to
+           the public one. AdminToken is js/admin.js's. */
+        const token = warren && typeof window.AdminToken === "function" ? window.AdminToken() : "";
+        return this._getWithFallback("/.netlify/functions/contributors" + (warren ? "?full=1" : ""), "contributor data", () => [],
+            token ? { "x-admin-token": token } : null);
     },
     createContributor(token, contributor) { return this._write("/.netlify/functions/contributors", "POST", token, contributor); },
     updateContributor(token, contributor) { return this._write("/.netlify/functions/contributors", "PUT", token, contributor); },

@@ -589,7 +589,30 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    /* A token this tab took over from another one (3 Oct 2026) — see the
+       storage listener below — and when. A request this tab sent with its
+       OLD token may still be out when the new one is adopted; its 401 used
+       to land in lockOut and throw the fresh token away with it (and, with
+       it, the other tab's). For a minute after adopting, a 401 is checked
+       against the server first, and only a token the server refuses is
+       dropped. */
+    let adoptedToken = "";
+    let adoptedAt = 0;
+    let adoptedRecheck = null;
+    const ADOPT_GRACE_MS = 60 * 1000;
+
     function lockOut() {
+        if (adoptedToken && adoptedToken === adminToken && Date.now() - adoptedAt < ADOPT_GRACE_MS) {
+            if (adoptedRecheck) return;
+            const held = adminToken;
+            adoptedRecheck = Api.verifySession(held).then(r => !!r, () => false).then(ok => {
+                adoptedRecheck = null;
+                if (adminToken !== held) return;
+                if (!ok) { adoptedToken = ""; lockOut(); }
+            });
+            return;
+        }
+        adoptedToken = "";
         /* The furni scan's poll stops here. It kept firing every 2.5s with
            the dead token, and each 401 came back through this function and
            rewrote the login box — clearing whatever error it was showing and
@@ -604,7 +627,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // And an Event Entries picture open full size, whose lightbox sits
         // over the sign-in box (30 Sept 2026) — see closeViewer there.
         if (window.AdminEntries && typeof window.AdminEntries.closeViewer === "function") window.AdminEntries.closeViewer();
-        writeToken("");
+        /* The stored token is only cleared if it is still the one THIS tab
+           was using (3 Oct 2026). Two tabs share it: once the session ran
+           out and the admin signed in again in the other one, this tab's
+           next 401 wiped the new token from storage — and the other tab's
+           side panels, reading it from there, were signed out too. */
+        if (readToken() === adminToken) writeToken("");
         adminToken = "";
         currentUsername = "";
         currentUserRole = "admin";
@@ -717,6 +745,59 @@ document.addEventListener("DOMContentLoaded", () => {
        sent whenever the ban list is re-read, so the label can follow. */
     window.AdminIsBanned = ip => isBanned(ip);
     window.AdminUnbanIp = ip => unbanIp(ip);
+    /* And the session itself (3 Oct 2026). The panels in files of their own
+       read the token out of localStorage on every request, so they followed
+       whatever another tab last stored rather than this tab's own session —
+       and, with storage blocked, sent nothing at all. AdminToken() is the
+       token this tab is actually using; they ask for it here instead. */
+    window.AdminToken = () => adminToken;
+
+    /* Another tab signing in, out, or changing its password (3 Oct 2026).
+       This tab only read the stored token at load, so two tabs drifted
+       apart: one would sit on an expired token while the other held a good
+       one. A new token is checked with the server first and taken over only
+       if it is the same account (and role) this tab is signed in as — or, on
+       a tab showing the sign-in box, the account last signed in here; a
+       different account in another tab leaves this one's session as it is.
+       This tab's own token being taken out of storage is the other tab
+       having been signed out of this same session, and this tab follows. */
+    let storageCheck = 0;
+    window.addEventListener("storage", e => {
+        if (e.key !== TOKEN_KEY || loggingOut) return;
+        const next = e.newValue || "";
+        if (next === adminToken) return;
+        const check = ++storageCheck;
+        if (!next) {
+            if (!adminToken || e.oldValue !== adminToken) return;
+            adoptedToken = "";
+            lockOut();
+            loginError.textContent = "Signed out in another tab — log in again.";
+            return;
+        }
+        Api.verifySession(next).then(result => {
+            if (check !== storageCheck || loggingOut || !result) return;
+            if (readToken() !== next || adminToken === next) return;
+            const role = result.role || "admin";
+            if (adminToken) {
+                if (result.username !== currentUsername || role !== currentUserRole) return;
+                adminToken = next;
+                adoptedToken = next;
+                adoptedAt = Date.now();
+                return;
+            }
+            if (lastSignedInAs && result.username !== lastSignedInAs) return;
+            adminToken = next;
+            adoptedToken = next;
+            adoptedAt = Date.now();
+            currentUsername = result.username;
+            currentUserRole = role;
+            lastSignedInAs = result.username;
+            loginForm.reset();
+            loginError.style.display = "none";
+            enterAdmin().catch(err => showLoadBanner("Something went wrong opening the panel: " +
+                ((err && err.message) || "unknown error") + ". Reload the page to try again."));
+        }, () => { /* unreachable server: nothing is changed on a guess */ });
+    });
 
     /* Logging out used to close every form on the spot: unsaved work gone
        without a question, and every picture uploaded during the edit left
@@ -818,8 +899,12 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!loggedOut) setLoggingOut(false);
         }
         stopFurniPolling();
-        writeToken("");
+        // Only this tab's own session (3 Oct 2026): a newer one signed in
+        // from another tab, which this tab never used, is left alone — see
+        // the same check in lockOut.
+        if (readToken() === adminToken) writeToken("");
         adminToken = "";
+        adoptedToken = "";
         currentUsername = "";
         currentUserRole = "admin";
         workingRooms = [];
@@ -8348,11 +8433,24 @@ document.addEventListener("DOMContentLoaded", () => {
     let dailyDetail = null;
     let dailyToday = "";
     let dailyNote = "";
+    /* Whose dailyNote it is (3 Oct 2026). It was never cleared, so the line
+       saying what a reset had done for one player sat under the next player
+       picked as though it were theirs. It is shown only under its own
+       player now, and dropped by any load for somebody else. */
+    let dailyNoteFor = "";
+    /* Numbered (3 Oct 2026), as the Missing Pieces lead tabs are: two
+       players picked in quick succession sent two reads, and whichever came
+       back LAST was drawn — the first player's games under the second one's
+       highlighted row. Only the newest read is drawn now. */
+    let dailySeq = 0;
 
     async function loadDaily(playerId) {
         if (!dailyPlayersEl) return;
+        const seq = ++dailySeq;
+        if (String(playerId || "") !== dailyNoteFor) { dailyNote = ""; dailyNoteFor = ""; }
         try {
             const data = await Api.getDailyPlayers(adminToken, dailySearchEl ? dailySearchEl.value.trim() : "", playerId || "");
+            if (seq !== dailySeq) return;
             dailyPlayers = data.players || [];
             dailyDetail = data.detail || null;
             dailyToday = data.today || "";
@@ -8364,6 +8462,7 @@ document.addEventListener("DOMContentLoaded", () => {
                session-expired login like every other panel; the second says
                it failed, in the list, instead of saying nobody played. */
             if (err && err.status === 401) { lockOut(); return; }
+            if (seq !== dailySeq) return;
             dailyPlayers = [];
             dailyDetail = null;
             dailyFailed = (err && err.message) || "Couldn't load the daily games.";
@@ -8464,7 +8563,7 @@ document.addEventListener("DOMContentLoaded", () => {
            taken. A reset has two halves and only one of them has happened
            by the time this appears — a line that says so is the difference
            between a control you trust and one you press twice. */
-        if (dailyNote) {
+        if (dailyNote && dailyNoteFor === String(dailyDetail.id)) {
             const note = document.createElement("p");
             note.className = "admin-daily-note";
             note.textContent = dailyNote;
@@ -8506,14 +8605,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 cancel.textContent = "Call it off";
                 cancel.addEventListener("click", async () => {
                     cancel.disabled = true;
+                    // Held, as the reset below holds it: by the time the
+                    // answer is back another player may be picked.
+                    const playerId = dailyDetail.id;
                     try {
-                        await Api.cancelDailyReset(adminToken, dailyDetail.id, game.key);
+                        await Api.cancelDailyReset(adminToken, playerId, game.key);
                         dailyNote = "Reset called off — they keep today as it stands.";
+                        dailyNoteFor = String(playerId);
                     } catch (err) {
                         if (err.status === 401) { lockOut(); return; }
                         await sayProblem(err.message || "Could not call that off — try again.");
                     }
-                    loadDaily(dailyDetail.id);
+                    // Whoever is picked now, not necessarily this player.
+                    loadDaily(dailyPicked || playerId);
                 });
                 actions.appendChild(cancel);
             } else {
@@ -8547,11 +8651,12 @@ document.addEventListener("DOMContentLoaded", () => {
                         dailyNote = out.scoreRowsDeleted
                             ? "Scored row for today deleted. Their saved day clears the next time they open the game."
                             : "Waiting: their saved day clears the next time they open the game.";
+                        dailyNoteFor = String(playerId);
                     } catch (err) {
                         if (err.status === 401) { lockOut(); return; }
                         await sayProblem(err.message || "Could not reset that — try again.");
                     }
-                    loadDaily(playerId);
+                    loadDaily(dailyPicked || playerId);
                 });
                 actions.appendChild(reset);
             }

@@ -1,7 +1,7 @@
 /* /.netlify/functions/contributors — CRUD API for the console modal's
    Contributors page. Mirrors rooms.js/events.js. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { isAuthorized, canWrite, refuseWrite, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
+const { isAuthorized, hasAccount, canWrite, refuseWrite, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson } = require("./_cache");
 
@@ -111,6 +111,17 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === "GET") {
         try {
+            /* ?full=1 only for an admin account (3 Oct 2026), as dead-ends.js
+               and picks.js gate theirs: anybody could ask for it, and it
+               skipped the edge and read the whole collection every time.
+               Without one it is sent to the plain address, which the edge
+               answers. Redirected rather than answered here, because a
+               cached copy filed under ?full=1 is what an admin's own ?full=1
+               would then be handed — the edge does not look at the token. */
+            const full = (event.queryStringParameters || {}).full === "1";
+            if (full && !(await hasAccount(event))) {
+                return { statusCode: 302, headers: { ...SECURITY_HEADERS, "Cache-Control": "no-store", Location: "/.netlify/functions/contributors" }, body: "" };
+            }
             const all = await contributors.find({}, { projection: { _id: 0 } }).toArray();
             /* Through the edge, as rooms and events are (2 Oct 2026). This
                went to Mongo on every open of the console's Contributors page
@@ -119,10 +130,12 @@ exports.handler = async (event) => {
                which stays uncached exactly as before, so an admin reading
                the list straight after a save reads the truth. Keyed on
                `full` alone, so a random parameter is not a way past it. */
-            if ((event.queryStringParameters || {}).full === "1") return json(200, all);
+            if (full) return json(200, all);
             return cachedJson(event, all, { vary: "full" });
         } catch (e) {
             console.error("contributors: read failed", e);
+            // A token whose account could not be looked up: retry, not 401.
+            if (isAuthUnavailable(e)) return AUTH_UNAVAILABLE;
             return json(503, { error: "The contributors could not be read just now." });
         }
     }

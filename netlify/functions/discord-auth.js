@@ -43,6 +43,8 @@ const { SECURITY_HEADERS } = require("./_headers");
 const { publicIdOf } = require("./_publicid");
 // Bans on `me` and at sign-in, and the network code (29 Sept 2026).
 const { banFor, netHashFor } = require("./_bans");
+// The Habbo name as the nickname, from OriginsBot (3 Oct 2026).
+const originsBot = require("./_originsbot");
 
 const STATE_COOKIE = "mr_oauth";
 const STATE_TTL = 10 * 60;                 // ten minutes to finish a login
@@ -240,6 +242,8 @@ function banView(ban, player) {
 const NET_HASH_REFRESH_MS = 24 * 60 * 60 * 1000;
 // How long `me` waits for that write — see meReply.
 const NET_HASH_WAIT_MS = 1000;
+// And for an OriginsBot lookup and what it writes — see meReply.
+const ORIGINSBOT_WAIT_MS = 4000;
 function netHashUpdate(event, row) {
     const netHash = netHashFor(event);
     if (!netHash) return null;
@@ -268,7 +272,7 @@ async function meReply(event) {
        null means the read worked and there is no row, which for a session
        carrying a session version means it was revoked (sessionRevoked in
        _player.js), and a database blink must never read as that. */
-    const [banned, row] = db ? await Promise.all([
+    let [banned, row] = db ? await Promise.all([
         banFor(db, event, player ? player.id : null),
         player
             ? db.collection("players").findOne({ id: player.id }, { projection: { _id: 0 } }).catch(() => undefined)
@@ -282,6 +286,26 @@ async function meReply(event) {
         return json(200, { player: null, ban: banView(banned, null) }, { "Set-Cookie": clearCookie() });
     }
     const ban = banView(banned, player);
+    /* THE HABBO NAME (3 Oct 2026; see _originsbot.js): once a week per
+       player, OriginsBot is asked for it, and a name it gives becomes the
+       nickname. Not for a banned visitor. Bounded by the lookup's own
+       2.5-second deadline, inside the page's ten; when the nickname changed
+       the row is read again, so the fresh cookie below carries it. */
+    /* Held for ORIGINSBOT_WAIT_MS at most (3 Oct 2026): the lookup has its
+       own 2.5 seconds, but taking a name from another player then renames
+       both players' board rows, and on a slow cluster that is more than
+       this answer should wait for. Past it, `me` answers as it stands; the
+       work finishes on its own, and the next page load reads the result. */
+    if (row && !banned && originsBot.due(row)) {
+        let timer;
+        const changed = await Promise.race([
+            originsBot.refresh(db, row),
+            new Promise(resolve => { timer = setTimeout(() => resolve(false), ORIGINSBOT_WAIT_MS); })
+        ]).finally(() => clearTimeout(timer));
+        if (changed) {
+            row = await db.collection("players").findOne({ id: player.id }, { projection: { _id: 0 } }).catch(() => row) || row;
+        }
+    }
     if (row) {
         const fresh = netHashUpdate(event, row);
         if (fresh) {
@@ -597,6 +621,13 @@ exports.handler = async (event) => {
                 },
                 { upsert: true }
             );
+            /* The Habbo name from OriginsBot (3 Oct 2026; see _originsbot.js),
+               before the row is read for the session, so a first sign-in's
+               cookie already carries it and the nickname prompt is never
+               offered to somebody who has one. At most 2.5 seconds; a
+               lookup that fails leaves the sign-in exactly as it was. */
+            const full = await players.findOne({ id: player.id }, { projection: { _id: 0 } });
+            if (full && originsBot.due(full)) await originsBot.refresh(db, full);
             let row = await players.findOne({ id: player.id }, { projection: { _id: 0, nick: 1, nickAsked: 1, sv: 1 } });
             /* A row from before session versions (30 Sept 2026; see SESSION
                VERSIONS in _player.js) is given one now — only if it still
