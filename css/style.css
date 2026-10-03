@@ -9370,6 +9370,13 @@ body[data-page="admin"] .search-box input {
        every piece of text on one line instead. */
     .site-header { flex-wrap: wrap; row-gap: 4px; }
     .header-events { max-width: 100%; width: 100%; text-align: left; }
+    /* The widest upcoming event's width, measured by js/site.js, so the
+       ticker is beside the brand for every event or below it for every
+       event — never hopping between the two as it turns (3 Oct 2026).
+       The group is held to the header's width so a title too long even
+       for a row of its own still ellipsises rather than overflowing. */
+    .header-events-group { min-width: 0; max-width: 100%; }
+    .header-events { width: var(--header-events-fit, 100%); }
     /* Even with the header itself free to wrap, .brand-group's own pills
        (Discord, Admin, and now up to 2 notice pills at once) could still
        outgrow the row alongside "MAZE RATS" itself. Wrapping this row too
@@ -12417,6 +12424,101 @@ body[data-page="admin"] #activity-sessions {
     }
 }
 
+/* --- the spotlight tab (3 Oct 2026) -------------------------------------
+
+   A second drawer under MENU, the same object doing the same thing (see
+   wireSpotlight in js/home.js): a spine, and a panel to its left that is
+   pulled out from behind the window. The panel here is the spotlight card,
+   the landing page's picture frame (.welcome-promo) set in the menu's cream
+   card, so the thing that slides out is the card itself.
+
+   Under MENU by the menu spine's own height (52px) and a gap. Wider than
+   the menu when the margin allows it, since a picture at 164px is a stamp:
+   up to 280px, and never more than fits beside the window — the same
+   arithmetic as --menu-w, done live. */
+.archive-stack {
+    --spot-top: calc(var(--spine-top) + 60px);
+    --spot-w: clamp(164px, calc((100vw - 538px) / 2 - 40px), 280px);
+}
+
+/* .side-drawer's display: flex beats the browser's own [hidden] rule. */
+.side-drawer[hidden] { display: none; }
+
+.side-drawer--spotlight { top: var(--spot-top); }
+
+/* The phone's mark, off above 900px (where the word says it). A star cut
+   from a square of the spine's ink, so it follows hover like the burger. */
+.side-spine-star {
+    display: none;
+    width: 13px;
+    height: 13px;
+    background: currentColor;
+    clip-path: polygon(50% 0%, 62% 36%, 100% 36%, 69% 58%, 81% 96%, 50% 73%, 19% 96%, 31% 58%, 0% 36%, 38% 36%);
+}
+.side-drawer--spotlight.is-open { transform: translateX(var(--spot-w)); }
+
+.spotlight-card {
+    flex: 0 0 auto;
+    width: var(--spot-w);
+    padding: 6px;
+    background: #c9ad84;
+    border: 1px solid var(--chrome-border);
+    border-radius: 5px 0 0 5px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    visibility: hidden;
+    transition: visibility 0s linear 0.34s;
+}
+.side-drawer--spotlight.is-open .spotlight-card {
+    visibility: visible;
+    pointer-events: auto;
+    transition-delay: 0s;
+}
+
+/* The landing page's frame, smaller: its 8px corners and 1px lit edge
+   were drawn for a picture three times this size. */
+.spotlight-frame {
+    position: relative;
+    display: grid;
+    aspect-ratio: 957 / 487;
+    border: 1px solid var(--chrome-border);
+    border-radius: 4px;
+    overflow: hidden;
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+    background: #120c07;
+    line-height: 0;
+    transition: border-color 0.12s ease-out;
+}
+.spotlight-frame::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    border-radius: inherit;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 248, 236, 0.22),
+        inset 1px 0 0 rgba(255, 248, 236, 0.22);
+}
+.spotlight-frame:hover,
+.spotlight-frame:has(.welcome-promo-slide:focus-visible) {
+    border-color: var(--amber);
+}
+.spotlight-frame:has(.welcome-promo-slide:focus-visible) {
+    outline: 2px solid var(--amber-bright);
+    outline-offset: 2px;
+}
+/* At this width a one-line caption ends in "…" before it has said
+   anything, so here it may take two. */
+.spotlight-frame .welcome-promo-cta {
+    white-space: normal;
+    padding: 14px 8px 5px;
+    line-height: 1.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spotlight-card { transition: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .side-drawer,
     .modal-actions-drawer,
@@ -12573,6 +12675,45 @@ body[data-page="admin"] #activity-sessions {
     }
 
     .side-drawer.is-open .side-menu { display: flex; }
+
+    /* The spotlight's tab: the burger's mirror image, a square at the
+       titlebar's LEFT end. The word was tried beside the burger first and
+       ran into the window's centred title at 375px (and there are 55px
+       less at 320) — so a star, the shape of "featured", with its card
+       dropping from the left as the menu's drops from the right. */
+    .archive-stack { --spot-w: min(300px, calc(100vw - 48px)); }
+    .side-drawer--spotlight {
+        top: var(--spine-top);
+        left: 14px;
+        right: auto;
+    }
+    .side-drawer--spotlight.is-open { transform: none; }
+    .side-spine--spotlight {
+        height: var(--spine-w);
+        border-radius: 5px;
+        position: relative;
+    }
+    .side-spine--spotlight .side-spine-arrow { display: none; }
+    .side-spine--spotlight .side-spine-star { display: block; }
+    /* The same 44px reach as the burger, for the same reason. */
+    .side-spine--spotlight::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 44px;
+        height: 44px;
+        transform: translate(-50%, -50%);
+    }
+    .spotlight-card {
+        position: absolute;
+        top: calc(var(--spine-w) + 8px);
+        left: 0;
+        border-radius: 5px;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.7);
+        display: none;
+    }
+    .side-drawer--spotlight.is-open .spotlight-card { display: block; }
 }
 
 /* ---------- the game window ---------- */

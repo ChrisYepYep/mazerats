@@ -1913,14 +1913,23 @@ function Read-Tail([string]$path, [ref]$cursor) {
         $sl = [System.IO.File]::Open($path, "Open", "Read", "ReadWrite")
         try {
             if ($sl.Length -le $cursor.Value) { return @() }
-            [void]$sl.Seek($cursor.Value, "Begin")
+            <# Never more than the last 64 KB. The pane keeps 200 lines, but
+               this runs on the UI thread, and a console opened onto a day's
+               leftover log (60,000 lines of "Response with status 405") read
+               every byte of it on the first tick — long enough for Windows to
+               call the window hung and close it, every time it was opened. #>
+            $from = [math]::Max($cursor.Value, $sl.Length - 65536)
+            [void]$sl.Seek($from, "Begin")
             $r = New-Object System.IO.StreamReader($sl)
             $fresh = $r.ReadToEnd()
+            # Started mid-file: the first line is a fragment, so drop it.
+            if ($from -gt $cursor.Value) { $fresh = $fresh.Substring($fresh.IndexOf("`n") + 1) }
             $cursor.Value = $sl.Length
         } finally { $sl.Dispose() }
     } catch { return @() }
 
-    $out = @()
+    # A List, not $out += — that copies the whole array once per line.
+    $out = New-Object System.Collections.Generic.List[string]
     foreach ($line in ($fresh -split "`r?`n")) {
         # Netlify colours everything and draws a box around its banner;
         # neither survives being painted as plain text.
@@ -1930,7 +1939,7 @@ function Read-Tail([string]$path, [ref]$cursor) {
         $clean = To-Ascii $clean
         if ($clean.Length -eq 0) { continue }
         if ($clean.Length -gt 120) { $clean = $clean.Substring(0, 117) + "..." }
-        $out += $clean
+        $out.Add($clean)
     }
     return $out
 }

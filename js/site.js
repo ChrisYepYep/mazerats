@@ -856,6 +856,49 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     writeSlide(showing);
 
+    /* AS WIDE AS THE WIDEST EVENT, on a phone (3 Oct 2026).
+
+       Under 640px the header may wrap, and the widget used to be as wide as
+       whichever title it was showing. So at some widths a short title fitted
+       beside MAZE RATS and a long one did not, and the ticker hopped between
+       the brand's row and a row of its own every ten seconds, pulling the
+       page up and down with it. Every upcoming event is measured, offstage,
+       and the widest sets the width: if any one cannot fit beside the
+       brand, the ticker is on its own line for all of them.
+
+       Above 640px the CSS ignores the variable (the widget is a fixed
+       200px there and the header never wraps). Measured again when the list
+       changes, when the window does, and once the fonts are in, since a
+       title measured in the fallback face is the wrong width. */
+    let fitFor = "";
+    function fitWidth(force) {
+        const key = upcoming.map(e => e.id + "|" + e.title + "|" + e.date).join("\n");
+        if (!force && key === fitFor) return;
+        fitFor = key;
+        const stage = widget.cloneNode(true);
+        stage.removeAttribute("id");
+        stage.querySelectorAll("[id]").forEach(el => el.removeAttribute("id"));
+        stage.setAttribute("aria-hidden", "true");
+        stage.style.cssText = "display:block;position:absolute;left:-9999px;top:0;visibility:hidden;width:max-content;max-width:none;";
+        const stageSlide = stage.querySelector(".header-events-slide");
+        widget.parentNode.appendChild(stage);
+        let widest = 0;
+        for (const event of (upcoming.length ? upcoming : [null])) {
+            stageSlide.innerHTML = slideMarkup(event);
+            stageSlide.querySelectorAll(".header-events-title, .header-events-when").forEach(el => { el.style.overflow = "visible"; });
+            widest = Math.max(widest, stage.getBoundingClientRect().width);
+        }
+        stage.remove();
+        widget.style.setProperty("--header-events-fit", Math.ceil(widest) + 1 + "px");
+    }
+    fitWidth(true);
+    let refit = 0;
+    window.addEventListener("resize", () => {
+        cancelAnimationFrame(refit);
+        refit = requestAnimationFrame(() => fitWidth(true));
+    });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => fitWidth(true));
+
     /* HELD STILL while somebody is pointing at it or has tabbed into it.
        It used to turn over every ten seconds regardless, so a reader halfway
        through a title lost it, and a keyboard user who had tabbed onto the
@@ -883,6 +926,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // something to rotate.
     setInterval(() => {
         upcoming = currentUpcoming();
+        fitWidth(false);
         const at = showing ? upcoming.indexOf(showing) : -1;
         // Nothing to rotate through: settle on whatever is true now
         // without an animation, and only touch the DOM if it changed.

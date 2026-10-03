@@ -41,13 +41,29 @@
     try {
         if (window.MazeErrors) return;             // loaded twice: the first copy has it
         var nav = window.navigator || {};
-        if (nav.globalPrivacyControl === true) {
+        if (nav.globalPrivacyControl === true || robot(nav)) {
             window.MazeErrors = noop;
             return;
         }
         install(nav);
     } catch (e) {
         try { if (!window.MazeErrors) window.MazeErrors = noop; } catch (e2) { /* nothing more to do */ }
+    }
+
+    /* A machine, not a visitor (3 Oct 2026). A crawler calling itself
+       "Chrome 138, Android 10" on a 400x400 screen, with no pointer and no
+       touch, loaded the landing page with pictures switched off and filed
+       every one of them as a failure. The server's "Bot" label only reads
+       the user agent, which said nothing. Automation says so itself in
+       navigator.webdriver; failing that, a phone with no touch and no
+       pointer is not a phone anybody is holding. */
+    function robot(nav) {
+        try {
+            if (nav.webdriver === true) return true;
+            var phone = /Android|iPhone|iPad|iPod/i.test(nav.userAgent || "");
+            var pointless = window.matchMedia && window.matchMedia("(any-pointer: none)").matches;
+            return phone && nav.maxTouchPoints === 0 && !!pointless;
+        } catch (e) { return false; }
     }
 
     function install(nav) {
@@ -96,6 +112,8 @@
         var busy = false;
         // Set by pagehide: see the network-failure hold in the fetch watcher.
         var leaving = false;
+        // Every pagehide, ever: `leaving` alone is put back by pageshow.
+        var hides = 0;
         var LEAVE_GRACE_MS = 1500;
 
         /* ---------------------------------------------------- small helpers */
@@ -609,7 +627,7 @@
                 if (document.visibilityState === "hidden") flush(true);
             } catch (x) { /* never */ }
         });
-        window.addEventListener("pagehide", function () { leaving = true; safe(flush, true); });
+        window.addEventListener("pagehide", function () { leaving = true; hides++; safe(flush, true); });
         // Back from the back/forward cache: the page is in use again.
         window.addEventListener("pageshow", function () { leaving = false; });
 
@@ -652,7 +670,7 @@
                                 /* An abort is somebody's decision (a leash, a
                                    newer request), and a request made while
                                    offline was always going to fail. */
-                                if (aborted || nav.onLine === false) return;
+                                if (aborted || nav.onLine === false || leaving) return;
                                 /* Somebody else's host failing is theirs,
                                    the same as for a failed picture above
                                    (29 Sept 2026): counted, not sent. */
@@ -682,8 +700,17 @@
                                    the tab was still visible or online, and
                                    crumbs from after it. */
                                 try { failure.env = environment(); } catch (x) { /* capture takes its own */ }
+                                /* Any pagehide since, not just "leaving now"
+                                   (3 Oct 2026). Safari keeps a page it leaves
+                                   in its back/forward cache with this timer
+                                   frozen; Back brings it out, pageshow clears
+                                   `leaving`, and the timer finishes — so a
+                                   visitor who pressed Enter, then came back
+                                   three minutes later, filed the same
+                                   cancelled "rooms" request after all. */
+                                var hidesThen = hides;
                                 setTimeout(function () {
-                                    try { if (!leaving) capture("fetch", failure); } catch (x) { /* never */ }
+                                    try { if (!leaving && hides === hidesThen) capture("fetch", failure); } catch (x) { /* never */ }
                                 }, LEAVE_GRACE_MS);
                             } catch (x) { /* never */ }
                         });

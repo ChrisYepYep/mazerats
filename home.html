@@ -694,6 +694,28 @@
                     </button>
                 </div>
 
+                <!-- THE SPOTLIGHT (3 Oct 2026, the owner's): the landing
+                     page's event spotlight, on the archive too. A second tab
+                     under MENU, built the same way, and what it pulls out
+                     from behind the window is the spotlight card itself —
+                     the card is the panel. Ships hidden: js/home.js shows it
+                     only while an event is in its spotlight window, the same
+                     rule the landing page uses. On a phone the tab moves onto
+                     the titlebar's left end, the burger's mirror image, and
+                     the card drops from it as the menu's panel does. -->
+                <div class="side-drawer side-drawer--spotlight" id="spotlight-drawer" hidden>
+                    <div class="spotlight-card" id="spotlight-card" role="region" aria-label="Event spotlight"></div>
+                    <button type="button" class="side-spine side-spine--spotlight" id="spotlight-spine"
+                            aria-expanded="false" aria-controls="spotlight-card"
+                            aria-label="Spotlight: the event in the spotlight">
+                        <span class="side-spine-label" aria-hidden="true">Spotlight</span>
+                        <span class="side-spine-arrow" aria-hidden="true">&#9654;</span>
+                        <!-- Phones only, in place of the word: see
+                             .side-spine-star in css/style.css. -->
+                        <span class="side-spine-star" aria-hidden="true"></span>
+                    </button>
+                </div>
+
             <div class="chrome-window" id="browse-window" tabindex="-1">
                 <img class="window-peek-rat" src="assets/img/rat_peek.png" alt="" aria-hidden="true">
                 <div class="chrome-titlebar">

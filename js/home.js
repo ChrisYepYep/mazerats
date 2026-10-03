@@ -9576,6 +9576,207 @@ document.addEventListener("DOMContentLoaded", () => {
 
     })();
 
+    /* THE SPOTLIGHT TAB (3 Oct 2026, the owner's). The landing page's
+       spotlight (showSpotlight in js/welcome.js) had nowhere on the archive,
+       so it gets a tab of its own under MENU, and the card is what the tab
+       pulls out. Which events, and when, is the landing page's rule exactly:
+       ticked in the Warren, with a thumbnail that loads, inside their
+       spotlight dates — rechecked every 20 seconds, so the tab goes the
+       moment the last one's window closes. Several take turns while the card
+       is out, held while it is pointed at or focused, with dots to pick one
+       (which stops the turns, as there).
+
+       A slide links to the event's own address, which the click handler
+       further down opens in place. The two drawers are never out at once:
+       a press anywhere outside one closes it, and each spine is outside the
+       other's drawer. */
+    (function wireSpotlight() {
+        const drawer = document.getElementById("spotlight-drawer");
+        const spine = document.getElementById("spotlight-spine");
+        const card = document.getElementById("spotlight-card");
+        if (!drawer || !spine || !card || typeof Api === "undefined") return;
+
+        const TURN_MS = 7000;
+        const RECHECK_MS = 20000;
+        const DEFAULT_CAPTION = "Click for more details.";
+        const reduced = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+        const broken = new Set();
+        let events = null;
+        let key = "";
+        let index = 0;
+        let turn = null;
+        let paused = false;
+        let pointer = false;
+        let focused = false;
+
+        const time = v => {
+            const t = typeof v === "string" && v ? Date.parse(v) : NaN;
+            return isNaN(t) ? null : t;
+        };
+        const thumb = ev => [ev.thumb, ev.thumbnail, ev.image].find(v => typeof v === "string" && v) || "";
+        const live = (ev, now) => {
+            if (!ev || ev.spotlight !== true || !ev.id || !thumb(ev) || broken.has(ev.id)) return false;
+            const from = time(ev.spotlightFrom), until = time(ev.spotlightUntil);
+            return (from === null || from <= now) && (until === null || now < until);
+        };
+        const isOpen = () => drawer.classList.contains("is-open");
+        const slides = () => [...card.querySelectorAll(".welcome-promo-slide")];
+
+        function setOpen(open) {
+            drawer.classList.toggle("is-open", open);
+            spine.setAttribute("aria-expanded", open ? "true" : "false");
+            // Out of the tab order while it is behind the window, as the menu is.
+            card.toggleAttribute("inert", !open);
+            schedule();
+        }
+        card.setAttribute("inert", "");
+
+        function slide(ev) {
+            const a = document.createElement("a");
+            a.className = "welcome-promo-slide";
+            a.href = window.RecordAddress.of("event", ev);
+            a.dataset.id = ev.id;
+            const caption = (typeof ev.spotlightCaption === "string" && ev.spotlightCaption.trim()) || DEFAULT_CAPTION;
+            a.setAttribute("aria-label", `${ev.title || "Event"}: ${caption}`);
+            const img = document.createElement("img");
+            img.className = "welcome-promo-img";
+            img.alt = "";
+            img.decoding = "async";
+            img.addEventListener("error", () => {
+                broken.add(ev.id);
+                draw();
+            }, { once: true });
+            img.src = imgCdn(thumb(ev), 640, null, 80);
+            const cta = document.createElement("span");
+            cta.className = "welcome-promo-cta";
+            cta.textContent = caption;
+            if (/^#[0-9a-f]{6}$/i.test(ev.spotlightColour || "")) cta.style.color = ev.spotlightColour;
+            a.append(img, cta);
+            // Closed before the event window opens over it, focus parked on
+            // the spine first so that window has somewhere to hand it back.
+            a.addEventListener("click", () => {
+                spine.focus({ preventScroll: true });
+                setOpen(false);
+            });
+            return a;
+        }
+
+        function show(i) {
+            const all = slides();
+            if (!all.length) return;
+            index = ((i % all.length) + all.length) % all.length;
+            all.forEach((s, n) => {
+                const on = n === index;
+                s.classList.toggle("is-shown", on);
+                s.tabIndex = on ? 0 : -1;
+                s.setAttribute("aria-hidden", on ? "false" : "true");
+            });
+            card.querySelectorAll(".welcome-promo-dot").forEach((d, n) => {
+                d.classList.toggle("is-on", n === index);
+                if (n === index) d.setAttribute("aria-current", "true");
+                else d.removeAttribute("aria-current");
+            });
+        }
+
+        // Turns only while the card is out: nobody is watching it behind the window.
+        function schedule() {
+            clearTimeout(turn);
+            if (!isOpen() || paused || slides().length < 2 || (reduced && reduced.matches)) return;
+            turn = setTimeout(() => {
+                const covered = !!document.querySelector(".modal-overlay.open");
+                if (!pointer && !focused && !covered && !document.hidden) show(index + 1);
+                schedule();
+            }, TURN_MS);
+        }
+
+        async function draw() {
+            if (!events) events = Api.getEvents().catch(() => []);
+            const list = await events;
+            const now = Date.now();
+            const on = (Array.isArray(list) ? list : [])
+                .filter(ev => live(ev, now))
+                .sort((a, b) => (time(a.spotlightFrom) || 0) - (time(b.spotlightFrom) || 0)
+                    || String(a.title || "").localeCompare(String(b.title || "")));
+            const next = JSON.stringify(on.map(ev => [ev.id, thumb(ev), ev.spotlightCaption || "", ev.spotlightColour || "", ev.title || "", ev.slug || ""]));
+            if (!on.length) {
+                if (isOpen()) setOpen(false);
+                drawer.hidden = true;
+                card.replaceChildren();
+                key = "";
+                focused = false;
+                clearTimeout(turn);
+                return;
+            }
+            if (next !== key) {
+                const was = card.querySelector(".welcome-promo-slide.is-shown");
+                const wasId = was ? was.dataset.id : "";
+                const hadFocus = card.contains(document.activeElement);
+                const frame = document.createElement("div");
+                frame.className = "spotlight-frame";
+                frame.append(...on.map(slide));
+                if (on.length > 1) {
+                    const dots = document.createElement("span");
+                    dots.className = "welcome-promo-dots";
+                    on.forEach((ev, i) => {
+                        const d = document.createElement("button");
+                        d.type = "button";
+                        d.className = "welcome-promo-dot";
+                        d.setAttribute("aria-label", `Show spotlight ${i + 1} of ${on.length}`);
+                        d.addEventListener("click", () => {
+                            paused = true;
+                            clearTimeout(turn);
+                            show(i);
+                        });
+                        dots.appendChild(d);
+                    });
+                    frame.appendChild(dots);
+                }
+                card.replaceChildren(frame);
+                key = next;
+                const keep = on.findIndex(ev => ev.id === wasId);
+                show(keep >= 0 ? keep : 0);
+                if (hadFocus && keep >= 0) {
+                    const shown = card.querySelector(".welcome-promo-slide.is-shown");
+                    if (shown) shown.focus({ preventScroll: true });
+                }
+                focused = card.contains(document.activeElement);
+                schedule();
+            }
+            drawer.hidden = false;
+        }
+
+        card.addEventListener("pointerenter", () => { pointer = true; });
+        card.addEventListener("pointerleave", () => { pointer = false; });
+        card.addEventListener("focusin", () => { focused = true; });
+        card.addEventListener("focusout", e => { if (!card.contains(e.relatedTarget)) focused = false; });
+        if (reduced && typeof reduced.addEventListener === "function") reduced.addEventListener("change", schedule);
+
+        // No stopPropagation here: the menu's own outside-click closer is
+        // what puts the menu away when this tab is pressed.
+        spine.addEventListener("click", () => {
+            const open = !isOpen();
+            setOpen(open);
+            if (open) {
+                const shown = card.querySelector(".welcome-promo-slide.is-shown");
+                if (shown) shown.focus({ preventScroll: true });
+            }
+        });
+
+        // Capture phase, because the menu's spine stops its click from
+        // bubbling — and pressing it has to put this card away too.
+        document.addEventListener("click", e => {
+            if (isOpen() && !drawer.contains(e.target)) setOpen(false);
+        }, true);
+
+        registerEscapeLayer(
+            () => isOpen() ? [drawer] : [],
+            () => { setOpen(false); spine.focus({ preventScroll: true }); }
+        );
+
+        draw();
+        setInterval(draw, RECHECK_MS);
+    })();
+
     // Switches straight to that category, keeping whichever sub-filter was
     // last picked for it (defaulting to the first one) — clicking the
     // already-active button is a no-op rather than toggling back to a
