@@ -12444,7 +12444,24 @@ body[data-page="admin"] #activity-sessions {
 /* .side-drawer's display: flex beats the browser's own [hidden] rule. */
 .side-drawer[hidden] { display: none; }
 
-.side-drawer--spotlight { top: var(--spot-top); }
+.side-drawer--spotlight {
+    top: var(--spot-top);
+    transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s;
+}
+
+/* Out of the way while the menu is out (3 Oct 2026). Both drawers sit at
+   the same depth under the window, and this one comes later in the page,
+   so its tab was painted across the open menu's panel. It slides home
+   behind the window instead, and comes back once the menu has gone.
+   Desktop only: on a phone the two hang from opposite ends of the
+   titlebar and never meet. */
+@media (min-width: 901px) {
+    .archive-stack:has(> #side-drawer.is-open) > .side-drawer--spotlight {
+        transform: translateX(calc(-1 * var(--spine-w)));
+        visibility: hidden;
+        transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0.34s;
+    }
+}
 
 /* The phone's mark, off above 900px (where the word says it). A star cut
    from a square of the spine's ink, so it follows hover like the burger. */
