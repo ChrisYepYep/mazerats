@@ -226,7 +226,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ${head("Mazes")}
             ${line("Completed", `${esc(num(f.done))} / ${esc(num(f.total))}`)}
             <div class="console-profile-bar" role="img" aria-label="${pct}% completed"><span style="width:${pct}%"></span></div>
-            ${line("Saved", esc(num(typeof f.saved === "number" ? f.saved : f.toWalk)))}
+            ${line("To do", esc(num(typeof f.saved === "number" ? f.saved : f.toWalk)))}
             <button type="button" class="console-btn console-profile-btn" data-act="progress">Your Progress</button>`;
     }
 

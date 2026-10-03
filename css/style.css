@@ -14069,6 +14069,45 @@ body[data-page="admin"] #activity-sessions {
     color: #ffffff;
 }
 
+/* COMPLETED TAKES IT OFF THE LIST, VISIBLY (3 Oct 2026; todoFollowsDone in
+   js/home.js). For a moment the button reads "Ticked off" in the
+   Completed button's green, its ribbon gone and its edge dashed like
+   something being let go, and fades; then it is tucked away (.is-done)
+   while the maze stays completed. Not pressable while it says so. */
+/* Filled, not see-through (3 Oct 2026): light green text on a transparent
+   button vanished against the desktop Actions drawer's cream card. It wears
+   the ticked Completed button's own dark green and light text instead, so
+   it reads on the cream and on the phone's dark bar alike, and it stays
+   fully solid for most of its moment before the fade. */
+.saved-toggle.is-clearing,
+.modal-meta-actions .saved-toggle.is-clearing {
+    background: linear-gradient(#3d4b32, #2f3a26);
+    border-style: dashed;
+    border-color: var(--ok);
+    color: #d8e8c6;
+    pointer-events: none;
+    animation: todo-clearing 1.8s ease-in forwards;
+}
+.saved-toggle.is-clearing .saved-toggle-mark { display: none; }
+@keyframes todo-clearing {
+    0%, 80% { opacity: 1; }
+    100% { opacity: 0; }
+}
+.saved-toggle.is-done { display: none; }
+
+/* The phone's action bar sets every label on one line, and this one is
+   longer than a column: it may take two. */
+.modal-actions-bar .saved-toggle.is-clearing .saved-toggle-label {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.25;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .saved-toggle.is-clearing,
+    .modal-meta-actions .saved-toggle.is-clearing { animation: none; }
+}
+
 /* ---------- where a saved maze went ----------
 
    Shown once per browser, the first time anything is saved — see

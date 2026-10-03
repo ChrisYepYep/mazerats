@@ -1969,7 +1969,12 @@ document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll(".walked-toggle[data-walked-id]")
             .forEach(btn => paintWalkedToggle(btn, isWalked(btn.dataset.walkedId)));
         document.querySelectorAll(".saved-toggle[data-saved-id]")
-            .forEach(btn => paintSavedToggle(btn, isSaved(btn.dataset.savedId)));
+            .forEach(btn => {
+                const id = btn.dataset.savedId, saved = isSaved(id);
+                if (!btn.classList.contains("is-clearing")) paintSavedToggle(btn, saved);
+                // Tucked away while completed, as todoFollowsDone leaves it.
+                btn.classList.toggle("is-done", isWalked(id) && !saved && !btn.classList.contains("is-clearing"));
+            });
     }
 
     // Nobody signed in (a sign-out, or a session that has lapsed): the
@@ -2107,6 +2112,60 @@ document.addEventListener("DOMContentLoaded", () => {
         document.querySelectorAll(`.walked-toggle[data-walked-id="${CSS.escape(id)}"]`)
             .forEach(btn => paintWalkedToggle(btn, walked));
         updateWalkedCount();
+        todoFollowsDone(id, walked);
+    }
+
+    /* DONE TAKES IT OFF THE TO DO LIST, AND SAYS SO (3 Oct 2026, the
+       owner's). A maze on both lists used to stay "Saved" on the button
+       while quietly vanishing from the list in Your Progress (savedShown
+       leaves completed ones out), so completing one looked like it had done
+       nothing to the save, and the list looked like it had lost it.
+
+       Now completing really takes it off: the To do button reads "Ticked
+       off" for a moment, then tucks away, since a completed maze
+       has nothing left to do. Un-ticking Completed brings the button back,
+       and puts the maze back on the list if it was Completed that took it
+       off — remembered for this page only, so a slip of the finger costs
+       nothing. A completed maze that was never on the list just has the
+       button tucked away, with no message. */
+    const clearedByDone = new Set();
+    const DONE_NOTE_MS = 1800;
+
+    function todoFollowsDone(id, walked) {
+        const buttons = document.querySelectorAll(`.saved-toggle[data-saved-id="${CSS.escape(id)}"]`);
+        if (walked) {
+            const wasOn = isSaved(id);
+            if (wasOn) {
+                setSaved(id, false, { quiet: true });
+                clearedByDone.add(id);
+            }
+            buttons.forEach(btn => {
+                if (!wasOn) { btn.classList.add("is-done"); return; }
+                const label = btn.querySelector(".saved-toggle-label");
+                /* Short enough for one line in the phone's action bar and the
+                   desktop's Actions drawer, measured (3 Oct 2026): "Done! Off
+                   your list" wrapped in both. "Ticked off" says done and off
+                   the list at once. */
+                if (label) label.textContent = "Ticked off";
+                btn.classList.add("is-clearing");
+                btn.title = "Completed, so it's off your To do list";
+                clearTimeout(btn._doneTimer);
+                btn._doneTimer = setTimeout(() => {
+                    btn.classList.remove("is-clearing");
+                    // Still completed? Tuck it away. Un-ticked meanwhile: leave it be.
+                    if (isWalked(id)) btn.classList.add("is-done");
+                    paintSavedToggle(btn, isSaved(id));
+                }, DONE_NOTE_MS);
+            });
+        } else {
+            const restore = clearedByDone.delete(id);
+            if (restore) setSaved(id, true, { quiet: true });
+            buttons.forEach(btn => {
+                clearTimeout(btn._doneTimer);
+                btn.classList.remove("is-done", "is-clearing");
+                paintSavedToggle(btn, isSaved(id));
+            });
+        }
     }
 
     function paintWalkedToggle(btn, walked) {
@@ -2187,11 +2246,24 @@ document.addEventListener("DOMContentLoaded", () => {
        gave the archive the look of a checklist before anyone had asked for
        one. Marking a maze off belongs where you land after actually walking
        it, which is its own page. */
+    /* A CLOSED maze offers neither Completed nor Save (3 Oct 2026, the
+       owner's): it is gone from the hotel, so it cannot be walked, and
+       there is nothing to save it for — walkableRooms already leaves it out
+       of the count. Only offered, though, not taken away: a maze somebody
+       completed or saved before it closed still shows that button, ticked,
+       so they can take it off their list. Without it there would be no way
+       to. */
+    function closedAndUnticked(n, ticked) {
+        return n.statusKey === "closed" && !ticked;
+    }
+
     function walkedToggleHtml(n) {
         // No Completed on an event, and none on a hallway either: there is
         // nothing in a corridor to have finished.
         if (n.isEvent || !n.id || isHallway(n)) return "";
         const walked = isWalked(n.id);
+        // Nor on a closed maze — see closedAndUnticked.
+        if (closedAndUnticked(n, walked)) return "";
         return `<button type="button" class="walked-toggle${walked ? " is-walked" : ""}" ` +
             `data-walked-id="${escapeHtml(n.id)}" aria-pressed="${walked ? "true" : "false"}" ` +
             `title="${walked ? "Completed. Click to unmark." : "Mark this as completed"}" ` +
@@ -2234,15 +2306,18 @@ document.addEventListener("DOMContentLoaded", () => {
         return !!id && savedIds.has(id);
     }
 
-    function setSaved(id, saved) {
+    function setSaved(id, saved, opts) {
         if (!id) return;
         if (saved) savedIds.add(id);
         else savedIds.delete(id);
         persistSaved();
         noteTick("saved", id, saved);
+        // A press of its own is not one Completed took back (see todoFollowsDone).
+        if (!(opts && opts.quiet)) clearedByDone.delete(id);
         document.querySelectorAll(`.saved-toggle[data-saved-id="${CSS.escape(id)}"]`)
             .forEach(btn => paintSavedToggle(btn, saved));
-        if (saved) tellWhereSavedGo();
+        // Put back by un-ticking Completed: no "where did it go" note for that.
+        if (saved && !(opts && opts.quiet)) tellWhereSavedGo();
     }
 
     /* ---------- the one thing Save never said ----------
@@ -2302,8 +2377,8 @@ document.addEventListener("DOMContentLoaded", () => {
         note.setAttribute("role", "status");
         note.setAttribute("aria-live", "polite");
         note.innerHTML = `
-            <p class="saved-note-text">Saved. It is waiting for you in
-                <strong>Your Progress</strong>, under &ldquo;Saved&rdquo;.</p>
+            <p class="saved-note-text">Added to your To do. It is waiting for you in
+                <strong>Your Progress</strong>, under &ldquo;To do&rdquo;, until you complete it.</p>
             <div class="saved-note-actions">
                 <button type="button" class="saved-note-go">Take me there</button>
                 <button type="button" class="saved-note-close" aria-label="Dismiss">Got it</button>
@@ -2359,12 +2434,21 @@ document.addEventListener("DOMContentLoaded", () => {
         start();
     }
 
+    /* "TO DO", NOT "SAVE" (3 Oct 2026, the owner's). Save said what the
+       button did to the browser, not what it meant to the player, and it
+       sat beside Completed without saying they were one list's two ends.
+       To do and Completed read as a to-do list and its done column. The
+       stored list keeps its old name ("saved") everywhere underneath; only
+       the words a visitor reads changed. */
+    const TODO_LABEL = { on: "On my To do", off: "To do" };
+    const TODO_TITLE = { on: "On your To do list. Click to take it off.", off: "Add this to your To do list" };
+
     function paintSavedToggle(btn, saved) {
         btn.classList.toggle("is-saved", saved);
         btn.setAttribute("aria-pressed", saved ? "true" : "false");
-        btn.title = saved ? "On your list. Click to remove." : "Save this to complete later";
+        btn.title = saved ? TODO_TITLE.on : TODO_TITLE.off;
         const label = btn.querySelector(".saved-toggle-label");
-        if (label) label.textContent = saved ? "Saved" : "Save";
+        if (label) label.textContent = saved ? TODO_LABEL.on : TODO_LABEL.off;
     }
 
     function savedToggleHtml(n) {
@@ -2372,12 +2456,15 @@ document.addEventListener("DOMContentLoaded", () => {
         // nothing in a hallway to finish, there is nothing to save it for.
         if (n.isEvent || !n.id || isHallway(n)) return "";
         const saved = isSaved(n.id);
-        return `<button type="button" class="saved-toggle${saved ? " is-saved" : ""}" ` +
+        if (closedAndUnticked(n, saved)) return "";
+        // Tucked away while the maze is completed — see DONE TAKES IT OFF.
+        const done = isWalked(n.id) && !saved;
+        return `<button type="button" class="saved-toggle${saved ? " is-saved" : ""}${done ? " is-done" : ""}" ` +
             `data-saved-id="${escapeHtml(n.id)}" aria-pressed="${saved ? "true" : "false"}" ` +
-            `title="${saved ? "On your list. Click to remove." : "Save this to complete later"}" ` +
+            `title="${saved ? TODO_TITLE.on : TODO_TITLE.off}" ` +
             `data-track="saved-toggle" data-track-label="${escapeHtml(n.id)}">` +
             `<span class="saved-toggle-mark" aria-hidden="true"></span>` +
-            `<span class="saved-toggle-label">${saved ? "Saved" : "Save"}</span>` +
+            `<span class="saved-toggle-label">${saved ? TODO_LABEL.on : TODO_LABEL.off}</span>` +
             `</button>`;
     }
 
@@ -7935,7 +8022,8 @@ document.addEventListener("DOMContentLoaded", () => {
                you walk it — and Completed stays nearest Share, where it has
                always been. */
             wrap.innerHTML = savedToggleHtml(n) + walkedToggleHtml(n);
-            actions.appendChild(wrap);
+            // A closed maze can have neither (see closedAndUnticked).
+            if (wrap.children.length) actions.appendChild(wrap);
         }
         renderShareButton(n, actions);
         /* A record with nothing to act on — an event with no address to
@@ -8722,7 +8810,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         ? `<span class="progress-saved-closed" title="Closed, so it can't be completed now">Closed</span>`
                         : ""}${escapeHtml(r.creator || "")}</span>
                 </button></li>`).join("")}</ul>`
-            : `<p class="progress-note">Nothing saved yet. Open a maze and press <strong>Save</strong> to keep it here.</p>`;
+            : `<p class="progress-note">Nothing to do yet. Open a maze and press <strong>To do</strong> to keep it here until you complete it.</p>`;
 
         return `
             <section class="progress-head">
@@ -8761,7 +8849,7 @@ document.addEventListener("DOMContentLoaded", () => {
             </section>
 
             <section class="progress-block">
-                <h4 class="progress-head-sm">Saved${f.savedShown.length ? ` <span class="progress-count">${f.savedShown.length}</span>` : ""}</h4>
+                <h4 class="progress-head-sm">To do${f.savedShown.length ? ` <span class="progress-count">${f.savedShown.length}</span>` : ""}</h4>
                 ${savedList}
             </section>`;
     }
@@ -9309,7 +9397,7 @@ document.addEventListener("DOMContentLoaded", () => {
             {
                 name: "Your Progress",
                 state: menuFigure(() => `${f.walkedHere.length} of ${f.walkable.length} completed`
-                    + (f.savedShown.length ? ` · ${f.savedShown.length} saved` : ""), "Completed and saved mazes"),
+                    + (f.savedShown.length ? ` · ${f.savedShown.length} to do` : ""), "Completed mazes and your To do list"),
                 badge: "",
                 on: false,
                 run: openProgress
