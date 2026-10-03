@@ -4773,11 +4773,6 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     outline: 2px solid var(--amber-bright);
 }
 
-[data-theme="witch"] .de-chip.pl-chip-locked {
-    border-color: var(--danger);
-    color: var(--danger-text, var(--danger));
-}
-
 [data-theme="witch"] .de-chip.pl-chip-unasked {
     color: var(--parchment-dim);
 }

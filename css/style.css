@@ -19139,9 +19139,7 @@ body.is-viewer .admin-panel[data-panel="errors"] .se-write { display: none !impo
    buttons rather than the field under it (29 Sept 2026). */
 .pl-review { margin-bottom: 10px; }
 
-.de-chip.pl-chip-locked { border-color: var(--danger); color: var(--danger-text, var(--danger)); }
 .de-chip.pl-chip-unasked { border-style: dashed; color: var(--parchment-dim); }
-.se-row.pl-row.is-locked { border-left: 3px solid var(--danger); }
 
 .pl-side .admin-activity-meta { white-space: nowrap; }
 

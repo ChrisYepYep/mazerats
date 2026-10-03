@@ -3785,6 +3785,34 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    /* AND WHEN THE PICKS THEMSELVES GROW (3 Oct 2026). The panel is sized to
+       the picks' height at the moment it opens, and that height is not
+       final then: a row's thumbnail and its fonts can still be arriving,
+       and each settles the row a few pixels taller. Measured on a 1506x1024
+       window: the panel was capped at the 168px the picks measured on
+       opening, they settled at 216px, and the body scrolled with 400px of
+       room to spare below it — the cut-off rows this whole function exists
+       to prevent. The window-resize listener above never saw it, since
+       nothing about the window moved.
+
+       So the list is watched for its own size, and a change while the panel
+       is open re-runs the sizing on the next frame. It cannot loop: the
+       re-run trims rows (a size change), but the trim settles at the same
+       height every time it is asked about the same rows, and an observer
+       only reports a size that is different from the last one it gave. */
+    if (typeof ResizeObserver === "function") {
+        let featuredGrowFrame = 0;
+        let featuredListHeight = -1;
+        new ResizeObserver(entries => {
+            const h = Math.round(entries[entries.length - 1].contentRect.height);
+            if (h === featuredListHeight) return;
+            featuredListHeight = h;
+            if (!showFeatured || !featuredPanelReady) return;
+            cancelAnimationFrame(featuredGrowFrame);
+            featuredGrowFrame = requestAnimationFrame(() => setFeaturedPanelState(true, true));
+        }).observe(featuredFrameList);
+    }
+
     // Bumped every call and captured by each pending requestAnimationFrame
     // callback below, which bails out if this has moved on by the time it
     // fires — own counter rather than one shared across other animated

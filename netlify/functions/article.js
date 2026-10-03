@@ -37,6 +37,64 @@ const ARTICLE_URL = /^https:\/\/origins\.habbo\.com\/community\/article\/(\d+)(?
    convention as "like Gecko", and there for the same reason. */
 const UA = "Mozilla/5.0 (compatible; MazeRatsBot/1.0; +https://mazerats.net; link-preview like Twitterbot)";
 
+/* THE PRERENDER IS GONE (3 Oct 2026). Every article page now comes back as
+   the bare 6KB shell whatever the user agent — Twitterbot, Discordbot,
+   facebookexternalhit and Googlebot alike — so the import above stopped
+   finding an article for any link, old or new.
+
+   The app itself never used the prerender: it reads each article from a
+   plain file on Habbo's image host, named from the id and the slug
+   (article.service in Habbo's scripts.js: habboWebNewsUrl + "articles/" +
+   id + "_" + slug-with-underscores + ".html"). That file is the same
+   <article> markup extract() already reads, so it is fetched instead. Two
+   parts of it are left for the app to fill in, and are filled in here:
+   the date, an Angular template around a millisecond time (articleDate),
+   and the category, a translation key (CATEGORY_NAMES). The page link is
+   still what the admin pastes and what is stored; only the fetch moves.
+
+   The file needs the slug, so a link with only the id cannot be read. */
+const ARTICLE_FILE = /^https:\/\/images\.habbo\.com\/origins-habbo-web-news\/en\/origins\/articles\/\d+_[A-Za-z0-9_]+\.html$/;
+function articleFileUrl(pageUrl) {
+    const m = /\/community\/article\/(\d+)\/([A-Za-z0-9-]+)\/?$/.exec(pageUrl);
+    return m ? `https://images.habbo.com/origins-habbo-web-news/en/origins/articles/${m[1]}_${m[2].replace(/-/g, "_")}.html` : "";
+}
+
+/* Habbo's own English names for its news categories, from the app's
+   translation file (images.habbo.com/habbo-web-l10n/ous.json). A key not
+   here is spelled out from the key itself. */
+const CATEGORY_NAMES = {
+    NEWS_CATEGORY_SAFETY: "Safety & Security",
+    NEWS_CATEGORY_FANSITES: "Fansites",
+    NEWS_CATEGORY_BAW: "Builders At Work",
+    NEWS_CATEGORY_TECHNICAL_UPDATES: "Habbo Updates",
+    NEWS_CATEGORY_COMPETITIONS: "Competitions & Polls",
+    NEWS_CATEGORY_EVENTS: "Events & Celeb visits",
+    NEWS_CATEGORY_AMBASSADORS: "Ambassadors",
+    NEWS_CATEGORY_FURNITURE_NEWS: "Furni",
+    NEWS_CATEGORY_CREDIT_PROMO: "Special Offers",
+    NEWS_CATEGORY_CAMPAIGNS: "Campaigns",
+    NEWS_CATEGORY_CAMPAIGNS_ACTIVITIES: "Campaigns & Activities",
+    NEWS_CATEGORY_ARTIST_AT_WORK: "Artist at Work"
+};
+function categoryName(key) {
+    if (!key) return "";
+    if (CATEGORY_NAMES[key]) return CATEGORY_NAMES[key];
+    return key.replace(/^NEWS_CATEGORY_/, "").toLowerCase().split("_").filter(Boolean)
+        .map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
+}
+
+/* "{{ 1787726457000 | date: 'mediumDate' }}" as the app would show it,
+   "Aug 26, 2026" — the form every article already stored has. UTC, so the
+   day does not depend on where the function happens to run. Text that is
+   not the template is left as it was. */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function articleDate(text) {
+    const m = /\{\{\s*(\d{10,14})\s*\|\s*date\b[^}]*\}\}/.exec(text || "");
+    if (!m) return text || "";
+    const d = new Date(Number(m[1]));
+    return isNaN(d) ? "" : `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+}
+
 const FETCH_TIMEOUT_MS = 12000;
 
 /* Redirects are followed by hand, and only so far.
@@ -77,7 +135,7 @@ async function fetchArticle(url, signal) {
             } catch (e) {
                 throw refusal("That article link redirects somewhere unreadable.");
             }
-            if (!ARTICLE_URL.test(next)) throw refusal("That article link redirects away from Habbo's articles, so it was not followed.");
+            if (!ARTICLE_URL.test(next) && !ARTICLE_FILE.test(next)) throw refusal("That article link redirects away from Habbo's articles, so it was not followed.");
             // Nothing of the redirect's own body is wanted.
             if (res.body && res.body.cancel) await res.body.cancel().catch(() => {});
             current = next;
@@ -308,8 +366,11 @@ function extract(html, base) {
 
     return {
         title: decodeEntities(plain(firstMatch(article, /<h1[^>]+class="[^"]*\bnews-header__title\b[^"]*"[^>]*>([\s\S]*?)<\/h1>/i))),
-        date: plain(firstMatch(article, /<time[^>]*>([\s\S]*?)<\/time>/i)),
-        category: decodeEntities(plain(firstMatch(article, /<a[^>]+class="[^"]*\bnews-header__category__link\b[^"]*"[^>]*>([\s\S]*?)<\/a>/i))),
+        // The file leaves both of these for the app (see THE PRERENDER IS GONE).
+        date: articleDate(plain(firstMatch(article, /<time[^>]*>([\s\S]*?)<\/time>/i))),
+        category: decodeEntities(plain(firstMatch(article, /<a[^>]+class="[^"]*\bnews-header__category__link\b[^"]*"[^>]*>([\s\S]*?)<\/a>/i)))
+            || categoryName(firstMatch((article.match(/<a\b[^>]*>/gi) || [])
+                .find(tag => /\bnews-header__category__link\b/.test(tag)) || "", /\stranslate="([A-Z0-9_]+)"/i)),
         summary: decodeEntities(plain(firstMatch(article, /<p[^>]+class="[^"]*\bnews-header__summary\b[^"]*"[^>]*>([\s\S]*?)<\/p>/i))),
         image: safeUrl(heroSrc, base),
         body: sanitiseHtml(bodyHtml, base)
@@ -356,6 +417,12 @@ exports.handler = async (event) => {
         return json(400, { error: "That is not a Habbo Origins article link. It should look like https://origins.habbo.com/community/article/1234/its-title" });
     }
 
+    // The article's own file, not the page (see THE PRERENDER IS GONE).
+    const fileUrl = articleFileUrl(url);
+    if (!fileUrl) {
+        return json(400, { error: "That link has no title on the end. Open the article on Habbo's site and copy the full address, like https://origins.habbo.com/community/article/1234/its-title" });
+    }
+
     let html;
     /* The timer covers the whole read — every hop and the body — rather
        than only until the first headers arrived, which is where it used to
@@ -364,7 +431,10 @@ exports.handler = async (event) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-        const res = await fetchArticle(url, controller.signal);
+        const res = await fetchArticle(fileUrl, controller.signal);
+        /* A 404 for the file is a link whose title part has been mistyped
+           or shortened — the id alone does not find it. */
+        if (res.status === 404) return json(404, { error: "Habbo has no article at that address. Check the link is copied in full, title and all, from the article's own page." });
         if (!res.ok) return json(502, { error: "Habbo answered " + res.status + " for that article." });
         html = await readCapped(res);
     } catch (e) {

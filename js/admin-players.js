@@ -747,7 +747,10 @@
         if (bc) out.push(`<span class="de-chip pl-chip-banned${bc.cooling ? " is-cooling" : ""}" title="${escapeHtml(bc.title)}">${escapeHtml(bc.text)}</span>`);
         if (p.nickFlag) out.push(`<span class="de-chip is-marked pl-chip-flagged" title="${escapeHtml("The word filter caught this nickname" + (p.nickFlag.at ? ", " + fmtUtc(p.nickFlag.at) : "") + ". Open the row to Allow or Reject it.")}">${escapeHtml(flagText(p.nickFlag))}</span>`);
         if (p.nickRejected) out.push(`<span class="de-chip de-status-rejected pl-chip-rejected" title="${escapeHtml("Rejected" + (p.nickRejected.by ? " by " + p.nickRejected.by : "") + (p.nickRejected.at ? ", " + fmtUtc(p.nickRejected.at) : "") + " — they're asked to choose another on each visit until they do")}">Asked to change</span>`);
-        if (p.nickLocked) out.push(`<span class="de-chip pl-chip-locked" title="${escapeHtml("Locked" + (p.nickLockedBy ? " by " + p.nickLockedBy : "") + (p.nickLockedAt ? ", " + fmtUtc(p.nickLockedAt) : "") + " — the player can't change it")}">Locked</span>`);
+        /* No "Locked" chip any more (3 Oct 2026, the owner's): a red pill on
+           the row read as something wrong with the account, when all it
+           meant was that the player can't change their own nickname. It is
+           the "Nickname lock" line in the row's detail instead. */
         if (!p.nickAsked) out.push(`<span class="de-chip pl-chip-unasked" title="Hasn't seen the Choose a nickname? window yet — it opens on their next visit">Not asked</span>`);
         return out.join("");
     }
@@ -813,7 +816,7 @@
             const ref = refOf(p);
             const row = document.createElement("div");
             // se-row: the Errors panel's clickable row, border and open state.
-            row.className = "chrome-list-row admin-row se-row pl-row" + (ref === openRef ? " is-open" : "") + (p.nickLocked ? " is-locked" : "") + (Kit && Kit.chip(p.ban, nowMs()) ? " is-banned" : "");
+            row.className = "chrome-list-row admin-row se-row pl-row" + (ref === openRef ? " is-open" : "") + (Kit && Kit.chip(p.ban, nowMs()) ? " is-banned" : "");
             row.dataset.ref = ref;
             row.tabIndex = 0;
             row.setAttribute("role", "button");
@@ -905,7 +908,7 @@
             ["First signed in", `${escapeHtml(fmtUtc(p.joinedAt))}`],
             ["Last signed in", `${escapeHtml(fmtUtc(p.seenAt))}`],
             ["Nickname prompt", p.nickAsked ? "Seen" : "Not yet — it opens on their next visit"],
-            ["Lock", p.nickLocked ? `Locked${p.nickLockedBy ? " by " + escapeHtml(p.nickLockedBy) : ""}${p.nickLockedAt ? ", " + escapeHtml(fmtUtc(p.nickLockedAt)) : ""}` : "Not locked"],
+            ["Nickname lock", p.nickLocked ? `Locked${p.nickLockedBy ? " by " + escapeHtml(p.nickLockedBy) : ""}${p.nickLockedAt ? ", " + escapeHtml(fmtUtc(p.nickLockedAt)) : ""} — they can't change their nickname themselves` : "Not locked — they can change it themselves"],
             // The review (29 Sept 2026; see FLAGGED at the top).
             ["Word filter", p.nickFlag ? `${escapeHtml(flagText(p.nickFlag))}${p.nickFlag.at ? ", " + escapeHtml(fmtUtc(p.nickFlag.at)) : ""}` : "Nothing flagged"],
             ["Review", p.nickRejected
