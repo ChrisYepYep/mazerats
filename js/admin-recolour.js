@@ -245,7 +245,7 @@ window.AdminRecolour = (function () {
         [/\.site-header-notice/, "Header notice bar"], [/\.site-header/, "Header bar"], [/\.header-state-pill/, "Site-state pill"],
         [/a\.header-badge/, "Header link badge"], [/\.header-signin/, "Sign-in button"], [/\.header-events-title/, "Header events link"],
         [/\.site-footer/, "Footer links"], [/\.fellow-fansites/, "Fansite links"], [/\.data-degraded/, "Out-of-date data notice"],
-        [/\.walked-toggle/, "Walked button"], [/\.saved-toggle/, "Saved button"], [/\.saved-note/, "Saved note"],
+        [/\.walked-toggle/, "Walked button"], [/\.saved-toggle/, "Saved button"], [/\.fav-toggle/, "Favourite button"], [/\.saved-note/, "Saved note"],
         [/\.modal-share/, "Share button"], [/\.modal-meta/, "Maze info panel"], [/\.modal-thumb/, "Maze picture"],
         [/\.modal-overlay/, "Dimmed backdrop"], [/\.modal-actions/, "Maze actions bar"], [/\.modal-body|\.modal-top-row/, "Maze window body"],
         [/\.modal/, "Maze window"], [/\.gallery-strip/, "Photo strip"], [/\.gallery-nav/, "Gallery arrows"],

@@ -6659,6 +6659,66 @@ body[data-page="admin"] .admin-contributor-count {
     color: #ffffff;
 }
 
+/* FAVOURITE (4 Oct 2026, the owner's; FAVOURITE in js/home.js): the same
+   small chrome button as its neighbours, in a muted dusty pink (the
+   owner's: to sit with the site's browns), with a heart that
+   is hollow until the maze is their favourite and filled once it is. Its
+   own colours rather than the theme's: no theme file names .fav-toggle,
+   so it is this pink on every theme, on the desktop tab's cream card
+   and the phone's dark bar alike. */
+.modal-meta-actions .fav-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    background: linear-gradient(#583840, #452b31);
+    border: 1px solid #86606a;
+    border-radius: 4px;
+    box-shadow: inset 0 1px 0 rgba(222, 186, 192, 0.18), 0 1px 0 rgba(0, 0, 0, 0.35);
+    color: #e6cfd2;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    cursor: var(--cursor-pointer);
+    transition: background-color 0.12s ease-out, color 0.12s ease-out, border-color 0.12s ease-out;
+}
+
+.modal-meta-actions .fav-toggle:hover,
+.modal-meta-actions .fav-toggle:focus-visible {
+    background: linear-gradient(#66434b, #51343b);
+    border-color: #a07880;
+    color: #f3e4e6;
+}
+
+.modal-meta-actions .fav-toggle.is-fav {
+    background: linear-gradient(#77484f, #5f3940);
+    border-color: #b48a92;
+    color: #f3e4e6;
+}
+
+.modal-meta-actions .fav-toggle.is-fav:hover,
+.modal-meta-actions .fav-toggle.is-fav:focus-visible {
+    background: linear-gradient(#83535a, #6a414a);
+    border-color: #c49ca3;
+}
+
+/* The heart, a 9x8 pixel mask in the button's own colour, as the tick and
+   the ribbon beside it are: an outline, then filled. */
+.fav-toggle-mark {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 9px;
+    height: 8px;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 8' shape-rendering='crispEdges'%3E%3Cpath d='M1 0h2v1h-2zM6 0h2v1h-2zM0 1h1v1h-1zM3 1h1v1h-1zM5 1h1v1h-1zM8 1h1v1h-1zM0 2h1v1h-1zM4 2h1v1h-1zM8 2h1v1h-1zM0 3h1v1h-1zM8 3h1v1h-1zM1 4h1v1h-1zM7 4h1v1h-1zM2 5h1v1h-1zM6 5h1v1h-1zM3 6h1v1h-1zM5 6h1v1h-1zM4 7h1v1h-1z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 8' shape-rendering='crispEdges'%3E%3Cpath d='M1 0h2v1h-2zM6 0h2v1h-2zM0 1h1v1h-1zM3 1h1v1h-1zM5 1h1v1h-1zM8 1h1v1h-1zM0 2h1v1h-1zM4 2h1v1h-1zM8 2h1v1h-1zM0 3h1v1h-1zM8 3h1v1h-1zM1 4h1v1h-1zM7 4h1v1h-1zM2 5h1v1h-1zM6 5h1v1h-1zM3 6h1v1h-1zM5 6h1v1h-1zM4 7h1v1h-1z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+.fav-toggle.is-fav .fav-toggle-mark {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 8' shape-rendering='crispEdges'%3E%3Cpath d='M1 0h2v1h-2zM6 0h2v1h-2zM0 1h4v1h-4zM5 1h4v1h-4zM0 2h9v2h-9zM1 4h7v1h-7zM2 5h5v1h-5zM3 6h3v1h-3zM4 7h1v1h-1z'/%3E%3C/svg%3E");
+            mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 8' shape-rendering='crispEdges'%3E%3Cpath d='M1 0h2v1h-2zM6 0h2v1h-2zM0 1h4v1h-4zM5 1h4v1h-4zM0 2h9v2h-9zM1 4h7v1h-7zM2 5h5v1h-5zM3 6h3v1h-3zM4 7h1v1h-1z'/%3E%3C/svg%3E");
+}
+
 /* Only ever added when the clipboard refuses (see renderShareButton) — the
    address, selected, for copying by hand. */
 .modal-share-fallback {
@@ -6676,7 +6736,8 @@ body[data-page="admin"] .admin-contributor-count {
 @media (prefers-reduced-motion: reduce) {
     .modal-share-btn,
     .modal-meta-actions .saved-toggle,
-    .modal-meta-actions .walked-toggle { transition: none; }
+    .modal-meta-actions .walked-toggle,
+    .modal-meta-actions .fav-toggle { transition: none; }
 }
 
 
@@ -12519,6 +12580,7 @@ body[data-page="admin"] #activity-sessions {
 
 .modal-actions-panel .modal-meta-actions .saved-toggle,
 .modal-actions-panel .modal-meta-actions .walked-toggle,
+.modal-actions-panel .modal-meta-actions .fav-toggle,
 .modal-actions-panel .modal-share-btn {
     justify-content: center;
     width: 100%;
@@ -12584,7 +12646,8 @@ body[data-page="admin"] #activity-sessions {
     .modal-actions-bar .modal-walked { display: contents; }
     .modal-actions-bar .modal-share-btn,
     .modal-actions-bar .saved-toggle,
-    .modal-actions-bar .walked-toggle {
+    .modal-actions-bar .walked-toggle,
+    .modal-actions-bar .fav-toggle {
         flex: 1 1 0;
         min-width: 0;
         flex-direction: column;
@@ -12596,12 +12659,37 @@ body[data-page="admin"] #activity-sessions {
     }
     .modal-actions-bar .modal-share-label,
     .modal-actions-bar .saved-toggle-label,
-    .modal-actions-bar .walked-toggle-label {
+    .modal-actions-bar .walked-toggle-label,
+    .modal-actions-bar .fav-toggle-label {
         font-size: 0.62rem;
         letter-spacing: 0.4px;
         text-transform: uppercase;
         white-space: nowrap;
     }
+
+    /* FOUR TO A ROW once Favourite is there (4 Oct 2026). Measured on a
+       375px phone, a quarter of the bar left 63px for a word, and "On my
+       To do" is 75px and "Completed?" 71px at the size above, so they ran
+       out over the buttons' edges. Closer together, with no letter-spacing,
+       they fit from 400px up; under it the words drop to 0.5rem, which
+       fits "Completed?" down to a 320px phone. A line that still will not
+       fit ("On my To do") takes two rather than spilling. */
+    .modal-actions-bar .modal-meta-actions:has(.fav-toggle) { gap: 4px; }
+    .modal-actions-bar .modal-meta-actions:has(.fav-toggle) .modal-share-btn,
+    .modal-actions-bar .modal-meta-actions:has(.fav-toggle) .modal-walked > button {
+        padding-left: 2px;
+        padding-right: 2px;
+    }
+    .modal-actions-bar .modal-meta-actions:has(.fav-toggle) [class$="-label"] {
+        letter-spacing: 0;
+        white-space: normal;
+        text-align: center;
+        line-height: 1.25;
+    }
+}
+
+@media (max-width: 400px) {
+    .modal-actions-bar .modal-meta-actions:has(.fav-toggle) [class$="-label"] { font-size: 0.5rem; }
 }
 
 /* --- the spotlight tab (3 Oct 2026) -------------------------------------
@@ -20818,3 +20906,87 @@ body.is-viewer #bans-add { display: none !important; }
     }
     .furni-expand-close::after { width: max(100%, 44px); height: max(100%, 28px); }
 }
+
+/* ---- MAZER CARDS (4 Oct 2026, the owner's; js/mazer-card.js) ------------
+   Print Mazer Card on your own profile: the printer's window, the site's
+   own confirm window as wide as what it holds. It stays ONE SIZE from
+   opening to closing (the owner's): the stage is sized by the script for
+   the printer with the whole card out of it, the colour picker sits in
+   the stage, and the buttons' row is there from the start, hidden until
+   the card is out. */
+.mazer-window.confirm-modal {
+    width: auto;
+    max-width: calc(100vw - 24px);
+}
+.mazer-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+/* The window's one line: what to do, what it is doing, what it did. */
+.mazer-lead {
+    /* Its height kept while it has nothing to say, so the window stays put. */
+    min-height: 1.6em;
+    margin: 0 0 10px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    line-height: 1.6;
+    text-align: center;
+    white-space: nowrap;
+}
+
+/* The printer and its card are drawn on the scene; the picker is laid
+   over it. Each slides in and out of the stage, which cuts them off. */
+.mazer-stage {
+    position: relative;
+    overflow: hidden;
+}
+.mazer-scene {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    image-rendering: pixelated;
+}
+.mazer-picker {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.mazer-pick-head { margin-bottom: 8px; }
+.mazer-swatches {
+    display: flex;
+    gap: 4px;
+}
+
+/* Six squares of 14x14 (the owner's size), each in an 18px button; the
+   paper colour inside the card's own 1px black line. */
+.mazer-swatch {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: 0;
+    cursor: var(--cursor-pointer);
+}
+.mazer-swatch span {
+    display: block;
+    box-sizing: border-box;
+    width: 14px;
+    height: 14px;
+    border: 1px solid #000;
+}
+.mazer-swatch:hover span,
+.mazer-swatch:focus-visible span { outline: 1px solid var(--parchment); outline-offset: 1px; }
+.mazer-swatch:focus { outline: none; }
+
+/* Kept in the layout while the card prints, so the window never grows. */
+.mazer-actions { margin-top: 12px; }
+.mazer-actions[data-ready="0"] { visibility: hidden; }
+.mazer-actions [hidden] { display: none; }

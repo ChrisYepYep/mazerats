@@ -1379,6 +1379,8 @@
                             <button type="button" class="console-btn profile-back" id="profile-back" hidden>My profile</button>
                             <!-- Only on your own, signed in: the console's Edit Profile. -->
                             <button type="button" class="console-btn profile-back" id="profile-edit" data-profile-act="edit" hidden>Edit Profile</button>
+                            <!-- And under it, a Mazer Card of your own (js/mazer-card.js). -->
+                            <button type="button" class="console-btn profile-back" id="profile-mazer" data-profile-act="mazer" hidden>Print Mazer Card</button>
                         </div>
                     </div>
                 </div>
@@ -1668,6 +1670,7 @@
          console.js, whose page switching it uses (window.MazeConsole). -->
     <script src="js/console-info.js?v=2"></script>
     <script src="js/console-profile.js?v=2"></script>
+    <script src="js/mazer-card.js?v=1"></script>
     <!-- The Guides window. guide-text.js is loaded above, before home.js. -->
     <script src="js/guides.js?v=2"></script>
     <!-- The Alt Codes window. Needs nothing but site.js's EscapeLayers. -->

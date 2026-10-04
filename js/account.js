@@ -1293,6 +1293,9 @@
             if (first) first.focus({ preventScroll: true });
         });
     }
+    // For the archive's own questions too: the maze window's Favourite
+    // button asks through it (4 Oct 2026; FAVOURITE in js/home.js).
+    Account.notice = notice;
 
     /* "Nickname Saved" — a nickname the server took, but whose word filter
        caught something in it (player-nick.js answers `flagged: { reason,

@@ -754,6 +754,16 @@ document.addEventListener("DOMContentLoaded", () => {
         welcome = false;
     });
 
+    /* A favourite picked from a maze's own window (4 Oct 2026; FAVOURITE in
+       js/home.js), saved through the same PUT as this page's: the copy here
+       takes it at once, and is read again the next time the page is shown. */
+    document.addEventListener("profile:favourite", e => {
+        if (!data || !e.detail) return;
+        data.favourite = e.detail.favourite || null;
+        readAt = 0;
+        if (showing && !pref.busy) render();
+    });
+
     /* Signing in or out while the page is open redraws it for the new
        answer. Only a DIFFERENT player (or none) throws the figures away
        (29 Sept 2026): Account also announces a nickname saved, a lock

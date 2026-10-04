@@ -101,6 +101,8 @@ const EVENT_NAMES = new Set([
     "maze-open", "event-open", "photo-open",
     "furni-open", "furni-browse", "furni-also-list",
     "walked-toggle", "saved-toggle", "share-copy",
+    // The maze window's Favourite button (4 Oct 2026).
+    "fav-toggle",
     /* The daily games (30 Sept 2026): opened, finished, result copied,
        each labelled with the game ("odd", "guess") and nothing else —
        sent by Daily.track in js/daily.js, not by a data-track. */

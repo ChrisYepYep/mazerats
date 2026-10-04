@@ -2135,6 +2135,14 @@ document.addEventListener("DOMContentLoaded", () => {
             .forEach(btn => paintWalkedToggle(btn, walked));
         updateWalkedCount();
         todoFollowsDone(id, walked);
+        /* Un-completing the favourite unpicks it: the server takes it off
+           as the removal lands (player-data.js), and the profile's copy
+           follows now, so ticking it again does not quietly bring it back. */
+        if (!walked) {
+            const d = ownData();
+            if (d && d.favourite === id) d.favourite = null;
+        }
+        repaintFavToggles();
         // Your Profile, if it is open under the maze (4 Oct 2026).
         refreshProgressIfOpen();
     }
@@ -2205,7 +2213,9 @@ document.addEventListener("DOMContentLoaded", () => {
        Only over mazes, never events: an event is something that happened on
        a date, not something a visitor can go and complete. And only over
        the mazes that are actually open, since a closed one cannot be walked
-       any more and counting it would make the total unreachable by design.
+       any more and counting it would make the total unreachable by design —
+       except the closed ones already completed, which count since 4 Oct
+       2026 (completionCount below): those cannot leave the total short.
        Hidden entirely at zero: a fresh visitor should meet the archive, not
        a scoreboard reading 0. */
     /* A hallway is not a maze. It is the corridor that joins them — there is
@@ -2233,6 +2243,17 @@ document.addEventListener("DOMContentLoaded", () => {
         return ROOMS.filter(r => roomStatus(r) !== "closed" && !isHallway(r));
     }
 
+    /* "N of M completed", wherever it is shown: every open maze, plus the
+       closed ones this browser has completed (4 Oct 2026, the owner's; see
+       CLOSED MAZES COUNT in progressFigures, which works out the same pair
+       for the profile). Closed ones never completed stay out of M, so it
+       can still be reached. The badges go by walkableRooms alone. */
+    function completionCount() {
+        const open = walkableRooms();
+        const closedDone = ROOMS.filter(r => roomStatus(r) === "closed" && !isHallway(r) && isWalked(r.id)).length;
+        return { done: open.filter(r => isWalked(r.id)).length + closedDone, total: open.length + closedDone };
+    }
+
     function updateWalkedCount() {
         const el = document.getElementById("walked-count");
         if (!el) return;
@@ -2248,17 +2269,17 @@ document.addEventListener("DOMContentLoaded", () => {
            about the whole archive floating above a list that is not it. */
         const appliesHere = topView === "mazes"
             && !showWhatsNew && !showTimeline && !showFurni && !furniFilter;
-        const rooms = walkableRooms();
-        const done = rooms.filter(r => isWalked(r.id)).length;
-        if (!appliesHere || !done || !rooms.length) {
+        // The profile's own figure, closed mazes completed included.
+        const { done, total } = completionCount();
+        if (!appliesHere || !done || !total) {
             el.hidden = true;
             return;
         }
         el.hidden = false;
         // Worded as the ticks are: they say Completed, so this counts
         // completed. The two are the same act and should read as it.
-        el.textContent = `${done} of ${rooms.length} completed`;
-        el.classList.toggle("is-complete", done === rooms.length);
+        el.textContent = `${done} of ${total} completed`;
+        el.classList.toggle("is-complete", done === total);
     }
 
     /* The tick itself. A button rather than a checkbox: it carries its own
@@ -2287,9 +2308,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const walked = isWalked(n.id);
         /* A CLOSED maze can be marked completed again (4 Oct 2026, the
            owner's): somebody who walked it while it was open should be able
-           to say so. It still counts towards nothing — the totals and every
-           badge are taken over walkableRooms, which leaves closed mazes out —
-           so it only lists it among their completed mazes. To do stays off
+           to say so. It counts towards the "N of M completed" figure (since
+           4 Oct 2026; see completionCount) but towards no badge — they are
+           taken over walkableRooms, which leaves closed mazes out. To do stays off
            on a closed maze (closedAndUnticked): there is no going to walk it. */
         return `<button type="button" class="walked-toggle${walked ? " is-walked" : ""}" ` +
             `data-walked-id="${escapeHtml(n.id)}" aria-pressed="${walked ? "true" : "false"}" ` +
@@ -8228,9 +8249,16 @@ document.addEventListener("DOMContentLoaded", () => {
                question in the order you meet them — you save a maze before
                you walk it — and Completed stays nearest Share, where it has
                always been. */
-            wrap.innerHTML = savedToggleHtml(n) + walkedToggleHtml(n);
+            /* Favourite after them (4 Oct 2026, the owner's; see FAVOURITE,
+               FROM THE MAZE'S OWN WINDOW): it needs the maze completed, so
+               it reads as the step after Completed. */
+            wrap.innerHTML = savedToggleHtml(n) + walkedToggleHtml(n) + favToggleHtml(n);
             // A closed maze has no To do (see closedAndUnticked), but can be completed.
             if (wrap.children.length) actions.appendChild(wrap);
+            /* Whether it is the favourite comes from the profile's copy;
+               not read yet, it is asked for, and the button repaints when
+               it lands (loadOwnProfile). */
+            if (window.Account && Account.current && !ownData()) loadOwnProfile();
         }
         renderShareButton(n, actions);
         /* A record with nothing to act on — an event with no address to
@@ -9072,15 +9100,36 @@ document.addEventListener("DOMContentLoaded", () => {
         const savedShown = savedRooms.filter(r => !walked.has(r.id))
             .map(r => ({ room: r, closed: r.status === "closed" }));
 
-        const byDifficulty = {};
-        walkable.forEach(r => {
-            const d = (r.difficulty || "unknown").toLowerCase();
-            byDifficulty[d] = byDifficulty[d] || { total: 0, walked: 0 };
-            byDifficulty[d].total++;
-            if (walked.has(r.id)) byDifficulty[d].walked++;
-        });
+        const tally = rooms => {
+            const out = {};
+            rooms.forEach(r => {
+                const d = (r.difficulty || "unknown").toLowerCase();
+                out[d] = out[d] || { total: 0, walked: 0 };
+                out[d].total++;
+                if (walked.has(r.id)) out[d].walked++;
+            });
+            return out;
+        };
+        // Open mazes only: what the badges (Expert) are worked out from.
+        const byDifficulty = tally(walkable);
 
-        return { walkable, walkedHere, savedRooms, toWalk, savedShown, byDifficulty };
+        /* CLOSED MAZES COUNT TOWARDS THE BIG FIGURE (4 Oct 2026, the
+           owner's). A closed maze marked completed was walked while it was
+           open, and "N of M completed" left it out as if it never had been.
+           Now `counted` is every open maze plus the closed ones this player
+           has completed: the closed ones they never did stay out of the
+           total, so it can still be reached, and the bar never passes 100%.
+           It is the figure the profile's big number, the side menu and the
+           count over the list all show (completionCount). The badges still
+           go by `walkable` and `walkedHere` alone — closed mazes earn none —
+           and By difficulty is drawn from `shownByDifficulty`, the same
+           rooms as `counted`, so its rows still add up to the number above
+           them. */
+        const closedDone = ROOMS.filter(r => roomStatus(r) === "closed" && !isHallway(r) && walked.has(r.id));
+        const counted = { done: walkedHere.length + closedDone.length, total: walkable.length + closedDone.length };
+        const shownByDifficulty = tally([...walkable, ...closedDone]);
+
+        return { walkable, walkedHere, savedRooms, toWalk, savedShown, byDifficulty, closedDone, counted, shownByDifficulty };
     }
 
     /* ---------- WHOSE PROFILE (3 Oct 2026) ----------
@@ -9153,6 +9202,8 @@ document.addEventListener("DOMContentLoaded", () => {
             .finally(() => {
                 own.reading = null;
                 if (!viewing) refreshProgressIfOpen();
+                // And the maze window's Favourite, if one is showing.
+                repaintFavToggles();
             });
         return own.reading;
     }
@@ -9162,6 +9213,178 @@ document.addEventListener("DOMContentLoaded", () => {
         const me = window.Account && Account.current;
         return me && own.data && own.forId === me.id ? own.data : null;
     }
+
+    /* ---------- FAVOURITE, FROM THE MAZE'S OWN WINDOW (4 Oct 2026, the owner's) ----------
+
+       A Favourite button in a maze's Actions, after To do and Completed, as
+       well as the choice in Edit Profile (js/console-profile.js). It saves
+       exactly as that page does — one PUT of { profile: { favourite } } to
+       player-data.js — under the server's rule that a favourite has to be a
+       completed maze. So a press:
+
+         signed out        offers the sign-in, as the daily games do
+         not completed     asks to mark it Completed first; Yes ticks it
+                           and carries on
+         no favourite      sets it
+         another one       asks "Change Favourite?"; Yes changes it
+         this one          unsets it, without asking: the button is a
+                           toggle (aria-pressed), and a second press puts it
+                           straight back
+
+       The PUT carries the maze in `walked` as well, so a tick made a moment
+       before (noteTick sends them on a delay) cannot get the favourite
+       turned down for arriving first; the server unions the list, so the
+       repeat changes nothing. Whether this maze IS the favourite is read
+       off the profile's copy (`own`), and only while it is completed here —
+       the rule the Favourite maze section is drawn by. */
+    const FAV_TITLE = { on: "Your favourite maze. Click to unpick it.", off: "Make this your favourite maze" };
+    let favBusy = false;
+
+    function currentFavourite() {
+        const d = ownData();
+        return d && d.favourite && isWalked(d.favourite) ? d.favourite : null;
+    }
+
+    /* The label stays "Favourite" either way, and the heart (hollow, or
+       filled) and aria-pressed say which: "My favourite" would not fit the
+       phone's action bar beside the other three. */
+    function favToggleHtml(n) {
+        if (n.isEvent || !n.id || isHallway(n)) return "";
+        const on = currentFavourite() === n.id;
+        return `<button type="button" class="fav-toggle${on ? " is-fav" : ""}" ` +
+            `data-fav-id="${escapeHtml(n.id)}" aria-pressed="${on ? "true" : "false"}" ` +
+            `title="${on ? FAV_TITLE.on : FAV_TITLE.off}" ` +
+            `data-track="fav-toggle" data-track-label="${escapeHtml(n.id)}">` +
+            `<span class="fav-toggle-mark" aria-hidden="true"></span>` +
+            `<span class="fav-toggle-label">Favourite</span>` +
+            `</button>`;
+    }
+
+    function repaintFavToggles() {
+        const fav = currentFavourite();
+        document.querySelectorAll(".fav-toggle[data-fav-id]").forEach(btn => {
+            const on = fav === btn.dataset.favId;
+            btn.classList.toggle("is-fav", on);
+            btn.setAttribute("aria-pressed", on ? "true" : "false");
+            btn.title = on ? FAV_TITLE.on : FAV_TITLE.off;
+        });
+    }
+
+    // Account's small window (notice in js/account.js), or nothing at all.
+    const favAsk = o => (window.Account && typeof Account.notice === "function" ? Account.notice(o) : Promise.resolve(null));
+
+    async function putFavourite(id) {
+        const patch = { profile: { favourite: id } };
+        if (id) patch.walked = [id];
+        const res = await fetch("/.netlify/functions/player-data", {
+            method: "PUT",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(patch)
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw Object.assign(new Error(String(res.status)), { status: res.status });
+        return body;
+    }
+
+    async function saveFavourite(id) {
+        let body;
+        try {
+            body = await putFavourite(id);
+        } catch (e) {
+            // A lapsed session: `me` is asked again, and the page signs out.
+            if (e && e.status === 401 && window.Account && typeof Account.refresh === "function") Account.refresh();
+            await favAsk({
+                title: "Not Saved",
+                html: `<p>${e && e.status === 401
+                    ? "You've been signed out. Sign in again to pick a favourite."
+                    : "Your favourite couldn't be saved just now. Try again in a moment."}</p>`
+            });
+            return;
+        }
+        const p = body && body.profile;
+        const d = ownData();
+        if (d && p) d.favourite = p.favourite;
+        // The reply holds the walked list the PUT carried: those ticks have landed.
+        if (body && Array.isArray(body.walked)) confirmTicks(body);
+        repaintFavToggles();
+        // Edit Profile keeps its own copy of the profile (js/console-profile.js).
+        document.dispatchEvent(new CustomEvent("profile:favourite", { detail: { favourite: p ? p.favourite : id } }));
+        // And the Profiles window reads it again (refreshProgressIfOpen when it lands).
+        loadOwnProfile(true);
+        if (id && p && p.favourite !== id) {
+            await favAsk({ title: "Not Saved", html: "<p>That maze isn't on your completed list yet, so it wasn't saved.</p>" });
+        }
+    }
+
+    async function pressFavourite(btn) {
+        if (favBusy || !window.Account) return;
+        const id = btn.dataset.favId;
+        if (!id) return;
+        const nameOf = mid => { const r = roomById(mid); return escapeHtml((r && r.name) || mid); };
+
+        if (!Account.current) {
+            const v = await favAsk({
+                title: "Favourite Maze",
+                html: `<p class="notice-head">Sign in with Discord to pick a favourite maze.</p><p>It's shown at the top of your profile.</p>`,
+                actions: [
+                    { label: "Sign in with Discord", value: "signin", lead: true },
+                    { label: "Not now", value: null }
+                ]
+            });
+            if (v === "signin") Account.signIn();
+            return;
+        }
+
+        favBusy = true;
+        try {
+            // From the button, as Completed and To do read theirs.
+            if (btn.getAttribute("aria-pressed") === "true") { await saveFavourite(null); return; }
+
+            // The profile's copy, so another favourite is known before asking.
+            if (!ownData()) await loadOwnProfile();
+            if (!ownData()) {
+                await favAsk({ title: "Not Saved", html: "<p>Your profile couldn't be read just now. Try again in a moment.</p>" });
+                return;
+            }
+
+            if (!isWalked(id)) {
+                const v = await favAsk({
+                    title: "Complete It First",
+                    html: `<p class="notice-head">Only mazes you've completed can be your favourite.</p><p>Mark <strong>${nameOf(id)}</strong> as Completed?</p>`,
+                    actions: [
+                        { label: "Mark Completed", value: "yes", lead: true },
+                        { label: "Not now", value: null }
+                    ]
+                });
+                if (v !== "yes") return;
+                setWalked(id, true);
+            }
+
+            const other = currentFavourite();
+            if (other && other !== id) {
+                const v = await favAsk({
+                    title: "Change Favourite?",
+                    html: `<p>You've already picked <strong>${nameOf(other)}</strong> as your favourite! Want to change it?</p>`,
+                    actions: [
+                        { label: "Yes", value: "yes", lead: true },
+                        { label: "No", value: null }
+                    ]
+                });
+                if (v !== "yes") return;
+            }
+            await saveFavourite(id);
+        } finally {
+            favBusy = false;
+        }
+    }
+
+    document.addEventListener("click", e => {
+        const btn = e.target.closest && e.target.closest(".fav-toggle");
+        if (!btn) return;
+        e.preventDefault();
+        pressFavourite(btn);
+    });
 
     /* For the console (js/console-profile.js): the same figures this window
        draws, so the two can never disagree; the completed mazes and earned
@@ -9175,8 +9398,12 @@ document.addEventListener("DOMContentLoaded", () => {
                Profile line labelled Saved can agree with them. `toWalk` is
                kept, and is a different number on purpose: saved mazes that
                can still be completed, which leaves out closed ones. */
+            /* done and total are the window's big figure, closed mazes
+               completed included (see CLOSED MAZES COUNT in
+               progressFigures); `badgeDone` is the open-only count the
+               badges go by. */
             return {
-                done: f.walkedHere.length, total: f.walkable.length,
+                done: f.counted.done, total: f.counted.total, badgeDone: f.walkedHere.length,
                 toWalk: f.toWalk.length, saved: f.savedShown.length
             };
         },
@@ -9315,7 +9542,7 @@ document.addEventListener("DOMContentLoaded", () => {
         </button></li>`;
     }
     const closedTag = r => (r.status === "closed"
-        ? `<span class="progress-saved-closed" title="Closed: it doesn't count towards totals or badges">Closed</span>` : "");
+        ? `<span class="progress-saved-closed" title="Closed: it doesn't count towards badges">Closed</span>` : "");
 
     /* What a completed list says about the player who completed it.
        `list` is maze ids in the order they were ticked — near enough: two
@@ -9340,6 +9567,35 @@ document.addEventListener("DOMContentLoaded", () => {
                marked completed, but it is not news about what they have
                been walking. Toughest counts it. */
             recent: rooms.filter(r => r.status !== "closed").slice(-3).reverse()
+        };
+    }
+
+    /* Your own profile's figures for a Mazer Card (js/mazer-card.js), read
+       when the colour is picked: the same numbers the window shows, from
+       the same places (progressHtml). Throws without a profile to print,
+       which the card's window shows as a jam. */
+    function mazerCardData() {
+        const d = ownData();
+        if (!d) throw new Error("no profile");
+        const f = progressFigures();
+        const badges = earnedBadges(f, d);
+        const featured = d.badge ? badges.find(b => b.key === d.badge) : null;
+        const hard = highlightsOf([...walkedIds]).hardest;
+        const habbo = d.habbo || null;
+        const g = d.games || {};
+        const game = s => (s && s.days ? { streak: s.streak, best: s.best, days: s.days } : null);
+        return {
+            name: d.name || "Someone",
+            motto: habbo && habbo.motto ? habbo.motto : "",
+            featured: featured ? featured.name : "",
+            since: pfSince(d.since),
+            avatar: habbo && habbo.avatar ? outlineSrc(habbo.avatar, "body") : null,
+            done: f.counted.done,
+            total: f.counted.total,
+            toughest: hard ? { name: hard.name || hard.id, difficulty: hard.difficulty ? capitalise(prettyDifficulty(String(hard.difficulty).toLowerCase())) : "" } : null,
+            badges: badges.map(b => b.name),
+            games: { guess: game(g.guess), odd: game(g.odd) },
+            printed: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
         };
     }
 
@@ -9396,9 +9652,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const self = !other;
         const list = other ? (Array.isArray(d.walked) ? d.walked : []) : [...walkedIds];
         const f = other ? progressFigures(new Set(list), new Set()) : progressFigures();
-        const total = f.walkable.length;
-        const done = f.walkedHere.length;
+        // Closed mazes completed included (see CLOSED MAZES COUNT).
+        const total = f.counted.total;
+        const done = f.counted.done;
         const pct = total ? Math.round((done / total) * 100) : 0;
+        // ...but not in what the badges go by, nor in "Next:" under them.
+        const badgeDone = f.walkedHere.length;
 
         const badges = earnedBadges(f, d);
         /* What the Badges section lists (4 Oct 2026): on your own profile
@@ -9410,7 +9669,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ? BADGES.filter(b => !b.off).map(b => ({ key: b.key, name: b.name, means: b.means, how: badgeHow(b, f), earned: badges.some(e => e.key === b.key) }))
             : badges.map(b => ({ ...b, earned: true }));
         const featured = d && d.badge ? badges.find(b => b.key === d.badge) : null;
-        const next = self ? MILESTONES.find(m => done < m.at) : null;
+        const next = self ? MILESTONES.find(m => badgeDone < m.at) : null;
         const hl = highlightsOf(list);
 
         // ---- who ----
@@ -9490,11 +9749,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const i = RANK.indexOf(k);
             return i === -1 ? RANK.length : i;
         };
-        const diffRows = Object.keys(f.byDifficulty)
-            .filter(k => f.byDifficulty[k].total)
+        // shownByDifficulty: the big figure's own rooms, closed ones completed included.
+        const diffRows = Object.keys(f.shownByDifficulty)
+            .filter(k => f.shownByDifficulty[k].total)
             .sort((a, b) => rankOf(a) - rankOf(b) || (a < b ? -1 : 1))
             .map(k => {
-                const { total: t, walked: w } = f.byDifficulty[k];
+                const { total: t, walked: w } = f.shownByDifficulty[k];
                 const p = t ? Math.round((w / t) * 100) : 0;
                 return `<li class="progress-diff">
                     <span class="progress-diff-name">${escapeHtml(prettyDifficulty(k))}</span>
@@ -9521,6 +9781,10 @@ document.addEventListener("DOMContentLoaded", () => {
             ? `<ul class="progress-saved">${f.savedShown.map(({ room: r }) => mazeRow(r, closedTag(r))).join("")}</ul>`
             : `<p class="progress-note">Nothing to do yet. Open a maze and press <strong>To do</strong> to keep it here until you complete it.</p>`;
 
+        /* Under the bar, what closed mazes still don't count towards (4 Oct
+           2026; the owner asked for it to be said): the badges, and
+           Latest just below. They do count towards the bar and By
+           difficulty, and Toughest. The Badges section says its half again. */
         const body = `
             ${notes}
             ${favourite}
@@ -9530,7 +9794,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <strong>${done}</strong><span>of ${total} completed</span>
                 </div>
                 <div class="progress-bar"><span style="width:${pct}%"></span></div>
-                <p class="progress-note">${pct}% of the mazes that can still be completed today.</p>
+                <p class="progress-note">${pct}% of the open mazes, plus the closed ones ${self ? "you've" : "they've"} completed. Completed closed mazes don't count towards badges or Latest.</p>
                 ${hlRows.length ? `<dl class="profile-hls">${hlRows.join("")}</dl>` : ""}
             </section>
 
@@ -9555,7 +9819,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         <div class="profile-badge-card" id="profile-badge-card" hidden></div>
                         <p class="progress-note profile-badge-hint">Select a badge to see what it means and how to get it. Marking Closed mazes as complete does not count towards badges.</p>`
                     : `<p class="progress-note">None yet.</p>`}
-                ${next ? `<p class="progress-note">Next: <strong>${escapeHtml(next.name)}</strong> at ${next.at} completed, ${next.at - done} to go.</p>` : ""}
+                ${next ? `<p class="progress-note">Next: <strong>${escapeHtml(next.name)}</strong> at ${next.at} completed, ${next.at - badgeDone} to go.</p>` : ""}
             </section>
 
             ${d ? gamesHtml(d, self) : ""}
@@ -9634,6 +9898,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (back) back.hidden = !viewing;
         const edit = document.getElementById("profile-edit");
         if (edit) edit.hidden = !!viewing || !(window.Account && Account.current);
+        /* MAZER CARDS (4 Oct 2026, the owner's; js/mazer-card.js): your own
+           profile, signed in, as a picture to copy, under Edit Profile. A
+           hidden profile prints all the same. */
+        const mazer = document.getElementById("profile-mazer");
+        if (mazer) mazer.hidden = !!viewing || !window.MazerCard || !ownData();
     }
 
     /* Shows a player's profile in the window: `pid` is their public id, and
@@ -9751,6 +10020,7 @@ document.addEventListener("DOMContentLoaded", () => {
                over this window (z-index 200 to 100), so this stays open
                beneath it and is drawn again when a choice is saved. */
             else if (act.dataset.profileAct === "edit" && window.MazeConsole) MazeConsole.open("profile");
+            else if (act.dataset.profileAct === "mazer" && window.MazerCard) MazerCard.open(mazerCardData);
             return;
         }
         // A maze opens where every other maze opens.
@@ -9921,6 +10191,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (who) who.addEventListener("click", onProgressClick);
         const edit = document.getElementById("profile-edit");
         if (edit) edit.addEventListener("click", onProgressClick);
+        const mazer = document.getElementById("profile-mazer");
+        if (mazer) mazer.addEventListener("click", onProgressClick);
         /* A Habbo that could not be drawn (Habbo's imaging down; see
            habbo-outline.js) becomes the blank face rather than a broken
            picture. Images do not bubble their errors, so on the capture
@@ -10247,6 +10519,8 @@ document.addEventListener("DOMContentLoaded", () => {
             // moved — see refreshProgressIfOpen.
             refreshProgressIfOpen();
             // And its profile half is somebody else's now, or nobody's.
+            // The maze window's Favourite is somebody else's now, or nobody's.
+            repaintFavToggles();
             const overlay = document.getElementById("progress-overlay");
             if (overlay && overlay.classList.contains("open") && !viewing) loadOwnProfile(true);
             /* Your own profile, opened by its public id before this answer
@@ -10752,7 +11026,7 @@ document.addEventListener("DOMContentLoaded", () => {
                view, so it no longer sits in the ARCHIVE fold. */
             {
                 name: "Your Profile",
-                state: menuFigure(() => `${f.walkedHere.length} of ${f.walkable.length} completed`
+                state: menuFigure(() => `${f.counted.done} of ${f.counted.total} completed`
                     + (f.savedShown.length ? ` · ${f.savedShown.length} to do` : ""), "Your mazes, badges and games"),
                 badge: "",
                 on: false,
