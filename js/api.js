@@ -803,6 +803,8 @@ const Api = {
     },
     setNickname(nick) { return this._nick({ nick: nick == null ? null : String(nick) }); },
     markNickAsked() { return this._nick({ asked: true }); },
+    // The profile introduction has been shown (js/account.js, PROFILE INTRO).
+    markProfileIntro() { return this._nick({ profileIntro: true }); },
     refuseNickname() { return this._nick({ refuse: true }); },
 
     getContactMessages(token) { return this._write("/.netlify/functions/contact", "GET", token); },

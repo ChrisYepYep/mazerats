@@ -43,6 +43,10 @@ document.addEventListener("keydown", e => {
        it is on screen. */
     const consoleModal = document.getElementById("console-modal");
     if (consoleModal && (consoleModal.getClientRects().length > 0 || consoleModal.contains(active))) return;
+    // Your Profile too (4 Oct 2026): a floating window like the console,
+    // shown by its own .open, which neither marker above sees.
+    const profile = document.getElementById("progress-overlay");
+    if (profile && (profile.classList.contains("open") || profile.contains(active))) return;
 
     const letter = e.key.toLowerCase();
     /* Matched on the same reading of the name the sort uses (sortableName

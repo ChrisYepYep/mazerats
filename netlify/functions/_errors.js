@@ -37,6 +37,7 @@
 const crypto = require("crypto");
 const { getDb } = require("./_db");
 const { clientNet } = require("./_net");
+const { checkRateLimit } = require("./_ratelimit");
 
 const COLLECTION = "site_errors";
 const META = "site_errors_meta";
@@ -1003,6 +1004,11 @@ function withErrorReporting(name, handler) {
     // site-errors.js must never report its own failures to itself.
     if (name === "site-errors") return handler;
     const wrapped = async function (event, context, ...rest) {
+        /* The site-wide rate limit (4 Oct 2026), asked here because every
+           function but this store's own comes through this wrapper. See
+           _ratelimit.js. A refusal is a 429, which is never recorded below. */
+        const refused = await checkRateLimit(name, event);
+        if (refused) return refused;
         const started = Date.now();
         let res;
         try {

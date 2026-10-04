@@ -1,29 +1,32 @@
 /* ===========================================================
-   Maze Rats — the console's Profile page
+   Maze Rats — the console's Profile page: Edit Profile
 
-   What signing in with Discord is FOR, gathered in one place. Signing in
-   already carried completed mazes between devices and put a name on the
-   daily boards, but nothing on the site ever showed a player the sum of it;
-   this page does.
+   Where a player changes what their profile shows. Until 3 Oct 2026 this
+   page WAS the profile — mazes, the daily games, Fallin' Furni and Add
+   Maze Info, counted up — but those moved into the Your Profile window
+   (js/home.js, where other players can look them up too), and this page
+   became the place to edit it. The console's button still says Profile.
 
    Signed in, it shows:
-     - who they are, and the nickname the boards show instead of their
-       Discord name (see THE NICKNAME below);
-     - Mazes: how many completed, how many saved, with the Your Progress
-       window a press away (figures from js/home.js through
-       window.ArchiveProgress, so the two cannot disagree);
-     - the daily games: today, the streak, days played and place, for each
-       game and for both added together — and each game can be picked, which
-       brings up a Play button (see PICK A GAME below);
-     - Fallin' Furni: the best run and where it ranks, once there is one;
-     - Add Maze Info: what they have sent and what came of it.
-   Everything but the mazes comes from netlify/functions/player-profile.js,
-   which counts it from rows the games and forms already keep.
+     - who they are: their Habbo's head when OriginsBot has linked one,
+       never the Discord picture (the owner's call), and the nickname the
+       boards show instead of their Discord name (THE NICKNAME below);
+     - Favourite maze, chosen from the mazes they have completed;
+     - Featured badge, chosen from the badges they have earned;
+     - Visibility: whether other players can find and open the profile;
+     - the way to the profile itself, and to the Leaderboards.
+   The choices are saved to player-data.js (PUT { profile }) and read back
+   from profiles.js (?me=1), with the badges worked out by js/home.js
+   (ArchiveProgress.badges) so this page and the window cannot disagree.
 
-   Signed out, it says what the page would hold, and offers the sign-in.
+   Only the archive page has the archive. Elsewhere (Fallin' Furni's page
+   carries the console but not the mazes) the favourite and the badge can
+   only be read, and a button goes to the archive to change them.
+
+   Signed out, it says what signing in gives, and offers the sign-in.
 
    Built each time the page is shown (console.js announces that with a
-   console:page event), because every figure on it can change while the
+   console:page event), because what it shows can change while the
    console is closed. Set in Volter Goldfish like the rest of the console,
    so no em dashes, bullets or curly quotes (PICTURE_GLYPHS in js/site.js);
    the two dashes the nickname's wording asks for are set in Roboto through
@@ -34,7 +37,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const Console = window.MazeConsole;
     if (!host || !Console) return;
 
-    const PROFILE_URL = "/.netlify/functions/player-profile";
+    const PROFILE_URL = "/.netlify/functions/profiles?me=1";
+    const SAVE_URL = "/.netlify/functions/player-data";
     const FRESH_MS = 30 * 1000;
 
     let data = null;        // the last profile read, or null
@@ -50,13 +54,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return String(str == null ? "" : str).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
-    const num = n => Number(n || 0).toLocaleString("en-GB");
-    const plural = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
     const DASH = '<span class="console-dash">&mdash;</span>';
 
-    function since(iso) {
-        if (!iso) return "";
-        const d = new Date(iso);
+    function since(ym) {
+        if (!ym) return "";
+        const d = new Date(`${ym}-01T00:00:00Z`);
         if (isNaN(d)) return "";
         return d.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
     }
@@ -70,175 +72,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const head = text => `<p class="console-profile-head">${esc(text)}</p>`;
     const rule = '<div class="console-dotline console-profile-rule"></div>';
 
-    function placeText(p) {
-        return p ? `#${num(p.rank)} of ${num(p.of)}` : "Not ranked yet";
-    }
+    /* Text for the console's font. Maze names and badge names are written
+       by people, and the screen's face draws only what PICTURE_GLYPHS in
+       js/site.js lists, so the marks it has no picture for are swapped for
+       the plain ones it does. */
+    const plain = s => String(s == null ? "" : s)
+        .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
+        .replace(/[–—]/g, "-").replace(/…/g, "...");
 
-    /* ---------- PICK A GAME (28 Sept 2026) ----------
-
-       Guess the Maze and Odd One Out's figures can be picked. A pick draws a
-       1px border round that game's block, in the console frame's own yellow,
-       and brings up a Play button in the bottom-right corner of the console
-       screen; Play closes the console and opens the game, exactly as the
-       side menu and the Leaderboards window's play buttons do (the same
-       window.openGuessGame / window.openOddOneOut; see js/daily-loader.js).
-       Picking the picked one again lets go of it, and moving to another
-       console page, or reopening the console, lets go too.
-
-       Off the archive (Fallin' Furni's page carries the console but not the
-       games) Play goes to /guess or /odd, the games' own addresses, which
-       open them on arrival.
-
-       A real control rather than a painted div: role="button", in the tab
-       order, answering Enter and Space, and aria-pressed saying which is
-       picked. Not a <button> because it holds a column of paragraphs, which
-       a <button> may not. */
-    const PLAYABLE = {
-        guess: { label: "Guess the Maze", open: "openGuessGame", path: "/guess" },
-        odd: { label: "Odd One Out", open: "openOddOneOut", path: "/odd" }
-    };
-    let picked = null;
-
-    const screen = document.getElementById("console-screen");
-    let playBtn = null;
-    if (screen) {
-        playBtn = document.createElement("button");
-        playBtn.type = "button";
-        playBtn.className = "console-btn console-play-btn";
-        playBtn.textContent = "Play";
-        playBtn.hidden = true;
-        playBtn.addEventListener("click", playPicked);
-        screen.appendChild(playBtn);
-    }
-
-    function syncPick() {
-        host.querySelectorAll("[data-game-pick]").forEach(el => {
-            const on = el.dataset.gamePick === picked;
-            el.classList.toggle("is-picked", on);
-            el.setAttribute("aria-pressed", on ? "true" : "false");
-        });
-        // A pick whose block is not on the page (signed out, still loading)
-        // is no pick at all.
-        if (picked && !host.querySelector(`[data-game-pick="${picked}"]`)) picked = null;
-        const page = document.getElementById("console-page-profile");
-        if (page) page.classList.toggle("has-play", !!picked);
-        if (!playBtn) return;
-        playBtn.hidden = !picked || !showing;
-        if (picked) playBtn.setAttribute("aria-label", `Play ${PLAYABLE[picked].label}`);
-    }
-
-    function pick(key) {
-        picked = picked === key || !PLAYABLE[key] ? null : key;
-        syncPick();
-    }
-
-    function clearPick() {
-        picked = null;
-        syncPick();
-    }
-
-    /* A press anywhere that is not a game block or Play lets go of the pick
-       (29 Sept 2026), so Play goes away the way a selection does: click off
-       it and it is gone. On the capture phase, so it sees the press before
-       whatever it lands on acts; a press ON a block is left to pick(), which
-       moves or toggles the pick itself.
-
-       On `click`, not `pointerdown` (29 Sept 2026). A finger that lands on
-       the console screen to scroll it sends pointerdown before anyone knows
-       it is a swipe, so on a phone every scroll dropped the pick and Play
-       with it. A scroll never becomes a click; a tap anywhere else still
-       does, and a keyboard press on another button (Enter or Space) is a
-       click too. Still on the capture phase, so it has run before the
-       block's own click handler or Play's decide anything. */
-    document.addEventListener("click", e => {
-        if (!picked) return;
-        const t = e.target;
-        if (!t || !t.closest) return;
-        if (t.closest("[data-game-pick]") || (playBtn && playBtn.contains(t))) return;
-        clearPick();
-    }, true);
-
-    function playPicked() {
-        const g = picked && PLAYABLE[picked];
-        if (!g) return;
-        clearPick();
-        /* Locked out — a ban, or a nickname the admins asked to change (29
-           Sept 2026; Account.mayPlay in js/account.js). Asked here, before
-           the console closes, so the window saying why opens over the
-           Profile (it sits at 260, over the console's 200) rather than
-           over an empty game window. */
-        if (window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay()) return;
-        const open = window[g.open];
-        if (typeof open === "function") {
-            // The console sits at z-index 200, over the games' windows (100),
-            // so it goes first; keepFocus, because the game takes focus.
-            Console.close({ keepFocus: true });
-            open();
-        } else {
-            location.href = g.path;
-        }
-    }
-
-    function gameBlock(key, name, g) {
-        const inner = !g || !g.days
-            ? `${head(name)}${line("Today", g && g.playedToday ? "Done" : "Not played")}
-                <p class="console-note console-profile-note">Finish a day to start a streak.</p>`
-            : `
-            ${head(name)}
-            ${line("Today", g.playedToday ? "Done" : "Not played")}
-            ${line("Streak", esc(g.streak ? plural(g.streak, "day", "days") : "None"))}
-            ${line("Best streak", esc(plural(g.best, "day", "days")))}
-            ${line("Days played", esc(num(g.days)))}
-            ${line("Points", esc(num(g.points)))}
-            ${line("Place", esc(placeText(g.place)))}`;
-        return `<div class="console-profile-sub console-profile-game" data-game-pick="${esc(key)}"
-                     role="button" tabindex="0" aria-pressed="false"
-                     title="Select to play ${esc(name)}">${inner}</div>`;
-    }
-
-    function archiveBlock() {
-        const ap = window.ArchiveProgress;
-        /* "Mazes", not "The archive" (28 Sept 2026): what this block counts
-           is the mazes a player has completed and saved, and the site calls
-           them that everywhere else.
-
-           Only the homepage has the archive (js/home.js). Elsewhere, such as
-           Fallin' Furni's page, "Loading..." would never end, so the block
-           just points there. */
-        if (!ap) {
-            return `
-            ${head("Mazes")}
-            <p class="console-blurb">Your progress is kept on the archive page.</p>
-            <button type="button" class="console-btn console-profile-btn" data-act="progress">Your Progress</button>`;
-        }
-        const f = ap.figures();
-        if (!f || !f.total) {
-            return `${head("Mazes")}<p class="console-blurb">Loading...</p>`;
-        }
-        const pct = Math.round((f.done / f.total) * 100);
-        /* "Saved", counted as the Saved list counts it (f.saved: closed
-           mazes included), so it matches the Your Progress heading and the
-           side menu's "· N saved" a press away. It read "Saved to do" off
-           f.toWalk, which leaves closed mazes out, and the same player saw
-           two different saved counts on two screens. toWalk stays as the
-           fallback for a home.js that does not export `saved` yet. */
-        return `
-            ${head("Mazes")}
-            ${line("Completed", `${esc(num(f.done))} / ${esc(num(f.total))}`)}
-            <div class="console-profile-bar" role="img" aria-label="${pct}% completed"><span style="width:${pct}%"></span></div>
-            ${line("To do", esc(num(typeof f.saved === "number" ? f.saved : f.toWalk)))}
-            <button type="button" class="console-btn console-profile-btn" data-act="progress">Your Progress</button>`;
-    }
-
-    /* The note under Sign in says what DISCORD gives us (1 Oct 2026). It
-       said "We only see ... Nothing else", but a signed-in player's row also
-       keeps a keyed network code, and a message or lead keeps the address
-       for 30 days (both in the privacy policy). */
+    /* The signed-out page: what signing in is for. */
     function signedOutHtml() {
         return `
-            <p class="console-blurb">Sign in with Discord and this page becomes yours.</p>
+            <p class="console-blurb">Sign in with Discord and you get a profile of your own.</p>
             <ul class="console-profile-list">
                 <li>Your completed mazes, on every device</li>
+                <li>A profile other players can find</li>
                 <li>Your streaks and places in the daily games</li>
                 <li>Your name on the leaderboards, or a nickname</li>
                 <li>Credit for what you send in</li>
@@ -246,7 +94,9 @@ document.addEventListener("DOMContentLoaded", () => {
             <button type="button" class="console-btn console-profile-btn" data-act="signin">Sign in with Discord</button>
             <p class="console-note console-profile-note">From Discord we only get your username, display name, picture and account ID.</p>
             ${rule}
-            ${archiveBlock()}
+            ${head("Your Profile")}
+            <p class="console-blurb">Your completed mazes and badges, kept in this browser until you sign in.</p>
+            <button type="button" class="console-btn console-profile-btn" data-act="progress">Your Profile</button>
             ${rule}
             ${head("Leaderboards")}
             <p class="console-blurb">See who is on top without playing first.</p>
@@ -543,59 +393,192 @@ document.addEventListener("DOMContentLoaded", () => {
         Console.open("profile");
     };
 
+    /* A new player's first look (4 Oct 2026; PROFILE INTRO in
+       js/account.js): Edit Profile with a welcome line at the top, the
+       nickname's "Set a nickname" straight under it. Not with the field
+       already open: the console's screen is short, and the open field sat
+       below the welcome, out of sight but holding the focus, so the first
+       keys pressed went somewhere nobody could see. `welcome` false is the
+       returning player's "Edit my profile": the page, no welcome. The line
+       goes when the console moves to another page or closes. */
+    let welcome = false;
+    Console.openProfileWelcome = (withWelcome) => {
+        welcome = !!withWelcome;
+        Console.open("profile");
+    };
+    const welcomeHtml = () => (welcome ? `
+        <p class="console-blurb console-profile-welcome">Welcome to Maze Rats! This is your profile. Choose a nickname, a favourite maze and a badge to show, and other players can find you by name.</p>
+        <p class="console-note console-profile-note">You can come back here any time from Profile.</p>
+        ${rule}` : "");
+
+    /* ---------- THE PROFILE'S CHOICES (3 Oct 2026) ----------
+
+       Favourite maze, featured badge and visibility. Each saves the moment
+       it is changed — a select's change, the visibility button's press —
+       through one PUT of just that field, so two quick changes cannot undo
+       each other. A save in flight disables all three. What came of it is
+       said on one line under the control that was changed, and aloud
+       through the same live region the nickname uses (sayNick). */
+    const pref = { busy: false, where: "", msg: "", tone: "" };
+
+    function prefStatus(where) {
+        if (pref.where !== where || !pref.msg) return "";
+        return `<p class="console-form-status${pref.tone ? " is-" + pref.tone : ""}">${esc(pref.msg)}</p>`;
+    }
+
+    async function savePref(where, patch) {
+        if (pref.busy || !data) return;
+        /* The control is disabled while the save runs, and a disabled one
+           cannot hold focus, so it drops to <body>; whether it had focus is
+           noted now and handed back once the save settles. */
+        const hadFocus = !!(document.activeElement && host.contains(document.activeElement));
+        pref.busy = true;
+        pref.where = where;
+        pref.msg = "Saving...";
+        pref.tone = "";
+        sayNick(pref.msg);
+        render();
+        try {
+            const res = await fetch(SAVE_URL, {
+                method: "PUT",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json", Accept: "application/json" },
+                body: JSON.stringify({ profile: patch })
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(body && body.error ? body.error : "");
+            const p = body && body.profile;
+            if (p) {
+                data.favourite = p.favourite;
+                data.badge = p.badge;
+                data.hidden = p.hidden;
+            }
+            // The favourite is only kept if it is completed (player-data.js).
+            pref.msg = "favourite" in patch && patch.favourite && p && p.favourite !== patch.favourite
+                ? "That maze isn't on your completed list yet, so it wasn't saved."
+                : "Saved.";
+            pref.tone = pref.msg === "Saved." ? "ok" : "error";
+            // The window behind the console draws it again.
+            if (window.ArchiveProgress && typeof ArchiveProgress.changed === "function") ArchiveProgress.changed();
+        } catch (e) {
+            pref.msg = (e && e.message) || "That couldn't be saved just now. Try again in a moment.";
+            pref.tone = "error";
+        }
+        pref.busy = false;
+        sayNick(pref.msg);
+        render();
+        const again = hadFocus && showing ? host.querySelector(`[data-pref="${where}"]`) : null;
+        if (again) again.focus({ preventScroll: true });
+    }
+
+    function favouriteHtml() {
+        const ap = window.ArchiveProgress;
+        const off = pref.busy ? " disabled" : "";
+        if (!ap || typeof ap.completed !== "function") {
+            return `
+                ${head("Favourite maze")}
+                <p class="console-blurb">${data.favourite ? "Chosen. " : ""}Choose it on the archive page, from the mazes you have completed.</p>
+                <button type="button" class="console-btn console-profile-btn" data-act="progress">Go to the archive</button>`;
+        }
+        const done = ap.completed();
+        if (!done.length) {
+            return `
+                ${head("Favourite maze")}
+                <p class="console-blurb">Complete a maze and you can pick a favourite from them here.</p>`;
+        }
+        const chosen = done.some(m => m.id === data.favourite) ? data.favourite : "";
+        return `
+            ${head("Favourite maze")}
+            <label class="visually-hidden" for="console-fav-select">Favourite maze</label>
+            <select class="console-input console-select console-pref-select" id="console-fav-select" data-pref="favourite"${off}>
+                <option value=""${chosen ? "" : " selected"}>None</option>
+                ${done.map(m => `<option value="${esc(m.id)}"${m.id === chosen ? " selected" : ""}>${esc(plain(m.name))}</option>`).join("")}
+            </select>
+            ${prefStatus("favourite")}
+            <p class="console-note console-profile-note">Shown at the top of your profile. Only mazes you have completed can be chosen.</p>`;
+    }
+
+    function badgeHtml() {
+        const ap = window.ArchiveProgress;
+        const off = pref.busy ? " disabled" : "";
+        if (!ap || typeof ap.badges !== "function") {
+            return `
+                ${head("Featured badge")}
+                <p class="console-blurb">Choose it on the archive page, from the badges you have earned.</p>`;
+        }
+        const earned = ap.badges(data);
+        if (!earned.length) {
+            return `
+                ${head("Featured badge")}
+                <p class="console-blurb">No badges yet. The first comes with your first completed maze.</p>`;
+        }
+        const chosen = earned.some(b => b.key === data.badge) ? data.badge : "";
+        return `
+            ${head("Featured badge")}
+            <label class="visually-hidden" for="console-badge-select">Featured badge</label>
+            <select class="console-input console-select console-pref-select" id="console-badge-select" data-pref="badge"${off}>
+                <option value=""${chosen ? "" : " selected"}>None</option>
+                ${earned.map(b => `<option value="${esc(b.key)}"${b.key === chosen ? " selected" : ""}>${esc(plain(b.name))}</option>`).join("")}
+            </select>
+            ${prefStatus("badge")}
+            <p class="console-note console-profile-note">Shown beside your name on your profile.</p>`;
+    }
+
+    function visibilityHtml() {
+        const hidden = !!data.hidden;
+        return `
+            ${head("Visibility")}
+            ${line("Profile", hidden ? "Hidden" : "Public")}
+            <button type="button" class="console-btn console-profile-btn" data-pref="hidden" aria-pressed="${hidden ? "true" : "false"}"${pref.busy ? " disabled" : ""}>${hidden ? "Show my profile" : "Hide my profile"}</button>
+            ${prefStatus("hidden")}
+            <p class="console-note console-profile-note">${hidden
+                ? `Hidden ${DASH} nobody else can find or open it. You still can.`
+                : "Anyone can find it by your name in the search on Profiles."}</p>`;
+    }
+
     function signedInHtml(me) {
         const d = data;
+        const habbo = d && d.habbo;
+        /* The Habbo's head, outlined in the screen's colour as the Your
+           Profile window draws it (netlify/functions/habbo-outline.js; 4 Oct
+           2026); the Discord picture is never shown here. Without a linked
+           Habbo, nothing: the name stands on its own. */
+        let figure = "";
+        try { figure = habbo && habbo.avatar ? new URL(habbo.avatar).searchParams.get("figure") || "" : ""; } catch (e) { /* not an address */ }
+        const face = figure
+            ? `<img class="console-profile-habbo" src="/.netlify/functions/habbo-outline?figure=${esc(encodeURIComponent(figure))}&amp;kind=head&amp;v=2" alt="" aria-hidden="true">`
+            : "";
         const who = `
             <div class="console-profile-who" data-crumb-private>
-                ${me.avatar ? `<img class="console-profile-face" src="${esc(me.avatar)}" alt="" aria-hidden="true">` : ""}
+                ${face}
                 <div>
                     <p class="console-profile-name">${esc(Account.nameOf ? Account.nameOf(me) : me.name)}</p>
-                    ${d && d.player && d.player.joinedAt ? `<p class="console-profile-since">Rat since ${esc(since(d.player.joinedAt))}</p>` : ""}
+                    ${d && d.since ? `<p class="console-profile-since">Rat since ${esc(since(d.since))}</p>` : ""}
                 </div>
             </div>
+            ${d && !habbo ? `<p class="console-note console-profile-note">Link your Habbo through OriginsBot to show your avatar and motto on your profile.</p>` : ""}
             <div data-nick-slot></div>`;
 
-        if (!d) {
-            return `${who}${rule}${archiveBlock()}${rule}
-                <p class="console-blurb">${failed ? "Your game figures could not be read just now. Try again in a moment." : "Loading..."}</p>`;
-        }
-
-        const both = d.combined;
-        const games = `
-            ${head("Daily games")}
-            ${line("Total points", esc(num(both ? both.points : 0)))}
-            ${line("Place", esc(placeText(both)))}
-            <p class="console-note console-profile-note console-pick-note">Select a game to play it.</p>
-            ${gameBlock("guess", "Guess the Maze", d.games && d.games.guess)}
-            ${gameBlock("odd", "Odd One Out", d.games && d.games.odd)}
+        const view = `
+            <button type="button" class="console-btn console-profile-btn" data-act="progress">View my profile</button>
             <button type="button" class="console-btn console-profile-btn" data-act="boards">Leaderboards</button>`;
 
-        const ff = d.ff ? `
-            ${rule}
-            ${head("Fallin' Furni")}
-            ${line("Best run", `${esc(num(d.ff.points))} pts`)}
-            ${line("Levels", esc(num(d.ff.levels)))}
-            ${line("Place", esc(placeText(d.ff)))}` : "";
-
-        const l = d.leads || { sent: 0 };
-        const leads = l.sent ? `
-            ${head("Add Maze Info")}
-            ${line("Sent", esc(num(l.sent)))}
-            ${line("Accepted", esc(num(l.accepted)))}
-            ${l.waiting ? line("Waiting", esc(num(l.waiting))) : ""}` : `
-            ${head("Add Maze Info")}
-            <p class="console-blurb">Nothing sent yet. Know something about a maze? It all counts.</p>
-            <button type="button" class="console-btn console-profile-btn" data-act="info">Add Maze Info</button>`;
+        if (!d) {
+            return `${who}${rule}
+                <p class="console-blurb">${failed ? "Your profile could not be read just now. Try again in a moment." : "Loading..."}</p>
+                ${rule}${view}`;
+        }
 
         return `
             ${who}
             ${rule}
-            ${archiveBlock()}
+            ${favouriteHtml()}
             ${rule}
-            ${games}
-            ${ff}
+            ${badgeHtml()}
             ${rule}
-            ${leads}
+            ${visibilityHtml()}
+            ${rule}
+            ${view}
             ${rule}
             <button type="button" class="console-link-btn console-profile-signout" data-act="signout">Sign out</button>`;
     }
@@ -605,21 +588,20 @@ document.addEventListener("DOMContentLoaded", () => {
         const me = window.Account ? Account.current : null;
 
         /* What had focus, so a redraw can hand it back: the nickname field
-           (moved, not rebuilt, so only focus and caret need restoring) or a
-           picked game block (rebuilt, so found again by its key). */
+           (moved, not rebuilt, so only focus and caret need restoring), or
+           one of the choices (rebuilt, so found again by its id or data-pref). */
         const active = document.activeElement;
         const inNick = active && nickEl.contains(active) ? active : null;
         const nickFocusSel = inNick ? (inNick.id ? `#${inNick.id}` : inNick.dataset.nick ? `[data-nick="${inNick.dataset.nick}"]` : null) : null;
         const caret = inNick && typeof inNick.selectionStart === "number"
             ? [inNick.selectionStart, inNick.selectionEnd] : null;
-        const gameKey = active && host.contains(active) && active.dataset ? active.dataset.gamePick : null;
+        const prefKey = !inNick && active && host.contains(active) && active.dataset ? active.dataset.pref : null;
 
         if (!me) {
             nick.editing = false;
             nick.msg = "";
             drawnFor = null;
-            host.innerHTML = signedOutHtml();
-            syncPick();
+            host.innerHTML = welcomeHtml() + signedOutHtml();
             return;
         }
 
@@ -637,7 +619,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
-        host.innerHTML = signedInHtml(me);
+        host.innerHTML = welcomeHtml() + signedInHtml(me);
         /* Redrawn only when what it shows has moved on (a different player
            or nickname, or it has just been asked to open); otherwise the
            same element, field and all, is simply moved into the new page. */
@@ -650,7 +632,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const slot = host.querySelector("[data-nick-slot]");
         if (slot) slot.replaceWith(nickEl);
-        syncPick();
 
         if (openedNow) {
             const input = focusNick("#console-nick-input");
@@ -661,9 +642,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 again.focus({ preventScroll: true });
                 if (caret) { try { again.setSelectionRange(caret[0], caret[1]); } catch (e) { /* not a text field */ } }
             }
-        } else if (gameKey) {
-            const again = host.querySelector(`[data-game-pick="${gameKey}"]`);
-            if (again) again.focus({ preventScroll: true });
+        } else if (prefKey) {
+            // (A save in flight disables it; savePref hands focus back after.)
+            const again = host.querySelector(`[data-pref="${prefKey}"]`);
+            if (again && !again.disabled) again.focus({ preventScroll: true });
         }
     }
 
@@ -740,34 +722,31 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     document.addEventListener("console:page", e => {
-        // Any page change — or the console reopening, which shows a page
-        // afresh — lets go of a picked game.
-        picked = null;
-        /* And the nickname field starts closed each time the page is shown:
+        /* The nickname field starts closed each time the page is shown:
            coming back to a half-typed name you had walked away from is worse
            than starting again (the Contact form empties itself for the same
-           reason). Console.editNickname opens it again straight after. */
+           reason). Console.editNickname opens it again straight after. And
+           the last save's message goes, as the nickname's does. */
         nick.editing = false;
         nick.draft = null;
         nick.msg = "";
         nick.tone = "";
         drawnFor = null;
+        if (!pref.busy) { pref.msg = ""; pref.where = ""; }
         if (e.detail && e.detail.name === "profile") show();
-        else showing = false;
-        syncPick();
+        else { showing = false; welcome = false; }
     });
 
     /* The console shutting is the page no longer showing (29 Sept 2026; the
        event is new in js/console.js's closeConsole). Without it `showing`
        stayed true from the first look at the Profile for the rest of the
        visit, and every Account announcement after — a nickname saved from
-       Fallin' Furni, the sign-in check — fetched player-profile again for a
-       page that was not on screen. Play, and the page's own Leaderboards
-       and Your Progress buttons, all close the console, so they land here. */
+       Fallin' Furni, the sign-in check — fetched the profile again for a
+       page that was not on screen. The page's own View my profile and
+       Leaderboards buttons both close the console, so they land here. */
     document.addEventListener("console:close", () => {
         showing = false;
-        picked = null;
-        syncPick();
+        welcome = false;
     });
 
     /* Signing in or out while the page is open redraws it for the new
@@ -812,8 +791,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     host.addEventListener("click", e => {
-        const game = e.target.closest("[data-game-pick]");
-        if (game && host.contains(game)) { pick(game.dataset.gamePick); return; }
+        const toggle = e.target.closest('button[data-pref="hidden"]');
+        if (toggle && !toggle.disabled && data) { savePref("hidden", { hidden: !data.hidden }); return; }
         const btn = e.target.closest("[data-act]");
         if (!btn) return;
         const act = btn.dataset.act;
@@ -825,19 +804,18 @@ document.addEventListener("DOMContentLoaded", () => {
         else if (act === "progress" && window.ArchiveProgress) { Console.close(); window.ArchiveProgress.open(); }
         else if (act === "boards" && window.Leaderboards) { Console.close(); window.Leaderboards.open(); }
         // Off the homepage neither window exists, so both buttons go there.
-        else if (act === "progress" || act === "boards") location.href = "/home";
+        // Off the homepage neither window exists: /profile opens Your Profile
+        // there (4 Oct 2026), and the Leaderboards are on the archive page.
+        else if (act === "progress") location.href = "/profile";
+        else if (act === "boards") location.href = "/home";
         else if (act === "info") Console.openInfo(null);
     });
 
-    // Enter and Space on a game block, as on a button. Space is kept from
-    // scrolling the screen.
-    host.addEventListener("keydown", e => {
-        const game = e.target.closest ? e.target.closest("[data-game-pick]") : null;
-        if (!game || e.target !== game) return;
-        if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
-            e.preventDefault();
-            pick(game.dataset.gamePick);
-        }
+    host.addEventListener("change", e => {
+        const sel = e.target.closest("select[data-pref]");
+        if (!sel || !data) return;
+        const value = sel.value || null;
+        savePref(sel.dataset.pref, { [sel.dataset.pref]: value });
     });
 
     /* /home#nickname — where the "Set a nickname" line sends someone from a

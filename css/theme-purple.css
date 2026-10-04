@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1006 rules, 1635 declarations, hues 272 (surfaces) / 272 (accents).
+   1055 rules, 1709 declarations, hues 272 (surfaces) / 272 (accents).
 */
 :root[data-theme="purple"] {
     --bg-black: #020104;
@@ -1775,7 +1775,7 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
 
 [data-theme="purple"] .console-frame {
     background: #732fae;
-    box-shadow: 2px 0 0 0 rgba(0, 0, 0, 0.45), 0 2px 0 0 rgba(0, 0, 0, 0.45);
+    box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.22);
 }
 
 [data-theme="purple"] .console-border {
@@ -1802,17 +1802,12 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     border: 1px solid #000;
     background-image: url('../assets/img/console/cnsl-bg-tile.png');
     color: #eeeeee;
-    box-shadow: -4px 0 0 0 rgba(0, 0, 0, 0.45),
-        0 -2px 0 0 rgba(0, 0, 0, 0.45),
-        1px 0 0 0 rgba(255, 255, 255, 0.5),
-        0 1px 0 0 rgba(255, 255, 255, 0.5);
+    box-shadow: -1px -1px 0 1px rgba(0, 0, 0, 0.45),
+        1px 1px 0 0 rgba(255, 255, 255, 0.5);
 }
 
 [data-theme="purple"] .console-screen-shadow {
-    box-shadow: inset 0 6px 0 0 rgba(0, 0, 0, 0.4),
-        inset 6px 0 0 0 rgba(0, 0, 0, 0.4),
-        inset -6px 0 0 0 rgba(0, 0, 0, 0.4),
-        inset 0 -3px 0 0 rgba(0, 0, 0, 0.4);
+    box-shadow: inset 0 1px 0 5px rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="purple"] .console-page-title {
@@ -1878,6 +1873,37 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     color: #eeeeee;
 }
 
+[data-theme="purple"] .select-list.is-console {
+    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
+    border: 1px solid #eeeeee;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+    color: #eeeeee;
+}
+
+[data-theme="purple"] .select-list.is-console .select-list-opt.is-selected {
+    background: rgba(238, 238, 238, 0.08);
+}
+
+[data-theme="purple"] .select-list.is-console .select-list-opt.is-active {
+    background: rgba(238, 238, 238, 0.2);
+}
+
+[data-theme="purple"] .select-list.is-console .select-list-group {
+    color: rgba(238, 238, 238, 0.6);
+}
+
+[data-theme="purple"] .select-list.is-parchment {
+    background: var(--parchment);
+    border: 1.5px solid var(--chrome-border);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+    color: #0e0417;
+}
+
+[data-theme="purple"] .select-list.is-parchment .select-list-opt.is-active {
+    background: var(--amber-bright);
+    color: #050209;
+}
+
 [data-theme="purple"] .console-info-remove {
     background: transparent;
     border: 1px solid #eeeeee;
@@ -1918,10 +1944,6 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     color: rgba(238, 238, 238, 0.7);
 }
 
-[data-theme="purple"] .console-profile-face {
-    border: 1px solid #eeeeee;
-}
-
 [data-theme="purple"] .console-profile-name,
 [data-theme="purple"] .console-profile-head {
     color: #ffffff;
@@ -1933,14 +1955,6 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
 
 [data-theme="purple"] .console-profile-line {
     color: #eeeeee;
-}
-
-[data-theme="purple"] .console-profile-bar {
-    border: 1px solid #eeeeee;
-}
-
-[data-theme="purple"] .console-profile-bar span {
-    background: #eeeeee;
 }
 
 [data-theme="purple"] .console-profile-list {
@@ -2677,8 +2691,44 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     }
 }
 
+[data-theme="purple"] .side-spine-star {
+    background: currentColor;
+}
+
+[data-theme="purple"] .spotlight-card {
+    background: #b8a7c7;
+    border: 1px solid var(--chrome-border);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+[data-theme="purple"] .spotlight-frame {
+    border: 1px solid var(--chrome-border);
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+    background: #020104;
+}
+
+[data-theme="purple"] .spotlight-frame::after {
+    box-shadow: inset 0 1px 0 rgba(248, 245, 250, 0.22),
+        inset 1px 0 0 rgba(248, 245, 250, 0.22);
+}
+
+[data-theme="purple"] .spotlight-frame:hover,
+[data-theme="purple"] .spotlight-frame:has(.welcome-promo-slide:focus-visible) {
+    border-color: var(--amber);
+}
+
+[data-theme="purple"] .spotlight-frame:has(.welcome-promo-slide:focus-visible) {
+    outline: 2px solid var(--amber-bright);
+}
+
 @media (max-width: 900px) {
     [data-theme="purple"] .side-menu {
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.7);
+    }
+}
+
+@media (max-width: 900px) {
+    [data-theme="purple"] .spotlight-card {
         box-shadow: 0 8px 22px rgba(0, 0, 0, 0.7);
     }
 }
@@ -3134,6 +3184,13 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     color: #ffffff;
 }
 
+[data-theme="purple"] .saved-toggle.is-clearing,
+[data-theme="purple"] .modal-meta-actions .saved-toggle.is-clearing {
+    background: linear-gradient(#3d4b32, #2f3a26);
+    border-color: var(--ok);
+    color: #d8e8c6;
+}
+
 [data-theme="purple"] .saved-note {
     background: var(--wood-dark, #0c0711);
     border: 1px solid var(--chrome-border);
@@ -3369,6 +3426,51 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
+[data-theme="purple"] .wn-check {
+    color: var(--parchment-dim);
+}
+
+[data-theme="purple"] .wn-day {
+    color: var(--amber-text);
+}
+
+[data-theme="purple"] .wn-verb {
+    border: 1px solid;
+}
+
+[data-theme="purple"] .wn-verb.is-added {
+    color: #d8e8c6;
+    border-color: var(--ok);
+}
+
+[data-theme="purple"] .wn-verb.is-updated {
+    color: #c8b7d6;
+    border-color: var(--amber);
+}
+
+[data-theme="purple"] .wn-verb.is-news {
+    color: #e5dbed;
+    border-color: var(--parchment-dim);
+}
+
+[data-theme="purple"] .wn-verb.is-note {
+    color: #cfd9e4;
+    border-color: #7f94a8;
+}
+
+[data-theme="purple"] .wn-flags {
+    color: var(--amber-text);
+}
+
+[data-theme="purple"] .wn-line {
+    color: var(--parchment);
+}
+
+[data-theme="purple"] .wn-override {
+    border: 1px dashed var(--amber);
+    background: rgba(46, 17, 72, 0.14);
+}
+
 [data-theme="purple"] .guides-starter {
     border: 1px dashed var(--amber);
     background: rgba(46, 17, 72, 0.16);
@@ -3480,114 +3582,254 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     color: #f8f5fa;
 }
 
-[data-theme="purple"] .progress-face {
-    border: 1px solid var(--amber);
+[data-theme="purple"] #progress-window .profile-console-screen,
+[data-theme="purple"] #progress-window .profile-console-screen * {
+    color: var(--pc-text);
 }
 
-[data-theme="purple"] .progress-head-text h3 {
-    color: var(--amber-bright);
-    text-shadow: 2px 2px 0 var(--bg-black);
-}
-
-[data-theme="purple"] .progress-head-text p {
-    color: var(--parchment-dim);
-}
-
-[data-theme="purple"] .progress-signin {
-    background: none;
-    border: 0;
-    color: var(--amber-bright);
-}
-
-[data-theme="purple"] .progress-signin:hover {
-    color: #f8f5fa;
-}
-
-[data-theme="purple"] .progress-head-sm {
-    color: var(--amber-text);
-    text-shadow: 2px 2px 0 var(--bg-black);
-}
-
-[data-theme="purple"] .progress-count {
-    color: var(--amber-text);
-}
-
-[data-theme="purple"] .progress-bignum {
-    color: var(--amber-bright);
-}
-
-[data-theme="purple"] .progress-bignum span {
-    color: var(--unknown-text);
-}
-
-[data-theme="purple"] .progress-bar {
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid var(--chrome-border);
-}
-
-[data-theme="purple"] .progress-bar > span {
-    background: linear-gradient(180deg, #391459, #260e3c);
-}
-
-[data-theme="purple"] .progress-note {
-    color: var(--parchment-dim);
-}
-
-[data-theme="purple"] .progress-note strong {
-    color: var(--amber-bright);
-}
-
-[data-theme="purple"] .progress-diff {
-    color: var(--parchment);
-}
-
-[data-theme="purple"] .progress-diff-bar {
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid var(--chrome-border);
-}
-
-[data-theme="purple"] .progress-diff-bar > span {
-    background: var(--amber);
-}
-
-[data-theme="purple"] .progress-diff-n {
-    color: var(--parchment-dim);
-}
-
-[data-theme="purple"] .progress-badge {
-    background: rgba(46, 17, 72, 0.28);
-    border: 1px solid var(--amber);
-    color: var(--amber-bright);
-}
-
-[data-theme="purple"] .progress-badge-mark {
-    background: var(--amber-bright);
-}
-
-[data-theme="purple"] .progress-saved-row {
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--border);
-    color: var(--parchment);
-}
-
-[data-theme="purple"] .progress-saved-row:hover,
-[data-theme="purple"] .progress-saved-row:focus-visible {
-    border-color: var(--amber);
-    background: var(--wood-mid);
+[data-theme="purple"] .profile-console-frame:focus {
     outline: none;
 }
 
-[data-theme="purple"] .progress-saved-row:focus-visible {
-    outline: 2px solid var(--amber-bright);
+[data-theme="purple"] .profile-search-input:focus {
+    outline: none;
+    background: rgba(238, 238, 238, 0.1);
+}
+
+[data-theme="purple"] .profile-search-results {
+    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
+    border: 1px solid var(--pc-text);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="purple"] .profile-search-opt {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-search-opt:hover,
+[data-theme="purple"] .profile-search-opt.is-active {
+    background: rgba(238, 238, 238, 0.15);
+}
+
+[data-theme="purple"] .profile-search-face.is-blank {
+    border: 1px solid var(--pc-text);
+}
+
+[data-theme="purple"] .profile-search-hotel {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-search-msg {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] #progress-body {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-wait {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-who h3,
+[data-theme="purple"] .progress-head-sm,
+[data-theme="purple"] .profile-completed > summary,
+[data-theme="purple"] .progress-bignum strong {
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="purple"] .progress-head-sm,
+[data-theme="purple"] .profile-completed > summary {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-count {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-note {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-note strong {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-signin,
+[data-theme="purple"] .profile-link {
+    border: 0;
+    background: none;
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-signin:hover,
+[data-theme="purple"] .profile-link:hover {
+    background: rgba(238, 238, 238, 0.15);
+}
+
+[data-theme="purple"] #progress-overlay :is(button,
+[data-theme="purple"] summary,
+[data-theme="purple"] input):focus-visible {
+    outline: 1px dotted var(--pc-text);
+}
+
+[data-theme="purple"] .profile-avatar.is-blank {
+    border: 1px solid var(--pc-text);
+}
+
+[data-theme="purple"] .profile-who {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-who h3 {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-who h3 .profile-online {
+    text-shadow: none;
+}
+
+[data-theme="purple"] .profile-motto {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-line {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-line strong {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-hidden-note {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-online {
+    border: 1px solid var(--pc-text);
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-fav {
+    background: transparent;
+    border: 1px solid var(--pc-rule);
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-fav:hover {
+    border-color: var(--pc-text);
+    background: rgba(238, 238, 238, 0.1);
+}
+
+[data-theme="purple"] .profile-fav-img {
+    border: 1px solid var(--pc-text);
+}
+
+[data-theme="purple"] .profile-fav-name {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-fav-by {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-bignum strong {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-bignum span {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-bar,
+[data-theme="purple"] .progress-diff-bar {
+    border: 1px solid var(--pc-text);
+}
+
+[data-theme="purple"] .progress-bar > span,
+[data-theme="purple"] .progress-diff-bar > span {
+    background: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-hl dt {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-dim {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-diff-n {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-badge {
+    border: 1px solid var(--pc-text);
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-badge-mark {
+    background: var(--pc-text);
+}
+
+[data-theme="purple"] button.progress-badge {
+    background: transparent;
+}
+
+[data-theme="purple"] button.progress-badge:hover,
+[data-theme="purple"] button.progress-badge.is-showing,
+[data-theme="purple"] button.progress-badge[aria-pressed="true"] {
+    background: rgba(238, 238, 238, 0.15);
+}
+
+[data-theme="purple"] .progress-badge.is-locked {
+    border-color: var(--pc-dim);
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-badge.is-locked .progress-badge-mark {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--pc-dim);
+}
+
+[data-theme="purple"] .profile-badge-card {
+    border: 1px solid var(--pc-text);
+}
+
+[data-theme="purple"] .profile-badge-card p {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-games thead th {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-games tbody th {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .profile-games td {
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-saved-row {
+    background: transparent;
+    border: 1px solid var(--pc-rule);
+    color: var(--pc-text);
+}
+
+[data-theme="purple"] .progress-saved-row:hover {
+    border-color: var(--pc-text);
+    background: rgba(238, 238, 238, 0.15);
 }
 
 [data-theme="purple"] .progress-saved-by {
-    color: var(--unknown-text);
+    color: var(--pc-text);
 }
 
 [data-theme="purple"] .progress-saved-closed {
-    border: 1px solid var(--unknown-text, var(--unknown));
-    color: var(--unknown-text, var(--unknown));
+    border: 1px dashed var(--pc-dim);
+    color: var(--pc-text);
 }
 
 [data-theme="purple"] .updatelog-intro {
@@ -3764,6 +4006,11 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
     background: var(--bg-black);
 }
 
+[data-theme="purple"] .updatelog-thumb-crop {
+    border: 1px solid var(--chrome-border);
+    background: var(--bg-black);
+}
+
 [data-theme="purple"] .updatelog-thumb.is-blank {
     border-color: var(--border);
 }
@@ -3778,6 +4025,22 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
 
 [data-theme="purple"] .updatelog-change {
     color: var(--amber-text);
+}
+
+[data-theme="purple"] .updatelog-verb.is-news {
+    color: #e5dbed;
+    border-color: var(--parchment-dim);
+    background: rgba(229, 219, 237, 0.12);
+}
+
+[data-theme="purple"] .updatelog-verb.is-note {
+    color: #cfd9e4;
+    border-color: #7f94a8;
+    background: rgba(127, 148, 168, 0.18);
+}
+
+[data-theme="purple"] .updatelog-text {
+    color: var(--parchment);
 }
 
 [data-theme="purple"] .admin-tab-btn {
@@ -4685,31 +4948,6 @@ html[data-theme="purple"]::-webkit-scrollbar-button {
 
 [data-theme="purple"] .console-btn:disabled:hover {
     background: transparent;
-}
-
-[data-theme="purple"] .console-profile-game:hover {
-    background: rgba(238, 238, 238, 0.06);
-}
-
-[data-theme="purple"] .console-profile-game.is-picked {
-    box-shadow: 0 0 0 1px #eeeeee;
-}
-
-[data-theme="purple"] .console-profile-game:focus {
-    outline: none;
-}
-
-[data-theme="purple"] .console-profile-game:focus-visible {
-    outline: 2px solid var(--amber-bright);
-}
-
-[data-theme="purple"] .console-play-btn {
-    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
-}
-
-[data-theme="purple"] .console-play-btn:hover {
-    background: linear-gradient(rgba(238, 238, 238, 0.15), rgba(238, 238, 238, 0.15)),
-                url('../assets/img/console/cnsl-bg-tile.png') repeat;
 }
 
 [data-theme="purple"] .nick-prompt-input {

@@ -981,15 +981,22 @@
     function wantsNickPrompt() {
         const me = Account.current;
         if (nickPromptShowing || !me) return null;
-        /* Not while banned: the server refuses every nickname answer from a
-           banned player, so the window could never be answered and would
-           come back on every page load. */
-        if (activeBan()) return null;
-        return promptKind(me, {
+        /* The profile introduction comes first, and answers the FIRST
+           question itself: a new player is taken to Edit Profile, where the
+           nickname is the first thing on the page (see PROFILE INTRO). Only
+           that one (4 Oct 2026, the bug scan): it held back the admins'
+           "Pick a new nickname" too, which must still be asked. */
+        const kind = promptKind(me, {
             canNick: Account.canNick(),
             firstDone: nickPromptDone,
             renameDone: renamePromptDone
         });
+        if (me.profileIntro && kind === "first") return null;
+        /* Not while banned: the server refuses every nickname answer from a
+           banned player, so the window could never be answered and would
+           come back on every page load. */
+        if (activeBan()) return null;
+        return kind;
     }
 
     function scheduleNickPrompt() {
@@ -1578,6 +1585,155 @@
     // page; a first sign-in queues the one-time question.
     Account.onChange(dropNickHints);
     Account.onChange(scheduleNickPrompt);
+
+    /* ---------- PROFILE INTRO (4 Oct 2026, the owner's) ----------
+
+       Profiles arrived after the site opened, so every player is told about
+       theirs once. `me` says which telling they are owed (profileIntro;
+       profileIntroOf in netlify/functions/discord-auth.js):
+
+         "new"        just signed in for the first time: straight to Edit
+                      Profile in the console, with a welcome line and the
+                      nickname's "Set a nickname" under it. This replaces
+                      the old one-time "Choose a nickname?" window for them.
+         "returning"  signed in before profiles existed: a window saying
+                      "We added profiles, add yours!", whose button opens
+                      Edit Profile; "Later" (or ×, Escape) just closes it.
+
+       Either is shown once: the server is told as it opens (Api.
+       markProfileIntro), and a telling that could not be recorded is simply
+       given again on a later visit. It waits for a clear page by the
+       nickname window's rules (pageIsBusy), and only on a page with the
+       console to open — never on the Warren.
+
+       PREVIEW. A real first sign-in, or a returning player, is hard to
+       stage, so on a development host ?profile-intro=new or
+       ?profile-intro=returning shows either telling over whoever is (or is
+       not) signed in, and records nothing. */
+    let introShowing = false;
+    let introOverlay = null;
+    let introClose = null;
+    let introEscapeRegistered = false;
+    let introDone = false;
+    let introTimer = null;
+    const DEV_HOST = /^(localhost|127\.0\.0\.1|\[::1\])$|\.(localhost|test)$/.test(location.hostname);
+    const introPreview = (() => {
+        if (!DEV_HOST) return null;
+        try {
+            const v = new URLSearchParams(location.search).get("profile-intro");
+            return v === "new" || v === "returning" ? v : null;
+        } catch (e) { return null; }
+    })();
+
+    function wantsIntro() {
+        if (introShowing || introDone) return null;
+        if (introPreview) return introPreview;
+        const me = Account.current;
+        if (!me || activeBan()) return null;
+        return me.profileIntro === "new" || me.profileIntro === "returning" ? me.profileIntro : null;
+    }
+
+    function scheduleIntro() {
+        if (introTimer || !wantsIntro()) return;
+        const tick = () => {
+            introTimer = null;
+            const kind = wantsIntro();
+            if (!kind) return;
+            const C = window.MazeConsole;
+            if (!C || typeof C.open !== "function") return;     // no console on this page
+            if (pageIsBusy()) { introTimer = setTimeout(tick, 1500); return; }
+            showIntro(kind);
+        };
+        introTimer = setTimeout(tick, 1200);
+    }
+
+    // Told: on the server for real, nowhere for a preview.
+    function markIntro() {
+        introDone = true;
+        if (introPreview || !Account.current) return;
+        Account.current.profileIntro = null;
+        Account.current.nickAsked = true;
+        if (typeof Api.markProfileIntro === "function") {
+            Api.markProfileIntro().then(takePlayer).catch(() => { /* told again next visit, at worst */ });
+        }
+        /* Anything the intro was holding back — the admins' "Pick a new
+           nickname" — is asked for now; it waits for the intro's own window
+           to close (pageIsBusy), as for any other. */
+        scheduleNickPrompt();
+    }
+
+    function openEditProfile(welcome) {
+        const C = window.MazeConsole;
+        if (C && typeof C.openProfileWelcome === "function") C.openProfileWelcome(welcome);
+        else if (C && typeof C.open === "function") C.open("profile");
+    }
+
+    function showIntro(kind) {
+        markIntro();
+        if (kind === "new") { openEditProfile(true); return; }
+
+        introShowing = true;
+        const returnTo = document.activeElement;
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay open nick-overlay profile-intro-overlay";
+        overlay.innerHTML = `
+            <div class="modal confirm-modal nick-window" role="dialog" aria-modal="true"
+                 aria-labelledby="profile-intro-title" aria-describedby="profile-intro-text" tabindex="-1">
+                <div class="chrome-titlebar">
+                    <h2 id="profile-intro-title">Profiles are here</h2>
+                    <button type="button" class="chrome-close" aria-label="Later"><img src="/assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+                </div>
+                <div class="chrome-frame">
+                    <div class="modal-body nick-prompt-body">
+                        <p class="nick-prompt-text profile-intro-lead"><strong>We added profiles, add yours!</strong></p>
+                        <p class="nick-prompt-text" id="profile-intro-text">Your profile shows the mazes you've completed, the badges you've earned, plus your daily game streaks; other players can view your profile by searching your Habbo username.</p>
+                        <p class="nick-prompt-text">Head to the console to edit your profile and pick your favourite maze, show off a badge, and share your stats!</p>
+                        <div class="confirm-actions signout-actions nick-prompt-actions">
+                            <button type="button" class="guess-btn guess-btn--lead" data-intro="edit">Edit my profile</button>
+                            <button type="button" class="guess-btn" data-intro="later">Later</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        document.body.classList.add("modal-open");
+
+        function finish(edit) {
+            if (!introShowing) return;
+            introShowing = false;
+            introClose = null;
+            overlay.remove();
+            if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
+            if (edit) { openEditProfile(false); return; }
+            if (returnTo && document.body.contains(returnTo) && typeof returnTo.focus === "function") {
+                returnTo.focus({ preventScroll: true });
+            }
+        }
+        /* Escape through the shared top-most-layer rule (js/site.js), as
+           the nickname window does (4 Oct 2026, the bug scan): a listener of
+           its own ran after that rule, which had already closed whatever
+           was open behind this — the profile, the console, the menu. */
+        introClose = () => finish(false);
+        introOverlay = overlay;
+        if (!introEscapeRegistered && window.EscapeLayers) {
+            introEscapeRegistered = true;
+            window.EscapeLayers.register({
+                elements: () => (introShowing && introOverlay ? [introOverlay] : []),
+                close: () => { if (introClose) introClose(); }
+            });
+        }
+        overlay.addEventListener("click", e => {
+            if (e.target === overlay) { finish(false); return; }
+            const b = e.target.closest("[data-intro], .chrome-close");
+            if (!b) return;
+            finish(b.dataset.intro === "edit");
+        });
+        overlay.querySelector('[data-intro="edit"]').focus({ preventScroll: true });
+    }
+
+    Account.onChange(scheduleIntro);
+    // A preview needs nobody signed in, so it does not wait for `me`.
+    if (introPreview) document.addEventListener("DOMContentLoaded", scheduleIntro);
 
     document.addEventListener("DOMContentLoaded", () => {
         renderButton();          // the signed-out state, immediately

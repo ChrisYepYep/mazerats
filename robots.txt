@@ -16,6 +16,11 @@ Allow: /
 Disallow: /glyphs
 Disallow: /glyphs.html
 
+# Your Profile, on the same terms: /profile is the homepage with the profile
+# window open, and what it shows is the visitor's own (or a player's,
+# reached through search), not anything a search result should land on.
+Disallow: /profile
+
 # The Sorcerer's Atlas is NOT disallowed here, on purpose. It is still being
 # drawn and is kept out of search results — but by its noindex (the meta tag
 # in wizard.html and an X-Robots-Tag header in netlify.toml), which a crawler

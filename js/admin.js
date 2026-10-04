@@ -706,6 +706,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.AdminPlayers) window.AdminPlayers.reset();
         // The Event Entries panel (js/admin-entries.js, 30 Sept 2026).
         if (window.AdminEntries) window.AdminEntries.reset();
+        if (window.AdminWhatsNew) window.AdminWhatsNew.reset();
         // The Bans tab's Add a ban and open Change forms (29 Sept 2026).
         resetBanForms();
         // The Recolour editor's palette and preview (1 Oct 2026) — the same
@@ -847,8 +848,11 @@ document.addEventListener("DOMContentLoaded", () => {
            (30 Sept 2026) — see isContributorFormDirty and isEditorDirty in
            js/admin-dead-ends.js. */
         const deadEnds = window.AdminDeadEnds && typeof window.AdminDeadEnds.isDirty === "function" ? window.AdminDeadEnds : null;
+        // And a half-written What's New post (4 Oct 2026; js/admin-whats-new.js).
+        const whatsNew = window.AdminWhatsNew || null;
         const dirty = () => keys.some(isFormDirty) || isContributorFormDirty() ||
-            !!(deadEnds && deadEnds.isDirty()) || !!(guides && guides.isDirty());
+            !!(deadEnds && deadEnds.isDirty()) || !!(guides && guides.isDirty()) ||
+            !!(whatsNew && whatsNew.isDirty());
         const saving = () => keys.some(key => COLLECTIONS[key].formEl._saving) || !!(guides && guides.isSaving());
         /* A Recolour palette with unsaved edits (30 Sept 2026) is asked
            about too — its own beforeunload guards a reload, and a log out
@@ -888,6 +892,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (deadEnds) deadEnds.dropEditor();
                 // Its deletes go out at once, with the token still valid.
                 if (guides) guides.close();
+                if (whatsNew) whatsNew.close();
                 // A refused save's parked pictures, and its rescued furni.
                 discards.push(forgetRefusedEdits());
                 await Promise.all(discards);
@@ -937,6 +942,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.AdminErrors) window.AdminErrors.reset();
         if (window.AdminPlayers) window.AdminPlayers.reset();
         if (window.AdminEntries) window.AdminEntries.reset();
+        if (window.AdminWhatsNew) window.AdminWhatsNew.reset();
         // The palette editor, asked about above (1 Oct 2026): its edits and
         // its preview were still there for whoever signed in next.
         if (recolour && typeof recolour.reset === "function") recolour.reset();

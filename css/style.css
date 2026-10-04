@@ -8459,8 +8459,12 @@ body[data-page="admin"] .search-box input {
        that same curve so nothing solid shows past it. */
     border-radius: 16px;
     overflow: hidden;
-    /* Solid (unblurred) 2px shadow on the right/bottom sides only. */
-    box-shadow: 2px 0 0 0 rgba(0, 0, 0, 0.45), 0 2px 0 0 rgba(0, 0, 0, 0.45);
+    /* Solid (unblurred) 2px shadow to the bottom right. ONE shadow, offset
+       diagonally (4 Oct 2026): it was two — one 2px right, one 2px down —
+       whose rounded corners met in a step at the bottom left and top right.
+       And lighter: at 0.45 it read as the right and bottom edges of the
+       frame being drawn thicker than the others. */
+    box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.22);
 }
 
 /* ---- border: single composited border-image ----
@@ -8651,12 +8655,23 @@ body[data-page="admin"] .search-box input {
        light notionally coming from the bottom-right) and a 1px highlight
        on the bottom/right to match — these sit outside the box entirely so
        scrolled content never reaches them. The matching inset shadow lives
-       on .console-screen-shadow instead (see below) rather than here. */
+       on .console-screen-shadow instead (see below) rather than here.
+
+       One shadow each way (4 Oct 2026, the owner's: the screen's left
+       corners looked janky). They were four — 4px left, 2px up, 1px right,
+       1px down — and two copies of a rounded box moved apart sideways and
+       upwards meet in a notch at the corner between them, and stick out as
+       a crescent under the bottom-left curve.
+
+       The dark one is GROWN by 1px (spread) and moved 1px up and left, not
+       just moved: a moved copy keeps the screen's 15px curve, which is not
+       concentric with it, so the band bulged lopsidedly round the top-left
+       corner. Grown, its curve is 16px, the screen's own plus the band — a
+       ring 2px wide at the top and left, thinning to nothing at the top
+       right and bottom left, where the 1px highlight takes over. */
     box-shadow:
-        -4px 0 0 0 rgba(0, 0, 0, 0.45),
-        0 -2px 0 0 rgba(0, 0, 0, 0.45),
-        1px 0 0 0 rgba(255, 255, 255, 0.5),
-        0 1px 0 0 rgba(255, 255, 255, 0.5);
+        -1px -1px 0 1px rgba(0, 0, 0, 0.45),
+        1px 1px 0 0 rgba(255, 255, 255, 0.5);
 }
 
 .console-screen-scroll {
@@ -8668,19 +8683,24 @@ body[data-page="admin"] .search-box input {
    rather than the inset shadow living on .console-screen itself — a
    parent's own box-shadow always paints before its children, so scrolled
    text was passing over/hiding the shadow instead of sitting under it like
-   a glass's inner rim should. Same border-radius as the screen (inherited)
-   so the shadow's own curve still matches, and pointer-events: none keeps
+   a glass's inner rim should. Rounded to the curve inside the screen's
+   border (below) so the shadow's own curve matches, and pointer-events: none keeps
    it from blocking clicks/scroll/the custom scrollbar underneath. */
 .console-screen-shadow {
     position: absolute;
     inset: 0;
-    border-radius: inherit;
+    /* The curve INSIDE the screen's 1px border, which is 1px tighter than
+       the screen's own 15px (4 Oct 2026). It inherited the 15px, so its
+       corners sat inside the screen's clip and left a sliver of unshaded
+       glass between the black line and the rim at every corner. */
+    border-radius: 14px;
     pointer-events: none;
-    box-shadow:
-        inset 0 6px 0 0 rgba(0, 0, 0, 0.4),
-        inset 6px 0 0 0 rgba(0, 0, 0, 0.4),
-        inset -6px 0 0 0 rgba(0, 0, 0, 0.4),
-        inset 0 -3px 0 0 rgba(0, 0, 0, 0.4);
+    /* The glass's rim: ONE inset shadow (4 Oct 2026), spread 5px all round
+       and dropped 1px, so it is 6px at the top, 5px at the sides and 4px at
+       the foot. It was four — 6px top, left and right, 3px at the foot —
+       and where bands of different widths met, each corner's inner curve
+       was bent out of true. One shadow keeps every curve concentric. */
+    box-shadow: inset 0 1px 0 5px rgba(0, 0, 0, 0.4);
 }
 
 .console-page { padding: 9px 10px 4px 11px; }
@@ -8916,9 +8936,84 @@ body[data-page="admin"] .search-box input {
     margin-bottom: 8px;
     cursor: var(--cursor-pointer);
 }
-/* The open list is drawn by the browser; dark, so it reads as the screen's. */
+/* The open list is js/select-list.js's (4 Oct 2026), styled below with the
+   rest of it. These stay for a browser without scripts, whose own list is
+   at least dark, so it reads as the screen's. */
 .console-select option,
 .console-select optgroup { background: #2b2b2b; color: #eeeeee; }
+
+/* ---- a dropdown's open list, drawn by the site (js/select-list.js) ----
+   Made when a select opens and removed when it closes, at the top level of
+   the page and fixed against the window, over every window (the console is
+   200, the nickname prompt 260). */
+.select-list {
+    position: fixed;
+    z-index: 1000;
+    margin: 0;
+    padding: 2px;
+    list-style: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-sizing: border-box;
+}
+
+/* The console's: the screen's own scanline tile inside the white hairline
+   its controls wear, in Volter — the same tab Your Profile's search drops. */
+.select-list.is-console {
+    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
+    image-rendering: pixelated;
+    border: 1px solid #eeeeee;
+    border-radius: 2px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+    color: #eeeeee;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(238, 238, 238, 0.6) transparent;
+}
+.select-list.is-console .select-list-opt {
+    padding: 4px 6px;
+    line-height: 1.3;
+}
+.select-list.is-console .select-list-opt.is-selected { background: rgba(238, 238, 238, 0.08); }
+.select-list.is-console .select-list-opt.is-active { background: rgba(238, 238, 238, 0.2); }
+.select-list.is-console .select-list-group {
+    padding: 5px 6px 2px;
+    color: rgba(238, 238, 238, 0.6);
+}
+
+/* The archive's sort menu: its parchment, with the amber it marks what is
+   chosen in everywhere else. */
+.select-list.is-parchment {
+    background: var(--parchment);
+    border: 1.5px solid var(--chrome-border);
+    border-radius: 5px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+    color: #3a2812;
+    font-family: 'Roboto', sans-serif;
+    font-size: 0.74rem;
+}
+.select-list.is-parchment .select-list-opt {
+    padding: 5px 10px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+.select-list.is-parchment .select-list-opt.is-selected { font-weight: 700; }
+.select-list.is-parchment .select-list-opt.is-active { background: var(--amber-bright); color: #241505; }
+.select-list.is-parchment .select-list-group {
+    padding: 6px 10px 2px;
+    font-weight: 700;
+    opacity: 0.7;
+}
+
+.select-list-opt {
+    cursor: var(--cursor-pointer);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.select-list-opt.is-grouped { padding-left: 14px; }
+.select-list-opt.is-disabled { opacity: 0.45; cursor: default; }
 
 /* One thing being added: the choice, then the one input it needs. The rows
    are separated by the console's dotted rule so a long form still reads as
@@ -9022,15 +9117,6 @@ body[data-page="admin"] .search-box input {
     margin-bottom: 8px;
 }
 
-.console-profile-face {
-    width: 26px;
-    height: 26px;
-    flex: 0 0 auto;
-    border: 1px solid #eeeeee;
-    border-radius: 2px;
-    image-rendering: auto;
-}
-
 .console-profile-name,
 .console-profile-head {
     margin: 0;
@@ -9066,28 +9152,6 @@ body[data-page="admin"] .search-box input {
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-}
-
-/* Each game's own figures, indented under the two totals they add up to. */
-.console-profile-sub {
-    padding-left: 6px;
-    border-left: 1px dotted rgba(238, 238, 238, 0.35);
-    margin-top: 4px;
-}
-.console-profile-sub .console-profile-head { margin-top: 6px; }
-
-/* Completed out of the archive, as a bar drawn in the screen's own white:
-   an outline, and a solid fill as far as they have got. */
-.console-profile-bar {
-    height: 6px;
-    margin: 2px 0 6px;
-    border: 1px solid #eeeeee;
-    padding: 1px;
-}
-.console-profile-bar span {
-    display: block;
-    height: 100%;
-    background: #eeeeee;
 }
 
 .console-profile-list {
@@ -14713,6 +14777,63 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
 
 .guides-copied { margin: 10px 0 0; min-height: 1em; font-size: 0.75rem; color: var(--parchment-dim); }
 
+/* ---- the What's New panel in /warren (js/admin-whats-new.js; 4 Oct 2026) ---- */
+.wn-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.wn-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    margin: 0 0 12px;
+}
+.wn-tools .ctl-input { flex: 1 1 220px; max-width: 320px; }
+.wn-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--parchment-dim);
+    cursor: var(--cursor-pointer);
+}
+.wn-day {
+    margin: 16px 0 6px;
+    font-size: 0.8rem;
+    color: var(--amber-text);
+}
+.wn-day:first-child { margin-top: 0; }
+.wn-row.is-hidden { opacity: 0.55; }
+.wn-row h3 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wn-verb {
+    padding: 1px 6px;
+    border: 1px solid;
+    border-radius: 3px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+.wn-verb.is-added { color: #d8e8c6; border-color: var(--ok); }
+.wn-verb.is-updated { color: #dcc095; border-color: var(--amber); }
+.wn-verb.is-news { color: #f3e6c8; border-color: var(--parchment-dim); }
+.wn-verb.is-note { color: #cfd9e4; border-color: #7f94a8; }
+.wn-flags { margin-left: 6px; color: var(--amber-text); }
+.wn-line { color: var(--parchment); white-space: pre-line; }
+.wn-override {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+    gap: 12px 16px;
+    margin: -2px 0 12px;
+    padding: 12px 14px;
+    border: 1px dashed var(--amber);
+    border-radius: 0 0 6px 6px;
+    background: rgba(120, 90, 45, 0.14);
+}
+.wn-override .wn-wide,
+.wn-override .admin-form-actions,
+.wn-override .admin-form-error { grid-column: 1 / -1; }
+.admin-stage .admin-form > .wn-wide { grid-column: 1 / -1; }
+
 /* ---- the Guides panel in /warren (js/admin-guides.js) ---- */
 .admin-stage .admin-form > .guides-wide { grid-column: 1 / -1; }
 
@@ -15027,11 +15148,11 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
     .glyphs-cell { transition: none; }
 }
 
-/* ---------- your progress ----------
+/* ---------- the window shape the Leaderboards window wears ----------
 
-   The third window, opened by the third side tab. Same chrome as the game
-   and the maze sheets, so it is recognisably another panel of this site
-   rather than a settings screen that wandered in. */
+   Your Progress's once, and still the Leaderboards window's (js/
+   leaderboards.js: .progress-window and .progress-body); Your Profile,
+   which grew out of Your Progress, is a console now (below). */
 .progress-window { width: min(520px, 94vw); max-width: min(520px, 94vw); }
 
 .progress-body {
@@ -15044,166 +15165,536 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
     scrollbar-color: var(--wood-dark) var(--frame-bg);
 }
 
-.progress-head {
+/* ---------- YOUR PROFILE: a bigger Habbo Console (4 Oct 2026) ----------
+
+   The owner's: the profile wears the console. The frame, its border art,
+   the grip and title, the close box and the screen are the console's own
+   classes (.console-frame, .console-border, .console-top-pattern,
+   .console-title, .console-close-btn, .console-screen,
+   .console-screen-shadow — see CONSOLE MODAL above), so every theme that
+   recolours the console recolours this too, through tools/themes.js. What
+   is here is only what differs: the size, no tab buttons along the bottom
+   (the screen runs down to the frame's edge instead), and everything on the
+   screen set the way the console sets its own pages — Volter Goldfish, in
+   the screen's one text colour, with the dotted rule between sections and
+   white hairlines where the old window had amber.
+
+   TEXT SIZES. The console uses one size, 9px, for everything. The player's
+   completed count is drawn larger so the page has a middle, in Volter at
+   exactly twice its size, so the pixels stay square; set it to 0.5625rem
+   for one size everywhere. The name was the same size until the window
+   went to 360px wide (4 Oct 2026): a Habbo name runs to 20 characters, and
+   at twice the size they broke mid-name in the header beside the avatar. */
+.profile-console {
+    --pc-name: 0.5625rem;
+    --pc-big: 1.125rem;
+    --pc-text: #eeeeee;
+    --pc-dim: rgba(238, 238, 238, 0.7);
+    --pc-rule: rgba(238, 238, 238, 0.35);
+    position: fixed;
+    top: 0;
+    left: 0;
+    /* Over the page and its sticky header (50), UNDER every window (100 and
+       up; the console at 200) — 4 Oct 2026, the bug scan. It was at 150, so
+       a window opened while it was up (a maze from the list behind it, the
+       Leaderboards) came up underneath it, and the site's focus trap made
+       the profile inert while it still covered that window. Under them, a
+       window simply opens over it, the trap makes it inert only while that
+       window is up, and closing the window finds it as it was. */
+    z-index: 90;
+    display: none;
+}
+.profile-console.open { display: block; }
+
+/* ONE TEXT COLOUR ON THE SCREEN (4 Oct 2026, the owner's: "all text in the
+   profiles section must be the same as all the text in the console
+   screen"). No white headings, no faded notes, and nothing from the site's
+   own element rules — a bare <p> was the parchment beige of the page. What
+   tells things apart is shape: a locked badge's dashed outline, a link's
+   underline. The window's gold title is on the frame, not the screen. */
+#progress-window .profile-console-screen,
+#progress-window .profile-console-screen * { color: var(--pc-text); }
+
+/* A third smaller than it opened at (4 Oct 2026, the owner's): 540 x 640
+   became 360 x 427. The same width on a phone as on a desk now, so the
+   header keeps one layout everywhere. */
+.profile-console-frame {
+    width: min(360px, calc(100vw - 16px));
+    height: min(427px, calc(100vh - 16px));
+    height: min(427px, calc(100dvh - 16px));
+}
+.profile-console-frame:focus { outline: none; }
+
+/* The screen, from the grip down to the frame's bottom edge: the console's
+   own 14px of yellow at the sides and the foot, where the console keeps
+   its tab buttons. The text can be selected, which the console's frame
+   switches off for dragging. */
+.profile-console-screen {
+    top: 32px;
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+    width: auto;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    user-select: text;
+}
+
+/* The scrolling part of the screen, under the search bar. js/custom-
+   scrollbar.js wraps it in the console's own pixel scrollbar. */
+.profile-screen-scroll {
+    height: 100%;
+    overflow-y: auto;
+}
+.profile-console-screen > .profile-screen-scroll,
+.profile-console-screen > .custom-scrollbar-wrap--console {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+}
+
+/* ---- the header: stays put at the top of the screen (4 Oct 2026) ----
+   The Habbo on the left, who this is beside it, and on the right the
+   search field with My profile under it — so the name sits at the top of
+   the screen rather than under a row of its own. A dashed rule in the text's
+   own colour divides it from everything below, which is all that scrolls. */
+/* As tall as the Habbo and no taller (4 Oct 2026, the owner's): the three
+   lines beside it and the search column both fit its 56px. */
+.profile-top {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 11px;
+    gap: 10px;
+    /* 14px at the right (4 Oct 2026, the owner's): the search column ends
+       where the dashed rule under it does, rather than 14px short of it. */
+    padding: 10px 14px 8px 12px;
 }
 
-.progress-face {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    border: 1px solid var(--amber);
+/* Centred on the words beside it: the small figure (33x56) is shorter
+   than the name, badge and lines next to it. */
+.profile-face { flex: 0 0 auto; align-self: center; }
+
+/* As tall as the Habbo beside it (align-self: stretch), so the words can
+   be centred on the figure rather than hung from the top of its picture,
+   which starts with a band of empty pixels above the head. The search
+   stays at the top right. */
+.profile-top-main {
+    flex: 1 1 auto;
+    align-self: stretch;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+.profile-top-main > .profile-who { flex: 1 1 auto; align-self: center; }
+
+.profile-top-rule {
     flex: 0 0 auto;
-    image-rendering: auto;
+    margin: 0 14px;
+    border-top: 1px dashed var(--pc-text);
 }
 
-/* The bold cut asked for by its own family name at weight 400, rather than
-   'Volter Goldfish' at 700 — same file either way, but this route gets the
-   drawn bold face with no synthetic emboldening laid over an already-bold
-   one. See the @font-face pair at the top of this file. */
-.progress-head-text h3 {
+/* The search field, and My profile under it at the right — only while
+   somebody else's profile is showing. */
+.profile-bar {
+    position: relative;
+    z-index: 3;
+    /* Its full width whatever is beside it: a long line under the name
+       (the signed-out sign-in sentence) squeezed it to half that, and the
+       names in the list under it to "Bobba...". The window is the same
+       360px wide on a phone, so there is no narrower layout. */
+    flex: 0 0 114px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+}
+
+.profile-back { padding: 3px 10px; }
+.profile-back[hidden] { display: none; }
+
+.profile-search {
+    position: relative;
+    width: 100%;
+}
+
+.profile-search-input {
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 2px;
+}
+.profile-search-input:focus { outline: none; background: rgba(238, 238, 238, 0.1); }
+
+/* The tab that drops down under the field: the screen's own scanline
+   tile, inside the white hairline the console's controls wear. */
+.profile-search-results {
+    position: absolute;
+    top: calc(100% + 3px);
+    right: 0;
+    /* Exactly the field's width, so the tab reads as hanging from it. */
+    left: 0;
+    max-height: 220px;
+    overflow-y: auto;
     margin: 0;
-    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
-    font-weight: 400;
+    padding: 2px;
+    list-style: none;
+    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
+    image-rendering: pixelated;
+    border: 1px solid var(--pc-text);
+    border-radius: 2px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+.profile-search-results[hidden] { display: none; }
+
+.profile-search-opt {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 3px 6px;
+    color: var(--pc-text);
     font-size: 0.5625rem;
-    letter-spacing: 0.05em;
-    color: var(--amber-bright);
-    text-shadow: 2px 2px 0 var(--bg-black);
-}
-
-.progress-head-text p {
-    margin: 3px 0 0;
-    font-size: 0.7rem;
-    line-height: 1.45;
-    color: var(--parchment-dim);
-}
-
-/* Inline in the sentence rather than a button under it: the offer belongs
-   in the sentence that explains why you would take it. */
-.progress-signin {
-    padding: 0;
-    background: none;
-    border: 0;
-    color: var(--amber-bright);
-    font: inherit;
-    text-decoration: underline;
     cursor: var(--cursor-pointer);
 }
-.progress-signin:hover { color: #fff8ec; }
+.profile-search-opt:hover,
+.profile-search-opt.is-active { background: rgba(238, 238, 238, 0.15); }
 
+.profile-search-face {
+    width: 27px;
+    height: 30px;
+    flex: 0 0 auto;
+    image-rendering: pixelated;
+}
+/* No Habbo linked: an empty ring in the screen's colour, never the
+   Discord picture. */
+.profile-search-face.is-blank {
+    width: 16px;
+    height: 16px;
+    margin: 7px 5px;
+    border: 1px solid var(--pc-text);
+    border-radius: 50%;
+}
+
+.profile-search-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* A Habbo off the main hotel (".es", ".br"): kept whole, the name shortens. */
+.profile-search-hotel {
+    flex: 0 0 auto;
+    margin-left: -3px;
+    color: var(--pc-text);
+}
+
+.profile-search-msg {
+    padding: 5px 6px;
+    font-size: 0.5625rem;
+    color: var(--pc-text);
+}
+
+/* ---- the page itself: one column of sections, as the console's pages ---- */
+#progress-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-height: none;
+    overflow: visible;
+    padding: 0 6px 12px 14px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.4;
+    color: var(--pc-text);
+}
+
+.profile-wait { margin: 20px 0; text-align: center; color: var(--pc-text); }
+
+/* A Habbo with no profile here (4 Oct 2026): one line, in the middle of
+   the screen under the header both ways. The body fills the screen for it,
+   so "the middle" is the screen's and not the line's own height. */
+#progress-body:has(> .profile-empty) {
+    box-sizing: border-box;
+    min-height: 100%;
+    padding-bottom: 0;
+}
+.profile-empty {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 12px 8px 12px 0;
+}
+.profile-empty p { margin: 0; }
+
+/* Each section under the dotted rule the console draws between its own
+   (.console-dotline). */
 .progress-block {
     display: flex;
     flex-direction: column;
-    gap: 7px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border);
+    gap: 5px;
+    margin-top: 10px;
+    padding-top: 9px;
+    border-top: 1px dashed var(--pc-rule);
 }
+/* The first section sits straight under the header's own rule. */
+#progress-body > .progress-block:first-child { border-top: 0; }
 
-/* The section headings, in the same bold cut as the card's own title above
-   — they are the same kind of thing at a smaller rank, and setting one in
-   the drawn bold and the other in the regular would say they were not. */
-.progress-head-sm {
+/* A solid 2px shadow under the headings only (the owner's, 4 Oct 2026):
+   the player's name, each section's head and the completed count. The
+   rest of the screen's text carries none. */
+.profile-who h3,
+.progress-head-sm,
+.profile-completed > summary,
+.progress-bignum strong { text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45); }
+
+/* Headings as the console's (.console-profile-head): the drawn bold cut,
+   at the one size, in white. */
+.progress-head-sm,
+.profile-completed > summary {
     margin: 0;
     font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
-    font-size: 0.5625rem;
     font-weight: 400;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--amber-text);
-    text-shadow: 2px 2px 0 var(--bg-black);
+    font-size: 0.5625rem;
+    color: var(--pc-text);
 }
-
-.progress-count { color: var(--amber-text); }
-
-.progress-bignum {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    font-family: 'Montserrat', sans-serif;
-    font-weight: 800;
-    color: var(--amber-bright);
-}
-
-.progress-bignum strong {
-    font-size: 2rem;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-}
-
-.progress-bignum span {
-    font-size: 0.72rem;
-    color: var(--unknown-text);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-}
-
-.progress-bar {
-    height: 10px;
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid var(--chrome-border);
-    border-radius: 3px;
-    overflow: hidden;
-}
-
-.progress-bar > span {
-    display: block;
-    height: 100%;
-    background: linear-gradient(180deg, #8a6b32, #6b5327);
-    /* No transition: this is a fact on arrival, not an animation to watch. */
-}
+.progress-count { font-family: 'Volter Goldfish', 'Pixelify Sans', monospace; color: var(--pc-text); }
 
 .progress-note {
     margin: 0;
-    font-size: 0.68rem;
-    line-height: 1.5;
-    color: var(--parchment-dim);
+    color: var(--pc-text);
 }
-.progress-note strong { color: var(--amber-bright); font-weight: 400; }
+.progress-note strong { color: var(--pc-text); font-weight: 400; }
 
-/* Difficulty: name, bar, count. The bar is the column that carries the
-   comparison, so it takes the room and the two labels stay in fixed
-   tracks either side of it. */
+/* A link inside a sentence, as the console's .console-link-btn. */
+.progress-signin,
+.profile-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: var(--pc-text);
+    text-align: left;
+    text-decoration: underline;
+    cursor: var(--cursor-pointer);
+}
+.progress-signin:hover,
+.profile-link:hover { background: rgba(238, 238, 238, 0.15); }
+
+/* Keyboard focus on the screen: a dotted ring in its own colour. */
+#progress-overlay :is(button, summary, input):focus-visible {
+    outline: 1px dotted var(--pc-text);
+    outline-offset: 2px;
+}
+
+/* ---- who ---- */
+/* The Habbo, outlined in the screen's colour (habbo-outline.js) at its
+   native size, so every line is one pixel. */
+.profile-avatar {
+    /* A block, or the line it sat on added 7px of descender under it and
+       the figure's middle was not the header's. */
+    display: block;
+    /* Habbo's small figure at its own size, 33x56 (the owner's). */
+    width: 33px;
+    height: 56px;
+    flex: 0 0 auto;
+    image-rendering: pixelated;
+}
+/* No Habbo: an empty ring the avatar's own width (33px), not wider. */
+.profile-avatar.is-blank {
+    width: 32px;
+    height: 32px;
+    margin: 0;
+    border: 1px solid var(--pc-text);
+    border-radius: 50%;
+}
+
+.profile-who {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.4;
+    color: var(--pc-text);
+}
+.profile-who .profile-wait { margin: 14px 0 0; }
+
+.profile-who h3 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 0;
+    margin: 0;
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-weight: 400;
+    font-size: var(--pc-name);
+    line-height: 1.2;
+    color: var(--pc-text);
+    overflow-wrap: anywhere;
+}
+
+/* The rows beside the avatar, packed to its 56px: a little tighter than
+   the screen's own line height, and the two boxed ones (Online, the
+   featured badge) only as tall as their words. */
+.profile-who { line-height: 1.25; gap: 1px; }
+.profile-who h3 .profile-online {
+    margin-left: 5px;
+    padding: 0 3px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    text-shadow: none;
+    line-height: 1.2;
+}
+.profile-featured-line { margin: 0; }
+.profile-featured-line .profile-featured {
+    padding: 0 5px;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+/* Lines the header no longer has room for, at the top of what scrolls. */
+.profile-notes { display: flex; flex-direction: column; gap: 3px; margin-bottom: 2px; }
+.profile-motto { margin: 0; color: var(--pc-text); overflow-wrap: anywhere; }
+.profile-line { margin: 0; color: var(--pc-text); }
+.profile-line strong { color: var(--pc-text); font-weight: 400; }
+.profile-hidden-note { color: var(--pc-text); }
+
+.profile-online {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 0 4px;
+    border: 1px solid var(--pc-text);
+    border-radius: 2px;
+    color: var(--pc-text);
+}
+
+/* Edit Profile, as a console button (.console-btn). */
+/* ONE LINE EACH beside the avatar (4 Oct 2026, the bug scan): a Habbo
+   motto runs to 38 characters and a name to 20, and either wrapping made
+   the header taller than the avatar it is meant to match. Cut with an
+   ellipsis instead; the whole of it is on the line's title. */
+.profile-who > * { max-width: 100%; }
+.profile-who h3 { flex-wrap: nowrap; }
+.profile-who h3 .profile-name,
+.profile-motto,
+.profile-line {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.profile-who h3 .profile-online { flex: 0 0 auto; }
+
+/* ---- favourite maze: its picture keeps its colours ---- */
+.profile-fav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 5px;
+    background: transparent;
+    border: 1px solid var(--pc-rule);
+    border-radius: 2px;
+    color: var(--pc-text);
+    font: inherit;
+    text-align: left;
+    cursor: var(--cursor-pointer);
+}
+.profile-fav:hover { border-color: var(--pc-text); background: rgba(238, 238, 238, 0.1); }
+
+.profile-fav-img {
+    width: 64px;
+    height: 64px;
+    flex: 0 0 auto;
+    /* A canvas, dithered in the screen's colour by drawFavThumbs (js/
+       home.js): its dark parts are see-through, so the screen shows. */
+    display: block;
+    image-rendering: pixelated;
+    border: 1px solid var(--pc-text);
+}
+
+.profile-fav-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.profile-fav-name {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    color: var(--pc-text);
+}
+.profile-fav-by { color: var(--pc-text); }
+
+/* ---- the completed count, and the bars drawn as the console draws one:
+   a hairline outline, and a solid fill as far as they have got ---- */
+.progress-bignum {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+}
+.progress-bignum strong {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-weight: 400;
+    font-size: var(--pc-big);
+    line-height: 1;
+    color: var(--pc-text);
+}
+.progress-bignum span { color: var(--pc-text); }
+
+.progress-bar,
+.progress-diff-bar {
+    display: block;
+    height: 8px;
+    padding: 1px;
+    border: 1px solid var(--pc-text);
+}
+.progress-diff-bar { height: 6px; }
+.progress-bar > span,
+.progress-diff-bar > span {
+    display: block;
+    height: 100%;
+    background: var(--pc-text);
+}
+
+/* Highlights: label, then what it is. */
+.profile-hls {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 4px 0 0;
+}
+.profile-hl {
+    display: grid;
+    grid-template-columns: 84px 1fr;
+    gap: 8px;
+}
+.profile-hl dt { color: var(--pc-text); }
+.profile-hl dd { margin: 0; min-width: 0; }
+.profile-dim { color: var(--pc-text); }
+
+/* ---- by difficulty ---- */
 .progress-diffs {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
 }
-
 .progress-diff {
     display: grid;
-    grid-template-columns: 62px 1fr 42px;
+    grid-template-columns: 70px 1fr 40px;
     align-items: center;
     gap: 8px;
-    font-size: 0.68rem;
-    color: var(--parchment);
 }
-
 .progress-diff-name { text-transform: capitalize; }
+.progress-diff-n { text-align: right; font-variant-numeric: tabular-nums; color: var(--pc-text); }
 
-.progress-diff-bar {
-    height: 7px;
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid var(--chrome-border);
-    border-radius: 2px;
-    overflow: hidden;
-}
-.progress-diff-bar > span {
-    display: block;
-    height: 100%;
-    background: var(--amber);
-}
-
-.progress-diff-n {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    color: var(--parchment-dim);
-}
-
+/* ---- badges: hairline boxes with a square pip ---- */
 .progress-badges {
     list-style: none;
     margin: 0;
@@ -15212,29 +15703,84 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
     flex-wrap: wrap;
     gap: 5px;
 }
-
 .progress-badge {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 3px 8px;
-    background: rgba(120, 90, 45, 0.28);
-    border: 1px solid var(--amber);
-    border-radius: 10px;
-    font-size: 0.65rem;
-    color: var(--amber-bright);
+    padding: 2px 7px;
+    border: 1px solid var(--pc-text);
+    border-radius: 2px;
+    color: var(--pc-text);
 }
-
-/* A filled pip rather than an emoji: the rest of this site draws its own
-   marks, and an emoji would arrive in whatever the reader's system thinks
-   a medal looks like. */
 .progress-badge-mark {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--amber-bright);
+    width: 4px;
+    height: 4px;
+    background: var(--pc-text);
 }
 
+/* In the Badges list each is a button that brings up its card (BADGE CARDS
+   in js/home.js; 4 Oct 2026). Not earned yet, on your own profile: a
+   dashed outline, dimmed, with a hollow pip. */
+button.progress-badge {
+    background: transparent;
+    font: inherit;
+    line-height: inherit;
+    cursor: var(--cursor-pointer);
+}
+button.progress-badge:hover,
+button.progress-badge.is-showing,
+button.progress-badge[aria-pressed="true"] { background: rgba(238, 238, 238, 0.15); }
+.progress-badge.is-locked {
+    border-style: dashed;
+    border-color: var(--pc-dim);
+    color: var(--pc-text);
+}
+.progress-badge.is-locked .progress-badge-mark {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--pc-dim);
+}
+
+/* The card: what the badge means, and how to get it. */
+.profile-badge-card {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 2px;
+    padding: 6px 8px;
+    border: 1px solid var(--pc-text);
+    border-radius: 2px;
+}
+.profile-badge-card[hidden] { display: none; }
+/* All of it in the screen's one text colour; only the name is bold. */
+.profile-badge-card p { margin: 0; color: var(--pc-text); }
+.profile-badge-card-name {
+    font-family: 'Volter Goldfish Bold', 'Volter Goldfish', 'Pixelify Sans', monospace;
+}
+.profile-badge-card-state {
+    margin-left: 6px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+}
+.profile-badge-hint[hidden] { display: none; }
+
+/* ---- daily games ---- */
+.profile-games-wrap { overflow-x: auto; }
+.profile-games {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+.profile-games th,
+.profile-games td {
+    padding: 3px 6px;
+    text-align: right;
+    white-space: nowrap;
+}
+.profile-games thead th { font-weight: 400; color: var(--pc-text); }
+.profile-games tbody th { padding-left: 0; text-align: left; font-weight: 400; color: var(--pc-text); }
+.profile-games td { color: var(--pc-text); }
+.profile-games tbody tr + tr { border-top: 1px dashed var(--pc-rule); }
+
+/* ---- maze lists: rows dressed as the console's buttons ---- */
 .progress-saved {
     list-style: none;
     margin: 0;
@@ -15243,46 +15789,60 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
     flex-direction: column;
     gap: 3px;
 }
-
 .progress-saved-row {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 10px;
     width: 100%;
-    padding: 6px 9px;
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--parchment);
+    padding: 4px 7px;
+    background: transparent;
+    border: 1px solid var(--pc-rule);
+    border-radius: 2px;
+    color: var(--pc-text);
     font: inherit;
-    font-size: 0.7rem;
     text-align: left;
     cursor: var(--cursor-pointer);
 }
-
-.progress-saved-row:hover,
-.progress-saved-row:focus-visible {
-    border-color: var(--amber);
-    background: var(--wood-mid);
-    outline: none;
-}
-.progress-saved-row:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 1px; }
-
-.progress-saved-by { color: var(--unknown-text); font-size: 0.62rem; white-space: nowrap; }
-/* A saved maze that has since closed: still listed, so saving it visibly
-   worked, but marked, since it can't be completed now. */
+.progress-saved-row:hover { border-color: var(--pc-text); background: rgba(238, 238, 238, 0.15); }
+.progress-saved-by { color: var(--pc-text); white-space: nowrap; }
+/* A completed or saved maze that has since closed. */
 .progress-saved-closed {
     display: inline-block;
     margin-right: 6px;
-    padding: 0 5px;
-    border: 1px solid var(--unknown-text, var(--unknown));
-    border-radius: 3px;
-    color: var(--unknown-text, var(--unknown));
-    font-size: 0.56rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    padding: 0 4px;
+    border: 1px dashed var(--pc-dim);
+    border-radius: 2px;
+    color: var(--pc-text);
 }
+
+/* Every completed maze, folded away: it can run to dozens. */
+.profile-completed > summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: var(--cursor-pointer);
+    list-style: none;
+}
+.profile-completed > summary::-webkit-details-marker { display: none; }
+.profile-completed > summary::before {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 4px solid #ffffff;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+}
+.profile-completed[open] > summary::before { transform: rotate(90deg); }
+.profile-completed > .progress-saved { margin-top: 7px; }
+
+/* A phone narrower than the window: the highlights stack. */
+@media (max-width: 380px) {
+    .profile-hl { grid-template-columns: 1fr; gap: 0; }
+}
+
+/* (On a touch screen the search field is a .console-input, and gets the
+   console's own 16px-scaled-down answer to iOS zooming, further down.) */
 
 /* ---------- What's New, as an update log ----------
 
@@ -15616,6 +16176,12 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
     letter-spacing: 0.03em;
     text-transform: uppercase;
     white-space: nowrap;
+    /* One width for every label (4 Oct 2026, the owner's): the widest,
+       UPDATED, measured at 57.9px, and the word centred. Each label sized
+       to its own word started every picture and name at a different
+       place. In ems, so it follows the label's own size. */
+    width: 6.5em;
+    text-align: center;
 }
 
 .updatelog-verb.is-added {
@@ -15640,6 +16206,36 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
     border-radius: 2px;
     background: var(--bg-black);
     image-rendering: pixelated;
+}
+
+/* A news picture: shown whole and shrunk smoothly (a logo or a banner
+   loses its sides to a crop). */
+.updatelog-thumb.is-smooth { image-rendering: auto; object-fit: contain; }
+
+/* A room screenshot, zoomed into its middle (logThumbHtml in js/home.js):
+   the frame is the 34x24 box, and the picture inside it is twice that,
+   centred, so the frame shows its middle half. Smooth scaling: it is a
+   photo being shrunk, not pixel art being enlarged. */
+.updatelog-thumb-crop {
+    position: relative;
+    display: block;
+    width: 34px;
+    height: 24px;
+    overflow: hidden;
+    border: 1px solid var(--chrome-border);
+    border-radius: 2px;
+    background: var(--bg-black);
+}
+.updatelog-thumb-zoom {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 68px;
+    height: 48px;
+    max-width: none;
+    transform: translate(-50%, -50%);
+    object-fit: cover;
+    image-rendering: auto;
 }
 
 .updatelog-thumb.is-blank {
@@ -15712,6 +16308,36 @@ button.tag.tag-by { background: transparent; border-style: dashed; }
 @media (prefers-reduced-motion: reduce) {
     .updatelog-entry { transition: none; }
 }
+
+/* The Warren's own entries (4 Oct 2026; WHAT'S NEW, BY HAND in
+   js/home.js). News in the parchment the site's own voice is set in, a
+   note in a cooler grey-blue so it reads as an aside about a maze rather
+   than a change to it. */
+.updatelog-verb.is-news {
+    color: #f3e6c8;
+    border-color: var(--parchment-dim);
+    background: rgba(243, 230, 200, 0.12);
+}
+.updatelog-verb.is-note {
+    color: #cfd9e4;
+    border-color: #7f94a8;
+    background: rgba(127, 148, 168, 0.18);
+}
+
+/* A post's or a note's own words: as many lines as it has, not clipped
+   to one like the generated change line. */
+.updatelog-text {
+    font-family: 'Volter Punct', 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.35;
+    color: var(--parchment);
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+/* News with nowhere to go: still an entry, but not something to press. */
+.updatelog-entry.is-static { cursor: default; }
+.updatelog-entry.is-static:hover { transform: none; }
 
 /* ===================================================================
    ADMIN: THE BAR
@@ -17830,6 +18456,14 @@ textarea.ctl-input.de-note {
         margin-bottom: calc(8px + 20px - 20px / 0.5625);
     }
 
+    /* Your Profile's search field (4 Oct 2026): 20px, in a bar of its own,
+       so nothing under it to keep a margin for. */
+    .console-input.profile-search-input {
+        height: calc(20px / 0.5625);
+        padding: 0 calc(6px / 0.5625);
+        margin-bottom: calc(20px - 20px / 0.5625);
+    }
+
     /* The contact form's message box: a fixed 183 x 58, no margin. */
     .console-input.console-input-message {
         width: calc(183px / 0.5625);
@@ -18981,49 +19615,18 @@ body.is-viewer .admin-panel[data-panel="errors"] .se-write { display: none !impo
     input.nick-prompt-input { font-size: 16px; }
 }
 
-/* ---- picking a game on the Profile ---- */
-.console-profile-game {
-    padding: 2px 4px 3px 6px;
-    border-radius: 1px;
-    cursor: var(--cursor-pointer);
+/* ---- Edit Profile's choices (3 Oct 2026) ----
+   The Habbo's head where the Discord picture was, drawn at its own size
+   and unbordered (it is a figure, not a photo); the two selects the width
+   of the screen, since a maze's name can be long. */
+.console-profile-habbo {
+    width: 27px;
+    height: 30px;
+    flex: 0 0 auto;
+    object-fit: contain;
+    object-position: center bottom;
 }
-.console-profile-game:hover { background: rgba(238, 238, 238, 0.06); }
-/* The border is a box-shadow, so picking moves nothing on the page; the
-   dotted rule down the left side gives way to it rather than doubling it.
-   In the screen's own text colour (29 Sept 2026) — the console's gold
-   belongs to its frame, and on the screen it read as a warning. */
-.console-profile-game.is-picked {
-    border-left-color: transparent;
-    box-shadow: 0 0 0 1px #eeeeee;
-}
-.console-profile-game:focus { outline: none; }
-.console-profile-game:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 2px; }
-.console-pick-note { margin: 4px 0 0; }
-
-/* Play: inside the console's screen, in its bottom-right corner, left of
-   the screen's own scrollbar (7px in from the edge, 15px wide) and above
-   its inset shadow. Solid, so the lines scrolling under it cannot show
-   through; the page gains room at its foot while it shows, so the last
-   lines can still be scrolled clear of it.
-
-   Dressed as the screen's other buttons (.console-btn: the white hairline,
-   white text, the faint white wash on hover) rather than in the frame's
-   gold (29 Sept 2026). Its fill is the screen's own scanline tile, so it
-   reads as part of the screen rather than a patch laid over it. */
-.console-play-btn {
-    position: absolute;
-    right: 28px;
-    bottom: 9px;
-    z-index: 4;
-    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
-    image-rendering: pixelated;
-}
-.console-play-btn:hover {
-    background: linear-gradient(rgba(238, 238, 238, 0.15), rgba(238, 238, 238, 0.15)),
-                url('../assets/img/console/cnsl-bg-tile.png') repeat;
-}
-.console-play-btn[hidden] { display: none; }
-#console-page-profile.has-play { padding-bottom: 36px; }
+.console-pref-select { width: 100%; }
 
 /* ---- "On the board as ... Set a nickname", under a filed daily score ---- */
 .nick-hint {

@@ -1108,7 +1108,7 @@
                          netlify/functions/player-profile.js. It replaced the
                          About page. -->
                     <div class="console-page" id="console-page-profile" style="display:none;">
-                        <h3 class="console-page-title">Profile</h3>
+                        <h3 class="console-page-title">Edit Profile</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
                         <div id="console-profile-body"></div>
                     </div>
@@ -1324,18 +1324,59 @@
         </section>
     </template>
 
-    <!-- Your progress through the archive. Opened by the third side tab.
-         Everything in it is filled by renderProgress in js/home.js — it
-         reads the same walked and saved sets the rest of the page does, so
-         it can never disagree with the ticks on the mazes themselves. -->
-    <div class="modal-overlay progress-overlay" id="progress-overlay">
-        <div class="modal progress-window" id="progress-window" role="dialog" aria-modal="true" aria-labelledby="progress-title" tabindex="-1">
-            <div class="chrome-titlebar">
-                <h2 id="progress-title">Your Progress</h2>
-                <button class="chrome-close" id="progress-close" aria-label="Close"><img src="assets/img/modal_topclose_x.png" alt="" aria-hidden="true"></button>
+    <!-- Your Profile (Your Progress until 3 Oct 2026): your progress through
+         the archive and the rest of your profile, or another player's,
+         found with the search field at the top. Everything in the body is
+         filled by renderProgress in js/home.js — your own reads the same
+         walked and saved sets the rest of the page does, so it can never
+         disagree with the ticks on the mazes themselves. The bar above it
+         is never redrawn, so the field keeps what is typed in it.
+
+         Dressed as a bigger Habbo Console since 4 Oct 2026 (the owner's):
+         the console's own frame, grip, title, close box and screen classes,
+         so it wears whatever the console wears in every theme, without the
+         console's tab buttons along the bottom. And it floats as the
+         console does — no backdrop, dragged by its frame, the page usable
+         behind it (wireProgressDrag in js/home.js) — rather than being a
+         modal window. -->
+    <div class="profile-console" id="progress-overlay">
+        <div class="console-frame profile-console-frame" id="progress-window" role="dialog" aria-labelledby="progress-title" tabindex="-1">
+            <div class="console-border" aria-hidden="true"></div>
+            <div class="console-top-pattern">
+                <h2 class="console-title" id="progress-title">Profiles</h2>
             </div>
-            <div class="chrome-frame">
-                <div class="progress-body" id="progress-body"></div>
+            <button type="button" class="console-close-btn" id="progress-close" aria-label="Close"></button>
+            <div class="console-screen profile-console-screen">
+                <!-- The header, which stays put while the rest scrolls under
+                     it (4 Oct 2026): the Habbo on the left, who this is
+                     beside it, and on the right the search field with My
+                     profile under it. The face and the words are drawn by
+                     renderProgress; the bar is never redrawn, so the field
+                     keeps what is typed in it. -->
+                <div class="profile-top">
+                    <div class="profile-face" id="profile-face"></div>
+                    <div class="profile-top-main">
+                        <div class="profile-who" id="profile-who" data-crumb-private></div>
+                        <div class="profile-bar">
+                            <div class="profile-search" role="search">
+                                <label class="visually-hidden" for="profile-search-input">Search players</label>
+                                <input type="text" class="console-input profile-search-input" id="profile-search-input" placeholder="Search players"
+                                       role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="profile-search-results"
+                                       autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="24">
+                                <ul class="profile-search-results" id="profile-search-results" role="listbox" aria-label="Players" hidden></ul>
+                            </div>
+                            <!-- Only while somebody else's profile is showing: back to your own. -->
+                            <button type="button" class="console-btn profile-back" id="profile-back" hidden>My profile</button>
+                            <!-- Only on your own, signed in: the console's Edit Profile. -->
+                            <button type="button" class="console-btn profile-back" id="profile-edit" data-profile-act="edit" hidden>Edit Profile</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="profile-top-rule" aria-hidden="true"></div>
+                <div class="profile-screen-scroll" id="profile-screen-scroll">
+                    <div class="progress-body" id="progress-body"></div>
+                </div>
+                <div class="console-screen-shadow" aria-hidden="true"></div>
             </div>
         </div>
     </div>
@@ -1591,6 +1632,9 @@
     <script src="js/privacy-content.js?v=2"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/site.js?v=2"></script>
+    <!-- Dropdowns open the site's own list, not the browser's. After site.js,
+         whose EscapeLayers it registers with. -->
+    <script src="js/select-list.js?v=2"></script>
     <!-- Before home.js, console.js and guess.js, all three of which ask it
          who is signed in while they are setting themselves up. It sat after
          them at first, on the reasoning that they only read window.Account

@@ -171,6 +171,47 @@ function cleanGuess(g) {
     };
 }
 
+/* THE PROFILE'S OWN CHOICES (3 Oct 2026), set from the console's Edit
+   Profile page and shown on the public profile (profiles.js):
+
+     favourite   one maze id, from their completed list
+     badge       the badge shown beside their name — a key from BADGES in
+                 js/home.js. Only ever drawn if they have actually earned
+                 it, which is worked out where it is drawn, so a key sent
+                 by hand gets nobody a badge.
+     hidden      true keeps their profile out of search and off anybody
+                 else's screen (they always see their own).
+
+   Each is optional in a save, and null clears favourite and badge. Shape
+   only, as cleanGuess checks shape; whether the favourite is completed is
+   checked against the stored list in the PUT. */
+const BADGE_KEY = /^[a-z0-9-]{1,40}$/;
+function cleanProfile(p) {
+    if (!p || typeof p !== "object" || Array.isArray(p)) return null;
+    const out = {};
+    if ("favourite" in p) {
+        if (p.favourite === null) out.favourite = null;
+        else if (typeof p.favourite === "string" && p.favourite && p.favourite.length <= MAX_ID) out.favourite = p.favourite;
+        else return null;
+    }
+    if ("badge" in p) {
+        if (p.badge === null) out.badge = null;
+        else if (typeof p.badge === "string" && BADGE_KEY.test(p.badge)) out.badge = p.badge;
+        else return null;
+    }
+    if ("hidden" in p) {
+        if (typeof p.hidden !== "boolean") return null;
+        out.hidden = p.hidden;
+    }
+    return Object.keys(out).length ? out : null;
+}
+
+// As stored, with every field present, for the page.
+const profileOf = doc => {
+    const p = (doc && doc.profile) || {};
+    return { favourite: p.favourite || null, badge: p.badge || null, hidden: p.hidden === true };
+};
+
 /* A mirrored practice run the launch cut has since passed (30 Sept 2026).
    It is not the day any more — the page starts the real one fresh at the
    cut — so it is read as no game at all: never handed back to a device,
@@ -319,13 +360,14 @@ exports.handler = async (event) => {
         }
         try {
             const [doc, stats] = await Promise.all([
-                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1 } }),
+                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1 } }),
                 statsFor(db, player.id)
             ]);
             return json(200, {
                 walked: (doc && doc.walked) || [],
                 saved: (doc && doc.saved) || [],
                 guess: liveGuess(doc && doc.guess),
+                profile: profileOf(doc),
                 stats
             });
         } catch (e) {
@@ -360,6 +402,11 @@ exports.handler = async (event) => {
         if (body.saved !== undefined) {
             addSaved = cleanWalked(body.saved);
             if (addSaved === null) return json(400, { error: "Bad saved list" });
+        }
+        let profile = null;
+        if (body.profile !== undefined) {
+            profile = cleanProfile(body.profile);
+            if (profile === null) return json(400, { error: "Bad profile" });
         }
         if (body.guess !== undefined) {
             // null is a legitimate value: it is how the client says "the day
@@ -437,9 +484,22 @@ exports.handler = async (event) => {
                device re-sending its whole list is the normal case, not the
                exception, so without this every sync would append the same ids
                again and fill the cap with copies. */
-            const current = (Object.keys(add).length || "guess" in set)
-                ? (await col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1 } }) || {})
+            const current = (Object.keys(add).length || "guess" in set || profile)
+                ? (await col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1 } }) || {})
                 : {};
+
+            /* The profile's choices, each its own field so a save of one
+               leaves the others be. A favourite has to be a maze they have
+               completed — stored, or arriving in this same save — or it is
+               left as it was; the page only ever offers completed ones. */
+            if (profile) {
+                if ("favourite" in profile) {
+                    const done = new Set([...(current.walked || []), ...(addWalked || [])]);
+                    if (profile.favourite === null || done.has(profile.favourite)) set["profile.favourite"] = profile.favourite;
+                }
+                if ("badge" in profile) set["profile.badge"] = profile.badge;
+                if ("hidden" in profile) set["profile.hidden"] = profile.hidden;
+            }
 
             /* The day's game is never walked BACKWARDS. It used to be
                replaced outright, so a second device still holding an early
@@ -484,13 +544,14 @@ exports.handler = async (event) => {
             await col.updateOne({ playerId: player.id }, update, { upsert: true });
 
             const [doc, stats] = await Promise.all([
-                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1 } }),
+                col.findOne({ playerId: player.id }, { projection: { _id: 0, walked: 1, saved: 1, guess: 1, profile: 1 } }),
                 statsFor(db, player.id)
             ]);
             return json(200, {
                 walked: (doc && doc.walked) || [],
                 saved: (doc && doc.saved) || [],
                 guess: liveGuess(doc && doc.guess),
+                profile: profileOf(doc),
                 stats
             });
         } catch (e) {
@@ -510,6 +571,13 @@ exports.handler = async (event) => {
         if (!id) return json(400, { error: "Nothing named to remove" });
         try {
             await col.updateOne({ playerId: player.id }, { $pull: { [field]: id } });
+            /* A maze un-completed stops being the favourite (4 Oct 2026, the
+               bug scan): a favourite has to be a completed maze (see the
+               PUT), and leaving it stored meant the profile served one that
+               no longer was. */
+            if (field === "walked") {
+                await col.updateOne({ playerId: player.id, "profile.favourite": id }, { $unset: { "profile.favourite": "" } });
+            }
             return json(200, { removed: id, from: field });
         } catch (e) {
             console.error("player-data: remove failed", e);

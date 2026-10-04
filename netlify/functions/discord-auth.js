@@ -252,6 +252,24 @@ function netHashUpdate(event, row) {
     return { netHash, netHashAt: new Date().toISOString() };
 }
 
+/* THE PROFILE INTRODUCTION (4 Oct 2026, the owner's), once per player:
+     "new"        signed in for the first time a moment ago — the page takes
+                  them straight to Edit Profile in the console
+     "returning"  signed in before profiles existed — the page asks them,
+                  once, to add theirs ("We added profiles, add yours!")
+     null         already introduced (profileIntroAt, set by player-nick.js
+                  when the page shows either), or no row to tell from.
+   "A moment ago" is PROFILE_NEW_MS after joinedAt: the sign-in lands on the
+   page within seconds, and a new player who leaves before it does is
+   greeted as returning next time, which reads just as well. Answer only:
+   the cookie never carries it. */
+const PROFILE_NEW_MS = 30 * 60 * 1000;
+function profileIntroOf(row) {
+    if (!row || row.profileIntroAt) return null;
+    const joined = Date.parse(row.joinedAt);
+    return Number.isFinite(joined) && Date.now() - joined < PROFILE_NEW_MS ? "new" : "returning";
+}
+
 async function meReply(event) {
     const player = playerFrom(event);
     let db = null;
@@ -326,7 +344,7 @@ async function meReply(event) {
        _publicid.js), so the page can still pick out "you". Added to the
        answer only — the cookie below is signed from `view` as before and
        never carries it; it is derived from the id every time. */
-    const answer = { ...view, publicId: publicIdOf(view.id) };
+    const answer = { ...view, publicId: publicIdOf(view.id), profileIntro: profileIntroOf(row) };
     /* Re-signed, too, when the row has a session version the cookie lacks —
        a session from before they existed — so it becomes one that can be
        revoked. The version rides in the cookie only, never in the answer. */
@@ -663,3 +681,5 @@ exports.handler = async (event) => {
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally
    defined above; what the handler answers is unchanged. */
 exports.handler = require("./_errors").withErrorReporting("discord-auth", exports.handler);
+// For the tests (4 Oct 2026).
+exports.profileIntroOf = profileIntroOf;

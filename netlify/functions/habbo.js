@@ -241,7 +241,10 @@ exports.handler = async (event) => {
         const lower = name.toLowerCase();
         const keys = Object.values(ORIGINS_HOSTS).map(h => `${h}:${lower}`);
         const rows = (await cache.find({ key: { $in: keys } }, { projection: { _id: 0 } }).toArray())
-            .filter(isFresh);
+            /* Not a row a player's profile wrote (source "player", see
+               originsProfileFor): that name was never checked against the
+               archive, so it proves no credit (4 Oct 2026, the bug scan). */
+            .filter(r => isFresh(r) && r.source !== "player" && r.source !== "search");
         if (rows.length === 1) return cachedAnswer(rows[0]);
 
         hotelCode = await archivedCreditHotel(db, name);
@@ -279,7 +282,8 @@ exports.handler = async (event) => {
     // not to give it.
     await cache.updateOne(
         { key },
-        { $set: { key, name, host, found: result.found, profile: result.profile || null, fetchedAt } },
+        // source "credit": checked against the archive above (see the fast path).
+        { $set: { key, name, host, found: result.found, profile: result.profile || null, fetchedAt, source: "credit" } },
         { upsert: true }
     ).catch(e => console.warn("habbo.js: could not cache", key, "-", e.message));
 
@@ -287,7 +291,134 @@ exports.handler = async (event) => {
     return json(200, { ...result.profile, cachedAt: fetchedAt, stale: false });
 };
 
+/* A PLAYER'S OWN HABBO, for their profile (3 Oct 2026; profiles.js).
+
+   Not through the handler above, whose credit check is the whole of its
+   guard against being an open proxy: a player is not credited on a maze,
+   but their Habbo name came from OriginsBot (_originsbot.js), which vouches
+   for it, and only the server ever asks — the name is read off their
+   players row, never taken from the request. The same cache rows and the
+   same half hour, so a builder who is also a player is fetched once.
+
+   Resolves to the profile or null — never throws: a profile without its
+   avatar is still a profile. */
+async function originsProfileFor(db, hotelCode, name) {
+    if (!db || typeof name !== "string" || !name.trim()) return null;
+    const host = ORIGINS_HOSTS[String(hotelCode || "").toUpperCase()] || DEFAULT_HOST;
+    const key = `${host}:${name.trim().toLowerCase()}`;
+    let cached = null;
+    try {
+        const cache = db.collection("habbo_cache");
+        await ensureIndex(cache, { key: 1 });
+        cached = await cache.findOne({ key }, { projection: { _id: 0 } });
+        if (cached && Date.now() - new Date(cached.fetchedAt).getTime() < CACHE_TTL_MS) {
+            return cached.found ? cached.profile : null;
+        }
+        const result = await fetchOriginsProfile(host, name.trim());
+        await cache.updateOne(
+            { key },
+            /* Marked as a player's on the way in only: a row the handler
+               above wrote for a credited builder stays one. */
+            { $set: { key, name: name.trim(), host, found: result.found, profile: result.profile || null, fetchedAt: new Date().toISOString() },
+              $setOnInsert: { source: "player" } },
+            { upsert: true }
+        ).catch(e => console.warn("habbo.js: could not cache", key, "-", e.message));
+        return result.found ? result.profile : null;
+    } catch (e) {
+        // Origins having a bad minute: the copy we had, however old.
+        return cached && cached.found ? cached.profile : null;
+    }
+}
+
+/* ANY HABBO, BY THE NAME SOMEBODY TYPED (4 Oct 2026, the owner's: the
+   profile search finds every Habbo, joined or not; profiles.js).
+
+   Not through the handler, for the reason originsProfileFor gives, and not
+   through originsProfileFor either: that one caches every answer, and the
+   names typed into a search box — "Ch", "Chr", "Chri" on the way to a real
+   one — are mostly nobody. So only a Habbo that EXISTS is written to the
+   cache (source "search", which the handler's fast path ignores as it
+   ignores "player": no credit was checked), and a name Origins does not
+   know is remembered in this warm instance alone, bounded as notCredited
+   is. A fresh cache row of any source answers first.
+
+   Resolves to { found: true, profile } or { found: false }; null when
+   Origins could not be asked (down, slow, the WAF). Never throws. */
+const NOT_ON_ORIGINS_TTL_MS = 10 * 60 * 1000;
+const NOT_ON_ORIGINS_MAX = 5000;
+const notOnOrigins = new Map();     // "host:lowercased name" -> when Origins said no
+
+async function lookupOriginsName(db, hotelCode, name) {
+    const clean = typeof name === "string" ? name.trim() : "";
+    if (!db || !clean || clean.length > 60) return null;
+    const host = ORIGINS_HOSTS[String(hotelCode || "").toUpperCase()] || DEFAULT_HOST;
+    const key = `${host}:${clean.toLowerCase()}`;
+    const missAt = notOnOrigins.get(key);
+    if (missAt !== undefined) {
+        if (Date.now() - missAt < NOT_ON_ORIGINS_TTL_MS) return { found: false };
+        notOnOrigins.delete(key);
+    }
+    let cached = null;
+    try {
+        const cache = db.collection("habbo_cache");
+        await ensureIndex(cache, { key: 1 });
+        cached = await cache.findOne({ key }, { projection: { _id: 0 } });
+        if (cached && Date.now() - new Date(cached.fetchedAt).getTime() < CACHE_TTL_MS) {
+            return cached.found && cached.profile ? { found: true, profile: cached.profile } : { found: false };
+        }
+        const result = await fetchOriginsProfile(host, clean);
+        if (!result.found) {
+            notOnOrigins.delete(key);
+            notOnOrigins.set(key, Date.now());
+            for (const k of notOnOrigins.keys()) {
+                if (notOnOrigins.size <= NOT_ON_ORIGINS_MAX) break;
+                notOnOrigins.delete(k);
+            }
+            return { found: false };
+        }
+        await cache.updateOne(
+            { key },
+            { $set: { key, name: result.profile.name || clean, host, found: true, profile: result.profile, fetchedAt: new Date().toISOString() },
+              $setOnInsert: { source: "search" } },
+            { upsert: true }
+        ).catch(e => console.warn("habbo.js: could not cache", key, "-", e.message));
+        return { found: true, profile: result.profile };
+    } catch (e) {
+        // Origins having a bad minute: the copy we had, however old.
+        return cached && cached.found && cached.profile ? { found: true, profile: cached.profile } : null;
+    }
+}
+
+/* What is already known about a Habbo, from the cache alone — for lists
+   (profile search results) that must not send a request to Origins per row.
+   A Map of `${hotel}:${lowercased name}` (as asked) -> profile. */
+async function cachedOriginsProfiles(db, wants) {
+    const out = new Map();
+    const keys = new Map();
+    (wants || []).forEach(w => {
+        if (!w || typeof w.name !== "string" || !w.name.trim()) return;
+        const host = ORIGINS_HOSTS[String(w.hotel || "").toUpperCase()] || DEFAULT_HOST;
+        keys.set(`${host}:${w.name.trim().toLowerCase()}`, `${String(w.hotel || "").toUpperCase()}:${w.name.trim().toLowerCase()}`);
+    });
+    if (!keys.size) return out;
+    try {
+        const rows = await db.collection("habbo_cache")
+            .find({ key: { $in: [...keys.keys()] }, found: true }, { projection: { _id: 0, key: 1, profile: 1 } })
+            .toArray();
+        rows.forEach(r => { if (r.profile) out.set(keys.get(r.key), r.profile); });
+    } catch (e) {
+        console.warn("habbo.js: cached profiles unreadable", e && e.message);
+    }
+    return out;
+}
+
 /* Failures reported to /warren's Errors tab (28 Sept 2026): see
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally
    defined above; what the handler answers is unchanged. */
 exports.handler = require("./_errors").withErrorReporting("habbo", exports.handler);
+exports.originsProfileFor = originsProfileFor;
+exports.cachedOriginsProfiles = cachedOriginsProfiles;
+exports.lookupOriginsName = lookupOriginsName;
+exports.ORIGINS_HOSTS = ORIGINS_HOSTS;
+exports.avatarUrl = avatarUrl;
+exports.creatorMatcher = creatorMatcher;

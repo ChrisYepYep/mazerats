@@ -1207,7 +1207,7 @@
                          netlify/functions/player-profile.js. It replaced the
                          About page. -->
                     <div class="console-page" id="console-page-profile" style="display:none;">
-                        <h3 class="console-page-title">Profile</h3>
+                        <h3 class="console-page-title">Edit Profile</h3>
                         <div class="console-hashline" aria-hidden="true"></div>
                         <div id="console-profile-body"></div>
                     </div>
@@ -1293,6 +1293,9 @@
     <script src="js/privacy-content.js?v=2"></script>
     <script src="js/palette-wear.js?v=2"></script>
     <script src="js/site.js?v=2"></script>
+    <!-- Dropdowns open the site's own list, not the browser's. After site.js,
+         whose EscapeLayers it registers with. -->
+    <script src="js/select-list.js?v=2"></script>
     <!-- Before console.js and the console's pages, which ask it who is
          signed in while they set themselves up (see home.html). -->
     <script src="js/account.js?v=2"></script>

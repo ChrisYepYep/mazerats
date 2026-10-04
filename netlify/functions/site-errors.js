@@ -50,6 +50,7 @@ const {
 const { record } = require("./_audit");
 const { SECURITY_HEADERS } = require("./_headers");
 const E = require("./_errors");
+const { refusedSince } = require("./_ratelimit");
 
 const json = (statusCode, data) => ({
     statusCode,
@@ -271,7 +272,7 @@ async function read(event) {
 
     const since24h = new Date(now - 24 * 3600000);
     const since7d = new Date(now - 7 * 86400000);
-    const [rows, open, resolved, ignored, recent, dropped, ignoredByBrowser] = await Promise.all([
+    const [rows, open, resolved, ignored, recent, dropped, ignoredByBrowser, limited] = await Promise.all([
         col.find(filter, { projection: { samples: 0, sessions: 0 } }).sort(sort).limit(limit).toArray(),
         col.countDocuments({ status: "open" }),
         col.countDocuments({ status: "resolved" }),
@@ -291,6 +292,8 @@ async function read(event) {
             .sort({ lastSeen: -1 }).limit(RECENT_MAX).toArray(),
         E.metaSince(db, "dropped", since24h),
         E.metaSince(db, "ignored", since24h),
+        // What the site-wide rate limit turned away (_ratelimit.js, 4 Oct 2026).
+        refusedSince(db, since24h).catch(() => ({ last24h: 0, byFn: {} })),
     ]);
 
     /* OCCURRENCES, not groups: how many times anything (not ignored) went
@@ -309,6 +312,7 @@ async function read(event) {
         totals: { open, resolved, ignored, last24h, last7d },
         dropped: { last24h: dropped },
         ignored: { last24h: ignoredByBrowser },
+        limited,
         now: new Date(now).toISOString(),
     });
 }

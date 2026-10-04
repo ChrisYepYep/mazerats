@@ -16,6 +16,9 @@
      { asked: true }          only records that the prompt has been seen
      { refuse: true }         refuses the admins' request for a new
                               nickname (29 Sept 2026; see REFUSED below)
+     { profileIntro: true }   records that the profile introduction has
+                              been shown (4 Oct 2026; profileIntroOf in
+                              discord-auth.js), and answers `asked` with it
 
    Answers 200 { player } in the shape `me` answers with (playerView in
    _player.js) and a FRESH SESSION COOKIE, so the page's next request already
@@ -460,6 +463,10 @@ async function handler(event) {
         mode = "refuse";
     } else if (body.asked === true) {
         mode = "asked";
+    } else if (body.profileIntro === true) {
+        // The profile introduction has been shown (4 Oct 2026; see
+        // profileIntroOf in discord-auth.js).
+        mode = "profileIntro";
     } else {
         return json(400, { error: "Nothing to change." });
     }
@@ -538,6 +545,15 @@ async function handler(event) {
 
         if (mode === "asked") {
             await players.updateOne({ id: player.id }, { $set: { nickAsked: true } });
+            return await reply();
+        }
+
+        /* The profile introduction shown, once and for good. It answers the
+           first-sign-in nickname question too: a new player is taken to
+           Edit Profile, where the nickname is the first thing on the page,
+           instead of being asked in a window of its own. */
+        if (mode === "profileIntro") {
+            await players.updateOne({ id: player.id }, { $set: { profileIntroAt: now, nickAsked: true } });
             return await reply();
         }
 

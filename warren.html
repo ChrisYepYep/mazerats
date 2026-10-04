@@ -206,6 +206,7 @@
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="events" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Events</span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="deadends" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Missing Pieces</span><span class="admin-nav-count" id="dead-end-nav-count" hidden></span></button>
                                     <button type="button" class="chrome-nav-btn ctl-btn" data-panel="guides" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">Guides</span></button>
+                                    <button type="button" class="chrome-nav-btn ctl-btn" data-panel="whatsnew" role="tab" aria-selected="false"><span class="chrome-nav-btn-label">What's New</span></button>
                                 </div>
                             </div>
                             <div class="ctl-card">
@@ -651,6 +652,30 @@
                                 <div class="chrome-list" id="guides-list"></div>
                                 <form class="admin-form" id="guides-form" novalidate></form>
                                 <div class="guides-preview" id="guides-preview" hidden></div>
+                            </section>
+
+                            <!-- What's New (4 Oct 2026): the homepage's log as it
+                                 reads, with news posts and notes added, and any
+                                 automatic entry amended. Everything in this panel is
+                                 js/admin-whats-new.js; the store is
+                                 netlify/functions/whats-new.js. -->
+                            <section class="admin-panel" data-panel="whatsnew" hidden>
+                                <header class="admin-panel-head">
+                                    <div>
+                                        <h3 class="admin-panel-title">What's New</h3>
+                                        <p class="admin-hint">The log on the homepage, as visitors see it. Mazes, events and guides appear on their own when they're added or edited; Amend changes how one appears (its date, Added or Updated, the line under it). Hide takes any single entry off the homepage, news and notes included, without deleting it. Add news, or a note about a maze or event, with the buttons on the right.</p>
+                                    </div>
+                                    <div class="wn-add">
+                                        <button class="admin-action-pill admin-pill-solid admin-add-btn" id="wn-add-news" type="button">+ News post</button>
+                                        <button class="admin-action-pill admin-add-btn" id="wn-add-note" type="button">+ Note</button>
+                                    </div>
+                                </header>
+                                <div class="wn-tools">
+                                    <input type="search" class="ctl-input" id="wn-search" placeholder="Find an entry" aria-label="Find an entry">
+                                    <label class="wn-check"><input type="checkbox" id="wn-show-hidden"> Show hidden entries</label>
+                                </div>
+                                <form class="admin-form" id="wn-form" novalidate></form>
+                                <div class="chrome-list wn-list" id="wn-list"></div>
                             </section>
 
                             <section class="admin-panel" data-panel="deadends" hidden>
@@ -1289,6 +1314,7 @@
     <script src="js/guide-text.js?v=2"></script>
     <script src="js/guides-starter.js?v=2"></script>
     <script src="js/admin-guides.js?v=2"></script>
+    <script src="js/admin-whats-new.js?v=1"></script>
     <script src="js/admin-errors.js?v=1"></script>
     <script src="js/admin-players.js?v=1"></script>
     <script src="js/admin-entries.js?v=1"></script>

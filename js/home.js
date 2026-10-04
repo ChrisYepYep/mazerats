@@ -972,6 +972,9 @@ document.addEventListener("DOMContentLoaded", () => {
     function applyFilterChip(key, value, n) {
         const next = withFilter(query.trim(), key, value);
         closeModal();
+        /* Your Profile, if the maze was opened from it, would otherwise sit
+           over the very list this is taking the visitor to (4 Oct 2026). */
+        closeProgressIfOpen();
         showFeatured = false;
         showWhatsNew = false;
         showTimeline = false;
@@ -2113,6 +2116,8 @@ document.addEventListener("DOMContentLoaded", () => {
             .forEach(btn => paintWalkedToggle(btn, walked));
         updateWalkedCount();
         todoFollowsDone(id, walked);
+        // Your Profile, if it is open under the maze (4 Oct 2026).
+        refreshProgressIfOpen();
     }
 
     /* DONE TAKES IT OFF THE TO DO LIST, AND SAYS SO (3 Oct 2026, the
@@ -2246,13 +2251,12 @@ document.addEventListener("DOMContentLoaded", () => {
        gave the archive the look of a checklist before anyone had asked for
        one. Marking a maze off belongs where you land after actually walking
        it, which is its own page. */
-    /* A CLOSED maze offers neither Completed nor Save (3 Oct 2026, the
-       owner's): it is gone from the hotel, so it cannot be walked, and
-       there is nothing to save it for — walkableRooms already leaves it out
-       of the count. Only offered, though, not taken away: a maze somebody
-       completed or saved before it closed still shows that button, ticked,
-       so they can take it off their list. Without it there would be no way
-       to. */
+    /* A CLOSED maze offers no To do (3 Oct 2026, the owner's): it is gone
+       from the hotel, so there is nothing to save it for. Only offered,
+       though, not taken away: a maze somebody saved before it closed still
+       shows the button, ticked, so they can take it off their list. Without
+       it there would be no way to. (It offered no Completed either, until
+       4 Oct 2026 — see walkedToggleHtml.) */
     function closedAndUnticked(n, ticked) {
         return n.statusKey === "closed" && !ticked;
     }
@@ -2262,8 +2266,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // nothing in a corridor to have finished.
         if (n.isEvent || !n.id || isHallway(n)) return "";
         const walked = isWalked(n.id);
-        // Nor on a closed maze — see closedAndUnticked.
-        if (closedAndUnticked(n, walked)) return "";
+        /* A CLOSED maze can be marked completed again (4 Oct 2026, the
+           owner's): somebody who walked it while it was open should be able
+           to say so. It still counts towards nothing — the totals and every
+           badge are taken over walkableRooms, which leaves closed mazes out —
+           so it only lists it among their completed mazes. To do stays off
+           on a closed maze (closedAndUnticked): there is no going to walk it. */
         return `<button type="button" class="walked-toggle${walked ? " is-walked" : ""}" ` +
             `data-walked-id="${escapeHtml(n.id)}" aria-pressed="${walked ? "true" : "false"}" ` +
             `title="${walked ? "Completed. Click to unmark." : "Mark this as completed"}" ` +
@@ -2318,6 +2326,8 @@ document.addEventListener("DOMContentLoaded", () => {
             .forEach(btn => paintSavedToggle(btn, saved));
         // Put back by un-ticking Completed: no "where did it go" note for that.
         if (saved && !(opts && opts.quiet)) tellWhereSavedGo();
+        // Your Profile's To do, if it is open under the maze (4 Oct 2026).
+        refreshProgressIfOpen();
     }
 
     /* ---------- the one thing Save never said ----------
@@ -2378,7 +2388,7 @@ document.addEventListener("DOMContentLoaded", () => {
         note.setAttribute("aria-live", "polite");
         note.innerHTML = `
             <p class="saved-note-text">Added to your To do. It is waiting for you in
-                <strong>Your Progress</strong>, under &ldquo;To do&rdquo;, until you complete it.</p>
+                <strong>Your Profile</strong>, under &ldquo;To do&rdquo;, until you complete it.</p>
             <div class="saved-note-actions">
                 <button type="button" class="saved-note-go">Take me there</button>
                 <button type="button" class="saved-note-close" aria-label="Dismiss">Got it</button>
@@ -2717,6 +2727,88 @@ document.addEventListener("DOMContentLoaded", () => {
         return n ? `${n} ${n === 1 ? "guide" : "guides"} to how mazes work` : "How furni mazes work";
     }
 
+    /* ---------- WHAT'S NEW, BY HAND (4 Oct 2026, the owner's) ----------
+
+       What the Warren's What's New panel (js/admin-whats-new.js) adds to
+       the log and changes about it, read from netlify/functions/whats-new.js
+       once a visit. Until it arrives — or if it never does — the log is the
+       automatic one, exactly as before.
+
+         posts       site news, and notes on a maze or event, each an entry
+                     of its own on the day it was given
+         overrides   per automatic entry (keyed as recordKey keys it): taken
+                     off the log, filed under another day, labelled Added or
+                     Updated whatever the dates say, or given its own line
+                     instead of the automatic "what changed" one */
+    let whatsNewHand = { posts: [], overrides: new Map() };
+
+    function takeWhatsNewHand(data) {
+        if (!data || typeof data !== "object") return;
+        whatsNewHand = {
+            posts: Array.isArray(data.posts) ? data.posts.filter(p => p && p.type === "post") : [],
+            overrides: new Map((Array.isArray(data.overrides) ? data.overrides : [])
+                .filter(o => o && typeof o.target === "string").map(o => [o.target, o]))
+        };
+        if (showWhatsNew) renderInPlace();
+    }
+
+    function loadWhatsNewHand() {
+        fetch("/.netlify/functions/whats-new", { headers: { Accept: "application/json" } })
+            .then(res => (res.ok ? res.json() : null))
+            .then(takeWhatsNewHand)
+            .catch(() => { /* the automatic log stands on its own */ });
+    }
+    loadWhatsNewHand();
+
+    /* On a development host only: draw the log with posts and overrides
+       that are not in the database, to see how they look without writing
+       any (local dev reads the live one). */
+    if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) window.previewWhatsNew = takeWhatsNewHand;
+
+    // One automatic entry ({ n, at, own }), as the Warren has changed it.
+    function applyWhatsNewOverride(x) {
+        const o = whatsNewHand.overrides.get(recordKey(x.n));
+        if (!o) return;
+        x.n.override = o;
+        if (o.day) { x.at = o.day; x.n.activityAt = o.day; }
+        if (o.activity === "added" || o.activity === "updated") x.n.activity = o.activity;
+        if (o.text) x.n.customChange = o.text;
+    }
+
+    // The posts, as log entries.
+    function whatsNewPosts() {
+        const out = [];
+        whatsNewHand.posts.forEach(p => {
+            // Hidden in the Warren: kept, not shown (4 Oct 2026).
+            if (!p || typeof p.day !== "string" || p.hidden === true) return;
+            if (p.kind === "note") {
+                // A note is about a record, and goes with it if it goes.
+                const m = /^(maze|event):(.+)$/.exec(String(p.target || ""));
+                if (!m) return;
+                const isEvent = m[1] === "event";
+                const raw = (isEvent ? EVENTS : ROOMS).find(r => r.id === m[2]);
+                if (!raw) return;
+                const n = Object.assign({}, normalize(raw, isEvent), {
+                    isNote: true, postId: p.id, noteText: String(p.text || ""),
+                    activityAt: p.day, activity: "note"
+                });
+                n._haystack = [n.name, n.owner, p.text, "note"].join(" ").toLowerCase();
+                out.push({ n, at: p.day, own: "" });
+                return;
+            }
+            const n = {
+                isPost: true, postId: p.id, id: p.id,
+                name: String(p.title || ""), noteText: String(p.text || ""),
+                thumb: typeof p.image === "string" ? p.image : "",
+                link: typeof p.link === "string" ? p.link : "",
+                activityAt: p.day, activity: "news",
+                _haystack: [p.title, p.text, "news"].join(" ").toLowerCase()
+            };
+            out.push({ n, at: p.day, own: "" });
+        });
+        return out;
+    }
+
     function whatsNewItems() {
         const wrap = (item, isEvent) => {
             const n = normalize(item, isEvent);
@@ -2763,12 +2855,24 @@ document.addEventListener("DOMContentLoaded", () => {
         };
         const rooms = ROOMS.map(r => wrap(r, false));
         const events = EVENTS.map(e => wrap(e, true));
-        return rooms.concat(events, guideLogItems())
+        const auto = rooms.concat(events, guideLogItems());
+        // The Warren's changes to them, and its own posts (WHAT'S NEW, BY HAND).
+        auto.forEach(applyWhatsNewOverride);
+        return auto.filter(x => !(x.n.override && x.n.override.hidden))
+            .concat(whatsNewPosts())
             .filter(x => x.at)
             /* Most recent activity first — added or edited, whichever came
                last — and among everything sharing the backfill date with
                nothing since, newest in its own right first. */
-            .sort((a, b) => String(b.at).localeCompare(String(a.at)) || String(b.own).localeCompare(String(a.own)))
+            /* The reader's own DAY first (4 Oct 2026, the bug scan), as the
+               log groups by it: sorted on the raw strings, which is UTC
+               order, a post's bare "YYYY-MM-DD" fell between timestamps of a
+               neighbouring local day west of Greenwich and the same day
+               heading came out twice. Within a day, a post (a bare date)
+               leads, then everything else most recent first. */
+            .sort((a, b) => localDayKey(b.at).localeCompare(localDayKey(a.at))
+                || (/^\d{4}-\d{2}-\d{2}$/.test(String(b.at)) - /^\d{4}-\d{2}-\d{2}$/.test(String(a.at)))
+                || String(b.at).localeCompare(String(a.at)) || String(b.own).localeCompare(String(a.own)))
             .map(x => x.n);
     }
 
@@ -2900,6 +3004,32 @@ document.addEventListener("DOMContentLoaded", () => {
        record edited before this existed and every record only ever added.
        An absent line is honest; inventing "Updated" for them would be the
        log telling somebody something it does not know. */
+/* The word at the head of each entry. News and Note are the Warren's own
+       (WHAT'S NEW, BY HAND). */
+    const LOG_VERBS = { added: "Added", updated: "Updated", news: "News", note: "Note" };
+
+/* THE LOG'S PICTURES, ZOOMED INTO THE MIDDLE (4 Oct 2026, the owner's).
+       A room screenshot at 34x24 was a smear: it was fetched as a 160px
+       SQUARE, cropped a second time to the box's wider shape, and shrunk
+       with pixelated scaling, which keeps one pixel in five and drops the
+       rest. Now it is fetched already in the box's shape at six times its
+       size (204x144), drawn at twice the box (68x48) with ordinary smooth
+       scaling, and the frame shows the middle half of it — the room at 2x,
+       so the furni can be made out at this size. A guide's picture is pixel
+       art and is left as it was (guideLogThumb). A news picture is usually
+       a graphic — a logo, a banner — rather than a room, so it is shown
+       whole, shrunk smoothly: through the image service in the box's shape
+       when it is one of ours, as it is when it is from another site. */
+    function logThumbHtml(n) {
+        const attrs = 'alt="" loading="lazy" decoding="async"';
+        if (n.isGuide) return `<img class="updatelog-thumb" src="${escapeHtml(guideLogThumb(n.thumb))}" ${attrs}>`;
+        if (n.isPost) {
+            const t = String(n.thumb);
+            return `<img class="updatelog-thumb is-smooth" src="${escapeHtml(t.startsWith("/") ? imgCdn(t, 102, null, 75) : t)}" ${attrs}>`;
+        }
+        return `<span class="updatelog-thumb-crop"><img class="updatelog-thumb-zoom" src="${escapeHtml(imgCdn(n.thumb, 204, 144, 75))}" ${attrs}></span>`;
+    }
+
     function changeLineHtml(n) {
         const keys = Array.isArray(n.changes) ? n.changes : [];
         const words = keys.map(k => CHANGE_WORDS[k]).filter(Boolean);
@@ -3006,8 +3136,8 @@ document.addEventListener("DOMContentLoaded", () => {
                         <ul class="updatelog-entries">
                             ${group.entries.map(({ n, i }) => `
                                 <li>
-                                    <button type="button" class="updatelog-entry" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}" data-focus-key="${escapeHtml(recordKey(n))}">
-                                        <span class="updatelog-verb is-${n.activity}">${n.activity === "updated" ? "Updated" : "Added"}</span>
+                                    <${n.isPost && !n.link ? "div" : 'button type="button"'} class="updatelog-entry${n.isPost && !n.link ? " is-static" : ""}" data-log-index="${i}" data-record-id="${escapeHtml(n.id || "")}" data-focus-key="${escapeHtml(n.isPost ? "post:" + n.postId : n.isNote ? "note:" + n.postId : recordKey(n))}">
+                                        <span class="updatelog-verb is-${n.activity}">${LOG_VERBS[n.activity] || "Added"}</span>
                                         ${n.thumb
                                             /* A guide's picture is pixel art, so it is never put
                                                through the 160px crop maze screenshots get. It
@@ -3017,18 +3147,20 @@ document.addEventListener("DOMContentLoaded", () => {
                                                2026). 60px wide covers the 34x24 box for pictures
                                                up to 2.5 times wider than tall. .updatelog-thumb
                                                sizes both. */
-                                            ? `<img class="updatelog-thumb" src="${escapeHtml(n.isGuide ? guideLogThumb(n.thumb) : rowThumbUrl(n.thumb))}" alt="" loading="lazy" decoding="async">`
+                                            ? logThumbHtml(n)
                                             : `<span class="updatelog-thumb is-blank" aria-hidden="true"></span>`}
                                         <span class="updatelog-what">
                                             <span class="updatelog-name">${escapeHtml(n.name || "")}</span>
-                                            <span class="updatelog-meta">${escapeHtml(n.isGuide
+                                            <span class="updatelog-meta">${escapeHtml(n.isPost ? "Site news" : n.isGuide
                                                 ? "Guide" + (n.category ? ` · ${n.category}` : "")
                                                 : (n.isEvent ? "Event" : isHallway(n) ? "Hallway" : "Maze")
                                                     + (n.owner ? ` · ${n.owner}` : "")
                                             )}</span>
-                                            ${n.activity === "updated" ? changeLineHtml(n) : ""}
+                                            ${n.noteText ? `<span class="updatelog-text">${escapeHtml(n.noteText)}</span>`
+                                                : n.customChange ? `<span class="updatelog-change">${escapeHtml(n.customChange)}</span>`
+                                                : n.activity === "updated" ? changeLineHtml(n) : ""}
                                         </span>
-                                    </button>
+                                    </${n.isPost && !n.link ? "div" : "button"}>
                                 </li>`).join("")}
                         </ul>
                     </section>`).join("")}
@@ -3041,12 +3173,13 @@ document.addEventListener("DOMContentLoaded", () => {
            only ever looks for .row-thumb-img. Same complete/naturalWidth
            test as there, for the same reason: a 404 already in the cache
            fires no error event. */
-        grid.querySelectorAll("img.updatelog-thumb").forEach(img => {
+        grid.querySelectorAll("img.updatelog-thumb, img.updatelog-thumb-zoom").forEach(img => {
             const blank = () => {
                 const span = document.createElement("span");
                 span.className = "updatelog-thumb is-blank";
                 span.setAttribute("aria-hidden", "true");
-                img.replaceWith(span);
+                // A zoomed one's frame goes with it (logThumbHtml).
+                (img.closest(".updatelog-thumb-crop") || img).replaceWith(span);
             };
             if (img.complete) {
                 if (!img.naturalWidth) blank();
@@ -3058,7 +3191,17 @@ document.addEventListener("DOMContentLoaded", () => {
         grid.querySelectorAll(".updatelog-entry").forEach(btn => {
             btn.addEventListener("click", () => {
                 const n = currentItems[Number(btn.dataset.logIndex)];
-                if (n && n.isGuide) { if (window.Guides) Guides.open(n.id); }
+                if (n && n.isPost) {
+                    /* Site news: its link, if it has one. A page of this
+                       site opens in place if it is one of this page's own
+                       windows or records (openSiteLinkInPlace), and is
+                       otherwise visited in this tab; anywhere else opens
+                       in a new one. */
+                    if (!n.link) return;
+                    if (n.link.startsWith("/")) { if (!openSiteLinkInPlace(n.link)) location.href = n.link; }
+                    else window.open(n.link, "_blank", "noopener");
+                }
+                else if (n && n.isGuide) { if (window.Guides) Guides.open(n.id); }
                 else if (n) openModal(n);
             });
         });
@@ -6189,6 +6332,8 @@ document.addEventListener("DOMContentLoaded", () => {
             // The cards and the modal belong to the maze being left behind.
             closeAllFurniCards();
             closeModal();
+            // And Your Profile, which would sit over the list (applyFilterChip).
+            closeProgressIfOpen();
             // Every layered view writes into the same panel, so the filter
             // takes it over from whichever one was showing. (Deliberately
             // not clearing furniFilter here, unlike the view toggles: it is
@@ -8022,7 +8167,7 @@ document.addEventListener("DOMContentLoaded", () => {
                you walk it — and Completed stays nearest Share, where it has
                always been. */
             wrap.innerHTML = savedToggleHtml(n) + walkedToggleHtml(n);
-            // A closed maze can have neither (see closedAndUnticked).
+            // A closed maze has no To do (see closedAndUnticked), but can be completed.
             if (wrap.children.length) actions.appendChild(wrap);
         }
         renderShareButton(n, actions);
@@ -8413,7 +8558,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 const rendered = el => el && document.body.contains(el) && el.getClientRects().length;
                 // <body> (a window opened from its address, with nothing
                 // focused) is no trigger to go back to either.
-                const back = modalTriggerEl !== document.body && rendered(modalTriggerEl) ? modalTriggerEl : null;
+                let back = modalTriggerEl !== document.body && rendered(modalTriggerEl) ? modalTriggerEl : null;
+                /* Opened from Your Profile, which is still open under the
+                   maze and was drawn again while it was up (a tick, a To do):
+                   the row that opened it has been replaced. The same maze in
+                   the new drawing if it is there, else the profile itself —
+                   not the archive behind it (4 Oct 2026). */
+                const profile = document.getElementById("progress-overlay");
+                if (!back && modalTriggerEl && profile && profile.classList.contains("open") && !document.body.contains(modalTriggerEl)) {
+                    const id = modalTriggerEl.dataset && modalTriggerEl.dataset.openMaze;
+                    const same = id ? profile.querySelector(`[data-open-maze="${CSS.escape(id)}"]`) : null;
+                    back = rendered(same) ? same : document.getElementById("progress-window");
+                }
                 const fallback = document.getElementById("browse-window");
                 if (back) back.focus();
                 else if (rendered(fallback)) fallback.focus({ preventScroll: true });
@@ -8695,18 +8851,141 @@ document.addEventListener("DOMContentLoaded", () => {
        that can actually be walked, so none of them is unreachable by
        design — the closed ones are excluded from the denominator for the
        same reason they are excluded from the count. */
+    /* The completion milestones, for the badges below and for the profile's
+       "Next:" line. Each has a `key` (3 Oct 2026): the badges a player can
+       feature on their profile are chosen by key in Edit Profile and stored
+       as one (player-data.js), so a key, once out there, is never renamed —
+       which is why Pathfinder is still "bearings". Veteran (50) went on
+       4 Oct 2026: the archive is nowhere near fifty mazes, so it could not
+       be earned. */
     const MILESTONES = [
-        { at: 1, name: "First steps", note: "Completed your first maze" },
-        { at: 5, name: "Getting your bearings", note: "Five completed" },
-        { at: 10, name: "Regular", note: "Ten completed" },
-        { at: 25, name: "Seasoned", note: "Twenty-five completed" },
-        { at: 50, name: "Veteran", note: "Fifty completed" }
+        { key: "first-steps", at: 1, name: "First steps" },
+        { key: "bearings", at: 5, name: "Pathfinder" },
+        { key: "regular", at: 10, name: "Regular" },
+        { key: "seasoned", at: 25, name: "Seasoned" }
     ];
 
-    function progressFigures() {
+    const DIFFICULTY_RANK = ["easy", "medium", "hard", "very-hard", "extreme"];
+    const prettyDifficulty = d => (d === "unknown" ? "Unrated" : String(d).replace(/-/g, " "));
+    // Every word, as the By difficulty list shows them ("Very Hard").
+    const capitalise = s => String(s).replace(/\b[a-z]/g, c => c.toUpperCase());
+
+    // The difficulties the archive has mazes of to complete, in order.
+    const difficultiesHere = f => DIFFICULTY_RANK.filter(k => f.byDifficulty[k] && f.byDifficulty[k].total);
+    const bestStreakOf = d => {
+        const g = (d && d.games) || {};
+        return Math.max((g.guess && g.guess.best) || 0, (g.odd && g.odd.best) || 0);
+    };
+
+    /* ---------- BADGES (3 Oct 2026; the set reworked 4 Oct 2026) ----------
+
+       Every badge a profile can earn, in the order they are shown. Worked
+       out wherever they are drawn, from the figures in front of it — never
+       stored — so a badge can't outlive the thing it was for (a maze
+       un-ticked), and a featured badge sent by hand that was never earned
+       simply isn't drawn.
+
+         means  what having it says about the player, shown on its card
+         how    how to earn it, shown on its card
+         test   (f, d) => earned? — `f` a progressFigures() result, `d` the
+                profile from /profiles (null signed out, or not read yet;
+                a badge that needs it is simply not earned without it)
+         off    kept but not awarded (Top ten: too easy to earn while the
+                boards are this small; the owner's, 4 Oct 2026)
+
+       Cleared: <difficulty> went the same day, for Expert. */
+    const BADGES = [
+        ...MILESTONES.map(m => ({
+            key: m.key, name: m.name,
+            means: m.at === 1 ? "Completed a first maze." : `Completed ${m.at} mazes.`,
+            how: m.at === 1 ? "Complete your first maze." : `Complete ${m.at} mazes.`,
+            test: f => f.walkedHere.length >= m.at
+        })),
+        {
+            key: "expert", name: "Expert",
+            means: "Completed a maze of every difficulty.",
+            how: f => `Complete at least one maze of each difficulty: ${difficultiesHere(f).map(k => capitalise(prettyDifficulty(k))).join(", ")}.`,
+            test: f => {
+                const here = difficultiesHere(f);
+                return here.length > 0 && here.every(k => f.byDifficulty[k].walked > 0);
+            }
+        },
+        {
+            key: "completionist", name: "Completionist",
+            means: "Completed every open maze in the archive.",
+            how: "Complete every open maze in the archive.",
+            test: f => f.walkable.length > 0 && f.walkedHere.length >= f.walkable.length
+        },
+        {
+            key: "streak-7", name: "Week Streak",
+            means: "Played a daily game seven days running.",
+            how: "Play Guess the Maze or Odd One Out 7 days in a row.",
+            test: (f, d) => bestStreakOf(d) >= 7
+        },
+        {
+            key: "streak-30", name: "Month Streak",
+            means: "Played a daily game thirty days running.",
+            how: "Play Guess the Maze or Odd One Out 30 days in a row.",
+            test: (f, d) => bestStreakOf(d) >= 30
+        },
+        {
+            key: "streak-365", name: "Year Streak",
+            means: "Played a daily game every day for a year.",
+            how: "Play Guess the Maze or Odd One Out 365 days in a row.",
+            test: (f, d) => bestStreakOf(d) >= 365
+        },
+        {
+            key: "contributor", name: "Contributor",
+            means: "Helped build the archive.",
+            how: "Send in maze or event images to help build the archive!",
+            // Worked out by the server: see onContributorsList in profiles.js.
+            test: (f, d) => !!(d && d.contributor)
+        },
+        /* Built a maze, or hosted an event, that the archive credits to the
+           player's Habbo name (4 Oct 2026). Worked out by the server against
+           the name OriginsBot vouched for: see archiveCredits in profiles.js. */
+        {
+            key: "maze-owner", name: "Maze Owner",
+            means: "Built a maze that's in the archive.",
+            how: "Build a maze that's in the archive, credited to your Habbo name. Link your Habbo through OriginsBot so it can be matched to you.",
+            test: (f, d) => !!(d && d.mazeOwner)
+        },
+        {
+            key: "event-host", name: "Event Host",
+            means: "Hosted an event that's in the archive.",
+            how: "Host an event that's in the archive, credited to your Habbo name. Link your Habbo through OriginsBot so it can be matched to you.",
+            test: (f, d) => !!(d && d.eventHost)
+        },
+        {
+            key: "early-rat", name: "Early Rat",
+            means: "Joined in the site's first week.",
+            how: "Sign in within a week of the site's launch. It can't be earned any more.",
+            test: (f, d) => !!(d && d.earlyRat)
+        },
+        {
+            key: "top-ten", name: "Top ten", off: true,
+            means: "In the top ten of the daily games, both added together.",
+            how: "Reach the top ten of the daily games' combined leaderboard.",
+            test: (f, d) => !!(d && d.combined && d.combined.rank <= 10 && d.combined.points > 0)
+        }
+    ];
+
+    // A badge's card words, its `how` worked out against the figures if it
+    // depends on them (Expert names the difficulties the archive has).
+    const badgeHow = (b, f) => (typeof b.how === "function" ? b.how(f) : b.how);
+
+    function earnedBadges(f, d) {
+        return BADGES.filter(b => !b.off && b.test(f, d))
+            .map(b => ({ key: b.key, name: b.name, means: b.means, how: badgeHow(b, f) }));
+    }
+
+    /* `walked` and `saved` are Sets of maze ids: this browser's own by
+       default, or another player's completed list (with nothing saved —
+       their To do is theirs) when their profile is showing. */
+    function progressFigures(walked = walkedIds, saved = savedIds) {
         const walkable = walkableRooms();
-        const walkedHere = walkable.filter(r => walkedIds.has(r.id));
-        const savedRooms = ROOMS.filter(r => savedIds.has(r.id));
+        const walkedHere = walkable.filter(r => walked.has(r.id));
+        const savedRooms = ROOMS.filter(r => saved.has(r.id));
 
         // Only ones still to walk: a maze on both lists has been done, and
         // showing it under "to walk" would be a list that never empties.
@@ -8716,7 +8995,7 @@ document.addEventListener("DOMContentLoaded", () => {
            counted towards a figure the console's Profile shows as well. The
            same walkableRooms set the headline figure is taken over. */
         const walkableIds = new Set(walkable.map(r => r.id));
-        const toWalk = savedRooms.filter(r => walkableIds.has(r.id) && !walkedIds.has(r.id));
+        const toWalk = savedRooms.filter(r => walkableIds.has(r.id) && !walked.has(r.id));
         /* What the Saved LIST shows: every saved maze not yet completed,
            closed ones included. Filtering the list the way toWalk is
            filtered made saving a closed maze look broken — the button said
@@ -8728,7 +9007,7 @@ document.addEventListener("DOMContentLoaded", () => {
            collab maze was labelled Closed when it is nothing of the sort.
            (Collabs now count towards completion as well — see
            walkableRooms.) */
-        const savedShown = savedRooms.filter(r => !walkedIds.has(r.id))
+        const savedShown = savedRooms.filter(r => !walked.has(r.id))
             .map(r => ({ room: r, closed: r.status === "closed" }));
 
         const byDifficulty = {};
@@ -8736,15 +9015,96 @@ document.addEventListener("DOMContentLoaded", () => {
             const d = (r.difficulty || "unknown").toLowerCase();
             byDifficulty[d] = byDifficulty[d] || { total: 0, walked: 0 };
             byDifficulty[d].total++;
-            if (walkedIds.has(r.id)) byDifficulty[d].walked++;
+            if (walked.has(r.id)) byDifficulty[d].walked++;
         });
 
         return { walkable, walkedHere, savedRooms, toWalk, savedShown, byDifficulty };
     }
 
-    /* For the console's Profile page (js/console-profile.js): the same
-       figures this window draws, so the two can never disagree, and a way
-       to open this window for the detail. */
+    /* ---------- WHOSE PROFILE (3 Oct 2026) ----------
+
+       Your Progress became Your Profile: the same figures, and a profile
+       around them that other players can find and look at. The window
+       shows one profile at a time — your own (`viewing` null), or another
+       player's, picked from the search field at its top (wireProfileSearch
+       below).
+
+       Your own is drawn from this browser's ticks, the same sets as
+       everything else on the page, so it still cannot disagree with them;
+       the rest of it (the Habbo, the badges that need the daily games, the
+       choices made in Edit Profile) comes from /profiles?me once signed
+       in. Another player's comes whole from /profiles?p=<their public id>.
+       See netlify/functions/profiles.js for what may be shown, and to whom. */
+    const PROFILES_URL = "/.netlify/functions/profiles";
+    const OWN_FRESH_MS = 30 * 1000;
+    const own = { data: null, forId: null, at: 0, reading: null, failed: false, askedMeAt: 0 };
+    let viewing = null;     // null for your own, or { pid, data, failed }
+
+    // On a 10s leash, as console-profile.js's read is.
+    function readProfile(qs) {
+        const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+        if (controller) setTimeout(() => controller.abort(), 10000);
+        return fetch(`${PROFILES_URL}?${qs}`, {
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+            signal: controller ? controller.signal : undefined
+        }).then(res => (res.ok ? res.json()
+            : Promise.reject(Object.assign(new Error(String(res.status)), { status: res.status }))));
+    }
+
+    /* Your own profile's server half, re-read once it is OWN_FRESH_MS old,
+       or at once when `force` says something has changed (Edit Profile
+       saving). Draws the window again when it lands, if your own is what
+       it is showing — it is never called from the drawing itself. */
+    function loadOwnProfile(force) {
+        const me = window.Account && Account.current;
+        if (!me) { own.data = null; own.forId = null; return Promise.resolve(null); }
+        if (!force && own.data && own.forId === me.id && Date.now() - own.at < OWN_FRESH_MS) return Promise.resolve(own.data);
+        /* A read already out: wait for it. Asked to FORCE (Edit Profile has
+           just saved), that read may have left before the save and carry
+           the old answer, so another is asked for once it lands (4 Oct
+           2026, the bug scan); before, the old answer stood for 30s. */
+        if (own.reading) return force ? own.reading.then(() => loadOwnProfile(true)) : own.reading;
+        const forId = me.id;
+        own.failed = false;
+        own.reading = readProfile("me=1")
+            .then(body => {
+                const now = window.Account && Account.current;
+                if (!now || now.id !== forId) return null;
+                own.data = body;
+                own.forId = forId;
+                own.at = Date.now();
+                return body;
+            })
+            .catch(e => {
+                own.failed = true;
+                /* A revoked session: `me` is asked again, and the page signs
+                   out. Once a minute at most, as console-profile.js does, so a
+                   `me` that still says signed in cannot set up a loop with the
+                   re-read its answer starts. */
+                if (e && e.status === 401 && window.Account && typeof Account.refresh === "function" && Date.now() - own.askedMeAt > 60000) {
+                    own.askedMeAt = Date.now();
+                    Account.refresh();
+                }
+                return null;
+            })
+            .finally(() => {
+                own.reading = null;
+                if (!viewing) refreshProgressIfOpen();
+            });
+        return own.reading;
+    }
+
+    // Your own server half, but only if it is still yours.
+    function ownData() {
+        const me = window.Account && Account.current;
+        return me && own.data && own.forId === me.id ? own.data : null;
+    }
+
+    /* For the console (js/console-profile.js): the same figures this window
+       draws, so the two can never disagree; the completed mazes and earned
+       badges its Edit Profile page offers to choose from; and a way to open
+       this window. */
     window.ArchiveProgress = {
         figures() {
             const f = progressFigures();
@@ -8758,20 +9118,302 @@ document.addEventListener("DOMContentLoaded", () => {
                 toWalk: f.toWalk.length, saved: f.savedShown.length
             };
         },
-        open: () => openProgress()
+        /* Every maze this browser has ticked, closed ones included (a maze
+           you loved is no less your favourite for having gone), by name. */
+        completed() {
+            return ROOMS.filter(r => walkedIds.has(r.id) && !isHallway(r))
+                .map(r => ({ id: r.id, name: r.name || r.id, creator: r.creator || "" }))
+                .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
+        },
+        // `d` is the player's /profiles?me answer, or null.
+        badges: d => earnedBadges(progressFigures(), d || null),
+        open: pid => openProgress(pid),
+        // Edit Profile saved something: the window's copy is out of date.
+        changed: () => loadOwnProfile(true)
     };
 
+    const pfNum = n => Number(n || 0).toLocaleString("en-GB");
+    function pfSince(ym) {
+        if (!ym) return "";
+        const d = new Date(`${ym}-01T00:00:00Z`);
+        return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
+    }
+    const roomById = id => ROOMS.find(r => r.id === id) || null;
+
+    /* The favourite maze's picture (4 Oct 2026, the owner's): its middle,
+       cut out by the box (object-fit: none) at a quarter of the size the
+       room is drawn in the hotel. Screenshots come in at anything from 950
+       to 2900 pixels wide, so each is brought to FAV_W — a quarter of a
+       960-wide Habbo window — so that every one shows the same amount of
+       room. At the full 960 (unzoomed) the box held a couple of floor
+       tiles, and at 480 and 360 it was still too close. */
+    const FAV_W = 240;
+    const favThumbUrl = thumb => imgCdn(thumb, FAV_W, null, 70);
+
+    /* ...and drawn as the screen would draw it (4 Oct 2026, the owner's:
+       full colour looked out of place on the console screen). Dithered in
+       the screen's own #eeeeee, in FAV_TONES steps above "off" — a 4x4
+       ordered (Bayer) dither between them — with "off" left transparent, so
+       the scanlines show through the dark parts as they do everywhere else
+       on the screen. Two-tone (1-bit) was too harsh to make the room out;
+       four tones still read as a dithered screen, and the room reads too.
+
+       Done here, on a canvas, because the functions have no JPEG or WebP
+       decoder; the picture is this site's own (the image CDN), so the
+       canvas may read it. Each result is kept for the visit, so a redraw
+       of the window does not dither it again. */
+    const FAV_BOX = 64;
+    const FAV_TONES = 3;
+    const BAYER4 = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+    const favDithered = new Map();      // src -> ImageData, or the promise of one
+
+    function ditherFav(img) {
+        const S = FAV_BOX;
+        const c = document.createElement("canvas");
+        c.width = S;
+        c.height = S;
+        const x = c.getContext("2d");
+        // The middle, at the picture's own size (see FAV_W).
+        x.drawImage(img, Math.round((img.naturalWidth - S) / 2), Math.round((img.naturalHeight - S) / 2), S, S, 0, 0, S, S);
+        const data = x.getImageData(0, 0, S, S);
+        const d = data.data;
+        const lum = i => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        // Stretched to the picture's own darkest and lightest, so a dim room still has its four tones.
+        let lo = 255, hi = 0;
+        for (let i = 0; i < d.length; i += 4) {
+            if (d[i + 3] === 0) continue;
+            const l = lum(i);
+            if (l < lo) lo = l;
+            if (l > hi) hi = l;
+        }
+        const span = Math.max(1, hi - lo);
+        for (let y = 0; y < S; y++) {
+            for (let px = 0; px < S; px++) {
+                const i = (y * S + px) * 4;
+                const v = d[i + 3] === 0 ? 0 : ((lum(i) - lo) / span) * FAV_TONES;
+                const base = Math.floor(v);
+                const tone = Math.min(FAV_TONES, base + (v - base > (BAYER4[y % 4][px % 4] + 0.5) / 16 ? 1 : 0));
+                d[i] = d[i + 1] = d[i + 2] = 238;
+                d[i + 3] = Math.round((255 * tone) / FAV_TONES);
+            }
+        }
+        return data;
+    }
+
+    // Fills every favourite's canvas under `root` (see the favourite's markup).
+    function drawFavThumbs(root) {
+        if (!root) return;
+        root.querySelectorAll("canvas[data-fav-src]").forEach(canvas => {
+            const src = canvas.dataset.favSrc;
+            const paint = data => {
+                if (data && canvas.isConnected) canvas.getContext("2d").putImageData(data, 0, 0);
+            };
+            const known = favDithered.get(src);
+            if (known && !(known instanceof Promise)) { paint(known); return; }
+            const asked = known || new Promise(resolve => {
+                const img = new Image();
+                img.decoding = "async";
+                img.onload = () => {
+                    try { resolve(ditherFav(img)); } catch (e) { resolve(null); }
+                };
+                img.onerror = () => resolve(null);
+                img.src = src;
+            }).then(data => {
+                // A failure is not kept: the next drawing tries again.
+                if (data) favDithered.set(src, data);
+                else favDithered.delete(src);
+                return data;
+            });
+            if (!known) favDithered.set(src, asked);
+            asked.then(paint);
+        });
+    }
+
+    /* A Habbo, drawn for the console screen (4 Oct 2026): its outline alone,
+       in the screen's text colour, by netlify/functions/habbo-outline.js.
+       `url` is the Habbo imaging address profiles.js hands over; only its
+       figure is taken from it. `kind` is "body" or "head". "" when there is
+       no figure in it, so the caller draws the blank face. */
+    /* Raised whenever habbo-outline.js starts drawing differently (2: the
+       small size and the head turned with the body, 4 Oct 2026), so a
+       browser's day-old copy, and the edge's month-old one, are not kept.
+       js/console-profile.js asks with the same number. */
+    const OUTLINE_V = 2;
+    function outlineSrc(url, kind) {
+        let figure = "";
+        try { figure = new URL(url).searchParams.get("figure") || ""; } catch (e) { /* not an address */ }
+        return figure ? `/.netlify/functions/habbo-outline?figure=${encodeURIComponent(figure)}&kind=${kind}&v=${OUTLINE_V}` : "";
+    }
+
+    // One maze as a row that opens it — the To do list's row, reused.
+    function mazeRow(r, tag) {
+        return `<li><button type="button" class="progress-saved-row" data-open-maze="${escapeHtml(r.id)}">
+            <span class="progress-saved-name">${escapeHtml(r.name || r.id)}</span>
+            <span class="progress-saved-by">${tag || ""}${escapeHtml(r.creator || "")}</span>
+        </button></li>`;
+    }
+    const closedTag = r => (r.status === "closed"
+        ? `<span class="progress-saved-closed" title="Closed: it doesn't count towards totals or badges">Closed</span>` : "");
+
+    /* What a completed list says about the player who completed it.
+       `list` is maze ids in the order they were ticked — near enough: two
+       devices' ticks are merged as sets, so "recently" is the order they
+       reached the account, not a timestamp. Nothing is timed. */
+    function highlightsOf(list) {
+        const rooms = list.map(roomById).filter(r => r && !isHallway(r));
+
+        // The hardest difficulty reached; the latest of them, if several.
+        let hardest = null;
+        rooms.forEach(r => {
+            const k = DIFFICULTY_RANK.indexOf(String(r.difficulty || "").toLowerCase());
+            if (k >= 0 && (!hardest || k >= hardest.k)) hardest = { k, room: r };
+        });
+
+        /* "Most mazes by", the builder whose mazes they had completed most,
+           was dropped on 4 Oct 2026 (the owner's): no wording for it read
+           right. */
+        return {
+            hardest: hardest ? hardest.room : null,
+            /* Open mazes only (4 Oct 2026, the owner's): a closed maze can be
+               marked completed, but it is not news about what they have
+               been walking. Toughest counts it. */
+            recent: rooms.filter(r => r.status !== "closed").slice(-3).reverse()
+        };
+    }
+
+    function placeText(p) {
+        return p ? `#${pfNum(p.rank)} of ${pfNum(p.of)}` : "Not ranked";
+    }
+
+    function gamesHtml(d, self) {
+        const g = d.games || {};
+        const row = (label, s) => `<tr>
+            <th scope="row">${label}</th>
+            <td>${s && s.days ? pfNum(s.streak) : "-"}</td>
+            <td>${s && s.days ? pfNum(s.best) : "-"}</td>
+            <td>${s ? pfNum(s.days) : "0"}</td>
+            <td>${s && s.days ? placeText(s.place) : "-"}</td>
+        </tr>`;
+        const played = (g.guess && g.guess.days) || (g.odd && g.odd.days);
+        return `<section class="progress-block">
+            <h4 class="progress-head-sm">Daily games</h4>
+            ${played ? `
+                <div class="profile-games-wrap">
+                    <table class="profile-games">
+                        <thead><tr><th scope="col"><span class="visually-hidden">Game</span></th>
+                            <th scope="col">Streak</th><th scope="col">Best</th><th scope="col">Days</th><th scope="col">Place</th></tr></thead>
+                        <tbody>${row("Guess the Maze", g.guess)}${row("Odd One Out", g.odd)}</tbody>
+                    </table>
+                </div>
+                ${d.combined ? `<p class="progress-note">Both together: <strong>${pfNum(d.combined.points)}</strong> points, ${placeText(d.combined)}.</p>` : ""}`
+                : `<p class="progress-note">${self ? "Play a daily game to start a streak." : "Hasn't played the daily games yet."}</p>`}
+            ${d.ff ? `<p class="progress-note">Fallin' Furni best run: <strong>${pfNum(d.ff.points)}</strong> points over ${pfNum(d.ff.levels)} ${d.ff.levels === 1 ? "level" : "levels"}, ${placeText(d.ff)}.</p>` : ""}
+        </section>`;
+    }
+
+    /* The profile in three parts (4 Oct 2026): `face` (the Habbo) and
+       `who` (name, badge, motto and the rest) for the header that stays put
+       at the top of the screen, and `body` for everything that scrolls
+       under it. */
     function progressHtml() {
-        const f = progressFigures();
+        const me = window.Account && Account.current;
+        const other = viewing;
+
+        if (other && !other.data) {
+            return {
+                face: `<span class="profile-avatar is-blank" aria-hidden="true"></span>`,
+                who: `<p class="progress-note profile-wait">${!other.failed ? "Loading..."
+                    : other.habbo ? "That Habbo can't be shown just now. Try again in a moment."
+                    : "That profile can't be shown. It may be hidden, or the player may have left."}</p>`,
+                body: ""
+            };
+        }
+        if (other && other.habbo) return habboOnlyHtml(other.data);
+
+        const d = other ? other.data : ownData();
+        const self = !other;
+        const list = other ? (Array.isArray(d.walked) ? d.walked : []) : [...walkedIds];
+        const f = other ? progressFigures(new Set(list), new Set()) : progressFigures();
         const total = f.walkable.length;
         const done = f.walkedHere.length;
         const pct = total ? Math.round((done / total) * 100) : 0;
-        const me = window.Account && Account.current;
 
-        const earned = MILESTONES.filter(m => done >= m.at);
-        const next = MILESTONES.find(m => done < m.at);
+        const badges = earnedBadges(f, d);
+        /* What the Badges section lists (4 Oct 2026): on your own profile
+           every badge there is, the ones not earned yet drawn dimmed, so
+           the page itself says what there is to go for; on somebody else's,
+           only what they have. Each opens a card saying what it means and
+           how to get it (see BADGE CARDS). */
+        const badgeList = self
+            ? BADGES.filter(b => !b.off).map(b => ({ key: b.key, name: b.name, means: b.means, how: badgeHow(b, f), earned: badges.some(e => e.key === b.key) }))
+            : badges.map(b => ({ ...b, earned: true }));
+        const featured = d && d.badge ? badges.find(b => b.key === d.badge) : null;
+        const next = self ? MILESTONES.find(m => done < m.at) : null;
+        const hl = highlightsOf(list);
 
-        /* Ranked easy-to-hard rather than alphabetically, because that is
+        // ---- who ----
+        const name = d ? (d.name || "Someone") : me ? (me.displayName || me.name || "Someone") : "Your archive";
+        const habbo = d && d.habbo;
+        /* The Habbo, never the Discord picture (the owner's call): a
+           player without a linked Habbo gets the boards' blank face. */
+        const faceSrc = habbo && habbo.avatar ? outlineSrc(habbo.avatar, "body") : "";
+        const face = faceSrc
+            ? `<img class="profile-avatar" src="${escapeHtml(faceSrc)}" alt="" aria-hidden="true">`
+            : `<span class="profile-avatar is-blank" aria-hidden="true"></span>`;
+        /* THE HEADER IS THE AVATAR'S HEIGHT (4 Oct 2026, the owner's): three
+           short rows beside the 56px figure — the name with Online after it,
+           the motto, the featured badge, and "Rat since". Everything
+           longer it used to carry goes to the top of the scrolling part
+           (`notes`): "In the hotel as", the hidden-profile line, the
+           OriginsBot line and the signed-out sign-in sentence. Edit Profile
+           is under the search, where My profile sits on somebody else's. */
+        const sinceLine = d && d.since
+            ? `<p class="profile-line">Rat since ${escapeHtml(pfSince(d.since))}</p>` : "";
+
+        const noteLines = [];
+        if (habbo && habbo.name && habbo.name.toLowerCase() !== String(name).toLowerCase()) {
+            noteLines.push(`In the hotel as <strong>${escapeHtml(habbo.name)}</strong>.`);
+        }
+        if (self && !me) {
+            noteLines.push(`Kept in this browser. <button type="button" class="progress-signin" data-profile-act="signin">Sign in with Discord</button> to carry it with you and get a profile other players can find.`);
+        } else if (self) {
+            if (d && d.hidden) noteLines.push(`<span class="profile-hidden-note">Hidden: only you can see this.</span>`);
+            if (d && !habbo) noteLines.push("Link your Habbo through OriginsBot to show your avatar and motto here.");
+        }
+        const notes = noteLines.length
+            ? `<div class="profile-notes">${noteLines.map(l => `<p class="progress-note">${l}</p>`).join("")}</div>` : "";
+
+        const who = `
+                    <h3><span class="profile-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>${habbo && habbo.online ? ` <span class="profile-online">Online</span>` : ""}</h3>
+                    ${habbo && habbo.motto ? `<p class="profile-motto" title="${escapeHtml(habbo.motto)}">"${escapeHtml(habbo.motto)}"</p>` : ""}
+                    ${featured ? `<p class="profile-featured-line"><span class="progress-badge profile-featured" title="${escapeHtml(featured.means)}"><span class="progress-badge-mark" aria-hidden="true"></span><span>${escapeHtml(featured.name)}</span></span></p>` : ""}
+                    ${sinceLine}`;
+
+        // ---- favourite maze ----
+        const fav = d && d.favourite && list.includes(d.favourite) ? roomById(d.favourite) : null;
+        let favourite = "";
+        if (fav) {
+            const n = normalize(fav, false);
+            favourite = `<section class="progress-block">
+                <h4 class="progress-head-sm">Favourite maze</h4>
+                <button type="button" class="profile-fav" data-open-maze="${escapeHtml(fav.id)}">
+                    ${n.thumb ? `<canvas class="profile-fav-img" width="${FAV_BOX}" height="${FAV_BOX}" data-fav-src="${escapeHtml(favThumbUrl(n.thumb))}" aria-hidden="true"></canvas>` : ""}
+                    <span class="profile-fav-text">
+                        <span class="profile-fav-name">${escapeHtml(fav.name || fav.id)}</span>
+                        ${fav.creator ? `<span class="profile-fav-by">by ${escapeHtml(fav.creator)}</span>` : ""}
+                        ${fav.difficulty ? `<span class="profile-fav-by">${escapeHtml(capitalise(prettyDifficulty(String(fav.difficulty).toLowerCase())))}</span>` : ""}
+                    </span>
+                </button>
+            </section>`;
+        } else if (self && me && done) {
+            favourite = `<section class="progress-block">
+                <h4 class="progress-head-sm">Favourite maze</h4>
+                <p class="progress-note">None chosen yet. Pick one from your completed mazes in <button type="button" class="progress-signin" data-profile-act="edit">Edit Profile</button>.</p>
+            </section>`;
+        }
+
+        /* ---- by difficulty ----
+           Ranked easy-to-hard rather than alphabetically, because that is
            the order the ratings mean. But the ranking only decides the
            ORDER — every difficulty actually present is listed, including
            any the ranking has not heard of, which then sort to the end.
@@ -8781,54 +9423,53 @@ document.addEventListener("DOMContentLoaded", () => {
            breakdown whose totals were supposed to add up to the headline
            figure directly above it. A list that can quietly disagree with
            the number over it is worse than no list. */
-        const RANK = ["easy", "medium", "hard", "very-hard", "extreme", "unknown"];
-        const rankOf = d => {
-            const i = RANK.indexOf(d);
+        const RANK = [...DIFFICULTY_RANK, "unknown"];
+        const rankOf = k => {
+            const i = RANK.indexOf(k);
             return i === -1 ? RANK.length : i;
         };
-        const prettyDifficulty = d =>
-            d === "unknown" ? "Unrated" : d.replace(/-/g, " ");
-
         const diffRows = Object.keys(f.byDifficulty)
-            .filter(d => f.byDifficulty[d].total)
+            .filter(k => f.byDifficulty[k].total)
             .sort((a, b) => rankOf(a) - rankOf(b) || (a < b ? -1 : 1))
-            .map(d => {
-                const { total: t, walked: w } = f.byDifficulty[d];
+            .map(k => {
+                const { total: t, walked: w } = f.byDifficulty[k];
                 const p = t ? Math.round((w / t) * 100) : 0;
                 return `<li class="progress-diff">
-                    <span class="progress-diff-name">${escapeHtml(prettyDifficulty(d))}</span>
+                    <span class="progress-diff-name">${escapeHtml(prettyDifficulty(k))}</span>
                     <span class="progress-diff-bar"><span style="width:${p}%"></span></span>
                     <span class="progress-diff-n">${w}/${t}</span>
                 </li>`;
             }).join("");
 
+        // ---- highlights ----
+        const hlRows = [];
+        if (hl.hardest) {
+            hlRows.push(`<div class="profile-hl"><dt>Toughest</dt><dd><button type="button" class="profile-link" data-open-maze="${escapeHtml(hl.hardest.id)}">${escapeHtml(hl.hardest.name || hl.hardest.id)}</button> <span class="profile-dim">${escapeHtml(capitalise(prettyDifficulty(String(hl.hardest.difficulty).toLowerCase())))}</span></dd></div>`);
+        }
+        if (hl.recent.length) {
+            hlRows.push(`<div class="profile-hl"><dt>Latest</dt><dd>${hl.recent.map(r =>
+                `<button type="button" class="profile-link" data-open-maze="${escapeHtml(r.id)}">${escapeHtml(r.name || r.id)}</button>`).join('<span class="profile-dim">, </span>')}</dd></div>`);
+        }
+
+        // ---- every completed maze, by name ----
+        const completedRooms = list.map(roomById).filter(r => r && !isHallway(r))
+            .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), "en", { sensitivity: "base" }));
+
         const savedList = f.savedShown.length
-            ? `<ul class="progress-saved">${f.savedShown.map(({ room: r, closed }) => `
-                <li><button type="button" class="progress-saved-row" data-open-maze="${escapeHtml(r.id)}">
-                    <span class="progress-saved-name">${escapeHtml(r.name || r.id)}</span>
-                    <span class="progress-saved-by">${closed
-                        ? `<span class="progress-saved-closed" title="Closed, so it can't be completed now">Closed</span>`
-                        : ""}${escapeHtml(r.creator || "")}</span>
-                </button></li>`).join("")}</ul>`
+            ? `<ul class="progress-saved">${f.savedShown.map(({ room: r }) => mazeRow(r, closedTag(r))).join("")}</ul>`
             : `<p class="progress-note">Nothing to do yet. Open a maze and press <strong>To do</strong> to keep it here until you complete it.</p>`;
 
-        return `
-            <section class="progress-head">
-                ${me && me.avatar ? `<img class="progress-face" src="${escapeHtml(me.avatar)}" alt="" aria-hidden="true">` : ""}
-                <div class="progress-head-text">
-                    <h3>${me ? escapeHtml(me.displayName || me.name) : "Your archive"}</h3>
-                    <p>${me
-                        ? "Kept against your account, so it follows you between devices."
-                        : `Kept in this browser. <button type="button" class="progress-signin" id="progress-signin">Sign in with Discord</button> to carry it with you.`}</p>
-                </div>
-            </section>
+        const body = `
+            ${notes}
+            ${favourite}
 
             <section class="progress-block">
                 <div class="progress-bignum">
                     <strong>${done}</strong><span>of ${total} completed</span>
                 </div>
                 <div class="progress-bar"><span style="width:${pct}%"></span></div>
-                <p class="progress-note">${pct}% of the mazes you can still complete today.</p>
+                <p class="progress-note">${pct}% of the mazes that can still be completed today.</p>
+                ${hlRows.length ? `<dl class="profile-hls">${hlRows.join("")}</dl>` : ""}
             </section>
 
             ${diffRows ? `<section class="progress-block">
@@ -8837,49 +9478,221 @@ document.addEventListener("DOMContentLoaded", () => {
             </section>` : ""}
 
             <section class="progress-block">
-                <h4 class="progress-head-sm">Milestones</h4>
-                ${earned.length
-                    ? `<ul class="progress-badges">${earned.map(m => `
-                        <li class="progress-badge" title="${escapeHtml(m.note)}">
+                <h4 class="progress-head-sm">Badges${self
+                    ? ` <span class="progress-count">${badges.length} of ${badgeList.length}</span>`
+                    : badges.length ? ` <span class="progress-count">${badges.length}</span>` : ""}</h4>
+                ${badgeList.length
+                    ? `<ul class="progress-badges">${badgeList.map(b => `
+                        <li><button type="button" class="progress-badge${b.earned ? "" : " is-locked"}" data-badge-key="${escapeHtml(b.key)}"
+                                aria-controls="profile-badge-card" aria-pressed="false"
+                                data-badge-name="${escapeHtml(b.name)}" data-badge-means="${escapeHtml(b.means)}"
+                                data-badge-how="${escapeHtml(b.how)}" data-badge-earned="${b.earned ? "1" : ""}">
                             <span class="progress-badge-mark" aria-hidden="true"></span>
-                            <span>${escapeHtml(m.name)}</span>
-                        </li>`).join("")}</ul>`
-                    : `<p class="progress-note">None yet — the first arrives the moment you mark a maze as completed.</p>`}
-                ${next ? `<p class="progress-note">Next: <strong>${escapeHtml(next.name)}</strong> at ${next.at} completed — ${next.at - done} to go.</p>` : ""}
+                            <span>${escapeHtml(b.name)}</span>
+                        </button></li>`).join("")}</ul>
+                        <div class="profile-badge-card" id="profile-badge-card" hidden></div>
+                        <p class="progress-note profile-badge-hint">Select a badge to see what it means and how to get it. Marking Closed mazes as complete does not count towards badges.</p>`
+                    : `<p class="progress-note">None yet.</p>`}
+                ${next ? `<p class="progress-note">Next: <strong>${escapeHtml(next.name)}</strong> at ${next.at} completed, ${next.at - done} to go.</p>` : ""}
             </section>
 
-            <section class="progress-block">
+            ${d ? gamesHtml(d, self) : ""}
+
+            ${completedRooms.length ? `<section class="progress-block">
+                <details class="profile-completed">
+                    <summary class="progress-head-sm">Completed mazes <span class="progress-count">${completedRooms.length}</span></summary>
+                    <ul class="progress-saved">${completedRooms.map(r => mazeRow(r, closedTag(r))).join("")}</ul>
+                </details>
+            </section>` : ""}
+
+            ${self ? `<section class="progress-block">
                 <h4 class="progress-head-sm">To do${f.savedShown.length ? ` <span class="progress-count">${f.savedShown.length}</span>` : ""}</h4>
                 ${savedList}
-            </section>`;
+            </section>` : ""}`;
+        return { face, who, body };
+    }
+
+    /* A Habbo with no profile to show (see showHabbo): the header as a
+       profile's — the Habbo, its name, Online, its motto — and under it one
+       line, in the middle of the screen, saying why there is no more. */
+    const NOT_JOINED_LINE = "Not yet joined";
+    function habboOnlyHtml(d) {
+        const habbo = d.habbo || {};
+        const name = habbo.name || "Someone";
+        const faceSrc = habbo.avatar ? outlineSrc(habbo.avatar, "body") : "";
+        const face = faceSrc
+            ? `<img class="profile-avatar" src="${escapeHtml(faceSrc)}" alt="" aria-hidden="true">`
+            : `<span class="profile-avatar is-blank" aria-hidden="true"></span>`;
+        const inactive = d.status === "inactive";
+        const statusLine = inactive
+            ? (d.since ? `<p class="profile-line">Rat since ${escapeHtml(pfSince(d.since))}</p>` : "")
+            : `<p class="profile-line">${NOT_JOINED_LINE}</p>`;
+        const who = `
+                    <h3><span class="profile-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>${habbo.online ? ` <span class="profile-online">Online</span>` : ""}</h3>
+                    ${habbo.motto ? `<p class="profile-motto" title="${escapeHtml(habbo.motto)}">"${escapeHtml(habbo.motto)}"</p>` : ""}
+                    ${statusLine}`;
+        const body = `<div class="profile-empty"><p>${inactive
+            ? "This maze rat hasn't activated their profile yet!"
+            : "This user hasn't joined Maze Rats yet!"}</p></div>`;
+        return { face, who, body };
     }
 
     function renderProgress() {
         const body = document.getElementById("progress-body");
         if (!body) return;
-        body.innerHTML = progressHtml();
+        // The completed list stays open across a redraw if it was open.
+        const wasOpen = !!body.querySelector(".profile-completed[open]");
+        const parts = progressHtml();
+        body.innerHTML = parts.body;
+        drawFavThumbs(body);
+        const face = document.getElementById("profile-face");
+        const who = document.getElementById("profile-who");
+        if (face) face.innerHTML = parts.face;
+        if (who) who.innerHTML = parts.who;
+        const list = wasOpen && body.querySelector(".profile-completed");
+        if (list) list.open = true;
+        // A pinned badge's card stays up through the redraw, if it is still there.
+        if (pinnedBadge && !badgeBtn(pinnedBadge)) pinnedBadge = null;
+        settleBadgeCard();
+        const title = document.getElementById("progress-title");
+        // One title, whoever is showing (4 Oct 2026, the owner's).
+        if (title) title.textContent = "Profiles";
+        const back = document.getElementById("profile-back");
+        if (back) back.hidden = !viewing;
+        const edit = document.getElementById("profile-edit");
+        if (edit) edit.hidden = !!viewing || !(window.Account && Account.current);
+    }
 
-        const signin = document.getElementById("progress-signin");
-        if (signin) signin.addEventListener("click", () => window.Account && Account.signIn());
+    /* Shows a player's profile in the window: `pid` is their public id, and
+       null (or your own id) is your own. The window scrolls back to the
+       top for the new profile. */
+    function showProfile(pid) {
+        const me = window.Account && Account.current;
+        const body = document.getElementById("progress-body");
+        // A new profile starts with no badge card up.
+        pinnedBadge = null;
+        if (!pid || (me && me.publicId && me.publicId === pid)) {
+            viewing = null;
+            renderProgress();
+            loadOwnProfile();
+        } else {
+            const v = { pid, data: null, failed: false };
+            viewing = v;
+            renderProgress();
+            readProfile(`p=${encodeURIComponent(pid)}`)
+                .then(data => { v.data = data; })
+                .catch(() => { v.failed = true; })
+                .finally(() => { if (viewing === v) renderProgress(); });
+        }
+        const scroller = document.getElementById("profile-screen-scroll");
+        if (scroller) scroller.scrollTop = 0;
+    }
 
-        // A saved maze opens where every other maze opens.
-        body.querySelectorAll("[data-open-maze]").forEach(btn => {
-            btn.addEventListener("click", () => {
-                const room = ROOMS.find(r => r.id === btn.dataset.openMaze);
-                if (!room) return;
-                /* This window's opener is carried on to the maze's, so
-                   closing the maze hands focus to what opened Your Progress
-                   in the first place. openModal takes the focused element
-                   as its opener, and here that is this row — inside a
-                   window that has just shut — so closing the maze dropped
-                   focus to <body>. Read before closeProgress, which
-                   forgets it. */
-                const opener = progressTriggerEl;
-                closeProgress({ keepFocus: true });
-                openModal(normalize(room, false));
-                modalTriggerEl = focusLanding(opener);
-            });
+    /* A Habbo the search found with no public profile here (4 Oct 2026, the
+       owner's): its avatar and motto, and that its player has not joined or
+       not activated their profile yet — see habboView in profiles.js. One
+       whose player's profile IS public comes back as that profile's id. */
+    function showHabbo(name, hotel) {
+        pinnedBadge = null;
+        const v = { habbo: { name, hotel: hotel || "COM" }, data: null, failed: false };
+        viewing = v;
+        renderProgress();
+        readProfile(`h=${encodeURIComponent(name)}&hotel=${encodeURIComponent(v.habbo.hotel)}`)
+            .then(data => {
+                if (viewing !== v) return;
+                if (data && data.pid) { showProfile(data.pid); return; }
+                v.data = data;
+            })
+            .catch(() => { v.failed = true; })
+            .finally(() => { if (viewing === v) renderProgress(); });
+        const scroller = document.getElementById("profile-screen-scroll");
+        if (scroller) scroller.scrollTop = 0;
+    }
+
+    /* The window's clicks, bound once rather than on every drawing. */
+    /* ---------- BADGE CARDS (4 Oct 2026) ----------
+
+       What a badge means and how it is earned, on a card under the badges.
+       Pointing at a badge, or tabbing to it, shows its card; selecting it
+       keeps the card up (aria-pressed) until it is selected again or
+       another one is, so a phone, with nothing to point with, gets it on a
+       tap. One card under the row rather than one hanging off each badge:
+       the screen clips anything that would hang over its edge, and a
+       card in the flow never can. Survives the window being redrawn. */
+    let pinnedBadge = null;
+
+    function badgeBtn(key) {
+        const body = document.getElementById("progress-body");
+        return key && body ? body.querySelector(`[data-badge-key="${CSS.escape(key)}"]`) : null;
+    }
+
+    function showBadgeCard(btn) {
+        const body = document.getElementById("progress-body");
+        const card = body && body.querySelector("#profile-badge-card");
+        if (!card) return;
+        body.querySelectorAll("[data-badge-key]").forEach(b => {
+            b.classList.toggle("is-showing", b === btn);
+            b.setAttribute("aria-pressed", b.dataset.badgeKey === pinnedBadge ? "true" : "false");
         });
+        const hint = body.querySelector(".profile-badge-hint");
+        if (hint) hint.hidden = !!btn;
+        if (!btn) {
+            card.hidden = true;
+            card.innerHTML = "";
+            return;
+        }
+        const s = btn.dataset;
+        card.innerHTML = `
+            <p class="profile-badge-card-name">${escapeHtml(s.badgeName)}
+                <span class="profile-badge-card-state">${s.badgeEarned ? "Earned" : "Not earned yet"}</span></p>
+            <p class="profile-badge-card-means">${escapeHtml(s.badgeMeans)}</p>
+            <p class="profile-badge-card-how">How to get it: ${escapeHtml(s.badgeHow)}</p>`;
+        card.hidden = false;
+    }
+
+    // Back to the pinned badge's card, or none.
+    const settleBadgeCard = () => showBadgeCard(badgeBtn(pinnedBadge));
+
+    function onBadgePoint(e) {
+        const btn = e.target.closest && e.target.closest("[data-badge-key]");
+        if (btn) showBadgeCard(btn);
+    }
+    function onBadgeLeave(e) {
+        const btn = e.target.closest && e.target.closest("[data-badge-key]");
+        // Moving between a badge's own parts is not leaving it.
+        if (!btn || (e.relatedTarget && btn.contains(e.relatedTarget))) return;
+        settleBadgeCard();
+    }
+
+    function onProgressClick(e) {
+        const badge = e.target.closest("[data-badge-key]");
+        if (badge) {
+            pinnedBadge = pinnedBadge === badge.dataset.badgeKey ? null : badge.dataset.badgeKey;
+            showBadgeCard(pinnedBadge ? badge : null);
+            return;
+        }
+        const act = e.target.closest("[data-profile-act]");
+        if (act) {
+            if (act.dataset.profileAct === "signin" && window.Account) Account.signIn();
+            /* Edit Profile is the console's Profile page. The console floats
+               over this window (z-index 200 to 100), so this stays open
+               beneath it and is drawn again when a choice is saved. */
+            else if (act.dataset.profileAct === "edit" && window.MazeConsole) MazeConsole.open("profile");
+            return;
+        }
+        // A maze opens where every other maze opens.
+        const btn = e.target.closest("[data-open-maze]");
+        if (!btn) return;
+        const room = roomById(btn.dataset.openMaze);
+        if (!room) return;
+        /* The maze opens OVER the profile, which stays where it is (4 Oct
+           2026): the profile sits under every window (z-index 90 to their
+           100; see .profile-console), so closing the maze finds it exactly
+           as it was, scrolled where it was. openModal takes the pressed row
+           as its opener, so focus goes back to it. It used to close the
+           profile (and for a while to hide it and bring it back, which
+           brought it back with the figures from before the maze). */
+        openModal(normalize(room, false));
     }
 
     /* Where focus was when the window opened, handed back when it closes —
@@ -8907,26 +9720,37 @@ document.addEventListener("DOMContentLoaded", () => {
         return el;
     }
 
-    function openProgress() {
+    /* `pid`: a player's public id, to open on their profile rather than
+       your own (3 Oct 2026). */
+    function openProgress(pid) {
         const overlay = document.getElementById("progress-overlay");
         if (!overlay) return;
-        /* The room modal goes first. Both overlays sit at z-index 100 and
+        /* The room modal goes first. Both overlays sat at z-index 100 and
            the modal comes later in the page, so opening this from the
            console's Profile while a maze was showing put Your Progress
-           BEHIND it — open, holding focus, and invisible. The row that
-           opened the maze is the better place to hand focus back to later,
-           so it is taken as this window's opener before the modal lets go
-           of it (keepFocus stops the modal handing focus back itself, 300ms
-           from now, on top of this). */
+           BEHIND it — open, holding focus, and invisible. This window
+           floats above the modal now (4 Oct 2026), but the modal is still
+           a modal: it keeps focus inside itself, so this window could be
+           seen and not typed in. The row that opened the maze is the better
+           place to hand focus back to later, so it is taken as this
+           window's opener before the modal lets go of it (keepFocus stops
+           the modal handing focus back itself, 300ms from now, on top of
+           this). */
         let opener = null;
         if (modalOverlay.classList.contains("open") && !modalOverlay.classList.contains("closing")) {
             opener = modalTriggerEl;
             closeModal({ keepFocus: true });
         }
         if (!overlay.classList.contains("open")) progressTriggerEl = opener || document.activeElement;
-        renderProgress();
+        // Your own unless somebody else's was asked for; a fresh open never
+        // lands on whoever was being looked at last time.
+        showProfile(typeof pid === "string" ? pid : null);
+        const wasOpen = overlay.classList.contains("open");
         overlay.classList.add("open");
-        document.body.classList.add("modal-open");
+        // No modal-open on <body>: the page behind stays usable, as it does
+        // behind the console. Placed where it opens until it has been
+        // dragged somewhere (see wireProgressDrag).
+        if (!wasOpen && !progressDragged) placeProgressDefault();
         // Without scrolling, as the maze window (see openModal).
         document.getElementById("progress-window").focus({ preventScroll: true });
     }
@@ -8941,21 +9765,43 @@ document.addEventListener("DOMContentLoaded", () => {
         const overlay = document.getElementById("progress-overlay");
         if (!overlay || !overlay.classList.contains("open")) return;
         const body = document.getElementById("progress-body");
-        const hadFocus = !!(body && body.contains(document.activeElement));
+        const who = document.getElementById("profile-who");
+        const active = document.activeElement;
+        const hadFocus = !!((body && body.contains(active)) || (who && who.contains(active)));
+        /* The same control again after the redraw, found by what it is (4
+           Oct 2026, the bug scan): every redraw — the profile's own read
+           landing a second after it opens, a sign-in check — used to throw a
+           keyboard user back to the top of the window. */
+        let again = null;
+        if (hadFocus && active.dataset) {
+            const d = active.dataset;
+            again = d.badgeKey ? `[data-badge-key="${CSS.escape(d.badgeKey)}"]`
+                : d.openMaze ? `[data-open-maze="${CSS.escape(d.openMaze)}"]`
+                : d.profileAct ? `[data-profile-act="${CSS.escape(d.profileAct)}"]`
+                : active.matches(".profile-completed > summary") ? ".profile-completed > summary" : null;
+        }
         renderProgress();
         if (hadFocus) {
-            const win = document.getElementById("progress-window");
-            if (win) win.focus({ preventScroll: true });
+            const scope = document.getElementById("progress-window");
+            const target = again && scope ? scope.querySelector(again) : null;
+            if (target) target.focus({ preventScroll: true });
+            else if (scope) scope.focus({ preventScroll: true });
         }
     }
 
     /* opts.keepFocus: something is about to open in its place (a saved
        maze's row opens the room modal) and will take focus itself. */
+    function closeProgressIfOpen() {
+        const overlay = document.getElementById("progress-overlay");
+        if (overlay && overlay.classList.contains("open")) closeProgress({ keepFocus: true });
+    }
+
     function closeProgress(opts = {}) {
         const overlay = document.getElementById("progress-overlay");
         if (!overlay) return;
         overlay.classList.remove("open");
-        document.body.classList.remove("modal-open");
+        viewing = null;
+        profileSearch.reset();
         const back = progressTriggerEl;
         progressTriggerEl = null;
         if (opts.keepFocus) return;
@@ -8981,14 +9827,332 @@ document.addEventListener("DOMContentLoaded", () => {
            function has no business depending on whoever happens to open
            it. */
         if (!overlay) return;
-        if (close) close.addEventListener("click", closeProgress);
-        overlay.addEventListener("click", e => { if (e.target === overlay) closeProgress(); });
+        // Wrapped, so the click is not read as closeProgress's options. No
+        // backdrop to click any more: it floats, as the console does.
+        if (close) close.addEventListener("click", () => closeProgress());
+        const body = document.getElementById("progress-body");
+        if (body) {
+            body.addEventListener("click", onProgressClick);
+            // The badges' cards: see BADGE CARDS.
+            body.addEventListener("mouseover", onBadgePoint);
+            body.addEventListener("focusin", onBadgePoint);
+            body.addEventListener("mouseout", onBadgeLeave);
+            body.addEventListener("focusout", onBadgeLeave);
+        }
+        // The header's Edit Profile and Sign in (4 Oct 2026).
+        const who = document.getElementById("profile-who");
+        if (who) who.addEventListener("click", onProgressClick);
+        const edit = document.getElementById("profile-edit");
+        if (edit) edit.addEventListener("click", onProgressClick);
+        /* A Habbo that could not be drawn (Habbo's imaging down; see
+           habbo-outline.js) becomes the blank face rather than a broken
+           picture. Images do not bubble their errors, so on the capture
+           phase, once for the whole window. */
+        overlay.addEventListener("error", e => {
+            const img = e.target;
+            if (!img || img.tagName !== "IMG" || !img.matches(".profile-avatar, .profile-search-face")) return;
+            const blank = document.createElement("span");
+            blank.className = `${img.className} is-blank`;
+            blank.setAttribute("aria-hidden", "true");
+            img.replaceWith(blank);
+        }, true);
+        // My profile: from another player's profile back to your own.
+        const back = document.getElementById("profile-back");
+        if (back) back.addEventListener("click", () => {
+            showProfile(null);
+            const win = document.getElementById("progress-window");
+            if (win) win.focus({ preventScroll: true });
+        });
         // Escape through the shared rule — see registerEscapeLayer.
         registerEscapeLayer(
             () => overlay.classList.contains("open") ? [overlay] : [],
             () => closeProgress()
         );
     })();
+
+    /* ---------- WHERE THE WINDOW SITS (4 Oct 2026) ----------
+
+       A floating window, as the console is (js/console.js, whose drag this
+       follows): it opens centred across the page, near the top, until it
+       is dragged; from then on it stays where it was put, across closes,
+       for the rest of the visit. Dragged by its yellow frame — never from
+       the screen, a control, or the scrollbar — with pointer events and
+       touch-action: none on the frame, so a finger drags it too. Kept on
+       the screen as the window resizes. */
+    let progressDragged = false;
+
+    function placeProgressDefault() {
+        const overlay = document.getElementById("progress-overlay");
+        if (!overlay) return;
+        const w = overlay.offsetWidth;
+        const h = overlay.offsetHeight;
+        const left = Math.max(0, Math.round((window.innerWidth - w) / 2));
+        // A little under the header on a wide screen; as high as it fits on
+        // a short one.
+        const top = Math.max(0, Math.min(Math.round(window.innerHeight * 0.1), window.innerHeight - h));
+        overlay.style.left = left + "px";
+        overlay.style.top = top + "px";
+    }
+
+    function clampProgress() {
+        const overlay = document.getElementById("progress-overlay");
+        if (!overlay || !overlay.classList.contains("open")) return;
+        const rect = overlay.getBoundingClientRect();
+        const left = Math.min(Math.max(0, window.innerWidth - overlay.offsetWidth), Math.max(0, rect.left));
+        const top = Math.min(Math.max(0, window.innerHeight - overlay.offsetHeight), Math.max(0, rect.top));
+        overlay.style.left = left + "px";
+        overlay.style.top = top + "px";
+    }
+
+    (function wireProgressDrag() {
+        const overlay = document.getElementById("progress-overlay");
+        const frame = document.getElementById("progress-window");
+        if (!overlay || !frame) return;
+        let pointer = null;
+        let dx = 0;
+        let dy = 0;
+
+        frame.addEventListener("pointerdown", e => {
+            if (e.pointerType === "mouse" && e.button !== 0) return;
+            if (e.target.closest("button, input, textarea, select, a, .console-screen")) return;
+            pointer = e.pointerId;
+            progressDragged = true;
+            frame.classList.add("is-dragging");
+            const rect = overlay.getBoundingClientRect();
+            dx = e.clientX - rect.left;
+            dy = e.clientY - rect.top;
+            document.body.style.userSelect = "none";
+            if (frame.setPointerCapture) {
+                try { frame.setPointerCapture(e.pointerId); } catch (err) { /* already gone */ }
+            }
+            e.preventDefault();
+        });
+
+        window.addEventListener("pointermove", e => {
+            if (pointer === null || e.pointerId !== pointer) return;
+            const left = Math.min(Math.max(0, window.innerWidth - overlay.offsetWidth), Math.max(0, e.clientX - dx));
+            const top = Math.min(Math.max(0, window.innerHeight - overlay.offsetHeight), Math.max(0, e.clientY - dy));
+            overlay.style.left = left + "px";
+            overlay.style.top = top + "px";
+        });
+
+        const end = e => {
+            if (pointer === null || (e && e.pointerId !== pointer)) return;
+            pointer = null;
+            frame.classList.remove("is-dragging");
+            document.body.style.userSelect = "";
+        };
+        window.addEventListener("pointerup", end);
+        // A cancelled pointer must not leave the window stuck to the finger.
+        window.addEventListener("pointercancel", end);
+        window.addEventListener("resize", clampProgress);
+
+        /* The screen itself never scrolls — only the part under the header
+           does. But it clips (overflow: hidden), and a clipping box can
+           still be scrolled by the browser bringing something into view:
+           focus moving to a badge low down, or the search list's highlight,
+           slid the whole screen up and the header off its top. Put straight
+           back whenever that happens. */
+        const screen = frame.querySelector(".console-screen");
+        if (screen) screen.addEventListener("scroll", () => {
+            if (screen.scrollTop || screen.scrollLeft) { screen.scrollTop = 0; screen.scrollLeft = 0; }
+        });
+    })();
+
+    /* ---------- FINDING A PLAYER (3 Oct 2026) ----------
+
+       The search field at the top right of the window. Typing two letters
+       or more asks /profiles?q= (a quarter of a second after the typing
+       stops, and only the latest answer is drawn), and the matches drop
+       down under the field; picking one shows their profile in the window.
+
+       A combobox as ARIA describes one: the field keeps focus, the arrow
+       keys move a highlighted option (aria-activedescendant), Enter picks
+       it, and Escape shuts the list first — it is registered as a layer of
+       its own inside the window, so the shared rule closes it before the
+       window. A click anywhere else shuts it too. */
+    const profileSearch = (function wireProfileSearch() {
+        const input = document.getElementById("profile-search-input");
+        const list = document.getElementById("profile-search-results");
+        const none = { reset() {} };
+        if (!input || !list) return none;
+        const box = input.closest(".profile-search") || input.parentNode;
+
+        let timer = 0;
+        let seq = 0;
+        let results = [];
+        let active = -1;
+
+        function shut() {
+            list.hidden = true;
+            list.innerHTML = "";
+            results = [];
+            active = -1;
+            input.setAttribute("aria-expanded", "false");
+            input.removeAttribute("aria-activedescendant");
+        }
+
+        function say(text) {
+            results = [];
+            active = -1;
+            input.removeAttribute("aria-activedescendant");
+            list.innerHTML = `<li class="profile-search-msg" role="presentation">${escapeHtml(text)}</li>`;
+            list.hidden = false;
+            input.setAttribute("aria-expanded", "true");
+        }
+
+        /* A result's name: a player's, or a Habbo's (4 Oct 2026: the search
+           finds any Habbo, joined or not). A Habbo off the main hotel says
+           which in a tag of its own after the name, which the name gives way
+           to, since the same name on .es is somebody else. */
+        function searchName(p) {
+            const name = `<span class="profile-search-name">${escapeHtml(p.id ? p.name : p.habbo)}</span>`;
+            return !p.id && p.hotel && p.hotel !== "COM"
+                ? `${name}<span class="profile-search-hotel">.${escapeHtml(p.hotel.toLowerCase())}</span>` : name;
+        }
+
+        function draw(q) {
+            if (!results.length) { say(`No players or Habbos found for "${q}".`); return; }
+            list.innerHTML = results.map((p, i) => `
+                <li class="profile-search-opt${i === active ? " is-active" : ""}" id="profile-opt-${i}" role="option"
+                    aria-selected="${i === active ? "true" : "false"}" data-i="${i}">
+                    ${p.avatar && outlineSrc(p.avatar, "head")
+                        ? `<img class="profile-search-face" src="${escapeHtml(outlineSrc(p.avatar, "head"))}" alt="" aria-hidden="true" loading="lazy">`
+                        : `<span class="profile-search-face is-blank" aria-hidden="true"></span>`}
+                    ${searchName(p)}
+                </li>`).join("");
+            list.hidden = false;
+            input.setAttribute("aria-expanded", "true");
+            if (active >= 0) input.setAttribute("aria-activedescendant", `profile-opt-${active}`);
+            else input.removeAttribute("aria-activedescendant");
+        }
+
+        async function run(q) {
+            const mine = ++seq;
+            say("Searching...");
+            try {
+                const body = await readProfile(`q=${encodeURIComponent(q)}`);
+                if (mine !== seq) return;
+                results = Array.isArray(body.players) ? body.players : [];
+                active = -1;
+                draw(q);
+            } catch (e) {
+                if (mine !== seq) return;
+                say("Search isn't working just now. Try again in a moment.");
+            }
+        }
+
+        function pick(i) {
+            const p = results[i];
+            if (!p) return;
+            seq++;
+            clearTimeout(timer);
+            input.value = "";
+            shut();
+            if (p.id) showProfile(p.id);
+            else showHabbo(p.habbo, p.hotel);
+            const win = document.getElementById("progress-window");
+            if (win) win.focus({ preventScroll: true });
+        }
+
+        input.addEventListener("input", () => {
+            clearTimeout(timer);
+            const q = input.value.trim();
+            if (q.length < 2) { seq++; shut(); return; }
+            /* The last search's matches are no longer the answer (4 Oct 2026,
+               the bug scan): Enter in the quarter-second before the new ask
+               used to open the top match for what WAS typed. */
+            seq++;
+            say("Searching...");
+            timer = setTimeout(() => run(q), 250);
+        });
+
+        input.addEventListener("keydown", e => {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                if (!results.length) return;
+                e.preventDefault();
+                const step = e.key === "ArrowDown" ? 1 : -1;
+                active = (active + step + results.length) % results.length;
+                draw(input.value.trim());
+                const el = document.getElementById(`profile-opt-${active}`);
+                if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest" });
+            } else if (e.key === "Enter") {
+                e.preventDefault();
+                if (results.length) pick(active >= 0 ? active : 0);
+            }
+        });
+
+        // Pressing an option leaves focus in the field; the click picks it.
+        list.addEventListener("mousedown", e => e.preventDefault());
+        list.addEventListener("click", e => {
+            const opt = e.target.closest("[data-i]");
+            if (opt) pick(Number(opt.dataset.i));
+        });
+
+        document.addEventListener("click", e => {
+            if (!list.hidden && !box.contains(e.target)) shut();
+        }, true);
+
+        registerEscapeLayer(() => (list.hidden ? [] : [list]), () => { shut(); input.focus({ preventScroll: true }); });
+
+        return {
+            // The window closing: an empty field and no list next time.
+            reset() {
+                seq++;
+                clearTimeout(timer);
+                input.value = "";
+                shut();
+            }
+        };
+    })();
+
+    /* /profile — YOUR PROFILE'S ADDRESS (4 Oct 2026). The homepage with the
+       window open (netlify.toml rewrites it here), and /profile?p=<public
+       id> one player's. The window keeps no address of its own, so once it
+       is open the address goes back to the archive's, as #nickname does,
+       and a reload is just the archive again. */
+    const PROFILE_PATH = /^\/profile\/?$/;
+    if (PROFILE_PATH.test(location.pathname)) {
+        let pid = null;
+        try { pid = new URLSearchParams(location.search).get("p"); } catch (e) { /* none */ }
+        try { history.replaceState(history.state, "", "/home"); } catch (e) { /* a sandboxed frame */ }
+        openProgress(pid && /^[A-Za-z0-9_-]{16}$/.test(pid) ? pid : null);
+    }
+
+    /* A What's New link to a page of this site, opened where it can be
+       without loading the page again (4 Oct 2026): the windows that live on
+       this page, and the mazes and events in it. Returns whether it did;
+       anything else is left to an ordinary visit, in the same tab. */
+    function openSiteLinkInPlace(link) {
+        let u;
+        try { u = new URL(link, location.origin); } catch (e) { return false; }
+        if (u.origin !== location.origin) return false;
+        const path = u.pathname.replace(/\/+$/, "") || "/";
+        if (PROFILE_PATH.test(path)) {
+            const pid = u.searchParams.get("p");
+            openProgress(pid && /^[A-Za-z0-9_-]{16}$/.test(pid) ? pid : null);
+            return true;
+        }
+        // A malformed %-escape is left to an ordinary visit, not a throw.
+        const decode = v => { try { return decodeURIComponent(v); } catch (e) { return null; } };
+        let m;
+        if ((m = /^\/guides(?:\/([^/]+))?$/.exec(path)) && window.Guides) {
+            if (m[1] && decode(m[1]) === null) return false;
+            Guides.open(m[1] ? decode(m[1]) : (u.searchParams.get("g") || null));
+            return true;
+        }
+        if (path === "/glyphs" && window.Glyphs) { Glyphs.open(); return true; }
+        if (path === "/guess" && typeof window.openGuessGame === "function") { window.openGuessGame(); return true; }
+        if (path === "/odd" && typeof window.openOddOneOut === "function") { window.openOddOneOut(); return true; }
+        if ((m = /^\/(maze|event)\/([^/]+)$/.exec(path))) {
+            const key = decode(m[2]);
+            const record = key === null ? null : findRecord(m[1], key);
+            if (record) { openRecord(m[1], record, {}); return true; }
+        }
+        // The archive itself, as it is: already here. "/" is the landing
+        // page, and /home with a search wants the page loaded with it.
+        return path === "/home" && !u.search;
+    }
 
     /* Pulls the account's ticks down as soon as we know who is signed in,
        and again if they sign in or out during the visit. onChange fires on
@@ -9003,6 +10167,9 @@ document.addEventListener("DOMContentLoaded", () => {
             // sign-in), so a change of answer redraws it even when no tick
             // moved — see refreshProgressIfOpen.
             refreshProgressIfOpen();
+            // And its profile half is somebody else's now, or nobody's.
+            const overlay = document.getElementById("progress-overlay");
+            if (overlay && overlay.classList.contains("open") && !viewing) loadOwnProfile(true);
         });
         if (Account.onStored) Account.onStored(confirmTicks);
         Account.ready();
@@ -9394,14 +10561,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 // leads straight into the Add Maze Info form beside it.
                 run: () => { if (window.MazeConsole) MazeConsole.openMissing(); }
             },
-            {
-                name: "Your Progress",
-                state: menuFigure(() => `${f.walkedHere.length} of ${f.walkable.length} completed`
-                    + (f.savedShown.length ? ` · ${f.savedShown.length} to do` : ""), "Completed mazes and your To do list"),
-                badge: "",
-                on: false,
-                run: openProgress
-            },
             /* GAMES: a row that folds open, holding every game and the
                boards. Rows below it belong to it until the next heading.
                The games used to sit open under a plain "Daily" heading,
@@ -9504,6 +10663,18 @@ document.addEventListener("DOMContentLoaded", () => {
             // The end of the GAMES fold: what follows sits on its own, at
             // the foot of the menu.
             { endGroup: true },
+            /* Your Profile, on its own between the GAMES fold and Alt Codes
+               (4 Oct 2026, the owner's): it is about the player across the
+               whole site — mazes, games and badges — not one more archive
+               view, so it no longer sits in the ARCHIVE fold. */
+            {
+                name: "Your Profile",
+                state: menuFigure(() => `${f.walkedHere.length} of ${f.walkable.length} completed`
+                    + (f.savedShown.length ? ` · ${f.savedShown.length} to do` : ""), "Your mazes, badges and games"),
+                badge: "",
+                on: false,
+                run: openProgress
+            },
             {
                 /* Outside both folds, at the foot of the menu: it is a
                    reference sheet rather than part of the archive or a game.
@@ -10842,6 +12013,10 @@ document.addEventListener("DOMContentLoaded", () => {
            fell into the catch below, which called render again and threw
            the same error a second time from there. */
         try { render(); } catch (e) { console.error("The archive list failed to render", e); }
+        /* Your Profile, if it was opened before the mazes were in (the
+           side menu is usable under the loader): it counted against no
+           mazes at all — "0 of 0 completed" — and nothing drew it again. */
+        try { refreshProgressIfOpen(); } catch (e) { console.error("Your Profile failed to redraw", e); }
         try { openFromAddress("load"); } catch (e) { console.error("Could not open the linked record", e); }
         // Which records are marked as dead ends. Small and edge-cached, and
         // nothing waits on it: a maze's window re-draws its strip when it

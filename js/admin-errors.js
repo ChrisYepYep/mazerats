@@ -91,6 +91,8 @@
     let groups = [];
     let totals = {};
     let dropped = {};
+    // The site-wide rate limit's refusals (netlify/functions/_ratelimit.js).
+    let limited = {};
     let loadedAt = 0;               // Date.now() of the last good list read
     let loadError = null;           // the last list read's failure, if any
     let loadGen = 0;
@@ -421,7 +423,20 @@
             stat(t.ignored, "ignored", "ignored") +
             stat(t.last24h, "report in the last 24h", "reports in the last 24h") +
             stat(t.last7d, "report in the last 7 days", "reports in the last 7 days") +
-            (d24 > 0 ? `<span class="admin-activity-stat is-warn" title="Reports the server refused because too many were arriving — from one network, or across the site. One each, however many repeats a report carried."><strong>${escapeHtml(num(d24))}</strong> ${d24 === 1 ? "report" : "reports"} dropped by the rate limit in 24h</span>` : "");
+            (d24 > 0 ? `<span class="admin-activity-stat is-warn" title="Reports the server refused because too many were arriving — from one network, or across the site. One each, however many repeats a report carried."><strong>${escapeHtml(num(d24))}</strong> ${d24 === 1 ? "report" : "reports"} dropped by the rate limit in 24h</span>` : "") +
+            limitedStat();
+    }
+
+    /* Visitors the site-wide rate limit turned away (4 Oct 2026): each is a
+       network that went over one of its per-minute budgets, counted once per
+       minute it stayed over. The title says which functions. */
+    function limitedStat() {
+        const n = Number(limited && limited.last24h) || 0;
+        if (!n) return "";
+        const by = Object.entries((limited && limited.byFn) || {}).sort((a, b) => b[1] - a[1])
+            .map(([fn, k]) => `${fn} ${num(k)}`).join(", ");
+        const title = "Times a visitor's network went over the site's per-minute request limit and was asked to wait (counted once per minute they stayed over). By function: " + by;
+        return `<span class="admin-activity-stat is-warn" title="${escapeHtml(title)}"><strong>${escapeHtml(num(n))}</strong> rate-limited in 24h</span>`;
     }
 
     function renderUpdated() {
@@ -1113,6 +1128,7 @@
             groups.forEach(g => { if (g && g.id != null) g.id = String(g.id); });
             totals = (data && data.totals) || {};
             dropped = (data && data.dropped) || {};
+            limited = (data && data.limited) || {};
             loadedAt = Date.now();
             loadError = null;
             /* The same question the badge asks, answered for free — but only
@@ -1406,6 +1422,7 @@
         groups = [];
         totals = {};
         dropped = {};
+        limited = {};
         loadedAt = 0;
         loadError = null;
         openId = null;

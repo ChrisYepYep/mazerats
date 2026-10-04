@@ -52,7 +52,9 @@ function slugify(text) {
    new folder cannot arrive without a decision about who owns it. */
 // "guides/" holds the Guides section's pictures (js/admin-guides.js); they
 // are part of the site's content like the archive's, so the same scope.
-const FOLDER_SCOPES = { rooms: "site", wizard: "wizard", guides: "site" };
+// "news/" holds What's New posts' pictures (js/admin-whats-new.js; 4 Oct 2026),
+// site content like the rest.
+const FOLDER_SCOPES = { rooms: "site", wizard: "wizard", guides: "site", news: "site" };
 const DEFAULT_FOLDER = "rooms";
 
 function folderOfKey(key) {
@@ -102,7 +104,9 @@ const PICTURE_FIELDS = (() => {
             ...either("relatedImages"), "oldVersions", "oldVersions.image"],
         guides: ["thumb", "sections.image"],
         dead_end_leads: ["promoted"],
-        wizard: ["image", "thumb", "labelImage", "background", "backgroundDetail", "footprint"]
+        wizard: ["image", "thumb", "labelImage", "background", "backgroundDetail", "footprint"],
+        // A What's New news post's picture (whats-new.js; 4 Oct 2026).
+        whats_new: ["image"]
     };
 })();
 
@@ -124,7 +128,8 @@ async function isInUse(db, key) {
         hit("guides", anyOf(PICTURE_FIELDS.guides)),
         hit("daily_deals", { day: { $in: [day(0), day(1)] }, ...anyOf(["rounds.image", "rounds.tiles.image"]) }),
         hit("dead_end_leads", anyOf(PICTURE_FIELDS.dead_end_leads)),
-        hit("wizard", anyOf(PICTURE_FIELDS.wizard))
+        hit("wizard", anyOf(PICTURE_FIELDS.wizard)),
+        hit("whats_new", anyOf(PICTURE_FIELDS.whats_new))
     ]);
     return found.some(Boolean);
 }

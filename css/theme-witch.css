@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1006 rules, 1635 declarations, hues 274 (surfaces) / 274 (accents).
+   1055 rules, 1709 declarations, hues 274 (surfaces) / 274 (accents).
 */
 :root[data-theme="witch"] {
     --bg-black: #050207;
@@ -1775,7 +1775,7 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 
 [data-theme="witch"] .console-frame {
     background: #712ca6;
-    box-shadow: 2px 0 0 0 rgba(0, 0, 0, 0.45), 0 2px 0 0 rgba(0, 0, 0, 0.45);
+    box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.22);
 }
 
 [data-theme="witch"] .console-border {
@@ -1802,17 +1802,12 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     border: 1px solid #000;
     background-image: url('../assets/img/console/cnsl-bg-tile.png');
     color: #eeeeee;
-    box-shadow: -4px 0 0 0 rgba(0, 0, 0, 0.45),
-        0 -2px 0 0 rgba(0, 0, 0, 0.45),
-        1px 0 0 0 rgba(255, 255, 255, 0.5),
-        0 1px 0 0 rgba(255, 255, 255, 0.5);
+    box-shadow: -1px -1px 0 1px rgba(0, 0, 0, 0.45),
+        1px 1px 0 0 rgba(255, 255, 255, 0.5);
 }
 
 [data-theme="witch"] .console-screen-shadow {
-    box-shadow: inset 0 6px 0 0 rgba(0, 0, 0, 0.4),
-        inset 6px 0 0 0 rgba(0, 0, 0, 0.4),
-        inset -6px 0 0 0 rgba(0, 0, 0, 0.4),
-        inset 0 -3px 0 0 rgba(0, 0, 0, 0.4);
+    box-shadow: inset 0 1px 0 5px rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="witch"] .console-page-title {
@@ -1878,6 +1873,37 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     color: #eeeeee;
 }
 
+[data-theme="witch"] .select-list.is-console {
+    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
+    border: 1px solid #eeeeee;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+    color: #eeeeee;
+}
+
+[data-theme="witch"] .select-list.is-console .select-list-opt.is-selected {
+    background: rgba(238, 238, 238, 0.08);
+}
+
+[data-theme="witch"] .select-list.is-console .select-list-opt.is-active {
+    background: rgba(238, 238, 238, 0.2);
+}
+
+[data-theme="witch"] .select-list.is-console .select-list-group {
+    color: rgba(238, 238, 238, 0.6);
+}
+
+[data-theme="witch"] .select-list.is-parchment {
+    background: var(--parchment);
+    border: 1.5px solid var(--chrome-border);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+    color: #12051c;
+}
+
+[data-theme="witch"] .select-list.is-parchment .select-list-opt.is-active {
+    background: var(--amber-bright);
+    color: #09020d;
+}
+
 [data-theme="witch"] .console-info-remove {
     background: transparent;
     border: 1px solid #eeeeee;
@@ -1918,10 +1944,6 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     color: rgba(238, 238, 238, 0.7);
 }
 
-[data-theme="witch"] .console-profile-face {
-    border: 1px solid #eeeeee;
-}
-
 [data-theme="witch"] .console-profile-name,
 [data-theme="witch"] .console-profile-head {
     color: #ffffff;
@@ -1933,14 +1955,6 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 
 [data-theme="witch"] .console-profile-line {
     color: #eeeeee;
-}
-
-[data-theme="witch"] .console-profile-bar {
-    border: 1px solid #eeeeee;
-}
-
-[data-theme="witch"] .console-profile-bar span {
-    background: #eeeeee;
 }
 
 [data-theme="witch"] .console-profile-list {
@@ -2677,8 +2691,44 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     }
 }
 
+[data-theme="witch"] .side-spine-star {
+    background: currentColor;
+}
+
+[data-theme="witch"] .spotlight-card {
+    background: #bcacc8;
+    border: 1px solid var(--chrome-border);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+[data-theme="witch"] .spotlight-frame {
+    border: 1px solid var(--chrome-border);
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35);
+    background: #050207;
+}
+
+[data-theme="witch"] .spotlight-frame::after {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        inset 1px 0 0 rgba(255, 255, 255, 0.22);
+}
+
+[data-theme="witch"] .spotlight-frame:hover,
+[data-theme="witch"] .spotlight-frame:has(.welcome-promo-slide:focus-visible) {
+    border-color: var(--amber);
+}
+
+[data-theme="witch"] .spotlight-frame:has(.welcome-promo-slide:focus-visible) {
+    outline: 2px solid var(--amber-bright);
+}
+
 @media (max-width: 900px) {
     [data-theme="witch"] .side-menu {
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.7);
+    }
+}
+
+@media (max-width: 900px) {
+    [data-theme="witch"] .spotlight-card {
         box-shadow: 0 8px 22px rgba(0, 0, 0, 0.7);
     }
 }
@@ -3134,6 +3184,13 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     color: #ffffff;
 }
 
+[data-theme="witch"] .saved-toggle.is-clearing,
+[data-theme="witch"] .modal-meta-actions .saved-toggle.is-clearing {
+    background: linear-gradient(#3d4b32, #2f3a26);
+    border-color: var(--ok);
+    color: #d8e8c6;
+}
+
 [data-theme="witch"] .saved-note {
     background: var(--wood-dark, #100916);
     border: 1px solid var(--chrome-border);
@@ -3369,6 +3426,51 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     color: var(--parchment-dim);
 }
 
+[data-theme="witch"] .wn-check {
+    color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .wn-day {
+    color: var(--amber-text);
+}
+
+[data-theme="witch"] .wn-verb {
+    border: 1px solid;
+}
+
+[data-theme="witch"] .wn-verb.is-added {
+    color: #d8e8c6;
+    border-color: var(--ok);
+}
+
+[data-theme="witch"] .wn-verb.is-updated {
+    color: #cec2d8;
+    border-color: var(--amber);
+}
+
+[data-theme="witch"] .wn-verb.is-news {
+    color: #ece7f1;
+    border-color: var(--parchment-dim);
+}
+
+[data-theme="witch"] .wn-verb.is-note {
+    color: #cfd9e4;
+    border-color: #7f94a8;
+}
+
+[data-theme="witch"] .wn-flags {
+    color: var(--amber-text);
+}
+
+[data-theme="witch"] .wn-line {
+    color: var(--parchment);
+}
+
+[data-theme="witch"] .wn-override {
+    border: 1px dashed var(--amber);
+    background: rgba(48, 17, 72, 0.14);
+}
+
 [data-theme="witch"] .guides-starter {
     border: 1px dashed var(--amber);
     background: rgba(48, 17, 72, 0.16);
@@ -3480,114 +3582,254 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     color: #ffffff;
 }
 
-[data-theme="witch"] .progress-face {
-    border: 1px solid var(--amber);
+[data-theme="witch"] #progress-window .profile-console-screen,
+[data-theme="witch"] #progress-window .profile-console-screen * {
+    color: var(--pc-text);
 }
 
-[data-theme="witch"] .progress-head-text h3 {
-    color: var(--amber-bright);
-    text-shadow: 2px 2px 0 var(--bg-black);
-}
-
-[data-theme="witch"] .progress-head-text p {
-    color: var(--parchment-dim);
-}
-
-[data-theme="witch"] .progress-signin {
-    background: none;
-    border: 0;
-    color: var(--amber-bright);
-}
-
-[data-theme="witch"] .progress-signin:hover {
-    color: #ffffff;
-}
-
-[data-theme="witch"] .progress-head-sm {
-    color: var(--amber-text);
-    text-shadow: 2px 2px 0 var(--bg-black);
-}
-
-[data-theme="witch"] .progress-count {
-    color: var(--amber-text);
-}
-
-[data-theme="witch"] .progress-bignum {
-    color: var(--amber-bright);
-}
-
-[data-theme="witch"] .progress-bignum span {
-    color: var(--unknown-text);
-}
-
-[data-theme="witch"] .progress-bar {
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid var(--chrome-border);
-}
-
-[data-theme="witch"] .progress-bar > span {
-    background: linear-gradient(180deg, #3a1457, #290e3e);
-}
-
-[data-theme="witch"] .progress-note {
-    color: var(--parchment-dim);
-}
-
-[data-theme="witch"] .progress-note strong {
-    color: var(--amber-bright);
-}
-
-[data-theme="witch"] .progress-diff {
-    color: var(--parchment);
-}
-
-[data-theme="witch"] .progress-diff-bar {
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid var(--chrome-border);
-}
-
-[data-theme="witch"] .progress-diff-bar > span {
-    background: var(--amber);
-}
-
-[data-theme="witch"] .progress-diff-n {
-    color: var(--parchment-dim);
-}
-
-[data-theme="witch"] .progress-badge {
-    background: rgba(48, 17, 72, 0.28);
-    border: 1px solid var(--amber);
-    color: var(--amber-bright);
-}
-
-[data-theme="witch"] .progress-badge-mark {
-    background: var(--amber-bright);
-}
-
-[data-theme="witch"] .progress-saved-row {
-    background: rgba(0, 0, 0, 0.22);
-    border: 1px solid var(--border);
-    color: var(--parchment);
-}
-
-[data-theme="witch"] .progress-saved-row:hover,
-[data-theme="witch"] .progress-saved-row:focus-visible {
-    border-color: var(--amber);
-    background: var(--wood-mid);
+[data-theme="witch"] .profile-console-frame:focus {
     outline: none;
 }
 
-[data-theme="witch"] .progress-saved-row:focus-visible {
-    outline: 2px solid var(--amber-bright);
+[data-theme="witch"] .profile-search-input:focus {
+    outline: none;
+    background: rgba(238, 238, 238, 0.1);
+}
+
+[data-theme="witch"] .profile-search-results {
+    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
+    border: 1px solid var(--pc-text);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="witch"] .profile-search-opt {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-search-opt:hover,
+[data-theme="witch"] .profile-search-opt.is-active {
+    background: rgba(238, 238, 238, 0.15);
+}
+
+[data-theme="witch"] .profile-search-face.is-blank {
+    border: 1px solid var(--pc-text);
+}
+
+[data-theme="witch"] .profile-search-hotel {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-search-msg {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] #progress-body {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-wait {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-who h3,
+[data-theme="witch"] .progress-head-sm,
+[data-theme="witch"] .profile-completed > summary,
+[data-theme="witch"] .progress-bignum strong {
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="witch"] .progress-head-sm,
+[data-theme="witch"] .profile-completed > summary {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-count {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-note {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-note strong {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-signin,
+[data-theme="witch"] .profile-link {
+    border: 0;
+    background: none;
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-signin:hover,
+[data-theme="witch"] .profile-link:hover {
+    background: rgba(238, 238, 238, 0.15);
+}
+
+[data-theme="witch"] #progress-overlay :is(button,
+[data-theme="witch"] summary,
+[data-theme="witch"] input):focus-visible {
+    outline: 1px dotted var(--pc-text);
+}
+
+[data-theme="witch"] .profile-avatar.is-blank {
+    border: 1px solid var(--pc-text);
+}
+
+[data-theme="witch"] .profile-who {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-who h3 {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-who h3 .profile-online {
+    text-shadow: none;
+}
+
+[data-theme="witch"] .profile-motto {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-line {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-line strong {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-hidden-note {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-online {
+    border: 1px solid var(--pc-text);
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-fav {
+    background: transparent;
+    border: 1px solid var(--pc-rule);
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-fav:hover {
+    border-color: var(--pc-text);
+    background: rgba(238, 238, 238, 0.1);
+}
+
+[data-theme="witch"] .profile-fav-img {
+    border: 1px solid var(--pc-text);
+}
+
+[data-theme="witch"] .profile-fav-name {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-fav-by {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-bignum strong {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-bignum span {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-bar,
+[data-theme="witch"] .progress-diff-bar {
+    border: 1px solid var(--pc-text);
+}
+
+[data-theme="witch"] .progress-bar > span,
+[data-theme="witch"] .progress-diff-bar > span {
+    background: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-hl dt {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-dim {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-diff-n {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-badge {
+    border: 1px solid var(--pc-text);
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-badge-mark {
+    background: var(--pc-text);
+}
+
+[data-theme="witch"] button.progress-badge {
+    background: transparent;
+}
+
+[data-theme="witch"] button.progress-badge:hover,
+[data-theme="witch"] button.progress-badge.is-showing,
+[data-theme="witch"] button.progress-badge[aria-pressed="true"] {
+    background: rgba(238, 238, 238, 0.15);
+}
+
+[data-theme="witch"] .progress-badge.is-locked {
+    border-color: var(--pc-dim);
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-badge.is-locked .progress-badge-mark {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--pc-dim);
+}
+
+[data-theme="witch"] .profile-badge-card {
+    border: 1px solid var(--pc-text);
+}
+
+[data-theme="witch"] .profile-badge-card p {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-games thead th {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-games tbody th {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .profile-games td {
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-saved-row {
+    background: transparent;
+    border: 1px solid var(--pc-rule);
+    color: var(--pc-text);
+}
+
+[data-theme="witch"] .progress-saved-row:hover {
+    border-color: var(--pc-text);
+    background: rgba(238, 238, 238, 0.15);
 }
 
 [data-theme="witch"] .progress-saved-by {
-    color: var(--unknown-text);
+    color: var(--pc-text);
 }
 
 [data-theme="witch"] .progress-saved-closed {
-    border: 1px solid var(--unknown-text, var(--unknown));
-    color: var(--unknown-text, var(--unknown));
+    border: 1px dashed var(--pc-dim);
+    color: var(--pc-text);
 }
 
 [data-theme="witch"] .updatelog-intro {
@@ -3764,6 +4006,11 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
     background: var(--bg-black);
 }
 
+[data-theme="witch"] .updatelog-thumb-crop {
+    border: 1px solid var(--chrome-border);
+    background: var(--bg-black);
+}
+
 [data-theme="witch"] .updatelog-thumb.is-blank {
     border-color: var(--border);
 }
@@ -3778,6 +4025,22 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 
 [data-theme="witch"] .updatelog-change {
     color: var(--amber-text);
+}
+
+[data-theme="witch"] .updatelog-verb.is-news {
+    color: #ece7f1;
+    border-color: var(--parchment-dim);
+    background: rgba(236, 231, 241, 0.12);
+}
+
+[data-theme="witch"] .updatelog-verb.is-note {
+    color: #cfd9e4;
+    border-color: #7f94a8;
+    background: rgba(127, 148, 168, 0.18);
+}
+
+[data-theme="witch"] .updatelog-text {
+    color: var(--parchment);
 }
 
 [data-theme="witch"] .admin-tab-btn {
@@ -4685,31 +4948,6 @@ html[data-theme="witch"]::-webkit-scrollbar-button {
 
 [data-theme="witch"] .console-btn:disabled:hover {
     background: transparent;
-}
-
-[data-theme="witch"] .console-profile-game:hover {
-    background: rgba(238, 238, 238, 0.06);
-}
-
-[data-theme="witch"] .console-profile-game.is-picked {
-    box-shadow: 0 0 0 1px #eeeeee;
-}
-
-[data-theme="witch"] .console-profile-game:focus {
-    outline: none;
-}
-
-[data-theme="witch"] .console-profile-game:focus-visible {
-    outline: 2px solid var(--amber-bright);
-}
-
-[data-theme="witch"] .console-play-btn {
-    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
-}
-
-[data-theme="witch"] .console-play-btn:hover {
-    background: linear-gradient(rgba(238, 238, 238, 0.15), rgba(238, 238, 238, 0.15)),
-                url('../assets/img/console/cnsl-bg-tile.png') repeat;
 }
 
 [data-theme="witch"] .nick-prompt-input {

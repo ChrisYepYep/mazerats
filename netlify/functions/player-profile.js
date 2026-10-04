@@ -194,6 +194,148 @@ const isoOf = v => {
     return Number.isFinite(t) ? new Date(t).toISOString() : "";
 };
 
+/* EVERY FIGURE FOR ONE PLAYER (3 Oct 2026), pulled out of the handler so
+   the public profiles (profiles.js) count exactly what this page counts —
+   a player's place on somebody else's view of them is the same number as on
+   their own. `profile` is their players row (the fields asked for below),
+   for the caller's revocation check and names; `launch` the site's launch
+   instant, or null. Throws when the database does. */
+async function figuresFor(db, id) {
+    const day = today();
+    const guessCol = db.collection("guess_scores");
+    const dailyCol = db.collection("daily_scores");
+    const ffCol = db.collection("ff_scores");
+    /* The launch, read first because it decides which rows count below.
+
+       Only runs from launch onwards, as the public board counts them (see
+       sinceLaunch in ff-scores.js). The pre-launch test runs are still in
+       the collection; without this the owner's profile showed a 9,190
+       test run as their best, ranked against a board that no longer
+       lists it. settings.launchAt and every `at` are ISO strings, so
+       they compare as strings.
+
+       And the daily games from launch DAY onwards, as their boards now
+       count them (see launchDay in daily-scores.js — the same UTC date
+       of the same setting, worked out here from the one read rather than
+       a second). Days, points, streaks and places alike: a profile that
+       counted rehearsal days the boards do not would rank a player
+       somewhere no board shows them.
+
+       Fallin' Furni has a launch of its own, settings.ffLaunchAt, since
+       the game opens after the site does, and its board is cut at that
+       when it is set and at the site's launchAt when it is not (see
+       readGate in ff-scores.js). The same rule here, from the same
+       read, or the profile would count runs the board has cut. The
+       daily games, and the totals cache keyed on their launch day,
+       stay on the site's date: the game's date is nothing to them. */
+    const settings = await db.collection("settings").findOne({ _id: "site" }, { projection: { launchAt: 1, ffLaunchAt: 1 } });
+    const launchMs = settings && settings.launchAt ? Date.parse(settings.launchAt) : NaN;
+    const ffOwnMs = settings && settings.ffLaunchAt ? Date.parse(settings.ffLaunchAt) : NaN;
+    const ffLaunchMs = isNaN(ffOwnMs) ? launchMs : ffOwnMs;
+    const since = isNaN(ffLaunchMs) ? {} : { at: { $gte: new Date(ffLaunchMs).toISOString() } };
+    /* The launch INSTANT, as the boards now cut (launchCut in
+       daily-scores.js): from launch day, and on that day only what was
+       played after the doors opened at launchAt. */
+    const launch = isNaN(launchMs) ? null : new Date(launchMs).toISOString();
+    const fromLaunch = launch ? { day: { $gte: launch.slice(0, 10) }, at: { $gte: launch } } : {};
+
+    // `rounds` for Odd One Out rows that record it, and `bonus` for the
+    // total — see gameStats.
+    const rowShape = { projection: { _id: 0, day: 1, points: 1, bonus: 1, solved: 1, rounds: 1 } };
+    const [profile, guessRows, oddRows, board, ffMine, leadCounts, banned] = await Promise.all([
+        // With the nickname fields, for the Profile's name (see below).
+        // nickLocked too (29 Sept 2026): playerView reads it off this
+        // row, and a projection that left it out made every Profile
+        // report the nickname unlocked, whatever the admins had set.
+        // sv for the revocation check below (30 Sept 2026), and svStrict
+        // with it (1 Oct 2026): sessionRevoked reads that flag for a
+        // cookie from before session versions, which "Sign out on every
+        // device" revokes — left out, those were never signed out here.
+        // nickLockedBy and habbo for the profile's Habbo (3 Oct 2026;
+        // playerView's nickHabbo, and the avatar profiles.js shows).
+        db.collection("players").findOne({ id }, { projection: { _id: 0, joinedAt: 1, name: 1, avatar: 1, nick: 1, nickAsked: 1, nickLocked: 1, nickLockedBy: 1, habbo: 1, nickRejected: 1, nickRefused: 1, sv: 1, svStrict: 1,
+                // Whether they have been shown profiles yet (profiles.js, isPublic).
+                profileIntroAt: 1 } }),
+        guessCol.find({ playerId: id, ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
+        dailyCol.find({ playerId: id, game: "odd", ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
+        boardTotals(guessCol, dailyCol, launch),
+        ffCol.findOne({ playerId: id }, { projection: { _id: 0, points: 1, levels: 1, ms: 1, at: 1 } }),
+        db.collection("dead_end_leads").aggregate([
+            { $match: { "from.id": id } },
+            { $group: { _id: "$status", n: { $sum: 1 } } }
+        ]).toArray(),
+        bannedIds(db)
+    ]);
+
+    // Their own totals, fresh from their own rows; null means no place.
+    const myGuess = guessRows.length ? sumPoints(guessRows) : null;
+    const myOdd = oddRows.length ? sumPoints(oddRows) : null;
+    const myCombined = myGuess == null && myOdd == null ? null : addUp(myGuess, myOdd);
+
+    // Fallin' Furni from its launch instant — see `since` above.
+    // Compared as instants (isoOf above), not as text.
+    const ffCounts = ffMine && (!since.at || isoOf(ffMine.at) >= since.at.$gte);
+
+    let ff = null;
+    if (ffCounts) {
+        const points = Number(ffMine.points) || 0;
+        /* The launch cut for the count, for an `at` of EITHER type (30
+           Sept 2026). A string $gte skips every Date-typed row, and a
+           Date one every string, so both are asked. And the banned
+           accounts off it, as off the board (see bannedIds) — never the
+           player's own row. */
+        const cut = since.at ? { $or: [{ at: { $gte: since.at.$gte } }, { at: { $gte: new Date(since.at.$gte) } }] } : {};
+        const off = [...banned].filter(b => b !== String(id));
+        const scope = off.length ? { ...cut, playerId: { $nin: off } } : cut;
+        /* Ahead of them is everyone the board would list first (30 Sept
+           2026): ff-scores.js sorts { points: -1, ms: 1, at: 1 }, and
+           counting only higher points put a player level on points
+           with somebody faster at that somebody's place, not their own.
+           So a draw on points goes to the quicker clock, and a draw on
+           both to whoever got there first — with `at` compared the way
+           the database's sort does it across the two types it is stored
+           as: nothing (null) first, then every string, then every Date.
+           A row from before points existed (null) sorts below every
+           number, as it does on the board. */
+        const myPts = typeof ffMine.points === "number" ? ffMine.points : null;
+        const myMs = ffMine.ms;
+        const myAt = ffMine.at;
+        const samePts = myPts == null ? { points: null } : { points: myPts };
+        const atAhead = myAt instanceof Date ? [{ at: { $lt: myAt } }, { at: { $type: "string" } }, { at: null }]
+            : typeof myAt === "string" ? [{ at: { $lt: myAt } }, { at: null }]
+            : [];
+        const ahead = [
+            myPts == null ? { points: { $ne: null } } : { points: { $gt: myPts } },
+            // (A missing clock sorts first on an ascending key.)
+            ...(myMs == null ? [] : [{ ...samePts, ms: { $lt: myMs } }, { ...samePts, ms: null }]),
+            ...atAhead.map(a => ({ ...samePts, ms: myMs == null ? null : myMs, ...a }))
+        ];
+        const [above, of] = await Promise.all([
+            ffCol.countDocuments({ $and: [scope, { $or: ahead }] }),
+            ffCol.countDocuments(scope)
+        ]);
+        ff = { points, levels: ffMine.levels || 0, ms: ffMine.ms || 0, rank: above + 1, of };
+    }
+
+    const leads = { sent: 0, accepted: 0, waiting: 0 };
+    leadCounts.forEach(r => {
+        leads.sent += r.n;
+        if (r._id === "accepted") leads.accepted += r.n;
+        if (r._id === "new") leads.waiting += r.n;
+    });
+
+    return {
+        day, profile, launch, banned,
+        games: {
+            guess: { ...gameStats(guessRows, day), place: placeIn(board.guess, id, myGuess, banned) },
+            odd: { ...gameStats(oddRows, day), place: placeIn(board.odd, id, myOdd, banned) }
+        },
+        combined: placeIn(board.combined, id, myCombined, banned),
+        ff,
+        leads
+    };
+}
+
 exports.handler = async (event) => {
     if (event.httpMethod !== "GET") return json(405, { error: "Method not allowed" });
     const player = playerFrom(event);
@@ -206,70 +348,9 @@ exports.handler = async (event) => {
         return json(503, { error: "Database connection failed" });
     }
 
-    const day = today();
     const id = player.id;
-    const guessCol = db.collection("guess_scores");
-    const dailyCol = db.collection("daily_scores");
-    const ffCol = db.collection("ff_scores");
-
     try {
-        /* The launch, read first because it decides which rows count below.
-
-           Only runs from launch onwards, as the public board counts them (see
-           sinceLaunch in ff-scores.js). The pre-launch test runs are still in
-           the collection; without this the owner's profile showed a 9,190
-           test run as their best, ranked against a board that no longer
-           lists it. settings.launchAt and every `at` are ISO strings, so
-           they compare as strings.
-
-           And the daily games from launch DAY onwards, as their boards now
-           count them (see launchDay in daily-scores.js — the same UTC date
-           of the same setting, worked out here from the one read rather than
-           a second). Days, points, streaks and places alike: a profile that
-           counted rehearsal days the boards do not would rank a player
-           somewhere no board shows them.
-
-           Fallin' Furni has a launch of its own, settings.ffLaunchAt, since
-           the game opens after the site does, and its board is cut at that
-           when it is set and at the site's launchAt when it is not (see
-           readGate in ff-scores.js). The same rule here, from the same
-           read, or the profile would count runs the board has cut. The
-           daily games, and the totals cache keyed on their launch day,
-           stay on the site's date: the game's date is nothing to them. */
-        const settings = await db.collection("settings").findOne({ _id: "site" }, { projection: { launchAt: 1, ffLaunchAt: 1 } });
-        const launchMs = settings && settings.launchAt ? Date.parse(settings.launchAt) : NaN;
-        const ffOwnMs = settings && settings.ffLaunchAt ? Date.parse(settings.ffLaunchAt) : NaN;
-        const ffLaunchMs = isNaN(ffOwnMs) ? launchMs : ffOwnMs;
-        const since = isNaN(ffLaunchMs) ? {} : { at: { $gte: new Date(ffLaunchMs).toISOString() } };
-        /* The launch INSTANT, as the boards now cut (launchCut in
-           daily-scores.js): from launch day, and on that day only what was
-           played after the doors opened at launchAt. */
-        const launch = isNaN(launchMs) ? null : new Date(launchMs).toISOString();
-        const fromLaunch = launch ? { day: { $gte: launch.slice(0, 10) }, at: { $gte: launch } } : {};
-
-        // `rounds` for Odd One Out rows that record it, and `bonus` for the
-        // total — see gameStats.
-        const rowShape = { projection: { _id: 0, day: 1, points: 1, bonus: 1, solved: 1, rounds: 1 } };
-        const [profile, guessRows, oddRows, board, ffMine, leadCounts, banned] = await Promise.all([
-            // With the nickname fields, for the Profile's name (see below).
-            // nickLocked too (29 Sept 2026): playerView reads it off this
-            // row, and a projection that left it out made every Profile
-            // report the nickname unlocked, whatever the admins had set.
-            // sv for the revocation check below (30 Sept 2026), and svStrict
-            // with it (1 Oct 2026): sessionRevoked reads that flag for a
-            // cookie from before session versions, which "Sign out on every
-            // device" revokes — left out, those were never signed out here.
-            db.collection("players").findOne({ id }, { projection: { _id: 0, joinedAt: 1, name: 1, avatar: 1, nick: 1, nickAsked: 1, nickLocked: 1, sv: 1, svStrict: 1 } }),
-            guessCol.find({ playerId: id, ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
-            dailyCol.find({ playerId: id, game: "odd", ...fromLaunch }, rowShape).sort({ day: 1 }).toArray(),
-            boardTotals(guessCol, dailyCol, launch),
-            ffCol.findOne({ playerId: id }, { projection: { _id: 0, points: 1, levels: 1, ms: 1, at: 1 } }),
-            db.collection("dead_end_leads").aggregate([
-                { $match: { "from.id": id } },
-                { $group: { _id: "$status", n: { $sum: 1 } } }
-            ]).toArray(),
-            bannedIds(db)
-        ]);
+        const { day, profile, games, combined, ff, leads } = await figuresFor(db, id);
 
         /* A REVOKED SESSION (30 Sept 2026; see SESSION VERSIONS in
            _player.js) is signed out here as it is on `me`: a forgotten
@@ -281,63 +362,6 @@ exports.handler = async (event) => {
             out.headers = { ...out.headers, "Set-Cookie": clearCookie() };
             return out;
         }
-
-        // Their own totals, fresh from their own rows; null means no place.
-        const myGuess = guessRows.length ? sumPoints(guessRows) : null;
-        const myOdd = oddRows.length ? sumPoints(oddRows) : null;
-        const myCombined = myGuess == null && myOdd == null ? null : addUp(myGuess, myOdd);
-
-        // Fallin' Furni from its launch instant — see `since` above.
-        // Compared as instants (isoOf above), not as text.
-        const ffCounts = ffMine && (!since.at || isoOf(ffMine.at) >= since.at.$gte);
-
-        let ff = null;
-        if (ffCounts) {
-            const points = Number(ffMine.points) || 0;
-            /* The launch cut for the count, for an `at` of EITHER type (30
-               Sept 2026). A string $gte skips every Date-typed row, and a
-               Date one every string, so both are asked. And the banned
-               accounts off it, as off the board (see bannedIds) — never the
-               player's own row. */
-            const cut = since.at ? { $or: [{ at: { $gte: since.at.$gte } }, { at: { $gte: new Date(since.at.$gte) } }] } : {};
-            const off = [...banned].filter(b => b !== String(id));
-            const scope = off.length ? { ...cut, playerId: { $nin: off } } : cut;
-            /* Ahead of them is everyone the board would list first (30 Sept
-               2026): ff-scores.js sorts { points: -1, ms: 1, at: 1 }, and
-               counting only higher points put a player level on points
-               with somebody faster at that somebody's place, not their own.
-               So a draw on points goes to the quicker clock, and a draw on
-               both to whoever got there first — with `at` compared the way
-               the database's sort does it across the two types it is stored
-               as: nothing (null) first, then every string, then every Date.
-               A row from before points existed (null) sorts below every
-               number, as it does on the board. */
-            const myPts = typeof ffMine.points === "number" ? ffMine.points : null;
-            const myMs = ffMine.ms;
-            const myAt = ffMine.at;
-            const samePts = myPts == null ? { points: null } : { points: myPts };
-            const atAhead = myAt instanceof Date ? [{ at: { $lt: myAt } }, { at: { $type: "string" } }, { at: null }]
-                : typeof myAt === "string" ? [{ at: { $lt: myAt } }, { at: null }]
-                : [];
-            const ahead = [
-                myPts == null ? { points: { $ne: null } } : { points: { $gt: myPts } },
-                // (A missing clock sorts first on an ascending key.)
-                ...(myMs == null ? [] : [{ ...samePts, ms: { $lt: myMs } }, { ...samePts, ms: null }]),
-                ...atAhead.map(a => ({ ...samePts, ms: myMs == null ? null : myMs, ...a }))
-            ];
-            const [above, of] = await Promise.all([
-                ffCol.countDocuments({ $and: [scope, { $or: ahead }] }),
-                ffCol.countDocuments(scope)
-            ]);
-            ff = { points, levels: ffMine.levels || 0, ms: ffMine.ms || 0, rank: above + 1, of };
-        }
-
-        const leads = { sent: 0, accepted: 0, waiting: 0 };
-        leadCounts.forEach(r => {
-            leads.sent += r.n;
-            if (r._id === "accepted") leads.accepted += r.n;
-            if (r._id === "new") leads.waiting += r.n;
-        });
 
         /* The name as `me` gives it (playerView in _player.js; 28 Sept
            2026): `name` is still the Discord display name, `displayName` is
@@ -351,11 +375,8 @@ exports.handler = async (event) => {
                 nickLocked: who.nickLocked,
                 avatar: who.avatar, joinedAt: (profile && profile.joinedAt) || null
             },
-            games: {
-                guess: { ...gameStats(guessRows, day), place: placeIn(board.guess, id, myGuess, banned) },
-                odd: { ...gameStats(oddRows, day), place: placeIn(board.odd, id, myOdd, banned) }
-            },
-            combined: placeIn(board.combined, id, myCombined, banned),
+            games,
+            combined,
             ff,
             leads
         });
@@ -369,3 +390,5 @@ exports.handler = async (event) => {
    withErrorReporting in _errors.js. Last, so it wraps the handler as finally
    defined above; what the handler answers is unchanged. */
 exports.handler = require("./_errors").withErrorReporting("player-profile", exports.handler);
+
+exports.figuresFor = figuresFor;

@@ -375,6 +375,16 @@
   to = "/home.html"
   status = 200
 
+# Your Profile (4 Oct 2026): /profile is the homepage with the profile
+# window open, and /profile?p=<public id> opens one player's. On the same
+# terms as /glyphs above; js/home.js opens the window and puts the address
+# back to /home, since the window keeps no address of its own. Not indexed
+# (robots.txt): it shows whoever is looking their own browser's progress.
+[[redirects]]
+  from = "/profile"
+  to = "/home.html"
+  status = 200
+
 # publish = "." above means the whole repo root — including this directory
 # of function SOURCE files — is otherwise served as plain static assets
 # alongside the real site (e.g. mazerats.net/netlify/functions/contact.js
