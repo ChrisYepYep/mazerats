@@ -816,14 +816,24 @@
                 </div>
                 <div class="featured-frame" id="featured-frame">
                     <button type="button" class="chrome-nav-btn chrome-nav-btn-recommended" id="featured-mazes-btn"><span class="chrome-nav-btn-arrow" aria-hidden="true">&#9654;</span><span class="chrome-nav-btn-label">Featured Mazes</span></button>
-                    <!-- Two wordings, one shown at a time (see the CSS): the
-                         full phrase where there is room for it, and "Refresh"
-                         on a phone, where the long one ran to within 4px of
-                         the FEATURED MAZES label beside it and left no room
-                         to give this a tap target worth the name. -->
-                    <button type="button" class="featured-refresh-btn" id="featured-refresh-btn" aria-label="Refresh recommendations"><span class="featured-refresh-full">Refresh recommendations</span><span class="featured-refresh-short">Refresh</span></button>
                     <div class="featured-frame-body" id="featured-frame-body">
-                        <div class="chrome-list" id="featured-frame-list"></div>
+                        <!-- One line over the picks (4 Oct 2026): what they are
+                             on the left, and Refresh on the right, level with it. -->
+                        <div class="featured-frame-head">
+                            <!-- "Two mazes picked at random from the archive.",
+                                 the count as many as are showing (renderFeaturedList). -->
+                            <p class="featured-frame-note" id="featured-frame-note" hidden></p>
+                            <!-- Two wordings, one shown at a time (see the CSS): the
+                                 full phrase where there is room for it, and "Refresh"
+                                 on a phone, where there is not. -->
+                            <button type="button" class="featured-refresh-btn" id="featured-refresh-btn" aria-label="Refresh recommendations"><span class="featured-refresh-full">Refresh recommendations</span><span class="featured-refresh-short">Refresh</span></button>
+                        </div>
+                        <!-- The picks' own clip: Refresh slides the new ones
+                             in from above, and they must pass under the line
+                             above, not over it (see refreshFeaturedList). -->
+                        <div class="featured-frame-list-clip">
+                            <div class="chrome-list" id="featured-frame-list"></div>
+                        </div>
                         <p class="archive-empty" id="featured-frame-empty" style="display:none;"></p>
                     </div>
                     <div class="chrome-frame">

@@ -543,6 +543,15 @@ async function handler(event) {
             return json(200, { player: view, ...(extra || {}) }, { "Set-Cookie": setCookie(signPlayer({ ...view, sv: svFor(player, row) })) });
         };
 
+        /* Checked BEFORE the three small writes below, not only in reply()
+           after them (4 Oct 2026, the bug scan): a session signed out
+           everywhere could still mark the profile intro seen — which makes
+           the profile public — and only then be refused. */
+        if (mode === "asked" || mode === "profileIntro" || mode === "refuse") {
+            const row = await players.findOne({ id: player.id }, { projection: { _id: 0, sv: 1, svStrict: 1 } });
+            if (sessionRevoked(player, row)) return revoked();
+        }
+
         if (mode === "asked") {
             await players.updateOne({ id: player.id }, { $set: { nickAsked: true } });
             return await reply();

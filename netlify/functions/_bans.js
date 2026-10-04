@@ -325,6 +325,13 @@ function bannedReply(ban) {
 
 const NICK_REQUIRED_MESSAGE = "Set a new nickname to play.";
 const nickRequiredReply = () => reply(403, { error: NICK_REQUIRED_MESSAGE, nickRequired: true });
+/* THE DAILY GAMES ARE FOR PLAYERS WITH A NICKNAME (4 Oct 2026, the
+   owner's): signed in with Discord, and a nickname chosen. Their own two
+   refusals, so the page can say which step is missing. */
+const SIGN_IN_TO_PLAY_MESSAGE = "Sign in with Discord to play.";
+const NICK_TO_PLAY_MESSAGE = "Choose a nickname to play.";
+const signInToPlayReply = () => reply(403, { error: SIGN_IN_TO_PLAY_MESSAGE, signInToPlay: true });
+const nickToPlayReply = () => reply(403, { error: NICK_TO_PLAY_MESSAGE, nickToPlay: true });
 const unavailableReply = () => reply(503, { error: "That can't be saved just now. Try again in a minute." });
 
 /* A revoked session's refusal (30 Sept 2026), with the cookie cleared as
@@ -350,7 +357,7 @@ function revokedReply() {
    players row, not memoised: it has to see the new nickname the moment it
    is saved. A ban is checked first, so a banned player is told about the
    ban rather than about their nickname. */
-async function writeRefusal(db, event, playerId, { game = false } = {}) {
+async function writeRefusal(db, event, playerId, { game = false, daily = false } = {}) {
     let ban;
     try {
         ban = await lookUp(db, event, playerId);
@@ -359,12 +366,14 @@ async function writeRefusal(db, event, playerId, { game = false } = {}) {
         return unavailableReply();
     }
     if (ban) return bannedReply(ban);
+    // A daily game, signed out: not any more (see THE DAILY GAMES above).
+    if (daily && !playerId) return signInToPlayReply();
     const { playerFrom, sessionRevoked } = require("./_player");
     const who = playerId ? playerFrom(event) : null;
     const mine = who && String(who.id) === String(playerId) ? who : null;
     if (game && playerId) {
         try {
-            const row = await db.collection("players").findOne({ id: String(playerId) }, { projection: { _id: 0, nickRejected: 1, sv: 1, svStrict: 1 } });
+            const row = await db.collection("players").findOne({ id: String(playerId) }, { projection: { _id: 0, nickRejected: 1, nick: 1, sv: 1, svStrict: 1 } });
             /* A revoked session (30 Sept 2026): the same read tells whether
                this cookie's session version is still the row's — a forgotten
                player's row is gone, so an old cookie cannot keep filing
@@ -372,6 +381,8 @@ async function writeRefusal(db, event, playerId, { game = false } = {}) {
                null for a real "no row", which is what sessionRevoked needs. */
             if (mine && sessionRevoked(mine, row)) return revokedReply();
             if (row && row.nickRejected && typeof row.nickRejected === "object") return nickRequiredReply();
+            // A daily game with no nickname chosen (see THE DAILY GAMES above).
+            if (daily && !(row && typeof row.nick === "string" && row.nick)) return nickToPlayReply();
         } catch (e) {
             console.error("bans: could not read the players row for a game write", e);
             return unavailableReply();

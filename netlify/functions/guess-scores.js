@@ -44,7 +44,7 @@
    a day counts, and a second is answered with the first's score — so even
    that cannot be compounded, or used to check answers. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { playerFrom, publicName } = require("./_player");
+const { playerFrom, livePlayerFrom, publicName } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 const { cachedJson, BOARD_CDN_CACHE } = require("./_cache");
 /* dayIsOpen and rangeBounds are rules about the clock and the calendar
@@ -449,7 +449,9 @@ exports.handler = async (event) => {
            403 { error, banned } for a banned account or network, and 403
            { error, nickRequired: true } for a signed-in player whose
            nickname the admins have rejected, until they choose another. */
-        const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true });
+        // And signed in with a nickname, or not at all (4 Oct 2026, the owner's;
+        // see THE DAILY GAMES ARE FOR PLAYERS WITH A NICKNAME in _bans.js).
+        const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true, daily: true });
         if (refusal) return refusal;
 
         // Practice time, as in daily-scores.js (PRACTICE BEFORE LAUNCH in
@@ -795,7 +797,8 @@ async function dealReply(db, event, params) {
         console.error("guess-scores: could not deal the day", e);
         return privateJson(503, { error: "The day could not be dealt just now" });
     }
-    const player = playerFrom(event);
+    // Not a session ended everywhere (4 Oct 2026, the bug scan): see livePlayerFrom.
+    const player = await livePlayerFrom(db, event);
     const practice = await practiceOf(db, day, Date.now());
     let progress = null, filed = false, score = null, practiceOver = false;
     // Only the rooms this player has reached, and none signed out or

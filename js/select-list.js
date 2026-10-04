@@ -218,12 +218,30 @@
     }
     document.addEventListener("mousedown", onPress, true);
     // A touch would open the phone's own picker on its way to a click.
+    /* A TAP opens ours; a swipe that starts on the select still scrolls the
+       screen (4 Oct 2026, the bug scan). touchstart was cancelled outright,
+       so a swipe beginning on a full-width select could not scroll, and
+       touchend opened the list however far the finger had gone. Now the
+       start is only noted, and touchend opens the list — cancelled there,
+       which still keeps the phone's own picker shut — only if the finger
+       stayed within TAP_SLOP of it. */
+    const TAP_SLOP = 10;
+    let touchFrom = null;
+    document.addEventListener("touchstart", e => {
+        const t = e.touches && e.touches[0];
+        touchFrom = isOurs(e.target) && t ? { x: t.clientX, y: t.clientY } : null;
+    }, { capture: true, passive: true });
     document.addEventListener("touchend", e => {
         if (!isOurs(e.target)) return;
+        const t = e.changedTouches && e.changedTouches[0];
+        const from = touchFrom;
+        touchFrom = null;
+        // A swipe: the screen has scrolled; nothing to open, and no picker.
+        if (!from || !t || Math.abs(t.clientX - from.x) > TAP_SLOP || Math.abs(t.clientY - from.y) > TAP_SLOP) {
+            e.preventDefault();
+            return;
+        }
         onPress(e);
-    }, { capture: true, passive: false });
-    document.addEventListener("touchstart", e => {
-        if (isOurs(e.target)) e.preventDefault();
     }, { capture: true, passive: false });
 
     document.addEventListener("keydown", e => {

@@ -1218,7 +1218,8 @@
         if (!retrying && window.Account && typeof Account.mayPlay === "function" && !Account.known && typeof Account.ready === "function") {
             try { await Account.ready(); } catch (e) { /* signed out */ }
         }
-        if (!retrying && window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay()) {
+        // A daily game: signed in with a nickname (4 Oct 2026, the owner's).
+        if (!retrying && window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay({ daily: true })) {
             el.overlay.classList.remove("open");
             if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
             if (location.pathname === "/odd") history.replaceState({}, "", "/home");

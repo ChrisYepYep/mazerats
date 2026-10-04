@@ -2442,7 +2442,8 @@
             Promise.resolve().then(() => Account.ready()).catch(() => {}).then(() => open());
             return;
         }
-        if (window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay()) {
+        // A daily game: signed in with a nickname (4 Oct 2026, the owner's).
+        if (window.Account && typeof Account.mayPlay === "function" && !Account.mayPlay({ daily: true })) {
             el.overlay.classList.remove("open");
             if (!document.querySelector(".modal-overlay.open")) document.body.classList.remove("modal-open");
             // A pasted /guess should not leave the address bar on a game

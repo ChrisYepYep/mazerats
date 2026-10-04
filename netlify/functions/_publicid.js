@@ -16,7 +16,8 @@
              answer in discord-auth.js carries the caller's own publicId) and
              the board can still key rows, but nobody can walk it back.
 
-     avatar  the Discord avatar only for a player WITHOUT a nickname. A
+     avatar  NEVER, since 4 Oct 2026 (see publicAvatar). Before that:
+             the Discord avatar only for a player WITHOUT a nickname. A
              player who has chosen one gets null, and the page draws its
              blank face. That is the owner's decision: a nickname is the
              player saying "not as my Discord self", and the avatar is their
@@ -80,11 +81,14 @@ async function nickedAmong(db, ids) {
     }
 }
 
-// The avatar a public row may show — see the note at the top.
-function publicAvatar(avatar, playerId, nicked) {
-    if (!avatar) return null;
-    if (nicked === null || nicked.has(String(playerId))) return null;
-    return avatar;
+/* NO DISCORD AVATAR ON ANY PUBLIC ROW, nicknamed or not (4 Oct 2026, the
+   owner's: "we can't show discord avatars at all"). Discord's address for
+   one carries the player's Discord id (cdn.discordapp.com/avatars/<id>/…),
+   and the privacy policy says the boards never show it — which was untrue
+   for every player without a nickname. Every row gets the page's blank
+   face. The arguments stay, so the callers need not change. */
+function publicAvatar(avatar, playerId, nicked) {   // eslint-disable-line no-unused-vars
+    return null;
 }
 
 /* Several board lists at once, each row carrying its RAW player id as `id`
@@ -93,11 +97,11 @@ function publicAvatar(avatar, playerId, nicked) {
    only if the player has no nickname. New objects; the lists passed in are
    left alone. */
 async function publicLists(db, lists) {
-    const nicked = await nickedAmong(db, lists.flat().map(r => r && r.id));
+    // No nickname read any more: no row keeps an avatar (publicAvatar).
     return lists.map(list => (list || []).map(r => ({
         ...r,
         id: publicIdOf(r.id),
-        avatar: publicAvatar(r.avatar, r.id, nicked)
+        avatar: null
     })));
 }
 

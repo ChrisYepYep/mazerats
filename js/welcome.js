@@ -94,6 +94,18 @@ const RETURN_JITTER_MS = 2000;
 
 const isGatedState = s => s === "coming-soon" || s === "maintenance";
 
+/* What Maintenance says (4 Oct 2026, the owner's): chosen in the Warren
+   beside the switch (settings.maintenanceNote), and drawn by labelGated.
+   Anything else, or no answer — and a blocked visitor's Maintenance page,
+   which passes no note — is "soon", so the words never change under a
+   visitor when a real answer arrives (the bug scan, 4 Oct 2026). Up here rather
+   than beside labelGated: the blocked branch calls it before that point. */
+const MAINTENANCE_LABELS = {
+    "5": "Maintenance, Back in 5!",
+    "soon": "Maintenance, Back Soon",
+    "later": "Maintenance, Back Later"
+};
+
 /* The settings, straight from the function (or a ten-second-old edge copy at
    worst). null for anything that is not a clear answer — a failed, timed-out
    or malformed read is "ask again later", never "open".
@@ -546,7 +558,7 @@ function warmTheArchive(btn) {
    js/account.js keeps a note in this browser when `me` says the visitor has
    a whole-site ban — { until, reason } under BLOCK_KEY — and every other
    page sends them here. As the owner asked:
-     permanent   this page shows "Maintenance, Back Soon!", as a real
+     permanent   this page shows "Maintenance, Back Soon", as a real
                  maintenance window does, and nothing more. It does not say
                  it is a ban.
      cool-down   the same, with a pop-up (the red button, as the flagged-
@@ -730,7 +742,8 @@ function spotlightSlide(ev) {
     }, { once: true });
     img.src = imgCdn(spotlightThumb(ev), 960, null, 80);
     const cta = document.createElement("span");
-    cta.className = "welcome-promo-cta";
+    // Over the top of the picture, if the Warren says so (4 Oct 2026).
+    cta.className = ev.spotlightCaptionAt === "top" ? "welcome-promo-cta is-top" : "welcome-promo-cta";
     cta.textContent = caption;
     if (/^#[0-9a-f]{6}$/i.test(ev.spotlightColour || "")) cta.style.color = ev.spotlightColour;
     a.append(img, cta);
@@ -796,7 +809,7 @@ async function showSpotlight() {
        on the ids alone, a caption, colour or picture changed in the Warren
        was fetched by the three-minute refresh and then never drawn, because
        the same events were still on. */
-    const key = JSON.stringify(live.map(ev => [ev.id, spotlightThumb(ev), ev.spotlightCaption || "", ev.spotlightColour || "", ev.title || ""]));
+    const key = JSON.stringify(live.map(ev => [ev.id, spotlightThumb(ev), ev.spotlightCaption || "", ev.spotlightColour || "", ev.spotlightCaptionAt || "", ev.title || ""]));
     if (!live.length) {
         el.hidden = true;
         el.replaceChildren();
@@ -914,7 +927,7 @@ document.addEventListener("DOMContentLoaded", async () => {
        it, and without a ban note that check answers at once. */
     startSpotlight();
 
-    let { landingState, launchAt, fromCache } = (await Api.getSiteSettings()) || {};
+    let { landingState, launchAt, fromCache, maintenanceNote } = (await Api.getSiteSettings()) || {};
     /* An answer with no state in it is no answer (1 Oct 2026), exactly as
        home.html's gate reads one: it used to fall to the else below and
        make the button a live Enter link. Shut, as for any unreadable read,
@@ -929,8 +942,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     // state (see its markup in index.html), so the state has to be spoken
     // rather than left to the visual treatment alone. A function so the
     // poll can relabel a site that moves between the two gated states.
-    function labelGated(state) {
-        const text = state === "maintenance" ? "Maintenance, Back Soon!" : "Coming Soon";
+    function labelGated(state, note) {
+        const text = state === "maintenance"
+            ? (Object.prototype.hasOwnProperty.call(MAINTENANCE_LABELS, note) ? MAINTENANCE_LABELS[note] : MAINTENANCE_LABELS.soon)
+            : "Coming Soon";
         if (label.textContent !== text) label.textContent = text;
         btn.removeAttribute("href");
         btn.classList.add("is-disabled");
@@ -938,7 +953,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     if (landingState === "coming-soon" || landingState === "maintenance") {
-        labelGated(landingState);
+        labelGated(landingState, maintenanceNote);
     } else {
         label.textContent = "Enter";
         /* The clean address, not the filename. This is the one link on the
@@ -979,7 +994,7 @@ document.addEventListener("DOMContentLoaded", async () => {
        has. So a Maintenance window after launch — or any later gated
        period — came up under a clock reading "Opening any moment now" and
        "No need to refresh: this page will let you in", about a launch that
-       happened weeks ago, beside a button saying "Maintenance, Back Soon!".
+       happened weeks ago, beside a button saying "Maintenance, Back Soon".
        The countdown and its wording now belong to Coming Soon alone;
        Maintenance keeps its plain button and nothing under it. And it
        follows the poll: a site moved from Coming Soon to Maintenance while
@@ -1002,7 +1017,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     // above may itself have been a stale edge copy, and this is what
     // corrects it.
     watchForOpening(() => target, (state, settings) => {
-        labelGated(state);
+        // A wording changed in the Warren mid-window shows on the next ask.
+        labelGated(state, settings && settings.maintenanceNote);
         // A real answer's date replaces the one this page started with —
         // arrived late, moved, or cleared — and the clock is redrawn for it.
         const fresh = launchDate(settings && settings.launchAt);

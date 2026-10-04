@@ -40,6 +40,15 @@ const DEFAULT_STATE = "enter";
 
    Defaults to live, so a site that has never touched this setting behaves
    exactly as it did before the setting existed. */
+/* WHAT MAINTENANCE SAYS (4 Oct 2026, the owner's). The welcome button's
+   wording while the site is in Maintenance, chosen in the Warren beside the
+   switch: "Maintenance, Back in 5!", "Maintenance, Back Soon" or
+   "Maintenance, Back Later" (js/welcome.js, MAINTENANCE_LABELS). Kept
+   whatever the state, so it is ready the next time Maintenance is switched
+   on. "soon" is what the button always said, and is the default. */
+const VALID_MAINTENANCE_NOTES = ["5", "soon", "later"];
+const DEFAULT_MAINTENANCE_NOTE = "soon";
+
 const VALID_FF_STATES = ["live", "coming-soon", "maintenance"];
 const DEFAULT_FF_STATE = "live";
 
@@ -131,6 +140,7 @@ function settingsReply(event, doc) {
         landingState: (doc && doc.landingState) || DEFAULT_STATE,
         lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
         fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
+        maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,
         theme: (doc && doc.theme) || DEFAULT_THEME,
         palette: (doc && doc.palette) || null,
         launchAt: (doc && doc.launchAt) || "",
@@ -216,6 +226,12 @@ async function write(event, settings, db) {
             }
             update.fallinFurniState = body.fallinFurniState;
         }
+        if (body.maintenanceNote !== undefined) {
+            if (!VALID_MAINTENANCE_NOTES.includes(body.maintenanceNote)) {
+                return json(400, { error: "maintenanceNote must be one of: " + VALID_MAINTENANCE_NOTES.join(", ") });
+            }
+            update.maintenanceNote = body.maintenanceNote;
+        }
         if (body.theme !== undefined) {
             if (!VALID_THEMES.includes(body.theme)) {
                 return json(400, { error: "theme must be one of: " + VALID_THEMES.join(", ") });
@@ -298,6 +314,7 @@ async function write(event, settings, db) {
             landingState: (doc && doc.landingState) || DEFAULT_STATE,
             lobbyFurni: (doc && Array.isArray(doc.lobbyFurni)) ? doc.lobbyFurni : [],
             fallinFurniState: (doc && doc.fallinFurniState) || DEFAULT_FF_STATE,
+            maintenanceNote: (doc && doc.maintenanceNote) || DEFAULT_MAINTENANCE_NOTE,
             theme: (doc && doc.theme) || DEFAULT_THEME,
             // Answered alongside the theme, now that the Controls panel
             // sets them together and lights one of the two from the reply.

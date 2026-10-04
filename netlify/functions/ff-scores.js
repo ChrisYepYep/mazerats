@@ -40,7 +40,6 @@ const { getDb, ensureUniqueIndex, ensureIndex } = require("./_db");
 const { playerFrom, publicName } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 // No nicknamed player's Discord avatar on the board (29 Sept 2026).
-const { nickedAmong, publicAvatar } = require("./_publicid");
 // The ban gate on both POSTs, and banned accounts off the boards (29 Sept 2026).
 const { writeRefusal, withoutBanned } = require("./_bans");
 
@@ -987,7 +986,8 @@ const scoreHotel = (v) => {
 
 const clean = (row, nicked) => ({
     name: row.name,
-    avatar: nicked === undefined ? (row.avatar || null) : publicAvatar(row.avatar, row.playerId, nicked),
+    // No Discord avatar anywhere, the caller's own row included (4 Oct 2026, the owner's).
+    avatar: null,
     points: Number(row.points) || 0,
     levels: row.levels,
     ms: row.ms,
@@ -1035,9 +1035,8 @@ exports.handler = async (event) => {
                 .limit(BOARD_READ)
                 .toArray()], r => r && r.playerId))[0].slice(0, TOP);
 
-            // One nickname read for the board — see clean() above.
-            const nicked = await nickedAmong(db, top.map(r => r.playerId));
-            out = { count: top.length, top: top.map(r => clean(r, nicked)) };
+            // No nickname read: clean() gives no row an avatar any more (4 Oct 2026).
+            out = { count: top.length, top: top.map(r => clean(r)) };
             if (player) {
                 const mine = await scores.findOne({ playerId: player.id }, { projection: { _id: 0 } });
                 /* The same cut as the table: a best run from before launch is
@@ -1078,8 +1077,7 @@ exports.handler = async (event) => {
                     .sort({ points: -1, ms: 1, at: 1 })
                     .limit(BOARD_READ)
                     .toArray()], r => r && r.playerId))[0].slice(0, TOP);
-                const meetNicked = await nickedAmong(db, rows.map(r => r.playerId));
-                out.tournament = { ...meet, top: rows.map(r => clean(r, meetNicked)) };
+                out.tournament = { ...meet, top: rows.map(r => clean(r)) };
                 if (player) {
                     const mine = await db.collection(TOURNAMENT_COLLECTION)
                         .findOne({ tid: meet.id, playerId: player.id }, { projection: { _id: 0 } });

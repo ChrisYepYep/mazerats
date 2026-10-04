@@ -66,7 +66,7 @@
    day (claimAnonMove in _speed.js). A leaderboard here is a thing to
    enjoy, not a thing to defend. */
 const { getDb, ensureUniqueIndex } = require("./_db");
-const { playerFrom, publicName } = require("./_player");
+const { playerFrom, livePlayerFrom, publicName } = require("./_player");
 const { clientNet } = require("./_net");
 const { today, dayIsOpen, dayClosesAt, rangeBounds } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
@@ -732,7 +732,9 @@ exports.handler = async (event) => {
            rejected is refused with 403 { error, nickRequired: true } until
            they choose another (player-nick.js). Ahead of the deal and every
            write, so a refused request costs one memoised lookup. */
-        const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true });
+        // And signed in with a nickname, or not at all (4 Oct 2026, the owner's;
+        // see THE DAILY GAMES ARE FOR PLAYERS WITH A NICKNAME in _bans.js).
+        const refusal = await writeRefusal(db, event, player ? player.id : null, { game: true, daily: true });
         if (refusal) return refusal;
 
         /* Practice time — see PRACTICE BEFORE LAUNCH in _speed.js. Read on
@@ -1117,7 +1119,8 @@ async function dealReply(db, event, game, params) {
         console.error("daily-scores: could not deal the day", e);
         return privateJson(503, { error: "The day could not be dealt just now" });
     }
-    const player = playerFrom(event);
+    // Not a session ended everywhere (4 Oct 2026, the bug scan): see livePlayerFrom.
+    const player = await livePlayerFrom(db, event);
     const practice = await practiceOf(db, day, Date.now());
     let progress = null, filed = false, score = null, practiceOver = false;
     // How many rounds' pictures go out: none before the day has started,

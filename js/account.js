@@ -753,7 +753,7 @@
                     aria-haspopup="dialog"
                     aria-label="Signed in as ${escapeHtml(shown)}: sign out…"
                     title="${escapeHtml(tip)}">
-                ${me.avatar ? `<img class="header-signin-face" src="${escapeHtml(me.avatar)}" alt="" aria-hidden="true">` : ""}
+                <!-- No Discord avatar, anywhere on the site (4 Oct 2026, the owner's). -->
                 <span class="header-signin-name">${escapeHtml(shown)}</span>
             </button>`;
         const btn = document.getElementById("account-signout");
@@ -817,7 +817,6 @@
                     </div>
                     <div class="chrome-frame">
                         <div class="modal-body signout-body">
-                            ${me.avatar ? `<img class="signout-face" src="${escapeHtml(me.avatar)}" alt="" aria-hidden="true">` : ""}
                             <div class="confirm-message signout-message" id="signout-message" data-crumb-private>
                                 <p class="signout-who">Signed in as ${escapeHtml(Account.nameOf(me))}</p>
                                 <p class="signout-ask">Do you want to sign out?</p>
@@ -1479,14 +1478,47 @@
     }
     Account.showNickRequired = showNickRequired;
 
+    /* THE DAILY GAMES ARE FOR PLAYERS WITH A NICKNAME (4 Oct 2026, the
+       owner's; the server's side is in netlify/functions/_bans.js): signed
+       in with Discord, and a nickname chosen — the name the boards show. One
+       window for each missing step, offering it. */
+    function showSignInToPlay() {
+        return notice({
+            title: "Sign In to Play",
+            html: `<p class="notice-head">Sign in with Discord to play the daily games.</p><p>Then choose a nickname. It's the name the leaderboards show for you.</p>`,
+            actions: [
+                { label: "Sign in with Discord", value: "signin", lead: true },
+                { label: "Not now", value: null }
+            ]
+        }).then(v => { if (v === "signin") Account.signIn(); });
+    }
+    function showNickToPlay() {
+        return notice({
+            title: "Choose a Nickname",
+            html: `<p class="notice-head">Choose a nickname to play the daily games.</p><p>It's the name the leaderboards show for you.</p>`,
+            actions: [
+                { label: "Choose a nickname", value: "choose", lead: true },
+                { label: "Not now", value: null }
+            ]
+        }).then(v => { if (v === "choose") Account.editNickname(); });
+    }
     /* Whether Play may go ahead. True, and nothing else happens, for anyone
        signed out and unbanned or signed in in good standing — which is
        everyone but a handful. Otherwise the right window is shown and it
        answers false, and the caller does nothing more. */
-    Account.mayPlay = () => {
+    /* opts.daily: a daily game (Guess the Maze, Odd One Out), which also
+       needs a player signed in with a nickname (see THE DAILY GAMES above).
+       Not Fallin' Furni, whose Play asks with no options. While the "who am
+       I" answer is unsure (it failed), nobody is turned away here: the
+       server still refuses a signed-out move, and writeRefused says so. */
+    Account.mayPlay = (opts) => {
         if (activeBan()) { showBlocked("play"); return false; }
         const me = Account.current;
         if (me && me.nickRejected === true) { showNickRequired(); return false; }
+        if (opts && opts.daily) {
+            if (!me && !Account.unsure) { showSignInToPlay(); return false; }
+            if (me && !me.nick) { showNickToPlay(); return false; }
+        }
         return true;
     };
 
@@ -1503,6 +1535,9 @@
             showBlocked(what === "send" ? "send" : "play", now || was);
             return true;
         }
+        // The daily games' two (4 Oct 2026; see THE DAILY GAMES above).
+        if (body.signInToPlay) { showSignInToPlay(); return true; }
+        if (body.nickToPlay) { showNickToPlay(); return true; }
         if (body.nickRequired) {
             const me = Account.current;
             if (me && me.nickRejected !== true) {
@@ -1648,18 +1683,29 @@
     }
 
     // Told: on the server for real, nowhere for a preview.
+    /* Resolves once the server has the intro as seen (or could not be
+       told), so what opens next reads the profile as it now is (4 Oct
+       2026, the bug scan): Edit Profile opened at once used to read the
+       profile before this landed, and say "Hidden" to a player who was
+       public a moment later — the unsafe way round to be wrong. */
     function markIntro() {
         introDone = true;
-        if (introPreview || !Account.current) return;
+        if (introPreview || !Account.current) return Promise.resolve();
         Account.current.profileIntro = null;
         Account.current.nickAsked = true;
+        let told = Promise.resolve();
         if (typeof Api.markProfileIntro === "function") {
-            Api.markProfileIntro().then(takePlayer).catch(() => { /* told again next visit, at worst */ });
+            told = Api.markProfileIntro().then(takePlayer).catch(() => { /* told again next visit, at worst */ })
+                .then(() => {
+                    // The Profiles window's copy of your own is out of date now.
+                    if (window.ArchiveProgress && typeof ArchiveProgress.changed === "function") ArchiveProgress.changed();
+                });
         }
         /* Anything the intro was holding back — the admins' "Pick a new
            nickname" — is asked for now; it waits for the intro's own window
            to close (pageIsBusy), as for any other. */
         scheduleNickPrompt();
+        return told;
     }
 
     function openEditProfile(welcome) {
@@ -1669,8 +1715,8 @@
     }
 
     function showIntro(kind) {
-        markIntro();
-        if (kind === "new") { openEditProfile(true); return; }
+        const told = markIntro();
+        if (kind === "new") { told.then(() => openEditProfile(true)); return; }
 
         introShowing = true;
         const returnTo = document.activeElement;

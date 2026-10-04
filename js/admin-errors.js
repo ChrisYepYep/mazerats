@@ -435,7 +435,7 @@
         if (!n) return "";
         const by = Object.entries((limited && limited.byFn) || {}).sort((a, b) => b[1] - a[1])
             .map(([fn, k]) => `${fn} ${num(k)}`).join(", ");
-        const title = "Times a visitor's network went over the site's per-minute request limit and was asked to wait (counted once per minute they stayed over). By function: " + by;
+        const title = "Times a visitor's network went over the site's per-minute request limit and was asked to wait — at least this many: each server counts a network once a minute, and pictures are not counted here. By function: " + by;
         return `<span class="admin-activity-stat is-warn" title="${escapeHtml(title)}"><strong>${escapeHtml(num(n))}</strong> rate-limited in 24h</span>`;
     }
 

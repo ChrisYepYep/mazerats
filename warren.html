@@ -362,6 +362,18 @@
                                      Soon (the countdown goes at zero). See
                                      sayLandingMismatch. -->
                                 <p class="ctl-status" id="landing-state-warning" style="display:none;"></p>
+                                <!-- What the landing page's button says while
+                                     the site is in Maint. (4 Oct 2026). Saved
+                                     on its own, whatever the switch is on, so
+                                     it can be chosen before switching. See
+                                     setMaintenanceNote in js/admin.js. -->
+                                <span class="ctl-label ctl-sublabel">Maintenance says</span>
+                                <div class="ctl-seg" id="maintenance-note-toggle">
+                                    <button type="button" class="btn-enter-mini" data-note="5" title="Maintenance, Back in 5!">Back in 5!</button>
+                                    <button type="button" class="btn-enter-mini" data-note="soon" title="Maintenance, Back Soon">Back soon</button>
+                                    <button type="button" class="btn-enter-mini" data-note="later" title="Maintenance, Back Later">Back later</button>
+                                </div>
+                                <p class="ctl-status" id="maintenance-note-status" style="display:none;"></p>
                             </div>
 
                             <!-- The countdown on the front door.

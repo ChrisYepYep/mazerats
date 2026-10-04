@@ -35,7 +35,7 @@
 const crypto = require("crypto");
 const { getDb, ensureUniqueIndex } = require("./_db");
 const { hasAccount, canWrite, refuseWrite, roleOf, WRITE_SCOPES, usernameFromToken, UNAUTHORIZED, AUTH_UNAVAILABLE, isAuthUnavailable } = require("./_auth");
-const { playerFrom } = require("./_player");
+const { livePlayerFrom } = require("./_player");
 const { SECURITY_HEADERS } = require("./_headers");
 // Points here are totals, the day's score plus its speed bonus, as every
 // public board and the Profile count them (see _speed.js). forgetDay is the
@@ -159,8 +159,15 @@ async function route(event, db, scores, resets) {
        admin token in sight. It answers only about the caller: there is no
        way to ask this about somebody else. */
     if (params.mine === "1") {
-        const player = playerFrom(event);
-        if (!player) return json(200, { games: [] });
+        // Not a session ended everywhere (4 Oct 2026, the bug scan): it
+        // could list this account's reset tickets and spend them.
+        const player = await livePlayerFrom(db, event);
+        /* A claim (POST) with nobody to claim for is refused, never "fine"
+           (4 Oct 2026, the quick scan): the page clears its stored day on a
+           200, so a database blip that made livePlayerFrom answer null let
+           it spend a ticket the server never deleted. A read just finds
+           nothing. */
+        if (!player) return event.httpMethod === "POST" ? json(401, { error: "Not signed in" }) : json(200, { games: [] });
 
         if (event.httpMethod === "POST") {
             // Claimed: the page has cleared its stored day, so the ticket is

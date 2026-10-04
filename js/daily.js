@@ -204,7 +204,7 @@ window.Daily = (function () {
                for every request the games make, so neither game has to
                know. The games still see the refusal and treat it as they
                treat any other a pick or guess could not survive. */
-            if (res.status === 403 && body && (body.banned || body.nickRequired)
+            if (res.status === 403 && body && (body.banned || body.nickRequired || body.signInToPlay || body.nickToPlay)
                 && window.Account && typeof Account.writeRefused === "function") {
                 try { Account.writeRefused(403, body, "play"); } catch (e) { /* the refusal stands either way */ }
             }
@@ -648,7 +648,10 @@ window.Daily = (function () {
         // 2026): settled, and never worth sending again.
         if (status === 200 && b.practice) return { ok: false, retry: false, final: true, practice: true };
         const retry = status === 0 || status >= 500 || status === 429;
-        const lifts = status === 403 && (Boolean(b.nickRequired) ||
+        /* Signed out mid-round, or the nickname cleared (4 Oct 2026, the
+           quick scan): the day waits to be filed once they sign in again or
+           choose one, as a rejected nickname's does — it is not lost. */
+        const lifts = status === 403 && (Boolean(b.nickRequired) || Boolean(b.signInToPlay) || Boolean(b.nickToPlay) ||
             Boolean(b.banned && typeof b.banned === "object" && b.banned.until));
         const later = retry ||
             (status === 200 && b.reason === "signed-out") ||

@@ -247,7 +247,7 @@
                window first only for the game file to shut it again and leave
                focus nowhere. mayPlay shows the notice itself. Not known yet,
                the game's own open() waits and asks (29 Sept 2026). */
-            if (window.Account && Account.known && typeof Account.mayPlay === "function" && !Account.mayPlay()) return;
+            if (window.Account && Account.known && typeof Account.mayPlay === "function" && !Account.mayPlay({ daily: true })) return;
 
             const overlay = openShell(name);
             const slow = setTimeout(() => sayLoading(name), SLOW_AFTER);

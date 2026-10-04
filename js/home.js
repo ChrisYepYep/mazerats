@@ -266,10 +266,26 @@ document.addEventListener("DOMContentLoaded", () => {
         archive: "No archived events yet."
     };
 
+    /* COLLAB IS ITS OWN FIELD (4 Oct 2026, the owner's). A maze is a collab
+       or not (`collab: true`, the Warren's Collab maze box), and open,
+       closed or unknown either way, so a collab carries its Open or Closed
+       too. It used to be a fourth status, "collab", in place of either;
+       mazes still stored that way are collabs whose status is not known
+       yet, until an admin edits them and chooses one. These two are the
+       only places that know about the old way. */
+    function isCollabRoom(r) {
+        return !!r && (r.collab === true || r.status === "collab");
+    }
+    function roomStatus(r) {
+        const s = r && r.status;
+        return s === "open" || s === "closed" ? s : "unknown";
+    }
+
     function sourceItems(view) {
-        if (view === "featured" || view === "open") return ROOMS.filter(r => r.status === "open" || r.status === "unknown");
-        if (view === "archived") return ROOMS.filter(r => r.status === "closed");
-        if (view === "collab") return ROOMS.filter(r => r.status === "collab");
+        // Collab mazes are listed under Collab alone, whatever their status.
+        if (view === "featured" || view === "open") return ROOMS.filter(r => !isCollabRoom(r) && roomStatus(r) !== "closed");
+        if (view === "archived") return ROOMS.filter(r => !isCollabRoom(r) && roomStatus(r) === "closed");
+        if (view === "collab") return ROOMS.filter(isCollabRoom);
         // A live event belongs in Upcoming, not stranded in Past — it's
         // still happening, and this is the tab someone checks to find
         // something to go to. sortItems pins them to the top of it.
@@ -436,8 +452,10 @@ document.addEventListener("DOMContentLoaded", () => {
             slug: asText(item.slug),
             name: asText(item.name),
             subtitle: asText(item.creator) ? `by ${asText(item.creator)}` : "",
-            statusKey: item.status,
-            statusLabel: item.status === "open" ? "Open" : item.status === "closed" ? "Closed" : item.status === "collab" ? "Collab" : "Unknown",
+            statusKey: roomStatus(item),
+            statusLabel: roomStatus(item) === "open" ? "Open" : roomStatus(item) === "closed" ? "Closed" : "Unknown",
+            // Shown as a Collab pill beside the status (see statusPillsHtml).
+            collab: isCollabRoom(item),
             hotel: item.hotel,
             owner: asText(item.creator),
             dateFieldLabel: "Opened",
@@ -510,7 +528,7 @@ document.addEventListener("DOMContentLoaded", () => {
             base = staticHaystack(n);
             if (raw) haystackCache.set(raw, base);
         }
-        n._haystack = base + " \u0000 " + String(n.statusLabel || "").toLowerCase();
+        n._haystack = base + " \u0000 " + String(n.statusLabel || "").toLowerCase() + (n.collab ? " collab" : "");
         return n._haystack;
     }
 
@@ -992,7 +1010,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             } else {
                 topView = "mazes";
-                const tab = MAZE_TAB_OF_STATUS[n.statusKey];
+                const tab = n.collab ? "collab" : MAZE_TAB_OF_STATUS[n.statusKey];
                 if (tab) mazesSub = tab;
             }
         }
@@ -1003,8 +1021,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (results) results.scrollTop = 0;
     }
 
-    // Which Mazes tab a status is listed under — the mapping sourceItems uses.
-    const MAZE_TAB_OF_STATUS = { open: "open", unknown: "open", closed: "archived", collab: "collab" };
+    // Which Mazes tab a status is listed under — the mapping sourceItems
+    // uses. A collab maze is under Collab whatever its status (see above).
+    const MAZE_TAB_OF_STATUS = { open: "open", unknown: "open", closed: "archived" };
 
     /* The box, in the address bar. replaceState rather than pushState: typing
        is not navigation, and a Back button that stepped through every
@@ -2208,10 +2227,10 @@ document.addEventListener("DOMContentLoaded", () => {
        closed ones, but Collab says who BUILT a maze, not whether it can be
        walked: they sit in their own tab and are as walkable as any open one,
        so completing one earned nothing and the total quietly ignored a whole
-       tab. Only Closed — gone from the hotel — and hallways stay out. */
+       tab. Only Closed — gone from the hotel, collab or not (4 Oct 2026) —
+       and hallways stay out. */
     function walkableRooms() {
-        return ROOMS.filter(r =>
-            (r.status === "open" || r.status === "unknown" || r.status === "collab") && !isHallway(r));
+        return ROOMS.filter(r => roomStatus(r) !== "closed" && !isHallway(r));
     }
 
     function updateWalkedCount() {
@@ -2578,6 +2597,18 @@ document.addEventListener("DOMContentLoaded", () => {
         return by ? `${name} — a ${kind} by ${by}` : `${name} — a ${kind}`;
     }
 
+    /* A record's status as pills: its one status, or for a collab maze
+       (4 Oct 2026) Collab and then its Open or Closed — none when that is
+       not known yet (see isCollabRoom). The list rows stack them, Collab on
+       top (.row-pills); the maze window and the timeline set them side by
+       side. `cls` is added to each, for the timeline's own. */
+    function statusPillsHtml(n, cls) {
+        const pill = (key, label) =>
+            `<span class="${cls ? cls + " " : ""}status-badge status-${cssToken(key)}">${escapeHtml(label || "")}</span>`;
+        if (!n.collab) return pill(n.statusKey, n.statusLabel);
+        return pill("collab", "Collab") + (n.statusKey === "unknown" ? "" : pill(n.statusKey, n.statusLabel));
+    }
+
     function roomRowHtml(n, isOpenView) {
         // Events always show their date; mazes only do on the Open list.
         const showDate = isOpenView || n.isEvent;
@@ -2595,8 +2626,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="row-tags">${tagsHtml(n)}</div>
                 </div>
                 <div class="row-side">
-                    <span class="status-badge status-${cssToken(n.statusKey)}">${escapeHtml(n.statusLabel || "")}</span>
-                    <span class="chrome-go">Go &#9654;</span>
+                    <span class="row-pills">${statusPillsHtml(n)}</span>
+                    <span class="chrome-go">Go<span class="chrome-go-arrow" aria-hidden="true"></span></span>
                 </div>
             </div>
         `;
@@ -3025,7 +3056,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (n.isGuide) return `<img class="updatelog-thumb" src="${escapeHtml(guideLogThumb(n.thumb))}" ${attrs}>`;
         if (n.isPost) {
             const t = String(n.thumb);
-            return `<img class="updatelog-thumb is-smooth" src="${escapeHtml(t.startsWith("/") ? imgCdn(t, 102, null, 75) : t)}" ${attrs}>`;
+            return `<img class="updatelog-thumb is-smooth" src="${escapeHtml(/^\/(?![\/\\])/.test(t) ? imgCdn(t, 102, null, 75) : t)}" ${attrs}>`;
         }
         return `<span class="updatelog-thumb-crop"><img class="updatelog-thumb-zoom" src="${escapeHtml(imgCdn(n.thumb, 204, 144, 75))}" ${attrs}></span>`;
     }
@@ -3198,7 +3229,9 @@ document.addEventListener("DOMContentLoaded", () => {
                        otherwise visited in this tab; anywhere else opens
                        in a new one. */
                     if (!n.link) return;
-                    if (n.link.startsWith("/")) { if (!openSiteLinkInPlace(n.link)) location.href = n.link; }
+                    // "//host" (and "/\host", which browsers read the same) is
+                    // another site, not one of ours (4 Oct 2026, the bug scans).
+                    if (/^\/(?![\/\\])/.test(n.link)) { if (!openSiteLinkInPlace(n.link)) location.href = n.link; }
                     else window.open(n.link, "_blank", "noopener");
                 }
                 else if (n && n.isGuide) { if (window.Guides) Guides.open(n.id); }
@@ -3219,10 +3252,10 @@ document.addEventListener("DOMContentLoaded", () => {
        where they scroll and closes the way they close. Every entry opens the
        real modal — this is an index of the archive, not a second copy of it. */
 
+    // Collab is a pill of its own beside these (4 Oct 2026; statusPillsHtml).
     const TIMELINE_STATUS_LABELS = {
         open: "Open",
         closed: "Closed",
-        collab: "Collab",
         unknown: "Unknown"
     };
 
@@ -3264,8 +3297,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 when: room.added || "",
                 name: room.name,
                 by: room.creator || "",
-                statusKey: room.status || "unknown",
-                statusLabel: TIMELINE_STATUS_LABELS[room.status] || "Unknown",
+                statusKey: roomStatus(room),
+                statusLabel: TIMELINE_STATUS_LABELS[roomStatus(room)],
+                collab: isCollabRoom(room),
                 note: descPlain(room.description),
                 ecSeason: ""
             });
@@ -3300,7 +3334,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function timelineYearNote(entries) {
         const mazes = entries.filter(e => e.kind === "maze");
         const events = entries.filter(e => e.kind === "event");
-        const collabs = mazes.filter(e => e.statusKey === "collab").length;
+        const collabs = mazes.filter(e => e.collab).length;
         const parts = [];
         if (mazes.length) parts.push(`${mazes.length} ${mazes.length === 1 ? "maze" : "mazes"}`);
         if (collabs) parts.push(`${collabs} ${collabs === 1 ? "collab" : "collabs"}`);
@@ -3320,7 +3354,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="timeline-entry-body">
                     <p class="timeline-entry-name">
                         ${medal}<button type="button" class="timeline-open" data-timeline-index="${index}" data-record-id="${escapeHtml(entry.id)}" data-focus-key="${escapeHtml(entry.kind + ":" + entry.id)}">${escapeHtml(entry.name)}</button>
-                        <span class="timeline-badge status-badge status-${cssToken(entry.statusKey)}">${escapeHtml(entry.statusLabel)}</span>
+                        ${statusPillsHtml(entry, "timeline-badge")}
                     </p>
                     ${entry.by ? `<p class="timeline-entry-by">${entry.kind === "event" ? "Event hosted" : "Maze built"} by ${escapeHtml(entry.by)}</p>` : ""}
                     ${entry.note ? `<p class="timeline-entry-note">${escapeHtml(entry.note)}</p>` : ""}
@@ -3884,6 +3918,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
         featuredFrameEmpty.textContent = emptyMessagesNoSearch.featured;
         featuredFrameEmpty.style.display = featuredListItems.length === 0 ? "block" : "none";
+
+        sayFeaturedCount();
+    }
+
+    /* What the picks are (4 Oct 2026, the owner's), counted from the rows
+       actually SHOWING: four or two are dealt (featuredFrameCount), and
+       trimFeaturedToFit may then hide some to fit the panel, so it runs
+       again after every trim (setFeaturedPanelState). The line is the same
+       height whatever the number says, so recounting never re-trims. */
+    function sayFeaturedCount() {
+        const note = document.getElementById("featured-frame-note");
+        if (!note) return;
+        const n = Array.from(featuredFrameList.children).filter(row => row.style.display !== "none").length;
+        const words = ["", "One maze", "Two mazes", "Three mazes", "Four mazes"];
+        note.textContent = n ? `${words[n] || `${n} mazes`} picked at random from the archive.` : "";
+        note.hidden = !n;
     }
 
     // "Refresh recommendations" — same reshuffle as renderFeaturedList, just
@@ -3913,12 +3963,17 @@ document.addEventListener("DOMContentLoaded", () => {
         // right where .chrome-frame begins, sliding across its minimized
         // sliver on the way past instead of disappearing behind the edge
         // of where the picks used to end.
+        /* From the top of the picks' own clip, not the body's (4 Oct 2026):
+           the body now opens with the line "Two mazes picked at random…"
+           and Refresh, which the outgoing picks must not slide over. */
         const bodyRect = featuredFrameBody.getBoundingClientRect();
+        const listClip = featuredFrameList.parentElement;
+        const clipTop = listClip ? Math.max(bodyRect.top, listClip.getBoundingClientRect().top) : bodyRect.top;
         const frameRect = featuredFrame.getBoundingClientRect();
         const outgoingClip = document.createElement("div");
         outgoingClip.className = "featured-frame-list-outgoing-clip";
-        outgoingClip.style.top = (bodyRect.top - frameRect.top) + "px";
-        outgoingClip.style.height = bodyRect.height + "px";
+        outgoingClip.style.top = (clipTop - frameRect.top) + "px";
+        outgoingClip.style.height = Math.max(0, bodyRect.bottom - clipTop) + "px";
         featuredFrame.appendChild(outgoingClip);
 
         const outgoing = featuredFrameList.cloneNode(true);
@@ -4243,6 +4298,11 @@ document.addEventListener("DOMContentLoaded", () => {
            follow. */
         chromeFrameMinimizeToggle.inert = !active;
         if (browseChromeBody) browseChromeBody.inert = active;
+        /* And the panel's own body while it is shut (4 Oct 2026, the bug
+           scan): folded to nothing it still held Refresh — inside it since
+           Refresh moved onto the caption line — and the last picks, all
+           reachable by Tab and none of them visible. */
+        featuredFrameBody.inert = !active;
 
         // force bypasses the "nothing changed" guard below — used by
         // refreshFeaturedList to re-run the sizing math after swapping in a
@@ -4330,6 +4390,8 @@ document.addEventListener("DOMContentLoaded", () => {
            the CONTAINER that cannot be trusted here, and the container is
            not what this reads. */
         if (active) trimFeaturedToFit(bodyBudget);
+        // The caption counts what the trim left showing, not what was dealt.
+        if (active) sayFeaturedCount();
 
         const bodyTarget = active
             ? Math.min(featuredBodyContentHeight(), bodyBudget)
@@ -8129,7 +8191,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ? `<span>Hotel: <button type="button" class="meta-filter" data-filter-key="hotel" data-filter-value="${escapeHtml(n.hotel)}" title="Everything from the ${escapeHtml(n.hotel)} hotel">${escapeHtml(n.hotel)}</button></span>`
             : `<span>Hotel: Unknown</span>`;
         modalMeta.innerHTML = `
-            <span class="status-badge status-${cssToken(n.statusKey)}">${escapeHtml(n.statusLabel)}</span>
+            ${statusPillsHtml(n)}
             ${hotelHtml}
             <span>${escapeHtml(n.dateFieldLabel)}: ${escapeHtml(dateDisplay || "Unknown")}</span>
         `;
@@ -9378,13 +9440,13 @@ document.addEventListener("DOMContentLoaded", () => {
             noteLines.push(`Kept in this browser. <button type="button" class="progress-signin" data-profile-act="signin">Sign in with Discord</button> to carry it with you and get a profile other players can find.`);
         } else if (self) {
             if (d && d.hidden) noteLines.push(`<span class="profile-hidden-note">Hidden: only you can see this.</span>`);
-            if (d && !habbo) noteLines.push("Link your Habbo through OriginsBot to show your avatar and motto here.");
+            if (d && !habbo && !d.habboLinked) noteLines.push("Link your Habbo through OriginsBot to show your avatar and motto here.");
         }
         const notes = noteLines.length
             ? `<div class="profile-notes">${noteLines.map(l => `<p class="progress-note">${l}</p>`).join("")}</div>` : "";
 
         const who = `
-                    <h3><span class="profile-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>${habbo && habbo.online ? ` <span class="profile-online">Online</span>` : ""}</h3>
+                    <h3><span class="profile-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>${onlineMark(habbo)}</h3>
                     ${habbo && habbo.motto ? `<p class="profile-motto" title="${escapeHtml(habbo.motto)}">"${escapeHtml(habbo.motto)}"</p>` : ""}
                     ${featured ? `<p class="profile-featured-line"><span class="progress-badge profile-featured" title="${escapeHtml(featured.means)}"><span class="progress-badge-mark" aria-hidden="true"></span><span>${escapeHtml(featured.name)}</span></span></p>` : ""}
                     ${sinceLine}`;
@@ -9516,6 +9578,17 @@ document.addEventListener("DOMContentLoaded", () => {
        profile's — the Habbo, its name, Online, its motto — and under it one
        line, in the middle of the screen, saying why there is no more. */
     const NOT_JOINED_LINE = "Not yet joined";
+    /* ONLINE, as a mark on the name's line, after it (4 Oct 2026, the
+       owner's): a little square box, outlined as the console's tags are,
+       with a muted green dot in it. It was an "Online" tag there, wider
+       than the name column could spare once the search widened. Its label is drawn in the screen's own style (see
+       .profile-online-mark in style.css), not the browser's tooltip, and
+       shows on focus as well as on hover, so a keyboard or a tap finds it. */
+    function onlineMark(habbo) {
+        if (!habbo || !habbo.online) return "";
+        return `<span class="profile-online-mark" tabindex="0" role="img" aria-label="Online in Habbo Origins" data-tip="Online in Habbo Origins"></span>`;
+    }
+
     function habboOnlyHtml(d) {
         const habbo = d.habbo || {};
         const name = habbo.name || "Someone";
@@ -9528,7 +9601,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ? (d.since ? `<p class="profile-line">Rat since ${escapeHtml(pfSince(d.since))}</p>` : "")
             : `<p class="profile-line">${NOT_JOINED_LINE}</p>`;
         const who = `
-                    <h3><span class="profile-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>${habbo.online ? ` <span class="profile-online">Online</span>` : ""}</h3>
+                    <h3><span class="profile-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>${onlineMark(habbo)}</h3>
                     ${habbo.motto ? `<p class="profile-motto" title="${escapeHtml(habbo.motto)}">"${escapeHtml(habbo.motto)}"</p>` : ""}
                     ${statusLine}`;
         const body = `<div class="profile-empty"><p>${inactive
@@ -9751,6 +9824,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // behind the console. Placed where it opens until it has been
         // dragged somewhere (see wireProgressDrag).
         if (!wasOpen && !progressDragged) placeProgressDefault();
+        /* Dragged, it reopens where it was left — held inside the window
+           as it is now (4 Oct 2026, the bug scan): a phone turned while it
+           was shut reopened it off the edge, its handle out of reach. */
+        else if (!wasOpen) clampProgress();
         // Without scrolling, as the maze window (see openModal).
         document.getElementById("progress-window").focus({ preventScroll: true });
     }
@@ -10002,13 +10079,14 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         /* A result's name: a player's, or a Habbo's (4 Oct 2026: the search
-           finds any Habbo, joined or not). A Habbo off the main hotel says
-           which in a tag of its own after the name, which the name gives way
-           to, since the same name on .es is somebody else. */
+           finds any Habbo, joined or not). A Habbo says which hotel it is on
+           — COM, ES or BR, since the same name on another hotel is somebody
+           else — in a tag at the far end of the row, which the name gives
+           way to. Not ".es": after a name that read as a web address. */
         function searchName(p) {
             const name = `<span class="profile-search-name">${escapeHtml(p.id ? p.name : p.habbo)}</span>`;
-            return !p.id && p.hotel && p.hotel !== "COM"
-                ? `${name}<span class="profile-search-hotel">.${escapeHtml(p.hotel.toLowerCase())}</span>` : name;
+            return !p.id && p.hotel
+                ? `${name}<span class="profile-search-hotel">${escapeHtml(String(p.hotel).toUpperCase())}</span>` : name;
         }
 
         function draw(q) {
@@ -10170,6 +10248,10 @@ document.addEventListener("DOMContentLoaded", () => {
             // And its profile half is somebody else's now, or nobody's.
             const overlay = document.getElementById("progress-overlay");
             if (overlay && overlay.classList.contains("open") && !viewing) loadOwnProfile(true);
+            /* Your own profile, opened by its public id before this answer
+               came (a /profile?p= link on page load), was drawn as a
+               stranger's; it becomes yours now (4 Oct 2026, the bug scan). */
+            else if (overlay && overlay.classList.contains("open") && viewing && viewing.pid && me && me.publicId === viewing.pid) showProfile(null);
         });
         if (Account.onStored) Account.onStored(confirmTicks);
         Account.ready();
@@ -10949,7 +11031,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }, { once: true });
             img.src = imgCdn(thumb(ev), 640, null, 80);
             const cta = document.createElement("span");
-            cta.className = "welcome-promo-cta";
+            // Over the top of the picture, if the Warren says so (4 Oct 2026).
+            cta.className = ev.spotlightCaptionAt === "top" ? "welcome-promo-cta is-top" : "welcome-promo-cta";
             cta.textContent = caption;
             if (/^#[0-9a-f]{6}$/i.test(ev.spotlightColour || "")) cta.style.color = ev.spotlightColour;
             a.append(img, cta);
@@ -11037,7 +11120,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 .filter(ev => live(ev, now))
                 .sort((a, b) => (time(a.spotlightFrom) || 0) - (time(b.spotlightFrom) || 0)
                     || String(a.title || "").localeCompare(String(b.title || "")));
-            const next = JSON.stringify(on.map(ev => [ev.id, thumb(ev), ev.spotlightCaption || "", ev.spotlightColour || "", ev.title || "", ev.slug || ""]));
+            const next = JSON.stringify(on.map(ev => [ev.id, thumb(ev), ev.spotlightCaption || "", ev.spotlightColour || "", ev.spotlightCaptionAt || "", ev.title || "", ev.slug || ""]));
             if (!on.length) {
                 if (isOpen()) setOpen(false);
                 drawer.hidden = true;
@@ -11439,7 +11522,7 @@ document.addEventListener("DOMContentLoaded", () => {
             eventsSubTouched = true;
         } else {
             topView = "mazes";
-            mazesSub = record.status === "closed" ? "archived" : record.status === "collab" ? "collab" : "open";
+            mazesSub = isCollabRoom(record) ? "collab" : roomStatus(record) === "closed" ? "archived" : "open";
         }
         showFeatured = false;
         /* And out of the layered views, as applyFilterChip does. Switching

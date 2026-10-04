@@ -161,13 +161,24 @@ const MAX_BODY = 2048;
 // player-forget.js), since one goes into a regex below.
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,64}$/;
 const REF_SHAPE = /^p_[0-9a-f]{20}$/;
-const FILTERS = ["all", "nick", "nonick", "locked", "unasked", "flagged", "banned"];
+const FILTERS = ["all", "nick", "nonick", "locked", "unasked", "flagged", "clash", "banned"];
 const REVIEWS = ["allow", "reject"];
 /* A flagged row, as a Mongo filter (29 Sept 2026). On the flag's `reason`
    being a string rather than on nickFlag existing, for the same reason the
    nickKey index is partial on the string type: a stray `nickFlag: null`
    must never count as something waiting for an admin. */
 const FLAGGED = { "nickFlag.reason": { $type: "string" } };
+/* A NAME CLASH waiting for an admin (4 Oct 2026, the owner's; see _originsbot.js):
+   OriginsBot found this player's Habbo name, but somebody else already has
+   it (or one that folds to it) as their nickname, and a name already taken
+   is never taken. Settled by an admin setting this player's nickname here,
+   or by Dismiss (dismissClash below). */
+const CLASHING = { "habbo.clash": true, "habbo.clashDismissed": { $ne: true } };
+function clashOf(row) {
+    const h = row && row.habbo;
+    if (!h || h.clash !== true || h.clashDismissed === true) return null;
+    return { name: str(h.name), hotel: str(h.hotel) };
+}
 const SORTS = ["seen", "joined", "name", "nick"];
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -230,6 +241,8 @@ function shape(row, seesIds, act, bans) {
         // They pressed "Refuse" on the request (see REFUSED in player-nick.js).
         nickRefused: row.nickRefused === true,
         nickAsked: row.nickAsked === true,
+        // Their Habbo name, held by somebody else (see CLASHING).
+        nameClash: clashOf(row),
         /* BANS (29 Sept 2026; see _bans.js). `ban` is the most severe active
            ban on their account or on their network code, as { level, until,
            kind }, or null. `hasNetHash` says whether the Warren can ban
@@ -272,7 +285,7 @@ function detailShape(row, seesIds, act, bans) {
     const h = row.habbo && typeof row.habbo === "object" ? row.habbo : null;
     out.habbo = h ? {
         name: str(h.name), hotel: str(h.hotel), applied: str(h.applied),
-        clash: !!h.clash, unusable: str(h.unusable), checkedAt: str(h.checkedAt)
+        clash: !!h.clash, clashDismissed: h.clashDismissed === true, unusable: str(h.unusable), checkedAt: str(h.checkedAt)
     } : null;
     return out;
 }
@@ -309,6 +322,7 @@ function listFilter(filter, q, seesIds, bans) {
     if (filter === "locked") and.push({ nickLocked: true });
     if (filter === "unasked") and.push({ nickAsked: { $ne: true } });
     if (filter === "flagged") and.push(FLAGGED);
+    if (filter === "clash") and.push(CLASHING);
     if (q) {
         const bare = q.replace(/^@/, "").trim();
         if (bare) {
@@ -502,7 +516,7 @@ async function list(event, db, seesIds) {
     // the "banned" filter and count (29 Sept 2026). A handful of rows.
     const bans = await Bans.accountBans(db);
     const where = listFilter(filter, q, seesIds, bans);
-    const [rows, total, all, nick, locked, flagged, banned] = await Promise.all([
+    const [rows, total, all, nick, locked, flagged, banned, clash, waiting] = await Promise.all([
         pageOf(players, where, sort, skip, limit),
         players.countDocuments(where),
         players.countDocuments({}),
@@ -510,13 +524,18 @@ async function list(event, db, seesIds) {
         players.countDocuments({ nickLocked: true }),
         // What the nav badge lights up for (29 Sept 2026).
         players.countDocuments(FLAGGED),
-        players.countDocuments(bannedFilter(bans))
+        players.countDocuments(bannedFilter(bans)),
+        // And name clashes, which light it too (4 Oct 2026).
+        players.countDocuments(CLASHING),
+        /* Both at once, each player once, for the nav badge (the quick
+           scan): a flagged name with a clash too was counted twice. */
+        players.countDocuments({ $or: [FLAGGED, CLASHING] })
     ]);
     const act = await activityFor(db, rows.map(r => String(r.id)), false);
     return json(200, {
         players: rows.map(r => shape(r, seesIds, act.get(String(r.id)), bans)),
         total,
-        counts: { all, nick, locked, flagged, banned },
+        counts: { all, nick, locked, flagged, banned, clash, waiting },
         now: new Date().toISOString()
     });
 }
@@ -564,6 +583,11 @@ async function update(event, db, role) {
             return json(400, { error: "Taking a name off the turned-down list goes on its own." });
         }
         return await unTurnDown(event, db, body);
+    }
+    if (body.dismissClash !== undefined) {
+        if (body.dismissClash !== true) return json(400, { error: "dismissClash is true." });
+        if (hasNick || body.locked !== undefined || body.resetPrompt !== undefined || body.review !== undefined) return json(400, { error: "Dismissing a name clash goes on its own." });
+        return await dismissClash(event, db, body);
     }
     if (body.review !== undefined) {
         if (!REVIEWS.includes(body.review)) return json(400, { error: "review is allow or reject." });
@@ -622,6 +646,26 @@ async function update(event, db, role) {
            it is the admins' judgement already. */
         Object.assign($unset, { nickFlag: "", nickRejected: "", nickRefused: "" });
         $push = nickRules.historyPush(nick || null, now, "admin:" + who);
+        /* A NAME CLASH settled by the name an admin gives them (4 Oct 2026;
+           see CLASHING): their own Habbo name, once the admin has freed it,
+           is recorded as applied, as OriginsBot would have; any other name
+           is the admins' decision, and the clash is dismissed. Either way
+           OriginsBot stops asking. */
+        if (nick && row.habbo && row.habbo.clash === true) {
+            if (str(row.habbo.name) && nick.toLowerCase() === str(row.habbo.name).toLowerCase()) {
+                $set["habbo.applied"] = nick;
+                $unset["habbo.clash"] = "";
+                /* And locked as OriginsBot locks it (the quick scan, 4 Oct
+                   2026), so their profile says it is their Habbo name and
+                   they cannot change it themselves — OriginsBot will not
+                   come back to do it, now that `applied` is set. An
+                   explicit unlock in the same save still wins (below). */
+                if (body.locked !== false) Object.assign($set, { nickLocked: true, nickLockedBy: "OriginsBot", nickLockedAt: now });
+            } else {
+                $set["habbo.clashDismissed"] = true;
+            }
+            did.push("name clash settled");
+        }
     }
     /* A name the admins set or lock is theirs now, so it comes off the
        turned-down list (30 Sept 2026; see TURNED DOWN in player-nick.js):
@@ -638,7 +682,8 @@ async function update(event, db, role) {
         Object.assign($set, { nickLockedBy: who, nickLockedAt: now });
     }
     if (body.locked === true && row.nickLocked !== true) {
-        Object.assign($set, { nickLocked: true, nickLockedBy: who, nickLockedAt: now });
+        // A settled clash's Habbo-name lock (above) stays OriginsBot's.
+        Object.assign($set, { nickLocked: true, nickLockedBy: $set.nickLockedBy === "OriginsBot" ? "OriginsBot" : who, nickLockedAt: now });
         /* The other way round from Reject unlocking: a name the admins lock
            is one they have settled, so a rejection standing on it goes,
            rather than leaving a player told to change a name they cannot. */
@@ -688,6 +733,28 @@ async function update(event, db, role) {
 
     const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
     return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: did });
+}
+
+/* A NAME CLASH DISMISSED (4 Oct 2026; see CLASHING): the admins have
+   looked and are leaving both players as they are. OriginsBot stops asking
+   about this player (clashDismissed in _originsbot.js due). update() has
+   already checked the role. */
+async function dismissClash(event, db, body) {
+    const players = db.collection("players");
+    const row = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    if (!row) return json(404, { error: "No player by that id." });
+    if (!clashOf(row)) return json(200, { player: detailShape(row, true, null, await bansOr(db)), changed: [] });
+    const who = usernameFromToken(event) || "unknown";
+    await record(event, "write", {
+        username: who,
+        session: sessionOf(event),
+        method: "PUT",
+        endpoint: "players-admin",
+        target: `${body.id}: name clash dismissed`.slice(0, 200)
+    });
+    await players.updateOne({ id: body.id }, { $set: { "habbo.clashDismissed": true } });
+    const after = await players.findOne({ id: body.id }, { projection: { _id: 0 } });
+    return json(200, { player: detailShape(after || row, true, null, await bansOr(db)), changed: ["name clash dismissed"] });
 }
 
 /* THE REVIEW, allow or reject (29 Sept 2026; see the header's second PUT,

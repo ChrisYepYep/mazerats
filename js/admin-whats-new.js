@@ -235,7 +235,8 @@
     // ------------------------------------------------------------ overrides
 
     async function saveOverride(target, fields) {
-        if (busy) return;
+        // Said, not silently ignored (4 Oct 2026, the bug scan).
+        if (busy) { await tell("Still saving the last change. Try again in a moment."); return false; }
         busy = true;
         try {
             const res = await call(URL_, "PUT", { override: { target, ...fields } });
@@ -262,7 +263,18 @@
 
     // ------------------------------------------------------------ posts
 
-    function openPost(p, kind) {
+    /* A changed post is never thrown away without asking (4 Oct 2026, the
+       bug scan): opening another post, starting a new one, or Cancel used to
+       drop it — and delete any picture uploaded for it — without a word.
+       True when there is nothing to lose, or the admin says to lose it. */
+    async function mayDiscard() {
+        if (!editing || !window.AdminWhatsNew.isDirty()) return true;
+        const ask = window.AdminConfirm || (m => Promise.resolve(window.confirm(m)));
+        return !!(await ask("Discard the post you are writing? What you have typed, and any picture you added to it, will be lost."));
+    }
+
+    async function openPost(p, kind) {
+        if (!(await mayDiscard())) return;
         if (editing) closePost();
         editing = p ? { ...p } : { kind: kind === "note" ? "note" : "news", day: today(), title: "", text: "", image: "", link: "", target: "" };
         opened = JSON.stringify(editing);
@@ -422,7 +434,12 @@
         }
         if (act === "toggle-hide") {
             const o = overrides.get(key) || {};
-            const ok = await saveOverride(key, { day: o.day || "", activity: o.activity || "", text: o.text || "", hidden: !o.hidden });
+            /* This row's Amend box, if it is open, is saved as typed rather
+               than thrown away by the redraw (4 Oct 2026, the bug scan). */
+            const box = openOverride === key ? listEl.querySelector(`.wn-override[data-for="${CSS.escape(key)}"]`) : null;
+            const fields = box ? overrideFields(box) : { day: o.day || "", activity: o.activity || "", text: o.text || "", hidden: !!o.hidden };
+            fields.hidden = !o.hidden;
+            const ok = await saveOverride(key, fields);
             if (ok) render();
             return;
         }
@@ -471,7 +488,7 @@
         const btn = e.target.closest("[data-wn]");
         if (!btn) return;
         if (btn.dataset.wn === "save-post") savePost();
-        else if (btn.dataset.wn === "cancel-post") closePost();
+        else if (btn.dataset.wn === "cancel-post") mayDiscard().then(ok => { if (ok) closePost(); });
         else if (btn.dataset.wn === "unpic") { readForm(); editing.image = ""; renderForm(); }
     });
     formEl.addEventListener("submit", e => { e.preventDefault(); savePost(); });

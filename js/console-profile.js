@@ -451,7 +451,12 @@ document.addEventListener("DOMContentLoaded", () => {
             if (p) {
                 data.favourite = p.favourite;
                 data.badge = p.badge;
-                data.hidden = p.hidden;
+                /* Only when this save was the visibility switch (4 Oct 2026,
+                   the bug scan). The reply's `hidden` is the stored choice
+                   alone, false when none was made — and a player who has not
+                   been shown profiles yet is hidden without one. Copied on a
+                   favourite's save, it flipped their page to "Public". */
+                if ("hidden" in patch) data.hidden = p.hidden;
             }
             // The favourite is only kept if it is completed (player-data.js).
             pref.msg = "favourite" in patch && patch.favourite && p && p.favourite !== patch.favourite
@@ -556,7 +561,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     ${d && d.since ? `<p class="console-profile-since">Rat since ${esc(since(d.since))}</p>` : ""}
                 </div>
             </div>
-            ${d && !habbo ? `<p class="console-note console-profile-note">Link your Habbo through OriginsBot to show your avatar and motto on your profile.</p>` : ""}
+            ${d && !habbo && !d.habboLinked ? `<p class="console-note console-profile-note">Link your Habbo through OriginsBot to show your avatar and motto on your profile.</p>` : ""}
             <div data-nick-slot></div>`;
 
         const view = `

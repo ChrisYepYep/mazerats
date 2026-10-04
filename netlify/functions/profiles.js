@@ -351,6 +351,10 @@ async function profile(db, id, self) {
         // Month and year only — "Rat since October 2026" is all it says.
         since: Number.isFinite(joined) ? new Date(joined).toISOString().slice(0, 7) : null,
         earlyRat: Number.isFinite(joined) && Number.isFinite(launch) && joined <= launch + EARLY_MS,
+        /* Whether a Habbo is linked at all, apart from whether Origins
+           answered in time (4 Oct 2026, the bug scan): with Origins slow,
+           `habbo` is null and a linked player was told to link one. */
+        habboLinked: !!h,
         habbo: origins ? {
             name: origins.name,
             motto: origins.motto || "",

@@ -126,8 +126,12 @@ document.addEventListener("DOMContentLoaded", () => {
        Fallin' Furni switch below borrows the same class for the same look, and
        a bare class selector would have swept it into the landing toggle's
        "which one is active" bookkeeping and disabled it on every save. */
-    const landingToggleBtns = document.querySelectorAll("#landing-toggle .btn-enter-mini");
+    // [data-state]: the card also holds the Maintenance-wording buttons (4 Oct 2026).
+    const landingToggleBtns = document.querySelectorAll("#landing-toggle .btn-enter-mini[data-state]");
     const landingToggleStatus = document.getElementById("landing-toggle-status");
+    // What Maintenance says (4 Oct 2026): see setMaintenanceNote.
+    const maintenanceNoteBtns = document.querySelectorAll("#maintenance-note-toggle .btn-enter-mini");
+    const maintenanceNoteStatus = document.getElementById("maintenance-note-status");
     const launchAtEl = document.getElementById("launch-at");
     const launchAtInput = document.getElementById("launch-at-input");
     const launchAtSave = document.getElementById("launch-at-save");
@@ -466,7 +470,10 @@ document.addEventListener("DOMContentLoaded", () => {
             titleLabel: "Maze Name",
             subtitleLabel: "Creator (Habbo username)",
             dateLabel: "Date opened",
-            statusOptions: [["open", "Open"], ["closed", "Closed"], ["collab", "Collab"], ["unknown", "Unknown"]],
+            /* Collab is not a status any more (4 Oct 2026, the owner's): a
+               maze is a collab or not (the Collab maze box, `collab`), and
+               open, closed or unknown either way. */
+            statusOptions: [["open", "Open"], ["closed", "Closed"], ["unknown", "Unknown"]],
             getAll: () => workingRooms,
             // The stored records as they are now — see refreshAfterConflict.
             // With the deleted mazes' addresses (readFullWithRetired).
@@ -4616,7 +4623,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <p class="row-desc">${escapeHtml(window.GuideText && GuideText.plain ? GuideText.plain(item.description || "") : (item.description || ""))}</p>
                 </div>
                 <div class="row-side">
-                    <span class="status-badge status-${escapeHtml(item.status || "")}">${escapeHtml(item.status || "")}</span>
+                    ${adminStatusBadges(key, item)}
                     ${key === "rooms" ? `<label class="admin-furni-complete"><input type="checkbox" class="admin-furni-complete-box"${item.furniComplete ? " checked" : ""}${canWrite() ? "" : " disabled"}> Furni complete</label>` : ""}
                     <div class="admin-row-actions">
                         <button type="button" class="btn admin-edit-btn">Edit</button>
@@ -4696,6 +4703,18 @@ document.addEventListener("DOMContentLoaded", () => {
     // on the page instead of just this one.
 
     // ---------- form ----------
+
+    /* A list row's status: a maze's Collab, when it is one, and its
+       status beside it (4 Oct 2026: Collab is its own box now). A maze
+       still stored as status "collab" shows Collab alone until its status
+       is chosen. */
+    function adminStatusBadges(key, item) {
+        const badge = s => `<span class="status-badge status-${escapeHtml(s)}">${escapeHtml(s)}</span>`;
+        if (key !== "rooms") return badge(item.status || "");
+        const legacy = item.status === "collab";
+        const collab = item.collab === true || legacy;
+        return (collab ? badge("collab") : "") + (legacy ? "" : badge(item.status || ""));
+    }
 
     function fieldRow(labelText, inputHtml) {
         return `<label class="admin-field"><span>${labelText}</span>${inputHtml}</label>`;
@@ -5127,11 +5146,17 @@ document.addEventListener("DOMContentLoaded", () => {
            <select> fell back to its first option and an untouched save
            rewrote the maze to "Open". (rooms.js refuses an unrecognised
            status, so such a save now says so instead of changing it.) */
-        const statusKnown = !item.status || cfg.statusOptions.some(([value]) => value === item.status);
+        /* A maze stored before Collab became its own box (4 Oct 2026) has
+           status "collab": it opens with the box ticked and its status on
+           Unknown until somebody says whether it is open or closed. */
+        const legacyCollab = !isEvents && item.status === "collab";
+        const shownStatus = legacyCollab ? "unknown" : item.status;
+        const statusKnown = !shownStatus || cfg.statusOptions.some(([value]) => value === shownStatus);
         const statusOptionsHtml = cfg.statusOptions.map(([value, label]) =>
-            `<option value="${value}" ${item.status === value ? "selected" : ""}>${label}</option>`
+            `<option value="${value}" ${shownStatus === value ? "selected" : ""}>${label}</option>`
         ).join("") + (statusKnown ? "" :
-            `<option value="${escapeHtml(item.status)}" selected>${escapeHtml(item.status)} (unrecognised)</option>`);
+            `<option value="${escapeHtml(shownStatus)}" selected>${escapeHtml(shownStatus)} (unrecognised)</option>`);
+        const isCollab = !isEvents && (item.collab === true || legacyCollab);
 
         // Mazes still pick their own status. Events don't get the dropdown:
         // the site works an event's status out from its start/end dates
@@ -5142,7 +5167,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // rather than something to fill in.
         const statusFieldHtml = isEvents
             ? ""
-            : fieldRow("Status", `<select name="status">${statusOptionsHtml}</select>`);
+            : fieldRow("Status", `<select name="status">${statusOptionsHtml}</select>`) + `
+                <label class="admin-check"><input type="checkbox" name="collab" value="1" ${isCollab ? "checked" : ""}> Collab maze (built together by several people). It is listed under Collab, with its Open or Closed status as well.</label>
+                ${legacyCollab ? `<p class="admin-hint">This maze was marked Collab before that was its own box, so its status is not known yet: choose Open or Closed above.</p>` : ""}`;
 
         // The hidden input keeps `status` in the submitted form data (the
         // save handler reads data.status for both kinds), so the stored
@@ -5860,6 +5887,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${fieldRow("Spotlight caption (optional)", `<input type="text" name="spotlightCaption" maxlength="80" placeholder="Click for more details." value="${escapeHtml(item.spotlightCaption || "")}">`)}
                 ${fieldRow("Caption colour (hex, optional)", `<span class="admin-colour-pair"><input type="color" class="admin-colour-swatch" value="${colour}" aria-label="Pick the caption colour"><input type="text" name="spotlightColour" maxlength="7" spellcheck="false" autocomplete="off" placeholder="${SPOTLIGHT_DEFAULT_COLOUR}" value="${stored}"></span>`)}
                 <p class="admin-hint">Blank caption reads "Click for more details." Type a hex code such as #ebe8ff, or pick one from the swatch, to match the lettering in the event's thumbnail. Blank colour is ${SPOTLIGHT_DEFAULT_COLOUR}.</p>
+                ${fieldRow("Caption position", `<select name="spotlightCaptionAt">
+                    <option value="bottom"${item.spotlightCaptionAt === "top" ? "" : " selected"}>Bottom of the picture</option>
+                    <option value="top"${item.spotlightCaptionAt === "top" ? " selected" : ""}>Top of the picture</option>
+                </select>`)}
             </div>`;
     }
 
@@ -5968,6 +5999,8 @@ document.addEventListener("DOMContentLoaded", () => {
             details: data.details,
             habboLink: data.habboLink
         };
+        // A maze's Collab box: its own field, never a status (4 Oct 2026).
+        if (key === "rooms") payload.collab = data.collab === "1";
         payload[cfg.fieldMap.title] = data.title;
         payload[cfg.fieldMap.subtitle] = data.subtitle;
         // The address, and whether it follows the name (js/admin-address.js).
@@ -6018,6 +6051,8 @@ document.addEventListener("DOMContentLoaded", () => {
                left blank it stays "", the landing page's own default, so an
                old event never gains a colour nobody chose (30 Sept 2026). */
             payload.spotlightColour = spotlightHex(data.spotlightColour) || "";
+            // Over the top or across the foot of the picture (4 Oct 2026).
+            payload.spotlightCaptionAt = data.spotlightCaptionAt === "top" ? "top" : "bottom";
             /* "live" is never sent. The status box works it out from the
                dates and can say LIVE (see wireDerivedStatus), but it is not
                a status the events endpoint stores — a live event is an
@@ -7424,7 +7459,7 @@ document.addEventListener("DOMContentLoaded", () => {
         settingsTriedAt = Date.now();
         try {
             // One read, every switch: they all live in the same settings document.
-            const { landingState, fallinFurniState, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
+            const { landingState, fallinFurniState, maintenanceNote, theme, palette: livePalette, launchAt, ffLaunchAt, fromCache } = await freshSiteSettings();
             /* The stand-in getSiteSettings answers with during an outage
                (fromCache, see js/api.js) has a GUESSED landing state and no
                Fallin' Furni state or palette at all. Lighting buttons from it
@@ -7459,6 +7494,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const ff = fallinFurniState || "live";
                 ffToggleBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.ffState === ff));
                 currentFfState = ff;
+                lightMaintenanceNote(maintenanceNote);
             }
             sayLandingMismatch();
             sayFfMismatch();
@@ -7517,6 +7553,7 @@ document.addEventListener("DOMContentLoaded", () => {
             currentFfState = ff;
             if (launchFieldsLoaded) currentFfLaunchAt = s.ffLaunchAt || "";
             sayFfMismatch();
+            lightMaintenanceNote(s.maintenanceNote);
         } catch (e) { /* the error already said is all there is to say */ }
     }
     const answerless = err => !err || !err.status || err.status >= 500;
@@ -7541,7 +7578,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
             if (!switchesReadAt || Date.now() - switchesReadAt < SWITCH_REREAD_MS) return;
-            if (Array.from(landingToggleBtns).concat(Array.from(ffToggleBtns)).some(b => b.disabled)) return;
+            if (Array.from(landingToggleBtns).concat(Array.from(ffToggleBtns), Array.from(maintenanceNoteBtns)).some(b => b.disabled)) return;
             switchesReadAt = Date.now();   // one read per opening, not one per event
             relightSwitches();
         }));
@@ -7550,6 +7587,40 @@ document.addEventListener("DOMContentLoaded", () => {
     // Returns whether the update actually went through, so callers that
     // show a follow-up success message (see the offline-confirmation flow
     // below) know not to show one after a failed save.
+    /* ---- What Maintenance says (4 Oct 2026, the owner's)
+
+       The landing page button's wording while the site is in Maint.:
+       "Maintenance, Back in 5!", "…Back Soon" or "…Back Later" (see
+       MAINTENANCE_LABELS in js/welcome.js). Saved the moment it is pressed,
+       with no confirmation: it takes nothing offline and changes no state,
+       only words, and only shows while the site is already shut. Kept
+       whatever the switch is on, so the wording can be chosen first and the
+       site then switched. Default "soon", as the button always said. */
+    function lightMaintenanceNote(note) {
+        const n = note || "soon";
+        maintenanceNoteBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.note === n));
+    }
+    async function setMaintenanceNote(note, clickedBtn) {
+        maintenanceNoteBtns.forEach(b => b.disabled = true);
+        maintenanceNoteStatus.style.display = "none";
+        switchSaves++;
+        try {
+            await Api.updateSiteSettings(adminToken, { maintenanceNote: note });
+            /* And again once it has landed (4 Oct 2026, the bug scan): a
+               re-read that set off while this was in flight may carry the
+               document from before it, and would light the old wording. */
+            switchSaves++;
+            maintenanceNoteBtns.forEach(b => b.classList.toggle("active", b === clickedBtn));
+        } catch (err) {
+            if (err.status === 401) { lockOut(); return; }
+            maintenanceNoteStatus.textContent = err.message || "Couldn't save what Maintenance says.";
+            maintenanceNoteStatus.style.display = "block";
+            if (answerless(err)) relightSwitches();
+        } finally {
+            maintenanceNoteBtns.forEach(b => b.disabled = false);
+        }
+    }
+
     async function setLandingState(state, clickedBtn) {
         landingToggleBtns.forEach(b => b.disabled = true);
         landingToggleStatus.style.display = "none";
@@ -7897,6 +7968,13 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             const succeeded = await setLandingState(state, btn);
             if (succeeded) await showInfoDialog(config.success);
+        });
+    });
+
+    maintenanceNoteBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            if (btn.classList.contains("active")) return;
+            setMaintenanceNote(btn.dataset.note, btn);
         });
     });
 
@@ -8270,7 +8348,9 @@ document.addEventListener("DOMContentLoaded", () => {
        wording — the browser shows its own. */
     window.addEventListener("beforeunload", e => {
         // The contributor form as well (30 Sept 2026).
-        if (!Object.keys(COLLECTIONS).some(isFormDirty) && !isContributorFormDirty()) return;
+        // And a What's New post being written (4 Oct 2026, the bug scan).
+        const whatsNewDirty = !!(window.AdminWhatsNew && typeof AdminWhatsNew.isDirty === "function" && AdminWhatsNew.isDirty());
+        if (!Object.keys(COLLECTIONS).some(isFormDirty) && !isContributorFormDirty() && !whatsNewDirty) return;
         e.preventDefault();
         e.returnValue = "";
     });

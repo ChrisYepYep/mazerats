@@ -73,7 +73,8 @@ const GROUPS = [
     { key: "thumb",      fields: ["thumb"] },
     { key: "furni",      fields: ["furni"] },
     { key: "markers",    fields: ["entrance", "finish"] },
-    { key: "status",     fields: ["status"] },
+    // Collab is its own field since 4 Oct 2026, but the same news.
+    { key: "status",     fields: ["status", "collab"] },
     { key: "difficulty", fields: ["difficulty"] },
     { key: "tags",       fields: ["tags"] },
     { key: "dates",      fields: ["added", "date", "endDate"] },
@@ -103,7 +104,7 @@ const IGNORED = new Set([
     "id", "_id", "createdAt", "updatedAt", "changes",
     "slug", "slugAliases", "slugManual", "_slugAuto",
     "furniRev", "furniPatch",
-    "spotlight", "spotlightFrom", "spotlightUntil", "spotlightCaption", "spotlightColour", "spotlightAt"
+    "spotlight", "spotlightFrom", "spotlightUntil", "spotlightCaption", "spotlightColour", "spotlightCaptionAt", "spotlightAt"
 ]);
 
 // Anything real that is not in a group above still deserves to be reported,

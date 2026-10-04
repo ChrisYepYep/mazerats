@@ -25,6 +25,11 @@ const json = (statusCode, data) => ({
    which is no guard at all against a request that did not come from the
    form. Blank is allowed where the form offers "Not rated" / "Unknown". */
 const DIFFICULTIES = ["", "easy", "medium", "hard", "very-hard", "extreme"];
+/* "collab" is the OLD way of marking a collab maze, before it had its own
+   true/false field, `collab` (4 Oct 2026, the owner's: a collab maze is
+   open or closed too). Still accepted, because mazes stored that way are
+   only moved over as an admin edits each one and chooses its status; the
+   Warren no longer offers it. */
 const STATUSES = ["open", "closed", "collab", "unknown"];
 const HOTELS = ["", "COM", "ES", "BR"];
 const CHOICES = { difficulty: DIFFICULTIES, status: STATUSES, hotel: HOTELS };
@@ -76,6 +81,8 @@ function checkShapes(body) {
         const v = body[field];
         if (v !== undefined && v !== null && (typeof v !== "object" || Array.isArray(v))) return `"${field}" must be a picture or nothing`;
     }
+    // Collab is a yes or no (4 Oct 2026); anything else would be printed as one.
+    if (body.collab !== undefined && body.collab !== null && typeof body.collab !== "boolean") return `"collab" must be true or false`;
     if (typeof body.name === "string" && body.name.length > NAME_MAX) return `A name is at most ${NAME_MAX} characters`;
     if (typeof body.creator === "string" && body.creator.length > CREATOR_MAX) return `The builder line is at most ${CREATOR_MAX} characters`;
     return null;
@@ -132,6 +139,13 @@ const furniRevFilter = rev => ({ furniRev: rev ? rev : { $in: [0, null] } });
    it out again against a record re-read after a scan got in first. */
 function fieldsToSet(before, update, furni) {
     const set = { ...update };
+    /* "Not a collab" over a maze that never had the field is the same thing
+       said twice (4 Oct 2026, the bug scan). The Warren sends `collab` on
+       every save, and false over nothing read as a change — so every maze
+       saved untouched went to the top of What's New as "Status changed".
+       Left unwritten instead; absent means not a collab. A legacy collab
+       (status "collab") being unticked is a real change, and is written. */
+    if (set.collab === false && before && before.collab == null && before.status !== "collab") delete set.collab;
     const judged = furni ? { ...set, furni } : set;
     const moved = changedFields(before, judged);
     if (moved && moved.length === 0) {

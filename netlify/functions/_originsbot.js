@@ -26,14 +26,12 @@
      page load: RETRY_MS, claimed by `habboTriedAt` before the call, which
      also stops two tabs asking at once.
 
-     THE HABBO OWNER WINS A CLASH. If somebody else already has the name as
-     their nickname, theirs is cleared (and unlocked) and they are offered
-     the nickname prompt again on their next visit (nickAsked: false), with
-     a history entry saying why. Two exceptions, both left alone and
-     recorded on this player's row as `habbo.clash`, for the admins: a name
-     that is ALSO a verified Habbo name (the same name on another hotel),
-     and a nickname that only folds to the same key ("W.i.l.f" against
-     "Wilf"), which may be somebody's own Habbo name, not yet linked.
+     A NAME ALREADY TAKEN IS NEVER TAKEN (4 Oct 2026, the owner's; it used
+     to be "the Habbo owner wins"). If somebody else already has the name,
+     or one that folds to it, as their nickname, nothing changes for either
+     of them: this player is recorded with `habbo.clash`, and the Warren
+     flags it for an admin to settle. A dismissed clash (`clashDismissed`)
+     is not looked up again.
 
    THE KEY is ORIGINSBOT_SSO_KEY, set in Netlify's environment variables
    (and .env for `netlify dev`), never in the repo. Without it, nothing here
@@ -126,6 +124,8 @@ function habboShapeProblem(name) {
 function due(row, now = Date.now()) {
     if (!enabled() || !row || !row.id) return false;
     if (row.habbo && typeof row.habbo.applied === "string" && row.habbo.applied) return false;
+    // A clash an admin has settled is not asked about again (4 Oct 2026).
+    if (row.habbo && row.habbo.clashDismissed === true) return false;
     const tried = Date.parse(row.habboTriedAt);
     if (Number.isFinite(tried) && now - tried < RETRY_MS) return false;
     const checked = Date.parse(row.habbo && row.habbo.checkedAt);
@@ -181,38 +181,17 @@ async function apply(db, row, answer) {
     await nickRules.ensureNickIndex(players);
     const holder = await players.findOne({ nickKey: key, id: { $ne: row.id } }, { projection: { _id: 0 } });
     if (holder) {
-        /* THE SAME NAME, NOT ONE THAT FOLDS TO IT (3 Oct 2026). nickKey
-           drops case, accents and punctuation, so "-=Wilf=-", "W.i.l.f" and
-           "Wilf" are one key — but three different Habbo accounts. Only a
-           holder whose nickname IS this Habbo name (letter case aside, as
-           Habbo itself ignores it) gives way; one that merely folds to it
-           could be the real owner of their own name, not linked yet, and is
-           left alone. So is another verified owner (the same name on
-           another hotel). Either way the key cannot be shared, so this
-           player is recorded with `clash` for the admins and not applied. */
-        const same = typeof holder.nick === "string" && holder.nick.toLowerCase() === name.toLowerCase();
-        const holderVerified = holder.habbo && typeof holder.habbo.applied === "string" && holder.habbo.applied === holder.nick;
-        if (!same || holderVerified) {
-            await done({ ...record, clash: true });
-            return false;
-        }
-        /* THE HABBO OWNER WINS: the other player's nickname goes, lock and
-           review with it, and they are offered the prompt again. Only if
-           they still hold it — matched on nickKey — so a change of their
-           own in between is left alone. The history says why without
-           saying who: another player's Discord id on this row would outlive
-           that player being forgotten, and reach the Warren's viewers. */
-        const evicted = await players.updateOne(
-            { id: holder.id, nickKey: key },
-            {
-                $set: { nickAsked: false, nickAt: now },
-                $unset: { nick: "", nickKey: "", nickLocked: "", nickLockedBy: "", nickLockedAt: "", nickFlag: "", nickRejected: "", nickRefused: "" },
-                $push: nickRules.historyPush(null, now, "originsbot:habbo-owner")
-            }
-        );
-        if (evicted && evicted.matchedCount) {
-            await nickRules.renameRows(db, holder.id, holder.name || "Someone", null);
-        }
+        /* A NAME ALREADY TAKEN IS NEVER TAKEN (4 Oct 2026, the owner's).
+           OriginsBot used to win a clash: the holder's nickname was cleared
+           and they were asked for another — and until they chose one, every
+           board and their profile showed their Discord name, which the
+           nickname existed to hide. Now nobody's name is taken from them,
+           by OriginsBot or anyone: this player is recorded with `clash`
+           and left as they are, and the Warren's Players tab flags it
+           ("Name clash") for an admin to settle — see players-admin.js. A
+           name that frees up later is applied at the next weekly check. */
+        await done(prior.clashDismissed === true ? { ...record, clash: true, clashDismissed: true } : { ...record, clash: true });
+        return false;
     }
 
     const hit = nickRules.filterHit(name);

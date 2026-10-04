@@ -9,7 +9,7 @@
    completely inert until js/site.js puts that attribute on <html>. The
    classic palette is not defined here and is not affected by anything in it.
 
-   1055 rules, 1709 declarations, hues 18 (surfaces) / 38 (accents).
+   1062 rules, 1720 declarations, hues 18 (surfaces) / 38 (accents).
 */
 :root[data-theme="pumpkin"] {
     --bg-black: #0a0401;
@@ -362,6 +362,11 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] .welcome-promo-cta {
     background: linear-gradient(rgba(6, 6, 20, 0), rgba(6, 6, 20, 0.7));
     color: #ebe8ff;
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="pumpkin"] .welcome-promo-cta.is-top {
+    background: linear-gradient(rgba(6, 6, 20, 0.7), rgba(6, 6, 20, 0));
 }
 
 [data-theme="pumpkin"] .welcome-countdown-label {
@@ -660,6 +665,10 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--amber-bright);
 }
 
+[data-theme="pumpkin"] .chrome-go-arrow {
+    background: currentColor;
+}
+
 [data-theme="pumpkin"] .status-badge {
     background: rgba(11, 4, 1, 0.85);
     border: 1px solid currentColor;
@@ -753,6 +762,10 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 [data-theme="pumpkin"] .featured-frame #featured-mazes-btn::before {
     border-image-source: none;
     background: none;
+}
+
+[data-theme="pumpkin"] .featured-frame-note {
+    color: var(--parchment-dim);
 }
 
 [data-theme="pumpkin"] .featured-frame .chrome-list-row {
@@ -3587,8 +3600,36 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--pc-text);
 }
 
+[data-theme="pumpkin"] #progress-window .profile-console-screen ::placeholder {
+    color: var(--pc-text);
+}
+
 [data-theme="pumpkin"] .profile-console-frame:focus {
     outline: none;
+}
+
+[data-theme="pumpkin"] .profile-online-mark {
+    border: 1px solid var(--pc-text);
+}
+
+[data-theme="pumpkin"] .profile-online-mark::before {
+    background: #7fae6a;
+}
+
+[data-theme="pumpkin"] .profile-online-mark:focus {
+    outline: none;
+}
+
+[data-theme="pumpkin"] .profile-online-mark:focus-visible {
+    box-shadow: 0 0 0 1px var(--pc-text);
+}
+
+[data-theme="pumpkin"] .profile-online-mark::after {
+    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
+    border: 1px solid var(--pc-text);
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+    color: var(--pc-text);
+    text-shadow: none;
 }
 
 [data-theme="pumpkin"] .profile-search-input:focus {
@@ -3685,10 +3726,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
     color: var(--pc-text);
 }
 
-[data-theme="pumpkin"] .profile-who h3 .profile-online {
-    text-shadow: none;
-}
-
 [data-theme="pumpkin"] .profile-motto {
     color: var(--pc-text);
 }
@@ -3702,11 +3739,6 @@ html[data-theme="pumpkin"]::-webkit-scrollbar-button {
 }
 
 [data-theme="pumpkin"] .profile-hidden-note {
-    color: var(--pc-text);
-}
-
-[data-theme="pumpkin"] .profile-online {
-    border: 1px solid var(--pc-text);
     color: var(--pc-text);
 }
 

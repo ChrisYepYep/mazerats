@@ -306,5 +306,21 @@ function clearCookie() {
     return `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 }
 
-module.exports = { COOKIE, AUDIENCE, MAX_AGE, signPlayer, playerFrom, setCookie, clearCookie, parseCookies, shownName, publicName, playerView, nameKey,
+/* The session's player, or null if there is none OR it has been ended —
+   signed out on every device, or forgotten (4 Oct 2026, the bug scan). For
+   the reads that answer about the caller's own account and had taken the
+   cookie alone on trust: one indexed read of the row's session versions.
+   Fails closed to null if the database cannot say. */
+async function livePlayerFrom(db, event) {
+    const player = playerFrom(event);
+    if (!player) return null;
+    try {
+        const row = await db.collection("players").findOne({ id: String(player.id) }, { projection: { _id: 0, sv: 1, svStrict: 1 } });
+        return sessionRevoked(player, row) ? null : player;
+    } catch (e) {
+        return null;
+    }
+}
+
+module.exports = { COOKIE, AUDIENCE, MAX_AGE, signPlayer, playerFrom, livePlayerFrom, setCookie, clearCookie, parseCookies, shownName, publicName, playerView, nameKey,
     sessionRevoked, svFor, newSv };

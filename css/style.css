@@ -1602,6 +1602,18 @@ body[data-page="home"] .hero { padding-top: 18px; }
     overflow: hidden;
     text-overflow: ellipsis;
     pointer-events: none;
+    /* A subtle 1px solid shadow (4 Oct 2026, the owner's), so the lettering
+       holds up over the lighter parts of a picture. */
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5);
+}
+/* Over the top of the picture instead (4 Oct 2026, the owner's; the event's
+   spotlightCaptionAt, set in the Warren): the same strip turned over, its
+   fade running down from the top edge rather than up from the foot. */
+.welcome-promo-cta.is-top {
+    top: 0;
+    bottom: auto;
+    padding: 7px 10px 18px;
+    background: linear-gradient(rgba(6, 6, 20, 0.7), rgba(6, 6, 20, 0));
 }
 
 /* ---------- THE LAUNCH COUNTDOWN ----------
@@ -3280,16 +3292,46 @@ body[data-page="admin"] .admin-contributor-count {
 }
 
 .chrome-go {
-    font-family: 'Silkscreen', monospace;
-    font-size: 0.75rem;
+    /* The featured rows' face and size everywhere (4 Oct 2026, the owner's):
+       it was Silkscreen at 12px here and Volter at 9px there. Each list keeps
+       its own colour. */
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
     color: var(--amber-bright);
     display: flex;
-    align-items: center;
+    /* The arrow stands on the words' baseline, so it runs exactly the height
+       of the capitals (7px, nothing below the line) whatever the face. */
+    align-items: baseline;
     align-self: center;
     gap: 3px;
     flex-shrink: 0;
     white-space: nowrap;
-    padding-right: 3px;
+    /* 1px above, nothing below: Volter's capitals sit half a pixel above the
+       middle of their line, and this puts them on the middle of the label —
+       which the row centres (see GO IN THE MIDDLE OF THE ROW). Nothing to the
+       right only, either: 3px there put the words 1.5px left of the pill. */
+    padding-top: 1px;
+    /* A whole number, or the browser rounds the space above the words and
+       they land 0.75px high: 12px puts the 7px capitals at 3px to 10px of
+       the 13px label, its exact middle. */
+    line-height: 12px;
+}
+
+/* Go's arrow, drawn in pixels (4 Oct 2026, the owner's: it did not line up
+   with the word). It was the character ▶, which Silkscreen does not have,
+   so the browser drew it from a smooth font of its own: 9.5px tall beside
+   letters 7px tall, and centred higher than they are. This is a 4x7 pixel
+   triangle — the letters' own height, stepped as they are — in their
+   colour. */
+.chrome-go-arrow {
+    display: block;
+    flex: 0 0 auto;
+    width: 4px;
+    height: 7px;
+    background: currentColor;
+    clip-path: polygon(0 0, 1px 0, 1px 1px, 2px 1px, 2px 2px, 3px 2px, 3px 3px, 4px 3px,
+        4px 4px, 3px 4px, 3px 5px, 2px 5px, 2px 6px, 1px 6px, 1px 7px, 0 7px);
 }
 
 /* Sits in normal flow now (see .row-side, which stacks this above
@@ -3320,6 +3362,39 @@ body[data-page="admin"] .admin-contributor-count {
     gap: 6px;
     flex-shrink: 0;
 }
+
+/* The row's status pills, one above another (4 Oct 2026): a collab maze
+   has Collab and then its Open or Closed under it (statusPillsHtml in
+   js/home.js), right-aligned with it; everything else, its one status. */
+.row-pills {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
+/* GO IN THE MIDDLE OF THE ROW (4 Oct 2026, the owner's). The row lines
+   its contents up at the top (align-items: flex-start, for the text), so
+   this column was only as tall as the pills and Go, and Go sat wherever
+   that left it — below the row's middle, by more on a taller row. Now the
+   column runs the row's full height in three bands: the pills at the top
+   of the first, where they always were (the row's top right), Go in the
+   second — the exact middle, since the first and last share what is left
+   equally — and nothing in the third. The archive's own rows only: the
+   Warren's (.admin-row) put other things in this column. */
+.chrome-list-row:not(.admin-row) .row-side {
+    align-self: stretch;
+    display: grid;
+    grid-template-rows: 1fr auto 1fr;
+    justify-items: center;
+    gap: 0;
+}
+.chrome-list-row:not(.admin-row) .row-side > .row-pills {
+    grid-row: 1;
+    align-self: start;
+    justify-self: end;
+}
+.chrome-list-row:not(.admin-row) .row-side > .chrome-go { grid-row: 2; }
 
 .status-open { color: var(--ok); }
 /* The -text tokens, not the plain ones: see their note in :root. The border
@@ -3507,7 +3582,6 @@ body[data-page="admin"] .admin-contributor-count {
    their space with them and the list closes up against the window's top edge
    with no empty band where the header used to be. */
 .featured-frame.is-events > .chrome-nav-btn-recommended,
-.featured-frame.is-events > .featured-refresh-btn,
 .featured-frame.is-events > .featured-frame-body {
     display: none;
 }
@@ -3614,8 +3688,8 @@ body[data-page="admin"] .admin-contributor-count {
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    /* Containing block for .featured-refresh-btn, absolutely positioned in
-       the top-right corner over #featured-mazes-btn's own header strip. */
+    /* Containing block for the picks sliding away on Refresh (see
+       .featured-frame-list-outgoing-clip). */
     position: relative;
     /* Negative top margin extends this frame's own box 15px upward, behind
        #search-wrap (whose z-index: 1 paints over the overlap) rather than
@@ -3658,25 +3732,15 @@ body[data-page="admin"] .admin-contributor-count {
     padding-top: 25px;
 }
 
-/* Text-only "Refresh recommendations" control, floated over the top-right
-   corner of #featured-mazes-btn's own header strip rather than living
-   inside it (nesting a real <button> inside another <button> isn't valid
-   HTML) — matches that button's own padding-top/bottom exactly so its
-   label lines up at the same baseline as "FEATURED MAZES" beside it.
-   Hidden at rest; only ever shown once #featured-mazes-btn picks up its
-   own .active class (see updateChrome in js/home.js) — the sibling
-   selector means no separate JS toggle is needed here. */
+/* Text-only "Refresh recommendations" control, on the line over the picks
+   at its right, level with "Two mazes picked at random from the archive."
+   at its left (4 Oct 2026, the owner's; .featured-frame-head). It used to
+   float over the top-right corner of #featured-mazes-btn's own strip, level
+   with FEATURED MAZES. Inside the panel's body now, it is shown and hidden
+   with the picks, so it needs no rule of its own for that. */
 .featured-refresh-btn {
-    display: none;
-    position: absolute;
-    /* The 25px that used to sit in padding-top lives here instead. Padding is
-       part of a button's hit area, so positioning the label that way made the
-       whole 46px box clickable — it reached up over the Featured Mazes nav
-       button above and swallowed clicks meant for it. As an offset it places
-       the text identically while the box stays the size of the text. */
-    top: 25px;
-    right: 14px;
-    z-index: 3;
+    flex: 0 0 auto;
+    margin-left: auto;
     padding: 0;
     appearance: none;
     -webkit-appearance: none;
@@ -3689,10 +3753,7 @@ body[data-page="admin"] .admin-contributor-count {
     letter-spacing: 0.4px;
     color: var(--amber-bright);
     text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.55);
-}
-
-#featured-mazes-btn.active ~ .featured-refresh-btn {
-    display: block;
+    white-space: nowrap;
 }
 
 /* The line over the list: the Events archive note or the completed tally
@@ -3790,6 +3851,34 @@ body[data-page="admin"] .admin-contributor-count {
    shrunk by .featured-frame's own flex column for the same reason
    .chrome-frame.is-minimized isn't — that max-height number needs to stay
    the final word, not a starting point flex-shrink can still eat into. */
+/* "Two mazes picked at random from the archive." (4 Oct 2026, the owner's),
+   at the top left over the picks, set as the Events archive note is (see
+   .events-archive-note): the pixel face, small, in the parchment's soft
+   tone, so it reads as a caption to the list and not as one of its rows. */
+.featured-frame-note {
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    font-weight: 400;
+    color: var(--parchment-dim);
+    pointer-events: none;
+}
+.featured-frame-note[hidden] { display: none; }
+/* The line over the picks: the note at the left, Refresh at the right,
+   on one baseline, the list's own 14px in from either side. */
+.featured-frame-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 4px 14px 0;
+}
+/* The picks give up most of their top padding to the line above them. */
+.featured-frame .featured-frame-list-clip > .chrome-list { padding-top: 7px; }
+/* Their own clip, so picks sliding in on Refresh pass under the line. */
+.featured-frame-list-clip { overflow: hidden; }
+
 .featured-frame-body {
     flex-shrink: 0;
     /* Scrolls rather than clips. The open height is capped at whatever is
@@ -3801,10 +3890,23 @@ body[data-page="admin"] .admin-contributor-count {
        the content fits inside the cap and no scrollbar appears at all. */
     overflow-x: hidden;
     overflow-y: auto;
-    /* Same bar colours as every other native scroll region on the site. */
-    scrollbar-color: var(--wood-dark) var(--frame-bg);
+    /* NO SCROLLBAR, EVER (4 Oct 2026, the owner's — after it kept coming
+       back). The picks are trimmed to fit the panel before it is sized
+       (trimFeaturedToFit in js/home.js), so the panel never needs one. But
+       its height ANIMATES (max-height, 0.4s), and whenever its contents
+       grow — new picks on Refresh, a thumbnail or a font arriving, a
+       resize — they are taller than the box until the animation catches
+       up, and overflow-y: auto drew a bar for those moments. Measured: three
+       Refreshes in six showed contents up to 29px taller than the box
+       mid-animation. Every earlier fix made one height sum more exact; none
+       could close that window, because the window is the animation itself.
+       So the bar is never drawn. It still scrolls by wheel or touch, for
+       the one case the trim cannot help — a single pick taller than the
+       whole panel on a very short screen. */
+    scrollbar-width: none;
     transition: max-height 0.4s ease;
 }
+.featured-frame-body::-webkit-scrollbar { display: none; }
 
 /* Shut, it clips instead (30 Sept 2026). Folded to max-height 0 it still
    held 28px of content, so it was still a scroll container with somewhere
@@ -3925,6 +4027,13 @@ body[data-page="admin"] .admin-contributor-count {
 #featured-frame-list .chrome-list-row {
     align-items: stretch;
     padding: 2px;
+}
+/* The status pills sit at the top of the row's side column (see GO IN THE
+   MIDDLE OF THE ROW), and these rows have only 2px of their own padding, so
+   the column takes the inset the others get from theirs (4 Oct 2026, the bug
+   scan). Equal top and bottom, so Go stays on the row's middle. */
+@media (min-width: 641px) {
+    #featured-frame-list .chrome-list-row .row-side { padding: 7px 7px 7px 0; }
 }
 
 #featured-frame-list .row-thumb {
@@ -9506,12 +9615,18 @@ body[data-page="admin"] .search-box input {
     .chrome-list-row:not(.admin-row) .chrome-go { display: none; }
     .chrome-list-row { flex-wrap: wrap; gap: 10px; }
     .chrome-list-row:not(.admin-row) .row-side {
+        /* A line of its own here, not the full-height column of three
+           bands it is on a wider screen (see GO IN THE MIDDLE OF THE ROW). */
+        display: flex;
+        align-self: auto;
         flex: 1 0 100%;
         flex-direction: row;
         align-items: center;
         justify-content: flex-start;
         margin-top: 2px;
     }
+    /* Side by side here, where the pills have a line of their own. */
+    .row-pills { flex-direction: row; gap: 6px; }
     /* Every px here comes straight off the row's usable width. Set through
        the variable so the custom scrollbar's cancelling margin narrows with
        it instead of overshooting the frame edge by the difference. */
@@ -9602,10 +9717,11 @@ body[data-page="admin"] .search-box input {
 
     .featured-refresh-full { display: none; }
     .featured-refresh-short { display: inline; }
+    /* A thumb-sized target without moving the words: padding all round,
+       given back by an equal negative margin. */
     .featured-refresh-btn {
-        top: 17px;
-        right: 10px;
-        padding: 8px 10px 10px;
+        padding: 8px 10px;
+        margin: -8px -10px -8px auto;
     }
 
     .modal-top-row .builder-list { flex-basis: 0; }
@@ -12595,6 +12711,7 @@ body[data-page="admin"] #activity-sessions {
     padding: 14px 8px 5px;
     line-height: 1.45;
 }
+.spotlight-frame .welcome-promo-cta.is-top { padding: 5px 8px 14px; }
 
 @media (prefers-reduced-motion: reduce) {
     .spotlight-card { transition: none; }
@@ -15214,6 +15331,8 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
    underline. The window's gold title is on the frame, not the screen. */
 #progress-window .profile-console-screen,
 #progress-window .profile-console-screen * { color: var(--pc-text); }
+/* "Search players" too, which * does not reach (the bug scan, 4 Oct 2026). */
+#progress-window .profile-console-screen ::placeholder { color: var(--pc-text); opacity: 1; }
 
 /* A third smaller than it opened at (4 Oct 2026, the owner's): 540 x 640
    became 360 x 427. The same width on a phone as on a desk now, so the
@@ -15275,6 +15394,62 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
    than the name, badge and lines next to it. */
 .profile-face { flex: 0 0 auto; align-self: center; }
 
+/* Online in the hotel (4 Oct 2026, the owner's; onlineMark in js/home.js):
+   a 9px square outlined as the console's tags are, on the name's line just
+   after it, with a muted green dot in it: the one thing on the screen that
+   is not its text colour, and not text. It never gives way — the name
+   shortens before it does. */
+.profile-online-mark {
+    position: relative;
+    flex: 0 0 auto;
+    margin-left: 5px;
+    width: 9px;
+    height: 9px;
+    box-sizing: border-box;
+    border: 1px solid var(--pc-text);
+    border-radius: 2px;
+    cursor: default;
+    z-index: 4;
+}
+.profile-online-mark::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 3px;
+    height: 3px;
+    background: #7fae6a;
+}
+.profile-online-mark:focus { outline: none; }
+.profile-online-mark:focus-visible { box-shadow: 0 0 0 1px var(--pc-text); }
+
+/* Its label: the screen's own tab, as the search's drop-down list is
+   drawn — scanlines inside the white hairline, in Volter — rather than
+   the browser's tooltip. */
+.profile-online-mark::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: calc(100% + 3px);
+    left: -2px;
+    padding: 3px 6px;
+    white-space: nowrap;
+    background: url('../assets/img/console/cnsl-bg-tile.png') repeat;
+    image-rendering: pixelated;
+    border: 1px solid var(--pc-text);
+    border-radius: 2px;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+    color: var(--pc-text);
+    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.2;
+    /* Not the name heading's shadow, which it would inherit. */
+    text-shadow: none;
+    pointer-events: none;
+    visibility: hidden;
+}
+.profile-online-mark:hover::after,
+.profile-online-mark:focus::after { visibility: visible; }
+
 /* As tall as the Habbo beside it (align-self: stretch), so the words can
    be centred on the figure rather than hung from the top of its picture,
    which starts with a band of empty pixels above the head. The search
@@ -15304,7 +15479,10 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
        (the signed-out sign-in sentence) squeezed it to half that, and the
        names in the list under it to "Bobba...". The window is the same
        360px wide on a phone, so there is no narrower layout. */
-    flex: 0 0 114px;
+    /* 144px (4 Oct 2026, the owner's: wider, growing to the left): what
+       the name column can spare and still fit "Rat since Sept 2026", its
+       longest line, at 105px. */
+    flex: 0 0 144px;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -15382,10 +15560,13 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-/* A Habbo off the main hotel (".es", ".br"): kept whole, the name shortens. */
+/* A Habbo's hotel (COM, ES, BR): at the far end of the row, kept whole,
+   at least the row's own 7px gap from the name, which shortens before it
+   does. No more than that: at the field's old 114px, a wider gap cut
+   "Frenkie" to "Fre...". */
 .profile-search-hotel {
     flex: 0 0 auto;
-    margin-left: -3px;
+    margin-left: auto;
     color: var(--pc-text);
 }
 
@@ -15539,16 +15720,10 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
 }
 
 /* The rows beside the avatar, packed to its 56px: a little tighter than
-   the screen's own line height, and the two boxed ones (Online, the
-   featured badge) only as tall as their words. */
+   the screen's own line height, and the boxed one (the featured badge)
+   only as tall as its words. The Online tag after the name went on 4 Oct
+   2026 (the owner's), to give the search the room. */
 .profile-who { line-height: 1.25; gap: 1px; }
-.profile-who h3 .profile-online {
-    margin-left: 5px;
-    padding: 0 3px;
-    font-family: 'Volter Goldfish', 'Pixelify Sans', 'Silkscreen', monospace;
-    text-shadow: none;
-    line-height: 1.2;
-}
 .profile-featured-line { margin: 0; }
 .profile-featured-line .profile-featured {
     padding: 0 5px;
@@ -15562,15 +15737,6 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
 .profile-line { margin: 0; color: var(--pc-text); }
 .profile-line strong { color: var(--pc-text); font-weight: 400; }
 .profile-hidden-note { color: var(--pc-text); }
-
-.profile-online {
-    display: inline-block;
-    margin-left: 4px;
-    padding: 0 4px;
-    border: 1px solid var(--pc-text);
-    border-radius: 2px;
-    color: var(--pc-text);
-}
 
 /* Edit Profile, as a console button (.console-btn). */
 /* ONE LINE EACH beside the avatar (4 Oct 2026, the bug scan): a Habbo
@@ -15587,7 +15753,6 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.profile-who h3 .profile-online { flex: 0 0 auto; }
 
 /* ---- favourite maze: its picture keeps its colours ---- */
 .profile-fav {

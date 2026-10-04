@@ -449,7 +449,7 @@
     const navCount = document.getElementById("players-nav-count");
 
     // "banned" (29 Sept 2026): banned or cooling down, account or network.
-    const FILTERS = [["all", "All"], ["flagged", "Flagged"], ["banned", "Banned"], ["nick", "Has a nickname"], ["nonick", "No nickname"], ["locked", "Locked"], ["unasked", "Not asked yet"]];
+    const FILTERS = [["all", "All"], ["flagged", "Flagged"], ["clash", "Name clash"], ["banned", "Banned"], ["nick", "Has a nickname"], ["nonick", "No nickname"], ["locked", "Locked"], ["unasked", "Not asked yet"]];
     const Kit = window.AdminBanKit;
     const FLAG_REASONS = { profanity: "filter word", reserved: "reserved word" };
     const SORTS = [["seen", "Last signed in"], ["joined", "First signed in"], ["name", "Discord name"], ["nick", "Nickname"]];
@@ -644,14 +644,16 @@
     function setBadge(c) {
         if (!navCount) return;
         const counts = typeof c === "number" ? { all: c } : (c || {});
-        const flagged = Number(counts.flagged) || 0;
+        /* Name clashes count as waiting too (4 Oct 2026): see nameClash. */
+        // `waiting` counts each player once, flagged and clashing both (the quick scan).
+        const flagged = has(counts.waiting) ? Number(counts.waiting) || 0 : (Number(counts.flagged) || 0) + (Number(counts.clash) || 0);
         const n = flagged > 0 ? flagged : Number(counts.all) || 0;
         navCount.textContent = n ? num(n) : "";
         navCount.hidden = !n;
         navCount.classList.toggle("admin-nav-count-quiet", flagged <= 0);
         navCount.classList.toggle("pl-nav-flagged", flagged > 0);
         navCount.setAttribute("title", flagged > 0
-            ? `${num(flagged)} flagged ${flagged === 1 ? "nickname" : "nicknames"} to review`
+            ? `${num(flagged)} ${flagged === 1 ? "nickname" : "nicknames"} to review (flagged words and name clashes)`
             : QUIET_TITLE);
     }
     function flagText(f) {
@@ -669,6 +671,7 @@
             stat(c.nick, "has a nickname", "have a nickname") +
             stat(c.locked, "nickname locked", "nicknames locked", "Locked nicknames can only be changed from here") +
             stat(c.flagged, "nickname flagged", "nicknames flagged", "Nicknames the word filter caught, waiting for an Allow or a Reject") +
+            (Number(c.clash) ? stat(c.clash, "name clash", "name clashes", "Players whose linked Habbo name another player already has as a nickname — waiting for you to settle") : "") +
             (has(c.banned) ? stat(c.banned, "banned or cooling down", "banned or cooling down", "Players with a ban or cool-down in force on their account or their network") : "");
     }
 
@@ -719,7 +722,7 @@
     function renderFilters() {
         buildFilters();
         const c = counts || {};
-        const n = { all: c.all, nick: c.nick, locked: c.locked, flagged: c.flagged, banned: c.banned, nonick: has(c.all) && has(c.nick) ? Number(c.all) - Number(c.nick) : null };
+        const n = { all: c.all, nick: c.nick, locked: c.locked, flagged: c.flagged, clash: c.clash, banned: c.banned, nonick: has(c.all) && has(c.nick) ? Number(c.all) - Number(c.nick) : null };
         filtersEl.querySelector('[data-f="filter"]').innerHTML = FILTERS.map(([k, label]) =>
             `<button type="button" class="btn-enter-mini${k === filter ? " active" : ""}" data-filter="${k}" aria-pressed="${k === filter}">${escapeHtml(label)}${has(n[k]) && Number(n[k]) ? ` (${escapeHtml(num(n[k]))})` : ""}</button>`).join("");
     }
@@ -746,6 +749,9 @@
         const bc = Kit && Kit.chip(p.ban, nowMs());
         if (bc) out.push(`<span class="de-chip pl-chip-banned${bc.cooling ? " is-cooling" : ""}" title="${escapeHtml(bc.title)}">${escapeHtml(bc.text)}</span>`);
         if (p.nickFlag) out.push(`<span class="de-chip is-marked pl-chip-flagged" title="${escapeHtml("The word filter caught this nickname" + (p.nickFlag.at ? ", " + fmtUtc(p.nickFlag.at) : "") + ". Open the row to Allow or Reject it.")}">${escapeHtml(flagText(p.nickFlag))}</span>`);
+        /* A NAME CLASH (4 Oct 2026): their Habbo name is somebody else's
+           nickname, and a name already taken is never taken. */
+        if (p.nameClash) out.push(`<span class="de-chip is-marked pl-chip-flagged" title="${escapeHtml("OriginsBot says their Habbo is " + p.nameClash.name + (p.nameClash.hotel ? " (" + p.nameClash.hotel + ")" : "") + ", but another player already has that nickname. Open the row to settle it.")}">Name clash: ${escapeHtml(p.nameClash.name)}</span>`);
         if (p.nickRejected) out.push(`<span class="de-chip de-status-rejected pl-chip-rejected" title="${escapeHtml("Rejected" + (p.nickRejected.by ? " by " + p.nickRejected.by : "") + (p.nickRejected.at ? ", " + fmtUtc(p.nickRejected.at) : "") + " — they're asked to choose another on each visit until they do")}">Asked to change</span>`);
         /* No "Locked" chip any more (3 Oct 2026, the owner's): a red pill on
            the row read as something wrong with the account, when all it
@@ -929,7 +935,7 @@
         if (!h.name) return "No Habbo account linked" + when;
         const named = escapeHtml(h.name) + (h.hotel ? " (" + escapeHtml(h.hotel) + ")" : "");
         if (h.applied) return named + " — set as their nickname and locked" + when;
-        if (h.clash) return named + " — not set: another player's nickname is the same name or too close to it" + when;
+        if (h.clash) return named + " — not set: another player's nickname is the same name or too close to it" + (h.clashDismissed ? " (dismissed)" : "") + when;
         if (h.unusable) return named + " — not set: the boards can't display it" + when;
         return named + when;
     }
@@ -979,6 +985,7 @@
         const draft = nickDrafts.has(ref) ? nickDrafts.get(ref) : (p.nick || "");
         return `
             <div class="pl-edit">
+                ${clashHtml(p)}
                 ${reviewHtml(p)}
                 <label class="ctl-label" for="pl-nick-${domId(ref)}">Nickname</label>
                 <div class="ctl-row">
@@ -1031,6 +1038,23 @@
        it would do nothing (the server answers such a press with no change
        anyway). Only reached for owners and admins: actionsHtml has already
        shown a viewer "view-only". */
+    /* A NAME CLASH to settle (4 Oct 2026, the owner's; CLASHING in
+       players-admin.js). OriginsBot never takes a name from anybody, so it
+       waits here: give this player a nickname above (their Habbo name once
+       you have freed it from the other player, or anything else), or
+       Dismiss to leave both as they are. Either way OriginsBot stops asking. */
+    function clashHtml(p) {
+        if (!p.nameClash) return "";
+        const name = escapeHtml(p.nameClash.name) + (p.nameClash.hotel ? " (" + escapeHtml(p.nameClash.hotel) + ")" : "");
+        return `
+                <div class="pl-review">
+                    <p class="admin-hint">Name clash: OriginsBot says their Habbo is <strong>${name}</strong>, but another player already has that nickname, so it wasn't set. Nobody's name is taken from them automatically. To give it to this player, clear or change the other player's nickname first, then set it here. Or set any other nickname here, or Dismiss to leave both as they are.</p>
+                    <div class="ctl-actions">
+                        <button type="button" class="ctl-btn pl-write" data-a="dismiss-clash"${busy ? " disabled" : ""} title="Leave both players as they are; OriginsBot stops asking">Dismiss</button>
+                    </div>
+                </div>`;
+    }
+
     function reviewHtml(p) {
         const canAllow = !!(p.nickFlag || p.nickRejected);
         const canReject = !!p.nick && !(p.nickRejected && !p.nickFlag);
@@ -1366,6 +1390,7 @@
             else if (a === "clear") clearNick(p);
             else if (a === "lock") write(p, { locked: !p.nickLocked }, p.nickLocked ? "Unlocked. They can change their nickname again." : "Locked. They can't change their nickname themselves now.");
             else if (a === "allow" || a === "reject") reviewNick(p, a);
+            else if (a === "dismiss-clash") write(p, { dismissClash: true }, "Dismissed. Both keep their names, and OriginsBot won't ask about it again.");
             else if (a === "untd") unTurnDown(p, b.dataset.key || "");
             else if (a === "prompt") write(p, { resetPrompt: true }, "Done. They'll be asked to choose a nickname on their next visit, if they have none and it isn't locked.");
             else if (a === "forget-look") forgetLook(p);
@@ -1479,7 +1504,7 @@
             detailErrors.delete(ref);
             // The list's copy follows what the detail says.
             const row = players.find(x => refOf(x) === ref);
-            if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "name", "username", "avatar", "seenAt", "ban", "hasNetHash"].forEach(k => { row[k] = p[k]; });
+            if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "nameClash", "name", "username", "avatar", "seenAt", "ban", "hasNetHash"].forEach(k => { row[k] = p[k]; });
         } catch (err) {
             if (mine !== sessionNo) return;
             if (sessionGone(err)) return;
@@ -1504,7 +1529,7 @@
         const prev = details.get(ref) || {};
         details.set(ref, Object.assign({}, prev, player, { activity: prev.activity }));
         const row = players.find(x => refOf(x) === ref);
-        if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected"].forEach(k => { row[k] = player[k]; });
+        if (row) ["nick", "displayName", "nickLocked", "nickLockedBy", "nickLockedAt", "nickAsked", "nickAt", "nickFlag", "nickRejected", "nameClash"].forEach(k => { row[k] = player[k]; });
     }
 
     async function write(p, change, okText) {
@@ -1520,10 +1545,12 @@
             takeWrite(ref, res && res.player);
             if (Object.prototype.hasOwnProperty.call(change, "nick")) nickDrafts.delete(ref);
             // Counts on the strip may have moved (a nickname, a lock, a flag).
-            const had = { nick: !!p.nick, locked: !!p.nickLocked, flagged: !!p.nickFlag };
+            const had = { nick: !!p.nick, locked: !!p.nickLocked, flagged: !!p.nickFlag, clash: !!p.nameClash };
             const now = details.get(ref) || {};
             if (has(counts.nick)) counts.nick += (now.nick ? 1 : 0) - (had.nick ? 1 : 0);
             if (has(counts.locked)) counts.locked += (now.nickLocked ? 1 : 0) - (had.locked ? 1 : 0);
+            if (has(counts.clash)) counts.clash = Math.max(0, counts.clash + (now.nameClash ? 1 : 0) - (had.clash ? 1 : 0));
+            if (has(counts.waiting)) counts.waiting = Math.max(0, counts.waiting + (now.nickFlag || now.nameClash ? 1 : 0) - (had.flagged || had.clash ? 1 : 0));
             if (has(counts.flagged)) {
                 counts.flagged = Math.max(0, counts.flagged + (now.nickFlag ? 1 : 0) - (had.flagged ? 1 : 0));
                 setBadge(counts);
@@ -1684,6 +1711,8 @@
             total = Math.max(0, total - 1);
             if (has(counts.all)) counts.all = Math.max(0, counts.all - 1);
             if (p.nickFlag && has(counts.flagged)) counts.flagged = Math.max(0, counts.flagged - 1);
+            if (p.nameClash && has(counts.clash)) counts.clash = Math.max(0, counts.clash - 1);
+            if ((p.nickFlag || p.nameClash) && has(counts.waiting)) counts.waiting = Math.max(0, counts.waiting - 1);
             if (has(counts.all)) setBadge(counts);
             if (p.nick && has(counts.nick)) counts.nick = Math.max(0, counts.nick - 1);
             if (p.nickLocked && has(counts.locked)) counts.locked = Math.max(0, counts.locked - 1);
