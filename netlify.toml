@@ -380,16 +380,18 @@
 # terms as /glyphs above; js/home.js opens the window and puts the address
 # back to /home, since the window keeps no address of its own. Not indexed
 # (robots.txt): it shows whoever is looking their own browser's progress.
+# Through the share function, which serves the same home.html with the
+# Profiles link preview (assets/img/og-profiles.png, the Habbo Console).
 [[redirects]]
   from = "/profile"
-  to = "/home.html"
+  to = "/.netlify/functions/share"
   status = 200
 
 # And /profiles, the same (4 Oct 2026, the owner's): the window is titled
 # Profiles, so that is what people type.
 [[redirects]]
   from = "/profiles"
-  to = "/home.html"
+  to = "/.netlify/functions/share"
   status = 200
 
 # publish = "." above means the whole repo root — including this directory
