@@ -673,7 +673,7 @@
         const me = Account.current;
         if (!me || me.nick || me.nickLocked || !Account.canNick()) return "";
         return `<p class="guess-board-note nick-hint" data-nick-hint-line>
-                    On the board as ${escapeHtml(Account.nameOf(me))}.
+                    Not on the boards without a nickname.
                     <button type="button" class="guess-btn nick-hint-btn" data-nick-hint>Set a nickname</button>
                 </p>`;
     };

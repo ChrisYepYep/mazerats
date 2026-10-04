@@ -204,7 +204,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${current
                     ? line("Nickname", esc(current))
                     : `${head("Nickname")}
-                       <p class="console-blurb console-nick-none">None set ${DASH} the boards show your Discord name (${esc(me.name || "")}).</p>`}
+                       <p class="console-blurb console-nick-none">None set ${DASH} you're not on the boards until you choose one.</p>`}
                 <p class="console-note console-profile-note console-nick-locked">${me.nickHabbo
                     // From OriginsBot (3 Oct 2026; see _originsbot.js).
                     ? "This is your Habbo name, linked to your Discord through OriginsBot. Ask the site's admins if it's wrong."
@@ -232,7 +232,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${current
                     ? line("Nickname", esc(current))
                     : `${head("Nickname")}
-                       <p class="console-blurb console-nick-none">None set ${DASH} the boards show your Discord name (${esc(me.name || "")}).</p>`}
+                       <p class="console-blurb console-nick-none">None set ${DASH} you're not on the boards until you choose one.</p>`}
                 ${rejectedLine}
                 <button type="button" class="console-btn console-profile-btn" data-nick="edit">${current ? "Change" : "Set a nickname"}</button>
                 ${status}
@@ -335,7 +335,7 @@ document.addEventListener("DOMContentLoaded", () => {
             nick.busy = false;
             nick.editing = false;
             nick.draft = null;
-            nick.msg = remove ? "Removed. The boards show your Discord name again."
+            nick.msg = remove ? "Removed. You're off the boards until you choose a new one."
                 : `Saved. The boards now show ${typed}.`;
             nick.tone = "ok";
             nick.fromServer = false;

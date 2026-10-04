@@ -213,7 +213,7 @@
         let foot = "";
         if (!who) {
             foot = `<div class="guess-board-note guess-board-invite">
-                        Scores are listed under your Discord name, or a nickname you choose.
+                        Sign in and choose a nickname to get on the boards.
                         <button type="button" class="guess-btn" data-boards-signin>Sign in with Discord</button>
                     </div>`;
         } else if (!list.some(isMe)) {

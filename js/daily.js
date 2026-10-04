@@ -1034,6 +1034,40 @@ window.Daily = (function () {
         } catch (e) { /* usage numbers never get in the way of a game */ }
     }
 
+    /* THE LOADING BAR (4 Oct 2026, the owner's: a game that took a few
+       seconds to deal, with nothing on screen, "feels like it's broken").
+       A solid block sliding along a track, centred in the deck — the same
+       .daily-loading slot js/daily-loader.js has always used for the file
+       downloading — while the game file arrives and while the day is
+       dealt. `waiting(deck, true)` puts it up and hides the sheets under
+       it (so a splash whose Play cannot work yet is never pressed);
+       `waiting(deck, false)` takes it down. */
+    function loadingHtml(label) {
+        return `<div class="daily-loading daily-wait" role="status">` +
+            `<span class="visually-hidden">${label || "Loading"}</span>` +
+            `<span class="daily-bar" aria-hidden="true"><span></span></span></div>`;
+    }
+    function waiting(deck, on, label) {
+        if (!deck) return;
+        deck.classList.toggle("is-waiting", !!on);
+        const had = deck.querySelector(":scope > .daily-wait");
+        if (!on) { if (had) had.remove(); return; }
+        if (!had) deck.insertAdjacentHTML("beforeend", loadingHtml(label));
+    }
+
+    /* A board's Habbo head that cannot be drawn (Habbo's imaging down; see
+       habbo-outline.js) becomes the blank disc rather than a broken picture.
+       Images do not bubble their errors, so on the capture phase, once for
+       every board on the page (the games' and js/leaderboards.js's). */
+    document.addEventListener("error", e => {
+        const img = e.target;
+        if (!img || img.tagName !== "IMG" || !img.classList.contains("guess-board-face")) return;
+        const blank = document.createElement("span");
+        blank.className = "guess-board-face is-blank";
+        blank.setAttribute("aria-hidden", "true");
+        img.replaceWith(blank);
+    }, true);
+
     /* isHallway lived here too, for the games to keep hallways out of the
        day they dealt. The server deals now, and its copy (isHallway in
        netlify/functions/_daily.js) is the one that decides; js/home.js keeps
@@ -1042,7 +1076,7 @@ window.Daily = (function () {
     return {
         today, now, setServerNow, seededRandom, dayBefore, request,
         claimReset, deal, move, replay, refusedAsSignedIn, afterPractice, submit, filed, fileable, start, opening, takeRound, mergeRounds,
-        forgetStarts, track,
+        forgetStarts, track, loadingHtml, waiting,
         clock, scoreCell, boards, ranks, isMine,
         SPEED_BONUS_MAX, bonusLine, practiceLine, bonusRule,
         shareDate, dayTotal, shareScore, shareText, shareFallback

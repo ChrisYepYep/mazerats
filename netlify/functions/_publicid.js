@@ -97,12 +97,48 @@ function publicAvatar(avatar, playerId, nicked) {   // eslint-disable-line no-un
    only if the player has no nickname. New objects; the lists passed in are
    left alone. */
 async function publicLists(db, lists) {
-    // No nickname read any more: no row keeps an avatar (publicAvatar).
+    // Never the Discord picture (publicAvatar); the Habbo head instead.
+    const heads = await habboHeads(db, lists.flat().map(r => r && r.id));
     return lists.map(list => (list || []).map(r => ({
         ...r,
         id: publicIdOf(r.id),
-        avatar: null
+        avatar: heads.get(String(r.id)) || null
     })));
 }
 
-module.exports = { publicIdOf, nickedAmong, publicAvatar, publicLists };
+/* HABBO HEADS ON THE BOARDS (4 Oct 2026, the owner's: "instead of blank
+   circles use their habbo head", as the player search shows them). A Map of
+   raw player id -> the outlined head (habbo-outline.js, kind=head, the same
+   picture and version js/home.js asks for) for every player among `ids`
+   with an OriginsBot-linked Habbo whose look is in the Habbo cache. Cache
+   only: a board is read far too often to ask Origins once a row, and a
+   player not looked up yet keeps the blank circle until someone opens
+   their profile or finds them in the search. Never throws: no heads is a
+   board of circles, as before. */
+const OUTLINE_V = 2;
+async function habboHeads(db, ids) {
+    const out = new Map();
+    const want = [...new Set((ids || []).filter(x => x !== undefined && x !== null && x !== "").map(String))];
+    if (!want.length) return out;
+    try {
+        const { cachedOriginsProfiles } = require("./habbo");
+        const rows = await db.collection("players")
+            .find({ id: { $in: want } }, { projection: { _id: 0, id: 1, habbo: 1 } })
+            .toArray();
+        const linked = rows.filter(r => r.habbo && typeof r.habbo.name === "string" && r.habbo.name.trim());
+        if (!linked.length) return out;
+        const key = h => `${String(h.hotel || "").toUpperCase()}:${h.name.trim().toLowerCase()}`;
+        const profiles = await cachedOriginsProfiles(db, linked.map(r => r.habbo));
+        linked.forEach(r => {
+            const p = profiles.get(key(r.habbo));
+            let figure = "";
+            try { figure = p && p.avatar ? new URL(p.avatar).searchParams.get("figure") || "" : ""; } catch (e) { /* not an address */ }
+            if (figure) out.set(String(r.id), `/.netlify/functions/habbo-outline?figure=${encodeURIComponent(figure)}&kind=head&v=${OUTLINE_V}`);
+        });
+    } catch (e) {
+        console.error("publicid: could not read Habbo heads; the boards keep their circles", e);
+    }
+    return out;
+}
+
+module.exports = { publicIdOf, nickedAmong, publicAvatar, publicLists, habboHeads };

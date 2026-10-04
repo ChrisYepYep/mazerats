@@ -906,7 +906,7 @@
     function factsHtml(p) {
         const f = [
             ["Shown on the boards as", escapeHtml(shownOf(p))],
-            ["Nickname", p.nick ? escapeHtml(p.nick) : "None — the boards show their Discord name"],
+            ["Nickname", p.nick ? escapeHtml(p.nick) : "None, so they're not on the boards"],
             ["Nickname last changed", p.nickAt ? `${escapeHtml(fmtUtc(p.nickAt))}` : "—"],
             ["Discord display name", escapeHtml(dash(p.name))],
             ["Discord username", p.username ? "@" + escapeHtml(p.username) : "—"],
@@ -1590,9 +1590,9 @@
 
     async function clearNick(p) {
         if (!p.nick) return;
-        const ok = await ask(`Remove <strong>${escapeHtml(p.nick)}</strong>? The boards go back to showing their Discord name, <strong>${escapeHtml(p.name || "their Discord name")}</strong>.${p.nickLocked ? "" : " They can choose a new nickname themselves unless you lock it."}`);
+        const ok = await ask(`Remove <strong>${escapeHtml(p.nick)}</strong>? They come off the boards until they have a nickname again.${p.nickLocked ? "" : " They can choose a new nickname themselves unless you lock it."}`);
         if (!ok) return;
-        write(p, { nick: null }, "Removed. The boards show their Discord name again.");
+        write(p, { nick: null }, "Removed. They're off the boards until they have a nickname again.");
     }
 
     // `opts` goes on to AdminConfirm — { danger: true } for the red Yes.

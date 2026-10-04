@@ -75,6 +75,7 @@
 const crypto = require("crypto");
 const { clientIp, subscriberOf } = require("./_net");
 const { SECURITY_HEADERS } = require("./_headers");
+const { nickedAmong } = require("./_publicid");
 
 const COLLECTION = "bans";
 const KINDS = ["player", "ip", "net", "nethash"];
@@ -443,10 +444,23 @@ async function bannedAmong(db, ids) {
    this (BOARD_READ in daily-scores.js and guess-scores.js, 3 Oct 2026), so
    a banned player's place goes to the next one rather than leaving the
    board a row short. */
+/* NO NICKNAME, NOT ON THE BOARDS (4 Oct 2026, the owner's: "people with no
+   nickname can't be on the leaderboards"). A row's name is the Discord
+   name whenever its player has no nickname (renameRows in player-nick.js
+   writes it there when one is removed), and a nickname is what keeps that
+   off the page. So their rows are left out here too, wherever they came
+   from: scores from before the daily games asked for a nickname, a
+   nickname removed by the player or an admin, a Fallin' Furni run. They
+   come back the moment a nickname is set. FAILS CLOSED, unlike the bans
+   above: a players collection that cannot be read leaves every row out
+   rather than risk a Discord name. */
 async function withoutBanned(db, lists, idOf = (r) => r && r.id) {
-    const banned = await bannedAmong(db, lists.flat().map(idOf));
-    if (!banned.size) return lists.map(l => (l || []).slice());
-    return lists.map(list => (list || []).filter(r => !banned.has(String(idOf(r)))));
+    const ids = lists.flat().map(idOf);
+    const [banned, nicked] = await Promise.all([bannedAmong(db, ids), nickedAmong(db, ids)]);
+    return lists.map(list => (list || []).filter(r => {
+        const id = String(idOf(r));
+        return !banned.has(id) && !!nicked && nicked.has(id);
+    }));
 }
 
 /* ---- for the Warren (players-admin.js) ----

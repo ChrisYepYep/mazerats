@@ -1239,35 +1239,43 @@
            used to keep the archive's title (30 Sept 2026). */
         if (window.PageMeta) window.PageMeta.set("odd", "Odd One Out — Maze Rats", "https://mazerats.net/odd");
         if (!retrying && el.window) el.window.focus();
-        if (!deal || deal.day !== day()) settled(() => introMessage(`<p class="daily-note">Dealing…</p>`));
-        // Whether somebody is signed in decides what a pick does, so it is
-        // known before anything is dealt. A failure reads as signed out.
-        if (window.Account) { try { await Account.ready(); } catch (e) { /* signed out */ } }
-        /* The check on page load could not be made at all (Account.unsure —
-           a network blink, not an answer). Asked once more now, since the
-           window being opened is usually well after the load: settling the
-           day's mode on a failed check is how a signed-in player used to
-           play a whole day unrecorded. choose() asks again if it is still
-           unsure at the first pick. */
-        if (window.Account && Account.unsure) { try { await Account.refresh(); } catch (e) { /* still unsure */ } }
-        /* A day given back by an administrator lands here: the ticket is
-           claimed before the stored day is read, so what loads is the fresh
-           day rather than the one being cleared. The in-memory copy goes
-           too, or the day just taken away would be played on — and with it
-           the note that it was sent, since the replay has to be filed like
-           any other. The server's recorded picks went with the reset
-           (daily-games.js), so the deal below brings none back. */
-        if (await window.Daily.claimReset("odd")) {
-            try { localStorage.removeItem(STATE_KEY); } catch (e) { /* private mode */ }
-            state = null;
+        /* The loading bar while the day is dealt (Daily.waiting in
+           js/daily.js; 4 Oct 2026, the owner's), where a "Dealing…" line was.
+           Down again once the day is drawn, or if anything below throws. */
+        if (!deal || deal.day !== day()) Daily.waiting(el.deck, true, "Dealing today's rounds");
+        try {
+            // Whether somebody is signed in decides what a pick does, so it is
+            // known before anything is dealt. A failure reads as signed out.
+            if (window.Account) { try { await Account.ready(); } catch (e) { /* signed out */ } }
+            /* The check on page load could not be made at all (Account.unsure —
+               a network blink, not an answer). Asked once more now, since the
+               window being opened is usually well after the load: settling the
+               day's mode on a failed check is how a signed-in player used to
+               play a whole day unrecorded. choose() asks again if it is still
+               unsure at the first pick. */
+            if (window.Account && Account.unsure) { try { await Account.refresh(); } catch (e) { /* still unsure */ } }
+            /* A day given back by an administrator lands here: the ticket is
+               claimed before the stored day is read, so what loads is the fresh
+               day rather than the one being cleared. The in-memory copy goes
+               too, or the day just taken away would be played on — and with it
+               the note that it was sent, since the replay has to be filed like
+               any other. The server's recorded picks went with the reset
+               (daily-games.js), so the deal below brings none back. */
+            if (await window.Daily.claimReset("odd")) {
+                try { localStorage.removeItem(STATE_KEY); } catch (e) { /* private mode */ }
+                state = null;
+            }
+            await refreshDay();
+            loadStats();
+            showSplash = state.picks.length === 0 && !state.done;
+            Daily.waiting(el.deck, false);
+            /* Straight onto the right sheet — the splash, the round in hand, or
+               the results — with the rest already stacked around it. Only the
+               moves made while the window is open slide. */
+            settled(render);
+        } finally {
+            Daily.waiting(el.deck, false);
         }
-        await refreshDay();
-        loadStats();
-        showSplash = state.picks.length === 0 && !state.done;
-        /* Straight onto the right sheet — the splash, the round in hand, or
-           the results — with the rest already stacked around it. Only the
-           moves made while the window is open slide. */
-        settled(render);
     }
 
     /* The day to play, from the server, and the state of play that goes

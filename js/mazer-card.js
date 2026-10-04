@@ -182,7 +182,7 @@
     /* `data`:
          name, motto, featured (badge name), since ("Sept 2026"),
          avatar (an outline URL, or null),
-         done, total, toughest { name, difficulty } or null,
+         done, total (the open mazes), closed (closed ones completed),
          badges [names],
          games { guess: { streak, best, days }, odd: { ... } },
          printed (a date line) */
@@ -243,7 +243,8 @@
             dashed(ctx, tx, ruleY, tw, t.rule);
             motto.forEach((l, i) => text(ctx, l, tx, mottoYs[i], t.text));
             if (featuredY !== null) pill(ctx, fit(data.featured, tw - 15), tx, featuredY, t);
-            if (sinceY !== null) text(ctx, `Rat since ${data.since}`, tx, sinceY, t.dim);
+            // "Maze Rat since" on the card only (the owner's); the profile says "Rat since".
+            if (sinceY !== null) text(ctx, fit(`Maze Rat since ${data.since}`, tw), tx, sinceY, t.dim);
         });
         const rule = at => ops.push((ctx, t) => dashed(ctx, PAD, at, W - PAD * 2, t.rule));
         rule(y);
@@ -254,24 +255,22 @@
         const mazesY = y;
         y += 6;
         const barY = y;
+        // No Toughest line (the owner's, 4 Oct 2026): the bar, the closed
+        // mazes completed if any (as the profile tallies them), the rule.
         y += 7 + 10;
-        const toughY = data.toughest ? y : null;
-        if (data.toughest) y += LINE;
+        const closed = Number(data.closed || 0);
+        const closedY = closed ? y + 1 : null;
+        if (closed) y += LINE + 1;
         ops.push((ctx, t) => {
             const big = num(done);
             const w = text(ctx, big, PAD, mazesY, t.ink, true);
-            text(ctx, `of ${num(total)} mazes completed`, PAD + w + 5, mazesY, t.text);
+            text(ctx, `of ${num(total)} open mazes completed`, PAD + w + 5, mazesY, t.text);
             const bw = W - PAD * 2;
             box(ctx, PAD, barY, bw, 7, t.ink);
             const fill = total ? Math.round((bw - 4) * Math.min(1, done / total)) : 0;
             rect(ctx, PAD + 2, barY + 2, fill, 3, t.ink);
-            if (toughY !== null) {
-                const lw = text(ctx, "Toughest", PAD, toughY, t.dim);
-                const diff = data.toughest.difficulty ? ` (${data.toughest.difficulty})` : "";
-                text(ctx, fit(data.toughest.name + diff, W - PAD * 2 - lw - 6), PAD + lw + 6, toughY, t.text);
-            }
+            if (closedY !== null) text(ctx, `+ ${num(closed)} closed ${closed === 1 ? "maze" : "mazes"} completed`, PAD, closedY, t.dim);
         });
-        y += 1;
         rule(y);
         y += 13;
 
@@ -355,6 +354,7 @@
     /* A timer, not requestAnimationFrame: a tab in the background, or a
        throttled one, would otherwise hold the card in the printer. */
     const FRAME_MS = 40;
+    const QUIET_ROWS = 16;
     const P = {
         line: "#000", lid: "#60462b", lidHi: "#7a5a38", face: "#39250f", grille: "#60462b",
         plate: "#2b1d12", plateText: "#c7a679", knob: "#ab8b64", knobHi: "#c7a679",
@@ -460,7 +460,10 @@
         let ac;
         try { ac = new AC(); } catch (e) { return null; }
         const master = ac.createGain();
-        master.gain.value = 0.55;
+        /* Faded in over a second and a half (the owner's: the start was too
+           sudden for anyone in headphones with the volume up). */
+        master.gain.setValueAtTime(0, ac.currentTime);
+        master.gain.linearRampToValueAtTime(0.55, ac.currentTime + 1.5);
         master.connect(ac.destination);
         const noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
         const ch = noise.getChannelData(0);
@@ -564,6 +567,9 @@
                                                 <span style="background:${THEMES[k].paper}"></span>
                                             </button>`).join("")}
                                     </div>
+                                    ${data && data.motto ? `
+                                        <!-- The motto is theirs to leave off (4 Oct 2026, the owner's): off unless ticked. -->
+                                        <label class="mazer-motto"><input type="checkbox" class="mazer-motto-box"> Include my motto</label>` : ""}
                                 </div>
                             </div>
                             <div class="confirm-actions mazer-actions" data-ready="0">
@@ -588,8 +594,10 @@
 
         // The card's height decides the stage's; the theme does not change it.
         if (document.fonts) await Promise.all([document.fonts.load(FONT), document.fonts.load(BOLD)]).catch(() => {});
+        // With the motto or without, whichever is taller: ticking it must
+        // not change the window.
         let H = 200;
-        try { if (data) H = layout(data).height; } catch (e) { /* a jam later */ }
+        try { if (data) H = Math.max(layout(data).height, layout({ ...data, motto: "" }).height); } catch (e) { /* a jam later */ }
         const SH = sceneHeight(H);
         const z = window.innerWidth >= PW * 2 + 80 && window.innerHeight >= SH * 2 + 190 ? 2 : 1;
         scene.width = PW; scene.height = SH;
@@ -681,7 +689,8 @@
             const t = THEMES[key];
             ready(false);
             picker.inert = true;
-            lead.textContent = "Printing Mazer Card...";
+            // No "Printing..." line (the owner's): the printer says it.
+            lead.textContent = "";
             // The picker slides down out of the window, under the printer.
             ctx.clearRect(0, 0, PW, SH);
             printer(ctx, t.paper, true, 0);
@@ -690,6 +699,8 @@
 
             let fresh = null;
             try { fresh = getData(); } catch (e) { /* a jam below */ }
+            const withMotto = overlay.querySelector(".mazer-motto-box");
+            if (fresh && !(withMotto && withMotto.checked)) fresh = { ...fresh, motto: "" };
             card = fresh ? await render(fresh, key).catch(() => null) : null;
             await wait(reduced() ? 0 : 500);
             if (my !== gen) return;
@@ -714,7 +725,10 @@
                     const slip = !reduced() && out > 4 && out < CH && weight > 0.35 && Math.random() < 0.08 ? 1 : 0;
                     const shake = !reduced() && !stalled && out < CH && weight > 0.2 && Math.floor(now / FRAME_MS) % 2 ? 1 : 0;
                     if (audio) {
-                        if (out > shown) audio.line(weight);
+                        /* No ticks for the card's foot: its outline and folded
+                           corner are solid ink, and came out as the loudest
+                           burst of the print, first thing. */
+                        if (out > shown && out > QUIET_ROWS) audio.line(weight);
                         if (stalled) audio.humOff(); else if (out < CH) audio.humOn();
                     }
                     shown = out;
@@ -749,7 +763,7 @@
 
         // ---- 3. the card, still hanging from the printer ----
         function done() {
-            lead.textContent = "Your Mazer Card";
+            lead.textContent = "";
             ready(true);
             copyBtn.hidden = !canCopy;
             saveBtn.hidden = false;

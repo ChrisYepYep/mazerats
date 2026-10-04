@@ -27,6 +27,7 @@ const { today } = require("./_daily");
 const { SECURITY_HEADERS } = require("./_headers");
 const { totalOf } = require("./_speed");
 const { accountBans } = require("./_bans");
+const { nickedAmong } = require("./_publicid");
 
 const ROUNDS = 5;
 // The live games daily_scores serves; a row from a dropped game is history,
@@ -267,14 +268,27 @@ async function figuresFor(db, id) {
         bannedIds(db)
     ]);
 
-    // Their own totals, fresh from their own rows; null means no place.
-    const myGuess = guessRows.length ? sumPoints(guessRows) : null;
-    const myOdd = oddRows.length ? sumPoints(oddRows) : null;
-    const myCombined = myGuess == null && myOdd == null ? null : addUp(myGuess, myOdd);
-
     // Fallin' Furni from its launch instant — see `since` above.
     // Compared as instants (isoOf above), not as text.
     const ffCounts = ffMine && (!since.at || isoOf(ffMine.at) >= since.at.$gte);
+
+    /* NO NICKNAME, NO PLACE (4 Oct 2026, the owner's; withoutBanned in
+       _bans.js): the boards leave out every player without a nickname, so
+       the places here count them out as they do the banned (`offBoard`),
+       and a player without one has no place of their own: "Not ranked",
+       as the boards would have it. Read for the players on the boards
+       only; a read that fails counts everyone out, as the boards do. */
+    const boardIds = new Set([...board.guess.keys(), ...board.odd.keys(), ...board.combined.keys()].map(String));
+    const ffIds = ffCounts ? (await ffCol.distinct("playerId")).map(String) : [];
+    const nicked = await nickedAmong(db, [...boardIds, ...ffIds]);
+    const offBoard = new Set(banned);
+    [...boardIds, ...ffIds].forEach(k => { if (!nicked || !nicked.has(k)) offBoard.add(k); });
+    const listed = !!(profile && typeof profile.nick === "string" && profile.nick);
+
+    // Their own totals, fresh from their own rows; null means no place.
+    const myGuess = guessRows.length && listed ? sumPoints(guessRows) : null;
+    const myOdd = oddRows.length && listed ? sumPoints(oddRows) : null;
+    const myCombined = myGuess == null && myOdd == null ? null : addUp(myGuess, myOdd);
 
     let ff = null;
     if (ffCounts) {
@@ -285,7 +299,7 @@ async function figuresFor(db, id) {
            accounts off it, as off the board (see bannedIds) — never the
            player's own row. */
         const cut = since.at ? { $or: [{ at: { $gte: since.at.$gte } }, { at: { $gte: new Date(since.at.$gte) } }] } : {};
-        const off = [...banned].filter(b => b !== String(id));
+        const off = [...offBoard].filter(b => b !== String(id));
         const scope = off.length ? { ...cut, playerId: { $nin: off } } : cut;
         /* Ahead of them is everyone the board would list first (30 Sept
            2026): ff-scores.js sorts { points: -1, ms: 1, at: 1 }, and
@@ -314,7 +328,7 @@ async function figuresFor(db, id) {
             ffCol.countDocuments({ $and: [scope, { $or: ahead }] }),
             ffCol.countDocuments(scope)
         ]);
-        ff = { points, levels: ffMine.levels || 0, ms: ffMine.ms || 0, rank: above + 1, of };
+        ff = { points, levels: ffMine.levels || 0, ms: ffMine.ms || 0, rank: listed ? above + 1 : null, of: listed ? of : null };
     }
 
     const leads = { sent: 0, accepted: 0, waiting: 0 };
@@ -327,10 +341,10 @@ async function figuresFor(db, id) {
     return {
         day, profile, launch, banned,
         games: {
-            guess: { ...gameStats(guessRows, day), place: placeIn(board.guess, id, myGuess, banned) },
-            odd: { ...gameStats(oddRows, day), place: placeIn(board.odd, id, myOdd, banned) }
+            guess: { ...gameStats(guessRows, day), place: placeIn(board.guess, id, myGuess, offBoard) },
+            odd: { ...gameStats(oddRows, day), place: placeIn(board.odd, id, myOdd, offBoard) }
         },
-        combined: placeIn(board.combined, id, myCombined, banned),
+        combined: placeIn(board.combined, id, myCombined, offBoard),
         ff,
         leads
     };

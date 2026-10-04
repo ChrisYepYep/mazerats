@@ -789,7 +789,7 @@ async function review(event, db, body) {
         }
         did = "nickname allowed";
     } else {
-        if (!had) return json(400, { error: "They have no nickname to reject — the boards show their Discord name." });
+        if (!had) return json(400, { error: "They have no nickname to reject." });
         // Already asked, and nothing new flagged since: asking twice adds nothing.
         if (rejected && !flag) return json(200, { player: detailShape(row, true, null, await bansOr(db)), changed: [] });
         upd = {

@@ -48,9 +48,9 @@
    menu's own fallback wording ("Today's five rooms") is what they see
    either way.
 
-   A SLOW LOAD SAYS SO. The window opens immediately and shows a quiet line
-   after 400ms, which is long enough that a normal load never shows it at
-   all and short enough that a bad connection is never left looking broken.
+   A SLOW LOAD SAYS SO. The window opens immediately and puts up the
+   loading bar (Daily.waiting) after 150ms, fading in, so a normal load
+   never shows it and a bad connection is never left looking broken.
 
    ----------------------------------------------------------------------
    THE DEEP LINKS
@@ -94,7 +94,9 @@
         }
     };
 
-    const SLOW_AFTER = 400;
+    /* 150ms (4 Oct 2026): the bar fades in, so a quick load still never
+       shows it, and a slow one is not left blank for long. */
+    const SLOW_AFTER = 150;
 
     const inFlight = {};
 
@@ -190,13 +192,12 @@
         if (armed[name]) armed[name]();
     }
 
+    // The loading bar (Daily.waiting in js/daily.js; 4 Oct 2026), where a
+    // "Dealing today's round…" line used to be.
     function sayLoading(name) {
         const body = document.getElementById(GAMES[name].body);
         if (!body || body.querySelector(".daily-loading")) return;
-        const p = document.createElement("p");
-        p.className = "daily-loading";
-        p.textContent = "Dealing today's round…";
-        body.appendChild(p);
+        if (window.Daily && typeof Daily.waiting === "function") Daily.waiting(body, true, "Loading the game");
     }
 
     // Every one, not the first: a failed line and a "still loading" line
@@ -204,6 +205,7 @@
     function clearLoading(name) {
         const body = document.getElementById(GAMES[name].body);
         if (!body) return;
+        body.classList.remove("is-waiting");
         body.querySelectorAll(".daily-loading").forEach(p => p.remove());
     }
 

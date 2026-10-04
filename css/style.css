@@ -13332,8 +13332,9 @@ body[data-page="admin"] #activity-sessions {
     pointer-events: none;
 }
 
-/* While a room's picture is being fetched and scored. */
-.guess-sheet.is-busy .guess-picture { opacity: 0.45; }
+/* While a room's picture is being fetched and scored: the picture dimmed,
+   and the loading bar over it at full strength (THE LOADING BAR, below). */
+.guess-sheet.is-busy .guess-canvas { opacity: 0.45; }
 
 .guess-panel {
     display: flex;
@@ -14075,7 +14076,7 @@ body[data-page="admin"] #activity-sessions {
 
 .guess-board-row {
     display: grid;
-    grid-template-columns: 16px 20px 1fr auto;
+    grid-template-columns: 16px 27px 1fr auto;
     align-items: center;
     gap: 8px;
     padding: 4px 8px;
@@ -14099,22 +14100,29 @@ body[data-page="admin"] #activity-sessions {
     text-align: right;
 }
 
+/* The player's Habbo head (4 Oct 2026, the owner's; habboHeads in
+   netlify/functions/_publicid.js): the outlined head the player search
+   shows, at its own 27x30 so every pixel stays square. The row's padding
+   came down to 1px to make room, so a row is only 4px taller than with the
+   old 20px circle. */
+.guess-board-row:has(.guess-board-face) { padding-top: 1px; padding-bottom: 1px; }
 .guess-board-face {
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
+    width: 27px;
+    height: 30px;
     display: block;
-    image-rendering: auto;
+    image-rendering: pixelated;
 }
 
-/* Someone with no Discord avatar. A hole in the row reads as a broken
-   image; a quiet disc reads as a person without a picture. */
+/* No Habbo linked, or none looked up yet: a quiet disc, never the Discord
+   picture. A hole in the row reads as a broken image. */
 .guess-board-face.is-blank {
     width: 20px;
     height: 20px;
+    margin: 5px 3px 5px 4px;
     border-radius: 50%;
     background: var(--wood-mid);
     border: 1px solid var(--border);
+    box-sizing: border-box;
 }
 
 .guess-board-name {
@@ -14219,7 +14227,7 @@ body[data-page="admin"] #activity-sessions {
 /* Someone else's five, beside their name. The row gained a column for it;
    it is empty on the ranges that total more than one day, where there is no
    single grid to draw. */
-.guess-board-row { grid-template-columns: 16px 20px 1fr auto auto; }
+.guess-board-row { grid-template-columns: 16px 27px 1fr auto auto; }
 
 .guess-board-grid {
     display: inline-flex;
@@ -14245,14 +14253,14 @@ body[data-page="admin"] #activity-sessions {
     /* The grid is the first thing to go when the row runs out of room —
        the score is the point of a leaderboard, the grid is the garnish. */
     .guess-board-grid { display: none; }
-    .guess-board-row { grid-template-columns: 16px 20px 1fr auto; }
+    .guess-board-row { grid-template-columns: 16px 27px 1fr auto; }
 }
 
 /* The Leaderboards window (js/leaderboards.js) always draws the fifth
    column — a small pill saying how many games or days a total came from,
    never a grid — so it keeps it at every width rather than letting the
    score wrap under the name on a phone. */
-.boards-board .guess-board-row { grid-template-columns: 16px 20px 1fr auto auto; }
+.boards-board .guess-board-row { grid-template-columns: 16px 27px 1fr auto auto; }
 
 /* ---------- saved to walk later ----------
 
@@ -15914,15 +15922,18 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
 }
 
 /* Highlights: label, then what it is. */
+/* Toughest and Latest, 5px apart (the owner's: 3px read as cramped),
+   their mazes starting where By difficulty's bars do: the same 70px
+   label column and 8px gap as .progress-diff. */
 .profile-hls {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 5px;
     margin: 4px 0 0;
 }
 .profile-hl {
     display: grid;
-    grid-template-columns: 84px 1fr;
+    grid-template-columns: 70px 1fr;
     gap: 8px;
 }
 .profile-hl dt { color: var(--pc-text); }
@@ -15956,6 +15967,8 @@ ol.fmt-ol-wide.fmt-ol-wide { padding-left: 3.4em; }
     flex-wrap: wrap;
     gap: 5px;
 }
+/* The ones still to get, in their own list under the earned ones. */
+.progress-badges + .progress-badges { margin-top: 5px; }
 .progress-badge {
     display: inline-flex;
     align-items: center;
@@ -15987,7 +16000,13 @@ button.progress-badge[aria-pressed="true"] { background: rgba(238, 238, 238, 0.1
     border-style: dashed;
     border-color: var(--pc-dim);
     color: var(--pc-text);
+    /* Fainter again (4 Oct 2026, the owner's): still the one text colour,
+       just further back. */
+    opacity: 0.6;
 }
+button.progress-badge.is-locked:hover,
+button.progress-badge.is-locked:focus-visible,
+button.progress-badge.is-locked[aria-pressed="true"] { opacity: 0.85; }
 .progress-badge.is-locked .progress-badge-mark {
     background: transparent;
     box-shadow: inset 0 0 0 1px var(--pc-dim);
@@ -17624,6 +17643,64 @@ textarea.ctl-input.de-note {
 
 @media (prefers-reduced-motion: reduce) {
     .daily-loading { animation: none; }
+}
+
+/* THE LOADING BAR (4 Oct 2026, the owner's; Daily.waiting in js/daily.js):
+   a solid block sliding along a hairline track, in pixel steps, while a
+   game file downloads and while the day is dealt. The sheets under it are
+   hidden meanwhile, so a splash whose Play cannot work yet is not there to
+   be pressed. */
+.guess-deck.is-waiting > :not(.daily-loading) { visibility: hidden; }
+.daily-bar {
+    position: relative;
+    display: block;
+    width: 160px;
+    height: 12px;
+    box-sizing: border-box;
+    border: 1px solid var(--parchment);
+    border-radius: 2px;
+    overflow: hidden;
+    box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+}
+.daily-bar > span {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    left: 2px;
+    width: 40px;
+    background: var(--parchment);
+    animation: daily-bar-slide 1.2s steps(48) infinite;
+}
+@keyframes daily-bar-slide {
+    from { transform: translateX(-44px); }
+    to { transform: translateX(148px); }
+}
+/* The room's picture on its way (a slow image, a retry): the same bar over
+   the dimmed frame. */
+.guess-sheet.is-busy .guess-picture::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 120px;
+    height: 12px;
+    margin: -6px 0 0 -60px;
+    box-sizing: border-box;
+    border: 1px solid var(--parchment);
+    border-radius: 2px;
+    background: linear-gradient(var(--parchment), var(--parchment)) no-repeat;
+    background-size: 30px 6px;
+    background-origin: content-box;
+    padding: 2px;
+    animation: daily-bar-frame 1.2s steps(40) infinite;
+}
+@keyframes daily-bar-frame {
+    from { background-position: -34px 0; }
+    to { background-position: 124px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .daily-bar > span,
+    .guess-sheet.is-busy .guess-picture::after { animation-duration: 3s; }
 }
 
 /* The window holds a frame, and the frame holds the deck — the same deck of
@@ -20955,7 +21032,9 @@ body.is-viewer #bans-add { display: none !important; }
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
+    /* Just under the printer (the owner's), not in the middle of the space. */
+    justify-content: flex-start;
+    padding-top: 14px;
 }
 .mazer-pick-head { margin-bottom: 8px; }
 .mazer-swatches {
@@ -20963,11 +21042,11 @@ body.is-viewer #bans-add { display: none !important; }
     gap: 4px;
 }
 
-/* Six squares of 14x14 (the owner's size), each in an 18px button; the
+/* Six squares of 20x20 (the owner's size), each in a 24px button; the
    paper colour inside the card's own 1px black line. */
 .mazer-swatch {
-    width: 18px;
-    height: 18px;
+    width: 24px;
+    height: 24px;
     padding: 0;
     display: grid;
     place-items: center;
@@ -20978,8 +21057,8 @@ body.is-viewer #bans-add { display: none !important; }
 .mazer-swatch span {
     display: block;
     box-sizing: border-box;
-    width: 14px;
-    height: 14px;
+    width: 20px;
+    height: 20px;
     border: 1px solid #000;
 }
 .mazer-swatch:hover span,
@@ -20990,3 +21069,41 @@ body.is-viewer #bans-add { display: none !important; }
 .mazer-actions { margin-top: 12px; }
 .mazer-actions[data-ready="0"] { visibility: hidden; }
 .mazer-actions [hidden] { display: none; }
+
+/* Include my motto, under the squares: off unless ticked. A pixel box in
+   the window's own parchment, filled with a square when ticked, as the
+   badges' pips are. */
+.mazer-motto {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    font-family: 'Volter Goldfish', 'Pixelify Sans', monospace;
+    font-size: 0.5625rem;
+    line-height: 1.6;
+    cursor: var(--cursor-pointer);
+}
+.mazer-motto-box {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: 0 0 auto;
+    width: 11px;
+    height: 11px;
+    margin: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--parchment);
+    border-radius: 0;
+    background: transparent;
+    cursor: var(--cursor-pointer);
+}
+.mazer-motto-box::after {
+    content: "";
+    width: 5px;
+    height: 5px;
+    background: var(--parchment);
+    visibility: hidden;
+}
+.mazer-motto-box:checked::after { visibility: visible; }
+.mazer-motto-box:focus { outline: none; }
+.mazer-motto-box:focus-visible { outline: 1px solid var(--parchment); outline-offset: 1px; }

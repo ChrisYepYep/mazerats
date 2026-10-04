@@ -42,6 +42,7 @@ const { SECURITY_HEADERS } = require("./_headers");
 // No nicknamed player's Discord avatar on the board (29 Sept 2026).
 // The ban gate on both POSTs, and banned accounts off the boards (29 Sept 2026).
 const { writeRefusal, withoutBanned } = require("./_bans");
+const { habboHeads } = require("./_publicid");
 
 const COLLECTION = "ff_scores";
 const LEVELS = "ff_levels";
@@ -984,10 +985,11 @@ const scoreHotel = (v) => {
     return SCORE_HOTELS.includes(s) ? s : null;
 };
 
-const clean = (row, nicked) => ({
+/* `heads` is habboHeads (_publicid.js) for the rows being answered: the
+   player's Habbo head, never the Discord picture (4 Oct 2026, the owner's). */
+const clean = (row, heads) => ({
     name: row.name,
-    // No Discord avatar anywhere, the caller's own row included (4 Oct 2026, the owner's).
-    avatar: null,
+    avatar: (heads && heads.get(String(row.playerId))) || null,
     points: Number(row.points) || 0,
     levels: row.levels,
     ms: row.ms,
@@ -1035,13 +1037,13 @@ exports.handler = async (event) => {
                 .limit(BOARD_READ)
                 .toArray()], r => r && r.playerId))[0].slice(0, TOP);
 
-            // No nickname read: clean() gives no row an avatar any more (4 Oct 2026).
-            out = { count: top.length, top: top.map(r => clean(r)) };
+            const heads = await habboHeads(db, top.map(r => r && r.playerId));
+            out = { count: top.length, top: top.map(r => clean(r, heads)) };
             if (player) {
                 const mine = await scores.findOne({ playerId: player.id }, { projection: { _id: 0 } });
                 /* The same cut as the table: a best run from before launch is
                    not on the board, so it is not "your" place on it either. */
-                out.you = afterLaunch(gate, mine) ? clean(mine) : null;
+                out.you = afterLaunch(gate, mine) ? clean(mine, heads) : null;
                 /* The name they will be on the board as: the nickname when
                    they have one (publicName in _player.js; 28 Sept 2026).
                    It fell back to the Discord USERNAME here, which is the
@@ -1077,7 +1079,8 @@ exports.handler = async (event) => {
                     .sort({ points: -1, ms: 1, at: 1 })
                     .limit(BOARD_READ)
                     .toArray()], r => r && r.playerId))[0].slice(0, TOP);
-                out.tournament = { ...meet, top: rows.map(r => clean(r)) };
+                const meetHeads = await habboHeads(db, rows.map(r => r && r.playerId));
+                out.tournament = { ...meet, top: rows.map(r => clean(r, meetHeads)) };
                 if (player) {
                     const mine = await db.collection(TOURNAMENT_COLLECTION)
                         .findOne({ tid: meet.id, playerId: player.id }, { projection: { _id: 0 } });

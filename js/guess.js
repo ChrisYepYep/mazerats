@@ -2464,6 +2464,11 @@
         el.window.focus();
         // Counted once per open (Daily.track; 30 Sept 2026).
         Daily.track("open", "guess");
+        /* The loading bar while the day is dealt (4 Oct 2026, the owner's):
+           the window used to stand empty, or on a splash whose Play did
+           nothing, until the server answered. Down again below, whatever
+           happened. */
+        Daily.waiting(el.deck, true, "Dealing today's rooms");
         let reopened = false;
         claimAdminReset()
             .then(() => { if (dayHasTurned()) forgetDeal(); reopened = started; })
@@ -2507,6 +2512,7 @@
             // on no view at all.
             .catch(() => {})
             .then(() => {
+                Daily.waiting(el.deck, false);
                 if (!state) return;
                 goTo("intro");
                 // A finished day not yet on the board (signed in since, or

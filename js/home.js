@@ -2213,9 +2213,7 @@ document.addEventListener("DOMContentLoaded", () => {
        Only over mazes, never events: an event is something that happened on
        a date, not something a visitor can go and complete. And only over
        the mazes that are actually open, since a closed one cannot be walked
-       any more and counting it would make the total unreachable by design —
-       except the closed ones already completed, which count since 4 Oct
-       2026 (completionCount below): those cannot leave the total short.
+       any more and counting it would make the total unreachable by design.
        Hidden entirely at zero: a fresh visitor should meet the archive, not
        a scoreboard reading 0. */
     /* A hallway is not a maze. It is the corridor that joins them — there is
@@ -2243,15 +2241,11 @@ document.addEventListener("DOMContentLoaded", () => {
         return ROOMS.filter(r => roomStatus(r) !== "closed" && !isHallway(r));
     }
 
-    /* "N of M completed", wherever it is shown: every open maze, plus the
-       closed ones this browser has completed (4 Oct 2026, the owner's; see
-       CLOSED MAZES COUNT in progressFigures, which works out the same pair
-       for the profile). Closed ones never completed stay out of M, so it
-       can still be reached. The badges go by walkableRooms alone. */
+    /* "N of M completed", wherever it is shown: the open mazes only, as the
+       profile's bar has them (see CLOSED MAZES in progressFigures). */
     function completionCount() {
         const open = walkableRooms();
-        const closedDone = ROOMS.filter(r => roomStatus(r) === "closed" && !isHallway(r) && isWalked(r.id)).length;
-        return { done: open.filter(r => isWalked(r.id)).length + closedDone, total: open.length + closedDone };
+        return { done: open.filter(r => isWalked(r.id)).length, total: open.length };
     }
 
     function updateWalkedCount() {
@@ -2269,7 +2263,7 @@ document.addEventListener("DOMContentLoaded", () => {
            about the whole archive floating above a list that is not it. */
         const appliesHere = topView === "mazes"
             && !showWhatsNew && !showTimeline && !showFurni && !furniFilter;
-        // The profile's own figure, closed mazes completed included.
+        // The profile's own figure (completionCount).
         const { done, total } = completionCount();
         if (!appliesHere || !done || !total) {
             el.hidden = true;
@@ -2308,9 +2302,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const walked = isWalked(n.id);
         /* A CLOSED maze can be marked completed again (4 Oct 2026, the
            owner's): somebody who walked it while it was open should be able
-           to say so. It counts towards the "N of M completed" figure (since
-           4 Oct 2026; see completionCount) but towards no badge — they are
-           taken over walkableRooms, which leaves closed mazes out. To do stays off
+           to say so. It shows on the profile as a closed maze completed (see
+           CLOSED MAZES in progressFigures), but counts towards no badge and
+           not the "N of M completed" figure: both are taken over
+           walkableRooms, which leaves closed mazes out. To do stays off
            on a closed maze (closedAndUnticked): there is no going to walk it. */
         return `<button type="button" class="walked-toggle${walked ? " is-walked" : ""}" ` +
             `data-walked-id="${escapeHtml(n.id)}" aria-pressed="${walked ? "true" : "false"}" ` +
@@ -9113,23 +9108,18 @@ document.addEventListener("DOMContentLoaded", () => {
         // Open mazes only: what the badges (Expert) are worked out from.
         const byDifficulty = tally(walkable);
 
-        /* CLOSED MAZES COUNT TOWARDS THE BIG FIGURE (4 Oct 2026, the
-           owner's). A closed maze marked completed was walked while it was
-           open, and "N of M completed" left it out as if it never had been.
-           Now `counted` is every open maze plus the closed ones this player
-           has completed: the closed ones they never did stay out of the
-           total, so it can still be reached, and the bar never passes 100%.
-           It is the figure the profile's big number, the side menu and the
-           count over the list all show (completionCount). The badges still
-           go by `walkable` and `walkedHere` alone — closed mazes earn none —
-           and By difficulty is drawn from `shownByDifficulty`, the same
-           rooms as `counted`, so its rows still add up to the number above
-           them. */
+        /* CLOSED MAZES, A TALLY OF THEIR OWN (4 Oct 2026, the owner's). The
+           big figure and its bar are the OPEN mazes only — what there is
+           left to go and walk — so the total never moves; the closed ones a
+           player marked completed (walked while they were open) are counted
+           apart, as "+ N closed mazes completed" under the bar. For a few
+           hours the two were added together, and the total grew with every
+           closed maze ticked. `counted` is the pair the profile, the side
+           menu, the count over the list and the Mazer Card all show. */
         const closedDone = ROOMS.filter(r => roomStatus(r) === "closed" && !isHallway(r) && walked.has(r.id));
-        const counted = { done: walkedHere.length + closedDone.length, total: walkable.length + closedDone.length };
-        const shownByDifficulty = tally([...walkable, ...closedDone]);
+        const counted = { done: walkedHere.length, total: walkable.length };
 
-        return { walkable, walkedHere, savedRooms, toWalk, savedShown, byDifficulty, closedDone, counted, shownByDifficulty };
+        return { walkable, walkedHere, savedRooms, toWalk, savedShown, byDifficulty, closedDone, counted };
     }
 
     /* ---------- WHOSE PROFILE (3 Oct 2026) ----------
@@ -9398,12 +9388,11 @@ document.addEventListener("DOMContentLoaded", () => {
                Profile line labelled Saved can agree with them. `toWalk` is
                kept, and is a different number on purpose: saved mazes that
                can still be completed, which leaves out closed ones. */
-            /* done and total are the window's big figure, closed mazes
-               completed included (see CLOSED MAZES COUNT in
-               progressFigures); `badgeDone` is the open-only count the
-               badges go by. */
+            /* done and total are the window's big figure, the open mazes
+               (see CLOSED MAZES in progressFigures); `closedDone` the closed
+               ones completed beside it. */
             return {
-                done: f.counted.done, total: f.counted.total, badgeDone: f.walkedHere.length,
+                done: f.counted.done, total: f.counted.total, closedDone: f.closedDone.length,
                 toWalk: f.toWalk.length, saved: f.savedShown.length
             };
         },
@@ -9580,7 +9569,6 @@ document.addEventListener("DOMContentLoaded", () => {
         const f = progressFigures();
         const badges = earnedBadges(f, d);
         const featured = d.badge ? badges.find(b => b.key === d.badge) : null;
-        const hard = highlightsOf([...walkedIds]).hardest;
         const habbo = d.habbo || null;
         const g = d.games || {};
         const game = s => (s && s.days ? { streak: s.streak, best: s.best, days: s.days } : null);
@@ -9592,7 +9580,7 @@ document.addEventListener("DOMContentLoaded", () => {
             avatar: habbo && habbo.avatar ? outlineSrc(habbo.avatar, "body") : null,
             done: f.counted.done,
             total: f.counted.total,
-            toughest: hard ? { name: hard.name || hard.id, difficulty: hard.difficulty ? capitalise(prettyDifficulty(String(hard.difficulty).toLowerCase())) : "" } : null,
+            closed: f.closedDone.length,
             badges: badges.map(b => b.name),
             games: { guess: game(g.guess), odd: game(g.odd) },
             printed: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
@@ -9600,7 +9588,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function placeText(p) {
-        return p ? `#${pfNum(p.rank)} of ${pfNum(p.of)}` : "Not ranked";
+        // No rank: off the boards (no nickname, 4 Oct 2026; player-profile.js).
+        return p && p.rank ? `#${pfNum(p.rank)} of ${pfNum(p.of)}` : "Not ranked";
     }
 
     function gamesHtml(d, self) {
@@ -9652,12 +9641,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const self = !other;
         const list = other ? (Array.isArray(d.walked) ? d.walked : []) : [...walkedIds];
         const f = other ? progressFigures(new Set(list), new Set()) : progressFigures();
-        // Closed mazes completed included (see CLOSED MAZES COUNT).
+        // The open mazes; closed ones completed are a tally apart (see CLOSED MAZES).
         const total = f.counted.total;
         const done = f.counted.done;
         const pct = total ? Math.round((done / total) * 100) : 0;
-        // ...but not in what the badges go by, nor in "Next:" under them.
-        const badgeDone = f.walkedHere.length;
+        const closedN = f.closedDone.length;
+        const badgeDone = done;
 
         const badges = earnedBadges(f, d);
         /* What the Badges section lists (4 Oct 2026): on your own profile
@@ -9749,12 +9738,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const i = RANK.indexOf(k);
             return i === -1 ? RANK.length : i;
         };
-        // shownByDifficulty: the big figure's own rooms, closed ones completed included.
-        const diffRows = Object.keys(f.shownByDifficulty)
-            .filter(k => f.shownByDifficulty[k].total)
+        // The open mazes, as the big figure counts them.
+        const diffRows = Object.keys(f.byDifficulty)
+            .filter(k => f.byDifficulty[k].total)
             .sort((a, b) => rankOf(a) - rankOf(b) || (a < b ? -1 : 1))
             .map(k => {
-                const { total: t, walked: w } = f.shownByDifficulty[k];
+                const { total: t, walked: w } = f.byDifficulty[k];
                 const p = t ? Math.round((w / t) * 100) : 0;
                 return `<li class="progress-diff">
                     <span class="progress-diff-name">${escapeHtml(prettyDifficulty(k))}</span>
@@ -9791,10 +9780,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
             <section class="progress-block">
                 <div class="progress-bignum">
-                    <strong>${done}</strong><span>of ${total} completed</span>
+                    <strong>${done}</strong><span>of ${total} open mazes completed</span>
                 </div>
                 <div class="progress-bar"><span style="width:${pct}%"></span></div>
-                <p class="progress-note">${pct}% of the open mazes, plus the closed ones ${self ? "you've" : "they've"} completed. Completed closed mazes don't count towards badges or Latest.</p>
+                ${closedN ? `<p class="progress-note">+ ${closedN} closed ${closedN === 1 ? "maze" : "mazes"} completed</p>` : ""}
                 ${hlRows.length ? `<dl class="profile-hls">${hlRows.join("")}</dl>` : ""}
             </section>
 
@@ -9808,14 +9797,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     ? ` <span class="progress-count">${badges.length} of ${badgeList.length}</span>`
                     : badges.length ? ` <span class="progress-count">${badges.length}</span>` : ""}</h4>
                 ${badgeList.length
-                    ? `<ul class="progress-badges">${badgeList.map(b => `
+                    /* Earned first, and the ones still to get in a list of
+                       their own under them (4 Oct 2026, the owner's: one
+                       list of both read as clutter). */
+                    ? `${[badgeList.filter(b => b.earned), badgeList.filter(b => !b.earned)]
+                        .filter(l => l.length)
+                        .map(l => `<ul class="progress-badges">${l.map(b => `
                         <li><button type="button" class="progress-badge${b.earned ? "" : " is-locked"}" data-badge-key="${escapeHtml(b.key)}"
                                 aria-controls="profile-badge-card" aria-pressed="false"
                                 data-badge-name="${escapeHtml(b.name)}" data-badge-means="${escapeHtml(b.means)}"
                                 data-badge-how="${escapeHtml(b.how)}" data-badge-earned="${b.earned ? "1" : ""}">
                             <span class="progress-badge-mark" aria-hidden="true"></span>
                             <span>${escapeHtml(b.name)}</span>
-                        </button></li>`).join("")}</ul>
+                        </button></li>`).join("")}</ul>`).join("")}
                         <div class="profile-badge-card" id="profile-badge-card" hidden></div>
                         <p class="progress-note profile-badge-hint">Select a badge to see what it means and how to get it. Marking Closed mazes as complete does not count towards badges.</p>`
                     : `<p class="progress-note">None yet.</p>`}
