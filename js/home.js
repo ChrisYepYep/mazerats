@@ -10189,7 +10189,8 @@ document.addEventListener("DOMContentLoaded", () => {
        id> one player's. The window keeps no address of its own, so once it
        is open the address goes back to the archive's, as #nickname does,
        and a reload is just the archive again. */
-    const PROFILE_PATH = /^\/profile\/?$/;
+    // /profiles too (4 Oct 2026, the owner's: the window is titled Profiles).
+    const PROFILE_PATH = /^\/profiles?\/?$/;
     if (PROFILE_PATH.test(location.pathname)) {
         let pid = null;
         try { pid = new URLSearchParams(location.search).get("p"); } catch (e) { /* none */ }
